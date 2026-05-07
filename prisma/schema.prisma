@@ -1,0 +1,234 @@
+// Смены, ставки, бонусы/штрафы. Пользователи — по логину из AUTH_USERS,
+// а измененные пароли хранятся отдельно в БД.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Shift {
+  id                  String    @id @default(cuid())
+  userLogin           String
+  shiftDate           String    // YYYY-MM-DD (локальный день смены)
+  startedAt           DateTime  @map("started_at")
+  endedAt             DateTime? @map("ended_at")
+  closeType           String    @default("by_employee") @map("close_type") // by_employee | by_owner | auto
+  closedByLogin       String?   @map("closed_by_login")
+  latePenaltyCents    Int?      @map("late_penalty_cents")
+  unclosedPenaltyCents Int?     @map("unclosed_penalty_cents")
+
+  @@unique([userLogin, shiftDate])
+  @@map("shifts")
+}
+
+model ShiftRate {
+  id            String   @id @default(cuid())
+  userLogin     String   @map("user_login")
+  amountCents   Int      @map("amount_cents")
+  effectiveFrom String   @map("effective_from") // YYYY-MM-DD, новая ставка только на будущие смены
+
+  @@map("shift_rates")
+}
+
+model PieceworkRule {
+  id                 String   @id @default(cuid())
+  targetType         String   @map("target_type") // service | product_group
+  targetId           String   @map("target_id")
+  targetName         String   @map("target_name")
+  role               String
+  mode               String   // fixed | percent
+  fixedCents         Int?     @map("fixed_cents")
+  percentBasisPoints Int?     @map("percent_basis_points")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([targetType, targetId, role])
+  @@map("piecework_rules")
+}
+
+model BonusPenalty {
+  id             String   @id @default(cuid())
+  userLogin      String   @map("user_login")
+  date           String   // YYYY-MM-DD
+  amountCents    Int      @map("amount_cents") // бонус > 0, штраф < 0
+  type           String   // bonus | penalty_late | penalty_unclosed | penalty_manual
+  comment        String?  @db.Text
+  createdByLogin String   @map("created_by_login")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("bonus_penalties")
+}
+
+model ChangeLog {
+  id               String   @id @default(cuid())
+  entityType       String   @map("entity_type")
+  entityId         String   @map("entity_id")
+  action           String   // create | update | delete
+  oldValue         Json?    @map("old_value")
+  newValue         Json?    @map("new_value")
+  performedByLogin String   @map("performed_by_login")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("change_logs")
+}
+
+// Назначенные владельцем рабочие дни сотрудника (график)
+model ScheduledWorkingDay {
+  id               String   @id @default(cuid())
+  userLogin        String   @map("user_login")
+  date             String   // YYYY-MM-DD
+  createdByLogin   String   @map("created_by_login")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([userLogin, date])
+  @@map("scheduled_working_days")
+}
+
+model AuthPassword {
+  login        String   @id
+  passwordHash String   @map("password_hash")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("auth_passwords")
+}
+
+/// Слепок отгрузок МойСклад для аналитики по клиентам (только applicable)
+model MoySkladDemandSync {
+  id                  String   @id
+  documentDate        String   @map("document_date")
+  momentAt            DateTime @map("moment_at")
+  applicable          Boolean
+  sumCents            Int      @map("sum_cents")
+  name                String
+  agentMetaHref       String?  @map("agent_meta_href")
+  agentNameSnapshot   String?  @map("agent_name_snapshot")
+  phonesRaw           Json?    @map("phones_raw")
+  normalizedPhone     String?  @map("normalized_phone")
+  hasIncompleteCost   Boolean  @default(false) @map("has_incomplete_cost")
+  positionCount       Int      @default(0) @map("position_count")
+  /** Прибыль по строкам документа (копейки), считается при синхронизации */
+  profitCents         Int      @default(0) @map("profit_cents")
+  /** Услуги в документе по порядку первого вхождения: [{ "id", "name" }] */
+  documentServices    Json?    @map("document_services")
+  syncedAt            DateTime @default(now()) @map("synced_at")
+
+  positions MoySkladDemandPositionSync[]
+
+  @@index([normalizedPhone])
+  @@index([documentDate])
+  @@index([momentAt])
+  @@map("moysklad_demand_sync")
+}
+
+/// Позиции отгрузки для сегментации по услугам и расчёта себестоимости
+model MoySkladDemandPositionSync {
+  id                     String   @id
+  demandId               String   @map("demand_id")
+  demand                 MoySkladDemandSync @relation(fields: [demandId], references: [id], onDelete: Cascade)
+  assortmentType         String   @map("assortment_type")
+  assortmentId           String?  @map("assortment_id")
+  name                   String
+  quantity               Float
+  priceCentsPerUnit      Int      @map("price_cents_per_unit")
+  discount               Float    @default(0)
+  buyPriceCentsPerUnit   Int?     @map("buy_price_cents_per_unit")
+  lineIncompleteCost     Boolean  @default(false) @map("line_incomplete_cost")
+
+  @@index([demandId])
+  @@index([assortmentType, assortmentId])
+  @@map("moysklad_demand_position_sync")
+}
+
+/// Состояние синхронизации (одна строка)
+model MoySkladAnalyticsSyncState {
+  id                  String    @id
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  lastSyncedAt        DateTime? @map("last_synced_at")
+  lastError           String?   @map("last_error") @db.Text
+  demandsSynced       Int       @default(0) @map("demands_synced")
+  syncRunning         Boolean   @default(false) @map("sync_running")
+  syncMode            String?   @map("sync_mode")
+  syncPhase           String?   @map("sync_phase")
+  syncStartedAt       DateTime? @map("sync_started_at")
+  syncFinishedAt      DateTime? @map("sync_finished_at")
+  syncHeartbeatAt     DateTime? @map("sync_heartbeat_at")
+  syncTotalDemands    Int?      @map("sync_total_demands")
+  syncProcessedDemands Int      @default(0) @map("sync_processed_demands")
+  syncScannedDemands  Int       @default(0) @map("sync_scanned_demands")
+  syncLastDemandId    String?   @map("sync_last_demand_id")
+  syncLastDemandName  String?   @map("sync_last_demand_name")
+  syncMessage         String?   @map("sync_message") @db.Text
+
+  @@map("moysklad_analytics_sync_state")
+}
+
+/// Пороги статусов аналитики (singleton id = default)
+model CustomerAnalyticsSettings {
+  id                    String  @id @default("default")
+  inactiveDaysThreshold Int     @default(365) @map("inactive_days_threshold")
+  regularVisitThreshold Int     @default(5) @map("regular_visit_threshold")
+  vipThresholdCents     Int?    @map("vip_threshold_cents")
+  vipMetric             String  @default("revenue") @map("vip_metric")
+  vipWindow             String  @default("all") @map("vip_window")
+
+  @@map("customer_analytics_settings")
+}
+
+model VinLookupCache {
+  vin       String   @id @db.Text
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt], map: "vin_lookup_cache_expires_at_idx")
+  @@map("vin_lookup_cache")
+}
+
+model CrmStage {
+  id        String    @id @default(cuid())
+  name      String
+  sortOrder Int       @map("sort_order")
+  color     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  deals CrmDeal[]
+
+  @@unique([sortOrder])
+  @@map("crm_stages")
+}
+
+model CrmDeal {
+  id                String    @id @default(cuid())
+  title             String
+  customerName      String?   @map("customer_name")
+  phoneNormalized   String?   @map("phone_normalized")
+  vehicle           String?
+  source            String?
+  amountCents       Int?      @map("amount_cents")
+  stageId           String    @map("stage_id")
+  responsibleLogin  String?   @map("responsible_login")
+  moyskladCounterpartyId   String? @map("moysklad_counterparty_id")
+  moyskladCounterpartyName String? @map("moysklad_counterparty_name")
+  moyskladCounterpartyHref String? @map("moysklad_counterparty_href") @db.Text
+  yclientsRecordId  String?   @map("yclients_record_id")
+  moyskladDemandId  String?   @map("moysklad_demand_id")
+  nextContactAt     DateTime? @map("next_contact_at")
+  status            String    @default("open") // open | won | lost
+  notes             String?   @db.Text
+  createdByLogin    String    @map("created_by_login")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  stage CrmStage @relation(fields: [stageId], references: [id])
+
+  @@index([phoneNormalized])
+  @@index([moyskladCounterpartyId])
+  @@index([stageId])
+  @@index([status])
+  @@map("crm_deals")
+}

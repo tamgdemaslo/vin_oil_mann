@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@import url("https://be.cdn.yclients.com/css/open_sans.css");
+@import url("https://be.cdn.yclients.com/css/roboto.css");
+@import url("https://be.cdn.yclients.com/css/inter.css");
+@import url("https://be.cdn.yclients.com/css/p.backoffice.ac3e2b95271a0a9255bbdda25b38d5af.css");
+@import url("https://be.cdn.yclients.com/css/p.backoffice-yclients.1e56cbfff03de9dea19500aeb34f2a45.css");
+@import url("https://be.cdn.yclients.com/css/p.redesign.fb84f2a1f4578690cd84bcb85255e260.css");
+@import url("https://be.cdn.yclients.com/css/p.light-redesign-deprecated.d79e41181df1c9dfa777b0d782aa23ef.css");
+@import url("https://be.cdn.yclients.com/css/p.header-redesign.701aa1f7f2d8042747a370ae0ed6f1c9.css");
+
+:root {
+  --background: #fbfcff;
+  --foreground: #2b3134;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, "Open Sans", Roboto, Arial, sans-serif;
+}

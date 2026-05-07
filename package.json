@@ -1,0 +1,38 @@
+{
+  "name": "vin-oil-mann",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --webpack",
+    "build": "prisma generate && next build",
+    "start": "next start --hostname 0.0.0.0 --port ${PORT:-3000}",
+    "lint": "eslint",
+    "test:lookup": "node scripts/test-lookup.mjs",
+    "test:oil-search": "node scripts/test-oil-search.mjs",
+    "test:openai-oil": "node scripts/test-openai-oil.mjs",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "moysklad:token": "node scripts/refresh-moysklad-token.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "next": "16.1.6",
+    "openai": "^6.22.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "soap": "^1.9.1",
+    "undici": "^7.25.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "prisma": "^6.9.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

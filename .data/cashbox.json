@@ -1,0 +1,473 @@
+{
+  "shifts": [
+    {
+      "id": "shift_mmagg2ko_7oa8m8fn",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T10:18:26.952Z",
+      "openedBy": {
+        "login": "Елисеенко",
+        "name": "Елисеенко",
+        "role": "owner"
+      },
+      "openingCash": 1000,
+      "closedAt": "2026-03-03T10:57:00.261Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 1000,
+      "actualCash": 1000,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmahx374_0j4xv5o0",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T10:59:40.527Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 1000,
+      "closedAt": "2026-03-03T12:29:47.937Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 5,
+      "expectedCash": 995,
+      "actualCash": 995,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmal5adj_a8lgj9u1",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T12:30:01.927Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 0,
+      "closedAt": "2026-03-03T12:33:55.589Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 0,
+      "actualCash": 0,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmalanqe_z2s8kfo9",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T12:34:12.518Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 0,
+      "closedAt": "2026-03-03T12:41:56.732Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 6160,
+      "cardOrdersTotal": 13962,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 6160,
+      "actualCash": 6160,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmallh96_651dwq1d",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T12:42:37.338Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 1000,
+      "closedAt": "2026-03-03T12:44:19.244Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 500,
+      "expectedCash": 500,
+      "actualCash": 500,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmalpan7_gpqo6yus",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T12:45:35.395Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 400,
+      "closedAt": "2026-03-03T12:45:54.782Z",
+      "closedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 400,
+      "actualCash": 400,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mmb0yn13_1r61qgw2",
+      "serviceDate": "2026-03-03",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-03T19:52:45.590Z",
+      "openedBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "openingCash": 400,
+      "closedAt": "2026-03-20T10:11:41.717Z",
+      "closedBy": {
+        "login": "ilya",
+        "name": "Владелец",
+        "role": "owner"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 400,
+      "actualCash": 0,
+      "discrepancy": -400,
+      "discrepancyComment": "123"
+    },
+    {
+      "id": "shift_mmyuygid_7e9hfpdk",
+      "serviceDate": "2026-03-20",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-20T12:11:07.669Z",
+      "openedBy": {
+        "login": "ilya",
+        "name": "Владелец",
+        "role": "owner"
+      },
+      "openingCash": 0,
+      "closedAt": "2026-03-20T12:11:27.477Z",
+      "closedBy": {
+        "login": "ilya",
+        "name": "Владелец",
+        "role": "owner"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 0,
+      "actualCash": 0,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mn0oqhz4_f7w6m3in",
+      "serviceDate": "2026-03-21",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-21T18:52:30.976Z",
+      "openedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "openingCash": 0,
+      "closedAt": "2026-03-23T11:29:50.951Z",
+      "closedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 0,
+      "actualCash": 0,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mn35f6vw_di2pj82l",
+      "serviceDate": "2026-03-23",
+      "timezone": "Europe/Kaliningrad",
+      "status": "closed",
+      "openedAt": "2026-03-23T12:15:09.212Z",
+      "openedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "openingCash": 0,
+      "closedAt": "2026-03-23T12:15:15.768Z",
+      "closedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "cashOrdersTotal": 0,
+      "cardOrdersTotal": 0,
+      "withdrawalsTotal": 0,
+      "cashExpensesTotal": 0,
+      "expectedCash": 0,
+      "actualCash": 0,
+      "discrepancy": 0,
+      "discrepancyComment": ""
+    },
+    {
+      "id": "shift_mn35g140_5l3xwg6a",
+      "serviceDate": "2026-03-23",
+      "timezone": "Europe/Kaliningrad",
+      "status": "open",
+      "openedAt": "2026-03-23T12:15:48.384Z",
+      "openedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "openingCash": 0
+    }
+  ],
+  "operations": [
+    {
+      "id": "op_mmai50rz_2li8vke0",
+      "type": "expense",
+      "shiftId": "shift_mmahx374_0j4xv5o0",
+      "createdAt": "2026-03-03T11:05:50.640Z",
+      "createdBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "amount": 5,
+      "article": "арендаааа",
+      "paymentType": "cash",
+      "comment": "вот",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/f0649056-16f0-11f1-0a80-1374001e7f44"
+    },
+    {
+      "id": "op_mmalltnx_9hhpjjda",
+      "type": "expense",
+      "shiftId": "shift_mmallh96_651dwq1d",
+      "createdAt": "2026-03-03T12:42:53.421Z",
+      "createdBy": {
+        "login": "Дударев",
+        "name": "Дударев",
+        "role": "admin"
+      },
+      "amount": 500,
+      "article": "конфеты",
+      "paymentType": "cash",
+      "comment": "конфетки",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/7f05b69e-16fe-11f1-0a80-0eb70022d84b"
+    },
+    {
+      "id": "op_mn0owxbw_0gi7clgf",
+      "type": "expense",
+      "shiftId": "shift_mn0oqhz4_f7w6m3in",
+      "createdAt": "2026-03-21T18:57:30.812Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 1,
+      "article": "зп",
+      "paymentType": "card",
+      "comment": "1"
+    },
+    {
+      "id": "op_mn0pdaks_lf7za4th",
+      "type": "expense",
+      "shiftId": "shift_mn0oqhz4_f7w6m3in",
+      "createdAt": "2026-03-21T19:10:14.476Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 10000,
+      "article": "Аванс",
+      "counterpartyName": "Лобов Максим",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/6a2a5649-1a2e-11f1-0a80-00f2001d5705",
+      "expenseItemName": "Аванс",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/de85aff5-161b-11f0-0a80-07fc00259aaa",
+      "paymentType": "card"
+    },
+    {
+      "id": "op_mn0pmjkt_iwyzzhcc",
+      "type": "expense",
+      "shiftId": "shift_mn0oqhz4_f7w6m3in",
+      "createdAt": "2026-03-21T19:17:26.045Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 10000,
+      "article": "Аванс",
+      "counterpartyName": "Лобов Максим",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/6a2a5649-1a2e-11f1-0a80-00f2001d5705",
+      "expenseItemName": "Аванс",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/de85aff5-161b-11f0-0a80-07fc00259aaa",
+      "paymentType": "card",
+      "comment": "аванс",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/986d7eb9-255a-11f1-0a80-08430040e081"
+    },
+    {
+      "id": "op_mnbl7ms8_g1rsn0sc",
+      "type": "expense",
+      "shiftId": "shift_mn35g140_5l3xwg6a",
+      "createdAt": "2026-03-29T09:59:19.832Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 30000,
+      "article": "Аванс",
+      "counterpartyName": "Лобов Максим",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/6a2a5649-1a2e-11f1-0a80-00f2001d5705",
+      "expenseItemName": "Аванс",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/de85aff5-161b-11f0-0a80-07fc00259aaa",
+      "paymentType": "cash",
+      "comment": "аванс",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/f3d22ec3-2b55-11f1-0a80-070b0072afc8"
+    },
+    {
+      "id": "op_mnbl8ers_r3sv2qwb",
+      "type": "expense",
+      "shiftId": "shift_mn35g140_5l3xwg6a",
+      "createdAt": "2026-03-29T09:59:56.104Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 6000,
+      "article": "Аванс",
+      "counterpartyName": "Лобов Максим",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/6a2a5649-1a2e-11f1-0a80-00f2001d5705",
+      "expenseItemName": "Аванс",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/de85aff5-161b-11f0-0a80-07fc00259aaa",
+      "paymentType": "card",
+      "comment": "масло Барадль",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/0a0a112e-2b56-11f1-0a80-09d3007509f7"
+    },
+    {
+      "id": "op_mnblryb1_6gwfrdsh",
+      "type": "expense",
+      "shiftId": "shift_mn35g140_5l3xwg6a",
+      "createdAt": "2026-03-29T10:15:07.885Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 12500,
+      "article": "Зарплата",
+      "counterpartyName": "Дударев Александр Сергеевич",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/3819f292-eac3-11ef-0a80-094b000b9558",
+      "expenseItemName": "Зарплата",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/e7db07da-1116-11ee-0a80-13a2000000ff",
+      "paymentType": "cash",
+      "comment": "зп",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/29275c99-2b58-11f1-0a80-1a2a007618b4"
+    },
+    {
+      "id": "op_mol69rar_8wvuy49d",
+      "type": "expense",
+      "shiftId": "shift_mn35g140_5l3xwg6a",
+      "createdAt": "2026-04-30T07:38:28.851Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 41000,
+      "article": "Аванс",
+      "counterpartyName": "Лобов Максим",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/6a2a5649-1a2e-11f1-0a80-00f2001d5705",
+      "expenseItemName": "Аванс",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/de85aff5-161b-11f0-0a80-07fc00259aaa",
+      "paymentType": "cash",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/946faed8-4467-11f1-0a80-0b99001069dd"
+    },
+    {
+      "id": "op_morgd8fs_cx0g5sjc",
+      "type": "expense",
+      "shiftId": "shift_mn35g140_5l3xwg6a",
+      "createdAt": "2026-05-04T17:07:44.248Z",
+      "createdBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "amount": 7200,
+      "article": "cursor",
+      "counterpartyName": "Елисеенко Илья Сергеевич",
+      "counterpartyMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/5957990c-708c-11f0-0a80-0da700646a0c",
+      "expenseItemName": "Содержание сервиса и непредвиденные расходы",
+      "expenseItemMetaHref": "https://api.moysklad.ru/api/remap/1.2/entity/expenseitem/3e11540e-f5ac-11ef-0a80-0c69001b22d4",
+      "paymentType": "card",
+      "comment": "cursor",
+      "moyskladCashoutHref": "https://api.moysklad.ru/api/remap/1.2/entity/cashout/c43f40d9-47db-11f1-0a80-02b3003d9f0a"
+    }
+  ]
+}
