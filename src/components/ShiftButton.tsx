@@ -43,8 +43,10 @@ export default function ShiftButton() {
         const j = await tryResponseJson<{ user?: { role?: UserRole } | null }>(r);
         return j ?? { user: null };
       }),
-      fetch("/api/shifts/current").then((r) => tryResponseJson(r)),
-      fetch("/api/cash").then((r) => tryResponseJson(r)),
+      fetch("/api/shifts/current").then((r) => tryResponseJson<CurrentShift>(r)),
+      fetch("/api/cash").then((r) =>
+        tryResponseJson<{ shift: CurrentCashShift | null }>(r)
+      ),
     ])
       .then(([sessionData, shiftData, cashData]) => {
         if (cancelled) return;
