@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { safeReadJson } from "@/lib/http-json";
 
 const IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const PIN_REGEX = /^\d{4}$/;
@@ -29,7 +30,7 @@ export default function IdleLockGuard() {
       setLoading(true);
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" });
-        const data = await res.json();
+        const data = await safeReadJson<{ user?: SessionUser | null }>(res);
         if (cancelled) return;
         setUser(data?.user ?? null);
       } catch {
@@ -106,7 +107,7 @@ export default function IdleLockGuard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
-      const data = await res.json();
+      const data = await safeReadJson<{ error?: string }>(res);
       if (!res.ok) {
         setError(data?.error ?? "Не удалось разблокировать");
         return;
@@ -149,7 +150,7 @@ export default function IdleLockGuard() {
           <input
             type="password"
             inputMode="numeric"
-            pattern="\d{4}"
+            pattern="[0-9]{4}"
             maxLength={4}
             autoFocus
             value={password}

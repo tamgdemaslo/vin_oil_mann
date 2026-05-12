@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { moyskladFetch } from "@/lib/moysklad";
+import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
 
 type Meta = { href: string; type: string; mediaType: string };
-
-// Берём объект от МойСклад как есть, чтобы не терять поля
-type DemandGet = {
-  id: string;
-  name: string;
-  moment: string;
-  applicable: boolean;
-  description?: string;
-  sum: number;
-  meta: Meta;
-  agent?: { name?: string };
-  organization?: { name?: string };
-  store?: { name?: string };
-} & Record<string, unknown>;
 
 type DemandPositionRow = {
   id: string;
@@ -34,13 +21,6 @@ type DemandPositionRow = {
   };
 } & Record<string, unknown>;
 
-type AttributeMeta = {
-  id: string;
-  name: string;
-  type: string;
-  meta: Meta;
-};
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -51,118 +31,10 @@ export async function GET(
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const [demandRes, metaRes] = await Promise.all([
-    moyskladFetch<DemandGet>(`/entity/demand/${id}?expand=agent,organization,store`, {
-      cache: "no-store",
-    }),
-    moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>("/entity/demand/metadata/attributes"),
-  ]);
-  if (!demandRes.ok) return NextResponse.json({ error: demandRes.error }, { status: 502 });
+  const loaded = await loadDemandDetailPayload(id);
+  if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: 502 });
 
-  const posRes = await moyskladFetch<{ rows: DemandPositionRow[] }>(
-    `/entity/demand/${id}/positions?expand=assortment,slot&fields=stock`,
-    { cache: "no-store" }
-  );
-
-  const storeName = (demandRes.data as any).store?.name ?? "";
-  let stockByHref: Record<string, number> = {};
-  if (storeName) {
-    const reportRes = await moyskladFetch<{
-      rows?: { meta?: { href?: string }; stockByStore?: { name: string; stock: number }[] }[];
-    }>("/report/stock/bystore", { cache: "no-store" });
-    if (reportRes.ok && reportRes.data.rows) {
-      for (const row of reportRes.data.rows) {
-        const href = row.meta?.href ?? "";
-        if (!href) continue;
-        const forStore = (row.stockByStore ?? []).find((s) => s.name === storeName);
-        stockByHref[href] = forStore?.stock ?? 0;
-      }
-    }
-  }
-
-  // Полный список доп. полей из метаданных + значения из документа
-  let metaAttributes: AttributeMeta[] = [];
-  if (metaRes.ok) {
-    const d: any = metaRes.data;
-    if (Array.isArray(d)) {
-      metaAttributes = d as AttributeMeta[];
-    } else if (Array.isArray(d.rows)) {
-      metaAttributes = d.rows as AttributeMeta[];
-    }
-  }
-  const currentAttributes = (demandRes.data as any).attributes || [];
-  const currentById = new Map<string, any>();
-  for (const a of currentAttributes) {
-    if (a?.id) currentById.set(a.id as string, a);
-  }
-  const attributes = metaAttributes.map((m) => {
-    const cur = currentById.get(m.id) ?? currentAttributes.find((a: any) => a?.name === m.name);
-    return {
-      id: m.id,
-      name: m.name,
-      type: m.type,
-      meta: m.meta,
-      value: cur?.value ?? null,
-    };
-  });
-
-  const storeMeta = (demandRes.data as any).store?.meta;
-  const storeId = storeMeta?.href?.split("/").pop() ?? "";
-
-  const ecoUserAttr = attributes.find(
-    (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
-  );
-  const ecoUserName = (() => {
-    const v = ecoUserAttr?.value;
-    if (typeof v === "string") return v;
-    if (v == null) return undefined;
-    return String(v);
-  })();
-
-  return NextResponse.json({
-    header: {
-      id: demandRes.data.id,
-      name: demandRes.data.name,
-      moment: demandRes.data.moment,
-      applicable: demandRes.data.applicable,
-      description: demandRes.data.description ?? "",
-      sum: demandRes.data.sum,
-      href: demandRes.data.meta?.href,
-      agentName: demandRes.data.agent?.name ?? "",
-      organizationName: demandRes.data.organization?.name ?? "",
-      storeName: demandRes.data.store?.name ?? "",
-      storeId,
-      ecoUserName,
-    },
-    attributes,
-    positions:
-      posRes.ok && posRes.data.rows
-        ? posRes.data.rows.map((p) => {
-            const assortmentHref = (p.assortment as any)?.meta?.href;
-            const fromReport = assortmentHref != null ? stockByHref[assortmentHref] : undefined;
-            const baseStock = p.stock ?? {};
-            const stock =
-              typeof fromReport === "number"
-                ? { ...baseStock, quantity: fromReport }
-                : baseStock;
-            return {
-              id: p.id,
-              name:
-                (p.assortment as any)?.name ??
-                (p.assortment as any)?.meta?.href ??
-                "",
-              quantity: p.quantity,
-              price: p.price,
-              slotName: p.slot?.name ?? "",
-              discount: typeof p.discount === "number" ? p.discount : 0,
-              stock,
-              assortmentMeta: (p.assortment as any)?.meta,
-            };
-          })
-        : [],
-    raw: demandRes.data,
-    rawPositions: posRes.ok && posRes.data.rows ? posRes.data.rows : [],
-  });
+  return NextResponse.json(loaded.data);
 }
 
 type UpdateBody = {
@@ -248,7 +120,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Нет данных для обновления" }, { status: 400 });
   }
 
-  const result = await moyskladFetch<DemandGet>(
+  type DemandPut = {
+    id: string;
+    name: string;
+    moment: string;
+    applicable: boolean;
+    description?: string;
+    sum: number;
+    meta: Meta;
+  };
+
+  const result = await moyskladFetch<DemandPut>(
     `/entity/demand/${id}`,
     { method: "PUT", body: JSON.stringify(payload), cache: "no-store" }
   );

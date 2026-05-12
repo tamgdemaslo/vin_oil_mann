@@ -35,10 +35,16 @@ function roleAccent(role: LoginUser["role"]) {
   };
 }
 
+function sanitizeInternalPath(raw: string): string {
+  const s = raw.trim();
+  if (!s.startsWith("/") || s.startsWith("//") || s.includes("://")) return "/";
+  return s;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/";
+  const from = sanitizeInternalPath(searchParams.get("from") ?? "/");
   const [users, setUsers] = useState<LoginUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [selectedLogin, setSelectedLogin] = useState("");

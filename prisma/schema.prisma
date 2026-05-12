@@ -232,3 +232,122 @@ model CrmDeal {
   @@index([status])
   @@map("crm_deals")
 }
+
+// --- Диагностический лист при отгрузке ---
+
+enum DiagnosticStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum DiagnosticBlock {
+  AGGREGATE_FLUID
+  SERVICE_FLUID
+  VISUAL
+  SURVEY
+}
+
+enum DiagnosticPositionStatus {
+  NOT_CHECKED
+  GREEN
+  YELLOW
+  RED
+  SKIPPED
+}
+
+model Diagnostic {
+  id                 String           @id @default(uuid())
+  shipmentMoySkladId String?          @map("shipment_moysklad_id")
+  shipmentDraftId    String?          @map("shipment_draft_id")
+  agentMoySkladId    String?          @map("agent_moysklad_id")
+
+  vin           String?
+  brand         String?
+  model         String?
+  year          Int?
+  licensePlate  String?              @map("license_plate")
+  mileage       Int?
+
+  mechanicLogin String?           @map("mechanic_login")
+
+  status               DiagnosticStatus @default(IN_PROGRESS)
+  startedAt            DateTime        @default(now()) @map("started_at")
+  completedAt          DateTime?       @map("completed_at")
+  clientReportSentAt   DateTime?       @map("client_report_sent_at")
+  clientReportToken      String          @unique @default(uuid()) @map("client_report_token")
+  clientWantsReminder Boolean          @default(true) @map("client_wants_reminder")
+
+  summaryGreen  Int @default(0) @map("summary_green")
+  summaryYellow Int @default(0) @map("summary_yellow")
+  summaryRed    Int @default(0) @map("summary_red")
+
+  positions DiagnosticPosition[]
+  offers    DiagnosticOffer[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([vin])
+  @@index([agentMoySkladId])
+  @@index([shipmentMoySkladId])
+  @@map("diagnostics")
+}
+
+model DiagnosticPosition {
+  id           String                   @id @default(uuid())
+  diagnosticId String                   @map("diagnostic_id")
+  diagnostic   Diagnostic               @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+
+  block      DiagnosticBlock
+  node       String
+  status     DiagnosticPositionStatus @default(NOT_CHECKED)
+
+  tags             String[]
+  measurementValue Decimal?             @map("measurement_value") @db.Decimal(10, 2)
+  measurementUnit  String?              @map("measurement_unit")
+  recommendation   String?
+  notes            String?              @db.Text
+
+  photos DiagnosticPhoto[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([diagnosticId, node])
+  @@index([diagnosticId])
+  @@map("diagnostic_positions")
+}
+
+model DiagnosticPhoto {
+  id         String             @id @default(uuid())
+  positionId String             @map("position_id")
+  position   DiagnosticPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  filePath String @map("file_path")
+  caption  String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([positionId])
+  @@map("diagnostic_photos")
+}
+
+model DiagnosticOffer {
+  id           String     @id @default(uuid())
+  diagnosticId String     @map("diagnostic_id")
+  diagnostic   Diagnostic @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+
+  relatedPositionId    String? @map("related_position_id")
+  offerKey             String   @map("offer_key")
+  title                String
+  variants             Json
+  selectedVariantIndex Int?     @map("selected_variant_index")
+  addedToShipment      Boolean  @default(false) @map("added_to_shipment")
+  nextVisitOnly        Boolean  @default(false) @map("next_visit_only")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([diagnosticId])
+  @@map("diagnostic_offers")
+}

@@ -1,0 +1,50 @@
+import { NextRequest, NextResponse } from "next/server";
+import fs from "fs/promises";
+import { prisma } from "@/lib/db";
+import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { deletePhotoFile } from "@/lib/diagnostic-photos";
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; photoId: string }> }
+) {
+  const gate = await requireApiSessionWithShift();
+  if (!gate.ok) return gate.response;
+
+  const { id: diagnosticId, photoId } = await params;
+  const photo = await prisma.diagnosticPhoto.findFirst({
+    where: { id: photoId, position: { diagnosticId } },
+  });
+  if (!photo) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+
+  try {
+    const buf = await fs.readFile(photo.filePath);
+    return new NextResponse(buf, {
+      headers: {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "private, max-age=3600",
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "Файл недоступен" }, { status: 404 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; photoId: string }> }
+) {
+  const gate = await requireApiSessionWithShift();
+  if (!gate.ok) return gate.response;
+
+  const { id: diagnosticId, photoId } = await params;
+  const photo = await prisma.diagnosticPhoto.findFirst({
+    where: { id: photoId, position: { diagnosticId } },
+  });
+  if (!photo) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+
+  deletePhotoFile(photo.filePath);
+  await prisma.diagnosticPhoto.delete({ where: { id: photoId } });
+
+  return NextResponse.json({ ok: true });
+}

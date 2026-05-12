@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -81,7 +82,14 @@ export default function ShipmentDetailPage() {
   const [attributes, setAttributes] = useState<DemandAttribute[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [vin, setVin] = useState("");
-  const [printTemplate, setPrintTemplate] = useState<"default" | "birka_own" | "birka_box" | "job_order">("default");
+  const [printTemplate, setPrintTemplate] = useState<
+    | "default"
+    | "birka_own"
+    | "birka_box"
+    | "job_order"
+    | "eco_poster"
+    | "under_hood_tags"
+  >("eco_poster");
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
   const [productMannName, setProductMannName] = useState("");
@@ -101,6 +109,16 @@ export default function ShipmentDetailPage() {
     }[]
   >([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+
+  const [diagnosticModalOpen, setDiagnosticModalOpen] = useState(false);
+  const [diagnosticRowId, setDiagnosticRowId] = useState<string | null>(null);
+  const [diagnosticRemote, setDiagnosticRemote] = useState<{
+    id: string;
+    status: string;
+    summaryGreen: number;
+    summaryYellow: number;
+    summaryRed: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,6 +193,79 @@ export default function ShipmentDetailPage() {
       cancelled = true;
     };
   }, [id, router]);
+
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.diagnostic?.id) {
+          setDiagnosticRemote(j.diagnostic);
+          setDiagnosticRowId(j.diagnostic.id);
+        } else {
+          setDiagnosticRemote(null);
+          setDiagnosticRowId(null);
+        }
+      })
+      .catch(() => {});
+  }, [id]);
+
+  const handleOpenDiagnosticDetail = useCallback(async () => {
+    if (!id) return;
+    let diagId = diagnosticRowId;
+    if (!diagId) {
+      const attrModel = String(
+        attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+      ).trim();
+      const mp = attrModel.split(/\s+/).filter(Boolean);
+      const yearStr = String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? "").trim();
+      const plateStr = String(
+        attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
+      ).trim();
+      const mileageStr = String(
+        attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""
+      ).trim();
+      const rawAgentId =
+        data?.raw && typeof data.raw === "object" && data.raw !== null && "agent" in data.raw
+          ? (data.raw as { agent?: { id?: string } }).agent?.id
+          : undefined;
+      const cr = await fetch("/api/diagnostic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shipmentMoySkladId: id,
+          agentMoySkladId: rawAgentId ?? null,
+          vin: vin.replace(/\s/g, "").toUpperCase() || null,
+          brand: mp[0] ?? null,
+          model: mp.slice(1).join(" ") || null,
+          year: yearStr ? parseInt(yearStr, 10) || null : null,
+          licensePlate: plateStr || null,
+          mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+        }),
+      });
+      const cj = await cr.json();
+      if (!cr.ok) {
+        setError(cj.error ?? "Не удалось создать диагностику");
+        return;
+      }
+      diagId = cj.diagnosticId as string;
+      setDiagnosticRowId(diagId);
+      setDiagnosticRemote({
+        id: diagId,
+        status: "IN_PROGRESS",
+        summaryGreen: 0,
+        summaryYellow: 0,
+        summaryRed: 0,
+      });
+    }
+    setDiagnosticModalOpen(true);
+  }, [
+    id,
+    diagnosticRowId,
+    attributes,
+    vin,
+    data?.raw,
+  ]);
 
   useEffect(() => {
     const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
@@ -347,9 +438,16 @@ export default function ShipmentDetailPage() {
 
       {vinAttrIndex >= 0 && (
         <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-            VIN номер
-          </h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">VIN номер</h2>
+            {diagnosticRemote && (
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                Диагностика: {diagnosticRemote.status}{" "}
+                🟢{diagnosticRemote.summaryGreen} 🟡{diagnosticRemote.summaryYellow} 🔴
+                {diagnosticRemote.summaryRed}
+              </span>
+            )}
+          </div>
           <input
             type="text"
             value={vin}
@@ -365,6 +463,27 @@ export default function ShipmentDetailPage() {
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-mono tracking-widest dark:border-zinc-600 dark:bg-zinc-900"
             placeholder="Например: WBAXXXXX5JZ123456"
           />
+          <div className="mt-3">
+            {(() => {
+              const hasVin = vin.replace(/\s/g, "").length >= 8;
+              const modelCombined = String(
+                attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+              ).trim();
+              const mp = modelCombined.split(/\s+/).filter(Boolean);
+              const brandModelOk = mp.length >= 2;
+              const diagDisabled = !(hasVin || brandModelOk);
+              return (
+                <button
+                  type="button"
+                  disabled={diagDisabled}
+                  onClick={() => void handleOpenDiagnosticDetail()}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                </button>
+              );
+            })()}
+          </div>
         </div>
       )}
 
@@ -759,14 +878,24 @@ export default function ShipmentDetailPage() {
             <select
               value={printTemplate}
               onChange={(e) =>
-                setPrintTemplate(e.target.value as "default" | "birka_own" | "birka_box" | "job_order")
+                setPrintTemplate(
+                  e.target.value as
+                    | "default"
+                    | "birka_own"
+                    | "birka_box"
+                    | "job_order"
+                    | "eco_poster"
+                    | "under_hood_tags"
+                )
               }
               className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
             >
-              <option value="default">Основной (Заказ-наряд)</option>
-              <option value="birka_own">Бирка со своим</option>
-              <option value="birka_box">Бирка коробка</option>
-              <option value="job_order">Заказ-наряд (отдельно)</option>
+              <option value="eco_poster">Заказ-наряд (постер Эко · А4)</option>
+              <option value="under_hood_tags">Подкапотная бирка (50×70 мм)</option>
+              <option value="default">МойСклад: основной</option>
+              <option value="birka_own">МойСклад: бирка со своим</option>
+              <option value="birka_box">МойСклад: бирка коробка</option>
+              <option value="job_order">МойСклад: заказ-наряд</option>
             </select>
           </div>
           <button
@@ -775,6 +904,14 @@ export default function ShipmentDetailPage() {
               setPrinting(true);
               setError(null);
               try {
+                if (printTemplate === "eco_poster") {
+                  window.open(`/shipment/${data.header.id}/poster?autoprint=1`, "_blank");
+                  return;
+                }
+                if (printTemplate === "under_hood_tags") {
+                  window.open(`/shipment/${data.header.id}/tags?autoprint=1`, "_blank");
+                  return;
+                }
                 const res = await fetch(`/api/demands/${data.header.id}/print`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -801,6 +938,12 @@ export default function ShipmentDetailPage() {
           >
             {printing ? "Печать…" : "Печать"}
           </button>
+          <a
+            href={`/api/demands/${data.header.id}/job-order`}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Заказ-наряд (Excel)
+          </a>
           {data.header.href && (
             <a
               href={data.header.href}
@@ -830,6 +973,48 @@ export default function ShipmentDetailPage() {
           )}
         </div>
       ) : null}
+
+      <DiagnosticModal
+        open={diagnosticModalOpen}
+        onClose={() => setDiagnosticModalOpen(false)}
+        diagnosticId={diagnosticRowId}
+        shipmentMoySkladId={id ?? null}
+        headerDraft={{
+          vin,
+          brand: String(
+            attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+          )
+            .trim()
+            .split(/\s+/)[0] ?? "",
+          model: String(
+            attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+          )
+            .trim()
+            .split(/\s+/)
+            .slice(1)
+            .join(" "),
+          year: String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? ""),
+          licensePlate: String(
+            attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
+          ),
+          mileage: String(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""),
+          agentMoySkladId:
+            data?.raw && typeof data.raw === "object" && data.raw !== null && "agent" in data.raw
+              ? (data.raw as { agent?: { id?: string } }).agent?.id ?? null
+              : null,
+        }}
+        onDiagnosticCreated={(nid) => {
+          setDiagnosticRowId(nid);
+          setDiagnosticRemote({
+            id: nid,
+            status: "IN_PROGRESS",
+            summaryGreen: 0,
+            summaryYellow: 0,
+            summaryRed: 0,
+          });
+        }}
+        onAddedToShipment={() => window.location.reload()}
+      />
     </div>
   );
 }

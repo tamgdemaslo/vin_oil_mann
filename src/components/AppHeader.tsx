@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { safeReadJson } from "@/lib/http-json";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 type CurrentShift = { id: string } | null;
@@ -47,9 +48,12 @@ export default function AppHeader() {
           fetch("/api/shifts/current"),
           fetch("/api/cash"),
         ]);
-        const sessionData = await sessionRes.json();
-        const shiftData = shiftRes.ok ? await shiftRes.json() : null;
-        const cashData = cashRes.ok ? await cashRes.json() : null;
+        const sessionRaw = await safeReadJson<{ user?: User }>(sessionRes);
+        const sessionData = sessionRaw ?? { user: undefined };
+        const shiftData = shiftRes.ok ? (await safeReadJson<{ id: string }>(shiftRes)) ?? null : null;
+        const cashData = cashRes.ok
+          ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null
+          : null;
         if (cancelled) return;
         setUser(sessionData.user ?? null);
         setCurrentShift(shiftData ?? null);
