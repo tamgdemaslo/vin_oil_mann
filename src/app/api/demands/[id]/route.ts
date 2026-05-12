@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { moyskladFetch } from "@/lib/moysklad";
+import { MOYSKLAD_BASE, getMoySkladHeaders, moyskladFetch } from "@/lib/moysklad";
 import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -142,5 +142,37 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     applicable: result.data.applicable,
     description: result.data.description ?? "",
   });
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+
+  const { id } = await params;
+  if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
+
+  const headers = getMoySkladHeaders();
+  if (!headers) {
+    return NextResponse.json(
+      { error: "МойСклад: не заданы MOYSKLAD_TOKEN или пара MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD" },
+      { status: 500 }
+    );
+  }
+
+  const url = `${MOYSKLAD_BASE}/entity/demand/${encodeURIComponent(id)}`;
+  const res = await fetch(url, { method: "DELETE", headers });
+  if (!res.ok) {
+    const text = await res.text();
+    let errMsg = res.statusText;
+    try {
+      const j = JSON.parse(text) as { errors?: { error?: string }[] };
+      errMsg = j?.errors?.[0]?.error ?? errMsg;
+    } catch {
+      if (text.trim()) errMsg = text.slice(0, 500);
+    }
+    return NextResponse.json({ error: errMsg }, { status: 502 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
 

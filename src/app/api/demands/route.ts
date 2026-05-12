@@ -1,31 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
 import { moyskladFetch } from "@/lib/moysklad";
 
 type Meta = { href: string; type: string; mediaType: string };
 
 type AttributeMeta = { id: string; name: string; type: string; meta: Meta };
-
-type DemandPositionInput = {
-  assortment: { meta: Meta };
-  quantity: number;
-  price: number; // в рублях — при отправке переведём в копейки
-  discount?: number;
-  vat?: number;
-  vatEnabled?: boolean;
-};
-
-type CreateDemandBody = {
-  organization: { meta: Meta };
-  agent: { meta: Meta };
-  store: { meta: Meta };
-  name?: string;
-  description?: string;
-  moment?: string; // YYYY-MM-DD HH:mm:ss
-  applicable?: boolean;
-  attributes?: { id: string; name?: string; meta?: Meta; value: string | number | null }[];
-  positions?: DemandPositionInput[];
-};
 
 type DemandRow = {
   id: string;
@@ -39,34 +19,6 @@ type DemandRow = {
   meta: { href: string };
   attributes?: { id?: string; name?: string; value?: unknown }[];
 } & Record<string, unknown>;
-
-function buildDemandPayload(body: CreateDemandBody): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    organization: body.organization,
-    agent: body.agent,
-    store: body.store,
-  };
-  if (body.name?.trim()) payload.name = body.name.trim();
-  if (body.description?.trim()) payload.description = body.description.trim();
-  if (body.moment?.trim()) payload.moment = body.moment.trim();
-  if (typeof body.applicable === "boolean") payload.applicable = body.applicable;
-  if (Array.isArray(body.attributes) && body.attributes.length > 0) {
-    payload.attributes = body.attributes
-      .filter((a) => a.meta?.href && a.value != null && a.value !== "")
-      .map((a) => ({ meta: a.meta, value: a.value }));
-  }
-  if (Array.isArray(body.positions) && body.positions.length > 0) {
-    payload.positions = body.positions.map((p) => ({
-      assortment: p.assortment,
-      quantity: Number(p.quantity) || 1,
-      price: Math.round((Number(p.price) || 0) * 100), // МойСклад — цена в копейках
-      discount: Number(p.discount) || 0,
-      vat: p.vat ?? 0,
-      vatEnabled: p.vatEnabled ?? false,
-    }));
-  }
-  return payload;
-}
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -177,7 +129,7 @@ export async function POST(request: NextRequest) {
     // если МойСклад вернул ошибку по метаданным — просто не заполняем поле, создание документа не ломаем
   }
 
-  const payload = buildDemandPayload(body);
+  const payload = buildDemandCreatePayload(body);
   const result = await moyskladFetch<{ id: string; name: string; meta: { href: string } }>(
     "/entity/demand",
     { method: "POST", body: JSON.stringify(payload), cache: "no-store" }

@@ -75,6 +75,8 @@ export default function ShipmentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [paying, setPaying] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
@@ -349,6 +351,48 @@ export default function ShipmentDetailPage() {
     await saveShipment();
   }
 
+  async function handleDuplicate() {
+    if (!id) return;
+    setDuplicating(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/demands/${encodeURIComponent(id)}/copy`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку");
+        return;
+      }
+      if (json.id) router.push(`/shipment/${json.id}`);
+      else setError("МойСклад не вернул id новой отгрузки");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
+  async function handleDeleteShipment() {
+    if (!id) return;
+    if (!window.confirm("Удалить отгрузку в МойСклад? Действие необратимо.")) return;
+    setRemoving(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/demands/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Не удалось удалить отгрузку");
+        return;
+      }
+      router.push("/shipment");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   async function handlePayment() {
     setPaying(true);
     setError(null);
@@ -406,11 +450,31 @@ export default function ShipmentDetailPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Link href="/shipment" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
           ← Отгрузки
         </Link>
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">Отгрузка {data.header.name}</h1>
+        <h1 className="min-w-0 flex-1 text-xl font-bold text-zinc-900 dark:text-zinc-50">
+          Отгрузка {data.header.name}
+        </h1>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleDuplicate()}
+            disabled={saving || printing || paying || duplicating || removing}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            {duplicating ? "Копирование…" : "Копировать"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDeleteShipment()}
+            disabled={saving || printing || paying || duplicating || removing}
+            className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50 hover:bg-red-50 dark:border-red-900 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
+          >
+            {removing ? "Удаление…" : "Удалить"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
@@ -864,7 +928,7 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || printing || paying}
+            disabled={saving || printing || paying || duplicating || removing}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
           >
             {saving ? "Сохранение…" : "Сохранить"}
@@ -872,7 +936,7 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handlePayment}
-            disabled={saving || printing || paying}
+            disabled={saving || printing || paying || duplicating || removing}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
           >
             {paying ? "Отправка в AQSI…" : "Оплата"}
@@ -960,7 +1024,7 @@ export default function ShipmentDetailPage() {
                 setPrinting(false);
               }
             }}
-            disabled={printing || saving || paying}
+            disabled={printing || saving || paying || duplicating || removing}
             className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             {printing ? "Печать…" : "Печать"}

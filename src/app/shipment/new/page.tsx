@@ -45,6 +45,8 @@ type Position = {
   discountAmount?: number;
 };
 
+type ShipmentAttribute = { id: string; name: string; type: string; meta: Meta; value: string | null };
+
 const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег"];
 
 const MOYSKLAD_BASE = "https://api.moysklad.ru/api/remap/1.2";
@@ -214,6 +216,21 @@ function parseFillVolume(value?: string): number | undefined {
 
 function hasText(value?: string): boolean {
   return Boolean(value && value.trim().length > 0);
+}
+
+function attributeValueToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value && typeof value === "object" && "name" in value) {
+    const name = (value as { name?: unknown }).name;
+    return typeof name === "string" ? name : "";
+  }
+  return "";
+}
+
+function getAttributeString(attributes: ShipmentAttribute[], matches: (name: string) => boolean): string {
+  const attr = attributes.find((a) => matches((a.name ?? "").toLowerCase()));
+  return attributeValueToString(attr?.value).trim();
 }
 
 function getOilBaseName(name: string, volumeLiters?: number): string {
@@ -550,7 +567,7 @@ export default function NewShipmentPage() {
   const [createAgentLoading, setCreateAgentLoading] = useState(false);
   const [createAgentError, setCreateAgentError] = useState<string | null>(null);
 
-  const [attributes, setAttributes] = useState<{ id: string; name: string; type: string; meta: Meta; value: string | null }[]>([]);
+  const [attributes, setAttributes] = useState<ShipmentAttribute[]>([]);
   const [attributesLoading, setAttributesLoading] = useState(true);
   const [vin, setVin] = useState("");
   const [description, setDescription] = useState("");
@@ -1001,7 +1018,7 @@ export default function NewShipmentPage() {
           positions.length > 0
             ? positions.map((p) => ({
                 quantity: p.quantity,
-                price: Math.round((p.price || 0) * 100),
+                price: Number(p.price) || 0,
                 discount: typeof p.discount === "number" ? p.discount : 0,
                 assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
               }))
@@ -1031,49 +1048,57 @@ export default function NewShipmentPage() {
   };
 
   const handleOpenDiagnostic = async () => {
-    const sid = demandIdLocal ?? (await ensureDemandForDiagnostic());
-    if (!sid) return;
-    setDemandIdLocal(sid);
+    setSubmitError(null);
+    try {
+      const sid = demandIdLocal ?? (await ensureDemandForDiagnostic());
+      if (!sid) return;
+      setDemandIdLocal(sid);
 
-    const attrVal = (needle: string) =>
-      attributes.find((a) => (a.name ?? "").toLowerCase().includes(needle))?.value?.trim() ?? "";
-    const modelCombined = attrVal("модель авто") || attrVal("модель");
-    const modelParts = modelCombined.split(/\s+/).filter(Boolean);
-    const yearStr = attrVal("год");
-    const plateStr = attrVal("гос") || attrVal("номер");
-    const mileageStr = attrVal("пробег");
-    const dec = vinLookupResult?.decoded;
+      const attrVal = (needle: string) => getAttributeString(attributes, (name) => name.includes(needle));
+      const modelCombined = attrVal("модель авто") || attrVal("модель");
+      const modelParts = modelCombined.split(/\s+/).filter(Boolean);
+      const yearStr = attrVal("год");
+      const plateStr = attrVal("гос") || attrVal("номер");
+      const mileageStr = attrVal("пробег");
+      const dec = vinLookupResult?.decoded;
 
-    let diagId = diagnosticRowId;
-    const existingRes = await fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
-    const existingJson = await existingRes.json();
-    if (existingJson.diagnostic?.id) {
-      diagId = existingJson.diagnostic.id as string;
-    } else {
-      const createRes = await fetch("/api/diagnostic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shipmentMoySkladId: sid,
-          agentMoySkladId: selectedAgent?.id ?? null,
-          vin: vin.replace(/\s/g, "").toUpperCase() || null,
-          brand: dec?.make || modelParts[0] || null,
-          model: dec?.model || modelParts.slice(1).join(" ") || null,
-          year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
-          licensePlate: plateStr || null,
-          mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
-        }),
-      });
-      const createJson = await createRes.json();
-      if (!createRes.ok) {
-        setSubmitError(createJson.error ?? "Не удалось создать диагностику");
+      let diagId = diagnosticRowId;
+      const existingRes = await fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
+      const existingJson = await existingRes.json().catch(() => ({}));
+      if (!existingRes.ok) {
+        setSubmitError(existingJson.error ?? "Не удалось проверить существующую диагностику");
         return;
       }
-      diagId = createJson.diagnosticId as string;
-    }
+      if (existingJson.diagnostic?.id) {
+        diagId = existingJson.diagnostic.id as string;
+      } else {
+        const createRes = await fetch("/api/diagnostic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentMoySkladId: sid,
+            agentMoySkladId: selectedAgent?.id ?? null,
+            vin: vin.replace(/\s/g, "").toUpperCase() || null,
+            brand: dec?.make || modelParts[0] || null,
+            model: dec?.model || modelParts.slice(1).join(" ") || null,
+            year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
+            licensePlate: plateStr || null,
+            mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+          }),
+        });
+        const createJson = await createRes.json().catch(() => ({}));
+        if (!createRes.ok) {
+          setSubmitError(createJson.error ?? "Не удалось создать диагностику");
+          return;
+        }
+        diagId = createJson.diagnosticId as string;
+      }
 
-    setDiagnosticRowId(diagId);
-    setDiagnosticModalOpen(true);
+      setDiagnosticRowId(diagId);
+      setDiagnosticModalOpen(true);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Не удалось открыть диагностику");
+    }
   };
 
   const handleSubmit = async () => {
@@ -1101,7 +1126,7 @@ export default function NewShipmentPage() {
           positions.length > 0
             ? positions.map((p) => ({
                 quantity: p.quantity,
-                price: Math.round((p.price || 0) * 100),
+                price: Number(p.price) || 0,
                 discount: typeof p.discount === "number" ? p.discount : 0,
                 assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
               }))
@@ -1348,8 +1373,7 @@ export default function NewShipmentPage() {
             </button>
             {(() => {
               const hasVin = vin.replace(/\s/g, "").length >= 8;
-              const modelCombined =
-                attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value?.trim() ?? "";
+              const modelCombined = getAttributeString(attributes, (name) => name === "модель авто");
               const mp = modelCombined.split(/\s+/).filter(Boolean);
               const dec = vinLookupResult?.decoded;
               const brandModelOk =
@@ -1367,6 +1391,7 @@ export default function NewShipmentPage() {
               );
             })()}
           </div>
+          {submitError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{submitError}</p>}
           {vinLookupResult && (
             <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800/50">
               {vinLookupResult.decodeError && (
@@ -2333,21 +2358,21 @@ export default function NewShipmentPage() {
           vin,
           brand:
             vinLookupResult?.decoded?.make ??
-            (attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? "").split(/\s+/)[0] ??
+            getAttributeString(attributes, (name) => name === "модель авто").split(/\s+/)[0] ??
             "",
           model:
             vinLookupResult?.decoded?.model ??
-            (attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? "")
+            getAttributeString(attributes, (name) => name === "модель авто")
               .split(/\s+/)
               .slice(1)
               .join(" ") ??
             "",
           year:
             vinLookupResult?.decoded?.modelYear ??
-            attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ??
+            getAttributeString(attributes, (name) => name === "год") ??
             "",
-          licensePlate: attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? "",
-          mileage: attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? "",
+          licensePlate: getAttributeString(attributes, (name) => /гос|номер/i.test(name)),
+          mileage: getAttributeString(attributes, (name) => /пробег/i.test(name)),
           agentMoySkladId: selectedAgent?.id ?? null,
         }}
         onDiagnosticCreated={(id) => setDiagnosticRowId(id)}

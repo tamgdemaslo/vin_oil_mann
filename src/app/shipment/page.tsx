@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import { moyskladFetch } from "@/lib/moysklad";
+import { ShipmentRowActions } from "./ShipmentRowActions";
 
 type DemandRow = {
   id: string;
@@ -322,6 +323,7 @@ export default async function ShipmentListPage({
                   <th className="px-4 py-3 font-medium text-zinc-500">Создал (эко)</th>
                   <th className="px-4 py-3 text-right font-medium text-zinc-500">Сумма</th>
                   <th className="px-4 py-3 text-right font-medium text-zinc-500">Статус</th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -350,11 +352,14 @@ export default async function ShipmentListPage({
                         {r.applicable ? "Проведён" : "Черновик"}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-right align-middle">
+                      <ShipmentRowActions shipmentId={r.id} />
+                    </td>
                   </tr>
                 ))}
                 {result.data.rows?.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-zinc-500">
                       Ничего не найдено
                     </td>
                   </tr>
