@@ -195,7 +195,26 @@ function shortPointFromAddress(address: string, city: string): string {
   return address.replace(/^г\.\s*[^,]+,\s*/i, "").trim() || address;
 }
 
-export async function buildJobOrderPosterModel(demandId: string): Promise<JobOrderPosterModel | null> {
+/** `?variant=…` на страницах /poster и /tags: интервал «следующего пит-стопа» в км. */
+const POSTER_VARIANT_INTERVAL_KM: Record<string, number> = {
+  akpp_partial: 20_000,
+  akpp_full: 60_000,
+};
+
+export function posterModelOptsFromVariant(
+  variant: string | undefined
+): { nextIntervalKm: number } | undefined {
+  const key = variant?.trim();
+  if (!key) return undefined;
+  const km = POSTER_VARIANT_INTERVAL_KM[key];
+  if (km == null) return undefined;
+  return { nextIntervalKm: km };
+}
+
+export async function buildJobOrderPosterModel(
+  demandId: string,
+  opts?: { nextIntervalKm?: number }
+): Promise<JobOrderPosterModel | null> {
   const loaded = await loadDemandDetailPayload(demandId);
   if (!loaded.ok) return null;
 
@@ -207,7 +226,8 @@ export async function buildJobOrderPosterModel(demandId: string): Promise<JobOrd
 
   const site = process.env.POSTER_SITE?.trim() || "tamgdemaslo.ru";
   const tg = process.env.POSTER_TELEGRAM?.trim() || "@tamgdemaslo";
-  const intervalKm = Math.max(1000, parseInt(process.env.POSTER_NEXT_INTERVAL_KM ?? "8000", 10) || 8000);
+  const envIntervalKm = Math.max(1000, parseInt(process.env.POSTER_NEXT_INTERVAL_KM ?? "8000", 10) || 8000);
+  const intervalKm = Math.max(1000, opts?.nextIntervalKm ?? envIntervalKm);
   const intervalMonths = Math.max(1, parseInt(process.env.POSTER_NEXT_INTERVAL_MONTHS ?? "6", 10) || 6);
   const warrantyDays = Math.max(1, parseInt(process.env.POSTER_WARRANTY_DAYS ?? "60", 10) || 60);
   const defaultCity = process.env.POSTER_CITY?.trim() || "Калининград";

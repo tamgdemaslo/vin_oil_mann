@@ -88,7 +88,11 @@ export default function ShipmentDetailPage() {
     | "birka_box"
     | "job_order"
     | "eco_poster"
+    | "eco_poster_akpp_partial"
+    | "eco_poster_akpp_full"
     | "under_hood_tags"
+    | "under_hood_tags_akpp_partial"
+    | "under_hood_tags_akpp_full"
   >("eco_poster");
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
@@ -885,17 +889,29 @@ export default function ShipmentDetailPage() {
                     | "birka_box"
                     | "job_order"
                     | "eco_poster"
+                    | "eco_poster_akpp_partial"
+                    | "eco_poster_akpp_full"
                     | "under_hood_tags"
+                    | "under_hood_tags_akpp_partial"
+                    | "under_hood_tags_akpp_full"
                 )
               }
               className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
             >
-              <option value="eco_poster">Заказ-наряд (постер Эко · А4)</option>
-              <option value="under_hood_tags">Подкапотная бирка (50×80 мм)</option>
-              <option value="default">МойСклад: основной</option>
-              <option value="birka_own">МойСклад: бирка со своим</option>
-              <option value="birka_box">МойСклад: бирка коробка</option>
-              <option value="job_order">МойСклад: заказ-наряд</option>
+              <optgroup label="Печать из CRM (не МойСклад)">
+                <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
+                <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
+                <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
+                <option value="under_hood_tags">Бирка под капот (интервал из настроек)</option>
+                <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная (+20 тыс. км)</option>
+                <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная (+60 тыс. км)</option>
+              </optgroup>
+              <optgroup label="Шаблоны МойСклад">
+                <option value="default">Основной</option>
+                <option value="birka_own">Бирка со своим</option>
+                <option value="birka_box">Бирка коробка</option>
+                <option value="job_order">Заказ-наряд (файл из МС)</option>
+              </optgroup>
             </select>
           </div>
           <button
@@ -904,12 +920,23 @@ export default function ShipmentDetailPage() {
               setPrinting(true);
               setError(null);
               try {
-                if (printTemplate === "eco_poster") {
-                  window.open(`/shipment/${data.header.id}/poster?autoprint=1`, "_blank");
+                const crmVariant = (tpl: string): string | null => {
+                  if (tpl.endsWith("_akpp_partial")) return "akpp_partial";
+                  if (tpl.endsWith("_akpp_full")) return "akpp_full";
+                  return null;
+                };
+                const crmPrintQuery = (tpl: string) => {
+                  const v = crmVariant(tpl);
+                  const parts = ["autoprint=1"];
+                  if (v) parts.unshift(`variant=${encodeURIComponent(v)}`);
+                  return `?${parts.join("&")}`;
+                };
+                if (printTemplate.startsWith("eco_poster")) {
+                  window.open(`/shipment/${data.header.id}/poster${crmPrintQuery(printTemplate)}`, "_blank");
                   return;
                 }
-                if (printTemplate === "under_hood_tags") {
-                  window.open(`/shipment/${data.header.id}/tags?autoprint=1`, "_blank");
+                if (printTemplate.startsWith("under_hood_tags")) {
+                  window.open(`/shipment/${data.header.id}/tags${crmPrintQuery(printTemplate)}`, "_blank");
                   return;
                 }
                 const res = await fetch(`/api/demands/${data.header.id}/print`, {

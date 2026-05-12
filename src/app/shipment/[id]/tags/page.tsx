@@ -2,7 +2,7 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { buildJobOrderPosterModel } from "@/lib/job-order-poster-data";
+import { buildJobOrderPosterModel, posterModelOptsFromVariant } from "@/lib/job-order-poster-data";
 import UnderHoodTags from "@/components/print/UnderHoodTags";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
 
@@ -28,18 +28,23 @@ export default async function ShipmentUnderHoodTagsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string }>;
+  searchParams: Promise<{ autoprint?: string; variant?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
   const autoprint = sp.autoprint !== "0";
+  const intervalOpts = posterModelOptsFromVariant(sp.variant);
 
   const session = await getSession();
   if (!session) {
-    redirect(`/login?from=${encodeURIComponent(`/shipment/${id}/tags`)}`);
+    const fromQs = new URLSearchParams();
+    if (sp.autoprint === "0") fromQs.set("autoprint", "0");
+    if (sp.variant?.trim()) fromQs.set("variant", sp.variant.trim());
+    const suffix = fromQs.toString() ? `?${fromQs.toString()}` : "";
+    redirect(`/login?from=${encodeURIComponent(`/shipment/${id}/tags${suffix}`)}`);
   }
 
-  const data = await buildJobOrderPosterModel(id);
+  const data = await buildJobOrderPosterModel(id, intervalOpts);
   if (!data) {
     return (
       <div id="tags-print-mount" className="mx-auto max-w-lg px-6 py-16 text-center">
