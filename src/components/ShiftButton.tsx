@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { tryResponseJson, responseJson } from "@/lib/response-json";
 
 type CurrentShift = {
   id: string;
@@ -38,9 +39,12 @@ export default function ShiftButton() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/api/auth/session").then((r) => r.json()).catch(() => ({ user: null })),
-      fetch("/api/shifts/current").then((r) => r.json()).catch(() => null),
-      fetch("/api/cash").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/auth/session").then(async (r) => {
+        const j = await tryResponseJson<{ user?: { role?: UserRole } | null }>(r);
+        return j ?? { user: null };
+      }),
+      fetch("/api/shifts/current").then((r) => tryResponseJson(r)),
+      fetch("/api/cash").then((r) => tryResponseJson(r)),
     ])
       .then(([sessionData, shiftData, cashData]) => {
         if (cancelled) return;
@@ -66,7 +70,7 @@ export default function ShiftButton() {
       const r = await fetch("/api/shifts/start", { method: "POST" });
       let data: { error?: string; id?: string; shiftDate?: string; startedAt?: string };
       try {
-        data = await r.json();
+        data = await responseJson(r);
       } catch {
         setError(r.ok ? "Ошибка ответа сервера" : `Ошибка ${r.status}. Проверьте консоль сервера.`);
         return;
@@ -96,7 +100,7 @@ export default function ShiftButton() {
       const r = await fetch("/api/shifts/end", { method: "POST" });
       let data: { error?: string };
       try {
-        data = await r.json();
+        data = await responseJson(r);
       } catch {
         setError(r.ok ? "Ошибка ответа сервера" : `Ошибка ${r.status}. Проверьте консоль сервера.`);
         return;

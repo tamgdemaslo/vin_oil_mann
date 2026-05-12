@@ -891,7 +891,7 @@ export default function ShipmentDetailPage() {
               className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
             >
               <option value="eco_poster">Заказ-наряд (постер Эко · А4)</option>
-              <option value="under_hood_tags">Подкапотная бирка (50×70 мм)</option>
+              <option value="under_hood_tags">Подкапотная бирка (50×80 мм)</option>
               <option value="default">МойСклад: основной</option>
               <option value="birka_own">МойСклад: бирка со своим</option>
               <option value="birka_box">МойСклад: бирка коробка</option>

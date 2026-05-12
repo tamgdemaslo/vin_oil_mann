@@ -1,5 +1,6 @@
 /**
- * Подкапотная бирка A · «Сервисный талон» — 50×70 мм @ 96dpi (189×265 px), макет tgm eco-5.
+ * Подкапотная бирка — макет tgm eco-7 / under-hood-tags.jsx (TagClassic «гаражный пропуск»).
+ * 50×80 мм @ 96 dpi (≈189×302 px).
  */
 import type { CSSProperties } from "react";
 import type { JobOrderPosterModel } from "@/lib/job-order-poster-types";
@@ -7,9 +8,8 @@ import type { JobOrderPosterModel } from "@/lib/job-order-poster-types";
 const INK = "#000";
 const BG = "#fff";
 
-const chessStrip: CSSProperties = {
-  backgroundImage: "repeating-linear-gradient(45deg, #000 0 6px, #fff 6px 12px)",
-};
+const TAG_W = "50mm";
+const TAG_H = "80mm";
 
 function fmtKm(n: number): string {
   return Math.round(n)
@@ -17,18 +17,20 @@ function fmtKm(n: number): string {
     .replace(/\u00a0|\u202f/g, " ");
 }
 
-function fmtPlate(p: string): string {
-  const m = /^([А-ЯA-Z])\s*(\d{3})\s*([А-ЯA-Z]{2})\s*(\d{2,3})$/i.exec(p || "");
-  return m ? `${m[1]} ${m[2]} ${m[3]} · ${m[4]}` : p;
-}
-
-function vinTail(vin: string): string {
-  return (vin || "").slice(-6);
+/** Как в eco-7: «Залито» — до первой запятой; «Объём» — последний сегмент после запятых */
+function splitOilLine(raw: string): { oil: string; qty: string } {
+  const t = (raw || "").trim();
+  if (!t) return { oil: "—", qty: "—" };
+  const parts = t.split(",").map((s) => s.trim());
+  const oil = (parts[0] || "").trim() || "—";
+  const qty = (parts[parts.length - 1] || "").trim() || "—";
+  return { oil, qty };
 }
 
 const cardBase: CSSProperties = {
-  width: 189,
-  height: 265,
+  width: "100%",
+  maxWidth: TAG_W,
+  height: TAG_H,
   boxSizing: "border-box",
   background: BG,
   color: INK,
@@ -112,54 +114,75 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }) {
-  const oil = o.oilTagLine;
-  const plate = fmtPlate(o.car.plate);
-  return (
-    <div style={{ display: "flex", justifyContent: "center" }}>
-      <div className="under-hood-tag-card" style={cardBase}>
-        <div style={{ ...chessStrip, height: 8, flexShrink: 0, borderBottom: `2px solid ${INK}` }} />
+  const rawOil = o.oilTagLine || "";
+  const { oil, qty } = splitOilLine(rawOil);
 
+  return (
+    <div className="under-hood-tag-wrap" style={{ width: "100%", boxSizing: "border-box" }}>
+      <div className="under-hood-tag-card" style={cardBase}>
         <div
           style={{
             background: INK,
             color: BG,
-            padding: "5px 8px",
+            padding: "6px 8px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            fontSize: 8.5,
+            borderBottom: `1px solid ${INK}`,
           }}
         >
-          <Wordmark size={7} color={BG} />
-          <span style={{ fontWeight: 700, letterSpacing: "0.04em" }}>№{o.number}</span>
+          <Wordmark size={6.5} color={BG} />
+          <span style={{ fontSize: 7.5, fontWeight: 700, letterSpacing: "0.12em" }}>PASS №{o.number}</span>
         </div>
 
-        <div style={{ padding: "8px 8px 6px", textAlign: "center", borderBottom: `1px solid ${INK}` }}>
-          <div style={{ fontSize: 8, letterSpacing: "0.14em", fontWeight: 700 }}>СЛЕД. ЗАМЕНА · ПРОБЕГ</div>
+        <div style={{ padding: "10px 8px 8px", textAlign: "center", borderBottom: `1px solid ${INK}` }}>
+          <div style={{ fontSize: 7.5, letterSpacing: "0.18em", fontWeight: 800 }}>СЛЕДУЮЩИЙ ПИТ-СТОП</div>
           <div
             style={{
-              fontSize: 34,
+              fontSize: 38,
               fontWeight: 800,
-              letterSpacing: "-0.03em",
+              letterSpacing: "-0.035em",
               lineHeight: 1,
-              margin: "3px 0 2px",
+              margin: "5px 0 1px",
               fontVariantNumeric: "tabular-nums",
             }}
           >
             {fmtKm(o.next.mileage)}
           </div>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em" }}>КМ</div>
-          <div style={{ marginTop: 5, fontSize: 9, fontWeight: 500 }}>
-            или до <b style={{ fontWeight: 800 }}>{o.next.date}</b>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.18em" }}>КМ</div>
+          <div
+            style={{
+              marginTop: 7,
+              paddingTop: 6,
+              borderTop: `1px dotted ${INK}`,
+              fontSize: 9,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "center",
+              gap: 5,
+            }}
+          >
+            <span style={{ letterSpacing: "0.1em" }}>ИЛИ ДО</span>
+            <b style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{o.next.date}</b>
           </div>
         </div>
 
-        <div style={{ padding: "5px 8px", flex: 1, fontSize: 8.5, lineHeight: 1.35, minHeight: 0 }}>
-          <Row k="Заменено" v={o.date} />
+        <div
+          style={{
+            padding: "8px 10px 8px",
+            flex: 1,
+            fontSize: 9.5,
+            lineHeight: 1.45,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            minHeight: 0,
+          }}
+        >
+          <Row k="Въезд" v={o.date} />
           <Row k="При пробеге" v={`${fmtKm(o.car.mileage)} км`} />
-          <Row k="Масло" v={oil} />
-          <Row k="Госномер" v={plate || "—"} />
-          <Row k="Авто" v={`${o.car.model} ${o.car.year} · ${vinTail(o.car.vin)}`} />
+          <Row k="Залито" v={oil} />
+          <Row k="Объём" v={qty} />
         </div>
 
         <div
@@ -171,11 +194,10 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
             justifyContent: "space-between",
             alignItems: "center",
             fontSize: 8,
-            flexShrink: 0,
           }}
         >
           <Monogram size={9} color={BG} />
-          <span style={{ fontWeight: 500 }}>{o.ip.phone}</span>
+          <span style={{ fontWeight: 500, letterSpacing: "0.04em" }}>{o.ip.phone}</span>
         </div>
       </div>
     </div>

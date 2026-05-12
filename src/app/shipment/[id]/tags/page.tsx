@@ -6,61 +6,19 @@ import { buildJobOrderPosterModel } from "@/lib/job-order-poster-data";
 import UnderHoodTags from "@/components/print/UnderHoodTags";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
 
+import "./tags-print.css";
+
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
 });
 
-const tagsShellCss = `
-.tags-print-root {
-  min-height: 100vh;
-  background: #d9d6cf;
-  padding: 24px 0;
-}
-.tags-sheet {
-  margin: 0 auto;
-  max-width: 220px;
-  padding-bottom: 24px;
-}
+const tagPageCss = `
 @media print {
   @page {
+    size: 50mm 80mm;
     margin: 0;
-    size: auto;
-  }
-  html,
-  body {
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #fff !important;
-  }
-  .tags-print-root {
-    background: white;
-    padding: 0;
-    min-height: auto;
-  }
-  .tags-sheet {
-    max-width: none;
-    padding: 0;
-    margin: 0;
-  }
-  body > *:not(#tags-print-mount) {
-    display: none !important;
-  }
-  body > #tags-print-mount {
-    display: block !important;
-  }
-  #tags-print-mount,
-  #tags-print-mount * {
-    outline: none !important;
-    box-shadow: none !important;
-  }
-  #tags-print-mount .under-hood-tag-card {
-    border: none !important;
-  }
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 }
 `;
@@ -102,12 +60,14 @@ export default async function ShipmentUnderHoodTagsPage({
   }
 
   return (
-    <div id="tags-print-mount" className={`tags-print-root ${inter.className}`}>
-      <style dangerouslySetInnerHTML={{ __html: tagsShellCss }} />
-      <PosterAutoPrint enabled={autoprint} />
-      <div className="tags-sheet">
-        <UnderHoodTags data={data} />
+    <>
+      <style dangerouslySetInnerHTML={{ __html: tagPageCss }} />
+      <div id="tags-print-mount" className={`tags-print-root ${inter.className}`}>
+        <PosterAutoPrint enabled={autoprint} />
+        <div className="tags-sheet">
+          <UnderHoodTags data={data} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

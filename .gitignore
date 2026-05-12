@@ -40,6 +40,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# railway (local `railway link` metadata)
+.railway/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

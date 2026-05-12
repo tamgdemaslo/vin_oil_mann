@@ -14,11 +14,13 @@ const inter = Inter({
 
 const posterShellCss = `
 .poster-print-root {
+  display: block;
   min-height: 100vh;
   background: #d9d6cf;
   padding: 24px 0;
 }
 .poster-sheet {
+  display: block;
   width: 794px;
   min-height: 1123px;
   margin: 24px auto;
@@ -38,20 +40,23 @@ const posterShellCss = `
     background: #fff !important;
   }
   .poster-print-root {
+    display: block;
     background: white;
     padding: 0;
     min-height: auto;
   }
   .poster-sheet {
+    display: block;
     width: 210mm;
     min-height: 297mm;
     margin: 0;
     box-shadow: none !important;
   }
-  body > *:not(#poster-print-mount) {
+  /* Только страница постера — не конфликтует с /shipment/.../tags (tags-print.css) */
+  body:has(#poster-print-mount) > *:not(#poster-print-mount) {
     display: none !important;
   }
-  body > #poster-print-mount {
+  body:has(#poster-print-mount) #poster-print-mount {
     display: block !important;
   }
   #poster-print-mount,
@@ -103,12 +108,14 @@ export default async function ShipmentPosterPrintPage({
   }
 
   return (
-    <div id="poster-print-mount" className={`poster-print-root ${inter.className}`}>
+    <>
       <style dangerouslySetInnerHTML={{ __html: posterShellCss }} />
-      <PosterAutoPrint enabled={autoprint} />
-      <div className="poster-sheet">
-        <OrderPoster data={data} />
+      <div id="poster-print-mount" className={`poster-print-root ${inter.className}`}>
+        <PosterAutoPrint enabled={autoprint} />
+        <div className="poster-sheet">
+          <OrderPoster data={data} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

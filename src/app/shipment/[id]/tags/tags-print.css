@@ -1,0 +1,75 @@
+/* Экран: превью бирки */
+.tags-print-root {
+  min-height: 100vh;
+  background: #d9d6cf;
+  padding: 24px 0;
+}
+
+.tags-sheet {
+  margin: 0 auto;
+  max-width: 220px;
+  padding-bottom: 24px;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* Только страница бирки — иначе после /tags ломается печать заказ-наряда */
+  body:has(#tags-print-mount) > *:not(#tags-print-mount) {
+    display: none !important;
+  }
+
+  #tags-print-mount {
+    display: flex !important;
+    flex-direction: column !important;
+    /* Растягиваем по ширине листа — без боковых «полей» от flex-center */
+    align-items: stretch !important;
+    justify-content: center !important;
+    width: 50mm !important;
+    max-width: 50mm !important;
+    min-height: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #tags-print-mount .tags-sheet {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: center !important;
+    width: 100% !important;
+    max-width: 50mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #tags-print-mount,
+  #tags-print-mount * {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  #tags-print-mount .under-hood-tag-card {
+    border: none !important;
+    width: 100% !important;
+    max-width: 50mm !important;
+    box-sizing: border-box !important;
+  }
+
+  body:has(#tags-print-mount) *,
+  body:has(#tags-print-mount) {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

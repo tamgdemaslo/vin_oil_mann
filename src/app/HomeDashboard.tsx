@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import ShiftButton from "@/components/ShiftButton";
+import { tryResponseJson } from "@/lib/response-json";
 import { getCurrentMonthRange } from "./cabinet/useOwnerUsers";
 
 type CurrentShift = {
@@ -131,13 +132,14 @@ export default function HomeDashboard({
         ]);
 
         if (cancelled) return;
-        setCurrentShift(shiftRes.ok ? await shiftRes.json() : null);
-        setPayroll(payrollRes.ok ? await payrollRes.json() : null);
-        setRecentShifts(shiftsRes.ok ? ((await shiftsRes.json()) as ShiftSummary[]).slice(0, 5) : []);
-        setRecentBonuses(
-          bonusesRes.ok ? ((await bonusesRes.json()) as BonusPenalty[]).slice(0, 5) : []
-        );
-        const cashData = cashRes.ok ? await cashRes.json() : null;
+        const shiftData = await tryResponseJson<NonNullable<CurrentShift>>(shiftRes);
+        setCurrentShift(shiftData);
+        setPayroll(await tryResponseJson<PayrollResponse>(payrollRes));
+        const shiftsData = await tryResponseJson<ShiftSummary[]>(shiftsRes);
+        setRecentShifts(Array.isArray(shiftsData) ? shiftsData.slice(0, 5) : []);
+        const bonusesData = await tryResponseJson<BonusPenalty[]>(bonusesRes);
+        setRecentBonuses(Array.isArray(bonusesData) ? bonusesData.slice(0, 5) : []);
+        const cashData = await tryResponseJson<{ shift?: CurrentCashShift }>(cashRes);
         setCurrentCashShift(cashData?.shift ?? null);
       } finally {
         if (!cancelled) setSummaryLoading(false);

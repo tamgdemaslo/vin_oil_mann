@@ -19,6 +19,7 @@ import type {
   DiagnosticPositionStatus,
   DiagnosticStatus,
 } from "@prisma/client";
+import { responseJson } from "@/lib/response-json";
 
 type Nav =
   | { screen: "hub" }
@@ -90,7 +91,7 @@ export function DiagnosticModal({
     setLoading(true);
     try {
       const res = await fetch(`/api/diagnostic/${activeId}`);
-      const json = await res.json();
+      const json = await responseJson<DiagnosticRow & { error?: string }>(res);
       if (!res.ok) throw new Error(json.error ?? "Ошибка загрузки");
       setData(json as DiagnosticRow);
     } catch (e) {
@@ -122,7 +123,7 @@ export function DiagnosticModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(partial),
       });
-      const json = await res.json();
+      const json = await responseJson<DiagnosticRow & { error?: string }>(res);
       if (!res.ok) throw new Error(json.error ?? "Ошибка сохранения");
       setData(json as DiagnosticRow);
     },
@@ -155,7 +156,7 @@ export function DiagnosticModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
+      const json = await responseJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(json.error ?? "Ошибка сохранения узла");
       void json;
       await load();
@@ -169,23 +170,32 @@ export function DiagnosticModal({
     fd.set("node", node);
     fd.set("file", file);
     const res = await fetch(`/api/diagnostic/${activeId}/photo`, { method: "POST", body: fd });
-    const json = await res.json();
+    const json = await responseJson<{ error?: string }>(res);
     if (!res.ok) throw new Error(json.error ?? "Фото не загружено");
     await load();
   };
 
   const goSummary = async () => {
     if (!activeId) return;
-    await fetch(`/api/diagnostic/${activeId}/rebuild-offers`, { method: "POST" });
-    await load();
-    setNav({ screen: "summary" });
+    try {
+      const ro = await fetch(`/api/diagnostic/${activeId}/rebuild-offers`, { method: "POST" });
+      const roJson = await responseJson<{ error?: string }>(ro);
+      if (!ro.ok) {
+        setToast(roJson.error ?? "Не удалось пересчитать офферы");
+        return;
+      }
+      await load();
+      setNav({ screen: "summary" });
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Ошибка");
+    }
   };
 
   const completeDiagnostic = async () => {
     if (!activeId) return;
     try {
       const res = await fetch(`/api/diagnostic/${activeId}/complete`, { method: "POST" });
-      const json = await res.json();
+      const json = await responseJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(json.error ?? "Ошибка");
       setToast("Диагностика завершена");
       await load();
@@ -198,7 +208,7 @@ export function DiagnosticModal({
   const sendReport = async () => {
     if (!activeId) return;
     const res = await fetch(`/api/diagnostic/${activeId}/send-report`, { method: "POST" });
-    const json = await res.json();
+    const json = await responseJson<{ error?: string; reportUrl?: string }>(res);
     if (!res.ok) {
       setToast(json.error ?? "Ошибка");
       return;
@@ -243,7 +253,7 @@ export function DiagnosticModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ selections }),
     });
-    const json = await res.json();
+    const json = await responseJson<{ error?: string }>(res);
     if (!res.ok) {
       setToast(json.error ?? "Ошибка");
       return;
@@ -364,8 +374,11 @@ function HubScreen(props: {
   useEffect(() => {
     if (!props.diagnosticId) return;
     fetch(`/api/diagnostic/${props.diagnosticId}/by-history`)
-      .then((r) => r.json())
-      .then(setHistory)
+      .then(async (r) => {
+        if (!r.ok) return;
+        const j = await responseJson<{ demands: unknown[]; diagnostics: unknown[] }>(r);
+        setHistory(j);
+      })
       .catch(() => {});
   }, [props.diagnosticId]);
 
@@ -424,16 +437,17 @@ function HubScreen(props: {
         </label>
       </div>
 
-      {history && (history.diagnostics.length > 0 || history.demands.length > 0) && (
+      {history &&
+        ((history.demands?.length ?? 0) > 0 || (history.diagnostics?.length ?? 0) > 0) && (
         <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900/40">
           <div className="font-medium text-zinc-700 dark:text-zinc-200">История</div>
           <ul className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
-            {history.demands.slice(0, 3).map((d: any, i: number) => (
+            {(history.demands ?? []).slice(0, 3).map((d: any, i: number) => (
               <li key={i}>
                 Отгрузка {d.name} · {new Date(d.momentAt).toLocaleDateString("ru-RU")}
               </li>
             ))}
-            {history.diagnostics.map((d: any) => (
+            {(history.diagnostics ?? []).map((d: any) => (
               <li key={d.id}>
                 Диагностика {new Date(d.startedAt).toLocaleDateString("ru-RU")} · 🟢{d.summaryGreen} 🟡
                 {d.summaryYellow} 🔴{d.summaryRed}
