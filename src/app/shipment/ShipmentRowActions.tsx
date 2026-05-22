@@ -56,7 +56,7 @@ export function ShipmentRowActions({ shipmentId }: { shipmentId: string }) {
         disabled={phase !== "idle"}
         className="rounded border border-zinc-200 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-700"
       >
-        {phase === "copy" ? "…" : "Копия"}
+        {phase === "copy" ? "…" : "Копировать"}
       </button>
       <button
         type="button"

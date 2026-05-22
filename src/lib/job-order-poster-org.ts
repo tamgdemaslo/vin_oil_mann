@@ -1,4 +1,5 @@
 import { moyskladFetch } from "@/lib/moysklad";
+import { normalizeSellerPhonesForPrint } from "@/lib/job-order-seller-phone";
 
 function formatOrgPhones(org: Record<string, unknown>): string {
   const phone = org.phone;
@@ -53,7 +54,7 @@ export function sellerFromOrg(org: Record<string, unknown> | null): {
       inn: process.env.JOB_ORDER_SELLER_INN?.trim() ?? "",
       ogrn: process.env.JOB_ORDER_SELLER_OGRN?.trim() ?? "",
       legalAddress: process.env.JOB_ORDER_SELLER_ADDRESS?.trim() ?? "",
-      phones: process.env.JOB_ORDER_SELLER_PHONES?.trim() ?? "",
+      phones: normalizeSellerPhonesForPrint(process.env.JOB_ORDER_SELLER_PHONES?.trim() ?? ""),
     };
   }
   return {
@@ -61,6 +62,6 @@ export function sellerFromOrg(org: Record<string, unknown> | null): {
     inn: String(org.inn ?? ""),
     ogrn: String(org.ogrn ?? (org as Record<string, unknown>)["ogrnip"] ?? ""),
     legalAddress: String(org.legalAddress ?? org.actualAddress ?? ""),
-    phones: formatOrgPhones(org),
+    phones: normalizeSellerPhonesForPrint(formatOrgPhones(org)),
   };
 }

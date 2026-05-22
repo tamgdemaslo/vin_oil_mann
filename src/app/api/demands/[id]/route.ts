@@ -6,7 +6,7 @@ import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
 type Meta = { href: string; type: string; mediaType: string };
 
 type DemandPositionRow = {
-  id: string;
+  id?: string;
   quantity: number;
   price: number;
   assortment?: { name?: string; meta?: Meta };
@@ -82,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const currentById = new Map<string, DemandPositionRow>();
     for (const row of current.data.rows ?? []) {
-      currentById.set(row.id, row);
+      if (row.id) currentById.set(row.id, row);
     }
 
     const nextPositions: DemandPositionRow[] = [];
@@ -104,10 +104,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       } else if (!p.id && p.assortment?.meta) {
         // Новая позиция
         nextPositions.push({
-          id: "" as string, // будет проигнорирован МойСклад при создании
           quantity,
           price,
-          assortment: { meta: p.assortment.meta } as any,
+          assortment: { meta: p.assortment.meta },
           ...(typeof discount === "number" ? { discount } : null),
         } as DemandPositionRow);
       }
@@ -175,4 +174,3 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
 
   return NextResponse.json({ ok: true });
 }
-

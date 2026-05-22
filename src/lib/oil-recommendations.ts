@@ -12,6 +12,13 @@ import type {
 const CACHE_DAYS = Math.min(30, Math.max(1, parseInt(process.env.OIL_CACHE_DAYS ?? "7", 10) || 7));
 const CACHE_TTL_MS = CACHE_DAYS * 24 * 60 * 60 * 1000;
 const cache = new Map<string, { requirements: OilRequirements; at: number }>();
+const OIL_PRODUCTS_CACHE_TTL_MS = Math.max(
+  60_000,
+  parseInt(process.env.MOYSKLAD_LOOKUP_OIL_CACHE_MS ?? "1800000", 10) || 1_800_000
+);
+let oilProductsCache: { at: number; products: OilProduct[] } | null = null;
+let oilProductsInFlight: Promise<OilProduct[]> | null = null;
+const oilCandidatesCache = new Map<string, { at: number; products: OilProduct[] }>();
 
 function getCacheKey(vin: string, market?: string): string {
   return `${vin.toUpperCase()}|${(market ?? "").trim()}`;
@@ -249,8 +256,47 @@ function enrichOilLineRequirements(oils: OilProduct[]): OilProduct[] {
   return oils;
 }
 
+function cloneOilProducts(products: OilProduct[]): OilProduct[] {
+  return products.map((product) => ({
+    ...product,
+    meta: { ...product.meta },
+    requirements_norm: {
+      sae: [...product.requirements_norm.sae],
+      oem: [...product.requirements_norm.oem],
+      acea: [...product.requirements_norm.acea],
+      api: [...product.requirements_norm.api],
+      ilsac: [...product.requirements_norm.ilsac],
+    },
+  }));
+}
+
+function getCachedOilProductsSnapshot(): OilProduct[] | null {
+  if (!oilProductsCache || Date.now() - oilProductsCache.at > OIL_PRODUCTS_CACHE_TTL_MS) return null;
+  return cloneOilProducts(oilProductsCache.products);
+}
+
+export function warmOilProductsCache(): Promise<OilProduct[]> {
+  return fetchOilProductsFromMoySklad(1000, { forceRefresh: true });
+}
+
 /** Загрузить товары категории «масло» из МойСклад с полями SAE, OEM, ACEA, API, объём. */
-export async function fetchOilProductsFromMoySklad(limit = 200): Promise<OilProduct[]> {
+export async function fetchOilProductsFromMoySklad(
+  limit = 200,
+  options?: { forceRefresh?: boolean }
+): Promise<OilProduct[]> {
+  const cached = options?.forceRefresh ? null : getCachedOilProductsSnapshot();
+  if (cached) return cached;
+  if (oilProductsInFlight) return cloneOilProducts(await oilProductsInFlight);
+
+  oilProductsInFlight = loadOilProductsFromMoySklad(limit).finally(() => {
+    oilProductsInFlight = null;
+  });
+  const products = await oilProductsInFlight;
+  oilProductsCache = { at: Date.now(), products: cloneOilProducts(products) };
+  return cloneOilProducts(products);
+}
+
+async function loadOilProductsFromMoySklad(limit = 200): Promise<OilProduct[]> {
   const pageLimit = Math.min(1000, Math.max(100, limit));
   let offset = 0;
   let size = Number.POSITIVE_INFINITY;
@@ -377,6 +423,21 @@ function normalizeILSAC(value: string): string[] {
 
 /** Поиск масел в МойСклад только по допускам (OEM/SAE/ACEA/API/ILSAC) — без VIN/OpenAI. */
 export async function fetchOilCandidatesByRequirements(requirements: OilRequirements): Promise<OilProduct[]> {
+  const warmCatalog = getCachedOilProductsSnapshot();
+  if (warmCatalog) return warmCatalog;
+
+  const cacheKey = JSON.stringify({
+    sae: requirements.sae_viscosities ?? [],
+    oem: requirements.oem_approvals ?? [],
+    acea: requirements.acea ?? [],
+    api: requirements.api ?? [],
+    ilsac: requirements.ilsac ?? [],
+  });
+  const cachedCandidates = oilCandidatesCache.get(cacheKey);
+  if (cachedCandidates && Date.now() - cachedCandidates.at <= OIL_PRODUCTS_CACHE_TTL_MS) {
+    return cloneOilProducts(cachedCandidates.products);
+  }
+
   const auth = getMoySkladAuthHeader();
   if (!auth) return [];
   const headers: Record<string, string> = {
@@ -555,7 +616,9 @@ export async function fetchOilCandidatesByRequirements(requirements: OilRequirem
       imageHref: getFirstImageHref(r),
     });
   }
-  return enrichOilLineRequirements(oils);
+  const enriched = enrichOilLineRequirements(oils);
+  oilCandidatesCache.set(cacheKey, { at: Date.now(), products: cloneOilProducts(enriched) });
+  return enriched;
 }
 
 const SCORE_OEM = 100;

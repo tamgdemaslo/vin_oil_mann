@@ -38,31 +38,44 @@ export default function ShiftButton() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetch("/api/auth/session").then(async (r) => {
-        const j = await tryResponseJson<{ user?: { role?: UserRole } | null }>(r);
-        return j ?? { user: null };
-      }),
-      fetch("/api/shifts/current").then((r) => tryResponseJson<CurrentShift>(r)),
-      fetch("/api/cash").then((r) =>
-        tryResponseJson<{ shift: CurrentCashShift | null }>(r)
-      ),
-    ])
-      .then(([sessionData, shiftData, cashData]) => {
+
+    async function loadState() {
+      setLoading(true);
+      try {
+        const [sessionData, shiftData, cashData] = await Promise.all([
+          fetch("/api/auth/session").then(async (r) => {
+            const j = await tryResponseJson<{ user?: { role?: UserRole } | null }>(r);
+            return j ?? { user: null };
+          }),
+          fetch("/api/shifts/current", { cache: "no-store" }).then((r) => tryResponseJson<CurrentShift>(r)),
+          fetch("/api/cash", { cache: "no-store" }).then((r) =>
+            tryResponseJson<{ shift: CurrentCashShift | null }>(r)
+          ),
+        ]);
         if (cancelled) return;
         setRole(sessionData?.user?.role ?? null);
         setCurrent(shiftData);
         setCurrentCashShift(cashData?.shift ?? null);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setRole(null);
           setCurrent(null);
           setCurrentCashShift(null);
         }
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadState();
+    const handleShiftChanged = () => {
+      void loadState();
+    };
+    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+    };
   }, []);
 
   async function startShift() {

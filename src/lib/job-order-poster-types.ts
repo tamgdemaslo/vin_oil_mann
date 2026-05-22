@@ -74,4 +74,6 @@ export type JobOrderPosterModel = {
   milestone: { value: number; leftKm: number };
   /** Короткая подпись для подкапотных бирок (моторное масло и т.д.) */
   oilTagLine: string;
+  /** Явно заданный объём для подкапотной бирки из доп. поля отгрузки «Объем». */
+  oilTagVolume: string;
 };

@@ -12,6 +12,10 @@ import { getMoySkladAuthHeader, MOYSKLAD_BASE } from "@/lib/moysklad";
 import { normalizeACEA, normalizeSAE } from "@/lib/oil-normalizer";
 import { getVinLookupCache, setVinLookupCache } from "@/lib/vin-lookup-cache";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
+import {
+  getCachedStockByProductIdMap,
+  getDirectStockByProductId,
+} from "@/lib/moysklad-stock-cache";
 
 function getOpenAI(): OpenAI | null {
   const key = process.env.OPENAI_API_KEY;
@@ -66,27 +70,9 @@ type PartItem = { number?: string; name?: string; description?: string; notice?:
 type CollectedGroup = { item: GroupItem; pathNames: string[] };
 
 const LOOKUP_CACHE_TTL_MS = Math.max(60_000, parseInt(process.env.LOOKUP_CACHE_MS ?? "600000", 10) || 600_000);
-const STOCK_REPORT_CACHE_TTL_MS = Math.max(5_000, parseInt(process.env.STOCK_REPORT_CACHE_MS ?? "30000", 10) || 30_000);
 const MOYSKLAD_TIMEOUT_MS = Math.max(5_000, parseInt(process.env.MOYSKLAD_TIMEOUT_MS ?? "15000", 10) || 15_000);
 
-type StockByStoreEntry = { name: string; stock: number; reserve?: number };
-type StockReportRow = {
-  meta?: { href?: string };
-  assortment?: { meta?: { href?: string } };
-  stockByStore?: StockByStoreEntry[];
-};
-
 const lookupCache = new Map<string, { at: number; result: LookupResult }>();
-let stockByStoreReportCache:
-  | {
-      at: number;
-      rows: StockReportRow[];
-      byProductId: Map<string, { stockByStore?: StockByStoreEntry[] }>;
-    }
-  | null = null;
-let stockByStoreReportInFlight:
-  | Promise<StockReportRow[]>
-  | null = null;
 
 function cloneLookupResult(result: LookupResult): LookupResult {
   return JSON.parse(JSON.stringify(result)) as LookupResult;
@@ -170,106 +156,6 @@ async function fetchMoySkladJson<T>(url: string, headers: Record<string, string>
     if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
   return null;
-}
-
-function extractProductIdFromHref(href?: string): string | null {
-  // В MoySklad в product href обычно UUID-подобный идентификатор, но формат может
-  // отличаться (иногда встречаются символы вне [a-f]).
-  // Поэтому захватываем любые буквенно-цифровые символы и дефисы до следующего разделителя.
-  const match = (href ?? "").match(/entity\/product\/([0-9a-zA-Z-]+)/i);
-  return match?.[1] ?? null;
-}
-
-function mergeStockByStoreEntries(entries: StockByStoreEntry[] = []): StockByStoreEntry[] {
-  const byStore = new Map<string, StockByStoreEntry>();
-  for (const entry of entries) {
-    const name = (entry.name ?? "").trim();
-    if (!name) continue;
-    const prev = byStore.get(name);
-    byStore.set(name, {
-      name,
-      stock: (prev?.stock ?? 0) + (entry.stock ?? 0),
-      reserve: (prev?.reserve ?? 0) + (entry.reserve ?? 0),
-    });
-  }
-  return [...byStore.values()];
-}
-
-function buildStockByProductIdMap(
-  rows: StockReportRow[]
-): Map<string, { stockByStore?: StockByStoreEntry[] }> {
-  const map = new Map<string, { stockByStore?: StockByStoreEntry[] }>();
-  for (const row of rows) {
-    const productId = extractProductIdFromHref(row.assortment?.meta?.href ?? row.meta?.href);
-    if (!productId) continue;
-    const prev = map.get(productId)?.stockByStore ?? [];
-    map.set(productId, {
-      stockByStore: mergeStockByStoreEntries([...prev, ...(row.stockByStore ?? [])]),
-    });
-  }
-  return map;
-}
-
-async function getCachedStockByStoreRows(
-  headers: Record<string, string>
-): Promise<StockReportRow[]> {
-  if (stockByStoreReportCache && Date.now() - stockByStoreReportCache.at <= STOCK_REPORT_CACHE_TTL_MS) {
-    return stockByStoreReportCache.rows;
-  }
-  if (stockByStoreReportInFlight) return stockByStoreReportInFlight;
-  stockByStoreReportInFlight = (async () => {
-    try {
-      const limit = 1000;
-      let offset = 0;
-      let size = Number.POSITIVE_INFINITY;
-      const rows: StockReportRow[] = [];
-
-      while (offset < size) {
-        const stockData = await fetchMoySkladJson<{
-          meta?: { size?: number; limit?: number; offset?: number };
-          rows?: StockReportRow[];
-        }>(`${MOYSKLAD_BASE}/report/stock/bystore?limit=${limit}&offset=${offset}`, headers);
-        if (!stockData) {
-          throw new Error("Не удалось загрузить общий отчет остатков МойСклад");
-        }
-
-        const chunk = stockData.rows ?? [];
-        rows.push(...chunk);
-
-        const reportedSize = stockData.meta?.size;
-        size = typeof reportedSize === "number" && reportedSize > 0 ? reportedSize : rows.length;
-        if (chunk.length < limit) break;
-        offset += limit;
-      }
-
-      stockByStoreReportCache = { at: Date.now(), rows, byProductId: buildStockByProductIdMap(rows) };
-      return rows;
-    } finally {
-      stockByStoreReportInFlight = null;
-    }
-  })();
-  return stockByStoreReportInFlight;
-}
-
-async function getCachedStockByProductIdMap(
-  headers: Record<string, string>
-): Promise<Map<string, { stockByStore?: StockByStoreEntry[] }>> {
-  await getCachedStockByStoreRows(headers);
-  if (stockByStoreReportCache?.byProductId) return stockByStoreReportCache.byProductId;
-  // На случай hot-reload и старого кэша без byProductId.
-  return buildStockByProductIdMap(stockByStoreReportCache?.rows ?? []);
-}
-
-async function getDirectStockByProductId(
-  headers: Record<string, string>,
-  productId: string
-): Promise<StockByStoreEntry[]> {
-  const productHref = `${MOYSKLAD_BASE}/entity/product/${productId}`;
-  const stock = await fetchMoySkladJson<{ rows?: StockReportRow[] }>(
-    `${MOYSKLAD_BASE}/report/stock/bystore?filter=${encodeURIComponent(`product=${productHref}`)}&limit=100`,
-    headers
-  );
-  return mergeStockByStoreEntries((stock?.rows ?? []).flatMap((row) => row.stockByStore ?? []));
 }
 
 function getCarInfoItems(carData: unknown): CarInfoItem[] {
@@ -758,7 +644,7 @@ async function searchMoySkladProductsByTerms(
 
     const items: MoySkladItem[] = [];
 
-    const stockByProductId = await getCachedStockByProductIdMap(headers);
+    const stockByProductId = await getCachedStockByProductIdMap();
     if (stockByProductId.size === 0) {
       for (const [id, p] of productMap) {
         items.push({ ...p, quantity: 0, store: "—", productId: id, lookupKind });
@@ -803,14 +689,9 @@ async function getStockItemsForProducts(
 ): Promise<MoySkladItem[]> {
   const auth = getMoySkladAuthHeader();
   if (!auth || productInfos.length === 0) return [];
-  const headers: Record<string, string> = {
-    Authorization: auth,
-    "Accept-Encoding": "gzip",
-    Accept: "application/json;charset=utf-8",
-  };
   const byId = new Map(productInfos.map((p) => [p.id, p]));
   try {
-    const stockByProductId = await getCachedStockByProductIdMap(headers);
+    const stockByProductId = await getCachedStockByProductIdMap();
     const items: MoySkladItem[] = [];
 
     if (stockByProductId.size === 0) {
@@ -818,7 +699,7 @@ async function getStockItemsForProducts(
       const direct = await Promise.all(
         [...byId.values()].map(async (p) => ({
           product: p,
-          stores: await getDirectStockByProductId(headers, p.id),
+          stores: await getDirectStockByProductId(p.id),
         }))
       );
       for (const { product: p, stores } of direct) {
@@ -889,7 +770,7 @@ async function getStockItemsForProducts(
     const direct = await Promise.all(
       productInfos.map(async (p) => ({
         product: p,
-        stores: await getDirectStockByProductId(headers, p.id),
+        stores: await getDirectStockByProductId(p.id),
       }))
     );
     const items: MoySkladItem[] = [];
@@ -1039,6 +920,104 @@ function hasText(value?: string): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
+function hasOilSearchParams(oilInfo: OilInfo | null | undefined): boolean {
+  // findOilItems intentionally does not search oils without SAE: the strategy builder
+  // returns no candidates if viscosity is unknown, even when approval/ACEA is present.
+  return Boolean(oilInfo && (oilInfo.sae?.length ?? 0) > 0);
+}
+
+async function enrichOilInfoFromOpenAI(result: LookupResult): Promise<boolean> {
+  if (!result.oilInfo || !result.decoded || !process.env.OPENAI_API_KEY?.trim()) return false;
+  const hasDecoded = (result.decoded.make ?? result.decoded.model ?? result.decoded.modelYear ?? "").trim();
+  if (!hasDecoded) return false;
+
+  const before = JSON.stringify({
+    approval: result.oilInfo.approval,
+    fillVolumeLiters: result.oilInfo.fillVolumeLiters,
+    sae: result.oilInfo.sae,
+    acea: result.oilInfo.acea,
+    api: result.oilInfo.api,
+    ilsac: result.oilInfo.ilsac,
+  });
+
+  const openai = getOpenAI();
+  if (!openai) return false;
+
+  const req = await getOilRequirementsFromOpenAI(openai, {
+    make: result.decoded.make,
+    model: result.decoded.model,
+    year: result.decoded.modelYear,
+    engine: result.decoded.engineSeries,
+    trim: result.decoded.modification || result.decoded.generation,
+    series: result.decoded.generation,
+    market: result.decoded.market,
+    vin: result.vin,
+    hints: [
+      result.decoded.bodyClass ? `Кузов: ${result.decoded.bodyClass}` : "",
+      result.decoded.gearType ? `КПП: ${result.decoded.gearType}` : "",
+      result.decoded.steering ? `Руль: ${result.decoded.steering}` : "",
+      result.decoded.displacementL ? `Объём двигателя: ${result.decoded.displacementL} л` : "",
+      result.decoded.enginePowerPS ? `Мощность: ${Math.round(result.decoded.enginePowerPS)} л.с.` : "",
+      result.decoded.fuelTypePrimary ? `Топливо: ${result.decoded.fuelTypePrimary}` : "",
+      result.oilInfo.oilFilterOem ? `OEM масляного фильтра: ${result.oilInfo.oilFilterOem}` : "",
+      result.oilInfo.fuelFilterOem ? `OEM топливного фильтра: ${result.oilInfo.fuelFilterOem}` : "",
+      result.oilInfo.airFilterOem ? `OEM воздушного фильтра: ${result.oilInfo.airFilterOem}` : "",
+      result.oilInfo.cabinFilterOem ? `OEM салонного фильтра: ${result.oilInfo.cabinFilterOem}` : "",
+    ].filter(Boolean),
+  });
+  let oilSearchBlock: string | null = null;
+  if ((req.oem_approvals?.length ?? 0) === 0 && (req.acea?.length ?? 0) === 0) {
+    oilSearchBlock = await collectOilApprovalSearch(result.decoded);
+    if (oilSearchBlock) {
+      const fallbackApproval = await askOpenAIOilSpec(openai, result.decoded, "approval", oilSearchBlock);
+      if (fallbackApproval && !/не найдено|not found/i.test(fallbackApproval)) {
+        const parsed = parseApprovalString(fallbackApproval);
+        const sae = extractSaeViscositiesFromText(fallbackApproval);
+        if (parsed.oem.length) req.oem_approvals = parsed.oem;
+        if (parsed.acea.length) req.acea = parsed.acea;
+        if (parsed.api.length) req.api = parsed.api;
+        if (parsed.ilsac.length) req.ilsac = parsed.ilsac;
+        if (sae.length) req.sae_viscosities = sae;
+        console.log("[lookup] OpenAI oil fallback approval:", fallbackApproval);
+      }
+    }
+  }
+  if (/оценк|типичн|не подтверж|not confirm|estimate|typical/i.test(req.source_hint ?? "")) {
+    oilSearchBlock ??= await collectOilApprovalSearch(result.decoded);
+    if (oilSearchBlock) {
+      const fallbackVolume = await askOpenAIOilSpec(openai, result.decoded, "volume", oilSearchBlock);
+      const volume = Number.parseFloat(fallbackVolume.replace(",", ".").replace(/[^\d.]/g, ""));
+      if (Number.isFinite(volume) && volume > 0) {
+        req.oil_capacity_liters = volume;
+        console.log("[lookup] OpenAI oil fallback volume:", fallbackVolume);
+      }
+    }
+  }
+  applyKnownOilFallbacks(result.decoded, req);
+  req.oem_approvals = canonicalizeOilApprovalsForVehicle(result.decoded, req.oem_approvals ?? []);
+  if (req.oem_approvals?.length || req.acea?.length) {
+    result.oilInfo.approval = (req.oem_approvals ?? []).join(", ") || (req.acea ?? []).join(", ") || "";
+  }
+  if (req.oil_capacity_liters != null && req.oil_capacity_liters > 0) {
+    result.oilInfo.fillVolumeLiters = String(req.oil_capacity_liters);
+  }
+  result.oilInfo.sae = req.sae_viscosities ?? [];
+  result.oilInfo.acea = req.acea ?? [];
+  result.oilInfo.api = req.api ?? [];
+  result.oilInfo.ilsac = req.ilsac ?? [];
+  console.log("[lookup] OpenAI oil: approval=", result.oilInfo.approval || "—", "volume=", result.oilInfo.fillVolumeLiters || "—", "л");
+
+  const after = JSON.stringify({
+    approval: result.oilInfo.approval,
+    fillVolumeLiters: result.oilInfo.fillVolumeLiters,
+    sae: result.oilInfo.sae,
+    acea: result.oilInfo.acea,
+    api: result.oilInfo.api,
+    ilsac: result.oilInfo.ilsac,
+  });
+  return before !== after;
+}
+
 function extractSaeViscositiesFromText(text: string): string[] {
   const matches = text.match(/\b\d{1,2}W[\s-]?\d{2}\b/gi) ?? [];
   return [...new Set(matches.map((match) => match.toUpperCase().replace(/\s+/g, "").replace(/W-?/, "W-")))];
@@ -1091,6 +1070,12 @@ function applyKnownOilFallbacks(decoded: VinDecoded, requirements: OilRequiremen
     requirements.oem_approvals = ["VW 502.00"];
     if ((requirements.sae_viscosities?.length ?? 0) === 0) requirements.sae_viscosities = ["5W-30", "5W-40"];
     requirements.acea = ["A3/B4"];
+  }
+
+  if ((make === "volkswagen" || make === "vw") && /^ayq$/i.test(decoded.engineSeries ?? "")) {
+    if ((requirements.oem_approvals?.length ?? 0) === 0) requirements.oem_approvals = ["VW 505.00"];
+    if ((requirements.sae_viscosities?.length ?? 0) === 0) requirements.sae_viscosities = ["5W-40", "5W-30", "10W-40"];
+    if ((requirements.acea?.length ?? 0) === 0) requirements.acea = ["A3/B4"];
   }
 
   if (make === "mitsubishi" && /pajero|montero|nativa/i.test(decoded.model ?? "") && (engine === "3000" || decoded.displacementL === "3")) {
@@ -1540,12 +1525,13 @@ export async function POST(request: NextRequest) {
     };
 
     const cached = hasVehicleOverrides ? null : getCachedLookupResult(result.vin);
-    if (cached) {
+    if (cached?.oilInfo && hasOilSearchParams(cached.oilInfo)) {
       return NextResponse.json(cached);
     }
 
     console.log("[lookup] POST start vin=", result.vin);
     let usedPersistentCache = false;
+    let shouldRefreshPersistentCache = false;
     try {
       const cacheStartedAt = performance.now();
       const persisted = hasVehicleOverrides ? null : await getVinLookupCache(result.vin);
@@ -1571,86 +1557,19 @@ export async function POST(request: NextRequest) {
         console.log("[lookup] POST oilInfo:", result.oilInfo ? "ok" : "null", result.oilInfo ? { oil: result.oilInfo.oilFilterOem, fuel: result.oilInfo.fuelFilterOem, air: result.oilInfo.airFilterOem, cabin: result.oilInfo.cabinFilterOem } : "");
         if (result.decoded) console.log("[lookup] POST decoded:", result.decoded.make, result.decoded.model, result.decoded.modelYear);
 
-        if (result.oilInfo && result.decoded && process.env.OPENAI_API_KEY?.trim()) {
-          const hasDecoded = (result.decoded.make ?? result.decoded.model ?? result.decoded.modelYear ?? "").trim();
-          if (hasDecoded) {
-            try {
-              const oilRequirementsStartedAt = performance.now();
-              const openai = getOpenAI();
-              if (openai) {
-                const req = await getOilRequirementsFromOpenAI(openai, {
-                  make: result.decoded.make,
-                  model: result.decoded.model,
-                  year: result.decoded.modelYear,
-                  engine: result.decoded.engineSeries,
-                  trim: result.decoded.modification || result.decoded.generation,
-                  series: result.decoded.generation,
-                  market: result.decoded.market,
-                  vin: result.vin,
-                  hints: [
-                    result.decoded.bodyClass ? `Кузов: ${result.decoded.bodyClass}` : "",
-                    result.decoded.gearType ? `КПП: ${result.decoded.gearType}` : "",
-                    result.decoded.steering ? `Руль: ${result.decoded.steering}` : "",
-                    result.decoded.displacementL ? `Объём двигателя: ${result.decoded.displacementL} л` : "",
-                    result.decoded.enginePowerPS ? `Мощность: ${Math.round(result.decoded.enginePowerPS)} л.с.` : "",
-                    result.decoded.fuelTypePrimary ? `Топливо: ${result.decoded.fuelTypePrimary}` : "",
-                    result.oilInfo.oilFilterOem ? `OEM масляного фильтра: ${result.oilInfo.oilFilterOem}` : "",
-                    result.oilInfo.fuelFilterOem ? `OEM топливного фильтра: ${result.oilInfo.fuelFilterOem}` : "",
-                    result.oilInfo.airFilterOem ? `OEM воздушного фильтра: ${result.oilInfo.airFilterOem}` : "",
-                    result.oilInfo.cabinFilterOem ? `OEM салонного фильтра: ${result.oilInfo.cabinFilterOem}` : "",
-                  ].filter(Boolean),
-                });
-                let oilSearchBlock: string | null = null;
-                if ((req.oem_approvals?.length ?? 0) === 0 && (req.acea?.length ?? 0) === 0) {
-                  oilSearchBlock = await collectOilApprovalSearch(result.decoded);
-                  if (oilSearchBlock) {
-                    const fallbackApproval = await askOpenAIOilSpec(openai, result.decoded, "approval", oilSearchBlock);
-                    if (fallbackApproval && !/не найдено|not found/i.test(fallbackApproval)) {
-                      const parsed = parseApprovalString(fallbackApproval);
-                      const sae = extractSaeViscositiesFromText(fallbackApproval);
-                      if (parsed.oem.length) req.oem_approvals = parsed.oem;
-                      if (parsed.acea.length) req.acea = parsed.acea;
-                      if (parsed.api.length) req.api = parsed.api;
-                      if (parsed.ilsac.length) req.ilsac = parsed.ilsac;
-                      if (sae.length) req.sae_viscosities = sae;
-                      console.log("[lookup] OpenAI oil fallback approval:", fallbackApproval);
-                    }
-                  }
-                }
-                if (/оценк|типичн|не подтверж|not confirm|estimate|typical/i.test(req.source_hint ?? "")) {
-                  oilSearchBlock ??= await collectOilApprovalSearch(result.decoded);
-                  if (oilSearchBlock) {
-                    const fallbackVolume = await askOpenAIOilSpec(openai, result.decoded, "volume", oilSearchBlock);
-                    const volume = Number.parseFloat(fallbackVolume.replace(",", ".").replace(/[^\d.]/g, ""));
-                    if (Number.isFinite(volume) && volume > 0) {
-                      req.oil_capacity_liters = volume;
-                      console.log("[lookup] OpenAI oil fallback volume:", fallbackVolume);
-                    }
-                  }
-                }
-                applyKnownOilFallbacks(result.decoded, req);
-                req.oem_approvals = canonicalizeOilApprovalsForVehicle(result.decoded, req.oem_approvals ?? []);
-                if (req.oem_approvals?.length || req.acea?.length) {
-                  result.oilInfo.approval = (req.oem_approvals ?? []).join(", ") || (req.acea ?? []).join(", ") || "";
-                }
-                if (req.oil_capacity_liters != null && req.oil_capacity_liters > 0) {
-                  result.oilInfo.fillVolumeLiters = String(req.oil_capacity_liters);
-                }
-                result.oilInfo.sae = req.sae_viscosities ?? [];
-                result.oilInfo.acea = req.acea ?? [];
-                result.oilInfo.api = req.api ?? [];
-                result.oilInfo.ilsac = req.ilsac ?? [];
-                console.log("[lookup] OpenAI oil: approval=", result.oilInfo.approval || "—", "volume=", result.oilInfo.fillVolumeLiters || "—", "л");
-              }
-              markTiming("oilRequirementsMs", oilRequirementsStartedAt);
-            } catch (e) {
-              const err = e as { message?: string; status?: number; code?: string; error?: { message?: string; code?: string } };
-              const msg = err?.error?.message ?? err?.message ?? String(e);
-              const code = err?.error?.code ?? err?.code;
-              const status = err?.status;
-              console.error("[lookup] OpenAI oil requirements error:", msg, code != null ? `code=${code}` : "", status != null ? `status=${status}` : "");
-              if (process.env.NODE_ENV === "development" && e) console.error("[lookup] OpenAI error detail:", e);
-            }
+        if (result.oilInfo && result.decoded) {
+          try {
+            const oilRequirementsStartedAt = performance.now();
+            shouldRefreshPersistentCache = (await enrichOilInfoFromOpenAI(result)) || shouldRefreshPersistentCache;
+            markTiming("oilRequirementsMs", oilRequirementsStartedAt);
+          } catch (e) {
+            const err = e as { message?: string; status?: number; code?: string; error?: { message?: string; code?: string } };
+            const msg = err?.error?.message ?? err?.message ?? String(e);
+            const code = err?.error?.code ?? err?.code;
+            const status = err?.status;
+            result.openaiError = msg;
+            console.error("[lookup] OpenAI oil requirements error:", msg, code != null ? `code=${code}` : "", status != null ? `status=${status}` : "");
+            if (process.env.NODE_ENV === "development" && e) console.error("[lookup] OpenAI error detail:", e);
           }
         }
       }
@@ -1664,7 +1583,24 @@ export async function POST(request: NextRequest) {
       applyVehicleOilHeuristics(result.decoded, result.oilInfo);
     }
 
-    if (!usedPersistentCache && !hasVehicleOverrides && hasUsefulLookupPayload(result)) {
+    if (usedPersistentCache && result.oilInfo && result.decoded && !hasOilSearchParams(result.oilInfo)) {
+      try {
+        const oilRequirementsStartedAt = performance.now();
+        console.log("[lookup] VIN cache has filters but no oil params; refreshing oil requirements", result.vin);
+        shouldRefreshPersistentCache = (await enrichOilInfoFromOpenAI(result)) || shouldRefreshPersistentCache;
+        markTiming("oilRequirementsRefreshMs", oilRequirementsStartedAt);
+      } catch (e) {
+        const err = e as { message?: string; status?: number; code?: string; error?: { message?: string; code?: string } };
+        const msg = err?.error?.message ?? err?.message ?? String(e);
+        const code = err?.error?.code ?? err?.code;
+        const status = err?.status;
+        result.openaiError = msg;
+        console.error("[lookup] OpenAI oil requirements refresh error:", msg, code != null ? `code=${code}` : "", status != null ? `status=${status}` : "");
+        if (process.env.NODE_ENV === "development" && e) console.error("[lookup] OpenAI refresh error detail:", e);
+      }
+    }
+
+    if ((!usedPersistentCache || shouldRefreshPersistentCache) && !hasVehicleOverrides && hasUsefulLookupPayload(result)) {
       const cacheWriteStartedAt = performance.now();
       await setVinLookupCache(result.vin, {
         decoded: result.decoded,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentShift, requireSessionUser } from "@/lib/cashbox";
 import { getOrdersTotalsForDate } from "@/lib/aqsi";
+import { toLocalDateString } from "@/lib/time";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
     const serviceDate =
       dateParam?.trim() ||
       currentShift?.serviceDate ||
-      new Date().toISOString().slice(0, 10);
+      toLocalDateString(new Date());
     const timezone =
       currentShift?.timezone ||
       process.env.SERVICE_TIMEZONE?.trim() ||
@@ -42,4 +43,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: msg }, { status });
   }
 }
-

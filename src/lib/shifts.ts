@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { canonicalizeLogin, getLoginVariants } from "@/lib/auth";
 import {
   toLocalDateString,
   getWorkdayStart,
@@ -30,8 +31,9 @@ export function calculateLatePenaltyCents(startedAt: Date, shiftDate: string): n
 
 /** Найти ставку смены для сотрудника на дату (последняя с effectiveFrom <= shiftDate) */
 export async function getShiftRateCents(userLogin: string, shiftDate: string): Promise<number | null> {
+  const userLogins = getLoginVariants(userLogin);
   const row = await prisma.shiftRate.findFirst({
-    where: { userLogin, effectiveFrom: { lte: shiftDate } },
+    where: { userLogin: { in: userLogins }, effectiveFrom: { lte: shiftDate } },
     orderBy: { effectiveFrom: "desc" },
   });
   return row?.amountCents ?? null;
@@ -42,11 +44,13 @@ export async function startShift(userLogin: string): Promise<
   | { ok: true; shift: { id: string; shiftDate: string; startedAt: Date } }
   | { ok: false; error: string }
 > {
+  const canonicalUserLogin = canonicalizeLogin(userLogin);
+  const userLogins = getLoginVariants(userLogin);
   const now = nowInAppTz();
   const shiftDate = toLocalDateString(now);
 
-  const existing = await prisma.shift.findUnique({
-    where: { userLogin_shiftDate: { userLogin, shiftDate } },
+  const existing = await prisma.shift.findFirst({
+    where: { userLogin: { in: userLogins }, shiftDate },
   });
   if (existing) {
     return { ok: false, error: "На сегодня смена уже открыта" };
@@ -57,7 +61,7 @@ export async function startShift(userLogin: string): Promise<
 
   const shift = await prisma.shift.create({
     data: {
-      userLogin,
+      userLogin: canonicalUserLogin,
       shiftDate,
       startedAt,
       endedAt: null,
@@ -69,7 +73,7 @@ export async function startShift(userLogin: string): Promise<
   if (latePenaltyCents > 0) {
     await prisma.bonusPenalty.create({
       data: {
-        userLogin,
+        userLogin: canonicalUserLogin,
         date: shiftDate,
         amountCents: -latePenaltyCents,
         type: "penalty_late",
@@ -90,11 +94,12 @@ export async function endShift(userLogin: string): Promise<
   | { ok: true }
   | { ok: false; error: string }
 > {
+  const userLogins = getLoginVariants(userLogin);
   const now = nowInAppTz();
   const shiftDate = toLocalDateString(now);
 
-  const shift = await prisma.shift.findUnique({
-    where: { userLogin_shiftDate: { userLogin, shiftDate } },
+  const shift = await prisma.shift.findFirst({
+    where: { userLogin: { in: userLogins }, shiftDate },
   });
   if (!shift) return { ok: false, error: "Нет открытой смены на сегодня" };
   if (shift.endedAt) return { ok: false, error: "Смена уже закрыта" };
@@ -120,7 +125,7 @@ export async function closeShiftByOwner(
     data: {
       endedAt: new Date(),
       closeType: "by_owner",
-      closedByLogin: ownerLogin,
+      closedByLogin: canonicalizeLogin(ownerLogin),
     },
   });
   return { ok: true };
@@ -145,7 +150,7 @@ export async function autoCloseShifts(): Promise<{ closed: number }> {
     });
     await prisma.bonusPenalty.create({
       data: {
-        userLogin: shift.userLogin,
+        userLogin: canonicalizeLogin(shift.userLogin),
         date: yesterday,
         amountCents: -UNCLOSED_PENALTY_CENTS,
         type: "penalty_unclosed",
@@ -166,9 +171,10 @@ export async function getCurrentShift(userLogin: string): Promise<{
   closeType: string;
   latePenaltyCents: number | null;
 } | null> {
+  const userLogins = getLoginVariants(userLogin);
   const today = toLocalDateString(nowInAppTz());
   const shift = await prisma.shift.findFirst({
-    where: { userLogin, shiftDate: today, endedAt: null },
+    where: { userLogin: { in: userLogins }, shiftDate: today, endedAt: null },
   });
   if (!shift) return null;
   return {
@@ -192,9 +198,9 @@ export async function listShifts(params: {
   const { userLogin, role, targetLogin, dateFrom, dateTo } = params;
   const isOwner = role === "owner";
 
-  const where: { userLogin?: string; shiftDate?: { gte?: string; lte?: string } } = {};
-  if (!isOwner) where.userLogin = userLogin;
-  else if (targetLogin) where.userLogin = targetLogin;
+  const where: { userLogin?: string | { in: string[] }; shiftDate?: { gte?: string; lte?: string } } = {};
+  if (!isOwner) where.userLogin = { in: getLoginVariants(userLogin) };
+  else if (targetLogin) where.userLogin = { in: getLoginVariants(targetLogin) };
   if (dateFrom) where.shiftDate = { ...where.shiftDate, gte: dateFrom };
   if (dateTo) where.shiftDate = { ...where.shiftDate, lte: dateTo };
 
@@ -202,5 +208,9 @@ export async function listShifts(params: {
     where,
     orderBy: [{ shiftDate: "desc" }, { startedAt: "desc" }],
   });
-  return shifts;
+  return shifts.map((shift) => ({
+    ...shift,
+    userLogin: canonicalizeLogin(shift.userLogin),
+    closedByLogin: shift.closedByLogin ? canonicalizeLogin(shift.closedByLogin) : shift.closedByLogin,
+  }));
 }

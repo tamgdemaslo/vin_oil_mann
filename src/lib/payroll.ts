@@ -1,7 +1,7 @@
-import { moyskladFetch } from "@/lib/moysklad";
+import { moyskladFetchWithRetry } from "@/lib/moysklad";
 import { prisma } from "@/lib/db";
 import { getShiftRateCents } from "@/lib/shifts";
-import { getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
 import {
   calculatePieceworkAmountCents,
   extractMoyskladEntityId,
@@ -17,8 +17,19 @@ const payrollCache = new Map<
   { promise?: Promise<PayrollSummary> }
 >();
 
+/** Повторы при лимите API и кратковременных сбоях МойСклад (расчёт зарплаты — много запросов подряд). */
+const MOYSKLAD_PAYROLL_FETCH_ATTEMPTS = Math.max(
+  4,
+  Math.min(10, parseInt(process.env.MOYSKLAD_PAYROLL_FETCH_ATTEMPTS ?? "7", 10) || 7)
+);
+const MOYSKLAD_PAYROLL_MIN_INTERVAL_MS = Math.max(
+  250,
+  Math.min(5_000, parseInt(process.env.MOYSKLAD_PAYROLL_MIN_INTERVAL_MS ?? "800", 10) || 800)
+);
+const payrollMoyskladRetryConfig = { minIntervalMs: MOYSKLAD_PAYROLL_MIN_INTERVAL_MS };
+
 function normalizeLogin(login: string): string {
-  return login.trim().toLowerCase();
+  return canonicalizeLogin(login).trim().toLowerCase();
 }
 
 function normalizePersonName(name: string): string {
@@ -26,13 +37,9 @@ function normalizePersonName(name: string): string {
 }
 
 const PAYROLL_CASHOUT_AGENT_TO_LOGIN: Record<string, string> = {
-  [normalizePersonName("Дударев Александр Сергеевич")]: "alexandr",
+  [normalizePersonName("Бигожин Вадим Андреевич")]: "vadim",
   [normalizePersonName("Лобов Максим")]: "maksim",
 };
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -116,12 +123,17 @@ async function fetchDemandsWithPositions(
       order: "moment,asc",
       expand: "agent",
     });
-    const listRes = await moyskladFetch<{
+    const listRes = await moyskladFetchWithRetry<{
       meta?: { size?: number; limit?: number; offset?: number };
       rows?: DemandRow[];
-    }>(`/entity/demand?${qs.toString()}`, {
-      cache: "no-store",
-    });
+    }>(
+      `/entity/demand?${qs.toString()}`,
+      {
+        cache: "no-store",
+      },
+      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
+      payrollMoyskladRetryConfig
+    );
     if (!listRes.ok) {
       throw new Error(`Не удалось загрузить отгрузки из МойСклад: ${listRes.error}`);
     }
@@ -138,31 +150,20 @@ async function fetchDemandsWithPositions(
 
   async function fetchDemandPositions(demand: DemandRow): Promise<PositionRow[]> {
     const path = `/entity/demand/${demand.id}/positions?expand=assortment`;
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const posRes = await moyskladFetch<{ rows: PositionRow[] }>(path, {
-        cache: "no-store",
-      });
-
-      if (posRes.ok) {
-        return posRes.data.rows ?? [];
-      }
-
-      if (attempt < 2) {
-        await sleep(250 * (attempt + 1));
-        continue;
-      }
-
-      throw new Error(
-        `Не удалось загрузить позиции отгрузки ${demand.name} из МойСклад: ${posRes.error}`
-      );
+    const posRes = await moyskladFetchWithRetry<{ rows: PositionRow[] }>(
+      path,
+      { cache: "no-store" },
+      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
+      payrollMoyskladRetryConfig
+    );
+    if (!posRes.ok) {
+      throw new Error(`Не удалось загрузить позиции отгрузки ${demand.name} из МойСклад: ${posRes.error}`);
     }
-
-    return [];
+    return posRes.data.rows ?? [];
   }
 
-  // Держим умеренную параллельность: быстро, но без плавающих потерь позиций.
-  return mapWithConcurrency(demands, 3, async (demand) => {
+  // Строго по одной отгрузке: параллельные запросы позиций упираются в лимит запросов API МойСклад.
+  return mapWithConcurrency(demands, 1, async (demand) => {
     const positions = await fetchDemandPositions(demand);
     return { demand, positions };
   });
@@ -183,12 +184,17 @@ async function fetchPayrollCashouts(dateFrom: string, dateTo: string): Promise<C
       order: "moment,asc",
       expand: "agent,expenseItem",
     });
-    const result = await moyskladFetch<{
+    const result = await moyskladFetchWithRetry<{
       meta?: { size?: number; limit?: number; offset?: number };
       rows?: CashoutRow[];
-    }>(`/entity/cashout?${qs.toString()}`, {
-      cache: "no-store",
-    });
+    }>(
+      `/entity/cashout?${qs.toString()}`,
+      {
+        cache: "no-store",
+      },
+      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
+      payrollMoyskladRetryConfig
+    );
     if (!result.ok) {
       throw new Error(`Не удалось загрузить расходные ордера из МойСклад: ${result.error}`);
     }
@@ -312,26 +318,28 @@ export async function computePayroll(params: {
 }): Promise<PayrollSummary> {
   const { dateFrom, dateTo, targetLogin } = params;
   const normalizedTargetLogin = targetLogin ? normalizeLogin(targetLogin) : undefined;
-  const [demandsWithPositions, actualShiftsByDate, bonusPenalties, scheduledDays, users, pieceworkRuleMap, cashouts] =
-    await Promise.all([
-      fetchDemandsWithPositions(dateFrom, dateTo),
-      getShiftsByDate(dateFrom, dateTo),
-      prisma.bonusPenalty.findMany({
-        where: {
-          date: { gte: dateFrom, lte: dateTo },
-          ...(targetLogin ? { userLogin: targetLogin } : {}),
-        },
-      }),
-      prisma.scheduledWorkingDay.findMany({
-        where: {
-          date: { gte: dateFrom, lte: dateTo },
-          ...(targetLogin ? { userLogin: targetLogin } : {}),
-        },
-      }),
-      getUsersFromEnv(),
-      getPieceworkRuleMap(),
-      fetchPayrollCashouts(dateFrom, dateTo),
-    ]);
+  const targetLoginVariants = targetLogin ? getLoginVariants(targetLogin) : undefined;
+  const targetLoginWhere = targetLoginVariants ? { userLogin: { in: targetLoginVariants } } : {};
+  const [actualShiftsByDate, bonusPenalties, scheduledDays, users, pieceworkRuleMap] = await Promise.all([
+    getShiftsByDate(dateFrom, dateTo),
+    prisma.bonusPenalty.findMany({
+      where: {
+        date: { gte: dateFrom, lte: dateTo },
+        ...targetLoginWhere,
+      },
+    }),
+    prisma.scheduledWorkingDay.findMany({
+      where: {
+        date: { gte: dateFrom, lte: dateTo },
+        ...targetLoginWhere,
+      },
+    }),
+    getUsersFromEnv(),
+    getPieceworkRuleMap(),
+  ]);
+
+  const demandsWithPositions = await fetchDemandsWithPositions(dateFrom, dateTo);
+  const cashouts = await fetchPayrollCashouts(dateFrom, dateTo);
 
   const canonicalLoginByLower = new Map(users.map((u) => [normalizeLogin(u.login), u.login]));
   const roleByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.role]));
@@ -445,7 +453,7 @@ export async function computePayroll(params: {
 
   // Собираем смены за период и ставки (фактические смены)
   const shifts = await prisma.shift.findMany({
-    where: { shiftDate: { gte: dateFrom, lte: dateTo }, ...(targetLogin ? { userLogin: targetLogin } : {}) },
+    where: { shiftDate: { gte: dateFrom, lte: dateTo }, ...targetLoginWhere },
   });
 
   const actualShiftDatesByLogin = new Map<string, Set<string>>();

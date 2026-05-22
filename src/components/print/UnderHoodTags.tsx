@@ -115,7 +115,9 @@ function Row({ k, v }: { k: string; v: string }) {
 
 export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }) {
   const rawOil = o.oilTagLine || "";
-  const { oil, qty } = splitOilLine(rawOil);
+  const split = splitOilLine(rawOil);
+  const oil = split.oil;
+  const qty = o.oilTagVolume?.trim() || split.qty;
 
   return (
     <div className="under-hood-tag-wrap" style={{ width: "100%", boxSizing: "border-box" }}>

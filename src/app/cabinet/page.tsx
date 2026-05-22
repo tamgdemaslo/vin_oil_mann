@@ -1,8 +1,8 @@
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireAuthenticatedSession } from "@/lib/app-access";
 import CabinetDashboard from "./CabinetDashboard";
 
 export default async function CabinetPage() {
-  const session = await requireActiveShiftAccess("/cabinet");
+  const session = await requireAuthenticatedSession("/cabinet");
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-950">

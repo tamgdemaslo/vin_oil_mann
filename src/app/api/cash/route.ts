@@ -10,6 +10,27 @@ import {
   requireSessionUser,
 } from "@/lib/cashbox";
 
+export const dynamic = "force-dynamic";
+
+function statusFromCashError(message: string): number {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("требуется авторизация")) return 401;
+  if (normalized.includes("доступ")) return 403;
+  if (
+    normalized.includes("не указан") ||
+    normalized.includes("укажите") ||
+    normalized.includes("выберите") ||
+    normalized.includes("долж") ||
+    normalized.includes("нельзя") ||
+    normalized.includes("не найдена") ||
+    normalized.includes("уже открыта") ||
+    normalized.includes("уже была открыта")
+  ) {
+    return 400;
+  }
+  return 500;
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Требуется любая авторизация; фильтрация по ролям уже в lib, где нужно
@@ -48,13 +69,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ shift, operations });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ошибка сервера";
-    const normalized = msg.toLowerCase();
-    const status = normalized.includes("требуется авторизация")
-      ? 401
-      : normalized.includes("доступ")
-        ? 403
-        : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json({ error: msg }, { status: statusFromCashError(msg) });
   }
 }
 
@@ -153,13 +168,6 @@ export async function POST(request: NextRequest) {
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ошибка сервера";
-    const normalized = msg.toLowerCase();
-    const status = normalized.includes("требуется авторизация")
-      ? 401
-      : normalized.includes("доступ")
-        ? 403
-        : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return NextResponse.json({ error: msg }, { status: statusFromCashError(msg) });
   }
 }
-

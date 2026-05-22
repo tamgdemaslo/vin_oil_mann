@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as XLSX from "xlsx";
 import type { DemandDetailAttribute, DemandDetailPayload, DemandDetailPosition } from "@/lib/demand-detail-load";
+import { normalizeSellerPhonesForPrint } from "@/lib/job-order-seller-phone";
 import { moyskladFetch } from "@/lib/moysklad";
 
 const SHEET_NAMES_PREFERRED = ["Заказ-наряд"];
@@ -91,7 +92,7 @@ function sellerFromOrg(org: Record<string, unknown> | null): {
       inn: process.env.JOB_ORDER_SELLER_INN?.trim() ?? "",
       ogrn: process.env.JOB_ORDER_SELLER_OGRN?.trim() ?? "",
       legalAddress: process.env.JOB_ORDER_SELLER_ADDRESS?.trim() ?? "",
-      phones: process.env.JOB_ORDER_SELLER_PHONES?.trim() ?? "",
+      phones: normalizeSellerPhonesForPrint(process.env.JOB_ORDER_SELLER_PHONES?.trim() ?? ""),
     };
   }
   return {
@@ -99,7 +100,7 @@ function sellerFromOrg(org: Record<string, unknown> | null): {
     inn: String(org.inn ?? ""),
     ogrn: String(org.ogrn ?? org.ogrnip ?? ""),
     legalAddress: String(org.legalAddress ?? org.actualAddress ?? ""),
-    phones: formatOrgPhones(org),
+    phones: normalizeSellerPhonesForPrint(formatOrgPhones(org)),
   };
 }
 

@@ -60,6 +60,15 @@ function findAttrByNameRe(attributes: DemandDetailAttribute[], re: RegExp): stri
   return "";
 }
 
+function findExactAttrNormalized(attributes: DemandDetailAttribute[], exactName: string): string {
+  const want = exactName.trim().toLowerCase().replace(/ё/g, "е");
+  for (const a of attributes) {
+    const n = (a.name ?? "").trim().toLowerCase().replace(/ё/g, "е");
+    if (n === want) return formatAttrValue(a.value);
+  }
+  return "";
+}
+
 /** Значение похоже на VIN (латиница+цифры), а не на госномер с кириллицей. */
 function looksLikeVinValue(value: string): boolean {
   const t = value.replace(/\s/g, "");
@@ -382,10 +391,13 @@ export async function buildJobOrderPosterModel(
   const grandTotal = Math.round((header.sum / 100) * 100) / 100;
 
   const oilPick = pickJournalOilNoteFromRawRows(rawRows);
+  const manualOilTagLine = findExactAttrNormalized(attributes, "моторное масло").trim();
   const oilTagLine =
+    manualOilTagLine ||
     oilPick ||
     (parts[0]?.name ?? "").split(",")[0]?.trim() ||
     "—";
+  const oilTagVolume = findExactAttrNormalized(attributes, "объем").trim();
 
   const payMethod =
     header.description?.trim().split(/\n/)[0]?.slice(0, 80) ||
@@ -467,6 +479,6 @@ export async function buildJobOrderPosterModel(
     warrantyDays,
     milestone: nextMilestoneKm(mileage),
     oilTagLine,
+    oilTagVolume,
   };
 }
-

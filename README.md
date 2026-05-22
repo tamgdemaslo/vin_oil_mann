@@ -49,3 +49,8 @@ npm run dev
 npm run build
 npm start
 ```
+
+## Railway
+
+Перед запуском Railway выполняет `npm run db:deploy`, который синхронизирует PostgreSQL со схемой Prisma через `prisma db push --skip-generate`.
+Это нужно для существующей базы без baseline-миграций: новые таблицы вроде `diagnostics` и `crm_stages` будут созданы до старта приложения.

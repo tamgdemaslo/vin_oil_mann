@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 /** GET: список бонусов/штрафов. Владелец может фильтровать по user, dateFrom, dateTo. */
@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const userLogin = searchParams.get("user") ?? (session.user.role === "owner" ? undefined : session.user.login);
+  const requestedUserLogin = searchParams.get("user") ?? (session.user.role === "owner" ? undefined : session.user.login);
+  const userLogin = requestedUserLogin ? canonicalizeLogin(requestedUserLogin) : undefined;
   const dateFrom = searchParams.get("dateFrom") ?? undefined;
   const dateTo = searchParams.get("dateTo") ?? undefined;
 
@@ -16,8 +17,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
   }
 
-  const where: { userLogin?: string; date?: { gte?: string; lte?: string } } = {};
-  if (userLogin) where.userLogin = userLogin;
+  const where: { userLogin?: string | { in: string[] }; date?: { gte?: string; lte?: string } } = {};
+  if (userLogin) where.userLogin = { in: getLoginVariants(userLogin) };
   if (dateFrom) where.date = { ...where.date, gte: dateFrom };
   if (dateTo) where.date = { ...where.date, lte: dateTo };
 
@@ -25,7 +26,13 @@ export async function GET(request: NextRequest) {
     where,
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
-  return NextResponse.json(list);
+  return NextResponse.json(
+    list.map((item) => ({
+      ...item,
+      userLogin: canonicalizeLogin(item.userLogin),
+      createdByLogin: canonicalizeLogin(item.createdByLogin),
+    }))
+  );
 }
 
 /** POST: владелец создаёт бонус или штраф. Body: { userLogin, date, amountCents, type, comment? } type: bonus | penalty_manual */
@@ -37,7 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const userLogin = typeof body.userLogin === "string" ? body.userLogin.trim() : "";
+  const userLogin = typeof body.userLogin === "string" ? canonicalizeLogin(body.userLogin) : "";
   const date = typeof body.date === "string" ? body.date.trim() : "";
   const amountCents = typeof body.amountCents === "number" ? body.amountCents : Number(body.amountCents);
   const type = (body.type === "penalty_manual" || body.type === "bonus") ? body.type : "bonus";

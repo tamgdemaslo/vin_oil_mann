@@ -45,8 +45,8 @@ export default function AppHeader() {
       try {
         const [sessionRes, shiftRes, cashRes] = await Promise.all([
           fetch("/api/auth/session"),
-          fetch("/api/shifts/current"),
-          fetch("/api/cash"),
+          fetch("/api/shifts/current", { cache: "no-store" }),
+          fetch("/api/cash", { cache: "no-store" }),
         ]);
         const sessionRaw = await safeReadJson<{ user?: User }>(sessionRes);
         const sessionData = sessionRaw ?? { user: undefined };
@@ -128,6 +128,12 @@ export default function AppHeader() {
               href: "/shipment/new",
               label: "Новая отгрузка",
               description: "Создание новой отгрузки.",
+              disabled: locked,
+            },
+            {
+              href: "/operations/supply",
+              label: "Приёмка",
+              description: "Поступление товаров, поставщик, склад и позиции.",
               disabled: locked,
             },
             {
@@ -409,23 +415,17 @@ export default function AppHeader() {
                     Аналитика клиентов
                   </Link>
                 )}
-                {locked ? (
-                  <div className="rounded-lg px-3 py-2 text-sm text-zinc-400 dark:text-zinc-600">
-                    Кабинет
-                  </div>
-                ) : (
-                  <Link
-                    href="/cabinet"
-                    onClick={() => setProfileOpen(false)}
-                    className={`block rounded-lg px-3 py-2 text-sm transition ${
-                      isActivePath(pathname, "/cabinet")
-                        ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                        : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    Кабинет
-                  </Link>
-                )}
+                <Link
+                  href="/cabinet"
+                  onClick={() => setProfileOpen(false)}
+                  className={`block rounded-lg px-3 py-2 text-sm transition ${
+                    isActivePath(pathname, "/cabinet")
+                      ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                      : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  Кабинет
+                </Link>
                 <button
                   type="button"
                   onClick={handleLogout}

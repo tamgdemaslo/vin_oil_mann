@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
 import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
 import { moyskladFetch } from "@/lib/moysklad";
+import { toMoyskladMomentString } from "@/lib/time";
 
 type AttributeMeta = { id: string; name: string; type: string; meta: { href: string; type: string; mediaType: string } };
 
@@ -34,7 +35,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const positionsWithAssortment = loaded.data.positions.filter((p) => p.assortmentMeta?.href);
 
-  const moment = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const moment = toMoyskladMomentString();
 
   const body: CreateDemandBody = {
     organization: { meta: orgM },

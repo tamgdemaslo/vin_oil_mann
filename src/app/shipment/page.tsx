@@ -1,7 +1,17 @@
 import Link from "next/link";
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import { moyskladFetch } from "@/lib/moysklad";
+import {
+  listRawPhonesFromCounterparty,
+  normalizePhoneKey,
+  type CounterpartyPhoneSource,
+} from "@/lib/phone-normalize";
 import { ShipmentRowActions } from "./ShipmentRowActions";
+
+type DemandAgent = {
+  name?: string;
+  meta?: { href?: string };
+} & NonNullable<CounterpartyPhoneSource>;
 
 type DemandRow = {
   id: string;
@@ -10,7 +20,7 @@ type DemandRow = {
   applicable: boolean;
   sum: number;
   description?: string;
-  agent?: { name?: string };
+  agent?: DemandAgent;
   organization?: { name?: string };
   store?: { name?: string };
   meta?: { href?: string };
@@ -22,7 +32,7 @@ type ListOk = {
   rows: DemandRow[];
 };
 
-const DEMAND_EXPAND = "agent,organization,store,attributes";
+const DEMAND_EXPAND = "agent,agent.contactpersons,organization,store,attributes";
 
 function rubles(sumKopecks: number): string {
   const v = (sumKopecks || 0) / 100;
@@ -30,7 +40,24 @@ function rubles(sumKopecks: number): string {
 }
 
 function normalizePlate(s: string): string {
-  return s.replace(/\s/g, "").toUpperCase();
+  const lookalikes: Record<string, string> = {
+    А: "A",
+    В: "B",
+    Е: "E",
+    К: "K",
+    М: "M",
+    Н: "H",
+    О: "O",
+    Р: "P",
+    С: "C",
+    Т: "T",
+    У: "Y",
+    Х: "X",
+  };
+  return s
+    .toUpperCase()
+    .replace(/[АВЕКМНОРСТУХ]/g, (ch) => lookalikes[ch] ?? ch)
+    .replace(/[^A-ZА-ЯЁ0-9]/g, "");
 }
 
 function getEcoUserName(row: DemandRow): string | undefined {
@@ -44,6 +71,11 @@ function getEcoUserName(row: DemandRow): string | undefined {
   return String(v);
 }
 
+function isPlateAttributeName(name: string | undefined): boolean {
+  const n = (name ?? "").toLowerCase();
+  return /гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n);
+}
+
 function getPlateDisplay(row: DemandRow): string {
   const attrs = row.attributes ?? [];
   const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
@@ -53,8 +85,7 @@ function getPlateDisplay(row: DemandRow): string {
     if (v !== undefined && v !== null && v !== "") return String(v);
   }
   for (const a of attrs) {
-    const n = (a.name ?? "").toLowerCase();
-    if (/гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n)) {
+    if (isPlateAttributeName(a.name)) {
       const v = a.value;
       if (v !== undefined && v !== null && v !== "") return String(v);
     }
@@ -88,21 +119,23 @@ function counterpartyHaystack(row: DemandRow): string {
   return parts.join(" ").toLowerCase();
 }
 
-/** Только комментарий и доп. поля — без номера документа, чтобы «332» в гос. номере не ловило «00332». */
-function plateHaystackStrict(row: DemandRow): string {
+/** Только доп. поля госномера — без номера документа и прочих атрибутов, чтобы «735» не ловило чужие значения. */
+function plateHaystack(row: DemandRow): string {
   const parts: string[] = [];
-  if (row.description) parts.push(row.description);
+  const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
   for (const a of row.attributes ?? []) {
-    parts.push(String(a.value ?? ""));
+    if ((attrId && a.id === attrId) || isPlateAttributeName(a.name)) {
+      parts.push(String(a.value ?? ""));
+    }
   }
-  return parts.join(" ").replace(/\s/g, "").toUpperCase();
+  return normalizePlate(parts.join(" "));
 }
 
 function matchesPlate(row: DemandRow, plateNorm: string): boolean {
   if (!plateNorm) return true;
   const display = getPlateDisplay(row);
   if (display !== "—" && normalizePlate(display).includes(plateNorm)) return true;
-  return plateHaystackStrict(row).includes(plateNorm);
+  return plateHaystack(row).includes(plateNorm);
 }
 
 function matchesCounterparty(row: DemandRow, q: string): boolean {
@@ -118,12 +151,75 @@ function matchesDocSearch(row: DemandRow, q: string): boolean {
   return name.includes(s) || desc.includes(s);
 }
 
+function phoneKeyVariants(phoneKey: string): string[] {
+  const variants = new Set([phoneKey]);
+  if (/^7\d{10}$/.test(phoneKey)) variants.add(`8${phoneKey.slice(1)}`);
+  if (/^8\d{10}$/.test(phoneKey)) variants.add(`7${phoneKey.slice(1)}`);
+  if (phoneKey.length >= 10) variants.add(phoneKey.slice(-10));
+  return [...variants];
+}
+
+function rawTextMatchesPhone(value: unknown, phoneKey: string): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  if (normalizePhoneKey(raw) === phoneKey) return true;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return false;
+  return phoneKeyVariants(phoneKey).some((variant) => digits.includes(variant));
+}
+
+function matchesPhone(row: DemandRow, phoneKey: string): boolean {
+  if (!phoneKey) return true;
+  const candidates: unknown[] = [...listRawPhonesFromCounterparty(row.agent)];
+  if (row.description) candidates.push(row.description);
+  for (const a of row.attributes ?? []) {
+    const label = (a.name ?? "").toLowerCase();
+    if (/телефон|phone|контакт/i.test(label)) candidates.push(a.value);
+  }
+  return candidates.some((value) => rawTextMatchesPhone(value, phoneKey));
+}
+
 function dedupeDemands(rows: DemandRow[]): DemandRow[] {
   const map = new Map<string, DemandRow>();
   for (const r of rows) {
     if (!map.has(r.id)) map.set(r.id, r);
   }
   return [...map.values()].sort((a, b) => String(b.moment).localeCompare(String(a.moment)));
+}
+
+async function collectRecentDemands(maxRows: number): Promise<{ ok: true; rows: DemandRow[] } | { ok: false; error: string }> {
+  const out: DemandRow[] = [];
+  const pageSize = 100;
+
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const limit = Math.min(pageSize, maxRows - offset);
+    const res = await moyskladFetch<ListOk>(
+      `/entity/demand?limit=${limit}&offset=${offset}&order=moment,desc&expand=${DEMAND_EXPAND}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return res;
+    out.push(...(res.data.rows ?? []));
+    if ((res.data.rows?.length ?? 0) < limit || offset + limit >= res.data.meta.size) break;
+  }
+
+  return { ok: true, rows: dedupeDemands(out) };
+}
+
+async function collectDemandsByPlate(plate: string): Promise<{ ok: true; rows: DemandRow[] } | { ok: false; error: string }> {
+  const out: DemandRow[] = [];
+
+  const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
+    `/entity/demand?search=${encodeURIComponent(plate)}&limit=450&order=moment,desc&expand=${DEMAND_EXPAND}`,
+    { cache: "no-store" }
+  );
+  if (bySearch.ok) out.push(...(bySearch.data.rows ?? []));
+
+  const scanLimit = Math.max(100, parseInt(process.env.MOYSKLAD_PLATE_SEARCH_SCAN_LIMIT ?? "1200", 10) || 1200);
+  const recent = await collectRecentDemands(scanLimit);
+  if (!recent.ok && !bySearch.ok) return recent;
+  if (recent.ok) out.push(...recent.rows);
+
+  return { ok: true, rows: dedupeDemands(out) };
 }
 
 async function collectDemandsByCounterparty(counterparty: string): Promise<DemandRow[]> {
@@ -166,20 +262,44 @@ async function collectDemandsByCounterparty(counterparty: string): Promise<Deman
   return dedupeDemands(out).filter((r) => matchesCounterparty(r, counterparty));
 }
 
+async function collectDemandsByPhone(phone: string): Promise<DemandRow[]> {
+  const phoneKey = normalizePhoneKey(phone);
+  if (!phoneKey) return [];
+
+  const out: DemandRow[] = [];
+  const searchTerms = [...new Set([phone.trim(), phoneKey, phoneKey.slice(-10)].filter(Boolean))];
+  for (const term of searchTerms) {
+    const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
+      `/entity/demand?search=${encodeURIComponent(term)}&limit=300&order=moment,desc&expand=${DEMAND_EXPAND}`,
+      { cache: "no-store" }
+    );
+    if (bySearch.ok) out.push(...(bySearch.data.rows ?? []));
+  }
+
+  const scanLimit = Math.max(100, parseInt(process.env.MOYSKLAD_PHONE_SEARCH_SCAN_LIMIT ?? "1200", 10) || 1200);
+  const recent = await collectRecentDemands(scanLimit);
+  if (recent.ok) out.push(...recent.rows);
+
+  return dedupeDemands(out).filter((r) => matchesPhone(r, phoneKey));
+}
+
 async function loadShipmentList(opts: {
   search: string;
   counterparty: string;
   plate: string;
+  phone: string;
   offset: number;
   limit: number;
 }): Promise<{ ok: true; data: ListOk } | { ok: false; error: string }> {
-  const { search, counterparty, plate, offset, limit } = opts;
+  const { search, counterparty, plate, phone, offset, limit } = opts;
   const hasCp = counterparty.length > 0;
   const hasPlate = plate.length > 0;
+  const hasPhone = phone.length > 0;
   const hasDoc = search.length > 0;
   const plateNorm = hasPlate ? normalizePlate(plate) : "";
+  const phoneKey = hasPhone ? normalizePhoneKey(phone) : null;
 
-  if (!hasCp && !hasPlate) {
+  if (!hasCp && !hasPlate && !hasPhone) {
     const qs = new URLSearchParams();
     qs.set("limit", String(limit));
     qs.set("offset", String(offset));
@@ -191,14 +311,14 @@ async function loadShipmentList(opts: {
   }
 
   let pool: DemandRow[] = [];
-  if (hasCp) {
+  if (hasPhone) {
+    pool = phoneKey ? await collectDemandsByPhone(phone) : [];
+  } else if (hasCp) {
     pool = await collectDemandsByCounterparty(counterparty);
   } else {
-    const res = await moyskladFetch<{ rows: DemandRow[] }>(
-      `/entity/demand?search=${encodeURIComponent(plate)}&limit=450&order=moment,desc&expand=${DEMAND_EXPAND}`
-    );
+    const res = await collectDemandsByPlate(plate);
     if (!res.ok) return res;
-    pool = res.data.rows ?? [];
+    pool = res.rows;
   }
 
   if (hasPlate) {
@@ -206,6 +326,9 @@ async function loadShipmentList(opts: {
   }
   if (hasCp) {
     pool = pool.filter((r) => matchesCounterparty(r, counterparty));
+  }
+  if (hasPhone && phoneKey) {
+    pool = pool.filter((r) => matchesPhone(r, phoneKey));
   }
   if (hasDoc) {
     pool = pool.filter((r) => matchesDocSearch(r, search));
@@ -222,11 +345,12 @@ async function loadShipmentList(opts: {
   };
 }
 
-function listQuery(search: string, counterparty: string, plate: string, offset: number): string {
+function listQuery(search: string, counterparty: string, plate: string, phone: string, offset: number): string {
   const p = new URLSearchParams();
   if (search) p.set("search", search);
   if (counterparty) p.set("counterparty", counterparty);
   if (plate) p.set("plate", plate);
+  if (phone) p.set("phone", phone);
   if (offset > 0) p.set("offset", String(offset));
   const s = p.toString();
   return s ? `?${s}` : "";
@@ -235,7 +359,7 @@ function listQuery(search: string, counterparty: string, plate: string, offset: 
 export default async function ShipmentListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; counterparty?: string; plate?: string; offset?: string }>;
+  searchParams: Promise<{ search?: string; counterparty?: string; plate?: string; phone?: string; offset?: string }>;
 }) {
   await requireActiveShiftAccess("/shipment");
 
@@ -243,10 +367,11 @@ export default async function ShipmentListPage({
   const search = (sp.search ?? "").trim();
   const counterparty = (sp.counterparty ?? "").trim();
   const plate = (sp.plate ?? "").trim();
+  const phone = (sp.phone ?? "").trim();
   const offset = Math.max(0, parseInt(sp.offset ?? "0", 10) || 0);
   const limit = 50;
 
-  const result = await loadShipmentList({ search, counterparty, plate, offset, limit });
+  const result = await loadShipmentList({ search, counterparty, plate, phone, offset, limit });
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -266,7 +391,7 @@ export default async function ShipmentListPage({
       </div>
 
       <form action="/shipment" method="GET" className="mb-4 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <input
             name="search"
             defaultValue={search}
@@ -285,6 +410,12 @@ export default async function ShipmentListPage({
             placeholder="Гос. номер ТС (не номер отгрузки)…"
             className="rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm uppercase outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
           />
+          <input
+            name="phone"
+            defaultValue={phone}
+            placeholder="Телефон клиента…"
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
+          />
         </div>
         <div className="flex gap-2">
           <button
@@ -293,7 +424,7 @@ export default async function ShipmentListPage({
           >
             Найти
           </button>
-          {(search || counterparty || plate || offset > 0) && (
+          {(search || counterparty || plate || phone || offset > 0) && (
             <Link
               href="/shipment"
               className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
@@ -374,7 +505,7 @@ export default async function ShipmentListPage({
             </div>
             <div className="flex gap-2">
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, Math.max(0, offset - limit))}`}
+                href={`/shipment${listQuery(search, counterparty, plate, phone, Math.max(0, offset - limit))}`}
                 className={`rounded-lg border px-3 py-1.5 ${
                   offset <= 0
                     ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"
@@ -384,7 +515,7 @@ export default async function ShipmentListPage({
                 ← Назад
               </Link>
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, offset + limit)}`}
+                href={`/shipment${listQuery(search, counterparty, plate, phone, offset + limit)}`}
                 className={`rounded-lg border px-3 py-1.5 ${
                   offset + limit >= result.data.meta.size
                     ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"

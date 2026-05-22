@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
 import { moyskladFetch } from "@/lib/moysklad";
+import { warmMoySkladLookupCaches } from "@/lib/moysklad-lookup-warmup";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -19,6 +20,10 @@ type DemandRow = {
   meta: { href: string };
   attributes?: { id?: string; name?: string; value?: unknown }[];
 } & Record<string, unknown>;
+
+function getAttributeList(data: { rows?: AttributeMeta[] } | AttributeMeta[]): AttributeMeta[] {
+  return Array.isArray(data) ? data : Array.isArray(data.rows) ? data.rows : [];
+}
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -48,8 +53,7 @@ export async function GET(request: NextRequest) {
   );
   let ecoAttrId: string | null = null;
   if (metaRes.ok) {
-    const d: any = metaRes.data;
-    const list: AttributeMeta[] = Array.isArray(d) ? d : Array.isArray(d?.rows) ? d.rows : [];
+    const list = getAttributeList(metaRes.data);
     const found = list.find(
       (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
     );
@@ -104,8 +108,7 @@ export async function POST(request: NextRequest) {
       { cache: "no-store" }
     );
     if (metaRes.ok) {
-      const d: any = metaRes.data;
-      const list: AttributeMeta[] = Array.isArray(d) ? d : Array.isArray(d?.rows) ? d.rows : [];
+      const list = getAttributeList(metaRes.data);
       const ecoAttr = list.find(
         (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
       );
@@ -136,10 +139,11 @@ export async function POST(request: NextRequest) {
   );
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
 
+  warmMoySkladLookupCaches("demand-created");
+
   return NextResponse.json({
     id: result.data.id,
     name: result.data.name,
     href: result.data.meta?.href,
   });
 }
-

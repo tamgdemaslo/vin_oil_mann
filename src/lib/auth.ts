@@ -7,7 +7,15 @@ const SESSION_SECRET = process.env.SESSION_SECRET ?? "eco-platform-secret-change
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const AUTH_SALT = process.env.AUTH_SALT ?? "eco-salt";
 const DEFAULT_AUTH_USERS =
-  "ilya:1111:Илья:owner,denis:2222:Денис:owner,alexandr:3333:Вадим:admin,maksim:4444:Максим:master";
+  "ilya:1111:Илья:owner,denis:2222:Денис:owner,vadim:3333:Вадим:admin,maksim:4444:Максим:master";
+
+const LEGACY_LOGIN_ALIASES: Record<string, string> = {
+  alexandr: "vadim",
+};
+
+const CANONICAL_LOGIN_NAMES: Record<string, string> = {
+  vadim: "Вадим",
+};
 
 export type UserRole = "owner" | "admin" | "master";
 
@@ -58,10 +66,33 @@ function normalizeRole(value?: string): UserRole {
 
 type EnvUser = { login: string; name: string; passwordHash: string; role: UserRole };
 
+function normalizeLoginKey(login: string): string {
+  return login.trim().toLowerCase();
+}
+
+export function canonicalizeLogin(login: string): string {
+  const trimmed = login.trim();
+  return LEGACY_LOGIN_ALIASES[normalizeLoginKey(trimmed)] ?? trimmed;
+}
+
+export function getLoginVariants(login: string): string[] {
+  const normalized = normalizeLoginKey(login);
+  const canonical = canonicalizeLogin(login);
+  const variants = new Set([canonical]);
+  if (normalized) variants.add(normalized);
+
+  const canonicalKey = normalizeLoginKey(canonical);
+  for (const [legacy, target] of Object.entries(LEGACY_LOGIN_ALIASES)) {
+    if (normalizeLoginKey(target) === canonicalKey) variants.add(legacy);
+  }
+
+  return [...variants].filter(Boolean);
+}
+
 async function getPasswordOverrides(): Promise<Map<string, string>> {
   try {
     const rows = await prisma.authPassword.findMany();
-    return new Map(rows.map((row) => [row.login.trim().toLowerCase(), row.passwordHash]));
+    return new Map(rows.map((row) => [normalizeLoginKey(row.login), row.passwordHash]));
   } catch {
     return new Map();
   }
@@ -77,16 +108,25 @@ export async function getUsersFromEnv(): Promise<EnvUser[]> {
     const parts = line.split(":");
     if (parts.length >= 2) {
       const [rawLogin, rawPassword, rawName, rawRole] = parts;
-      const login = (rawLogin ?? "").trim();
+      const originalLogin = (rawLogin ?? "").trim();
+      const login = canonicalizeLogin(originalLogin);
       const password = (rawPassword ?? "").trim();
-      const name = (rawName ?? "").trim() || login;
+      const configuredName = (rawName ?? "").trim();
+      const name = CANONICAL_LOGIN_NAMES[normalizeLoginKey(login)] || configuredName || login;
       if (login && password) {
         const role = normalizeRole(rawRole);
+        const passwordHash =
+          getLoginVariants(login)
+            .map((variant) => passwordOverrides.get(normalizeLoginKey(variant)))
+            .find((hash): hash is string => Boolean(hash)) ??
+          passwordOverrides.get(normalizeLoginKey(originalLogin)) ??
+          hashPassword(password, AUTH_SALT);
+        if (users.some((user) => normalizeLoginKey(user.login) === normalizeLoginKey(login))) continue;
         users.push({
           login,
           name,
           role,
-          passwordHash: passwordOverrides.get(login.toLowerCase()) ?? hashPassword(password, AUTH_SALT),
+          passwordHash,
         });
       }
     }
@@ -101,16 +141,18 @@ export async function getPublicUsers(): Promise<User[]> {
 
 export async function verifyUser(login: string, password: string): Promise<User | null> {
   const users = await getUsersFromEnv();
+  const canonicalLogin = canonicalizeLogin(login);
   const hash = hashPassword(password, AUTH_SALT);
-  const u = users.find((x) => x.login === login && x.passwordHash === hash);
+  const u = users.find((x) => normalizeLoginKey(x.login) === normalizeLoginKey(canonicalLogin) && x.passwordHash === hash);
   return u ? { login: u.login, name: u.name, role: u.role } : null;
 }
 
 export async function setUserPassword(login: string, password: string): Promise<void> {
+  const canonicalLogin = canonicalizeLogin(login);
   await prisma.authPassword.upsert({
-    where: { login },
+    where: { login: canonicalLogin },
     update: { passwordHash: hashPassword(password, AUTH_SALT) },
-    create: { login, passwordHash: hashPassword(password, AUTH_SALT) },
+    create: { login: canonicalLogin, passwordHash: hashPassword(password, AUTH_SALT) },
   });
 }
 
@@ -132,8 +174,11 @@ export async function getSession(): Promise<{ user: User } | null> {
   if (!payload?.login || !payload?.name || typeof payload.exp !== "number") return null;
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp < now) return null;
-  const role = normalizeRole(payload.role);
-  return { user: { login: payload.login, name: payload.name, role } };
+  const login = canonicalizeLogin(payload.login);
+  const users = await getUsersFromEnv();
+  const user = users.find((x) => normalizeLoginKey(x.login) === normalizeLoginKey(login));
+  const role = normalizeRole(user?.role ?? payload.role);
+  return { user: { login: user?.login ?? login, name: user?.name ?? payload.name, role } };
 }
 
 export async function createSession(user: User): Promise<string> {

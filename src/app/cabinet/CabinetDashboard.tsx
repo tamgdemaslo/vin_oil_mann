@@ -9,10 +9,10 @@ export default function CabinetDashboard() {
         <div className="mb-5">
           <h2 className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">Смена пароля</h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Обновите пароль для входа в систему.
+            Обновите 4-значный пароль для входа в систему.
           </p>
         </div>
-          <PasswordChangeCard />
+        <PasswordChangeCard />
       </section>
     </main>
   );

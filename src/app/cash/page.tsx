@@ -87,6 +87,14 @@ type FlowSectionProps = {
   tone?: "default" | "danger";
 };
 
+const SHIFT_EVENT = "eco-shift-changed";
+
+function notifyShiftChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SHIFT_EVENT));
+  }
+}
+
 function FlowSection({
   id,
   eyebrow,
@@ -128,6 +136,22 @@ function getServiceDateForTimezone(timezone?: string): string {
   }
 }
 
+async function safeJson<T = unknown>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function errorFromJson(data: unknown, fallback: string): string {
+  if (data && typeof data === "object") {
+    const error = (data as { error?: unknown }).error;
+    if (typeof error === "string" && error.trim()) return error;
+  }
+  return fallback;
+}
+
 export default function CashPage() {
   const router = useRouter();
   const [user, setUser] = useState<User>(null);
@@ -160,6 +184,7 @@ export default function CashPage() {
   const [selectedExpenseCounterparty, setSelectedExpenseCounterparty] =
     useState<ReferenceOption | null>(null);
   const [expenseRefsLoading, setExpenseRefsLoading] = useState(false);
+  const [expenseRefsError, setExpenseRefsError] = useState<string | null>(null);
   const [counterpartyLoading, setCounterpartyLoading] = useState(false);
 
   const [cashouts, setCashouts] = useState<CashoutRecord[]>([]);
@@ -167,6 +192,7 @@ export default function CashPage() {
   const [cashoutsOffset, setCashoutsOffset] = useState(0);
   const [cashoutSearch, setCashoutSearch] = useState("");
   const [cashoutsLoading, setCashoutsLoading] = useState(false);
+  const [cashoutsError, setCashoutsError] = useState<string | null>(null);
 
   const cashoutsLimit = 50;
 
@@ -217,16 +243,21 @@ export default function CashPage() {
 
   const loadCounterparties = useCallback(async (search = "") => {
     setCounterpartyLoading(true);
+    setExpenseRefsError(null);
     try {
       const params = new URLSearchParams({ limit: "20" });
       if (search.trim()) params.set("search", search.trim());
       const res = await fetch(`/api/moysklad/counterparties?${params.toString()}`, {
         cache: "no-store",
       });
-      const data = await res.json();
+      const data = await safeJson<{ counterparties?: ReferenceOption[]; error?: string }>(res);
       if (res.ok) {
-        setExpenseCounterpartyOptions(Array.isArray(data.counterparties) ? data.counterparties : []);
+        setExpenseCounterpartyOptions(Array.isArray(data?.counterparties) ? data.counterparties : []);
+      } else {
+        setExpenseRefsError(errorFromJson(data, "Ошибка загрузки контрагентов"));
       }
+    } catch (e) {
+      setExpenseRefsError(e instanceof Error ? e.message : "Ошибка загрузки контрагентов");
     } finally {
       setCounterpartyLoading(false);
     }
@@ -235,6 +266,7 @@ export default function CashPage() {
   const loadCashouts = useCallback(async () => {
     if (!hasCashAccess) return;
     setCashoutsLoading(true);
+    setCashoutsError(null);
     try {
       const params = new URLSearchParams({
         limit: String(cashoutsLimit),
@@ -242,15 +274,19 @@ export default function CashPage() {
       });
       if (cashoutSearch.trim()) params.set("search", cashoutSearch.trim());
       const res = await fetch(`/api/moysklad/cashouts?${params.toString()}`, { cache: "no-store" });
-      const data = await res.json();
+      const data = await safeJson<{
+        cashouts?: CashoutRecord[];
+        meta?: { size?: number };
+        error?: string;
+      }>(res);
       if (res.ok) {
-        setCashouts(Array.isArray(data.cashouts) ? data.cashouts : []);
-        setCashoutsTotal(typeof data.meta?.size === "number" ? data.meta.size : 0);
+        setCashouts(Array.isArray(data?.cashouts) ? data.cashouts : []);
+        setCashoutsTotal(typeof data?.meta?.size === "number" ? data.meta.size : 0);
       } else {
-        setError(data.error ?? "Ошибка загрузки расходных ордеров");
+        setCashoutsError(errorFromJson(data, "Ошибка загрузки расходных ордеров"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка загрузки расходных ордеров");
+      setCashoutsError(e instanceof Error ? e.message : "Ошибка загрузки расходных ордеров");
     } finally {
       setCashoutsLoading(false);
     }
@@ -259,41 +295,47 @@ export default function CashPage() {
   useEffect(() => {
     if (!hasCashAccess || checkingAuth) return;
     let cancelled = false;
-    async function loadData() {
+    async function loadCashState() {
       setLoading(true);
       setError(null);
-      setExpenseRefsLoading(true);
       try {
-        const [currentRes, historyRes, expenseItemsRes, counterpartiesRes] = await Promise.all([
-          fetch("/api/cash"),
-          fetch("/api/cash?mode=history"),
-          fetch("/api/moysklad/expense-items?limit=1000", { cache: "no-store" }),
-          fetch("/api/moysklad/counterparties?limit=20", { cache: "no-store" }),
+        const [currentResult, historyResult] = await Promise.allSettled([
+          fetch("/api/cash", { cache: "no-store" }),
+          fetch("/api/cash?mode=history", { cache: "no-store" }),
         ]);
-        const currentJson = await currentRes.json();
-        const historyJson = await historyRes.json();
-        const expenseItemsJson = await expenseItemsRes.json();
-        const counterpartiesJson = await counterpartiesRes.json();
         if (cancelled) return;
-        if (!currentRes.ok) {
-          setError(currentJson.error ?? "Ошибка загрузки кассы");
-        } else {
-          setShift(currentJson.shift ?? null);
-          if (currentJson.shift?.timezone) {
-            setExpenseDate(getServiceDateForTimezone(currentJson.shift.timezone));
+
+        if (currentResult.status === "fulfilled") {
+          const currentRes = currentResult.value;
+          const currentJson = await safeJson<{
+            shift?: CashShift | null;
+            operations?: CashOperation[];
+            error?: string;
+          }>(currentRes);
+          if (cancelled) return;
+          if (!currentRes.ok) {
+            setError(errorFromJson(currentJson, "Ошибка загрузки кассы"));
+          } else {
+            setShift(currentJson?.shift ?? null);
+            if (currentJson?.shift?.timezone) {
+              setExpenseDate(getServiceDateForTimezone(currentJson.shift.timezone));
+            }
+            setOperations(Array.isArray(currentJson?.operations) ? currentJson.operations : []);
           }
-          setOperations(currentJson.operations ?? []);
-        }
-        if (historyRes.ok) {
-          setHistoryShifts(historyJson.shifts ?? []);
-        }
-        if (expenseItemsRes.ok) {
-          setExpenseItems(Array.isArray(expenseItemsJson.expenseItems) ? expenseItemsJson.expenseItems : []);
-        }
-        if (counterpartiesRes.ok) {
-          setExpenseCounterpartyOptions(
-            Array.isArray(counterpartiesJson.counterparties) ? counterpartiesJson.counterparties : []
+        } else {
+          setError(
+            currentResult.reason instanceof Error
+              ? currentResult.reason.message
+              : "Ошибка загрузки кассы"
           );
+        }
+
+        if (historyResult.status === "fulfilled") {
+          const historyRes = historyResult.value;
+          const historyJson = await safeJson<{ shifts?: CashShift[] }>(historyRes);
+          if (!cancelled && historyRes.ok) {
+            setHistoryShifts(Array.isArray(historyJson?.shifts) ? historyJson.shifts : []);
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -302,11 +344,75 @@ export default function CashPage() {
       } finally {
         if (!cancelled) {
           setLoading(false);
+        }
+      }
+    }
+
+    async function loadExpenseRefs() {
+      setExpenseRefsLoading(true);
+      setExpenseRefsError(null);
+      try {
+        const [expenseItemsResult, counterpartiesResult] = await Promise.allSettled([
+          fetch("/api/moysklad/expense-items?limit=1000", { cache: "no-store" }),
+          fetch("/api/moysklad/counterparties?limit=20", { cache: "no-store" }),
+        ]);
+        if (cancelled) return;
+
+        if (expenseItemsResult.status === "fulfilled") {
+          const expenseItemsRes = expenseItemsResult.value;
+          const expenseItemsJson = await safeJson<{ expenseItems?: ReferenceOption[]; error?: string }>(
+            expenseItemsRes
+          );
+          if (cancelled) return;
+          if (expenseItemsRes.ok) {
+            setExpenseItems(
+              Array.isArray(expenseItemsJson?.expenseItems) ? expenseItemsJson.expenseItems : []
+            );
+          } else {
+            setExpenseRefsError(errorFromJson(expenseItemsJson, "Ошибка загрузки статей расхода"));
+          }
+        } else {
+          setExpenseRefsError(
+            expenseItemsResult.reason instanceof Error
+              ? expenseItemsResult.reason.message
+              : "Ошибка загрузки статей расхода"
+          );
+        }
+
+        if (counterpartiesResult.status === "fulfilled") {
+          const counterpartiesRes = counterpartiesResult.value;
+          const counterpartiesJson = await safeJson<{
+            counterparties?: ReferenceOption[];
+            error?: string;
+          }>(counterpartiesRes);
+          if (cancelled) return;
+          if (counterpartiesRes.ok) {
+            setExpenseCounterpartyOptions(
+              Array.isArray(counterpartiesJson?.counterparties) ? counterpartiesJson.counterparties : []
+            );
+          } else {
+            setExpenseRefsError(errorFromJson(counterpartiesJson, "Ошибка загрузки контрагентов"));
+          }
+        } else {
+          setExpenseRefsError(
+            counterpartiesResult.reason instanceof Error
+              ? counterpartiesResult.reason.message
+              : "Ошибка загрузки контрагентов"
+          );
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setExpenseRefsError(e instanceof Error ? e.message : "Ошибка загрузки справочников МойСклад");
+        }
+      } finally {
+        if (!cancelled) {
           setExpenseRefsLoading(false);
         }
       }
     }
-    loadData();
+
+    void loadCashState();
+    void loadExpenseRefs();
     return () => {
       cancelled = true;
     };
@@ -392,6 +498,7 @@ export default function CashPage() {
       setShift(data.shift ?? null);
       setOperations(data.operations ?? []);
       setOpeningCashInput("");
+      notifyShiftChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети при открытии смены");
     } finally {
@@ -549,6 +656,7 @@ export default function CashPage() {
       }
       setShift(data.shift ?? null);
       setOperations(data.operations ?? []);
+      notifyShiftChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети при закрытии смены");
     } finally {
@@ -973,6 +1081,11 @@ export default function CashPage() {
                 <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
                   Расходный ордер
                 </h2>
+                {expenseRefsError && (
+                  <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    Справочники МойСклад не загрузились: {expenseRefsError}
+                  </p>
+                )}
                 <div className="space-y-3">
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div>
@@ -1469,11 +1582,23 @@ export default function CashPage() {
           </div>
         </div>
         {cashouts.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {cashoutsLoading ? "Загрузка ордеров…" : "Расходных ордеров пока нет."}
-          </p>
+          <>
+            {cashoutsError && (
+              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Расходные ордера МойСклад не загрузились: {cashoutsError}
+              </p>
+            )}
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {cashoutsLoading ? "Загрузка ордеров…" : "Расходных ордеров пока нет."}
+            </p>
+          </>
         ) : (
           <>
+            {cashoutsError && (
+              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Расходные ордера МойСклад не обновились: {cashoutsError}
+              </p>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -1867,4 +1992,3 @@ export default function CashPage() {
     </div>
   );
 }
-

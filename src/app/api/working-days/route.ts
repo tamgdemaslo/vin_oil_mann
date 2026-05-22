@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logChange } from "@/lib/change-log";
 
@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const userLogin = searchParams.get("user") ?? (session.user.role === "owner" ? undefined : session.user.login);
+  const requestedUserLogin = searchParams.get("user") ?? (session.user.role === "owner" ? undefined : session.user.login);
+  const userLogin = requestedUserLogin ? canonicalizeLogin(requestedUserLogin) : undefined;
   const dateFrom = searchParams.get("dateFrom") ?? undefined;
   const dateTo = searchParams.get("dateTo") ?? undefined;
 
@@ -17,13 +18,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
   }
 
-  const where: { userLogin?: string; date?: { gte?: string; lte?: string } } = {};
-  if (userLogin) where.userLogin = userLogin;
+  const where: { userLogin?: string | { in: string[] }; date?: { gte?: string; lte?: string } } = {};
+  if (userLogin) where.userLogin = { in: getLoginVariants(userLogin) };
   if (dateFrom) where.date = { ...where.date, gte: dateFrom };
   if (dateTo) where.date = { ...where.date, lte: dateTo };
 
-  const shiftWhere: { userLogin?: string; shiftDate?: { gte?: string; lte?: string } } = {};
-  if (userLogin) shiftWhere.userLogin = userLogin;
+  const shiftWhere: { userLogin?: string | { in: string[] }; shiftDate?: { gte?: string; lte?: string } } = {};
+  if (userLogin) shiftWhere.userLogin = { in: getLoginVariants(userLogin) };
   if (dateFrom) shiftWhere.shiftDate = { ...shiftWhere.shiftDate, gte: dateFrom };
   if (dateTo) shiftWhere.shiftDate = { ...shiftWhere.shiftDate, lte: dateTo };
 
@@ -52,18 +53,20 @@ export async function GET(request: NextRequest) {
   >();
 
   for (const row of scheduledDays) {
-    merged.set(`${row.userLogin}:${row.date}`, {
+    const rowUserLogin = canonicalizeLogin(row.userLogin);
+    merged.set(`${rowUserLogin}:${row.date}`, {
       id: row.id,
-      userLogin: row.userLogin,
+      userLogin: rowUserLogin,
       date: row.date,
-      createdByLogin: row.createdByLogin,
+      createdByLogin: canonicalizeLogin(row.createdByLogin),
       source: "scheduled",
       removable: true,
     });
   }
 
   for (const shift of shifts) {
-    const key = `${shift.userLogin}:${shift.shiftDate}`;
+    const shiftUserLogin = canonicalizeLogin(shift.userLogin);
+    const key = `${shiftUserLogin}:${shift.shiftDate}`;
     const existing = merged.get(key);
     if (existing) {
       merged.set(key, { ...existing, source: "both" });
@@ -71,7 +74,7 @@ export async function GET(request: NextRequest) {
     }
     merged.set(key, {
       id: `actual:${shift.id}`,
-      userLogin: shift.userLogin,
+      userLogin: shiftUserLogin,
       date: shift.shiftDate,
       createdByLogin: "system",
       source: "actual",
@@ -92,7 +95,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const userLogin = typeof body.userLogin === "string" ? body.userLogin.trim() : "";
+  const userLogin = typeof body.userLogin === "string" ? canonicalizeLogin(body.userLogin) : "";
   const date = typeof body.date === "string" ? body.date.trim() : "";
   const dateFrom = typeof body.dateFrom === "string" ? body.dateFrom.trim() : "";
   const dateTo = typeof body.dateTo === "string" ? body.dateTo.trim() : "";
@@ -120,17 +123,20 @@ export async function POST(request: NextRequest) {
   const created: { id: string; userLogin: string; date: string }[] = [];
   for (const d of toAdd) {
     try {
-      const row = await prisma.scheduledWorkingDay.upsert({
-        where: { userLogin_date: { userLogin, date: d } },
-        create: { userLogin, date: d, createdByLogin: session.user.login },
-        update: {},
+      const existing = await prisma.scheduledWorkingDay.findFirst({
+        where: { userLogin: { in: getLoginVariants(userLogin) }, date: d },
       });
-      created.push({ id: row.id, userLogin: row.userLogin, date: row.date });
+      const row =
+        existing ??
+        (await prisma.scheduledWorkingDay.create({
+          data: { userLogin, date: d, createdByLogin: session.user.login },
+        }));
+      created.push({ id: row.id, userLogin: canonicalizeLogin(row.userLogin), date: row.date });
       await logChange({
         entityType: "scheduled_working_day",
         entityId: row.id,
         action: "create",
-        newValue: { userLogin: row.userLogin, date: row.date },
+        newValue: { userLogin: canonicalizeLogin(row.userLogin), date: row.date },
         performedByLogin: session.user.login,
       });
     } catch {

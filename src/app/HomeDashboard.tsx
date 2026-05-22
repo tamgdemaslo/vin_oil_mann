@@ -124,11 +124,11 @@ export default function HomeDashboard({
           dateTo: monthRange.dateTo,
         });
         const [shiftRes, payrollRes, shiftsRes, bonusesRes, cashRes] = await Promise.all([
-          fetch("/api/shifts/current"),
+          fetch("/api/shifts/current", { cache: "no-store" }),
           fetch(`/api/payroll?${params.toString()}`),
-          fetch("/api/shifts"),
+          fetch("/api/shifts", { cache: "no-store" }),
           fetch(`/api/bonus-penalties?${params.toString()}`),
-          fetch("/api/cash"),
+          fetch("/api/cash", { cache: "no-store" }),
         ]);
 
         if (cancelled) return;

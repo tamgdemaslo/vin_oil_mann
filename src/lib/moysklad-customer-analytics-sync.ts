@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { documentProfitFromComputedPositions } from "@/lib/customer-analytics-profit";
 import { prisma } from "@/lib/db";
-import { getMoySkladHeaders, moyskladFetch } from "@/lib/moysklad";
+import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import { listRawPhonesFromCounterparty, pickNormalizedPhoneFromCounterparty } from "@/lib/phone-normalize";
 
@@ -191,21 +191,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isTransientMoySkladError(error: string): boolean {
-  const lower = error.toLowerCase();
-  return (
-    lower.includes("таймаут") ||
-    lower.includes("fetch failed") ||
-    lower.includes("abort") ||
-    lower.includes("econnreset") ||
-    lower.includes("socket") ||
-    lower.includes("network") ||
-    lower.includes("502") ||
-    lower.includes("503") ||
-    lower.includes("504")
-  );
-}
-
 function isTransientPrismaErrorMessage(error: string): boolean {
   const lower = error.toLowerCase();
   return (
@@ -233,24 +218,6 @@ async function prismaWithRetry<T>(operation: () => Promise<T>, attempts = PRISMA
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
-}
-
-async function moyskladFetchWithRetry<T>(
-  path: string,
-  options: RequestInit | undefined,
-  attempts: number
-): Promise<{ data: T; ok: true } | { error: string; ok: false }> {
-  let lastError = "Ошибка запроса к МойСклад";
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const res = await moyskladFetch<T>(path, options);
-    if (res.ok) return res;
-    lastError = res.error;
-    if (attempt >= attempts - 1 || !isTransientMoySkladError(res.error)) {
-      return { ok: false, error: res.error };
-    }
-    await sleep(800 * (attempt + 1));
-  }
-  return { ok: false, error: lastError };
 }
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>): Promise<R[]> {

@@ -1,14 +1,55 @@
 const APP_TZ = process.env.APP_TIMEZONE ?? "Europe/Moscow";
 
-/** Возвращает локальную дату YYYY-MM-DD для момента dt в часовом поясе приложения */
-export function toLocalDateString(dt: Date): string {
+function getDateTimeParts(dt: Date, timeZone: string): {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+} {
   const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TZ,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
   });
-  return formatter.format(dt);
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(dt)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return {
+    year: parts.year ?? "1970",
+    month: parts.month ?? "01",
+    day: parts.day ?? "01",
+    hour: parts.hour ?? "00",
+    minute: parts.minute ?? "00",
+    second: parts.second ?? "00",
+  };
+}
+
+/** Возвращает локальную дату YYYY-MM-DD для момента dt в часовом поясе приложения */
+export function toLocalDateString(dt: Date): string {
+  const parts = getDateTimeParts(dt, APP_TZ);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/** Возвращает локальные дату и время в формате МойСклад: YYYY-MM-DD HH:mm:ss */
+export function toMoyskladMomentString(dt = new Date()): string {
+  const parts = getDateTimeParts(dt, APP_TZ);
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+/** Возвращает локальные дату и время для AQSI без UTC-сдвига: YYYY-MM-DDTHH:mm:ss */
+export function toAqsiDateTimeString(dt = new Date()): string {
+  return toMoyskladMomentString(dt).replace(" ", "T");
 }
 
 /** Возвращает начало рабочего дня (час, минута) для даты: будни 09:00, выходные 10:00 */

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getSession, getUsersFromEnv } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getShiftRateCents } from "@/lib/shifts";
 import { logChange } from "@/lib/change-log";
@@ -32,7 +31,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rates });
   }
 
-  const targetLogin = login ?? session.user.login;
+  const targetLogin = login ? canonicalizeLogin(login) : session.user.login;
   if (session.user.role !== "owner" && targetLogin !== session.user.login) {
     return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
   }
@@ -51,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const userLogin = typeof body.userLogin === "string" ? body.userLogin.trim() : "";
+  const userLogin = typeof body.userLogin === "string" ? canonicalizeLogin(body.userLogin) : "";
   const amount = typeof body.amountCents === "number" ? body.amountCents : Number(body.amountCents);
   const amountCents = Math.round(amount);
   const effectiveFromRaw =
@@ -68,7 +67,7 @@ export async function POST(request: NextRequest) {
     const monthEnd = getMonthEnd(effectiveFrom);
     const existingInMonth = await prisma.shiftRate.findMany({
       where: {
-        userLogin,
+        userLogin: { in: getLoginVariants(userLogin) },
         effectiveFrom: {
           gte: effectiveFrom,
           lte: monthEnd,
@@ -84,7 +83,7 @@ export async function POST(request: NextRequest) {
       if (monthStartRate) {
         saved = await tx.shiftRate.update({
           where: { id: monthStartRate.id },
-          data: { amountCents },
+          data: { userLogin, amountCents },
         });
       } else {
         saved = await tx.shiftRate.create({
@@ -126,14 +125,14 @@ export async function POST(request: NextRequest) {
   }
 
   const existing = await prisma.shiftRate.findFirst({
-    where: { userLogin, effectiveFrom },
+    where: { userLogin: { in: getLoginVariants(userLogin) }, effectiveFrom },
     orderBy: { effectiveFrom: "desc" },
   });
 
   if (existing) {
     const updated = await prisma.shiftRate.update({
       where: { id: existing.id },
-      data: { amountCents },
+      data: { userLogin, amountCents },
     });
     await logChange({
       entityType: "shift_rate",

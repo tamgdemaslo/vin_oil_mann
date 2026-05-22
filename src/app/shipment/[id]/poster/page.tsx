@@ -24,8 +24,18 @@ const posterShellCss = `
   width: 794px;
   min-height: 1123px;
   margin: 24px auto;
-  background: #f5f2ed;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.poster-order {
+  height: 1123px;
+  margin: 24px auto;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+.poster-avoid-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 @media print {
   /* Иначе Chrome/PDF рисуют «рамку» полей страницы и серые полосы по краям */
@@ -51,6 +61,25 @@ const posterShellCss = `
     min-height: 297mm;
     margin: 0;
     box-shadow: none !important;
+    overflow: visible;
+  }
+  .poster-order {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    height: 297mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    break-after: page;
+    page-break-after: always;
+  }
+  .poster-order:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .poster-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   /* Только страница постера — не конфликтует с /shipment/.../tags (tags-print.css) */
   body:has(#poster-print-mount) > *:not(#poster-print-mount) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -23,8 +24,17 @@ type RecordItem = {
   bookform_id?: number;
   services?: Array<{ id?: number; title?: string }>;
   client?: { display_name?: string; name?: string; phone?: string; email?: string; is_new?: boolean };
-};
+} & Record<string, unknown>;
 type TimeSlot = { time?: string; datetime?: number | string; seance_length?: number; free?: boolean; is_free?: boolean };
+type ShipmentLookupRow = {
+  id: string;
+  name: string;
+  documentDate: string;
+  momentAt: string;
+  sumCents: number;
+  applicable: boolean;
+  agentName?: string;
+};
 type TimelineRecord = {
   id: number;
   staffId: number;
@@ -46,6 +56,33 @@ function toDateInputValue(value: Date) {
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function toDateTimeLocalValue(value: Date) {
+  const date = toDateInputValue(value);
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+  return `${date}T${hours}:${minutes}`;
+}
+
+function parseDateTimeLocal(value: string): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addSecondsToDateTimeLocal(value: string, seconds: number) {
+  const date = parseDateTimeLocal(value);
+  if (!date) return "";
+  return toDateTimeLocalValue(new Date(date.getTime() + seconds * 1000));
+}
+
+function calculateSeanceLengthSeconds(startValue: string, endValue: string): number | null {
+  const start = parseDateTimeLocal(startValue);
+  const end = parseDateTimeLocal(endValue);
+  if (!start || !end) return null;
+  const seconds = Math.round((end.getTime() - start.getTime()) / 1000);
+  return seconds > 0 ? seconds : null;
 }
 
 function normalizePhone(value: string) {
@@ -92,12 +129,31 @@ const RU_MONTHS = [
   "ноябрь",
   "декабрь",
 ];
+const DEFAULT_RECORD_DURATION_SECONDS = 40 * 60;
 
 function resolveStatus(record: RecordItem): { label: string; tone: TimelineRecord["statusTone"] } {
   if (record.attendance === 1) return { label: "Пришел", tone: "green" };
   if (record.attendance === -1) return { label: "Не пришел", tone: "red" };
   if (record.confirmed === 1) return { label: "Подтвержден", tone: "blue" };
   return { label: "Ожидание", tone: "amber" };
+}
+
+function getClientDisplayName(record: RecordItem): string {
+  return record.client?.display_name || record.client?.name || "Клиент";
+}
+
+function formatRubles(sumCents: number): string {
+  return ((sumCents || 0) / 100).toLocaleString("ru-RU", {
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatShipmentDate(value: string): string {
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  }
+  return value || "—";
 }
 
 export default function RecordsPage() {
@@ -120,10 +176,18 @@ export default function RecordsPage() {
   const [clientPhone, setClientPhone] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [datetime, setDatetime] = useState("");
+  const [datetimeEnd, setDatetimeEnd] = useState("");
   const [comment, setComment] = useState("");
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [quickCreateHint, setQuickCreateHint] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isRecordDetailsOpen, setIsRecordDetailsOpen] = useState(false);
+  const [shipmentLookup, setShipmentLookup] = useState<{
+    phone: string;
+    loading: boolean;
+    rows: ShipmentLookupRow[];
+    error: string | null;
+  }>({ phone: "", loading: false, rows: [], error: null });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [editStaffId, setEditStaffId] = useState("");
@@ -132,6 +196,7 @@ export default function RecordsPage() {
   const [editClientPhone, setEditClientPhone] = useState("");
   const [editClientEmail, setEditClientEmail] = useState("");
   const [editDatetime, setEditDatetime] = useState("");
+  const [editDatetimeEnd, setEditDatetimeEnd] = useState("");
   const [editComment, setEditComment] = useState("");
   const [hoveredSlot, setHoveredSlot] = useState<{ staffId: number; minute: number } | null>(null);
 
@@ -348,6 +413,21 @@ export default function RecordsPage() {
     [records, selectedRecordId]
   );
   const selectedClientPhone = selectedRecordItem?.client?.phone?.trim() ?? "";
+  const selectedClientName = selectedRecordItem ? getClientDisplayName(selectedRecordItem) : "";
+  const selectedShipmentPhone = selectedClientPhone ? normalizePhone(selectedClientPhone) : "";
+  const createShipmentHref = selectedClientName
+    ? `/shipment/new?counterparty=${encodeURIComponent(selectedClientName)}${
+        selectedShipmentPhone ? `&phone=${encodeURIComponent(selectedShipmentPhone)}` : ""
+      }`
+    : "/shipment/new";
+  const createServiceLengthSeconds = useMemo(() => {
+    const selectedService = services.find((item) => String(item.id) === serviceId);
+    return Number(selectedService?.seance_length ?? DEFAULT_RECORD_DURATION_SECONDS) || DEFAULT_RECORD_DURATION_SECONDS;
+  }, [serviceId, services]);
+  const editServiceLengthSeconds = useMemo(() => {
+    const selectedService = services.find((item) => String(item.id) === editServiceIds[0]);
+    return Number(selectedService?.seance_length ?? DEFAULT_RECORD_DURATION_SECONDS) || DEFAULT_RECORD_DURATION_SECONDS;
+  }, [editServiceIds, services]);
 
   const timelineStartMinute = 8 * 60;
   const timelineEndMinute = 17 * 60;
@@ -396,11 +476,13 @@ export default function RecordsPage() {
       const mm = String(rounded % 60).padStart(2, "0");
       setStaffId(String(staffIdValue));
       setDatetime(`${scheduleDate}T${hh}:${mm}`);
+      setDatetimeEnd(addSecondsToDateTimeLocal(`${scheduleDate}T${hh}:${mm}`, createServiceLengthSeconds));
       setSelectedRecordId(null);
+      setIsRecordDetailsOpen(false);
       setQuickCreateHint(`Новая запись: ${hh}:${mm} · ${staff.find((s) => s.id === staffIdValue)?.name ?? "Сотрудник"}`);
       setIsCreateModalOpen(true);
     },
-    [scheduleDate, staff, timelineEndMinute, timelineStartMinute]
+    [createServiceLengthSeconds, scheduleDate, staff, timelineEndMinute, timelineStartMinute]
   );
   const getRoundedMinute = useCallback(
     (minute: number) => {
@@ -427,12 +509,52 @@ export default function RecordsPage() {
     void loadRecords();
   }, [canAccess, checkingAuth, companyId, loadRecords, loadSchedule, scheduleDate, staffId, timelineStaffId]);
 
+  useEffect(() => {
+    if (!selectedShipmentPhone) {
+      setShipmentLookup({ phone: "", loading: false, rows: [], error: null });
+      return;
+    }
+
+    const controller = new AbortController();
+    setShipmentLookup({ phone: selectedShipmentPhone, loading: true, rows: [], error: null });
+
+    async function loadShipmentsByPhone() {
+      try {
+        const res = await fetch(
+          `/api/demands/by-phone?phone=${encodeURIComponent(selectedShipmentPhone)}&limit=5`,
+          { cache: "no-store", signal: controller.signal }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить отгрузки");
+        if (controller.signal.aborted) return;
+        setShipmentLookup({
+          phone: selectedShipmentPhone,
+          loading: false,
+          rows: Array.isArray(data?.rows) ? data.rows : [],
+          error: null,
+        });
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        setShipmentLookup({
+          phone: selectedShipmentPhone,
+          loading: false,
+          rows: [],
+          error: e instanceof Error ? e.message : "Не удалось загрузить отгрузки",
+        });
+      }
+    }
+
+    void loadShipmentsByPhone();
+    return () => controller.abort();
+  }, [selectedShipmentPhone]);
+
   const resetRecordForm = () => {
     setClientName("");
     setClientPhone("");
     setClientEmail("");
     setServiceId("");
     setDatetime("");
+    setDatetimeEnd("");
     setComment("");
   };
 
@@ -452,6 +574,12 @@ export default function RecordsPage() {
       setError("Укажите телефон клиента цифрами");
       return;
     }
+    const manualSeanceLength = datetimeEnd ? calculateSeanceLengthSeconds(datetime, datetimeEnd) : null;
+    if (datetimeEnd && manualSeanceLength == null) {
+      setError("Окончание записи должно быть позже начала");
+      return;
+    }
+    const seanceLength = manualSeanceLength ?? createServiceLengthSeconds;
     const payload = {
       phone,
       fullname: clientName.trim(),
@@ -463,6 +591,7 @@ export default function RecordsPage() {
           services: [Number(serviceId)],
           staff_id: Number(staffId),
           datetime: `${datetime.replace("T", " ")}:00`,
+          seance_length: seanceLength,
         },
       ],
     };
@@ -494,6 +623,14 @@ export default function RecordsPage() {
     setEditClientPhone(record.client?.phone || "");
     setEditClientEmail(record.client?.email || "");
     setEditDatetime(normalizedDate);
+    setEditDatetimeEnd(
+      normalizedDate
+        ? addSecondsToDateTimeLocal(
+            normalizedDate,
+            Number(record.seance_length ?? record.length ?? DEFAULT_RECORD_DURATION_SECONDS) || DEFAULT_RECORD_DURATION_SECONDS
+          )
+        : ""
+    );
     setEditComment(record.comment ?? "");
     setIsEditModalOpen(true);
   }, []);
@@ -513,10 +650,15 @@ export default function RecordsPage() {
     }
 
     setError(null);
-    const selectedService = services.find((item) => String(item.id) === editServiceIds[0]);
     const recordForEdit = records.find((item) => item.id === editingRecordId);
-    const seanceLength =
-      Number(recordForEdit?.seance_length ?? recordForEdit?.length ?? selectedService?.seance_length ?? 1800) || 1800;
+    const manualSeanceLength = editDatetimeEnd ? calculateSeanceLengthSeconds(editDatetime, editDatetimeEnd) : null;
+    if (editDatetimeEnd && manualSeanceLength == null) {
+      setError("Окончание записи должно быть позже начала");
+      return;
+    }
+    const fallbackSeanceLength =
+      Number(recordForEdit?.seance_length ?? recordForEdit?.length ?? editServiceLengthSeconds) || editServiceLengthSeconds;
+    const seanceLength = manualSeanceLength ?? fallbackSeanceLength;
     const editPhone = normalizePhone(editClientPhone);
     if (!editPhone) {
       setError("Укажите телефон клиента цифрами");
@@ -583,6 +725,7 @@ export default function RecordsPage() {
     }
 
     setSelectedRecordId(null);
+    setIsRecordDetailsOpen(false);
     await loadSchedule();
     await loadRecords();
   };
@@ -923,14 +1066,69 @@ export default function RecordsPage() {
 
               <div className="mt-2 border border-[#d2d2d2] bg-white p-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900/70">
                 {selectedTimelineRecord ? (
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <div className="text-xs font-semibold text-[#7f8793]">Выбрана запись</div>
                     <div className="font-semibold text-[#2b3134] dark:text-zinc-100">
                       {selectedTimelineRecord.startedAtText} - {selectedTimelineRecord.endedAtText}
                     </div>
                     <div className="text-[12px] font-medium">{selectedTimelineRecord.title}</div>
-                    <div className="text-[11px] text-[#5f6872] dark:text-zinc-300">{selectedTimelineRecord.subtitle}</div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="text-[11px] text-[#5f6872] dark:text-zinc-300">
+                      <span className="font-semibold text-[#0f766e]">{selectedClientName || selectedTimelineRecord.subtitle}</span>
+                      {selectedClientPhone ? <span> · {selectedClientPhone}</span> : null}
+                    </div>
+                    <div className="rounded border border-[#e3e5e8] bg-[#fafafa] px-2 py-1.5 text-[11px] text-[#4f5965] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                      <div className="font-semibold text-[#7f8793]">Комментарий</div>
+                      <div className="mt-0.5 max-h-20 overflow-auto whitespace-pre-wrap">
+                        {selectedTimelineRecord.comment || "Комментария нет"}
+                      </div>
+                    </div>
+                    {shipmentLookup.loading && shipmentLookup.phone === selectedShipmentPhone ? (
+                      <div className="rounded border border-[#e3e5e8] bg-white px-2 py-1.5 text-[11px] text-[#7f8793] dark:border-zinc-700 dark:bg-zinc-900">
+                        Проверяю отгрузки…
+                      </div>
+                    ) : null}
+                    {!shipmentLookup.loading && shipmentLookup.error && shipmentLookup.phone === selectedShipmentPhone ? (
+                      <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                        Отгрузки не загрузились
+                      </div>
+                    ) : null}
+                    {!shipmentLookup.loading && shipmentLookup.rows.length > 0 && shipmentLookup.phone === selectedShipmentPhone ? (
+                      <div className="rounded border border-[#d9e7e2] bg-[#f7fbf9] px-2 py-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-900">
+                        <div className="font-semibold text-[#0f766e]">Отгрузки</div>
+                        <div className="mt-1 space-y-1">
+                          {shipmentLookup.rows.map((shipment) => (
+                            <Link
+                              key={shipment.id}
+                              href={`/shipment/${shipment.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block rounded border border-transparent px-1 py-1 hover:border-[#b7d8cc] hover:bg-white dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                            >
+                              <div className="truncate font-semibold text-[#2b3134] dark:text-zinc-100">{shipment.name}</div>
+                              <div className="text-[#6f7782] dark:text-zinc-400">
+                                {formatShipmentDate(shipment.momentAt || shipment.documentDate)} · {formatRubles(shipment.sumCents)} ₽
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <Link
+                      href={createShipmentHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block h-7 rounded border border-[#0f8c67] bg-[#0f8c67] px-2 text-center text-[11px] font-semibold leading-7 text-white hover:bg-[#0d7657]"
+                    >
+                      Создать отгрузку
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setIsRecordDetailsOpen(true)}
+                      className="h-7 w-full rounded border border-[#cfd3d8] bg-white text-[11px] font-medium text-[#4f5965] dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                      Открыть комментарий
+                    </button>
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -986,6 +1184,35 @@ export default function RecordsPage() {
 
       </div>
 
+      {isRecordDetailsOpen && selectedRecordItem && selectedTimelineRecord ? (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Комментарий к записи</h2>
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  {selectedTimelineRecord.startedAtText} - {selectedTimelineRecord.endedAtText} · {selectedClientName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRecordDetailsOpen(false)}
+                className="rounded-lg border border-zinc-300 px-3 py-1 text-sm dark:border-zinc-700"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+              <div className="max-h-72 overflow-auto whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">
+                {selectedRecordItem.comment?.trim() || "Комментария нет"}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      ) : null}
+
       {isCreateModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
           <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-3xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
@@ -1032,7 +1259,15 @@ export default function RecordsPage() {
                 <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Услуга</span>
                 <select
                   value={serviceId}
-                  onChange={(e) => setServiceId(e.target.value)}
+                  onChange={(e) => {
+                    const nextServiceId = e.target.value;
+                    setServiceId(nextServiceId);
+                    const selectedService = services.find((item) => String(item.id) === nextServiceId);
+                    const nextLength =
+                      Number(selectedService?.seance_length ?? DEFAULT_RECORD_DURATION_SECONDS) ||
+                      DEFAULT_RECORD_DURATION_SECONDS;
+                    if (datetime && !datetimeEnd) setDatetimeEnd(addSecondsToDateTimeLocal(datetime, nextLength));
+                  }}
                   className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
                 >
                   <option value="">Выберите услугу</option>
@@ -1072,15 +1307,32 @@ export default function RecordsPage() {
                 />
               </label>
 
-              <label className="text-sm">
-                <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Дата и время</span>
-                <input
-                  type="datetime-local"
-                  value={datetime}
-                  onChange={(e) => setDatetime(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Начало</span>
+                  <input
+                    type="datetime-local"
+                    value={datetime}
+                    onChange={(e) => {
+                      const nextStart = e.target.value;
+                      setDatetime(nextStart);
+                      if (!datetimeEnd || calculateSeanceLengthSeconds(nextStart, datetimeEnd) == null) {
+                        setDatetimeEnd(addSecondsToDateTimeLocal(nextStart, createServiceLengthSeconds));
+                      }
+                    }}
+                    className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Окончание</span>
+                  <input
+                    type="datetime-local"
+                    value={datetimeEnd}
+                    onChange={(e) => setDatetimeEnd(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+              </div>
 
               <label className="text-sm">
                 <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Комментарий</span>
@@ -1207,15 +1459,32 @@ export default function RecordsPage() {
                 />
               </label>
 
-              <label className="text-sm">
-                <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Дата и время</span>
-                <input
-                  type="datetime-local"
-                  value={editDatetime}
-                  onChange={(e) => setEditDatetime(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Начало</span>
+                  <input
+                    type="datetime-local"
+                    value={editDatetime}
+                    onChange={(e) => {
+                      const nextStart = e.target.value;
+                      const currentLength =
+                        calculateSeanceLengthSeconds(editDatetime, editDatetimeEnd) ?? editServiceLengthSeconds;
+                      setEditDatetime(nextStart);
+                      setEditDatetimeEnd(addSecondsToDateTimeLocal(nextStart, currentLength));
+                    }}
+                    className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Окончание</span>
+                  <input
+                    type="datetime-local"
+                    value={editDatetimeEnd}
+                    onChange={(e) => setEditDatetimeEnd(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+              </div>
 
               <label className="text-sm">
                 <span className="mb-1 block text-zinc-600 dark:text-zinc-300">Комментарий</span>

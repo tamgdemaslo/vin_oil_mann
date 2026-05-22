@@ -164,7 +164,8 @@ export function assertOwner(user: User) {
 
 export function getCurrentShift(): CashShift | null {
   const state = readState();
-  return state.shifts.find((s) => s.status === "open") ?? null;
+  const serviceDate = getTodayServiceDate();
+  return state.shifts.find((s) => s.status === "open" && s.serviceDate === serviceDate) ?? null;
 }
 
 export function listShifts(limit = 50): CashShift[] {
@@ -189,6 +190,7 @@ async function ensureAdminWorkShiftOpened(user: User) {
 
   const result = await startWorkShift(user.login);
   if (!result.ok) {
+    if (result.error.toLowerCase().includes("на сегодня смена уже открыта")) return;
     throw new Error(`Не удалось открыть рабочую смену администратора: ${result.error}`);
   }
 }
@@ -213,9 +215,13 @@ export async function openShift(openingCash: number): Promise<CashShift> {
   assertOwnerOrAdmin(user);
 
   const state = readState();
-  const existingOpen = state.shifts.find((s) => s.status === "open");
-  if (existingOpen) {
-    throw new Error("Нельзя открыть новую смену: предыдущая ещё не закрыта");
+  const serviceDate = getTodayServiceDate();
+  const existingForServiceDate = state.shifts.find((s) => s.serviceDate === serviceDate);
+  if (existingForServiceDate?.status === "open") {
+    throw new Error("Кассовая смена на сегодня уже открыта");
+  }
+  if (existingForServiceDate) {
+    throw new Error("Кассовая смена на сегодня уже была открыта и закрыта");
   }
 
   await ensureAdminWorkShiftOpened(user);
@@ -223,7 +229,7 @@ export async function openShift(openingCash: number): Promise<CashShift> {
   const nowIso = new Date().toISOString();
   const shift: CashShift = {
     id: generateId("shift"),
-    serviceDate: getTodayServiceDate(),
+    serviceDate,
     timezone: DEFAULT_TIMEZONE,
     status: "open",
     openedAt: nowIso,
@@ -442,5 +448,4 @@ function normalizeMoyskladDate(date?: string): string | undefined {
   }
   return `${trimmed} 00:00:00`;
 }
-
 

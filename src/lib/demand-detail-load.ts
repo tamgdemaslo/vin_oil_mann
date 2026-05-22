@@ -1,4 +1,5 @@
 import { moyskladFetch, type MoySkladMeta } from "@/lib/moysklad";
+import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 
 export type DemandDetailHeader = {
   id: string;
@@ -92,7 +93,7 @@ export async function loadDemandDetailPayload(
     moyskladFetch<DemandGet>(`/entity/demand/${id}?expand=agent,organization,store`, {
       cache: "no-store",
     }),
-    moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>("/entity/demand/metadata/attributes"),
+    ensureDemandAttributeMetadata(),
   ]);
   if (!demandRes.ok) return { ok: false, error: demandRes.error };
 
@@ -102,7 +103,7 @@ export async function loadDemandDetailPayload(
   );
 
   const storeName = (demandRes.data as { store?: { name?: string } }).store?.name ?? "";
-  let stockByHref: Record<string, number> = {};
+  const stockByHref: Record<string, number> = {};
   if (storeName) {
     const reportRes = await moyskladFetch<{
       rows?: { meta?: { href?: string }; stockByStore?: { name: string; stock: number }[] }[];
@@ -118,14 +119,7 @@ export async function loadDemandDetailPayload(
   }
 
   let metaAttributes: AttributeMeta[] = [];
-  if (metaRes.ok) {
-    const d = metaRes.data as { rows?: AttributeMeta[] } | AttributeMeta[];
-    if (Array.isArray(d)) {
-      metaAttributes = d;
-    } else if (Array.isArray(d.rows)) {
-      metaAttributes = d.rows;
-    }
-  }
+  if (metaRes.ok) metaAttributes = metaRes.attributes;
   const currentAttributes = ((demandRes.data as { attributes?: unknown[] }).attributes ?? []) as {
     id?: string;
     name?: string;

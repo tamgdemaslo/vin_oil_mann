@@ -144,48 +144,159 @@ function Stat({
   );
 }
 
-export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) {
-  return (
-    <div
-      style={{
-        width: B_W,
-        height: B_H,
-        background: Bpaper,
-        color: Bink,
-        fontFamily: '"Inter", system-ui, sans-serif',
-        position: "relative",
-        padding: "44px 44px 28px",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      <HexBg w={B_W} h={420} />
+function posterRowWeight(text: string, charsPerLine: number): number {
+  return Math.max(1, Math.ceil(text.length / charsPerLine));
+}
 
+function shouldShowTurnoverNotice(o: JobOrderPosterModel): boolean {
+  const worksWeight = o.works.reduce((sum, w) => sum + posterRowWeight(w.name, 42), 0);
+  const partsWeight = o.parts.reduce((sum, p) => sum + posterRowWeight(p.name, 38), 0);
+  const historyWeight = o.client.history.reduce((sum, h) => sum + posterRowWeight(h.note, 54), 0);
+  return worksWeight + partsWeight + historyWeight > 8;
+}
+
+function splitWeighted<T>(
+  items: T[],
+  capacity: number,
+  weight: (item: T) => number
+): { head: T[]; tail: T[]; used: number } {
+  const head: T[] = [];
+  const tail: T[] = [];
+  let used = 0;
+  let overflow = false;
+
+  for (const item of items) {
+    const itemWeight = weight(item);
+    if (!overflow && (head.length === 0 || used + itemWeight <= capacity)) {
+      head.push(item);
+      used += itemWeight;
+    } else {
+      overflow = true;
+      tail.push(item);
+    }
+  }
+
+  return { head, tail, used };
+}
+
+function splitPosterContent(o: JobOrderPosterModel) {
+  const works = splitWeighted(o.works, 9, (w) => posterRowWeight(w.name, 42));
+  const parts = works.tail.length
+    ? { head: [] as JobOrderPosterModel["parts"], tail: o.parts, used: 0 }
+    : splitWeighted(o.parts, Math.max(0, 9 - works.used), (p) => posterRowWeight(p.name, 38));
+
+  return {
+    firstWorks: works.head,
+    restWorks: works.tail,
+    firstParts: parts.head,
+    restParts: parts.tail,
+    hasOverflow: works.tail.length > 0 || parts.tail.length > 0,
+  };
+}
+
+export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) {
+  const split = splitPosterContent(o);
+  const hasTurnover = split.hasOverflow || shouldShowTurnoverNotice(o);
+  const signatures = (
+    <>
+      <div
+        className="poster-avoid-break"
+        style={{
+          marginTop: 18,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 28,
+          alignItems: "start",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
+            {o.master.name}
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: Bmuted,
+              marginTop: 8,
+              fontWeight: 600,
+            }}
+          >
+            ИСПОЛНИТЕЛЬ · МАСТЕР
+          </div>
+          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
+            {posterFooterLifetimeLine(o.client)}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
+            {o.client.name}
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: Bmuted,
+              marginTop: 8,
+              fontWeight: 600,
+            }}
+          >
+            ЗАКАЗЧИК · ПИЛОТ
+          </div>
+          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
+            {o.client.phone} · {posterFooterPilotTripLine(o.client)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <PosterChess w={B_W - 88} />
+      </div>
       <div
         style={{
+          marginTop: 6,
           display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          fontSize: 10,
-          letterSpacing: "0.22em",
+          justifyContent: "space-between",
+          fontSize: 8,
+          color: Bmuted,
+          letterSpacing: "0.16em",
           textTransform: "uppercase",
-          color: Bink,
-          position: "relative",
-          textAlign: "center",
         }}
       >
         <span>
-          Там где масло<span style={{ color: Brust }}>.</span>
-          {" "}
-          точка замены
+          {o.ip.site} · {o.ip.tg}
+        </span>
+        <span>оформил: {o.ecoUser}</span>
+        <span>
+          TGM<span style={{ color: Brust }}>.</span>
         </span>
       </div>
+    </>
+  );
 
-      <div style={{ height: 1, background: Bink, marginTop: 10 }} />
+  return (
+    <>
+      <div
+        className="poster-order"
+        style={{
+          width: B_W,
+          height: B_H,
+          background: Bpaper,
+          color: Bink,
+          fontFamily: '"Inter", system-ui, sans-serif',
+          position: "relative",
+          padding: "44px 44px 28px",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+      <HexBg w={B_W} h={420} />
 
-      <div style={{ marginTop: 24, position: "relative" }}>
+      <div style={{ position: "relative" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div
             style={{
@@ -317,6 +428,26 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         />
       </div>
 
+      {hasTurnover ? (
+        <div
+          className="poster-avoid-break"
+          style={{
+            marginTop: 14,
+            padding: "7px 10px",
+            border: `1px solid ${Brust}`,
+            color: Brust,
+            fontSize: 8.5,
+            fontWeight: 800,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            textAlign: "center",
+            background: "rgba(194,65,12,0.06)",
+          }}
+        >
+          Часть заказ-наряда на оборотной стороне
+        </div>
+      ) : null}
+
       <div style={{ height: 1, background: Bink, marginTop: 22 }} />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginTop: 18, flex: 1 }}>
@@ -335,9 +466,10 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           {o.works.length === 0 ? (
             <div style={{ fontSize: 11, color: Bmuted }}>—</div>
           ) : (
-            o.works.map((w, i) => (
+            split.firstWorks.map((w, i) => (
               <div
                 key={i}
+                className="poster-avoid-break"
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -374,10 +506,11 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           </div>
           {o.parts.length === 0 ? (
             <div style={{ fontSize: 11, color: Bmuted }}>—</div>
-          ) : (
-            o.parts.map((p, i) => (
+          ) : split.firstParts.length > 0 ? (
+            split.firstParts.map((p, i) => (
               <div
                 key={i}
+                className="poster-avoid-break"
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -393,6 +526,8 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                 <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{bfmt(p.sum)} ₽</b>
               </div>
             ))
+          ) : (
+            <div style={{ fontSize: 10, color: Bmuted, padding: "8px 0" }}>см. оборотную сторону</div>
           )}
 
           <div
@@ -455,6 +590,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               return (
                 <div
                   key={i}
+                  className="poster-avoid-break"
                   style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", position: "relative" }}
                 >
                   <span
@@ -502,6 +638,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               );
             })}
             <div
+              className="poster-avoid-break"
               style={{
                 display: "flex",
                 alignItems: "flex-start",
@@ -543,6 +680,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
       </div>
 
       <div
+        className="poster-avoid-break"
         style={{
           marginTop: 14,
           padding: "10px 14px",
@@ -583,79 +721,116 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 18,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 28,
-          alignItems: "start",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
-            {o.master.name}
-          </div>
-          <div
-            style={{
-              fontSize: 8,
-              letterSpacing: "0.22em",
-              textTransform: "uppercase",
-              color: Bmuted,
-              marginTop: 8,
-              fontWeight: 600,
-            }}
-          >
-            ИСПОЛНИТЕЛЬ · МАСТЕР
-          </div>
-          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
-            {posterFooterLifetimeLine(o.client)}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
-            {o.client.name}
-          </div>
-          <div
-            style={{
-              fontSize: 8,
-              letterSpacing: "0.22em",
-              textTransform: "uppercase",
-              color: Bmuted,
-              marginTop: 8,
-              fontWeight: 600,
-            }}
-          >
-            ЗАКАЗЧИК · ПИЛОТ
-          </div>
-          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
-            {o.client.phone} · {posterFooterPilotTripLine(o.client)}
-          </div>
-        </div>
+        {!hasTurnover ? signatures : null}
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <PosterChess w={B_W - 88} />
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: 8,
-          color: Bmuted,
-          letterSpacing: "0.16em",
-          textTransform: "uppercase",
-        }}
-      >
-        <span>
-          {o.ip.site} · {o.ip.tg}
-        </span>
-        <span>оформил: {o.ecoUser}</span>
-        <span>
-          TGM<span style={{ color: Brust }}>.</span>
-        </span>
-      </div>
-    </div>
+      {hasTurnover ? (
+        <div
+          className="poster-order"
+          style={{
+            width: B_W,
+            height: B_H,
+            background: Bpaper,
+            color: Bink,
+            fontFamily: '"Inter", system-ui, sans-serif',
+            position: "relative",
+            padding: "44px 44px 28px",
+            boxSizing: "border-box",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <HexBg w={B_W} h={260} />
+          <div
+            style={{
+              position: "relative",
+              fontSize: 8.5,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+              color: Brust,
+              fontWeight: 800,
+              marginBottom: 24,
+            }}
+          >
+            оборотная сторона заказ-наряда № {o.number}
+          </div>
+          {split.restWorks.length > 0 ? (
+            <div className="poster-avoid-break" style={{ position: "relative", marginBottom: 18 }}>
+              <div
+                style={{
+                  fontSize: 9.5,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: Bmuted,
+                  marginBottom: 10,
+                }}
+              >
+                продолжение работ
+              </div>
+              {split.restWorks.map((w, i) => (
+                <div
+                  key={i}
+                  className="poster-avoid-break"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    borderBottom: "1px solid rgba(10,10,10,.12)",
+                    padding: "8px 0",
+                    fontSize: 11,
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
+                    <span style={{ color: Brust, fontWeight: 700, width: 14 }}>·</span>
+                    <span style={{ fontWeight: 500 }}>{w.name}</span>
+                  </div>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: Bmuted, whiteSpace: "nowrap" }}>
+                    {w.discount ? <s style={{ marginRight: 6 }}>{bfmt(w.price)}</s> : null}
+                    <b style={{ color: w.sum === 0 ? Brust : Bink }}>
+                      {w.sum === 0 ? "в подарок" : `${bfmt(w.sum)} ₽`}
+                    </b>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {split.restParts.length > 0 ? (
+            <div className="poster-avoid-break" style={{ position: "relative", marginBottom: 18 }}>
+              <div
+                style={{
+                  fontSize: 9.5,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: Bmuted,
+                  marginBottom: 10,
+                }}
+              >
+                продолжение товаров
+              </div>
+              {split.restParts.map((p, i) => (
+                <div
+                  key={i}
+                  className="poster-avoid-break"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    borderBottom: "1px solid rgba(10,10,10,.12)",
+                    padding: "8px 0",
+                    fontSize: 11,
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
+                    <span style={{ color: Bmuted, width: 22, fontVariantNumeric: "tabular-nums" }}>×{p.qty}</span>
+                    <span style={{ fontWeight: 500 }}>{p.name}</span>
+                  </div>
+                  <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{bfmt(p.sum)} ₽</b>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {signatures}
+        </div>
+      ) : null}
+    </>
   );
 }

@@ -48,7 +48,7 @@ function toPath(h: string): string {
   try {
     const url = new URL(s.startsWith("http") ? s : `https://x${s}`);
     const path = s.startsWith("http") ? url.pathname : s;
-    const match = path.match(/\/(entity\/product|entity\/variant)\/[a-f0-9-]+/i);
+    const match = path.match(/\/(entity\/product|entity\/variant|entity\/service)\/[a-f0-9-]+/i);
     return match ? match[0] : path;
   } catch {
     return s;
@@ -101,9 +101,14 @@ function normalizeTermKey(s: string): string {
   return s.replace(/\s/g, "").toLowerCase();
 }
 
+function rowMapKey(r: Row): string {
+  return r.meta?.href ?? `${r.meta?.type ?? "entity"}:${r.id}`;
+}
+
 function addRowsToMap(map: Map<string, Row>, rows: Row[] | undefined) {
   for (const r of rows ?? []) {
-    if (r.id && !map.has(r.id)) map.set(r.id, r);
+    const key = rowMapKey(r);
+    if (r.id && !map.has(key)) map.set(key, r);
   }
 }
 
@@ -179,13 +184,13 @@ export async function GET(request: NextRequest) {
     const path = `/entity/product?limit=${limit}`;
     const result = await moyskladFetch<{ rows: Row[] }>(path);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-    (result.data.rows ?? []).forEach((r) => productMap.set(r.id, r));
+    addRowsToMap(productMap, result.data.rows);
   } else {
     const enc = encodeURIComponent;
     for (const term of termsSlice) {
       const val = term.trim();
       if (!val) continue;
-      const [byOem, byMann, byParams, bySearch] = await Promise.all([
+      const [byOem, byMann, byParams, bySearch, byServiceSearch] = await Promise.all([
         moyskladFetch<{ rows?: Row[] }>(
           `/entity/product?filter=${enc(OEM_ATTR_HREF)}~${enc(val)}&limit=${PER_TERM_LIMIT}&expand=attributes`,
           { cache: "no-store" }
@@ -202,21 +207,37 @@ export async function GET(request: NextRequest) {
           `/entity/product?search=${enc(val)}&limit=${PER_TERM_LIMIT}&expand=attributes`,
           { cache: "no-store" }
         ),
+        moyskladFetch<{ rows?: Row[] }>(
+          `/entity/service?search=${enc(val)}&limit=${PER_TERM_LIMIT}`,
+          { cache: "no-store" }
+        ),
       ]);
       if (byOem.ok) addRowsToMap(productMap, byOem.data?.rows);
       if (byMann.ok) addRowsToMap(productMap, byMann.data?.rows);
       if (byParams.ok) addRowsToMap(productMap, byParams.data?.rows);
       if (bySearch.ok) addRowsToMap(productMap, bySearch.data?.rows);
+      if (byServiceSearch.ok) addRowsToMap(productMap, byServiceSearch.data?.rows);
     }
 
     if (productMap.size === 0 && termsSlice.length > 0) {
-      const batch = await moyskladFetch<{ rows?: ProductRowWithAttrs[] }>(
+      const [batch, servicesBatch] = await Promise.all([
+        moyskladFetch<{ rows?: ProductRowWithAttrs[] }>(
         `/entity/product?limit=500&expand=attributes`,
         { cache: "no-store" }
-      );
+        ),
+        moyskladFetch<{ rows?: Row[] }>(
+          `/entity/service?limit=500`,
+          { cache: "no-store" }
+        ),
+      ]);
       if (batch.ok && batch.data?.rows) {
         for (const row of batch.data.rows) {
-          if (productMatchesTerms(row, termsSlice)) productMap.set(row.id, row);
+          if (productMatchesTerms(row, termsSlice)) productMap.set(rowMapKey(row), row);
+        }
+      }
+      if (servicesBatch.ok && servicesBatch.data?.rows) {
+        for (const row of servicesBatch.data.rows) {
+          if (productMatchesTerms(row, termsSlice)) productMap.set(rowMapKey(row), row);
         }
       }
     }
@@ -225,6 +246,7 @@ export async function GET(request: NextRequest) {
   const rows = Array.from(productMap.values()).slice(0, limit);
   const withAttrs = await Promise.all(
     rows.map(async (r) => {
+      if (r.meta?.type === "service") return toProduct(r, null);
       const res = await moyskladFetch<ProductRowWithAttrs>(`/entity/product/${r.id}`, { cache: "no-store" });
       const cell = res.ok ? getCellFromAttributes(res.data?.attributes) : null;
       return toProduct(r, cell);

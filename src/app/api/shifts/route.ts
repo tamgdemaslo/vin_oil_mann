@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { canonicalizeLogin, getSession } from "@/lib/auth";
 import { listShifts } from "@/lib/shifts";
 
 export async function GET(request: NextRequest) {
@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
   }
   const { searchParams } = new URL(request.url);
-  const targetLogin = searchParams.get("user") ?? undefined;
+  const requestedTargetLogin = searchParams.get("user") ?? undefined;
+  const targetLogin = requestedTargetLogin ? canonicalizeLogin(requestedTargetLogin) : undefined;
   const dateFrom = searchParams.get("dateFrom") ?? undefined;
   const dateTo = searchParams.get("dateTo") ?? undefined;
 
