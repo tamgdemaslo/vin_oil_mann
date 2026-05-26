@@ -1,29 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
-import { moyskladFetch } from "@/lib/moysklad";
-import { warmMoySkladLookupCaches } from "@/lib/moysklad-lookup-warmup";
-
-type Meta = { href: string; type: string; mediaType: string };
-
-type AttributeMeta = { id: string; name: string; type: string; meta: Meta };
-
-type DemandRow = {
-  id: string;
-  name: string;
-  moment: string;
-  applicable: boolean;
-  sum: number; // копейки
-  agent?: { name?: string };
-  organization?: { name?: string };
-  store?: { name?: string };
-  meta: { href: string };
-  attributes?: { id?: string; name?: string; value?: unknown }[];
-} & Record<string, unknown>;
-
-function getAttributeList(data: { rows?: AttributeMeta[] } | AttributeMeta[]): AttributeMeta[] {
-  return Array.isArray(data) ? data : Array.isArray(data.rows) ? data.rows : [];
-}
+import { type CreateDemandBody } from "@/lib/demand-create-payload";
+import { createLocalDemand } from "@/lib/local-demand-write";
+import { loadLocalDemandList } from "@/lib/local-inventory-read";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -33,57 +12,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "50", 10) || 50);
   const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
 
-  const qs = new URLSearchParams();
-  qs.set("limit", String(limit));
-  qs.set("offset", String(offset));
-  qs.set("order", "moment,desc");
-  qs.set("expand", "agent,organization,store");
-  if (search.trim()) qs.set("search", search.trim());
-
-  const result = await moyskladFetch<{ meta: { size: number; limit: number; offset: number }; rows: DemandRow[] }>(
-    `/entity/demand?${qs.toString()}`,
-    { cache: "no-store" }
-  );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
-  // Пытаемся найти доп. поле «Эко пользователь», чтобы показать, кто создал документ через эко-платформу
-  const metaRes = await moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>(
-    "/entity/demand/metadata/attributes",
-    { cache: "no-store" }
-  );
-  let ecoAttrId: string | null = null;
-  if (metaRes.ok) {
-    const list = getAttributeList(metaRes.data);
-    const found = list.find(
-      (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
-    );
-    if (found) ecoAttrId = found.id;
-  }
-
-  return NextResponse.json({
-    meta: result.data.meta,
-    rows: (result.data.rows ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      moment: r.moment,
-      applicable: r.applicable,
-      sum: r.sum,
-      href: r.meta?.href,
-      agentName: r.agent?.name ?? "",
-      organizationName: r.organization?.name ?? "",
-      storeName: r.store?.name ?? "",
-      ecoUserName:
-        ecoAttrId && Array.isArray(r.attributes)
-          ? (() => {
-              const attr = r.attributes!.find((a) => a.id === ecoAttrId || a.name === "Эко пользователь");
-              const v = attr?.value;
-              if (typeof v === "string") return v;
-              if (v == null) return undefined;
-              return String(v);
-            })()
-          : undefined,
-    })),
-  });
+  return NextResponse.json(await loadLocalDemandList({ search, limit, offset }));
 }
 
 export async function POST(request: NextRequest) {
@@ -98,52 +27,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (!body.organization?.meta?.href || !body.agent?.meta?.href || !body.store?.meta?.href) {
-    return NextResponse.json({ error: "Укажите организацию, контрагента и склад (meta.href)" }, { status: 400 });
+    return NextResponse.json({ error: "Укажите организацию, контрагента и склад" }, { status: 400 });
   }
 
-  // Автоматически записываем в доп. поле «Эко пользователь» логин/имя пользователя эко-платформы, если такое поле создано в МойСклад
-  try {
-    const metaRes = await moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>(
-      "/entity/demand/metadata/attributes",
-      { cache: "no-store" }
-    );
-    if (metaRes.ok) {
-      const list = getAttributeList(metaRes.data);
-      const ecoAttr = list.find(
-        (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
-      );
-      if (ecoAttr) {
-        const ecoValue = (session.user.name || session.user.login).toString();
-        const existing = Array.isArray(body.attributes)
-          ? body.attributes.filter((a) => a.id !== ecoAttr.id)
-          : [];
-        body.attributes = [
-          ...existing,
-          {
-            id: ecoAttr.id,
-            name: ecoAttr.name,
-            meta: ecoAttr.meta,
-            value: ecoValue,
-          },
-        ];
-      }
-    }
-  } catch {
-    // если МойСклад вернул ошибку по метаданным — просто не заполняем поле, создание документа не ломаем
-  }
+  const created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
+  if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
 
-  const payload = buildDemandCreatePayload(body);
-  const result = await moyskladFetch<{ id: string; name: string; meta: { href: string } }>(
-    "/entity/demand",
-    { method: "POST", body: JSON.stringify(payload), cache: "no-store" }
-  );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
-  warmMoySkladLookupCaches("demand-created");
-
-  return NextResponse.json({
-    id: result.data.id,
-    name: result.data.name,
-    href: result.data.meta?.href,
-  });
+  return NextResponse.json(created);
 }

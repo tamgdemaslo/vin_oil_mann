@@ -47,7 +47,7 @@ export default function IdleLockGuard() {
   }, [pathname]);
 
   useEffect(() => {
-    if (!user || loading || pathname === "/login") return;
+    if (!user || loading || pathname === "/login" || pathname === "/client-site") return;
 
     function clearIdleTimer() {
       if (timerRef.current) {
@@ -89,7 +89,7 @@ export default function IdleLockGuard() {
   }, [locked, loading, pathname, user]);
 
   const shouldRenderModal = useMemo(
-    () => !!user && !loading && locked && pathname !== "/login",
+    () => !!user && !loading && locked && pathname !== "/login" && pathname !== "/client-site",
     [loading, locked, pathname, user]
   );
 

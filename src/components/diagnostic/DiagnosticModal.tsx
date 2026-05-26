@@ -2,6 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  Camera,
+  CheckCircle2,
+  ClipboardCheck,
+  FileText,
+  Mic,
+  Send,
+  TriangleAlert,
+  Wrench,
+  X,
+  XCircle,
+} from "lucide-react";
+import {
   ALL_NODES,
   BLOCK_ORDER,
   BLOCK_TITLES,
@@ -19,6 +32,7 @@ import type {
   DiagnosticPositionStatus,
   DiagnosticStatus,
 } from "@prisma/client";
+import { EcoBadge, EcoButton, EcoKpi, type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { responseJson } from "@/lib/response-json";
 
 type Nav =
@@ -45,8 +59,48 @@ type DiagnosticRow = {
   offers: DiagnosticOffer[];
 };
 
+type DiagnosticPositionRow = DiagnosticPosition & { photos: DiagnosticPhoto[] };
+
+type DiagnosticHistory = {
+  demands: { name: string | null; momentAt: string }[];
+  diagnostics: {
+    id: string;
+    startedAt: string;
+    summaryGreen: number;
+    summaryYellow: number;
+    summaryRed: number;
+  }[];
+};
+
 function nodeTitle(node: string): string {
   return ALL_NODES.find((n) => n.node === node)?.title ?? node;
+}
+
+function summaryCounts(positions: DiagnosticPositionRow[]) {
+  let summaryGreen = 0;
+  let summaryYellow = 0;
+  let summaryRed = 0;
+
+  for (const p of positions) {
+    if (p.status === "GREEN") summaryGreen++;
+    else if (p.status === "YELLOW") summaryYellow++;
+    else if (p.status === "RED") summaryRed++;
+  }
+
+  return { summaryGreen, summaryYellow, summaryRed };
+}
+
+function withUpdatedPosition(row: DiagnosticRow, position: DiagnosticPositionRow): DiagnosticRow {
+  const exists = row.positions.some((p) => p.node === position.node);
+  const positions = exists
+    ? row.positions.map((p) => (p.node === position.node ? position : p))
+    : [...row.positions, position];
+
+  return {
+    ...row,
+    ...summaryCounts(positions),
+    positions,
+  };
 }
 
 export type DiagnosticModalProps = {
@@ -74,7 +128,6 @@ export function DiagnosticModal({
   diagnosticId,
   shipmentMoySkladId,
   headerDraft,
-  onDiagnosticCreated,
   onAddedToShipment,
 }: DiagnosticModalProps) {
   const [nav, setNav] = useState<Nav>({ screen: "hub" });
@@ -83,6 +136,9 @@ export function DiagnosticModal({
   const [toast, setToast] = useState<string | null>(null);
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSeq = useRef(0);
+  const latestPositionSave = useRef<Record<string, number>>({});
+  const positionSaveQueues = useRef<Record<string, Promise<void>>>({});
 
   const activeId = data?.id ?? diagnosticId;
 
@@ -151,15 +207,63 @@ export function DiagnosticModal({
       recommendation?: string | null;
     }) => {
       if (!activeId) return;
-      const res = await fetch(`/api/diagnostic/${activeId}/position`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const seq = ++saveSeq.current;
+      latestPositionSave.current[payload.node] = seq;
+
+      setData((prev) => {
+        if (!prev) return prev;
+        const current = prev.positions.find((p) => p.node === payload.node);
+        if (!current) return prev;
+
+        const optimistic: DiagnosticPositionRow = {
+          ...current,
+          status: payload.status,
+          tags: payload.tags ?? current.tags,
+          measurementValue:
+            payload.measurementValue === undefined
+              ? current.measurementValue
+              : (payload.measurementValue as DiagnosticPosition["measurementValue"]),
+          measurementUnit:
+            payload.measurementUnit === undefined ? current.measurementUnit : payload.measurementUnit,
+          recommendation:
+            payload.recommendation === undefined ? current.recommendation : payload.recommendation,
+        };
+
+        return withUpdatedPosition(prev, optimistic);
       });
-      const json = await responseJson<{ error?: string }>(res);
-      if (!res.ok) throw new Error(json.error ?? "Ошибка сохранения узла");
-      void json;
-      await load();
+
+      const runSave = async () => {
+        const res = await fetch(`/api/diagnostic/${activeId}/position`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await responseJson<(DiagnosticPositionRow & { error?: string })>(res);
+        if (!res.ok) throw new Error(json.error ?? "Ошибка сохранения узла");
+        if (latestPositionSave.current[payload.node] === seq) {
+          setData((prev) => (prev ? withUpdatedPosition(prev, json as DiagnosticPositionRow) : prev));
+        }
+      };
+
+      const previousSave = positionSaveQueues.current[payload.node] ?? Promise.resolve();
+      const queuedSave = previousSave
+        .catch(() => undefined)
+        .then(runSave)
+        .catch((e) => {
+          if (latestPositionSave.current[payload.node] === seq) {
+            setToast(e instanceof Error ? e.message : "Ошибка сохранения узла");
+            void load();
+          }
+        });
+
+      positionSaveQueues.current[payload.node] = queuedSave;
+      void queuedSave.finally(() => {
+        if (positionSaveQueues.current[payload.node] === queuedSave) {
+          delete positionSaveQueues.current[payload.node];
+        }
+      });
+
+      await queuedSave;
     },
     [activeId, load]
   );
@@ -274,43 +378,47 @@ export function DiagnosticModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white dark:bg-zinc-950 md:items-center md:justify-center md:bg-black/50 md:p-4">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:max-h-[95vh] md:max-w-[960px] md:rounded-xl md:border md:border-zinc-200 md:bg-white md:shadow-xl dark:md:border-zinc-700 dark:md:bg-zinc-900">
-        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+    <div className="eco-diagnostic-overlay fixed inset-0 z-[100] flex flex-col bg-white dark:bg-zinc-950 md:items-center md:justify-center md:bg-black/50 md:p-4">
+      <div className="eco-diagnostic-shell flex min-h-0 flex-1 flex-col overflow-hidden md:max-h-[95vh] md:max-w-[960px] md:rounded-xl md:border md:border-zinc-200 md:bg-white md:shadow-xl dark:md:border-zinc-700 dark:md:bg-zinc-900">
+        <header className="eco-diagnostic-topbar flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
           <div>
-            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Диагностика</div>
-            <div className="text-xs text-zinc-500">
+            <div className="eco-page-kicker">Диагностика 14 пунктов</div>
+            <div className="eco-diagnostic-title">Диагностика</div>
+            <div className="eco-diagnostic-session">
               Сессия: {Math.floor(sessionSeconds / 60)}:{String(sessionSeconds % 60).padStart(2, "0")}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <EcoButton type="button" onClick={onClose} size="sm">
+            <X className="eco-icon" aria-hidden />
             Закрыть
-          </button>
+          </EcoButton>
         </header>
 
         {toast && (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+          <div className="eco-diagnostic-toast">
             {toast}
-            <button type="button" className="ml-2 underline" onClick={() => setToast(null)}>
+            <button type="button" onClick={() => setToast(null)}>
               ок
             </button>
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="eco-diagnostic-body min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {loading && !data ? (
             <p className="text-sm text-zinc-500">Загрузка…</p>
           ) : nav.screen === "hub" ? (
             <HubScreen
               hubEditable={hubEditable}
               onChange={(field, value) => {
-                if (field === "year") debouncedPatch({ year: parseInt(value, 10) || null });
-                else if (field === "mileage") debouncedPatch({ mileage: parseInt(value, 10) || null });
-                else debouncedPatch({ [field]: value || null });
+                const partial =
+                  field === "year"
+                    ? { year: parseInt(value, 10) || null }
+                    : field === "mileage"
+                      ? { mileage: parseInt(value, 10) || null }
+                      : { [field]: value || null };
+
+                setData((prev) => (prev ? ({ ...prev, ...partial } as DiagnosticRow) : prev));
+                debouncedPatch(partial);
               }}
               positions={data?.positions ?? []}
               diagnosticId={activeId}
@@ -369,14 +477,14 @@ function HubScreen(props: {
   onSummary: () => void;
   canSummary: boolean;
 }) {
-  const [history, setHistory] = useState<{ demands: unknown[]; diagnostics: unknown[] } | null>(null);
+  const [history, setHistory] = useState<DiagnosticHistory | null>(null);
 
   useEffect(() => {
     if (!props.diagnosticId) return;
     fetch(`/api/diagnostic/${props.diagnosticId}/by-history`)
       .then(async (r) => {
         if (!r.ok) return;
-        const j = await responseJson<{ demands: unknown[]; diagnostics: unknown[] }>(r);
+        const j = await responseJson<DiagnosticHistory>(r);
         setHistory(j);
       })
       .catch(() => {});
@@ -393,97 +501,115 @@ function HubScreen(props: {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs">
-          <span className="text-zinc-500">Госномер</span>
-          <input
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            value={props.hubEditable.licensePlate}
-            onChange={(e) => props.onChange("licensePlate", e.target.value)}
-          />
-        </label>
-        <label className="block text-xs">
-          <span className="text-zinc-500">Марка</span>
-          <input
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            value={props.hubEditable.brand}
-            onChange={(e) => props.onChange("brand", e.target.value)}
-          />
-        </label>
-        <label className="block text-xs">
-          <span className="text-zinc-500">Модель</span>
-          <input
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            value={props.hubEditable.model}
-            onChange={(e) => props.onChange("model", e.target.value)}
-          />
-        </label>
-        <label className="block text-xs">
-          <span className="text-zinc-500">Год</span>
-          <input
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            value={props.hubEditable.year}
-            onChange={(e) => props.onChange("year", e.target.value)}
-          />
-        </label>
-        <label className="block text-xs">
-          <span className="text-zinc-500">Пробег</span>
-          <input
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            value={props.hubEditable.mileage}
-            onChange={(e) => props.onChange("mileage", e.target.value)}
-          />
-        </label>
-      </div>
+    <div className="eco-diagnostic-hub">
+      <section className="eco-card eco-card--padded eco-diagnostic-vehicle">
+        <div>
+          <div className="eco-page-kicker">Автомобиль</div>
+          <h3>Карточка диагностики</h3>
+        </div>
+        <div className="eco-diagnostic-vehicle-grid">
+          <label className="eco-field">
+            <span>Госномер</span>
+            <input
+              className="eco-input"
+              value={props.hubEditable.licensePlate}
+              onChange={(e) => props.onChange("licensePlate", e.target.value)}
+            />
+          </label>
+          <label className="eco-field">
+            <span>Марка</span>
+            <input
+              className="eco-input"
+              value={props.hubEditable.brand}
+              onChange={(e) => props.onChange("brand", e.target.value)}
+            />
+          </label>
+          <label className="eco-field">
+            <span>Модель</span>
+            <input
+              className="eco-input"
+              value={props.hubEditable.model}
+              onChange={(e) => props.onChange("model", e.target.value)}
+            />
+          </label>
+          <label className="eco-field">
+            <span>Год</span>
+            <input
+              className="eco-input"
+              value={props.hubEditable.year}
+              onChange={(e) => props.onChange("year", e.target.value)}
+            />
+          </label>
+          <label className="eco-field">
+            <span>Пробег</span>
+            <input
+              className="eco-input"
+              value={props.hubEditable.mileage}
+              onChange={(e) => props.onChange("mileage", e.target.value)}
+            />
+          </label>
+        </div>
+      </section>
 
       {history &&
         ((history.demands?.length ?? 0) > 0 || (history.diagnostics?.length ?? 0) > 0) && (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-900/40">
-          <div className="font-medium text-zinc-700 dark:text-zinc-200">История</div>
-          <ul className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
-            {(history.demands ?? []).slice(0, 3).map((d: any, i: number) => (
+        <section className="eco-diagnostic-history">
+          <div className="eco-page-kicker">История</div>
+          <ul>
+            {(history.demands ?? []).slice(0, 3).map((d, i) => (
               <li key={i}>
-                Отгрузка {d.name} · {new Date(d.momentAt).toLocaleDateString("ru-RU")}
+                <span>Отгрузка {d.name}</span>
+                <b>{new Date(d.momentAt).toLocaleDateString("ru-RU")}</b>
               </li>
             ))}
-            {(history.diagnostics ?? []).map((d: any) => (
+            {(history.diagnostics ?? []).map((d) => (
               <li key={d.id}>
-                Диагностика {new Date(d.startedAt).toLocaleDateString("ru-RU")} · 🟢{d.summaryGreen} 🟡
-                {d.summaryYellow} 🔴{d.summaryRed}
+                <span>Диагностика {new Date(d.startedAt).toLocaleDateString("ru-RU")}</span>
+                <b>
+                  {d.summaryGreen}/{d.summaryYellow}/{d.summaryRed}
+                </b>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="eco-diagnostic-block-grid">
         {BLOCK_ORDER.map((block) => {
           const { done, total } = progressForBlock(block);
+          const pct = total ? Math.round((done / total) * 100) : 0;
           return (
             <button
               key={block}
               type="button"
               onClick={() => props.onSelectBlock(block)}
-              className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm hover:border-amber-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-amber-600"
+              className="eco-diagnostic-block-card"
             >
-              <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{BLOCK_TITLES[block]}</div>
-              <div className="mt-1 text-xs text-zinc-500">
-                {done} из {total} заполнено
+              <div>
+                <Wrench className="eco-icon" aria-hidden />
+                <strong>{BLOCK_TITLES[block]}</strong>
               </div>
+              <span>
+                {done} / {total}
+              </span>
+              <i aria-hidden>
+                <em style={{ width: `${pct}%` }} />
+              </i>
             </button>
           );
         })}
       </div>
 
-      <button
+      <EcoButton
         type="button"
         disabled={!props.canSummary}
         onClick={props.onSummary}
-        className="w-full rounded-lg bg-amber-500 py-3 text-sm font-medium text-white disabled:opacity-40 hover:bg-amber-600"
+        variant="primary"
+        className="eco-diagnostic-summary-btn"
       >
+        <FileText className="eco-icon" aria-hidden />
         К сводке
-      </button>
+      </EcoButton>
     </div>
   );
 }
@@ -496,12 +622,18 @@ function BlockScreen(props: {
 }) {
   const nodes = ALL_NODES.filter((n) => n.block === props.block);
   return (
-    <div>
-      <button type="button" onClick={props.onBack} className="mb-4 text-sm text-amber-600 hover:underline">
-        ← Назад
-      </button>
-      <h2 className="mb-3 text-lg font-semibold">{BLOCK_TITLES[props.block]}</h2>
-      <ul className="space-y-2">
+    <div className="eco-diagnostic-panel">
+      <div className="eco-diagnostic-panel-head">
+        <EcoButton type="button" onClick={props.onBack} variant="ghost" size="sm">
+          <ArrowLeft className="eco-icon" aria-hidden />
+          Назад
+        </EcoButton>
+        <div>
+          <div className="eco-page-kicker">Блок проверки</div>
+          <h2>{BLOCK_TITLES[props.block]}</h2>
+        </div>
+      </div>
+      <ul className="eco-diagnostic-node-list">
         {nodes.map((n) => {
           const p = props.positions.find((x) => x.node === n.node);
           const st = p?.status ?? "NOT_CHECKED";
@@ -510,10 +642,12 @@ function BlockScreen(props: {
               <button
                 type="button"
                 onClick={() => props.onPickNode(n.node)}
-                className="flex w-full items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="eco-diagnostic-node"
               >
                 <span>{n.title}</span>
-                <span className="text-xs text-zinc-500">{statusLabel(st)}</span>
+                <EcoBadge tone={statusTone(st)} dot>
+                  {statusLabel(st)}
+                </EcoBadge>
               </button>
             </li>
           );
@@ -523,18 +657,33 @@ function BlockScreen(props: {
   );
 }
 
+function statusTone(s: DiagnosticPositionStatus): EcoBadgeTone {
+  switch (s) {
+    case "GREEN":
+      return "success";
+    case "YELLOW":
+      return "warning";
+    case "RED":
+      return "danger";
+    case "SKIPPED":
+      return "info";
+    default:
+      return "neutral";
+  }
+}
+
 function statusLabel(s: DiagnosticPositionStatus): string {
   switch (s) {
     case "GREEN":
-      return "🟢";
+      return "Норма";
     case "YELLOW":
-      return "🟡";
+      return "Внимание";
     case "RED":
-      return "🔴";
+      return "Замена";
     case "SKIPPED":
-      return "⊘";
+      return "Пропущено";
     default:
-      return "…";
+      return "Не проверено";
   }
 }
 
@@ -602,29 +751,37 @@ function PositionScreen(props: {
   };
 
   return (
-    <div>
-      <button type="button" onClick={props.onBack} className="mb-4 text-sm text-amber-600 hover:underline">
-        ← Назад
-      </button>
-      <h2 className="mb-2 text-lg font-semibold">{nodeTitle(props.node)}</h2>
+    <div className="eco-diagnostic-panel eco-diagnostic-position">
+      <div className="eco-diagnostic-panel-head">
+        <EcoButton type="button" onClick={props.onBack} variant="ghost" size="sm">
+          <ArrowLeft className="eco-icon" aria-hidden />
+          Назад
+        </EcoButton>
+        <div>
+          <div className="eco-page-kicker">{BLOCK_TITLES[props.block]}</div>
+          <h2>{nodeTitle(props.node)}</h2>
+        </div>
+      </div>
 
       {measurement && (
-        <div className="mb-4">
-          <label className="block text-xs text-zinc-500">
-            {measurement === "brake_fluid" ? "Влажность, %" : "Температура замерзания, °C"}
+        <div className="eco-diagnostic-measurement">
+          <label className="eco-field">
+            <span>
+              {measurement === "brake_fluid" ? "Влажность, %" : "Температура замерзания, °C"}
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              className="eco-input eco-diagnostic-measurement-input"
+              value={meas}
+              onChange={(e) => setMeas(e.target.value)}
+            />
           </label>
-          <input
-            type="text"
-            inputMode="decimal"
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-3 text-2xl font-semibold dark:border-zinc-600 dark:bg-zinc-900"
-            value={meas}
-            onChange={(e) => setMeas(e.target.value)}
-          />
           <MeasScale measurement={measurement} value={meas} />
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-3 gap-2">
+      <div className="eco-diagnostic-status-grid">
         {(["GREEN", "YELLOW", "RED"] as const).map((s) => (
           <button
             key={s}
@@ -633,16 +790,23 @@ function PositionScreen(props: {
               setStatus(s);
               void persist({ status: s });
             }}
-            className={`rounded-xl py-4 text-sm font-medium ${
-              status === s ? "ring-2 ring-amber-500" : ""
-            } bg-zinc-100 dark:bg-zinc-800`}
+            className={`eco-diagnostic-status-btn eco-diagnostic-status-btn--${s.toLowerCase()} ${
+              status === s ? "is-active" : ""
+            }`}
           >
-            {s === "GREEN" ? "🟢 Норма" : s === "YELLOW" ? "🟡 Внимание" : "🔴 Замена"}
+            {s === "GREEN" ? (
+              <CheckCircle2 className="eco-icon" aria-hidden />
+            ) : s === "YELLOW" ? (
+              <TriangleAlert className="eco-icon" aria-hidden />
+            ) : (
+              <XCircle className="eco-icon" aria-hidden />
+            )}
+            {statusLabel(s)}
           </button>
         ))}
       </div>
 
-      <button
+      <EcoButton
         type="button"
         onClick={() =>
           void props.onSave({
@@ -657,14 +821,15 @@ function PositionScreen(props: {
             recommendation: rec || null,
           })
         }
-        className="mb-4 w-full rounded-lg border border-zinc-300 py-2 text-sm dark:border-zinc-600"
+        className="eco-diagnostic-skip-btn"
       >
+        <X className="eco-icon" aria-hidden />
         Пропустить узел
-      </button>
+      </EcoButton>
 
       {(status === "YELLOW" || status === "RED") && (
         <>
-          <div className="mb-2 flex flex-wrap gap-2">
+          <div className="eco-diagnostic-tags">
             {props.tags.map((t) => (
               <button
                 key={t.code}
@@ -676,24 +841,20 @@ function PositionScreen(props: {
                   setTags(next);
                   void persist({ tags: next });
                 }}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  tags.includes(t.code)
-                    ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
-                    : "border-zinc-300 dark:border-zinc-600"
-                }`}
+                className={`eco-diagnostic-tag ${tags.includes(t.code) ? "is-active" : ""}`}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-          <label className="mt-3 block text-xs text-zinc-500">
-            Фото (обязательно перед завершением диагностики)
+          <label className="eco-diagnostic-file">
+            <Camera className="eco-icon" aria-hidden />
+            <span>Фото обязательно перед завершением диагностики</span>
             <input
               type="file"
               accept="image/*"
               capture="environment"
-              className="mt-1 block w-full text-sm"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void props.onPhoto(f);
@@ -701,10 +862,10 @@ function PositionScreen(props: {
             />
           </label>
 
-          <label className="mt-3 block text-xs text-zinc-500">
-            Рекомендация
+          <label className="eco-field eco-diagnostic-recommendation">
+            <span>Рекомендация</span>
             <select
-              className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+              className="eco-input"
               value={rec}
               onChange={(e) => {
                 setRec(e.target.value);
@@ -732,13 +893,15 @@ function PositionScreen(props: {
         </>
       )}
 
-      <button
+      <EcoButton
         type="button"
         onClick={props.onVoice}
-        className="mt-6 w-full rounded-lg border border-dashed border-zinc-400 py-2 text-sm text-zinc-600 dark:border-zinc-500 dark:text-zinc-400"
+        variant="ghost"
+        className="eco-diagnostic-voice-btn"
       >
+        <Mic className="eco-icon" aria-hidden />
         Голосовая заметка
-      </button>
+      </EcoButton>
     </div>
   );
 }
@@ -754,9 +917,9 @@ function MeasScale(props: { measurement: "brake_fluid" | "coolant"; value: strin
         ? Math.min(100, Math.max(0, ((20 + v) / 55) * 100))
         : 0;
   return (
-    <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-600">
+    <div className="eco-diagnostic-scale">
       <div
-        className="h-full w-1 bg-black/40"
+        className="eco-diagnostic-scale-marker"
         style={{ marginLeft: `calc(${pct}% - 2px)` }}
         title={props.value}
       />
@@ -778,37 +941,37 @@ function SummaryScreen(props: {
   const variants = (o: DiagnosticOffer) => (o.variants as { label: string; priceRub: number }[]) ?? [];
 
   return (
-    <div className="space-y-6">
-      <button type="button" onClick={props.onBack} className="text-sm text-amber-600 hover:underline">
-        ← К блокам
-      </button>
-
-      <div className="flex flex-wrap gap-4 text-center">
-        <div className="rounded-xl bg-emerald-50 px-6 py-3 dark:bg-emerald-950/30">
-          <div className="text-3xl font-bold">{props.data?.summaryGreen ?? 0}</div>
-          <div className="text-xs text-zinc-600 dark:text-zinc-400">🟢</div>
-        </div>
-        <div className="rounded-xl bg-amber-50 px-6 py-3 dark:bg-amber-950/30">
-          <div className="text-3xl font-bold">{props.data?.summaryYellow ?? 0}</div>
-          <div className="text-xs text-zinc-600 dark:text-zinc-400">🟡</div>
-        </div>
-        <div className="rounded-xl bg-red-50 px-6 py-3 dark:bg-red-950/30">
-          <div className="text-3xl font-bold">{props.data?.summaryRed ?? 0}</div>
-          <div className="text-xs text-zinc-600 dark:text-zinc-400">🔴</div>
+    <div className="eco-diagnostic-summary">
+      <div className="eco-diagnostic-panel-head">
+        <EcoButton type="button" onClick={props.onBack} variant="ghost" size="sm">
+          <ArrowLeft className="eco-icon" aria-hidden />
+          К блокам
+        </EcoButton>
+        <div>
+          <div className="eco-page-kicker">Сводка</div>
+          <h2>Рекомендации и офферы</h2>
         </div>
       </div>
 
-      <div>
-        <h3 className="mb-2 font-semibold">Офферы (🔴)</h3>
-        <ul className="space-y-3">
+      <div className="eco-grid eco-grid--kpi eco-diagnostic-summary-kpis">
+        <EcoKpi label="Норма" value={props.data?.summaryGreen ?? 0} sub="Без действий" tone="success" />
+        <EcoKpi label="Внимание" value={props.data?.summaryYellow ?? 0} sub="На следующий визит" tone="warning" />
+        <EcoKpi label="Замена" value={props.data?.summaryRed ?? 0} sub="Предложить сейчас" tone="danger" />
+      </div>
+
+      <section className="eco-card eco-card--padded eco-diagnostic-offers">
+        <div className="eco-diagnostic-section-head">
+          <div className="eco-page-kicker">Офферы</div>
+          <h3>Красная зона</h3>
+        </div>
+        <ul>
           {(props.data?.offers ?? [])
             .filter((o) => !o.nextVisitOnly)
             .map((o) => (
-              <li key={o.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                <label className="flex items-start gap-2">
+              <li key={o.id}>
+                <label className="eco-diagnostic-offer-check">
                   <input
                     type="checkbox"
-                    className="mt-1"
                     onChange={(e) => {
                       if (e.target.checked) {
                         props.setSelectedOffers((prev) => ({ ...prev, [o.id]: prev[o.id] ?? 0 }));
@@ -821,11 +984,11 @@ function SummaryScreen(props: {
                       }
                     }}
                   />
-                  <span className="flex-1 text-sm font-medium">{o.title}</span>
+                  <span>{o.title}</span>
                 </label>
-                <div className="mt-2 space-y-1 pl-6">
+                <div className="eco-diagnostic-offer-variants">
                   {variants(o).map((v, idx) => (
-                    <label key={idx} className="flex items-center gap-2 text-xs">
+                    <label key={idx}>
                       <input
                         type="radio"
                         name={`var-${o.id}`}
@@ -834,51 +997,57 @@ function SummaryScreen(props: {
                           props.setSelectedOffers((prev) => ({ ...prev, [o.id]: idx }))
                         }
                       />
-                      {v.label} — {v.priceRub.toLocaleString("ru-RU")} ₽
+                      <span>{v.label}</span>
+                      <b>{v.priceRub.toLocaleString("ru-RU")} ₽</b>
                     </label>
                   ))}
                 </div>
               </li>
             ))}
         </ul>
-      </div>
+      </section>
 
       {yellowPositions.length > 0 && (
-        <div>
-          <h3 className="mb-2 font-semibold">На следующий визит (🟡)</h3>
-          <ul className="list-inside list-disc text-sm text-zinc-600 dark:text-zinc-400">
+        <section className="eco-card eco-card--padded eco-diagnostic-next-visit">
+          <div className="eco-diagnostic-section-head">
+            <div className="eco-page-kicker">Следующий визит</div>
+            <h3>Желтая зона</h3>
+          </div>
+          <ul>
             {yellowPositions.map((p) => (
               <li key={p.id}>
-                {nodeTitle(p.node)}
-                {p.recommendation ? ` — ${p.recommendation}` : ""}
+                <span>{nodeTitle(p.node)}</span>
+                {p.recommendation && <b>{p.recommendation}</b>}
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
-      <div className="flex flex-col gap-2">
-        <button
+      <div className="eco-diagnostic-actions">
+        <EcoButton
           type="button"
           onClick={props.onAddShipment}
-          className="rounded-lg bg-emerald-600 py-3 text-sm font-medium text-white hover:bg-emerald-700"
+          variant="primary"
         >
+          <ClipboardCheck className="eco-icon" aria-hidden />
           Добавить выбранные позиции в отгрузку
-        </button>
-        <button
+        </EcoButton>
+        <EcoButton
           type="button"
           onClick={props.onSendReport}
-          className="rounded-lg border border-zinc-300 py-3 text-sm dark:border-zinc-600"
         >
+          <Send className="eco-icon" aria-hidden />
           Отправить отчёт клиенту (копировать ссылку)
-        </button>
-        <button
+        </EcoButton>
+        <EcoButton
           type="button"
           onClick={props.onComplete}
-          className="rounded-lg bg-amber-500 py-3 text-sm font-medium text-white hover:bg-amber-600"
+          variant="danger"
         >
+          <CheckCircle2 className="eco-icon" aria-hidden />
           Завершить диагностику
-        </button>
+        </EcoButton>
       </div>
     </div>
   );

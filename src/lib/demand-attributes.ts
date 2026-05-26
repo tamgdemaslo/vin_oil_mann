@@ -1,70 +1,72 @@
-import { moyskladFetch, type MoySkladMeta } from "@/lib/moysklad";
+import { prisma } from "@/lib/db";
 
 export type DemandAttributeMeta = {
   id: string;
   name: string;
   type: string;
-  meta: MoySkladMeta;
+  required: boolean;
+  order: number;
+  isSystem: boolean;
+  meta: { href: string; type: string; mediaType: string };
 };
 
-const REQUIRED_DEMAND_STRING_ATTRIBUTES = ["Объем", "Моторное масло"];
+const DEFAULT_DEMAND_ATTRIBUTES = [
+  { name: "vin номер", type: "string", required: false, order: 10, isSystem: false },
+  { name: "модель авто", type: "string", required: false, order: 20, isSystem: false },
+  { name: "год", type: "string", required: false, order: 30, isSystem: false },
+  { name: "гос. номер", type: "string", required: false, order: 40, isSystem: false },
+  { name: "пробег", type: "string", required: false, order: 50, isSystem: false },
+  { name: "Объем", type: "string", required: true, order: 60, isSystem: false },
+  { name: "Моторное масло", type: "string", required: true, order: 70, isSystem: false },
+  { name: "Эко пользователь", type: "string", required: false, order: 1000, isSystem: true },
+];
 
-function normalizeAttributeName(value?: string): string {
-  return (value ?? "").trim().toLowerCase().replace(/ё/g, "е");
-}
-
-function parseAttributeList(data: { rows?: DemandAttributeMeta[] } | DemandAttributeMeta[]): DemandAttributeMeta[] {
-  if (Array.isArray(data)) return data;
-  return Array.isArray(data.rows) ? data.rows : [];
-}
-
-async function loadDemandAttributeMetadata() {
-  return moyskladFetch<{ rows?: DemandAttributeMeta[] } | DemandAttributeMeta[]>(
-    "/entity/demand/metadata/attributes",
-    { cache: "no-store" }
-  );
+function toMeta(definition: {
+  id: string;
+  name: string;
+  type: string;
+  required: boolean;
+  order: number;
+  isSystem: boolean;
+}): DemandAttributeMeta {
+  return {
+    id: definition.id,
+    name: definition.name,
+    type: definition.type,
+    required: definition.required,
+    order: definition.order,
+    isSystem: definition.isSystem,
+    meta: {
+      href: `local://demand-attribute/${definition.id}`,
+      type: "demandattribute",
+      mediaType: "application/json",
+    },
+  };
 }
 
 export async function ensureDemandAttributeMetadata(): Promise<
   | { ok: true; attributes: DemandAttributeMeta[] }
   | { ok: false; error: string; attributes: DemandAttributeMeta[] }
 > {
-  const loaded = await loadDemandAttributeMetadata();
-  if (!loaded.ok) return { ok: false, error: loaded.error, attributes: [] };
-
-  let attributes = parseAttributeList(loaded.data);
-  const existingNames = new Set(attributes.map((a) => normalizeAttributeName(a.name)));
-
-  for (const name of REQUIRED_DEMAND_STRING_ATTRIBUTES) {
-    if (existingNames.has(normalizeAttributeName(name))) continue;
-
-    const created = await moyskladFetch<DemandAttributeMeta>(
-      "/entity/demand/metadata/attributes",
-      {
-        method: "POST",
-        body: JSON.stringify({ name, type: "string" }),
-        cache: "no-store",
-      }
-    );
-
-    if (!created.ok) {
-      const reloaded = await loadDemandAttributeMetadata();
-      if (reloaded.ok) {
-        attributes = parseAttributeList(reloaded.data);
-        if (attributes.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(name))) {
-          continue;
-        }
-      }
-      return {
-        ok: false,
-        error: `Не удалось создать доп. поле отгрузки «${name}» в МойСклад: ${created.error}`,
-        attributes,
-      };
+  try {
+    for (const attr of DEFAULT_DEMAND_ATTRIBUTES) {
+      await prisma.demandAttributeDefinition.upsert({
+        where: { name: attr.name },
+        update: attr,
+        create: attr,
+      });
     }
 
-    attributes.push(created.data);
-    existingNames.add(normalizeAttributeName(created.data.name));
-  }
+    const attributes = await prisma.demandAttributeDefinition.findMany({
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+    });
 
-  return { ok: true, attributes };
+    return { ok: true, attributes: attributes.map(toMeta) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Не удалось загрузить локальные доп. поля отгрузки",
+      attributes: [],
+    };
+  }
 }

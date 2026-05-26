@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
 import { buildJobOrderXlsBuffer } from "@/lib/job-order-xls";
+import { isLocalInventoryReadsEnabled } from "@/lib/local-inventory-read";
+import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -10,7 +12,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const loaded = await loadDemandDetailPayload(id);
+  const loaded = isLocalInventoryReadsEnabled()
+    ? await loadLocalDemandDetailPayload(id)
+    : await loadDemandDetailPayload(id);
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: 502 });
 
   let buffer: Buffer;

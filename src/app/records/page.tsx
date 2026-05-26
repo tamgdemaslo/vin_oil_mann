@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { EcoBadge, EcoButton, EcoStatusDot } from "@/components/platform/EcoUI";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 
@@ -156,6 +158,39 @@ function formatShipmentDate(value: string): string {
   return value || "—";
 }
 
+function addDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
+  date.setDate(date.getDate() + days);
+  return toDateInputValue(date);
+}
+
+function formatScheduleTitle(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value || "Дата";
+  const dateLabel = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  const weekday = date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "");
+  return `${dateLabel} · ${weekday}`;
+}
+
+function formatMinute(minute: number): string {
+  const hour = Math.floor(minute / 60);
+  const minutes = minute % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function durationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (rest === 0) return `${hours} ч`;
+  return `${hours} ч ${rest} мин`;
+}
+
+function isToday(value: string): boolean {
+  return value === toDateInputValue(new Date());
+}
+
 export default function RecordsPage() {
   const router = useRouter();
   const [user, setUser] = useState<User>(null);
@@ -165,8 +200,8 @@ export default function RecordsPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [records, setRecords] = useState<RecordItem[]>([]);
-  const [times, setTimes] = useState<TimeSlot[]>([]);
-  const [seances, setSeances] = useState<TimeSlot[]>([]);
+  const [, setTimes] = useState<TimeSlot[]>([]);
+  const [, setSeances] = useState<TimeSlot[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [companyTitle, setCompanyTitle] = useState("Там где масло");
 
@@ -467,6 +502,47 @@ export default function RecordsPage() {
     while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
     return { title: `${RU_MONTHS[month]} ${year}`, cells };
   }, [scheduleDate]);
+  const statusStats = useMemo(() => {
+    const stats = new Map<TimelineRecord["statusTone"], { label: string; count: number }>();
+    for (const record of dayTimeline) {
+      const existing = stats.get(record.statusTone) ?? { label: record.statusLabel, count: 0 };
+      stats.set(record.statusTone, { ...existing, count: existing.count + 1 });
+    }
+    return Array.from(stats.entries()).map(([tone, value]) => ({ tone, ...value }));
+  }, [dayTimeline]);
+  const nextFreeCards = useMemo(() => {
+    const fromMinute = nowMinute ?? timelineStartMinute;
+    return timelineStaff.map((staffItem) => {
+      const blocks = (timelineByStaff.get(staffItem.id) ?? [])
+        .map((record) => ({ start: record.startMinute, end: record.endMinute }))
+        .sort((a, b) => a.start - b.start);
+      const merged: Array<{ start: number; end: number }> = [];
+      for (const block of blocks) {
+        const last = merged[merged.length - 1];
+        if (last && block.start <= last.end) {
+          last.end = Math.max(last.end, block.end);
+        } else {
+          merged.push({ ...block });
+        }
+      }
+      const slots: Array<{ start: number; end: number }> = [];
+      let cursor = timelineStartMinute;
+      for (const block of merged) {
+        if (block.start - cursor >= 30) slots.push({ start: cursor, end: block.start });
+        cursor = Math.max(cursor, block.end);
+      }
+      if (timelineEndMinute - cursor >= 30) slots.push({ start: cursor, end: timelineEndMinute });
+      const available = slots
+        .map((slot) => ({ start: Math.max(slot.start, fromMinute), end: slot.end }))
+        .filter((slot) => slot.end - slot.start >= 30);
+      const totalFree = available.reduce((sum, slot) => sum + (slot.end - slot.start), 0);
+      return {
+        staffItem,
+        next: available[0] ?? null,
+        totalFree,
+      };
+    });
+  }, [nowMinute, timelineByStaff, timelineEndMinute, timelineStaff, timelineStartMinute]);
 
   const openQuickCreateFromMinute = useCallback(
     (staffIdValue: number, minute: number) => {
@@ -746,81 +822,152 @@ export default function RecordsPage() {
 
   return (
     <main
-      className="min-h-screen bg-[#ececec] px-4 py-4 dark:bg-zinc-950 sm:px-5"
+      className="eco-page eco-page--wide"
       style={{ fontFamily: '"Inter", "Open Sans", "Roboto", Arial, sans-serif' }}
     >
-      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-3">
-        <section className="border border-[#d8d8d8] bg-[#f8f8f8] px-3 pb-3 pt-2 dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-semibold text-[#2b3134] dark:text-zinc-100">Журнал записей</h1>
-              <p className="text-xs text-[#838a94] dark:text-zinc-400">
-                {companyTitle} ({companyId || "—"})
-              </p>
+      <div className="eco-records-stack">
+        <section className="eco-page-head">
+          <div>
+            <div className="eco-page-crumbs">
+              <Link href="/">Главная</Link>
+              <span className="sep">/</span>
+              <span>CRM</span>
+              <span className="sep">/</span>
+              <span className="cur">Журнал записей</span>
             </div>
-            <div className="flex flex-wrap items-end gap-2.5">
-              <label className="text-xs">
-                <span className="mb-1 block text-zinc-500 dark:text-zinc-400">Дата</span>
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="h-8 rounded border border-[#cfd3d8] bg-white px-2.5 text-sm text-[#2b3134] shadow-[inset_0_1px_0_rgba(255,255,255,.7)] dark:border-zinc-700 dark:bg-zinc-900"
-                />
-              </label>
-              <label className="text-xs">
-                <span className="mb-1 block text-zinc-500 dark:text-zinc-400">Сотрудник</span>
-                <select
-                  value={timelineStaffId}
-                  onChange={(e) => setTimelineStaffId(e.target.value)}
-                  className="h-8 rounded border border-[#cfd3d8] bg-white px-2.5 text-sm text-[#2b3134] shadow-[inset_0_1px_0_rgba(255,255,255,.7)] dark:border-zinc-700 dark:bg-zinc-900"
-                >
-                  <option value="">Все боксы</option>
-                  {staff.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickCreateHint(null);
-                  setIsCreateModalOpen(true);
-                }}
-                className="h-8 rounded border border-[#0f8c67] bg-[#0f8c67] px-3 text-xs font-semibold text-white"
-              >
-                Создать
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void loadSchedule();
-                  void loadRecords();
-                }}
-                className="h-8 rounded border border-[#cfd3d8] bg-white px-3 text-xs font-medium text-[#4f5965] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-              >
-                Обновить
-              </button>
-              <div className="ml-1 flex items-center gap-2 text-[10px] text-[#6f7782]">
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-[#24b7a8]" />
-                  Админ
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-[#7f34d9]" />
-                  Онлайн клиент
-                </span>
-              </div>
+            <div className="eco-title-row">
+              <h1 className="eco-page-title">Журнал записей</h1>
+              <EcoBadge tone="success" dot>
+                YCLIENTS
+              </EcoBadge>
+              <EcoBadge tone="neutral">{dayTimeline.length} записей</EcoBadge>
             </div>
+            <p className="eco-page-subtitle">
+              {companyTitle} ({companyId || "—"})
+            </p>
           </div>
-          {error && (
-            <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          <div className="eco-page-actions">
+            <Link href="/crm" className="eco-btn">
+              <ArrowLeft size={15} />
+              К воронке
+            </Link>
+            <EcoButton
+              variant="primary"
+              type="button"
+              onClick={() => {
+                setQuickCreateHint(null);
+                setIsCreateModalOpen(true);
+              }}
+            >
+              <Plus size={15} />
+              Новая запись
+            </EcoButton>
+          </div>
         </section>
+
+        <div className="eco-journal-strip">
+          <div className="eco-journal-date-nav">
+            <button type="button" className="eco-icon-btn" onClick={() => setScheduleDate((value) => addDays(value, -1))}>
+              <ChevronLeft size={15} />
+            </button>
+            <label className="eco-journal-date-card">
+              <CalendarDays size={15} />
+              <span>
+                <strong>{formatScheduleTitle(scheduleDate)}</strong>
+                <small>{isToday(scheduleDate) ? "сегодня" : "рабочий день"}</small>
+              </span>
+              <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+            </label>
+            <button type="button" className="eco-icon-btn" onClick={() => setScheduleDate((value) => addDays(value, 1))}>
+              <ChevronRight size={15} />
+            </button>
+          </div>
+          <EcoButton type="button" onClick={() => setScheduleDate(toDateInputValue(new Date()))}>
+            Сегодня
+          </EcoButton>
+          <label className="eco-select-chip">
+            <span>Сотрудник:</span>
+            <select value={timelineStaffId} onChange={(e) => setTimelineStaffId(e.target.value)} className="eco-select-inline">
+              <option value="">Все боксы</option>
+              {staff.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <EcoButton
+            type="button"
+            onClick={() => {
+              void loadSchedule();
+              void loadRecords();
+            }}
+          >
+            <RefreshCw size={15} />
+            Обновить
+          </EcoButton>
+          <div className="grow" />
+          <div className="eco-journal-statuses">
+            {statusStats.map((status) => (
+              <span key={status.tone}>
+                <EcoStatusDot
+                  tone={
+                    status.tone === "green"
+                      ? "success"
+                      : status.tone === "red"
+                        ? "danger"
+                        : status.tone === "blue"
+                          ? "info"
+                          : "warning"
+                  }
+                />
+                {status.label}
+                <strong>{status.count}</strong>
+              </span>
+            ))}
+          </div>
+          <div className="eco-seg">
+            <button type="button" className="eco-seg-btn is-active">
+              Таймлайн
+            </button>
+            <button type="button" className="eco-seg-btn" disabled>
+              Список
+            </button>
+          </div>
+        </div>
+
+        {nextFreeCards.length > 0 ? (
+          <div className="eco-journal-free-strip">
+            {nextFreeCards.map(({ staffItem, next, totalFree }) => (
+              <div key={staffItem.id} className={next ? "is-open" : ""}>
+                <div className="eco-journal-avatar">{staffItem.name.slice(0, 1).toUpperCase()}</div>
+                <div>
+                  <strong>{staffItem.name}</strong>
+                  {next ? (
+                    <p>
+                      Ближайшее окно <b>{formatMinute(next.start)} — {formatMinute(next.end)}</b>
+                      <span> · {durationLabel(next.end - next.start)} · свободно {durationLabel(totalFree)}</span>
+                    </p>
+                  ) : (
+                    <p>Свободных окон больше нет</p>
+                  )}
+                </div>
+                <EcoButton
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={!next}
+                  onClick={() => next && openQuickCreateFromMinute(staffItem.id, next.start)}
+                >
+                  <Plus size={14} />
+                  Записать
+                </EcoButton>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {error && <div className="eco-form-error eco-journal-error">{error}</div>}
 
         <section className="bg-transparent">
           <div className="grid gap-3 lg:grid-cols-[1fr_292px]">

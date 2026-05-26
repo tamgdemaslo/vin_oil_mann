@@ -52,7 +52,7 @@ export default async function ShipmentUnderHoodTagsPage({
           Не удалось открыть бирку
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Отгрузка не загрузилась из МойСклад или нет доступа. Проверьте id документа и авторизацию.
+          Отгрузка не загрузилась из локальной БД или нет доступа. Проверьте id документа и авторизацию.
         </p>
         <Link
           href={`/shipment/${encodeURIComponent(id)}`}

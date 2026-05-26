@@ -12,9 +12,5 @@ export default async function CrmPage() {
     redirect("/");
   }
 
-  return (
-    <div className="min-h-screen bg-white dark:bg-zinc-950">
-      <CrmPipelineClient userLogin={session.user.login} userName={session.user.name} />
-    </div>
-  );
+  return <CrmPipelineClient userLogin={session.user.login} userName={session.user.name} />;
 }

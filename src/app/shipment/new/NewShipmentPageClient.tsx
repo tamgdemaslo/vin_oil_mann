@@ -2,14 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import {
+  PackagePlus,
+  Receipt,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
+import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
+import MoneyInput from "@/components/MoneyInput";
 
 type Meta = { href: string; type: string; mediaType: string };
 
 type Org = { id: string; name: string; meta: Meta };
-type Store = { id: string; name: string; meta: Meta };
+type Store = { id: string; name: string; meta: Meta; isMain?: boolean };
 type Counterparty = { id: string; name: string; meta: Meta };
 type Product = {
   id: string;
@@ -23,6 +30,8 @@ type Product = {
   reserveQuantity?: number;
   availableQuantity?: number;
   slotName?: string;
+  cost?: number;
+  buyPriceCents?: number;
 };
 
 type Position = {
@@ -39,6 +48,7 @@ type Position = {
     quantity?: number;
     reserve?: number;
     available?: number;
+    slotName?: string;
   };
   discount?: number;
   discountMode?: "percent" | "amount";
@@ -46,14 +56,33 @@ type Position = {
 };
 
 type ShipmentAttribute = { id: string; name: string; type: string; meta: Meta; value: string | null };
+type SessionJson = { user?: { role?: string } };
+type OrganizationsJson = { organizations?: Org[]; error?: string };
+type StoresJson = { stores?: Store[]; error?: string };
+type StockJson = { stockByAssortment?: Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string; cost?: number }> };
+type AttributesJson = { attributes?: ShipmentAttribute[]; error?: string };
+type CounterpartiesJson = { counterparties?: Counterparty[]; error?: string };
+type ProductsJson = { products?: Product[]; error?: string };
+type AgentCreateJson = { id?: string; name?: string; meta?: Meta; error?: string };
+type DemandCreateJson = { id?: string; error?: string };
+type DiagnosticExistingJson = { diagnostic?: { id?: string }; error?: string };
+type DiagnosticCreateJson = { diagnosticId?: string; error?: string };
 
 const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
-
-const MOYSKLAD_BASE = "https://api.moysklad.ru/api/remap/1.2";
 
 function formatLocalMoyskladMoment(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+async function safeJson<T>(response: Response, fallback: T): Promise<T> {
+  try {
+    const text = await response.text();
+    if (!text.trim()) return fallback;
+    return JSON.parse(text);
+  } catch {
+    return fallback;
+  }
 }
 
 type VinLookupItem = {
@@ -580,6 +609,7 @@ function NewShipmentForm() {
   const [newAgentCompanyType, setNewAgentCompanyType] = useState<"legal" | "entrepreneur" | "individual">("legal");
   const [newAgentEmail, setNewAgentEmail] = useState("");
   const [newAgentPhone, setNewAgentPhone] = useState("");
+  const [newAgentLegalTitle, setNewAgentLegalTitle] = useState("");
   const [createAgentLoading, setCreateAgentLoading] = useState(false);
   const [createAgentError, setCreateAgentError] = useState<string | null>(null);
 
@@ -591,7 +621,7 @@ function NewShipmentForm() {
 
   const [positions, setPositions] = useState<Position[]>([]);
   const [stockByAssortment, setStockByAssortment] = useState<
-    Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string }>
+    Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string; cost?: number }>
   >({});
   const [cellByAssortment, setCellByAssortment] = useState<Record<string, number | string>>({});
   const [productSearch, setProductSearch] = useState("");
@@ -607,6 +637,7 @@ function NewShipmentForm() {
   const [momentStr, setMomentStr] = useState("");
   const [vinLookupLoading, setVinLookupLoading] = useState(false);
   const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
+  const [vinResultTab, setVinResultTab] = useState<"recommendations" | "oils" | "filters" | "other">("recommendations");
   const [showAllOilGroups, setShowAllOilGroups] = useState(false);
   const [maintenanceCopyStatus, setMaintenanceCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [manualEngineVolume, setManualEngineVolume] = useState("");
@@ -617,6 +648,7 @@ function NewShipmentForm() {
   const [demandIdLocal, setDemandIdLocal] = useState<string | null>(null);
   const [diagnosticModalOpen, setDiagnosticModalOpen] = useState(false);
   const [diagnosticRowId, setDiagnosticRowId] = useState<string | null>(null);
+  const [summarySheetOpen, setSummarySheetOpen] = useState(false);
 
   useEffect(() => {
     if (prefillApplied) return;
@@ -645,7 +677,7 @@ function NewShipmentForm() {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session")
-      .then((r) => r.json())
+      .then((r) => safeJson<SessionJson>(r, {}))
       .then(async (data) => {
         if (cancelled) return;
         if (!data?.user) {
@@ -653,14 +685,14 @@ function NewShipmentForm() {
           return;
         }
         if (data.user.role === "admin" || data.user.role === "master") {
-          const shift = await fetch("/api/shifts/current").then((r) => (r.ok ? r.json() : null));
+          const shift = await fetch("/api/shifts/current").then((r) => (r.ok ? safeJson<{ shift?: unknown } | null>(r, null) : null));
           if (cancelled) return;
           if (!shift) {
             router.push(data.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
             return;
           }
           if (data.user.role === "admin") {
-            const cash = await fetch("/api/cash").then((r) => (r.ok ? r.json() : null));
+            const cash = await fetch("/api/cash").then((r) => (r.ok ? safeJson<{ shift?: unknown } | null>(r, null) : null));
             if (cancelled) return;
             if (!cash?.shift) {
               router.push("/cash?needShift=1");
@@ -686,11 +718,13 @@ function NewShipmentForm() {
         router.push("/login?from=/shipment/new");
         return;
       }
-      const data = await res.json();
+      const data = await safeJson<OrganizationsJson>(res, {});
       if (res.ok && data.organizations) {
         setOrganizations(data.organizations);
         if (!selectedOrg && data.organizations.length > 0) setSelectedOrg(data.organizations[0]);
       }
+    } catch {
+      setOrganizations([]);
     } finally {
       setLoadingOrgs(false);
     }
@@ -704,14 +738,16 @@ function NewShipmentForm() {
         router.push("/login?from=/shipment/new");
         return;
       }
-      const data = await res.json();
+      const data = await safeJson<StoresJson>(res, {});
       if (res.ok && data.stores) {
         setStores(data.stores);
         if (!selectedStore && data.stores.length > 0) {
-          const main = data.stores.find((s: Store) => (s.name ?? "").toLowerCase().includes("основной"));
+          const main = data.stores.find((s: Store) => s.isMain || (s.name ?? "").toLowerCase().includes("основной"));
           setSelectedStore(main ?? data.stores[0]);
         }
       }
+    } catch {
+      setStores([]);
     } finally {
       setLoadingStores(false);
     }
@@ -739,7 +775,7 @@ function NewShipmentForm() {
     fetch(
       `/api/stock?storeName=${encodeURIComponent(selectedStore.name)}&assortmentHrefs=${encodeURIComponent(hrefs.join(","))}${storeId}`
     )
-      .then((r) => r.json())
+      .then((r) => safeJson<StockJson>(r, {}))
       .then((data) => {
         if (!cancelled && data.stockByAssortment) setStockByAssortment(data.stockByAssortment);
       })
@@ -762,7 +798,7 @@ function NewShipmentForm() {
     }
     let cancelled = false;
     fetch(`/api/moysklad/product-cells?hrefs=${encodeURIComponent(hrefs.join(","))}`)
-      .then((r) => r.json())
+      .then((r) => safeJson<Record<string, number | string>>(r, {}))
       .then((data) => {
         if (!cancelled && typeof data === "object" && data !== null) setCellByAssortment(data as Record<string, number | string>);
       })
@@ -776,7 +812,7 @@ function NewShipmentForm() {
     if (!authChecked) return;
     setAttributesLoading(true);
     fetch("/api/demands/metadata")
-      .then((r) => r.json())
+      .then((r) => safeJson<AttributesJson>(r, {}))
       .then((data) => {
         if (data.attributes) {
           setAttributes(data.attributes);
@@ -792,7 +828,7 @@ function NewShipmentForm() {
     const t = setTimeout(() => {
       setAgentLoading(true);
       fetch(`/api/moysklad/counterparties?search=${encodeURIComponent(agentSearch)}&limit=20`)
-        .then((r) => r.json())
+        .then((r) => safeJson<CounterpartiesJson>(r, {}))
         .then((data) => {
           if (data.counterparties) setAgentOptions(data.counterparties);
         })
@@ -805,12 +841,29 @@ function NewShipmentForm() {
     if (!authChecked || selectedAgent || agentSearch.trim()) return;
     setAgentLoading(true);
     fetch("/api/moysklad/counterparties?limit=30")
-      .then((r) => r.json())
+      .then((r) => safeJson<CounterpartiesJson>(r, {}))
       .then((data) => {
         if (data.counterparties) setAgentOptions(data.counterparties);
       })
       .finally(() => setAgentLoading(false));
   }, [authChecked, selectedAgent, agentSearch]);
+
+  const handleUseDemoAgent = useCallback(async () => {
+    if (!authChecked || selectedAgent) return;
+    setAgentLoading(true);
+    try {
+      const res = await fetch("/api/moysklad/counterparties?limit=1");
+      const data = await safeJson<CounterpartiesJson>(res, {});
+      const demo = Array.isArray(data.counterparties) ? data.counterparties[0] : null;
+      if (demo) {
+        setSelectedAgent(demo);
+        setAgentSearch(demo.name);
+        setAgentOptions([]);
+      }
+    } finally {
+      setAgentLoading(false);
+    }
+  }, [authChecked, selectedAgent]);
 
   useEffect(() => {
     const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
@@ -829,7 +882,7 @@ function NewShipmentForm() {
       if (selectedStore?.name) params.set("storeName", selectedStore.name);
       params.set("limit", "15");
       fetch(`/api/moysklad/products?${params.toString()}`)
-        .then((r) => r.json())
+        .then((r) => safeJson<ProductsJson>(r, {}))
         .then((data) => {
           if (data.products) setProductOptions(data.products);
         })
@@ -842,6 +895,7 @@ function NewShipmentForm() {
     setNewAgentName(agentSearch.trim() || "");
     setNewAgentEmail("");
     setNewAgentPhone("");
+    setNewAgentLegalTitle("");
     setNewAgentCompanyType("legal");
     setCreateAgentError(null);
     setShowCreateAgentForm(true);
@@ -864,11 +918,16 @@ function NewShipmentForm() {
           companyType: newAgentCompanyType,
           email: newAgentEmail.trim() || undefined,
           phone: newAgentPhone.trim() || undefined,
+          legalTitle: newAgentLegalTitle.trim() || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await safeJson<AgentCreateJson>(res, {});
       if (!res.ok) {
         setCreateAgentError(data.error ?? "Ошибка создания");
+        return;
+      }
+      if (!data.id || !data.name || !data.meta) {
+        setCreateAgentError("Сервер не вернул созданного клиента");
         return;
       }
       setSelectedAgent({ id: data.id, name: data.name, meta: data.meta });
@@ -895,6 +954,13 @@ function NewShipmentForm() {
         discountAmount: 0,
         assortmentMeta: p.meta,
         cell: p.cell ?? undefined,
+        slotName: p.slotName ?? p.cell ?? undefined,
+        stock: {
+          cost: p.cost,
+          quantity: p.stockQuantity,
+          reserve: p.reserveQuantity,
+          available: p.availableQuantity,
+        },
       },
     ]);
     setProductSearch("");
@@ -907,6 +973,7 @@ function NewShipmentForm() {
     const hasOverrides = Boolean(vehicleOverrides?.displacementL?.trim() || vehicleOverrides?.enginePowerPS?.trim());
     setVinLookupLoading(true);
     setVinLookupResult(null);
+    setVinResultTab("recommendations");
     setShowAllOilGroups(false);
     setMaintenanceCopyStatus("idle");
     setShowVehicleOverrideDialog(false);
@@ -919,7 +986,12 @@ function NewShipmentForm() {
           vehicleOverrides: hasOverrides ? vehicleOverrides : undefined,
         }),
       });
-      const data = await res.json();
+      const data = await safeJson<VinLookupResult>(res, {
+        vin: vinClean,
+        decoded: null,
+        moySkladItems: [],
+        decodeError: "Пустой ответ подбора",
+      });
       setVinLookupResult(data as VinLookupResult);
       const decoded = (data as VinLookupResult).decoded;
       if (decoded?.displacementL) setManualEngineVolume(decoded.displacementL);
@@ -989,7 +1061,7 @@ function NewShipmentForm() {
         const capped = maxAvailable > 0 ? Math.min(desiredQuantity, maxAvailable) : 0;
         if (capped <= 0) continue;
         const meta: Meta = {
-          href: `${MOYSKLAD_BASE}/entity/product/${it.productId}`,
+          href: `local://product/${it.productId}`,
           type: "product",
           mediaType: "application/json",
         };
@@ -1052,7 +1124,7 @@ function NewShipmentForm() {
         store: { meta: selectedStore.meta },
         description: description.trim() || undefined,
         applicable,
-        moment: formatLocalMoyskladMoment(),
+        moment: momentStr || formatLocalMoyskladMoment(),
         attributes: atts,
         positions:
           positions.length > 0
@@ -1069,13 +1141,13 @@ function NewShipmentForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await safeJson<DemandCreateJson>(res, {});
       if (!res.ok) {
         setSubmitError(data.error ?? "Ошибка создания отгрузки");
         return null;
       }
       if (!data.id) {
-        setSubmitError("От МойСклад не пришёл ID созданной отгрузки");
+        setSubmitError("Локальная БД не вернула ID созданной отгрузки");
         return null;
       }
       return data.id as string;
@@ -1104,7 +1176,7 @@ function NewShipmentForm() {
 
       let diagId = diagnosticRowId;
       const existingRes = await fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
-      const existingJson = await existingRes.json().catch(() => ({}));
+      const existingJson = await safeJson<DiagnosticExistingJson>(existingRes, {});
       if (!existingRes.ok) {
         setSubmitError(existingJson.error ?? "Не удалось проверить существующую диагностику");
         return;
@@ -1126,7 +1198,7 @@ function NewShipmentForm() {
             mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
           }),
         });
-        const createJson = await createRes.json().catch(() => ({}));
+        const createJson = await safeJson<DiagnosticCreateJson>(createRes, {});
         if (!createRes.ok) {
           setSubmitError(createJson.error ?? "Не удалось создать диагностику");
           return;
@@ -1160,7 +1232,7 @@ function NewShipmentForm() {
         store: { meta: selectedStore.meta },
         description: description.trim() || undefined,
         applicable,
-        moment: formatLocalMoyskladMoment(),
+        moment: momentStr || formatLocalMoyskladMoment(),
         attributes: atts,
         positions:
           positions.length > 0
@@ -1177,13 +1249,13 @@ function NewShipmentForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await safeJson<DemandCreateJson>(res, {});
       if (!res.ok) {
         setSubmitError(data.error ?? "Ошибка создания отгрузки");
         return;
       }
       if (data.id) router.push(`/shipment/${data.id}`);
-      else setSubmitError("От МойСклад не пришёл ID созданной отгрузки");
+      else setSubmitError("Локальная БД не вернула ID созданной отгрузки");
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
@@ -1195,58 +1267,134 @@ function NewShipmentForm() {
   const editableAttributes = attributes
     .map((a, index) => ({ a, index }))
     .filter(({ a }) => EDITABLE_ATTR_NAMES.includes(normalizeAttrName(a.name)));
+  const getPositionStock = useCallback(
+    (position: Position) => {
+      const href = position.assortmentMeta?.href ?? "";
+      return position.stock ?? stockByAssortment[href] ?? null;
+    },
+    [stockByAssortment]
+  );
+  const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
+  const positionsTotal = positions.reduce((sum, p) => {
+    const base = (p.quantity || 0) * (p.price || 0);
+    const disc = typeof p.discount === "number" ? p.discount : 0;
+    return sum + base * (1 - disc / 100);
+  }, 0);
+  const positionsDiscount = Math.max(0, positionsSubtotal - positionsTotal);
+  const hasIncompleteCost = positions.some((p) => {
+    const stock = getPositionStock(p);
+    return typeof stock?.cost !== "number" || !Number.isFinite(stock.cost);
+  });
+  const positionsCost = hasIncompleteCost
+    ? null
+    : positions.reduce((sum, p) => sum + ((getPositionStock(p)?.cost ?? 0) * (p.quantity || 0)), 0);
+  const positionsMargin = positionsCost == null ? null : positionsTotal - positionsCost;
+  const positionsMarginPct = positionsMargin != null && positionsTotal > 0 ? Math.round((positionsMargin / positionsTotal) * 100) : null;
+  const readinessItems = [
+    { key: "organization", label: "Организация", ready: Boolean(selectedOrg) },
+    { key: "store", label: "Склад", ready: Boolean(selectedStore) },
+    { key: "client", label: "Клиент", ready: Boolean(selectedAgent) },
+  ];
+  const readinessMissing = readinessItems.filter((item) => !item.ready).map((item) => item.label.toLowerCase());
+  const saveDisabledReason = readinessMissing.length > 0 ? `Не хватает: ${readinessMissing.join(", ")}` : "";
+  const saveDisabled = submitLoading || readinessMissing.length > 0;
+  const decodedVehicle = vinLookupResult?.decoded;
+  const oilInfo = vinLookupResult?.oilInfo;
+  const vehicleTitle =
+    decodedVehicle
+      ? [
+          decodedVehicle.make,
+          decodedVehicle.model,
+          decodedVehicle.modification,
+          decodedVehicle.modelYear,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+  const vehicleSpecRows = [
+    {
+      label: "Двигатель",
+      value:
+        [
+          decodedVehicle?.engineSeries,
+          decodedVehicle?.displacementL ? `${decodedVehicle.displacementL} л` : null,
+          decodedVehicle?.enginePowerPS ? `${decodedVehicle.enginePowerPS} л.с.` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "—",
+    },
+    {
+      label: "Коробка",
+      value: oilInfo?.transmission?.gearbox ?? oilInfo?.transmission?.code ?? "—",
+    },
+    {
+      label: "Заводская спец.",
+      value: oilInfo?.approval ?? oilInfo?.acea?.join(", ") ?? oilInfo?.api?.join(", ") ?? "—",
+    },
+    {
+      label: "Фильтр",
+      value: oilInfo?.oilFilterMann ?? oilInfo?.oilFilterOem ?? "—",
+      mono: true,
+    },
+    {
+      label: "Интервал",
+      value: "—",
+    },
+    {
+      label: "Объём заливки",
+      value: oilInfo?.fillVolumeLiters ? `${oilInfo.fillVolumeLiters} л` : "—",
+    },
+    {
+      label: "Сливная пробка",
+      value: oilInfo?.transmission?.fluid ?? "—",
+      mono: true,
+    },
+  ];
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-4 flex items-center gap-3">
-        <Link href="/shipment" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-          ← Отгрузки
-        </Link>
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">Новая отгрузка</h1>
-      </div>
-
+    <main className="eco-page eco-page--wide eco-shipment-new-page">
       {showVehicleOverrideDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-5 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="eco-shipment-new-modal fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="eco-card eco-card--padded w-full max-w-md text-sm">
+            <h2>
               Уточните данные двигателя
             </h2>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="eco-page-subtitle">
               По VIN не удалось определить объём двигателя или мощность. Если знаете эти данные, укажите их — подбор масла будет точнее.
             </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="block text-xs text-zinc-500">Объём двигателя, л</label>
+            <div className="eco-shipment-new-modal-grid">
+              <label className="eco-field">
+                <span>Объём двигателя, л</span>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={manualEngineVolume}
                   onChange={(e) => setManualEngineVolume(e.target.value)}
                   placeholder="Например: 1.8"
-                  className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+                  className="eco-input"
                 />
-              </div>
-              <div>
-                <label className="block text-xs text-zinc-500">Мощность, л.с.</label>
+              </label>
+              <label className="eco-field">
+                <span>Мощность, л.с.</span>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={manualEnginePower}
                   onChange={(e) => setManualEnginePower(e.target.value)}
                   placeholder="Например: 150"
-                  className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+                  className="eco-input"
                 />
-              </div>
+              </label>
             </div>
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
+            <div className="eco-actions eco-shipment-new-modal-actions">
+              <EcoButton
                 type="button"
                 onClick={() => setShowVehicleOverrideDialog(false)}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 Продолжить без уточнения
-              </button>
-              <button
+              </EcoButton>
+              <EcoButton
                 type="button"
                 disabled={!manualEngineVolume.trim() && !manualEnginePower.trim()}
                 onClick={() =>
@@ -1255,39 +1403,152 @@ function NewShipmentForm() {
                     enginePowerPS: manualEnginePower.trim() || undefined,
                   })
                 }
-                className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+                variant="primary"
               >
                 Повторить подбор
-              </button>
+              </EcoButton>
             </div>
             {vehicleOverridePromptVin && (
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">VIN: {vehicleOverridePromptVin}</p>
+              <p className="eco-shipment-new-vin-note">VIN: {vehicleOverridePromptVin}</p>
             )}
           </div>
         </div>
       )}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <div>
-          <span className="text-xs text-zinc-500">Дата</span>
-          <div className="text-sm">{momentStr || "—"}</div>
+      {showCreateAgentForm && (
+        <div className="eco-shipment-new-modal fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="eco-card eco-card--padded w-full max-w-lg text-sm">
+            <div className="eco-shipment-card-head">
+              <h2>Новый клиент</h2>
+              <button type="button" className="eco-shipment-link-btn" onClick={() => setShowCreateAgentForm(false)}>
+                Закрыть
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="eco-field sm:col-span-2">
+                <span>Наименование *</span>
+                <input
+                  type="text"
+                  value={newAgentName}
+                  onChange={(e) => setNewAgentName(e.target.value)}
+                  placeholder="ООО Компания или ФИО"
+                  className="eco-input"
+                />
+              </label>
+              <label className="eco-field">
+                <span>Тип</span>
+                <select
+                  value={newAgentCompanyType}
+                  onChange={(e) => setNewAgentCompanyType(e.target.value as "legal" | "entrepreneur" | "individual")}
+                  className="eco-input"
+                >
+                  <option value="legal">Юридическое лицо</option>
+                  <option value="entrepreneur">ИП</option>
+                  <option value="individual">Физ. лицо</option>
+                </select>
+              </label>
+              <label className="eco-field">
+                <span>Телефон</span>
+                <input type="text" value={newAgentPhone} onChange={(e) => setNewAgentPhone(e.target.value)} className="eco-input" />
+              </label>
+              <label className="eco-field">
+                <span>Email</span>
+                <input type="email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)} className="eco-input" />
+              </label>
+              <label className="eco-field">
+                <span>Юр. наименование</span>
+                <input
+                  type="text"
+                  value={newAgentLegalTitle}
+                  onChange={(e) => setNewAgentLegalTitle(e.target.value)}
+                  placeholder="если отличается"
+                  className="eco-input"
+                />
+              </label>
+            </div>
+            {createAgentError && <p className="eco-shipment-new-error mt-3">{createAgentError}</p>}
+            <div className="eco-actions eco-shipment-new-modal-actions">
+              <EcoButton type="button" onClick={() => setShowCreateAgentForm(false)}>
+                Отмена
+              </EcoButton>
+              <EcoButton type="button" onClick={handleCreateAgent} disabled={createAgentLoading} variant="primary">
+                {createAgentLoading ? "Создание..." : "Создать"}
+              </EcoButton>
+            </div>
+          </div>
         </div>
-        <div>
-          <span className="text-xs text-zinc-500">Контрагент</span>
-          <div className="text-sm">{selectedAgent?.name ?? "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Организация</span>
-          <div className="text-sm">{loadingOrgs ? "Загрузка…" : selectedOrg?.name ?? "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Склад</span>
-          <div className="text-sm">{loadingStores ? "Загрузка…" : selectedStore?.name ?? "—"}</div>
-        </div>
-      </div>
+      )}
 
-      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Контрагент (покупатель) *</label>
+      <div className="eco-shipment-new-layout">
+        <div className="eco-shipment-new-main">
+      <section className="eco-card eco-card--padded eco-shipment-new-document">
+        <div className="eco-shipment-card-head">
+          <h2>Параметры документа</h2>
+          <EcoBadge tone={selectedOrg && selectedStore ? "success" : "neutral"} dot>
+            {selectedOrg && selectedStore ? "готово" : "частично"}
+          </EcoBadge>
+        </div>
+        <div className="eco-shipment-new-document-grid">
+          <label className="eco-field">
+            <span>Организация</span>
+            <select
+              value={selectedOrg?.id ?? ""}
+              onChange={(e) => setSelectedOrg(organizations.find((org) => org.id === e.target.value) ?? null)}
+              disabled={loadingOrgs || organizations.length === 0}
+              className="eco-input"
+            >
+              <option value="">{loadingOrgs ? "Загрузка..." : "Не выбрана"}</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+            {!loadingOrgs && organizations.length === 0 && (
+              <small className="eco-field-hint is-error">Нет локальных организаций. Запустите seed или импорт.</small>
+            )}
+          </label>
+          <label className="eco-field">
+            <span>Склад</span>
+            <select
+              value={selectedStore?.id ?? ""}
+              onChange={(e) => setSelectedStore(stores.find((store) => store.id === e.target.value) ?? null)}
+              disabled={loadingStores || stores.length === 0}
+              className="eco-input"
+            >
+              <option value="">{loadingStores ? "Загрузка..." : "Не выбран"}</option>
+              {stores.map((store) => (
+                <option key={store.id} value={store.id}>
+                  {store.name}
+                  {store.isMain ? " · основной" : ""}
+                </option>
+              ))}
+            </select>
+            {!loadingStores && stores.length === 0 && (
+              <small className="eco-field-hint is-error">Нет локальных складов. Запустите seed или импорт.</small>
+            )}
+          </label>
+          <label className="eco-field">
+            <span>Дата</span>
+            <input
+              type="text"
+              value={momentStr}
+              onChange={(e) => setMomentStr(e.target.value)}
+              placeholder="YYYY-MM-DD HH:mm:ss"
+              className="eco-input"
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="eco-card eco-shipment-new-client">
+        <div className="eco-shipment-card-head">
+          <h2>Клиент</h2>
+          {selectedAgent && <EcoBadge tone="success" dot>выбран</EcoBadge>}
+        </div>
+        <div className="eco-shipment-card-body">
+        <label className="eco-field eco-shipment-client-search">
+          <span>Найти по имени / телефону / номеру</span>
         <input
           type="text"
           value={agentSearch}
@@ -1299,16 +1560,29 @@ function NewShipmentForm() {
             if (selectedAgent) setAgentSearch(selectedAgent.name);
             else loadInitialCounterparties();
           }}
-          placeholder="Поиск или выберите из списка..."
-          className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+          placeholder="Например, +7 911..."
+          className="eco-input"
         />
+        </label>
+        {!selectedAgent && !showCreateAgentForm && (
+          <div className="eco-shipment-client-actions">
+            <EcoButton type="button" onClick={openCreateAgentForm} variant="primary">
+              Новый клиент
+            </EcoButton>
+          </div>
+        )}
+        {!selectedAgent && !showCreateAgentForm && (
+          <button type="button" className="eco-demo-fill" onClick={() => void handleUseDemoAgent()}>
+            Подставить демо →
+          </button>
+        )}
         {selectedAgent && (
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Выбран: <strong>{selectedAgent.name}</strong>
-            <button type="button" onClick={() => { setSelectedAgent(null); setAgentSearch(""); }} className="ml-2 text-amber-600 hover:underline dark:text-amber-400">
+          <div className="eco-shipment-selected-client">
+            <strong>{selectedAgent.name}</strong>
+            <button type="button" onClick={() => { setSelectedAgent(null); setAgentSearch(""); }}>
               сбросить
             </button>
-          </p>
+          </div>
         )}
         {!selectedAgent && !showCreateAgentForm && (agentSearch.trim() || agentOptions.length > 0) && (
           <ul className="mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-600">
@@ -1327,21 +1601,7 @@ function NewShipmentForm() {
             {!agentLoading && agentSearch && agentOptions.length === 0 && <li className="px-3 py-2 text-sm text-zinc-500">Ничего не найдено</li>}
           </ul>
         )}
-        {agentSearch.trim() && !selectedAgent && !showCreateAgentForm && (
-          <p className="mt-2">
-            <button type="button" onClick={openCreateAgentForm} className="text-sm text-amber-600 hover:underline dark:text-amber-400">
-              + Создать контрагента «{agentSearch.trim()}»
-            </button>
-          </p>
-        )}
-        {!selectedAgent && !showCreateAgentForm && !agentSearch.trim() && (
-          <p className="mt-2">
-            <button type="button" onClick={openCreateAgentForm} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400">
-              + Создать нового контрагента
-            </button>
-          </p>
-        )}
-        {showCreateAgentForm && (
+        {false && showCreateAgentForm && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-900/10">
             <p className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">Новый контрагент</p>
             <div className="space-y-3">
@@ -1377,15 +1637,27 @@ function NewShipmentForm() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </section>
 
-      <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">VIN номер</h2>
+      <section className="eco-card eco-shipment-new-vin">
+          <div className="eco-shipment-card-head">
+            <h2>
+              Автомобиль · подбор по VIN
+              {vinLookupResult && <EcoBadge tone="success" dot>Найдено</EcoBadge>}
+            </h2>
+            {vinLookupResult && <button type="button" className="eco-shipment-link-btn" onClick={() => setVinLookupResult(null)}>Изменить</button>}
+          </div>
+          <div className="eco-shipment-vin-body">
+            <div className="eco-shipment-vin-input-pane">
+              <label className="eco-field">
+                <span>VIN</span>
           <input
             type="text"
+            maxLength={17}
             value={vin}
             onChange={(e) => {
-              const v = e.target.value;
+              const v = e.target.value.replace(/\s/g, "").toUpperCase().slice(0, 17);
               setVin(v);
               setManualEngineVolume("");
               setManualEnginePower("");
@@ -1396,19 +1668,22 @@ function NewShipmentForm() {
                 setAttributes(next);
               }
             }}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-mono tracking-widest dark:border-zinc-600 dark:bg-zinc-900"
+            className="eco-input eco-shipment-new-vin-input"
             placeholder="Например: WBAXXXXX5JZ123456"
           />
+                <small className="eco-field-hint">Для подбора достаточно 8 символов, максимум 17.</small>
+              </label>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <p className="mb-2 w-full text-xs text-zinc-500">
-              Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры, найдём товары в МойСклад.
+              Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры по локальному каталогу.
             </p>
             <button
               type="button"
               disabled={vin.replace(/\s/g, "").length < 8 || vinLookupLoading}
               onClick={() => runVinLookup()}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+              className="eco-btn eco-btn--primary"
             >
+              <Sparkles className="eco-icon" aria-hidden />
               {vinLookupLoading ? "Подбор…" : "Подобрать по VIN"}
             </button>
             {(() => {
@@ -1432,10 +1707,30 @@ function NewShipmentForm() {
             })()}
           </div>
           {submitError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{submitError}</p>}
+            </div>
+            {decodedVehicle && (
+              <div className="eco-shipment-vin-spec-pane">
+                <h3>{vehicleTitle}</h3>
+                <div className="eco-shipment-vin-spec-grid">
+                  {vehicleSpecRows.map((row) => (
+                    <div key={row.label} className="eco-shipment-spec-row">
+                      <span>{row.label}</span>
+                      <strong className={row.mono ? "is-mono" : undefined}>{row.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           {vinLookupResult && (
-            <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800/50">
+            <div className="eco-shipment-vin-result">
               {vinLookupResult.decodeError && (
-                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.decodeError}</p>
+                <p className="eco-vin-alert">{vinLookupResult.decodeError}</p>
+              )}
+              {vinLookupResult.openaiError && (
+                <p className="eco-vin-alert">
+                  {vinLookupResult.openaiError}
+                </p>
               )}
               {vinLookupResult.decoded && (
                 <p className="mb-1 text-zinc-700 dark:text-zinc-300">
@@ -1541,7 +1836,7 @@ function NewShipmentForm() {
                 </div>
               )}
               {vinLookupResult.moySkladError && (
-                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.moySkladError}</p>
+                <p className="eco-vin-alert">{vinLookupResult.moySkladError}</p>
               )}
               {vinLookupResult.moySkladItems.length > 0 && (
                 <>
@@ -1568,18 +1863,37 @@ function NewShipmentForm() {
                     if (allItems.length === 0) {
                       return (
                         <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
-                          В МойСклад по этому VIN позиции не подобраны (совпадений по OEM/допуску не найдено или нет доступа к складу).
+                          В локальном каталоге по этому VIN позиции не подобраны (совпадений по OEM/допуску не найдено или нет остатков).
                         </div>
                       );
                     }
                     return (
                       <div className="space-y-3">
+                        <div className="eco-shipment-tabs" role="tablist" aria-label="Результаты VIN">
+                          {[
+                            ["recommendations", "Рекомендации ТО"],
+                            ["oils", "Масла"],
+                            ["filters", "Фильтры"],
+                            ["other", "Прочее"],
+                          ].map(([key, label]) => (
+                            <button
+                              key={key}
+                              type="button"
+                              role="tab"
+                              aria-selected={vinResultTab === key}
+                              className={vinResultTab === key ? "is-active" : undefined}
+                              onClick={() => setVinResultTab(key as typeof vinResultTab)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                         {inStockItems.length === 0 && (
                           <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
                             Найдено {allItems.length} позиций, но на выбранном складе остаток 0 по всем строкам. Ниже показан полный список подбора, чтобы можно было проверить соответствие и заказать.
                           </div>
                         )}
-                        {filterSections.length > 0 && (
+                        {vinResultTab === "filters" && filterSections.length > 0 && (
                           <div>
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <span className="text-zinc-600 dark:text-zinc-400">
@@ -1688,7 +2002,7 @@ function NewShipmentForm() {
                             </div>
                           </div>
                         )}
-                        {oils.length > 0 && (() => {
+                        {(vinResultTab === "oils" || vinResultTab === "recommendations") && oils.length > 0 && (() => {
                           const targetLiters = parseFillVolume(vinLookupResult.oilInfo?.fillVolumeLiters);
                           const oilGroups = buildOilGroups(oils, targetLiters);
                           const getGroupComparePrice = (g: OilGroup): number => {
@@ -1770,47 +2084,44 @@ function NewShipmentForm() {
                           const oilGroupsInStock = oilGroups.filter((g) => g.variants.some((v) => v.available > 0));
                           return oilGroups.length > 0 ? (
                             <div>
-                              {maintenanceOffers.length > 0 && (
-                                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
-                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                        Готовый расчет ТО для клиента
-                                      </h3>
-                                      <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                                        Система собрала варианты из подобранного масла и фильтров (при наличии остатков — берутся самые дешёвые варианты).
-                                      </p>
+                              {vinResultTab === "recommendations" && maintenanceOffers.length > 0 && (
+                                <div className="eco-maintenance-panel">
+                                  <div className="eco-maintenance-panel-head">
+                                    <div className="eco-maintenance-title-row">
+                                      <h3>Подбор: эконом / оптимальный / премиум</h3>
+                                      <span className="eco-ai-badge">OpenAI · локальный каталог</span>
                                     </div>
                                     <button
                                       type="button"
-                                      onClick={() => copyMaintenanceMessage(maintenanceMessage)}
-                                      className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                                      onClick={() => void runVinLookup()}
+                                      className="eco-maintenance-recalc"
                                     >
-                                      Скопировать весь расчет
+                                      Пересчитать
                                     </button>
                                   </div>
                                   {maintenanceCopyStatus !== "idle" && (
-                                    <p className={`mt-2 text-xs ${maintenanceCopyStatus === "copied" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}>
+                                    <p className={`eco-maintenance-copy-status ${maintenanceCopyStatus === "copied" ? "is-success" : "is-error"}`}>
                                       {maintenanceCopyStatus === "copied" ? "Текст скопирован." : "Не удалось скопировать автоматически."}
                                     </p>
                                   )}
-                                  <div className="mt-3 grid gap-2 lg:grid-cols-3">
+                                  <div className="eco-maintenance-offers-grid">
                                     {maintenanceOffers.map((offer) => (
-                                      <div key={offer.key} className="rounded-lg border border-white/70 bg-white/90 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
-                                        <div className="flex items-start justify-between gap-2">
+                                      <div key={offer.key} className={`eco-maintenance-offer-card ${offer.key === "standard" ? "is-recommended" : ""}`}>
+                                        {offer.key === "standard" && <span className="eco-recommend-label">Рекомендуем</span>}
+                                        <div className="eco-maintenance-offer-top">
                                           <div>
-                                            <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                            <div className="eco-maintenance-offer-title">
                                               {offer.title}
                                             </div>
-                                            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                            <div className="eco-maintenance-offer-note">
                                               {offer.lines.length} поз. · {offer.note}
                                             </div>
                                           </div>
-                                          <div className="text-right text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                            {formatMoney(offer.total, offer.currency)}
+                                          <div className="eco-maintenance-offer-price">
+                                            {formatMoney(offer.total, offer.currency).replace("руб.", "₽")}
                                           </div>
                                         </div>
-                                        <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+                                        <ul className="eco-maintenance-offer-lines">
                                           {offer.lines.slice(0, 4).map((line) => (
                                             <li key={`${offer.key}-${line.name}-${line.article ?? ""}`} className="truncate">
                                               {line.quantity} x {line.name}
@@ -1821,18 +2132,20 @@ function NewShipmentForm() {
                                         <button
                                           type="button"
                                           onClick={() => copyMaintenanceMessage(buildMaintenanceMessage(vinLookupResult, [offer]))}
-                                          className="mt-3 rounded-lg border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                                          className="eco-maintenance-copy-button"
                                         >
                                           Скопировать вариант
                                         </button>
                                       </div>
                                     ))}
                                   </div>
-                                  <textarea
-                                    readOnly
-                                    value={maintenanceMessage}
-                                    className="mt-3 h-44 w-full rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-zinc-700 dark:border-emerald-800 dark:bg-zinc-950/60 dark:text-zinc-300"
-                                  />
+                                  <details className="eco-maintenance-message">
+                                    <summary>Готовый расчет ТО для клиента</summary>
+                                    <textarea readOnly value={maintenanceMessage} />
+                                    <button type="button" onClick={() => copyMaintenanceMessage(maintenanceMessage)}>
+                                      Скопировать весь расчет
+                                    </button>
+                                  </details>
                                 </div>
                               )}
                               <div className="mb-2 flex items-center justify-between gap-2">
@@ -2035,11 +2348,11 @@ function NewShipmentForm() {
                             </div>
                           ) : (
                             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
-                              Подходящих масел по допуску не найдено в каталоге МойСклад.
+                              Подходящих масел по допуску не найдено в локальном каталоге.
                             </div>
                           );
                         })()}
-                        {oils.length === 0 &&
+                        {vinResultTab === "recommendations" && oils.length === 0 &&
                           filterSections.length > 0 &&
                           (() => {
                             const filterOnlyOffers = (() => {
@@ -2088,7 +2401,7 @@ function NewShipmentForm() {
                               </div>
                             );
                           })()}
-                        {others.length > 0 && (
+                        {vinResultTab === "other" && others.length > 0 && (
                           <div>
                             <div className="mb-1 flex items-center justify-between gap-2">
                               <span className="text-zinc-600 dark:text-zinc-400">
@@ -2139,11 +2452,18 @@ function NewShipmentForm() {
               )}
             </div>
           )}
-      </div>
+      </section>
 
-      {!attributesLoading && editableAttributes.length > 0 && (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">Дополнительные поля МойСклад</h2>
+        <section className="eco-card eco-card--padded eco-shipment-new-attributes">
+          <div className="eco-card__head">
+            <div>
+              <div className="eco-page-kicker">Локальная БД</div>
+              <h2>Дополнительные поля</h2>
+            </div>
+          </div>
+          {attributesLoading ? (
+            <p className="eco-shipment-new-empty">Загрузка дополнительных полей…</p>
+          ) : editableAttributes.length > 0 ? (
           <dl className="grid gap-2 sm:grid-cols-2">
             {editableAttributes.map(({ a, index }) => (
               <div key={a.id ?? a.name ?? index}>
@@ -2163,75 +2483,98 @@ function NewShipmentForm() {
               </div>
             ))}
           </dl>
-        </div>
-      )}
+          ) : (
+            <p className="eco-shipment-new-empty">Редактируемых дополнительных полей для этой отгрузки пока нет.</p>
+          )}
+        </section>
 
-      <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-        <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">Добавить позицию</h2>
+      <section className="eco-card eco-card--padded eco-shipment-new-add">
+        <div className="eco-card__head">
+          <div>
+            <div className="eco-page-kicker">Каталог</div>
+            <h2><PackagePlus className="eco-icon" aria-hidden /> Добавить позицию</h2>
+          </div>
+          <EcoBadge tone="neutral" dot>Локальный каталог</EcoBadge>
+        </div>
         <div className="space-y-2">
           <div>
-            <label className="block text-xs text-zinc-500">Наименование, код или артикул</label>
+            <label className="eco-field">
+              <span>Наименование, код или артикул</span>
+              <Search className="eco-shipment-new-search-icon" aria-hidden />
             <input
+              id="shipment-product-search"
               type="text"
               value={productSearch}
               onChange={(e) => setProductSearch(e.target.value)}
               placeholder="Поиск по названию или артикулу..."
-              className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+              className="eco-input"
             />
+            </label>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <details className="eco-shipment-advanced-search">
+            <summary>Расширенный поиск</summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
             <div>
-              <label className="block text-xs text-zinc-500">OEM PARTS</label>
+              <label className="eco-field">
+                <span>OEM PARTS</span>
               <input
                 type="text"
                 value={productOem}
                 onChange={(e) => setProductOem(e.target.value)}
                 placeholder="Фильтр по OEM"
-                className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+                className="eco-input"
               />
+              </label>
             </div>
             <div>
-              <label className="block text-xs text-zinc-500">Наименование по Mann</label>
+              <label className="eco-field">
+                <span>Наименование по Mann</span>
               <input
                 type="text"
                 value={productMannName}
                 onChange={(e) => setProductMannName(e.target.value)}
                 placeholder="Фильтр по Mann"
-                className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+                className="eco-input"
               />
+              </label>
             </div>
             <div>
-              <label className="block text-xs text-zinc-500">Параметры</label>
+              <label className="eco-field">
+                <span>Параметры</span>
               <input
                 type="text"
                 value={productParams}
                 onChange={(e) => setProductParams(e.target.value)}
                 placeholder="Фильтр по параметрам"
-                className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
+                className="eco-input"
               />
+              </label>
             </div>
           </div>
+          </details>
         </div>
         {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
-            <div className="mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <div className="eco-product-results mt-1 max-h-80 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
               {!productSearchLoading && productOptions.length > 0 && (
-                <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
-                  <span className="flex-1">Товар</span>
-                  <span className="w-14 text-right">Доступно</span>
-                  <span className="w-12 text-right">Ячейка</span>
-                  <span className="shrink-0">Цена</span>
+                <div className="eco-product-results-head border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
+                  <span>Товар</span>
+                  <span>Доступно</span>
+                  <span>Ячейка</span>
+                  <span>Цена</span>
+                  <span />
                 </div>
               )}
               <ul>
               {productSearchLoading && <li className="px-3 py-2 text-sm text-zinc-500">Загрузка…</li>}
               {!productSearchLoading && productOptions.map((p) => (
                 <li key={p.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    onClick={() => addPosition(p)}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  <div className="eco-product-result-row px-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{p.name}</span>
+                      <span className="block truncate text-xs text-zinc-500">
+                        Артикул: {p.article || "не указан"}
+                      </span>
+                    </span>
                     <span className={`shrink-0 w-14 text-right tabular-nums ${getStockToneClass(p.availableQuantity ?? p.stockQuantity)}`}>
                       {p.availableQuantity ?? p.stockQuantity ?? 0}
                     </span>
@@ -2239,19 +2582,154 @@ function NewShipmentForm() {
                       {p.cell ?? p.slotName ?? ""}
                     </span>
                     <span className="shrink-0 text-zinc-500">{p.price.toFixed(2)} {p.currency}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => addPosition(p)}
+                      className="eco-product-result-add"
+                    >
+                      Добавить
+                    </button>
+                  </div>
                 </li>
               ))}
+              {!productSearchLoading && productOptions.length === 0 && (
+                <li className="px-3 py-4 text-sm text-zinc-500">Ничего не найдено в локальном каталоге</li>
+              )}
               </ul>
             </div>
         )}
-      </div>
+      </section>
+
+      {positions.length === 0 && (
+        <section className="eco-card eco-card--padded eco-shipment-new-positions">
+          <div className="eco-card__head">
+            <div>
+              <div className="eco-page-kicker">Документ</div>
+              <h2>Позиции отгрузки</h2>
+            </div>
+            <div className="eco-position-head-actions">
+              <EcoBadge tone="neutral">0</EcoBadge>
+              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>Найти товар</button>
+              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">Услугу</button>
+            </div>
+          </div>
+          <div className="eco-shipment-empty-state">
+            <strong>Позиции пока не добавлены</strong>
+            <span>Найдите товар вручную или используйте подбор по VIN.</span>
+          </div>
+        </section>
+      )}
 
       {positions.length > 0 && (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">Позиции</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <section className="eco-card eco-shipment-new-positions">
+          <div className="eco-card__head">
+            <div>
+              <div className="eco-page-kicker">Документ</div>
+              <h2>Позиции отгрузки</h2>
+            </div>
+            <div className="eco-position-head-actions">
+              <EcoBadge tone="rust">{positions.length}</EcoBadge>
+              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>Найти товар</button>
+              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">Услугу</button>
+            </div>
+          </div>
+          <div className="eco-position-cards">
+            {positions.map((p, index) => {
+              const stock = getPositionStock(p);
+              const available = stock?.available;
+              const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
+              const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
+              return (
+                <article key={p.assortmentMeta?.href ?? index} className={`eco-position-card ${overAvailable ? "is-warning" : ""}`}>
+                  <div className="eco-position-card-head">
+                    <div>
+                      <strong title={p.name}>{p.name}</strong>
+                      <span>{p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
+                    </div>
+                    <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию">
+                      Удалить
+                    </button>
+                  </div>
+                  <div className="eco-position-chip-row">
+                    <span>Ячейка: {p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName ?? "—"}</span>
+                    <span>Остаток: {stock?.quantity ?? "—"}</span>
+                    <span>Резерв: {stock?.reserve ?? "—"}</span>
+                    <span>Доступно: {available ?? "—"}</span>
+                  </div>
+                  {overAvailable && <p className="eco-position-warning">Количество больше доступного остатка.</p>}
+                  <div className="eco-position-card-controls">
+                    <label>
+                      <span>Кол-во</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        inputMode="decimal"
+                        value={p.quantity}
+                        onChange={(e) => {
+                          const next = [...positions];
+                          next[index] = { ...p, quantity: parseDecimalInput(e.target.value) };
+                          setPositions(next);
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>Цена ₽</span>
+                      <MoneyInput
+                        value={p.price}
+                        onValueChange={(price) => {
+                          const next = [...positions];
+                          next[index] = { ...p, price };
+                          setPositions(next);
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>Скидка {typeof p.discount === "number" ? `(${p.discount.toFixed(1)}%)` : ""}</span>
+                      <div className="eco-discount-control">
+                        <select
+                          value={p.discountMode ?? "percent"}
+                          onChange={(e) => {
+                            const next = [...positions];
+                            next[index] = { ...p, discountMode: e.target.value as "percent" | "amount" };
+                            setPositions(next);
+                          }}
+                        >
+                          <option value="percent">%</option>
+                          <option value="amount">₽</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          inputMode="decimal"
+                          value={p.discountMode === "amount" ? p.discountAmount ?? 0 : p.discount ?? 0}
+                          onChange={(e) => {
+                            const raw = Math.max(0, Number(e.target.value) || 0);
+                            const lineBase = (p.quantity || 0) * (p.price || 0);
+                            const percent = p.discountMode === "amount" ? (lineBase > 0 ? Math.min(100, (raw / lineBase) * 100) : 0) : Math.min(100, raw);
+                            const next = [...positions];
+                            next[index] = {
+                              ...p,
+                              discount: percent,
+                              discountAmount: p.discountMode === "amount" ? raw : lineBase * (percent / 100),
+                            };
+                            setPositions(next);
+                          }}
+                        />
+                      </div>
+                    </label>
+                  </div>
+                  <div className="eco-position-card-total">
+                    <span>Сумма</span>
+                    <strong>{lineTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</strong>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="eco-table-wrap">
+            <table className="eco-table eco-shipment-new-table">
               <thead>
                 <tr className="border-b border-zinc-200 text-left dark:border-zinc-700">
                   <th className="px-2 py-2 font-medium text-zinc-500">Товар</th>
@@ -2267,20 +2745,24 @@ function NewShipmentForm() {
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p, index) => (
-                  <tr key={p.assortmentMeta?.href ?? index} className="border-b border-zinc-100 dark:border-zinc-700">
-                    <td className="px-2 py-2">{p.name}</td>
+                {positions.map((p, index) => {
+                  const stock = getPositionStock(p);
+                  const available = stock?.available;
+                  const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
+                  return (
+                  <tr key={p.assortmentMeta?.href ?? index} className={`border-b border-zinc-100 dark:border-zinc-700 ${overAvailable ? "bg-amber-50/70 dark:bg-amber-950/20" : ""}`}>
+                    <td className="px-2 py-2" title={p.name}>{p.name}</td>
                     <td className="px-2 py-2">
-                      {p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? ""}
+                      {p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName ?? ""}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {p.stock?.quantity ?? stockByAssortment[p.assortmentMeta?.href ?? ""]?.quantity ?? ""}
+                      {stock?.quantity ?? ""}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {p.stock?.reserve ?? stockByAssortment[p.assortmentMeta?.href ?? ""]?.reserve ?? ""}
+                      {stock?.reserve ?? ""}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {p.stock?.available ?? stockByAssortment[p.assortmentMeta?.href ?? ""]?.available ?? ""}
+                      {available ?? ""}
                     </td>
                     <td className="px-2 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -2298,13 +2780,9 @@ function NewShipmentForm() {
                           <option value="amount">₽</option>
                         </select>
                         {p.discountMode === "amount" ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
+                          <MoneyInput
                             value={p.discountAmount ?? 0}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
+                            onValueChange={(val) => {
                               const lineBase = (p.quantity || 0) * (p.price || 0);
                               const percent = lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
                               const next = [...positions];
@@ -2349,14 +2827,11 @@ function NewShipmentForm() {
                       />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={p.price}
-                        onChange={(e) => {
+                        onValueChange={(price) => {
                           const next = [...positions];
-                          next[index] = { ...p, price: Number(e.target.value) || 0 };
+                          next[index] = { ...p, price };
                           setPositions(next);
                         }}
                         className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-right text-xs dark:border-zinc-600 dark:bg-zinc-900"
@@ -2370,41 +2845,188 @@ function NewShipmentForm() {
                         type="button" onClick={() => removePosition(index)} className="text-xs text-red-600 hover:underline dark:text-red-400">Удалить</button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex justify-end text-sm text-zinc-700 dark:text-zinc-200">
-            <div className="text-right">
-              <div>Кол-во всего: {positions.reduce((sum, p) => sum + (p.quantity || 0), 0)}</div>
-              <div>
-                Сумма всего: {positions.reduce((sum, p) => {
-                  const base = (p.quantity || 0) * (p.price || 0);
-                  const disc = typeof p.discount === "number" ? p.discount : 0;
-                  return sum + base * (1 - disc / 100);
-                }, 0).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+          <div className="eco-shipment-new-table-foot">
+            <span>Кол-во всего: {positionsQty}</span>
+            <strong>
+              Сумма всего: {positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+            </strong>
+          </div>
+        </section>
+      )}
+
+        </div>
+
+        <aside className="eco-shipment-new-aside">
+      <section className="eco-card eco-shipment-new-total-card">
+        <div className="eco-shipment-card-head">
+          <h2>Итого</h2>
+          <span className="eco-shipment-draft-badge">черновик</span>
+        </div>
+        <div className="eco-shipment-new-total-body">
+          <div className="eco-shipment-new-total-line">
+            <span>Подытог</span>
+            <strong>{positionsSubtotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
+          </div>
+          <div className="eco-shipment-new-total-line">
+            <span>Скидка</span>
+            <strong>
+              {positionsDiscount > 0
+                ? `− ${positionsDiscount.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽`
+                : "0%"}
+            </strong>
+          </div>
+          <div className="eco-shipment-new-total-main">
+            <span>К оплате</span>
+            <strong>{positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
+          </div>
+          <div className="eco-shipment-new-total-line is-muted">
+            <span>Себестоимость</span>
+            <strong>
+              {positionsCost == null ? "—" : `${positionsCost.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽`}
+            </strong>
+          </div>
+          <div className="eco-shipment-new-total-line is-success">
+            <span>Маржа {hasIncompleteCost ? <em>оценочно</em> : null}</span>
+            <strong>
+              {positionsMargin == null || positionsMarginPct == null
+                ? "—"
+                : `${positionsMargin.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽ · ${positionsMarginPct}%`}
+            </strong>
+          </div>
+          <label className="eco-field">
+            <span>Комментарий</span>
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="eco-input eco-shipment-new-comment" />
+          </label>
+          <label className="eco-shipment-new-check">
+            <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => setApplicable(e.target.checked)} />
+            <span>Проведён. Списывает остатки локального склада.</span>
+          </label>
+          <div className="eco-readiness-list">
+            {readinessItems.map((item) => (
+              <span key={item.key} className={item.ready ? "is-ready" : ""}>
+                {item.ready ? "✓" : "•"} {item.label}
+              </span>
+            ))}
+          </div>
+          {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
+          <EcoButton
+            type="button"
+            onClick={handleSubmit}
+            disabled={saveDisabled}
+            title={saveDisabledReason}
+            variant="primary"
+            className="eco-shipment-new-submit"
+          >
+            <Receipt className="eco-icon" aria-hidden />
+            {submitLoading ? "Создание..." : "Сохранить отгрузку"}
+          </EcoButton>
+          <div className="eco-shipment-print-actions">
+            <button type="button" disabled={!demandIdLocal} title={!demandIdLocal ? "Доступно после сохранения" : undefined}>Заказ-наряд</button>
+            <button type="button" disabled={!demandIdLocal} title={!demandIdLocal ? "Доступно после сохранения" : undefined}>Под капот</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="eco-card eco-shipment-new-side-context">
+        <div className="eco-shipment-card-head">
+          <h2>Контекст</h2>
+        </div>
+        <div className="eco-shipment-new-side-context-body">
+        <div className="eco-shipment-new-side-row">
+          <span>Дата</span>
+          <strong>{momentStr || "сейчас"}</strong>
+        </div>
+        <div className="eco-shipment-new-side-row">
+          <span>Клиент</span>
+          <strong>{selectedAgent?.name ?? "не выбран"}</strong>
+        </div>
+        <div className="eco-shipment-new-side-row">
+          <span>Организация</span>
+          <strong>{loadingOrgs ? "загрузка" : selectedOrg?.name ?? "не выбрана"}</strong>
+        </div>
+        <div className="eco-shipment-new-side-row">
+          <span>Склад</span>
+          <strong>{loadingStores ? "загрузка" : selectedStore?.name ?? "не выбран"}</strong>
+        </div>
+        <div className="eco-shipment-new-side-row">
+          <span>VIN</span>
+          <strong>{vin || "не указан"}</strong>
+        </div>
+        <div className="eco-shipment-new-side-row">
+          <span>Статус</span>
+          <strong>{applicable ? "проведен" : "черновик"}</strong>
+        </div>
+        </div>
+      </section>
+        </aside>
+      </div>
+
+      {submitError && (
+        <div className="eco-toast" role="alert">
+          {submitError}
+        </div>
+      )}
+
+      <div className="eco-shipment-bottom-bar">
+        <button type="button" className="eco-shipment-bottom-total" onClick={() => setSummarySheetOpen(true)}>
+          <span>К оплате</span>
+          <strong>{positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
+        </button>
+        <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary">
+          {submitLoading ? "Создание..." : "Сохранить"}
+        </EcoButton>
+      </div>
+
+      {summarySheetOpen && (
+        <div className="eco-bottom-sheet-backdrop" onClick={() => setSummarySheetOpen(false)}>
+          <div className="eco-bottom-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="eco-shipment-card-head">
+              <h2>Итого</h2>
+              <button type="button" className="eco-shipment-link-btn" onClick={() => setSummarySheetOpen(false)}>
+                Закрыть
+              </button>
+            </div>
+            <div className="eco-shipment-new-total-body">
+              <div className="eco-shipment-new-total-line">
+                <span>Подытог</span>
+                <strong>{positionsSubtotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
               </div>
+              <div className="eco-shipment-new-total-line">
+                <span>Скидка</span>
+                <strong>{positionsDiscount.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-new-total-main">
+                <span>К оплате</span>
+                <strong>{positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <label className="eco-field">
+                <span>Комментарий</span>
+                <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="eco-input eco-shipment-new-comment" />
+              </label>
+              <label className="eco-shipment-new-check">
+                <input type="checkbox" checked={applicable} onChange={(e) => setApplicable(e.target.checked)} />
+                <span>Проведён. Списывает остатки локального склада.</span>
+              </label>
+              <div className="eco-readiness-list">
+                {readinessItems.map((item) => (
+                  <span key={item.key} className={item.ready ? "is-ready" : ""}>
+                    {item.ready ? "✓" : "•"} {item.label}
+                  </span>
+                ))}
+              </div>
+              {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
+              <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary" className="eco-shipment-new-submit">
+                {submitLoading ? "Создание..." : "Сохранить отгрузку"}
+              </EcoButton>
             </div>
           </div>
         </div>
       )}
-
-      <div className="mt-6 space-y-4 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Комментарий</label>
-          <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900" />
-        </div>
-        <div className="flex items-center gap-2">
-          <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => setApplicable(e.target.checked)} className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500" />
-          <label htmlFor="applicable" className="text-sm text-zinc-700 dark:text-zinc-300">Проведён (applicable)</label>
-        </div>
-        {submitError && <p className="text-sm text-red-600 dark:text-red-400">{submitError}</p>}
-        <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={handleSubmit} disabled={submitLoading} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700">
-            {submitLoading ? "Создание…" : "Создать отгрузку"}
-          </button>
-        </div>
-      </div>
 
       <DiagnosticModal
         open={diagnosticModalOpen}
@@ -2435,7 +3057,7 @@ function NewShipmentForm() {
         onDiagnosticCreated={(id) => setDiagnosticRowId(id)}
         onAddedToShipment={() => router.refresh()}
       />
-    </div>
+    </main>
   );
 }
 

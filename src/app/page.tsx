@@ -10,13 +10,11 @@ export default async function Home({
   const sp = await searchParams;
 
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-950">
-      <HomeDashboard
-        role={session.user.role}
-        login={session.user.login}
-        userName={session.user.name ?? session.user.login}
-        needShiftNotice={sp.needShift === "1"}
-      />
-    </div>
+    <HomeDashboard
+      role={session.user.role}
+      login={session.user.login}
+      userName={session.user.name ?? session.user.login}
+      needShiftNotice={sp.needShift === "1"}
+    />
   );
 }

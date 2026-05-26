@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
+import MoneyInput from "@/components/MoneyInput";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -181,6 +183,21 @@ function getStockToneClass(value?: number): string {
   if (qty <= 0) return "text-red-600 dark:text-red-400";
   if (qty <= 2) return "text-amber-600 dark:text-amber-400";
   return "text-emerald-600 dark:text-emerald-400";
+}
+
+function productIdFromMeta(meta?: Meta): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return localMatch[1];
+  const entityMatch = href.match(/\/entity\/(?:product|variant|service)\/([^/?#]+)/i);
+  return entityMatch?.[1] ?? "";
+}
+
+function localProductHref(position: Position): string {
+  const productId = productIdFromMeta(position.assortmentMeta);
+  if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
+  return `/inventory/products?search=${encodeURIComponent(position.name)}`;
 }
 
 function formatMoney(value: number, currency = "руб."): string {
@@ -557,6 +574,8 @@ export default function ShipmentDetailPage() {
   const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
   const [showAllOilGroups, setShowAllOilGroups] = useState(false);
   const [maintenanceCopyStatus, setMaintenanceCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "history" | "precheck">("positions");
+  const [vehicleEditing, setVehicleEditing] = useState(false);
   const [manualEngineVolume, setManualEngineVolume] = useState("");
   const [manualEnginePower, setManualEnginePower] = useState("");
   const [showVehicleOverrideDialog, setShowVehicleOverrideDialog] = useState(false);
@@ -1028,15 +1047,15 @@ export default function ShipmentDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <p className="text-sm text-zinc-500">Загрузка отгрузки…</p>
+      <div className="eco-page">
+        <p className="text-sm text-[var(--eco-muted)]">Загрузка отгрузки...</p>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="eco-page">
         <p className="text-sm text-red-600 dark:text-red-400">{error ?? "Отгрузка не найдена"}</p>
         <p className="mt-2">
           <Link href="/shipment" className="text-sm text-amber-600 hover:underline dark:text-amber-400">
@@ -1050,32 +1069,140 @@ export default function ShipmentDetailPage() {
   const vinAttrIndex = attributes.findIndex(
     (a) => typeof a?.name === "string" && /vin/i.test(a.name)
   );
+  const getAttrValue = (matcher: RegExp) => {
+    const attr = attributes.find((a) => matcher.test(normalizeAttrName(a.name)));
+    const value = attr?.value;
+    if (value == null) return "";
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
+  };
+  const updateAttrValue = (matcher: RegExp, value: string) => {
+    setAttributes((prev) =>
+      prev.map((attr) => (matcher.test(normalizeAttrName(attr.name)) ? { ...attr, value } : attr))
+    );
+  };
+  const addProductOption = (p: {
+    id: string;
+    name: string;
+    price: number;
+    currency: string;
+    meta: Meta;
+    cell?: string;
+    stockQuantity?: number;
+    reserveQuantity?: number;
+    availableQuantity?: number;
+    slotName?: string;
+  }) => {
+    setPositions((prev) => [
+      ...prev,
+      {
+        id: undefined,
+        name: p.name,
+        quantity: 1,
+        price: p.price,
+        discount: 0,
+        discountMode: "percent",
+        discountAmount: 0,
+        assortmentMeta: p.meta,
+        slotName: p.cell ?? p.slotName,
+        stock: {
+          quantity: p.stockQuantity,
+          reserve: p.reserveQuantity,
+          available: p.availableQuantity,
+        },
+      },
+    ]);
+    setProductSearch("");
+    setProductOem("");
+    setProductMannName("");
+    setProductParams("");
+    setProductOptions([]);
+  };
+  const agentName = data.header.agentName || "Клиент не выбран";
+  const agentInitials = agentName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "К";
+  const vehicleModel =
+    getAttrValue(/^модель авто$/i) ||
+    [vinLookupResult?.decoded?.make, vinLookupResult?.decoded?.model].filter(Boolean).join(" ");
+  const vehicleYear = getAttrValue(/^год$/i) || vinLookupResult?.decoded?.modelYear || "";
+  const vehiclePlate = getAttrValue(/гос.*номер|номер/i);
+  const vehicleMileage = getAttrValue(/пробег/i);
+  const vehicleVolume = getAttrValue(/^объем$/i);
+  const vehicleOil = getAttrValue(/моторное масло/i);
+  const documentVin = vin || getAttrValue(/vin/i);
+  const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
+  const positionsDiscount = positions.reduce((sum, p) => {
+    const base = (p.quantity || 0) * (p.price || 0);
+    const discount = typeof p.discount === "number" ? p.discount : 0;
+    return sum + base * (discount / 100);
+  }, 0);
+  const positionsTotal = Math.max(0, positionsSubtotal - positionsDiscount);
+  const positionsCost = positions.reduce((sum, p) => {
+    const cost = typeof p.stock?.cost === "number" ? p.stock.cost / 100 : 0;
+    return sum + cost * (p.quantity || 0);
+  }, 0);
+  const positionsMargin = positionsTotal - positionsCost;
+  const positionsMarginPct = positionsTotal > 0 ? Math.round((positionsMargin / positionsTotal) * 100) : 0;
+  const documentStatus = applicable ? "Проведена" : "Черновик";
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Link href="/shipment" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-          ← Отгрузки
-        </Link>
-        <h1 className="min-w-0 flex-1 text-xl font-bold text-zinc-900 dark:text-zinc-50">
-          Отгрузка {data.header.name}
-        </h1>
-        <div className="flex flex-wrap gap-2">
+    <main className="eco-page eco-shipment-detail-page">
+      <div className="eco-shipment-detail-head">
+        <div>
+          <div className="eco-shipment-detail-crumbs">
+            <Link href="/">Главная</Link>
+            <span>/</span>
+            <Link href="/shipment">Отгрузки</Link>
+            <span>/</span>
+            <b>{data.header.name}</b>
+          </div>
+          <div className="eco-shipment-detail-title-row">
+            <h1>Отгрузка {data.header.name}</h1>
+            <span className="eco-shipment-detail-badge is-draft">{documentStatus}</span>
+            {paymentInfo ? <span className="eco-shipment-detail-badge is-paid">Оплачено</span> : null}
+          </div>
+        </div>
+        <div className="eco-shipment-detail-actions">
           <button
             type="button"
             onClick={() => void handleDuplicate()}
             disabled={saving || printing || paying || duplicating || removing}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            className="eco-shipment-detail-link-action"
           >
             {duplicating ? "Копирование…" : "Копировать"}
           </button>
+          <a href={`/api/demands/${data.header.id}/job-order`} className="eco-shipment-detail-action">
+            Заказ-наряд
+          </a>
           <button
             type="button"
-            onClick={() => void handleDeleteShipment()}
+            onClick={async () => {
+              setPrinting(true);
+              setError(null);
+              try {
+                const saved = await saveShipment();
+                if (saved) window.open(`/shipment/${data.header.id}/tags?autoprint=1`, "_blank");
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Ошибка печати");
+              } finally {
+                setPrinting(false);
+              }
+            }}
             disabled={saving || printing || paying || duplicating || removing}
-            className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50 hover:bg-red-50 dark:border-red-900 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
+            className="eco-shipment-detail-action"
           >
-            {removing ? "Удаление…" : "Удалить"}
+            Наклейка
+          </button>
+          <button
+            type="button"
+            onClick={handlePayment}
+            disabled={saving || printing || paying || duplicating || removing}
+            className="eco-shipment-detail-action is-primary"
+          >
+            {paying ? "Открываем…" : "Открыть предчек"}
           </button>
         </div>
       </div>
@@ -1142,31 +1269,632 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <div>
-          <span className="text-xs text-zinc-500">Дата</span>
-          <div className="text-sm">{data.header.moment}</div>
+      <div className="eco-shipment-detail-layout">
+        <div className="eco-shipment-detail-main">
+          <section className="eco-shipment-detail-party-card">
+            <div className="eco-shipment-detail-party is-client">
+              <div className="eco-shipment-detail-kicker">Клиент</div>
+              <div className="eco-shipment-detail-client-row">
+                <div className="eco-shipment-detail-avatar">{agentInitials}</div>
+                <div>
+                  <h2>{agentName}</h2>
+                  <p>{data.header.ecoUserName?.trim() || "Эко-платформа"} · {data.header.organizationName || "организация не указана"}</p>
+                </div>
+              </div>
+            </div>
+            <div className="eco-shipment-detail-party is-car">
+              <div className="eco-shipment-detail-section-head">
+                <div className="eco-shipment-detail-kicker">Автомобиль</div>
+                <button
+                  type="button"
+                  className="eco-shipment-detail-icon-btn"
+                  onClick={() => setVehicleEditing((value) => !value)}
+                  aria-label={vehicleEditing ? "Закрыть редактирование автомобиля" : "Редактировать автомобиль"}
+                  title={vehicleEditing ? "Закрыть" : "Редактировать"}
+                >
+                  <Pencil aria-hidden />
+                </button>
+              </div>
+              {vehicleEditing ? (
+                <div className="eco-shipment-detail-car-edit">
+                  <label>
+                    <span>Модель авто</span>
+                    <input
+                      type="text"
+                      value={vehicleModel}
+                      onChange={(e) => updateAttrValue(/^модель авто$/i, e.target.value)}
+                      placeholder="AUDI q5"
+                    />
+                  </label>
+                  <label>
+                    <span>VIN</span>
+                    <input
+                      type="text"
+                      value={documentVin}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setVin(value);
+                        updateAttrValue(/vin/i, value);
+                      }}
+                      placeholder="WAUZZZ..."
+                    />
+                  </label>
+                  <label>
+                    <span>Гос. номер</span>
+                    <input
+                      type="text"
+                      value={vehiclePlate}
+                      onChange={(e) => updateAttrValue(/гос.*номер|номер/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Год</span>
+                    <input
+                      type="text"
+                      value={vehicleYear}
+                      onChange={(e) => updateAttrValue(/^год$/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Пробег</span>
+                    <input
+                      type="text"
+                      value={vehicleMileage}
+                      onChange={(e) => updateAttrValue(/пробег/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Объём</span>
+                    <input
+                      type="text"
+                      value={vehicleVolume}
+                      onChange={(e) => updateAttrValue(/^объем$/i, e.target.value)}
+                    />
+                  </label>
+                  <label className="is-wide">
+                    <span>Моторное масло</span>
+                    <input
+                      type="text"
+                      value={vehicleOil}
+                      onChange={(e) => updateAttrValue(/моторное масло/i, e.target.value)}
+                    />
+                  </label>
+                  <div className="eco-shipment-detail-car-edit-actions">
+                    <button
+                      type="button"
+                      disabled={documentVin.replace(/\s/g, "").length < 8 || vinLookupLoading}
+                      onClick={() => {
+                        setActiveDetailTab("vin");
+                        void runVinLookup();
+                      }}
+                    >
+                      {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
+                    </button>
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
+                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    </button>
+                    <button type="button" className="is-primary" onClick={() => setVehicleEditing(false)}>
+                      Готово
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h2>{vehicleModel || "Автомобиль не указан"}</h2>
+                  <p>
+                    {vehiclePlate || "номер не указан"}
+                    {documentVin ? ` · VIN ${documentVin}` : " · VIN не указан"}
+                  </p>
+                  <p>
+                    {vehicleMileage ? `Пробег ${vehicleMileage}` : "Пробег не указан"}
+                    {vehicleYear ? ` · Год ${vehicleYear}` : ""}
+                    {vehicleVolume ? ` · Объём ${vehicleVolume}` : ""}
+                    {vehicleOil ? ` · ${vehicleOil}` : ""}
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="eco-shipment-detail-tabs">
+            <button
+              type="button"
+              className={activeDetailTab === "positions" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("positions")}
+            >
+              Позиции <span>{positions.length}</span>
+            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "vin" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("vin")}
+            >
+              VIN-подбор <span>{vinLookupResult?.moySkladItems.length ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "history" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("history")}
+            >
+              Поля <span>{attributes.length}</span>
+            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "precheck" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("precheck")}
+            >
+              Предчек
+            </button>
+          </section>
+
+          <section className="eco-shipment-detail-table-card">
+            {activeDetailTab === "positions" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-product-search">
+                  <label className="eco-shipment-detail-search-main">
+                    <span>Добавить товар</span>
+                    <Search aria-hidden />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Наименование, код или артикул"
+                    />
+                  </label>
+                  <div className="eco-shipment-detail-search-filters">
+                    <input
+                      type="text"
+                      value={productOem}
+                      onChange={(e) => setProductOem(e.target.value)}
+                      placeholder="OEM"
+                    />
+                    <input
+                      type="text"
+                      value={productMannName}
+                      onChange={(e) => setProductMannName(e.target.value)}
+                      placeholder="Mann"
+                    />
+                    <input
+                      type="text"
+                      value={productParams}
+                      onChange={(e) => setProductParams(e.target.value)}
+                      placeholder="Параметры"
+                    />
+                  </div>
+                  {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
+                    <div className="eco-shipment-detail-product-results">
+                      {productSearchLoading ? (
+                        <div className="eco-shipment-detail-empty is-compact">Ищем товары...</div>
+                      ) : productOptions.length > 0 ? (
+                        productOptions.map((p) => (
+                          <button type="button" key={p.id} onClick={() => addProductOption(p)}>
+                            <span>
+                              <strong>{p.name}</strong>
+                              <small>
+                                Доступно: {p.availableQuantity ?? p.stockQuantity ?? 0}
+                                {p.cell ?? p.slotName ? ` · Ячейка ${p.cell ?? p.slotName}` : ""}
+                              </small>
+                            </span>
+                            <b>{p.price.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} {p.currency}</b>
+                            <Plus aria-hidden />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="eco-shipment-detail-empty is-compact">Ничего не найдено.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {positions.length > 0 ? (
+                  <div className="eco-shipment-detail-table-wrap">
+                    <table className="eco-shipment-detail-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Артикул / название</th>
+                          <th>Ячейка</th>
+                          <th>Тип</th>
+                          <th className="is-num">Кол.</th>
+                          <th className="is-num">Цена</th>
+                          <th className="is-num">Сумма</th>
+                          <th className="is-num">Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {positions.map((p, index) => {
+                          const discount = typeof p.discount === "number" ? p.discount : 0;
+                          const lineTotal = (p.quantity || 0) * (p.price || 0) * (1 - discount / 100);
+                          const type = p.assortmentMeta?.type === "service" ? "услуга" : "товар";
+                          const productHref = localProductHref(p);
+                          const sourceProductId = productIdFromMeta(p.assortmentMeta);
+                          return (
+                            <tr key={p.id ?? `summary-${index}`}>
+                              <td className="is-mono">{String(index + 1).padStart(2, "0")}</td>
+                              <td>
+                                {productHref ? (
+                                  <Link className="eco-shipment-detail-product-link" href={productHref}>
+                                    <strong>{p.name}</strong>
+                                    <ExternalLink aria-hidden />
+                                  </Link>
+                                ) : (
+                                  <strong>{p.name}</strong>
+                                )}
+                                <span>{sourceProductId || "локальная карточка"}</span>
+                              </td>
+                              <td className="is-mono">{p.slotName || "—"}</td>
+                              <td><span className="eco-shipment-detail-type">{type}</span></td>
+                              <td className="is-num">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.1}
+                                  inputMode="decimal"
+                                  value={p.quantity}
+                                  onChange={(e) => {
+                                    const q = parseDecimalInput(e.target.value);
+                                    const next = [...positions];
+                                    next[index] = { ...p, quantity: q };
+                                    setPositions(next);
+                                  }}
+                                  className="eco-shipment-detail-qty-input"
+                                />
+                              </td>
+                              <td className="is-num">
+                                <MoneyInput
+                                  value={p.price}
+                                  onValueChange={(val) => {
+                                    const next = [...positions];
+                                    next[index] = { ...p, price: val };
+                                    setPositions(next);
+                                  }}
+                                  className="eco-shipment-detail-money-input"
+                                />
+                              </td>
+                              <td className="is-num is-mono">{lineTotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</td>
+                              <td className="is-num">
+                                <button
+                                  type="button"
+                                  className="eco-shipment-detail-delete-btn"
+                                  onClick={() => setPositions((prev) => prev.filter((_, i) => i !== index))}
+                                  aria-label={`Удалить ${p.name}`}
+                                  title="Удалить"
+                                >
+                                  <Trash2 aria-hidden />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="eco-shipment-detail-empty">В отгрузке пока нет позиций. Найдите товар выше и добавьте его в документ.</div>
+                )}
+              </div>
+            )}
+
+            {activeDetailTab === "vin" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-vin-panel">
+                  <div className="eco-shipment-detail-vin-form">
+                    <label>
+                      <span>VIN · 17 знаков</span>
+                      <input
+                        type="text"
+                        value={vin}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setVin(v);
+                          setManualEngineVolume("");
+                          setManualEnginePower("");
+                          setShowVehicleOverrideDialog(false);
+                          updateAttrValue(/vin/i, v);
+                        }}
+                        placeholder="Например: WBAXXXXX5JZ123456"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={vin.replace(/\s/g, "").length < 8 || vinLookupLoading}
+                      onClick={() => void runVinLookup()}
+                    >
+                      {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
+                    </button>
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
+                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    </button>
+                  </div>
+
+                  {vinLookupResult ? (
+                    <div className="eco-shipment-detail-vin-result">
+                      {vinLookupResult.decodeError ? <p className="is-warning">{vinLookupResult.decodeError}</p> : null}
+                      {vinLookupResult.decoded ? (
+                        <div className="eco-shipment-detail-vin-summary">
+                          <strong>
+                            {[vinLookupResult.decoded.make, vinLookupResult.decoded.model, vinLookupResult.decoded.modelYear].filter(Boolean).join(" · ") || "Автомобиль определён"}
+                          </strong>
+                          <span>
+                            {[
+                              vinLookupResult.decoded.modification,
+                              vinLookupResult.decoded.engineSeries,
+                              vinLookupResult.decoded.displacementL ? `${vinLookupResult.decoded.displacementL} л` : "",
+                              vinLookupResult.decoded.enginePowerPS ? `${vinLookupResult.decoded.enginePowerPS} л.с.` : "",
+                            ].filter(Boolean).join(" · ")}
+                          </span>
+                        </div>
+                      ) : null}
+                      {vinLookupResult.oilInfo ? (
+                        <div className="eco-shipment-detail-vin-specs">
+                          <span>Допуск: <b>{vinLookupResult.oilInfo.approval || vinLookupResult.oilInfo.acea?.join(", ") || vinLookupResult.oilInfo.api?.join(", ") || "не указан"}</b></span>
+                          <span>Объём: <b>{vinLookupResult.oilInfo.fillVolumeLiters || "не указан"}</b></span>
+                          <span>SAE: <b>{vinLookupResult.oilInfo.sae?.join(", ") || "не указан"}</b></span>
+                        </div>
+                      ) : null}
+                      {vinLookupResult.moySkladError ? <p className="is-warning">{vinLookupResult.moySkladError}</p> : null}
+                      {vinLookupResult.moySkladItems.length > 0 ? (
+                        <div className="eco-shipment-detail-vin-items">
+                          <div className="eco-shipment-detail-vin-items-head">
+                            <strong>Найдено в МойСклад: {vinLookupResult.moySkladItems.length}</strong>
+                            <button
+                              type="button"
+                              onClick={() => addFromVinLookup(vinLookupResult.moySkladItems.filter((item) => item.quantity > 0))}
+                              disabled={vinLookupResult.moySkladItems.every((item) => item.quantity <= 0)}
+                            >
+                              Добавить всё в наличии
+                            </button>
+                          </div>
+                          {vinLookupResult.moySkladItems.map((item, index) => (
+                            <div className="eco-shipment-detail-vin-item" key={item.productId ?? `${item.name}-${index}`}>
+                              <span>
+                                <strong>{item.name}</strong>
+                                <small>
+                                  {item.article ? `Артикул ${item.article}` : "Артикул не указан"}
+                                  {item.cell ? ` · Ячейка ${item.cell}` : ""}
+                                  {` · Остаток ${item.quantity}`}
+                                </small>
+                              </span>
+                              <b>{formatMoney(item.price, item.currency)}</b>
+                              <button type="button" disabled={item.quantity <= 0} onClick={() => addFromVinLookup([item])}>
+                                <Plus aria-hidden />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="eco-shipment-detail-empty is-compact">Пока нет найденных товаров. Запустите подбор по VIN.</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="eco-shipment-detail-empty">Введите VIN и запустите подбор, чтобы добавить масло и фильтры в эту отгрузку.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeDetailTab === "history" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-fields-grid">
+                  {attributes
+                    .map((a, index) => ({ a, index }))
+                    .filter(({ a }) => EDITABLE_ATTR_NAMES.includes(normalizeAttrName(a.name)))
+                    .map(({ a, index }) => (
+                      <label key={a.id ?? a.name ?? index}>
+                        <span>{a.name ?? a.id}</span>
+                        <input
+                          type="text"
+                          value={typeof a.value === "object" ? JSON.stringify(a.value) : String(a.value ?? "")}
+                          onChange={(e) => {
+                            const next = [...attributes];
+                            next[index] = { ...a, value: e.target.value };
+                            setAttributes(next);
+                          }}
+                        />
+                      </label>
+                    ))}
+                </div>
+                {data.raw ? (
+                  <div className="eco-shipment-detail-raw">
+                    <button type="button" onClick={() => setShowRaw((v) => !v)}>
+                      {showRaw ? "Скрыть все поля МойСклад" : "Показать все поля МойСклад (JSON)"}
+                    </button>
+                    {showRaw ? <pre>{JSON.stringify(data.raw, null, 2)}</pre> : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {activeDetailTab === "precheck" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-precheck">
+                  <label className="is-wide">
+                    <span>Комментарий</span>
+                    <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+                  </label>
+                  <label className="eco-shipment-detail-checkbox">
+                    <input
+                      id="applicable-detail"
+                      type="checkbox"
+                      checked={applicable}
+                      onChange={(e) => setApplicable(e.target.checked)}
+                    />
+                    <span>Проведён</span>
+                  </label>
+                  <label>
+                    <span>Шаблон печати</span>
+                    <select
+                      value={printTemplate}
+                      onChange={(e) =>
+                        setPrintTemplate(
+                          e.target.value as
+                            | "default"
+                            | "birka_own"
+                            | "birka_box"
+                            | "job_order"
+                            | "eco_poster"
+                            | "eco_poster_akpp_partial"
+                            | "eco_poster_akpp_full"
+                            | "under_hood_tags"
+                            | "under_hood_tags_akpp_partial"
+                            | "under_hood_tags_akpp_full"
+                        )
+                      }
+                    >
+                      <optgroup label="Печать из CRM">
+                        <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
+                        <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
+                        <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
+                        <option value="under_hood_tags">Бирка под капот</option>
+                        <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная</option>
+                        <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная</option>
+                      </optgroup>
+                      <optgroup label="Шаблоны МойСклад">
+                        <option value="default">Основной</option>
+                        <option value="birka_own">Бирка со своим</option>
+                        <option value="birka_box">Бирка коробка</option>
+                        <option value="job_order">Заказ-наряд (файл из МС)</option>
+                      </optgroup>
+                    </select>
+                  </label>
+                  {error ? <p className="is-error">{error}</p> : null}
+                  {paymentInfo ? <p className="is-success">{paymentInfo}</p> : null}
+                  <div className="eco-shipment-detail-precheck-actions">
+                    <button type="button" onClick={handleSave} disabled={saving || printing || paying || duplicating || removing}>
+                      {saving ? "Сохранение..." : "Сохранить"}
+                    </button>
+                    <button type="button" onClick={handlePayment} disabled={saving || printing || paying || duplicating || removing}>
+                      {paying ? "Открытие..." : "Предчек / оплата"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setPrinting(true);
+                        setError(null);
+                        try {
+                          const saved = await saveShipment();
+                          if (!saved) return;
+                          const crmVariant = (tpl: string): string | null => {
+                            if (tpl.endsWith("_akpp_partial")) return "akpp_partial";
+                            if (tpl.endsWith("_akpp_full")) return "akpp_full";
+                            return null;
+                          };
+                          const crmPrintQuery = (tpl: string) => {
+                            const v = crmVariant(tpl);
+                            const parts = ["autoprint=1"];
+                            if (v) parts.unshift(`variant=${encodeURIComponent(v)}`);
+                            return `?${parts.join("&")}`;
+                          };
+                          if (printTemplate.startsWith("eco_poster")) {
+                            window.open(`/shipment/${data.header.id}/poster${crmPrintQuery(printTemplate)}`, "_blank");
+                            return;
+                          }
+                          if (printTemplate.startsWith("under_hood_tags")) {
+                            window.open(`/shipment/${data.header.id}/tags${crmPrintQuery(printTemplate)}`, "_blank");
+                            return;
+                          }
+                          const res = await fetch(`/api/demands/${data.header.id}/print`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ templateKey: printTemplate }),
+                          });
+                          const json = await res.json();
+                          if (!res.ok) {
+                            setError(json.error ?? "Ошибка печати");
+                            return;
+                          }
+                          if (json.location) {
+                            window.open(json.location, "_blank");
+                          } else {
+                            setError("МойСклад не вернул ссылку на файл печати.");
+                          }
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Ошибка печати");
+                        } finally {
+                          setPrinting(false);
+                        }
+                      }}
+                      disabled={printing || saving || paying || duplicating || removing}
+                    >
+                      {printing ? "Печать..." : "Печать"}
+                    </button>
+                    <a href={`/api/demands/${data.header.id}/job-order`}>Заказ-наряд Excel</a>
+                    {data.header.href ? <a href={data.header.href} target="_blank" rel="noreferrer">МойСклад</a> : null}
+                    <button type="button" className="is-danger" onClick={() => void handleDeleteShipment()} disabled={saving || printing || paying || duplicating || removing}>
+                      {removing ? "Удаление..." : "Удалить"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
-        <div>
-          <span className="text-xs text-zinc-500">Контрагент</span>
-          <div className="text-sm">{data.header.agentName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Организация</span>
-          <div className="text-sm">{data.header.organizationName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Склад</span>
-          <div className="text-sm">{data.header.storeName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Создал (эко)</span>
-          <div className="text-sm">
-            {data.header.ecoUserName && data.header.ecoUserName.trim()
-              ? data.header.ecoUserName
-              : "Не указано (создано напрямую в МойСклад или до внедрения эко-пользователей)"}
-          </div>
-        </div>
+
+        <aside className="eco-shipment-detail-aside">
+          <section className="eco-shipment-detail-side-card">
+            <div className="eco-shipment-detail-side-head">
+              <h2>Сумма</h2>
+              {paymentInfo ? <span className="eco-shipment-detail-badge is-paid">оплачено</span> : null}
+            </div>
+            <div className="eco-shipment-detail-side-body">
+              <div className="eco-shipment-detail-money-row">
+                <span>Подытог</span>
+                <strong>{positionsSubtotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row">
+                <span>Скидка</span>
+                <strong>{positionsDiscount > 0 ? `${positionsDiscount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽` : "0%"}</strong>
+              </div>
+              <div className="eco-shipment-detail-total-row">
+                <span>Итого</span>
+                <strong>{positionsTotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row is-muted">
+                <span>Себестоимость</span>
+                <strong>{positionsCost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row is-success">
+                <span>Маржа</span>
+                <strong>{positionsMargin.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽ · {positionsMarginPct}%</strong>
+              </div>
+              {paymentInfo ? <p className="eco-shipment-detail-payment-note">{paymentInfo}</p> : null}
+            </div>
+          </section>
+
+          <section className="eco-shipment-detail-side-card">
+            <div className="eco-shipment-detail-side-head">
+              <h2>Связи</h2>
+            </div>
+            <div className="eco-shipment-detail-links">
+              <div>
+                <strong>Документ</strong>
+                <span>{data.header.name} · {documentStatus.toLowerCase()}</span>
+              </div>
+              <div>
+                <strong>Склад</strong>
+                <span>{data.header.storeName || "не указан"}</span>
+              </div>
+              <div>
+                <strong>Диагностика</strong>
+                <span>{diagnosticRemote ? `${diagnosticRemote.status} · 🟢${diagnosticRemote.summaryGreen} 🟡${diagnosticRemote.summaryYellow} 🔴${diagnosticRemote.summaryRed}` : "не создана"}</span>
+              </div>
+              <div>
+                <strong>МойСклад</strong>
+                {data.header.href ? (
+                  <a href={data.header.href} target="_blank" rel="noreferrer">открыть документ →</a>
+                ) : (
+                  <span>ссылка не указана</span>
+                )}
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <div hidden className="eco-shipment-detail-legacy-workbench">
+      <div className="eco-shipment-detail-workbench-title">
+        <span>Рабочие поля</span>
+        <strong>VIN, дополнительные поля, добавление позиций и сохранение</strong>
       </div>
 
       {vinAttrIndex >= 0 && (
@@ -2141,13 +2869,9 @@ export default function ShipmentDetailPage() {
                           <option value="amount">₽</option>
                         </select>
                         {p.discountMode === "amount" ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
+                          <MoneyInput
                             value={p.discountAmount ?? 0}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
+                            onValueChange={(val) => {
                               const lineBase = (p.quantity || 0) * (p.price || 0);
                               const percent =
                                 lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
@@ -2205,13 +2929,9 @@ export default function ShipmentDetailPage() {
                       />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={p.price}
-                        onChange={(e) => {
-                          const val = Number(e.target.value) || 0;
+                        onValueChange={(val) => {
                           const next = [...positions];
                           next[index] = { ...p, price: val };
                           setPositions(next);
@@ -2330,10 +3050,6 @@ export default function ShipmentDetailPage() {
               onChange={(e) =>
                 setPrintTemplate(
                   e.target.value as
-                    | "default"
-                    | "birka_own"
-                    | "birka_box"
-                    | "job_order"
                     | "eco_poster"
                     | "eco_poster_akpp_partial"
                     | "eco_poster_akpp_full"
@@ -2344,20 +3060,12 @@ export default function ShipmentDetailPage() {
               }
               className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
             >
-              <optgroup label="Печать из CRM (не МойСклад)">
-                <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
-                <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
-                <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
-                <option value="under_hood_tags">Бирка под капот (интервал из настроек)</option>
-                <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная (+20 тыс. км)</option>
-                <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная (+60 тыс. км)</option>
-              </optgroup>
-              <optgroup label="Шаблоны МойСклад">
-                <option value="default">Основной</option>
-                <option value="birka_own">Бирка со своим</option>
-                <option value="birka_box">Бирка коробка</option>
-                <option value="job_order">Заказ-наряд (файл из МС)</option>
-              </optgroup>
+              <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
+              <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
+              <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
+              <option value="under_hood_tags">Бирка под капот (интервал из настроек)</option>
+              <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная (+20 тыс. км)</option>
+              <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная (+60 тыс. км)</option>
             </select>
           </div>
           <button
@@ -2388,21 +3096,6 @@ export default function ShipmentDetailPage() {
                   window.open(`/shipment/${data.header.id}/tags${crmPrintQuery(printTemplate)}`, "_blank");
                   return;
                 }
-                const res = await fetch(`/api/demands/${data.header.id}/print`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ templateKey: printTemplate }),
-                });
-                const json = await res.json();
-                if (!res.ok) {
-                  setError(json.error ?? "Ошибка печати");
-                  return;
-                }
-                if (json.location) {
-                  window.open(json.location, "_blank");
-                } else {
-                  setError("МойСклад не вернул ссылку на файл печати.");
-                }
               } catch (e) {
                 setError(e instanceof Error ? e.message : "Ошибка печати");
               } finally {
@@ -2430,6 +3123,14 @@ export default function ShipmentDetailPage() {
               Открыть в МойСклад →
             </a>
           )}
+          <button
+            type="button"
+            onClick={() => void handleDeleteShipment()}
+            disabled={saving || printing || paying || duplicating || removing}
+            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            {removing ? "Удаление…" : "Удалить"}
+          </button>
         </div>
       </div>
 
@@ -2449,6 +3150,8 @@ export default function ShipmentDetailPage() {
           )}
         </div>
       ) : null}
+
+      </div>
 
       <DiagnosticModal
         open={diagnosticModalOpen}
@@ -2491,6 +3194,6 @@ export default function ShipmentDetailPage() {
         }}
         onAddedToShipment={() => window.location.reload()}
       />
-    </div>
+    </main>
   );
 }

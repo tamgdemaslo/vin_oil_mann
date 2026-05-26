@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { moyskladFetch } from "@/lib/moysklad";
@@ -8,17 +9,6 @@ import { normalizePhoneKey } from "@/lib/phone-normalize";
 type Meta = { href: string; type: string; mediaType: string };
 type CounterpartyInput = { id?: unknown; name?: unknown; meta?: { href?: unknown; type?: unknown; mediaType?: unknown } };
 type CounterpartyLink = { id: string; name: string; meta: Meta };
-
-const DEFAULT_STAGES = [
-  { name: "Новый лид", sortOrder: 10, color: "amber" },
-  { name: "Связаться", sortOrder: 20, color: "sky" },
-  { name: "Записан", sortOrder: 30, color: "blue" },
-  { name: "Приехал", sortOrder: 40, color: "violet" },
-  { name: "Согласование работ", sortOrder: 50, color: "orange" },
-  { name: "В работе", sortOrder: 60, color: "zinc" },
-  { name: "Оплачено", sortOrder: 70, color: "emerald" },
-  { name: "Потерян / отложен", sortOrder: 80, color: "rose" },
-] as const;
 
 async function requireCrmSession() {
   const session = await getSession();
@@ -29,24 +19,6 @@ async function requireCrmSession() {
     return { session: null, response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   }
   return { session, response: null };
-}
-
-async function ensureDefaultStages() {
-  const count = await prisma.crmStage.count();
-  if (count > 0) return;
-
-  await prisma.$transaction(
-    DEFAULT_STAGES.map((stage) =>
-      prisma.crmStage.upsert({
-        where: { sortOrder: stage.sortOrder },
-        update: {
-          name: stage.name,
-          color: stage.color,
-        },
-        create: stage,
-      })
-    )
-  );
 }
 
 function parseOptionalString(value: unknown): string | null {
@@ -121,7 +93,7 @@ export async function GET() {
   if (access.response) return access.response;
 
   try {
-    await ensureDefaultStages();
+    await ensureDefaultCrmStages();
     const stages = await prisma.crmStage.findMany({
       orderBy: { sortOrder: "asc" },
       include: {
@@ -145,12 +117,11 @@ export async function POST(request: NextRequest) {
   const session = access.session!;
 
   try {
-    await ensureDefaultStages();
     const body = await request.json().catch(() => ({}));
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
-    const firstStage = await prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } });
+    const firstStage = await getFirstCrmStage();
     let counterparty = parseCounterparty(body.moyskladCounterparty);
 
     if (!counterparty && body.createMoyskladCounterparty === true) {

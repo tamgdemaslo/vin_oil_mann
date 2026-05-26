@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
 import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
+import { createLocalDemand, isLocalInventoryWritesEnabled, loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import { moyskladFetch } from "@/lib/moysklad";
 import { toMoyskladMomentString } from "@/lib/time";
 
@@ -14,7 +15,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   if (!id?.trim()) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const loaded = await loadDemandDetailPayload(id.trim());
+  const localWrites = isLocalInventoryWritesEnabled();
+  const loaded = localWrites
+    ? await loadLocalDemandDetailPayload(id.trim()).then(async (local) =>
+        local.ok ? local : loadDemandDetailPayload(id.trim())
+      )
+    : await loadDemandDetailPayload(id.trim());
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: 502 });
 
   const raw = loaded.data.raw as {
@@ -26,7 +32,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const orgM = raw.organization?.meta;
   const agentM = raw.agent?.meta;
   const storeM = raw.store?.meta;
-  if (!orgM?.href || !agentM?.href || !storeM?.href) {
+  if ((!localWrites && !orgM?.href) || !agentM?.href || !storeM?.href) {
     return NextResponse.json(
       { error: "В отгрузке нет организации, контрагента или склада — копирование невозможно" },
       { status: 400 }
@@ -38,7 +44,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const moment = toMoyskladMomentString();
 
   const body: CreateDemandBody = {
-    organization: { meta: orgM },
+    organization: { meta: orgM ?? { href: "local://organization/default", type: "organization", mediaType: "application/json" } },
     agent: { meta: agentM },
     store: { meta: storeM },
     description: loaded.data.header.description?.trim() || undefined,
@@ -62,6 +68,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           }))
         : undefined,
   };
+
+  if (localWrites) {
+    const created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
+    if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
+    return NextResponse.json(created);
+  }
 
   try {
     const metaRes = await moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>(

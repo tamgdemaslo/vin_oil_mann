@@ -1,25 +1,82 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { LookupResult, MoySkladItem, OilInfo, VinDecoded } from "@/types/lookup";
-import type { OilRequirements } from "@/types/oil";
-import {
-  getOilRequirementsFromOpenAI,
-  fetchOilCandidatesByRequirements,
-  fetchOilProductsFromMoySklad,
-  scoreAndMatch,
-} from "@/lib/oil-recommendations";
-import { getMoySkladAuthHeader, MOYSKLAD_BASE } from "@/lib/moysklad";
-import { normalizeACEA, normalizeSAE } from "@/lib/oil-normalizer";
+import type { OilProduct, OilRecommendationItem, OilRequirements, VinDecodeResponse } from "@/types/oil";
+import { prisma } from "@/lib/db";
+import { buildRequirementsNorm, normalizeACEA, normalizeSAE } from "@/lib/oil-normalizer";
 import { getVinLookupCache, setVinLookupCache } from "@/lib/vin-lookup-cache";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
-import {
-  getCachedStockByProductIdMap,
-  getDirectStockByProductId,
-} from "@/lib/moysklad-stock-cache";
 
 function getOpenAI(): OpenAI | null {
   const key = process.env.OPENAI_API_KEY;
   return key ? new OpenAI({ apiKey: key }) : null;
+}
+
+async function getOilRequirementsFromOpenAI(
+  openai: OpenAI,
+  decoded: VinDecodeResponse
+): Promise<OilRequirements> {
+  const vehicle = [
+    decoded.vin && `VIN: ${decoded.vin}`,
+    decoded.make && `Марка: ${decoded.make}`,
+    decoded.model && `Модель: ${decoded.model}`,
+    decoded.year && `Год: ${decoded.year}`,
+    decoded.engine && `Двигатель: ${decoded.engine}`,
+    decoded.trim && `Модификация: ${decoded.trim}`,
+    decoded.series && `Поколение: ${decoded.series}`,
+    decoded.market && `Рынок: ${decoded.market}`,
+    ...(decoded.hints ?? []).map((hint) => `Подсказка: ${hint}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_OIL_MODEL?.trim() || "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "Ты эксперт по моторным маслам. Верни только JSON с полями oil_capacity_liters, oil_capacity_note, sae_viscosities, oem_approvals, acea, api, ilsac, confidence, source_hint.",
+      },
+      { role: "user", content: `Данные автомобиля:\n${vehicle || "(только VIN)"}` },
+    ],
+    response_format: { type: "json_object" },
+    max_completion_tokens: 2048,
+  });
+
+  const text = completion.choices[0]?.message?.content?.trim() || "{}";
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    return {
+      oil_capacity_liters:
+        typeof parsed.oil_capacity_liters === "number" && Number.isFinite(parsed.oil_capacity_liters)
+          ? parsed.oil_capacity_liters
+          : undefined,
+      oil_capacity_note: typeof parsed.oil_capacity_note === "string" ? parsed.oil_capacity_note : undefined,
+      sae_viscosities: Array.isArray(parsed.sae_viscosities)
+        ? (parsed.sae_viscosities as unknown[]).filter((v): v is string => typeof v === "string")
+        : [],
+      oem_approvals: Array.isArray(parsed.oem_approvals)
+        ? (parsed.oem_approvals as unknown[]).filter((v): v is string => typeof v === "string")
+        : [],
+      acea: Array.isArray(parsed.acea) ? (parsed.acea as unknown[]).filter((v): v is string => typeof v === "string") : [],
+      api: Array.isArray(parsed.api) ? (parsed.api as unknown[]).filter((v): v is string => typeof v === "string") : [],
+      ilsac: Array.isArray(parsed.ilsac)
+        ? (parsed.ilsac as unknown[]).filter((v): v is string => typeof v === "string")
+        : undefined,
+      confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5,
+      source_hint: typeof parsed.source_hint === "string" ? parsed.source_hint : undefined,
+    };
+  } catch {
+    return {
+      sae_viscosities: [],
+      oem_approvals: [],
+      acea: [],
+      api: [],
+      confidence: 0,
+      source_hint: "OpenAI ответ не распознан",
+    };
+  }
 }
 
 const SERPER_URL = "https://google.serper.dev/search";
@@ -70,8 +127,6 @@ type PartItem = { number?: string; name?: string; description?: string; notice?:
 type CollectedGroup = { item: GroupItem; pathNames: string[] };
 
 const LOOKUP_CACHE_TTL_MS = Math.max(60_000, parseInt(process.env.LOOKUP_CACHE_MS ?? "600000", 10) || 600_000);
-const MOYSKLAD_TIMEOUT_MS = Math.max(5_000, parseInt(process.env.MOYSKLAD_TIMEOUT_MS ?? "15000", 10) || 15_000);
-
 const lookupCache = new Map<string, { at: number; result: LookupResult }>();
 
 function cloneLookupResult(result: LookupResult): LookupResult {
@@ -134,28 +189,6 @@ function getCachedLookupResult(vin: string): LookupResult | null {
 function setCachedLookupResult(vin: string, result: LookupResult): void {
   if (process.env.NODE_ENV !== "production") return;
   lookupCache.set(vin, { at: Date.now(), result: cloneLookupResult(result) });
-}
-
-async function fetchMoySkladJson<T>(url: string, headers: Record<string, string>): Promise<T | null> {
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), MOYSKLAD_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, {
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) return (await res.json()) as T;
-      console.warn("[lookup] MoySklad request failed", res.status, url);
-    } catch (error) {
-      console.warn("[lookup] MoySklad request error", error instanceof Error ? error.message : String(error), url);
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
-  }
-  return null;
 }
 
 function getCarInfoItems(carData: unknown): CarInfoItem[] {
@@ -497,188 +530,133 @@ async function getFiltersFromPartsCatalogs(vin: string): Promise<{
   return result;
 }
 
-/** id доп. поля «OEM PARTS». В filter по доке нужна полная ссылка: .../metadata/attributes/{id}=<значение> */
-/** Совпадает с доп. полем «OEM PARTS» в вашей организации МойСклад (можно переопределить в .env). */
-const MOYSKLAD_OEM_ATTRIBUTE_ID =
-  process.env.MOYSKLAD_OEM_ATTRIBUTE_ID?.trim() || "d1aad1ea-14e1-11f1-0a80-0eb200223523";
-const MOYSKLAD_OEM_ATTRIBUTE_HREF = `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_OEM_ATTRIBUTE_ID}`;
-
-type ProductRow = {
-  id: string;
-  name: string;
-  article?: string;
-  meta?: { href: string };
-  salePrices?: { value: number; currency?: { name?: string } }[];
-  attributes?: { id: string; meta?: { href?: string }; value: string; name?: string }[];
-};
-
-type ProductRowWithAttrs = ProductRow & {
-  attributes?: { id: string; meta?: { href?: string }; value: string; name?: string }[];
-};
-
 type FilterLookupKind = "oil-filter" | "fuel-filter" | "air-filter" | "cabin-filter";
 type FilterSearchGroup = { kind: FilterLookupKind; terms: string[] };
 
-function addRowsToProductMap(
-  productMap: Map<string, { name: string; article?: string; price: number; currency: string; cell?: string }>,
-  rows: ProductRow[]
-) {
-  for (const row of rows) {
-    if (productMap.has(row.id)) continue;
-    const priceCents = row.salePrices?.[0]?.value ?? 0;
-    const price = priceCents / 100;
-    const currency = row.salePrices?.[0]?.currency?.name ?? "руб.";
-    let cell: string | undefined;
-    for (const a of row.attributes ?? []) {
-      const name = (a.name ?? "").toLowerCase();
-      if (name.includes("ячейк") || name.includes("cell") || name.includes("яч")) {
-        cell = String(a.value);
-        break;
-      }
-    }
-    productMap.set(row.id, {
-      name: row.name,
-      article: row.article,
-      price,
-      currency,
-      cell,
-    });
-  }
+type LocalLookupProduct = Awaited<ReturnType<typeof findLocalProductsByTerms>>[number];
+
+function compactLookupText(value: unknown): string {
+  return String(value ?? "").toLowerCase().replace(/\s/g, "");
 }
 
-function productSearchText(row: ProductRowWithAttrs): string {
-  const parts = [row.name ?? "", row.article ?? ""];
-  for (const attr of row.attributes ?? []) {
-    parts.push(attr.name ?? "");
-    parts.push(String(attr.value ?? ""));
-  }
-  return parts.join(" ").toLowerCase();
+function productLookupText(product: {
+  name: string;
+  article?: string | null;
+  code?: string | null;
+  searchText?: string | null;
+  oem?: string | null;
+  oemParts?: string | null;
+  mannName?: string | null;
+  params?: string | null;
+  sae?: string | null;
+  acea?: string | null;
+  apiSpec?: string | null;
+  ilsac?: string | null;
+  brand?: string | null;
+  packageVolume?: string | null;
+  groupPath?: string | null;
+}): string {
+  return [
+    product.name,
+    product.article,
+    product.code,
+    product.searchText,
+    product.oem,
+    product.oemParts,
+    product.mannName,
+    product.params,
+    product.sae,
+    product.acea,
+    product.apiSpec,
+    product.ilsac,
+    product.brand,
+    product.packageVolume,
+    product.groupPath,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function productMatchesTerms(row: ProductRowWithAttrs, terms: string[]): boolean {
-  const haystack = productSearchText(row).replace(/\s/g, "");
-  return terms.some((term) => {
-    const needle = term.trim().toLowerCase().replace(/\s/g, "");
-    return needle.length >= 2 && haystack.includes(needle);
+async function findLocalProductsByTerms(rawTerms: string[], limit = 80) {
+  const terms = [...new Set(rawTerms.map((term) => term.trim()).filter((term) => term.length >= 2))].slice(0, 20);
+  if (terms.length === 0) return [];
+  const rows = await prisma.localProduct.findMany({
+    where: {
+      archived: false,
+      OR: terms.flatMap((term) => [
+        { name: { contains: term, mode: "insensitive" as const } },
+        { article: { contains: term, mode: "insensitive" as const } },
+        { code: { contains: term, mode: "insensitive" as const } },
+        { searchText: { contains: term.toLowerCase(), mode: "insensitive" as const } },
+        { oem: { contains: term, mode: "insensitive" as const } },
+        { oemParts: { contains: term, mode: "insensitive" as const } },
+        { mannName: { contains: term, mode: "insensitive" as const } },
+        { params: { contains: term, mode: "insensitive" as const } },
+      ]),
+    },
+    include: { stockBalances: { include: { store: true } } },
+    take: limit,
+  });
+
+  const compactTerms = terms.map(compactLookupText).filter((term) => term.length >= 2);
+  return rows.filter((product) => {
+    const text = compactLookupText(productLookupText(product));
+    return compactTerms.some((term) => text.includes(term));
   });
 }
 
-/** Быстрый поиск фильтров в МойСклад: OEM, Mann и обычный search + локальный fallback по атрибутам. */
+function localProductsToLookupItems(
+  products: LocalLookupProduct[],
+  lookupKind: MoySkladItem["lookupKind"]
+): MoySkladItem[] {
+  const items: MoySkladItem[] = [];
+  for (const product of products) {
+    const base = {
+      name: product.name,
+      article: product.article ?? undefined,
+      price: product.salePriceCents / 100,
+      currency: product.currencyName ?? "руб.",
+      productId: product.id,
+      cell: product.cell ?? undefined,
+      imageHref: product.imageHref ?? undefined,
+      volumeLiters: parsePackVolumeLiters(product.packageVolume ?? product.name),
+      lookupKind,
+    };
+    if (product.stockBalances.length === 0) {
+      items.push({ ...base, quantity: 0, store: "—" });
+      continue;
+    }
+    for (const stock of product.stockBalances) {
+      items.push({
+        ...base,
+        quantity: stock.available.toNumber(),
+        store: stock.store.name,
+        cell: stock.slotName ?? product.cell ?? undefined,
+      });
+    }
+  }
+  return items;
+}
+
+function parsePackVolumeLiters(value?: string | null): number | undefined {
+  const match = String(value ?? "").match(/(\d+(?:[,.]\d+)?)\s*(?:л|l)\b/i);
+  if (!match) return undefined;
+  const parsed = Number(match[1].replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/** Быстрый поиск фильтров по локальному каталогу: OEM, Mann, артикул и поисковый текст. */
 async function searchMoySkladProductsByTerms(
   rawTerms: string[],
   lookupKind: FilterLookupKind
 ): Promise<{ items: MoySkladItem[]; error?: string }> {
-  const auth = getMoySkladAuthHeader();
-  if (!auth) {
-    return {
-      items: [],
-      error: "Укажите MOYSKLAD_TOKEN или пару MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD в .env.local и перезапустите сервер.",
-    };
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: auth,
-    "Accept-Encoding": "gzip",
-    Accept: "application/json;charset=utf-8",
-    "Content-Type": "application/json",
-  };
-
   try {
-    const productMap = new Map<
-      string,
-      { name: string; article?: string; price: number; currency: string; cell?: string }
-    >();
-    const terms = [...new Set(rawTerms.map((term) => term.trim()).filter(Boolean))].slice(0, 8);
-    const urls: string[] = [];
-    for (const term of terms) {
-      const compact = term.replace(/\s/g, "");
-      if (compact.length < 2) continue;
-      urls.push(
-        `${MOYSKLAD_BASE}/entity/product?filter=${encodeURIComponent(MOYSKLAD_OEM_ATTRIBUTE_HREF)}~${encodeURIComponent(
-          term
-        )}&limit=30&expand=attributes`
-      );
-    }
-
-    const responses = await Promise.all(
-      [...new Set(urls)].map(async (url) => {
-        const data = await fetchMoySkladJson<{ rows?: ProductRow[] }>(url, headers);
-        return data?.rows ?? [];
-      })
-    );
-    for (const rows of responses) addRowsToProductMap(productMap, rows);
-
-    if (productMap.size === 0 && terms.length > 0) {
-      // Если OEM attribute не сработал (например, из-за отличий в форматировании номеров),
-      // делаем лёгкий fallback по обычному `search` по тем же OEM-строкам.
-      // Это не "поиск по названию" фильтра как таковой — источник термов всё равно OEM PARTS.
-      const fallbackUrls = terms.map(
-        (term) => `${MOYSKLAD_BASE}/entity/product?search=${encodeURIComponent(term)}&limit=30&expand=attributes`
-      );
-      const fallbackResponses = await Promise.all(
-        [...new Set(fallbackUrls)].map(async (url) => {
-          const data = await fetchMoySkladJson<{ rows?: ProductRow[] }>(url, headers);
-          return data?.rows ?? [];
-        })
-      );
-      for (const rows of fallbackResponses) addRowsToProductMap(productMap, rows);
-    }
-
-    if (productMap.size === 0 && terms.length > 0) {
-      // Последний fallback: забираем пачку товаров с атрибутами и матчим локально
-      // по тем же OEM-термам. Это помогает, когда строка хранится в атрибуте
-      // нестандартно и не отрабатывает через обычный filter/search.
-      const batch = await fetchMoySkladJson<{ rows?: ProductRowWithAttrs[] }>(
-        `${MOYSKLAD_BASE}/entity/product?limit=500&expand=attributes`,
-        headers
-      );
-      if (batch?.rows?.length) {
-        for (const row of batch.rows) {
-          if (productMatchesTerms(row, terms)) addRowsToProductMap(productMap, [row]);
-        }
-      }
-    }
-
-    const productIds = [...productMap.keys()];
-    if (productIds.length === 0) return { items: [] };
-
-    const items: MoySkladItem[] = [];
-
-    const stockByProductId = await getCachedStockByProductIdMap();
-    if (stockByProductId.size === 0) {
-      for (const [id, p] of productMap) {
-        items.push({ ...p, quantity: 0, store: "—", productId: id, lookupKind });
-      }
-      return { items };
-    }
-
-    for (const [id, p] of productMap) {
-      const entry = stockByProductId.get(id);
-      const stores = entry?.stockByStore ?? [];
-      if (!entry || stores.length === 0) {
-        items.push({ ...p, quantity: 0, store: "—", productId: id, lookupKind });
-        continue;
-      }
-      for (const s of stores) {
-        items.push({
-          name: p.name,
-          article: p.article,
-          price: p.price,
-          currency: p.currency,
-          quantity: s.stock,
-          store: s.name,
-          cell: p.cell,
-          productId: id,
-          lookupKind,
-        });
-      }
-    }
-
-    return { items };
+    const products = await findLocalProductsByTerms(rawTerms, 80);
+    return { items: localProductsToLookupItems(products, lookupKind) };
   } catch (e) {
     return {
       items: [],
-      error: e instanceof Error ? e.message : "Ошибка МойСклад",
+      error: e instanceof Error ? e.message : "Ошибка локального каталога",
     };
   }
 }
@@ -687,123 +665,29 @@ async function searchMoySkladProductsByTerms(
 async function getStockItemsForProducts(
   productInfos: Array<{ id: string; name: string; article?: string; price: number; currency: string; volumeLiters?: number; imageHref?: string }>
 ): Promise<MoySkladItem[]> {
-  const auth = getMoySkladAuthHeader();
-  if (!auth || productInfos.length === 0) return [];
-  const byId = new Map(productInfos.map((p) => [p.id, p]));
-  try {
-    const stockByProductId = await getCachedStockByProductIdMap();
-    const items: MoySkladItem[] = [];
-
-    if (stockByProductId.size === 0) {
-      console.warn("[lookup] stock report is empty; using direct stock lookup for selected oils");
-      const direct = await Promise.all(
-        [...byId.values()].map(async (p) => ({
-          product: p,
-          stores: await getDirectStockByProductId(p.id),
-        }))
-      );
-      for (const { product: p, stores } of direct) {
-        if (stores.length === 0) {
-          items.push({
-            ...p,
-            quantity: 0,
-            store: "—",
-            productId: p.id,
-            volumeLiters: p.volumeLiters,
-            imageHref: p.imageHref,
-            lookupKind: "oil",
-          });
-          continue;
-        }
-        for (const s of stores) {
-          items.push({
-            name: p.name,
-            article: p.article,
-            price: p.price,
-            currency: p.currency,
-            quantity: s.stock,
-            store: s.name,
-            productId: p.id,
-            volumeLiters: p.volumeLiters,
-            imageHref: p.imageHref,
-            lookupKind: "oil",
-          });
-        }
-      }
-      return items;
-    }
-
-    for (const p of byId.values()) {
-      const entry = stockByProductId.get(p.id);
-      const stores = entry?.stockByStore ?? [];
-      if (!entry || stores.length === 0) {
-        items.push({
-          ...p,
-          quantity: 0,
-          store: "—",
-          productId: p.id,
-          volumeLiters: p.volumeLiters,
-          imageHref: p.imageHref,
-          lookupKind: "oil",
-        });
-        continue;
-      }
-
-      for (const s of stores) {
-        items.push({
-          name: p.name,
-          article: p.article,
-          price: p.price,
-          currency: p.currency,
-          quantity: s.stock,
-          store: s.name,
-          productId: p.id,
-          volumeLiters: p.volumeLiters,
-          imageHref: p.imageHref,
-          lookupKind: "oil",
-        });
-      }
-    }
-    return items;
-  } catch (error) {
-    console.warn("[lookup] stock report failed; using direct stock lookup for selected oils", error);
-    const direct = await Promise.all(
-      productInfos.map(async (p) => ({
-        product: p,
-        stores: await getDirectStockByProductId(p.id),
-      }))
-    );
-    const items: MoySkladItem[] = [];
-    for (const { product: p, stores } of direct) {
-      if (stores.length === 0) {
-        items.push({
-          ...p,
-          quantity: 0,
-          store: "—",
-          productId: p.id,
-          volumeLiters: p.volumeLiters,
-          imageHref: p.imageHref,
-          lookupKind: "oil" as const,
-        });
-        continue;
-      }
-      for (const s of stores) {
-        items.push({
-          name: p.name,
-          article: p.article,
-          price: p.price,
-          currency: p.currency,
-          quantity: s.stock,
-          store: s.name,
-          productId: p.id,
-          volumeLiters: p.volumeLiters,
-          imageHref: p.imageHref,
-          lookupKind: "oil" as const,
-        });
-      }
-    }
-    return items;
-  }
+  if (productInfos.length === 0) return [];
+  const ids = productInfos.map((product) => product.id);
+  const products = await prisma.localProduct.findMany({
+    where: { id: { in: ids }, archived: false },
+    include: { stockBalances: { include: { store: true } } },
+  });
+  const localItems = localProductsToLookupItems(products, "oil");
+  const known = new Set(products.map((product) => product.id));
+  const missingItems = productInfos
+    .filter((product) => !known.has(product.id))
+    .map((product) => ({
+      name: product.name,
+      article: product.article,
+      price: product.price,
+      currency: product.currency,
+      quantity: 0,
+      store: "—",
+      productId: product.id,
+      volumeLiters: product.volumeLiters,
+      imageHref: product.imageHref,
+      lookupKind: "oil" as const,
+    }));
+  return [...localItems, ...missingItems];
 }
 
 /** Нормализует OEM: убирает пробелы — в МойСклад ищет "11428575211", а не "11 42 8 575 211". */
@@ -858,6 +742,117 @@ function extractMannDesignations(oilInfo: OilInfo): string[] {
     }
   }
   return [...new Set(parts)].slice(0, 15);
+}
+
+function oilRequirementTerms(requirements: OilRequirements): string[] {
+  return [
+    ...(requirements.sae_viscosities ?? []),
+    ...(requirements.oem_approvals ?? []),
+    ...(requirements.acea ?? []),
+    ...(requirements.api ?? []),
+    ...(requirements.ilsac ?? []),
+  ].filter(Boolean);
+}
+
+async function fetchOilCandidatesByRequirements(requirements: OilRequirements): Promise<OilProduct[]> {
+  const terms = oilRequirementTerms(requirements).slice(0, 30);
+  const rows = await prisma.localProduct.findMany({
+    where: {
+      archived: false,
+      OR: [
+        { name: { contains: "масл", mode: "insensitive" } },
+        { groupPath: { contains: "масл", mode: "insensitive" } },
+        { searchText: { contains: "масл", mode: "insensitive" } },
+        ...terms.flatMap((term) => [
+          { name: { contains: term, mode: "insensitive" as const } },
+          { searchText: { contains: term.toLowerCase(), mode: "insensitive" as const } },
+          { sae: { contains: term, mode: "insensitive" as const } },
+          { acea: { contains: term, mode: "insensitive" as const } },
+          { apiSpec: { contains: term, mode: "insensitive" as const } },
+          { ilsac: { contains: term, mode: "insensitive" as const } },
+          { oem: { contains: term, mode: "insensitive" as const } },
+          { oemParts: { contains: term, mode: "insensitive" as const } },
+        ]),
+      ],
+    },
+    take: 500,
+  });
+
+  return rows.map((product) => ({
+    id: product.id,
+    name: product.name,
+    article: product.article ?? undefined,
+    price: product.salePriceCents / 100,
+    currency: product.currencyName ?? "руб.",
+    meta: { href: `local://product/${product.id}` },
+    requirements_norm: buildRequirementsNorm({
+      sae: [product.sae, product.name, product.searchText].filter(Boolean).join(" "),
+      oem: [product.oem, product.oemParts, product.name, product.searchText].filter(Boolean).join(" "),
+      acea: [product.acea, product.aceaExtra, product.name, product.searchText].filter(Boolean).join(" "),
+      api: [product.apiSpec, product.name, product.searchText].filter(Boolean).join(" "),
+      ilsac: [product.ilsac, product.name, product.searchText].filter(Boolean).join(" "),
+    }),
+    volume_liters: parsePackVolumeLiters(product.packageVolume ?? product.name),
+    imageHref: product.imageHref ?? undefined,
+  }));
+}
+
+function intersects(a: string[] | undefined, b: string[] | undefined): boolean {
+  const right = new Set((b ?? []).map((value) => value.toUpperCase()));
+  return (a ?? []).some((value) => right.has(value.toUpperCase()));
+}
+
+function scoreOilProduct(requirements: OilRequirements, product: OilProduct): OilRecommendationItem {
+  const reqNorm = {
+    sae: requirements.sae_viscosities.flatMap(normalizeSAE),
+    oem: requirements.oem_approvals.flatMap((value) => buildRequirementsNorm({ oem: value }).oem),
+    acea: requirements.acea.flatMap(normalizeACEA),
+    api: requirements.api.flatMap((value) => buildRequirementsNorm({ api: value }).api),
+    ilsac: (requirements.ilsac ?? []).flatMap((value) => buildRequirementsNorm({ ilsac: value }).ilsac),
+  };
+  const why: string[] = [];
+  let score = 0;
+  if (intersects(reqNorm.sae, product.requirements_norm.sae)) {
+    score += 45;
+    why.push("вязкость SAE");
+  }
+  if (intersects(reqNorm.oem, product.requirements_norm.oem)) {
+    score += 35;
+    why.push("OEM-допуск");
+  }
+  if (intersects(reqNorm.acea, product.requirements_norm.acea)) {
+    score += 25;
+    why.push("ACEA");
+  }
+  if (intersects(reqNorm.api, product.requirements_norm.api)) {
+    score += 15;
+    why.push("API");
+  }
+  if (intersects(reqNorm.ilsac, product.requirements_norm.ilsac)) {
+    score += 15;
+    why.push("ILSAC");
+  }
+  if (score === 0 && reqNorm.sae.length > 0) {
+    const text = compactLookupText(product.name);
+    if (reqNorm.sae.some((sae) => text.includes(compactLookupText(sae)))) {
+      score += 30;
+      why.push("вязкость в названии");
+    }
+  }
+  return { product, score, why };
+}
+
+function scoreAndMatch(
+  requirements: OilRequirements,
+  products: OilProduct[],
+  recommendedLimit = 500,
+  alternativesLimit = 500
+): { recommended: OilRecommendationItem[]; alternatives: OilRecommendationItem[] } {
+  const scored = products.map((product) => scoreOilProduct(requirements, product)).sort((a, b) => b.score - a.score);
+  const recommended = scored.filter((item) => item.score >= 45).slice(0, recommendedLimit);
+  const recommendedIds = new Set(recommended.map((item) => item.product.id));
+  const alternatives = scored.filter((item) => !recommendedIds.has(item.product.id)).slice(0, alternativesLimit);
+  return { recommended, alternatives };
 }
 
 /** Только OEM фильтров + Mann — для поиска в МойСклад именно фильтров (без допусков масла). */
@@ -1274,7 +1269,13 @@ async function findOilItems(oilInfo: OilInfo): Promise<{ items: MoySkladItem[]; 
       // Полный скан каталога тяжёлый и иногда возвращал 0, после чего UI писал "масла нет".
       let candidateOils = await fetchOilCandidatesByRequirements(strategy.req);
       if (candidateOils.length === 0) {
-        candidateOils = await fetchOilProductsFromMoySklad(1000);
+        candidateOils = await fetchOilCandidatesByRequirements({
+          ...strategy.req,
+          oem_approvals: [],
+          acea: [],
+          api: [],
+          ilsac: [],
+        });
       }
       const { recommended, alternatives } = scoreAndMatch(strategy.req, candidateOils, 500, 500);
       const oilProducts = [...recommended, ...alternatives].map((r) => ({

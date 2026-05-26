@@ -2,6 +2,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import MoneyInput from "@/components/MoneyInput";
+import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 
@@ -103,19 +105,14 @@ function FlowSection({
   children,
   tone = "default",
 }: FlowSectionProps) {
-  const toneClass =
-    tone === "danger"
-      ? "border-red-200/70 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/10"
-      : "border-zinc-200 bg-white/95 dark:border-zinc-800 dark:bg-zinc-900/90";
+  const toneClass = tone === "danger" ? "border-[var(--eco-danger)] bg-[var(--eco-danger-tint)]" : "";
 
   return (
-    <section id={id} className={`mb-6 scroll-mt-28 rounded-3xl border p-5 shadow-sm sm:p-6 ${toneClass}`}>
+    <section id={id} className={`eco-card eco-card--padded mb-4 scroll-mt-28 ${toneClass}`}>
       <div className="mb-5">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-400">
-          {eyebrow}
-        </p>
-        <h2 className="mt-2 text-xl font-semibold text-zinc-950 dark:text-zinc-50">{title}</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{description}</p>
+        <p className="eco-page-kicker">{eyebrow}</p>
+        <h2 className="eco-page-title">{title}</h2>
+        <p className="eco-page-subtitle">{description}</p>
       </div>
       {children}
     </section>
@@ -150,6 +147,19 @@ function errorFromJson(data: unknown, fallback: string): string {
     if (typeof error === "string" && error.trim()) return error;
   }
   return fallback;
+}
+
+function money(value: number) {
+  return `${value.toLocaleString("ru-RU", {
+    maximumFractionDigits: 0,
+  })} ₽`;
+}
+
+function shortTime(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function CashPage() {
@@ -689,7 +699,7 @@ export default function CashPage() {
       }
       const cash = typeof data.cashTotal === "number" ? data.cashTotal : 0;
       const card = typeof data.cardTotal === "number" ? data.cardTotal : 0;
-      // type="number" принимает только формат вроде "4670" или "4670.00", не "4 670,00"
+      // Храним без пробелов, чтобы расчёты закрытия смены парсились одинаково.
       setCloseCashOrders(cash.toFixed(2));
       setCloseCardOrders(card.toFixed(2));
       const staleShiftHint =
@@ -717,77 +727,106 @@ export default function CashPage() {
 
   if (checkingAuth) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-10">
-        <p className="text-sm text-zinc-500">Проверка доступа…</p>
+      <div className="eco-page">
+        <p className="text-sm text-[var(--eco-muted)]">Проверка доступа...</p>
       </div>
     );
   }
 
   if (!hasCashAccess) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Касса</h1>
-        <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-          Доступ в раздел «Касса» есть только у владельца и администратора.
-        </p>
+      <div className="eco-page">
+        <div className="eco-page-head">
+          <div>
+            <div className="eco-page-kicker">Финансы</div>
+            <h1 className="eco-page-title">Касса</h1>
+            <p className="eco-page-subtitle">Доступ в раздел «Касса» есть только у владельца и администратора.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   const isOpen = shift?.status === "open";
+  const cashView = !shift ? "opening" : isOpen ? "active" : "closing";
+  const openingValue = shift?.openingCash ?? cashInRegister;
+  const cashExpenseCount = operations.filter((op) => op.type === "expense" && op.paymentType === "cash").length;
+  const withdrawalCount = operations.filter((op) => op.type === "withdrawal").length;
+  const expectedCashValue = shift?.status === "closed" ? shift.expectedCash ?? 0 : totals.expectedCash;
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <main className="eco-page">
+      <div className="eco-page-head">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Касса</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Смена одна на весь сервис в день. Операции фиксируются без возможности
-            редактирования.
-          </p>
-        </div>
-        {shift && (
-          <div className="text-right text-sm text-zinc-500 dark:text-zinc-400">
-            <div>
-              Статус:{" "}
-              <span
-                className={
-                  isOpen
-                    ? "inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                    : "inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                }
-              >
-                {isOpen ? "Открыта" : "Закрыта"}
-              </span>
-            </div>
-            <div>Дата сервиса: {shift.serviceDate}</div>
+          <div className="eco-page-kicker">
+            <span>Главная</span>
+            <span className="mx-2 text-[var(--eco-faint)]">/</span>
+            <span>Финансы</span>
+            <span className="mx-2 text-[var(--eco-faint)]">/</span>
+            <span>Касса</span>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <h1 className="eco-page-title">Касса</h1>
+            <EcoBadge tone={isOpen ? "success" : !shift ? "neutral" : "warning"} dot>
+              {isOpen ? "Кассовая смена активна" : !shift ? "Касса закрыта" : "Смена закрыта"}
+            </EcoBadge>
+          </div>
+        </div>
+        <div className="eco-seg">
+          <span className={`eco-seg-btn ${cashView === "opening" ? "is-active" : ""}`}>Открытие</span>
+          <span className={`eco-seg-btn ${cashView === "active" ? "is-active" : ""}`}>Активная смена</span>
+          <span className={`eco-seg-btn ${cashView === "closing" ? "is-active" : ""}`}>Закрытие</span>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+        <div className="eco-card eco-card--padded mb-4 text-sm text-[var(--eco-danger)]">
           {error}
         </div>
       )}
 
       {lastClosedShift != null && (
-        <div className="mb-4 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <span className="text-zinc-600 dark:text-zinc-400">
-            Денег в кассе:{" "}
-          </span>
-          <span className="font-semibold text-zinc-900 dark:text-zinc-50">
+        <div className="eco-card eco-card--padded mb-4 text-sm">
+          <span className="text-[var(--eco-muted)]">Денег в кассе: </span>
+          <span className="font-semibold text-[var(--eco-ink)]">
             {cashInRegister.toLocaleString("ru-RU", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}{" "}
             ₽
           </span>
-          <span className="ml-1 text-zinc-500 dark:text-zinc-400">
+          <span className="ml-1 text-[var(--eco-muted)]">
             (на конец смены {lastClosedShift.serviceDate})
           </span>
         </div>
       )}
+
+      <div className="eco-home-kpi-grid mb-4">
+        <EcoKpi
+          label="Открыто"
+          value={shift ? shortTime(shift.openedAt) : "—"}
+          sub={shift ? `${shift.openedBy.name} · ${shift.serviceDate}` : "смена не открыта"}
+        />
+        <EcoKpi label="Стартовый остаток" value={money(openingValue)} sub="наличные в кассе" />
+        <EcoKpi
+          label="Расходы наличными"
+          value={`− ${money(totals.cashExpenses)}`}
+          sub={`${cashExpenseCount} операций`}
+          tone={totals.cashExpenses > 0 ? "warning" : "neutral"}
+        />
+        <EcoKpi
+          label="Изъятия"
+          value={`− ${money(totals.withdrawals)}`}
+          sub={`${withdrawalCount} операций`}
+          tone={totals.withdrawals > 0 ? "warning" : "neutral"}
+        />
+        <EcoKpi
+          label="Ожидаемый остаток"
+          value={money(expectedCashValue)}
+          sub="расчёт по текущим данным"
+          tone="rust"
+        />
+      </div>
 
       {!shift && (
         <FlowSection
@@ -808,12 +847,9 @@ export default function CashPage() {
               <label className="block text-xs text-zinc-500">
                 Стартовый остаток наличных, ₽
               </label>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
+              <MoneyInput
                 value={openingCashInput}
-                onChange={(e) => setOpeningCashInput(e.target.value)}
+                onValueChange={(value, draft) => setOpeningCashInput(draft ? String(value) : "")}
                 className="mt-0.5 w-40 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-right dark:border-zinc-600 dark:bg-zinc-900"
               />
             </div>
@@ -1035,12 +1071,9 @@ export default function CashPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-zinc-500">Сумма, ₽</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={withdrawAmount}
-                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                        onValueChange={(value, draft) => setWithdrawAmount(draft ? String(value) : "")}
                         className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-right dark:border-zinc-600 dark:bg-zinc-900"
                       />
                     </div>
@@ -1090,12 +1123,9 @@ export default function CashPage() {
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div>
                       <label className="block text-xs text-zinc-500">Сумма, ₽</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={expenseAmount}
-                        onChange={(e) => setExpenseAmount(e.target.value)}
+                        onValueChange={(value, draft) => setExpenseAmount(draft ? String(value) : "")}
                         className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-right dark:border-zinc-600 dark:bg-zinc-900"
                       />
                     </div>
@@ -1329,12 +1359,9 @@ export default function CashPage() {
                     <label className="block text-xs text-zinc-500">
                       Фактические наличные в кассе, ₽
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
+                    <MoneyInput
                       value={closeActualCash}
-                      onChange={(e) => setCloseActualCash(e.target.value)}
+                      onValueChange={(value, draft) => setCloseActualCash(draft ? String(value) : "")}
                       className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-right dark:border-zinc-600 dark:bg-zinc-900"
                     />
                   </div>
@@ -1989,6 +2016,6 @@ export default function CashPage() {
         )}
       </div>
       </FlowSection>
-    </div>
+    </main>
   );
 }

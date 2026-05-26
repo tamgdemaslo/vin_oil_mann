@@ -6,6 +6,8 @@ import {
   pickJournalOilNoteFromSyncedPositions,
 } from "@/lib/job-order-poster-oil-note";
 import { fetchOrganizationRecord, sellerFromOrg } from "@/lib/job-order-poster-org";
+import { isLocalInventoryReadsEnabled } from "@/lib/local-inventory-read";
+import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import { moyskladFetch } from "@/lib/moysklad";
 import {
   extractRawPhoneFromAgent,
@@ -224,7 +226,10 @@ export async function buildJobOrderPosterModel(
   demandId: string,
   opts?: { nextIntervalKm?: number }
 ): Promise<JobOrderPosterModel | null> {
-  const loaded = await loadDemandDetailPayload(demandId);
+  const localMode = isLocalInventoryReadsEnabled();
+  const loaded = localMode
+    ? await loadLocalDemandDetailPayload(demandId)
+    : await loadDemandDetailPayload(demandId);
   if (!loaded.ok) return null;
 
   const { header, attributes, raw, rawPositions } = loaded.data;
@@ -264,7 +269,7 @@ export async function buildJobOrderPosterModel(
 
   const agentRaw = (raw as { agent?: CounterpartyPhoneSource })?.agent ?? null;
   let displayPhone = extractRawPhoneFromAgent(agentRaw)?.trim() ?? "";
-  if (!displayPhone && agentRaw) {
+  if (!localMode && !displayPhone && agentRaw) {
     const href = (agentRaw as { meta?: { href?: string } })?.meta?.href;
     const id = href?.split("/").filter(Boolean).pop();
     if (id) {
@@ -290,7 +295,7 @@ export async function buildJobOrderPosterModel(
   let visits = 1;
   let sinceVisit = formatDemandDateRu(header.moment);
 
-  const msJournal = agentHref
+  const msJournal = !localMode && agentHref
     ? await fetchPosterBortJournalFromMoySklad({
         agentHref,
         currentDemandId: demandId,

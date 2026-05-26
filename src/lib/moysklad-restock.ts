@@ -400,7 +400,7 @@ export async function loadOutflowNeedsItems(opts: {
   ]);
 
   const stockMap = buildStockMap(rows);
-  let items = buildNeedsOrderFromCatalog(catalog, stockMap);
+  const items = buildNeedsOrderFromCatalog(catalog, stockMap);
   for (const it of items) {
     const sh = shortage(it);
     if (sh !== null) it.shortage = sh;

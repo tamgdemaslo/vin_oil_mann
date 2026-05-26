@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import MoneyInput from "@/components/MoneyInput";
 
 type Meta = { href: string; type: string; mediaType: string };
 type RefOption = { id: string; name: string; meta: Meta };
@@ -613,12 +614,9 @@ export default function SupplyClient() {
                       />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={position.price}
-                        onChange={(event) => updatePosition(position.localId, { price: Number(event.target.value) || 0 })}
+                        onValueChange={(price) => updatePosition(position.localId, { price })}
                         className="w-28 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-right dark:border-zinc-700 dark:bg-zinc-950"
                       />
                     </td>

@@ -301,7 +301,8 @@ export function isPieceworkRole(role: string): role is PieceworkRole {
 
 export function extractMoyskladEntityId(href?: string): string | null {
   if (!href) return null;
-  const parts = href.split("/").filter(Boolean);
+  const cleanHref = href.split(/[?#]/)[0] ?? href;
+  const parts = cleanHref.split("/").filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : null;
 }
 

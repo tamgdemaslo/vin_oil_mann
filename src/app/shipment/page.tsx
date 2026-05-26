@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
+import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
+import { hasLocalInventoryDemands, isLocalInventoryReadsEnabled, loadLocalDemandList } from "@/lib/local-inventory-read";
 import { moyskladFetch } from "@/lib/moysklad";
 import {
   listRawPhonesFromCounterparty,
@@ -36,7 +39,16 @@ const DEMAND_EXPAND = "agent,agent.contactpersons,organization,store,attributes"
 
 function rubles(sumKopecks: number): string {
   const v = (sumKopecks || 0) / 100;
-  return v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function formatMoment(value: string): { date: string; time: string } {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { date: value, time: "—" };
+  return {
+    date: date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }),
+    time: date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+  };
 }
 
 function normalizePlate(s: string): string {
@@ -291,6 +303,17 @@ async function loadShipmentList(opts: {
   offset: number;
   limit: number;
 }): Promise<{ ok: true; data: ListOk } | { ok: false; error: string }> {
+  if (isLocalInventoryReadsEnabled()) {
+    try {
+      if (await hasLocalInventoryDemands()) {
+        const data = await loadLocalDemandList(opts);
+        return { ok: true, data };
+      }
+    } catch (e) {
+      console.warn("[shipment] local inventory read failed, falling back to MoySklad:", e);
+    }
+  }
+
   const { search, counterparty, plate, phone, offset, limit } = opts;
   const hasCp = counterparty.length > 0;
   const hasPlate = plate.length > 0;
@@ -372,125 +395,172 @@ export default async function ShipmentListPage({
   const limit = 50;
 
   const result = await loadShipmentList({ search, counterparty, plate, phone, offset, limit });
+  const sourceLabel = isLocalInventoryReadsEnabled()
+    ? "Отгрузки из локальной БД, с fallback на МойСклад"
+    : "Все отгрузки (demand) из МойСклад";
+  const rows = result.ok ? result.data.rows ?? [] : [];
+  const postedCount = rows.filter((row) => row.applicable).length;
+  const draftCount = rows.length - postedCount;
+  const totalSum = rows.reduce((sum, row) => sum + (row.sum || 0), 0);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <main className="eco-page">
+      <div className="eco-page-head">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Отгрузки</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Все отгрузки (demand) из МойСклад
-          </p>
+          <div className="eco-page-kicker">
+            <Link href="/">Главная</Link>
+            <span className="mx-2 text-[var(--eco-faint)]">/</span>
+            <span>Операции / Отгрузки</span>
+          </div>
+          <h1 className="eco-page-title">Отгрузки</h1>
         </div>
-        <Link
-          href="/shipment/new"
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
-        >
-          + Создать отгрузку
-        </Link>
+        <div className="eco-actions">
+          <button type="button" className="eco-btn">
+            <Download aria-hidden className="eco-icon" />
+            Выгрузить
+          </button>
+          <Link href="/shipment/new" className="eco-btn eco-btn--primary">
+            <Plus aria-hidden className="eco-icon" />
+            Новая отгрузка
+          </Link>
+        </div>
       </div>
 
-      <form action="/shipment" method="GET" className="mb-4 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="eco-tabs">
+        {[
+          ["Все", result.ok ? result.data.meta.size : 0, true],
+          ["Черновики", draftCount, false],
+          ["Проведено", postedCount, false],
+          ["Возвраты", 0, false],
+        ].map(([label, count, active]) => (
+          <span key={String(label)} className={`eco-tab ${active ? "is-active" : ""}`}>
+            {label}
+            <span className="eco-tab__count">{count}</span>
+          </span>
+        ))}
+      </div>
+
+      <form action="/shipment" method="GET" className="eco-filter-bar">
+        <div className="eco-search-wrap">
+          <Search aria-hidden className="eco-icon" />
           <input
             name="search"
             defaultValue={search}
-            placeholder="Номер / название документа…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <input
-            name="counterparty"
-            defaultValue={counterparty}
-            placeholder="Контрагент (имя, часть названия)…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <input
-            name="plate"
-            defaultValue={plate}
-            placeholder="Гос. номер ТС (не номер отгрузки)…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm uppercase outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <input
-            name="phone"
-            defaultValue={phone}
-            placeholder="Телефон клиента…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
+            placeholder="№, клиент, телефон, VIN…"
+            className="eco-input"
           />
         </div>
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
-          >
-            Найти
-          </button>
-          {(search || counterparty || plate || phone || offset > 0) && (
-            <Link
-              href="/shipment"
-              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
-            >
-              Сбросить
-            </Link>
-          )}
+        <input name="counterparty" defaultValue={counterparty} placeholder="Клиент" className="eco-input max-w-[170px]" />
+        <input name="plate" defaultValue={plate} placeholder="Гос. номер" className="eco-input max-w-[140px] font-mono uppercase" />
+        <input name="phone" defaultValue={phone} placeholder="Телефон" className="eco-input max-w-[150px]" />
+        <button type="submit" className="eco-pill">
+          <Filter aria-hidden className="eco-icon" />
+          Найти
+        </button>
+        {(search || counterparty || plate || phone || offset > 0) && (
+          <Link href="/shipment" className="eco-pill is-active">
+            Сбросить <X aria-hidden className="eco-icon" />
+          </Link>
+        )}
+        <span className="eco-pill">Период · сегодня</span>
+        <span className="eco-pill is-dashed">
+          <Plus aria-hidden className="eco-icon" />
+          Ещё фильтр
+        </span>
+        <div className="grow" />
+        <div className="eco-seg">
+          <span className="eco-seg-btn is-active">Comfortable</span>
+          <span className="eco-seg-btn">Compact</span>
         </div>
       </form>
 
       {!result.ok ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+        <div className="eco-card eco-card--padded text-sm text-[var(--eco-danger)]">
           Ошибка МойСклад: {result.error}
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-            <table className="w-full text-sm">
+          <div className="eco-table-wrap">
+            <div className="eco-table-toolbar">
+              <span className="l-meta">
+                {rows.length} строк · сумма {rubles(totalSum)} ₽ · {sourceLabel}
+              </span>
+              <div className="grow" />
+              <button type="button" className="eco-btn eco-btn--ghost eco-btn--sm">
+                <Printer aria-hidden className="eco-icon" />
+                Печать списка
+              </button>
+              <button type="button" className="eco-btn eco-btn--ghost eco-btn--sm">
+                <SlidersHorizontal aria-hidden className="eco-icon" />
+                Колонки
+              </button>
+            </div>
+            <table className="eco-table">
               <thead>
-                <tr className="border-b border-zinc-200 text-left dark:border-zinc-700">
-                  <th className="px-4 py-3 font-medium text-zinc-500">Дата</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Номер</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Контрагент</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Гос. номер</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Организация</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Склад</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Создал (эко)</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Сумма</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Статус</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Действия</th>
+                <tr>
+                  <th style={{ width: 36 }}><span className="eco-check" /></th>
+                  <th>№ / дата</th>
+                  <th>Клиент</th>
+                  <th>Авто / гос. номер</th>
+                  <th>Организация / склад</th>
+                  <th>Создал</th>
+                  <th>Статус</th>
+                  <th>Оплата</th>
+                  <th style={{ textAlign: "right" }}>Сумма</th>
+                  <th style={{ width: 96 }} />
                 </tr>
               </thead>
               <tbody>
-                {(result.data.rows ?? []).map((r) => (
-                  <tr key={r.id} className="border-b border-zinc-100 dark:border-zinc-700">
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{r.moment}</td>
-                    <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-50">
-                      <Link href={`/shipment/${r.id}`} className="hover:underline">
+                {rows.map((r) => {
+                  const moment = formatMoment(r.moment);
+                  return (
+                  <tr key={r.id}>
+                    <td><span className="eco-check" /></td>
+                    <td>
+                      <Link href={`/shipment/${r.id}`} className="l-mono" style={{ color: "var(--eco-ink)", fontWeight: 600 }}>
                         {r.name}
                       </Link>
+                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>
+                        {moment.date} · {moment.time}
+                      </div>
                     </td>
-                    <td className="px-4 py-3">{getCounterpartyDisplay(r)}</td>
-                    <td className="px-4 py-3 font-mono text-zinc-800 dark:text-zinc-200">{getPlateDisplay(r)}</td>
-                    <td className="px-4 py-3">{r.organization?.name ?? "—"}</td>
-                    <td className="px-4 py-3">{r.store?.name ?? "—"}</td>
-                    <td className="px-4 py-3">{getEcoUserName(r) ?? "Не указано"}</td>
-                    <td className="px-4 py-3 text-right">{rubles(r.sum)} ₽</td>
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                          r.applicable
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                            : "bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
-                        }`}
-                      >
-                        {r.applicable ? "Проведён" : "Черновик"}
-                      </span>
+                    <td>
+                      <div style={{ color: "var(--eco-ink)", fontWeight: 500 }}>{getCounterpartyDisplay(r)}</div>
+                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>телефон в карточке клиента</div>
                     </td>
-                    <td className="px-4 py-3 text-right align-middle">
-                      <ShipmentRowActions shipmentId={r.id} />
+                    <td>
+                      <div style={{ color: "var(--eco-ink-2)" }}>—</div>
+                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>{getPlateDisplay(r)}</div>
+                    </td>
+                    <td>
+                      <div>{r.organization?.name ?? "—"}</div>
+                      <div style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>{r.store?.name ?? "—"}</div>
+                    </td>
+                    <td>{getEcoUserName(r) ?? "—"}</td>
+                    <td>
+                      <EcoBadge tone={r.applicable ? "success" : "neutral"} dot>
+                        {r.applicable ? "Проведено" : "Черновик"}
+                      </EcoBadge>
+                    </td>
+                    <td>
+                      <EcoBadge tone={r.sum > 0 ? "success" : "warning"} dot>
+                        {r.sum > 0 ? "Оплачено" : "Не оплачено"}
+                      </EcoBadge>
+                    </td>
+                    <td className="l-money" style={{ color: "var(--eco-ink)", fontWeight: 600, textAlign: "right" }}>
+                      {rubles(r.sum)} ₽
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div className="eco-row-actions">
+                        <ShipmentRowActions shipmentId={r.id} />
+                      </div>
                     </td>
                   </tr>
-                ))}
-                {result.data.rows?.length === 0 && (
+                );
+                })}
+                {rows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={10} style={{ color: "var(--eco-muted)", padding: 32, textAlign: "center" }}>
                       Ничего не найдено
                     </td>
                   </tr>
@@ -499,27 +569,27 @@ export default async function ShipmentListPage({
             </table>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <div className="text-zinc-500 dark:text-zinc-400">
+          <div className="mt-4 flex items-center justify-between gap-3 text-sm text-[var(--eco-muted)]">
+            <div>
               Показано: {Math.min(limit, result.data.rows?.length ?? 0)} / {result.data.meta.size}
             </div>
             <div className="flex gap-2">
               <Link
                 href={`/shipment${listQuery(search, counterparty, plate, phone, Math.max(0, offset - limit))}`}
-                className={`rounded-lg border px-3 py-1.5 ${
+                className={`eco-btn eco-btn--sm ${
                   offset <= 0
-                    ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    ? "pointer-events-none opacity-50"
+                    : ""
                 }`}
               >
                 ← Назад
               </Link>
               <Link
                 href={`/shipment${listQuery(search, counterparty, plate, phone, offset + limit)}`}
-                className={`rounded-lg border px-3 py-1.5 ${
+                className={`eco-btn eco-btn--sm ${
                   offset + limit >= result.data.meta.size
-                    ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    ? "pointer-events-none opacity-50"
+                    : ""
                 }`}
               >
                 Вперёд →
@@ -528,6 +598,6 @@ export default async function ShipmentListPage({
           </div>
         </>
       )}
-    </div>
+    </main>
   );
 }

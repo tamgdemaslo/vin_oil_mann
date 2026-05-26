@@ -6,6 +6,7 @@ const SESSION_COOKIE = "eco_session";
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "eco-platform-secret-change-in-production";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const AUTH_SALT = process.env.AUTH_SALT ?? "eco-salt";
+const AUTH_PASSWORD_CACHE_MS = 60_000;
 const DEFAULT_AUTH_USERS =
   "ilya:1111:Илья:owner,denis:2222:Денис:owner,vadim:3333:Вадим:admin,maksim:4444:Максим:master";
 
@@ -65,6 +66,11 @@ function normalizeRole(value?: string): UserRole {
 }
 
 type EnvUser = { login: string; name: string; passwordHash: string; role: UserRole };
+type PasswordOverrideCache = { expiresAt: number; rows: Map<string, string> } | null;
+
+const authCache = ((globalThis as typeof globalThis & {
+  __ecoAuthPasswordOverrideCache?: { passwordOverrides: PasswordOverrideCache };
+}).__ecoAuthPasswordOverrideCache ??= { passwordOverrides: null });
 
 function normalizeLoginKey(login: string): string {
   return login.trim().toLowerCase();
@@ -90,9 +96,15 @@ export function getLoginVariants(login: string): string[] {
 }
 
 async function getPasswordOverrides(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (authCache.passwordOverrides && authCache.passwordOverrides.expiresAt > now) {
+    return authCache.passwordOverrides.rows;
+  }
   try {
     const rows = await prisma.authPassword.findMany();
-    return new Map(rows.map((row) => [normalizeLoginKey(row.login), row.passwordHash]));
+    const map = new Map(rows.map((row) => [normalizeLoginKey(row.login), row.passwordHash]));
+    authCache.passwordOverrides = { expiresAt: now + AUTH_PASSWORD_CACHE_MS, rows: map };
+    return map;
   } catch {
     return new Map();
   }
@@ -154,6 +166,7 @@ export async function setUserPassword(login: string, password: string): Promise<
     update: { passwordHash: hashPassword(password, AUTH_SALT) },
     create: { login: canonicalLogin, passwordHash: hashPassword(password, AUTH_SALT) },
   });
+  authCache.passwordOverrides = null;
 }
 
 export async function getSession(): Promise<{ user: User } | null> {

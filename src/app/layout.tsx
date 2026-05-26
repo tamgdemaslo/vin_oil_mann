@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import AppHeader from "@/components/AppHeader";
 import IdleLockGuard from "@/components/IdleLockGuard";
+import PlatformShell from "@/components/platform/PlatformShell";
 
 export const metadata: Metadata = {
   title: "Эко-платформа — продажи и деньги",
@@ -16,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="antialiased">
-        <AppHeader />
+        <PlatformShell />
         <IdleLockGuard />
         {children}
       </body>

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { RefreshCw, Settings2, ShoppingCart, Truck } from "lucide-react";
+import { EcoBadge, EcoButton, EcoKpi } from "@/components/platform/EcoUI";
 
 type RestockItem = {
   productId: string;
@@ -302,7 +305,8 @@ export default function RestockClient() {
     setLoading(true);
     setError(null);
     try {
-      const u = new URL("/api/restock/needs-order", window.location.origin);
+      const u = new URL("/api/local-inventory/restock", window.location.origin);
+      u.searchParams.set("mode", "below_min");
       if (refresh) u.searchParams.set("refresh", "1");
       const res = await fetch(u.toString());
       const data = await res.json();
@@ -311,6 +315,7 @@ export default function RestockClient() {
       setMeta({
         fetchedRows: data.fetchedRows,
         catalogSize: data.catalogSize,
+        note: data.note,
       });
       setOutflowLoaded(false);
     } catch (e) {
@@ -325,7 +330,8 @@ export default function RestockClient() {
     setLoading(true);
     setError(null);
     try {
-      const u = new URL("/api/restock/outflow-needs", window.location.origin);
+      const u = new URL("/api/local-inventory/restock", window.location.origin);
+      u.searchParams.set("mode", "outflow");
       if (refresh) u.searchParams.set("refresh", "1");
       if (dateFrom && dateTo) {
         u.searchParams.set("date_from", dateFrom);
@@ -396,6 +402,16 @@ export default function RestockClient() {
   const rosskoCartTotal = useMemo(
     () => rosskoCart.reduce((sum, x) => sum + Math.max(0, Number(x.count || 0)), 0),
     [rosskoCart]
+  );
+  const restockStats = useMemo(
+    () => ({
+      all: items.length,
+      shown: filteredItems.length,
+      shortage: filteredItems.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0),
+      suppliers: suppliers.length + (items.some(isRosskoItem) ? 1 : 0),
+      excluded: filteredItems.filter((item) => excluded[item.productId]).length,
+    }),
+    [excluded, filteredItems, items, suppliers.length]
   );
 
   function ensureQty(pid: string, it: RestockItem): number {
@@ -564,10 +580,70 @@ export default function RestockClient() {
   }
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
+    <div className="eco-restock-page">
+      <section className="eco-page-head eco-restock-head">
+        <div>
+          <div className="eco-page-crumbs">
+            <Link href="/">Главная</Link>
+            <span className="sep">/</span>
+            <span>Склад</span>
+            <span className="sep">/</span>
+            <span className="cur">Пополнение</span>
+          </div>
+          <div className="eco-title-row">
+            <h1 className="eco-page-title">Пополнение остатков</h1>
+            <EcoBadge tone="rust">{mode === "below_min" ? "ниже минимума" : "расход за период"}</EcoBadge>
+            <EcoBadge tone="success" dot>
+              {selected}
+            </EcoBadge>
+          </div>
+          <p className="eco-page-subtitle">
+            Товары с остатком ниже неснижаемого по локальной БД. Поставщик берётся из карточки товара.
+          </p>
+        </div>
+        <div className="eco-page-actions">
+          <div className="eco-seg">
+            <button
+              type="button"
+              onClick={() => setMode("below_min")}
+              className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
+            >
+              Ниже минимума
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("outflow")}
+              className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
+            >
+              С расходом
+            </button>
+          </div>
+          {mode === "below_min" && (
+            <EcoButton type="button" onClick={() => void loadBelowMin(true)} disabled={loading}>
+              <RefreshCw size={15} />
+              Обновить
+            </EcoButton>
+          )}
+          {selected === "ROSSKO" && (
+            <EcoButton type="button" variant="primary" onClick={() => setCartOpen((prev) => !prev)}>
+              <ShoppingCart size={15} />
+              Корзина ({rosskoCartTotal})
+            </EcoButton>
+          )}
+        </div>
+      </section>
+
+      <div className="eco-grid eco-grid--kpi eco-restock-metrics">
+        <EcoKpi label="Всего позиций" value={restockStats.all} tone="info" />
+        <EcoKpi label="Показано" value={restockStats.shown} sub={`${restockStats.excluded} исключено`} tone="neutral" />
+        <EcoKpi label="Дефицит" value={fmtNum(restockStats.shortage)} tone="warning" />
+        <EcoKpi label="Поставщики" value={restockStats.suppliers} tone="success" />
+      </div>
+
+      <div className="eco-restock-layout">
       <aside className="lg:w-64 lg:shrink-0">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="eco-filter-rail eco-restock-rail">
+          <div className="eco-filter-title">
             Поставщики
           </div>
           <div className="mt-3 flex flex-col gap-1">
@@ -598,70 +674,46 @@ export default function RestockClient() {
             ))}
           </div>
           <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-            <button
+            <EcoButton
               type="button"
               onClick={() => setSettingsOpen(true)}
-              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              size="sm"
             >
+              <Settings2 size={14} />
               О данных
-            </button>
+            </EcoButton>
           </div>
         </div>
       </aside>
 
-      <section className="min-w-0 flex-1 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Пополнение остатков
-            </h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Товары с остатком ниже неснижаемого (по данным МойСклад). Поставщик берётся из карточки товара.
-            </p>
-          </div>
+      <section className="eco-restock-main">
+        <div className="eco-table-toolbar eco-restock-toolbar">
+          <span className="l-meta">
+            {selected} · {restockStats.shown} позиций · дефицит {fmtNum(restockStats.shortage)}
+          </span>
+          <div className="grow" />
           <div className="flex flex-wrap gap-2">
-            <div className="inline-flex rounded-xl border border-zinc-200 p-0.5 dark:border-zinc-700">
-              <button
-                type="button"
-                onClick={() => setMode("below_min")}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  mode === "below_min"
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                    : "text-zinc-600 dark:text-zinc-400"
-                }`}
-              >
-                Ниже минимума
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("outflow")}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  mode === "outflow"
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                    : "text-zinc-600 dark:text-zinc-400"
-                }`}
-              >
-                С расходом за период
-              </button>
-            </div>
             {mode === "below_min" && (
-              <button
+              <EcoButton
                 type="button"
                 onClick={() => void loadBelowMin(true)}
                 disabled={loading}
-                className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-amber-600 disabled:opacity-60 dark:bg-amber-600 dark:hover:bg-amber-700"
+                size="sm"
               >
-                Обновить из МойСклад
-              </button>
+                <RefreshCw size={14} />
+                Обновить
+              </EcoButton>
             )}
             {selected === "ROSSKO" && (
-              <button
+              <EcoButton
                 type="button"
                 onClick={() => setCartOpen((prev) => !prev)}
-                className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                size="sm"
+                variant="primary"
               >
+                <ShoppingCart size={14} />
                 Корзина ROSSKO ({rosskoCartTotal})
-              </button>
+              </EcoButton>
             )}
           </div>
         </div>
@@ -686,14 +738,15 @@ export default function RestockClient() {
                 className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
               />
             </label>
-            <button
+            <EcoButton
               type="button"
               onClick={() => void loadOutflow(true)}
               disabled={loading}
-              className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60 dark:bg-amber-600 dark:hover:bg-amber-700"
+              variant="primary"
             >
+              <Truck size={15} />
               Загрузить
-            </button>
+            </EcoButton>
             {outflowLoaded && meta.dateLabel && (
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
                 Период: <span className="font-medium text-zinc-900 dark:text-zinc-100">{meta.dateLabel}</span>
@@ -704,7 +757,7 @@ export default function RestockClient() {
 
         {meta.fetchedRows !== undefined && (
           <p className="text-xs text-zinc-500 dark:text-zinc-500">
-            Строк отчёта остатков: {meta.fetchedRows}, позиций в каталоге: {meta.catalogSize ?? "—"}.
+            Товаров проверено: {meta.fetchedRows}, позиций в каталоге: {meta.catalogSize ?? "—"}.
             {meta.note && <span className="ml-1">{meta.note}</span>}
           </p>
         )}
@@ -717,7 +770,7 @@ export default function RestockClient() {
 
         {loading && (
           <div className="rounded-2xl border border-zinc-200 bg-white px-6 py-12 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-            Загрузка данных из МойСклад…
+            Загрузка данных из локальной БД…
           </div>
         )}
 
@@ -792,6 +845,7 @@ export default function RestockClient() {
           </div>
         )}
       </section>
+      </div>
 
       {settingsOpen && (
         <button
@@ -805,11 +859,11 @@ export default function RestockClient() {
         <div className="fixed left-1/2 top-1/2 z-50 w-[min(100%,420px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
           <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">О данных</div>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
-            <li>В список попадают только товары с заполненным неснижаемым остатком в МойСклад.</li>
-            <li>Условие: текущий остаток меньше неснижаемого.</li>
+            <li>В список попадают только локальные товары с заполненным неснижаемым остатком.</li>
+            <li>Условие: доступный остаток в локальной БД меньше неснижаемого.</li>
             <li>
               Режим «С расходом за период» дополнительно отбирает позиции, по которым был расход за выбранные даты
-              (отгрузки, розница, списания).
+              (локальные отгрузки и списания).
             </li>
             <li>Количества для сообщения и исключения позиций хранятся в браузере на этом устройстве.</li>
           </ul>

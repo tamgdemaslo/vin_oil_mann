@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import MoneyInput from "@/components/MoneyInput";
 
 type PieceworkRuleItem = {
   targetType: "service" | "product_group";
@@ -258,19 +259,31 @@ export default function PieceworkRulesEditor({ onSaved }: { onSaved?: () => void
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={draft.value}
-                                  onChange={(e) =>
-                                    setDrafts((prev) => ({
-                                      ...prev,
-                                      [key]: { ...draft, value: e.target.value },
-                                    }))
-                                  }
-                                  className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-                                />
+                                {draft.mode === "fixed" ? (
+                                  <MoneyInput
+                                    value={draft.value}
+                                    onValueChange={(value, valueDraft) =>
+                                      setDrafts((prev) => ({
+                                        ...prev,
+                                        [key]: { ...draft, value: valueDraft ? String(value) : "" },
+                                      }))
+                                    }
+                                    className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={draft.value}
+                                    onChange={(e) =>
+                                      setDrafts((prev) => ({
+                                        ...prev,
+                                        [key]: { ...draft, value: e.target.value },
+                                      }))
+                                    }
+                                    className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                                  />
+                                )}
                                 <span className="text-xs text-zinc-500">
                                   {valueHint(rule, draft.mode)}
                                 </span>

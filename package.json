@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --webpack",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build --webpack",
     "start": "next start --hostname 0.0.0.0 --port ${PORT:-3000}",
     "lint": "eslint",
     "test:lookup": "node scripts/test-lookup.mjs",
@@ -17,10 +17,12 @@
     "db:push": "prisma db push",
     "db:deploy": "prisma db push --skip-generate",
     "db:migrate": "prisma migrate dev",
+    "import:moysklad": "node scripts/import-from-moysklad.mjs",
     "moysklad:token": "node scripts/refresh-moysklad-token.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
+    "lucide-react": "^1.16.0",
     "next": "16.1.6",
     "openai": "^6.22.0",
     "react": "19.2.3",
@@ -39,5 +41,8 @@
     "prisma": "^6.9.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
   }
 }

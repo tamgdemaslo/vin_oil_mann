@@ -130,25 +130,56 @@ export default function AppHeader() {
               description: "Создание новой отгрузки.",
               disabled: locked,
             },
+          ],
+        },
+        {
+          id: "inventory",
+          href: "/inventory",
+          label: "Склад",
+          items: [
             {
-              href: "/operations/supply",
-              label: "Приёмка",
-              description: "Поступление товаров, поставщик, склад и позиции.",
+              href: "/inventory/products",
+              label: "Товары",
+              description: "Локальный справочник товаров и остатки.",
               disabled: locked,
             },
             {
-              href: "/operations/restock",
+              href: "/inventory/receipts",
+              label: "Приёмка",
+              description: "Поступление товаров на локальный склад.",
+              disabled: locked,
+            },
+            {
+              href: "/inventory/writeoffs",
+              label: "Списание",
+              description: "Списание товаров и корректировка остатков.",
+              disabled: locked,
+            },
+            {
+              href: "/inventory/restock",
               label: "Пополнение остатков",
-              description: "Дефицит по неснижаемому остатку и сообщение поставщику.",
+              description: "Дефицит, расход и заказ поставщикам по локальной БД.",
               disabled: locked,
             },
           ],
         },
         {
           id: "finance",
-          href: "/cash",
+          href: "/finance",
           label: "Финансы",
           items: [
+            {
+              href: "/finance/invoices",
+              label: "Счета поставщиков",
+              description: "Счета, созданные из локальных приёмок.",
+              disabled: locked,
+            },
+            {
+              href: "/finance/profit",
+              label: "Прибыль",
+              description: "Маржа, себестоимость и прибыль по локальной базе.",
+              disabled: locked,
+            },
             {
               href: "/cash#cash-state",
               label: "Касса",
@@ -178,9 +209,15 @@ export default function AppHeader() {
         },
         {
           id: "clients",
-          href: "/records",
+          href: "/clients",
           label: "Клиенты",
           items: [
+            {
+              href: "/clients/counterparties",
+              label: "Контрагенты",
+              description: "Клиенты, поставщики и компании в нашей БД.",
+              disabled: locked,
+            },
             {
               href: "/records",
               label: "Записи",
