@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -325,6 +327,35 @@ function getPresetRange(preset: "current" | "previous" | "7" | "30") {
   return { dateFrom: toLocalDateInputValue(from), dateTo: toLocalDateInputValue(now) };
 }
 
+function getDateRangeKeys(startKey: string, endKey: string) {
+  const start = new Date(`${startKey}T00:00:00`);
+  const end = new Date(`${endKey}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  const from = start <= end ? start : end;
+  const to = start <= end ? end : start;
+  const keys: string[] = [];
+  for (const date = new Date(from); date <= to; date.setDate(date.getDate() + 1)) {
+    keys.push(toLocalDateInputValue(date));
+  }
+  return keys;
+}
+
+function getWeekRangeKeys(dateKey: string, monthDate: Date) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return [];
+  const dayOffset = (date.getDay() + 6) % 7;
+  const start = new Date(date);
+  start.setDate(date.getDate() - dayOffset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const month = monthDate.getMonth();
+  const year = monthDate.getFullYear();
+  return getDateRangeKeys(toLocalDateInputValue(start), toLocalDateInputValue(end)).filter((key) => {
+    const parsed = new Date(`${key}T00:00:00`);
+    return parsed.getFullYear() === year && parsed.getMonth() === month;
+  });
+}
+
 function ruleKey(rule: Pick<PieceworkRuleItem, "targetType" | "targetId" | "role">) {
   return `${rule.targetType}:${rule.targetId}:${rule.role}`;
 }
@@ -483,10 +514,16 @@ export default function SalaryDashboard({
   const [calendarLogin, setCalendarLogin] = useState(isOwner ? "" : login);
   const [calendarFilter, setCalendarFilter] = useState<"all" | "working" | "actual" | "absence">("all");
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateInputValue(new Date()));
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([toLocalDateInputValue(new Date())]));
+  const [selectionAnchor, setSelectionAnchor] = useState(() => toLocalDateInputValue(new Date()));
+  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [calendarSaveStatus, setCalendarSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [calendarDays, setCalendarDays] = useState<WorkingDayItem[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [dayComments, setDayComments] = useState<Record<string, string>>({});
+  const [shiftOverrides, setShiftOverrides] = useState<Set<string>>(() => new Set());
+  const [absenceOverrides, setAbsenceOverrides] = useState<Set<string>>(() => new Set());
   const [selectedLogin, setSelectedLogin] = useState<string | null>(null);
   const [drawerComment, setDrawerComment] = useState("");
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -503,6 +540,8 @@ export default function SalaryDashboard({
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const autoLoadedRef = useRef(false);
+  const dragStartDateRef = useRef<string | null>(null);
+  const suppressNextClickRef = useRef(false);
 
   const viewingAsEmployee = mode === "employee";
   const canManagePayroll = isOwner && mode === "owner";
@@ -683,6 +722,17 @@ export default function SalaryDashboard({
   useEffect(() => {
     void loadCalendarDays();
   }, [loadCalendarDays]);
+
+  useEffect(() => {
+    const { dateFrom: monthFrom, dateTo: monthTo } = getMonthBounds(
+      calendarDate.getFullYear(),
+      calendarDate.getMonth()
+    );
+    if (selectedDate >= monthFrom && selectedDate <= monthTo) return;
+    setSelectedDate(monthFrom);
+    setSelectionAnchor(monthFrom);
+    setSelectedDates(new Set([monthFrom]));
+  }, [calendarDate, selectedDate]);
 
   const hasUnsavedRuleChanges = useMemo(
     () =>
@@ -912,6 +962,100 @@ export default function SalaryDashboard({
     setUserFilter("");
   }
 
+  function getCalendarMonthDateKeys() {
+    const { daysInMonth } = getMonthBounds(calendarDate.getFullYear(), calendarDate.getMonth());
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      return `${calendarDate.getFullYear()}-${String(calendarDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    });
+  }
+
+  function applyDateSelection(nextDates: Iterable<string>, nextAnchor?: string) {
+    const monthDates = new Set(getCalendarMonthDateKeys());
+    const normalized = Array.from(new Set(Array.from(nextDates).filter((date) => monthDates.has(date)))).sort();
+    const fallback = nextAnchor && monthDates.has(nextAnchor) ? nextAnchor : normalized[normalized.length - 1] ?? selectedDate;
+    setSelectedDates(new Set(normalized.length > 0 ? normalized : [fallback]));
+    setSelectedDate(fallback);
+    setSelectionAnchor(fallback);
+  }
+
+  function handleCalendarDayClick(dateKey: string, event: ReactMouseEvent<HTMLButtonElement>) {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+
+    if (event.shiftKey && selectionAnchor) {
+      applyDateSelection(getDateRangeKeys(selectionAnchor, dateKey), selectionAnchor);
+      setMultiSelectEnabled(true);
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey || multiSelectEnabled) {
+      const next = new Set(selectedDates);
+      if (next.has(dateKey) && next.size > 1) {
+        next.delete(dateKey);
+      } else {
+        next.add(dateKey);
+      }
+      applyDateSelection(next, dateKey);
+      setMultiSelectEnabled(true);
+      return;
+    }
+
+    applyDateSelection([dateKey], dateKey);
+  }
+
+  function handleCalendarPointerDown(dateKey: string, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    dragStartDateRef.current = dateKey;
+    suppressNextClickRef.current = false;
+  }
+
+  function handleCalendarPointerEnter(dateKey: string) {
+    const startDate = dragStartDateRef.current;
+    if (!startDate || startDate === dateKey) return;
+    suppressNextClickRef.current = true;
+    setMultiSelectEnabled(true);
+    applyDateSelection(getDateRangeKeys(startDate, dateKey), startDate);
+  }
+
+  function endCalendarDrag() {
+    dragStartDateRef.current = null;
+  }
+
+  function toggleMultiSelectMode() {
+    setMultiSelectEnabled((enabled) => {
+      const next = !enabled;
+      if (!next && selectedDates.size > 1) {
+        applyDateSelection([selectedDate], selectedDate);
+      }
+      return next;
+    });
+  }
+
+  function selectCalendarPreset(kind: "weekdays" | "weekends" | "week" | "month" | "clear") {
+    if (kind === "clear") {
+      applyDateSelection([selectedDate], selectedDate);
+      setMultiSelectEnabled(false);
+      return;
+    }
+
+    const monthDates = getCalendarMonthDateKeys();
+    const dates =
+      kind === "month"
+        ? monthDates
+        : kind === "week"
+          ? getWeekRangeKeys(selectedDate, calendarDate)
+          : monthDates.filter((dateKey) => {
+              const date = new Date(`${dateKey}T00:00:00`);
+              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+              return kind === "weekends" ? isWeekend : !isWeekend;
+            });
+    applyDateSelection(dates, dates[0] ?? selectedDate);
+    setMultiSelectEnabled(true);
+  }
+
   function getCalendarItemsForDate(date: string, targetLogin = calendarLogin) {
     return calendarDays.filter((item) => {
       if (targetLogin && normalizeLogin(item.userLogin) !== normalizeLogin(targetLogin)) return false;
@@ -932,6 +1076,212 @@ export default function SalaryDashboard({
   }
 
   const calendarCounts = getCalendarCountsByLogin();
+
+  const sortedSelectedDates = Array.from(selectedDates).sort();
+  const selectedDatesCount = sortedSelectedDates.length;
+  const firstSelectedDate = sortedSelectedDates[0] ?? selectedDate;
+  const lastSelectedDate = sortedSelectedDates[sortedSelectedDates.length - 1] ?? selectedDate;
+
+  function getTargetUsersForCalendarAction() {
+    if (calendarLogin) {
+      return teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin));
+    }
+    return teamUsers;
+  }
+
+  function calendarOverrideKey(userLogin: string, date: string) {
+    return `${normalizeLogin(userLogin)}:${date}`;
+  }
+
+  function getEffectiveDayState(date: string, targetLogin = calendarLogin) {
+    const targetUsers = targetLogin
+      ? teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(targetLogin))
+      : teamUsers;
+    const items = getCalendarItemsForDate(date, targetLogin);
+    const hasWorking = items.some((item) => item.source === "scheduled" || item.source === "both");
+    const hasActualFromApi = items.some((item) => item.source === "actual" || item.source === "both");
+    const hasShiftOverride = targetUsers.some((user) => shiftOverrides.has(calendarOverrideKey(user.login, date)));
+    const hasAbsenceOverride = targetUsers.some((user) => absenceOverrides.has(calendarOverrideKey(user.login, date)));
+    const hasActual = hasActualFromApi || hasShiftOverride;
+    const todayKey = toLocalDateInputValue(new Date());
+    const hasAbsence = hasAbsenceOverride || (hasWorking && !hasActual && date < todayKey);
+    return { hasWorking, hasActual, hasAbsence, items };
+  }
+
+  async function runSelectedDaysAction(
+    action:
+      | "mark-working"
+      | "clear-working"
+      | "add-shift"
+      | "clear-shift"
+      | "add-comment"
+      | "clear-comment"
+      | "mark-absence"
+      | "reset-local"
+  ) {
+    if (!canManagePayroll || calendarBusy || selectedDatesCount === 0) return;
+
+    const targetUsers = getTargetUsersForCalendarAction();
+    if (targetUsers.length === 0) {
+      setToast("Выберите сотрудника для массового действия");
+      return;
+    }
+
+    const targetLabel = calendarLogin
+      ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))?.name ?? calendarLogin
+      : "всех сотрудников";
+    const dangerous = action === "clear-working" || action === "clear-shift" || action === "clear-comment" || !calendarLogin;
+    const actionLabels = {
+      "mark-working": "Отметить",
+      "clear-working": "Снять рабочие дни",
+      "add-shift": "Добавить смену",
+      "clear-shift": "Очистить смены",
+      "add-comment": "Добавить комментарий",
+      "clear-comment": "Очистить комментарии",
+      "mark-absence": "Отметить отсутствием",
+      "reset-local": "Сбросить выбранные изменения",
+    };
+
+    if (dangerous && !window.confirm(`${actionLabels[action]} для ${selectedDatesCount} дней: ${targetLabel}?`)) {
+      return;
+    }
+
+    setCalendarSaveStatus("saving");
+    setCalendarBusy(true);
+    try {
+      if (action === "mark-working") {
+        for (const user of targetUsers) {
+          for (const date of sortedSelectedDates) {
+            const response = await fetch("/api/working-days", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userLogin: user.login, date }),
+            });
+            await readJson(response, "Не удалось назначить рабочие дни");
+          }
+        }
+        setToast(`${selectedDatesCount} дней отмечены рабочими`);
+      }
+
+      if (action === "clear-working") {
+        const removable = calendarDays.filter((item) => {
+          if (!sortedSelectedDates.includes(item.date)) return false;
+          if (item.source !== "scheduled" && item.source !== "both") return false;
+          if (calendarLogin && normalizeLogin(item.userLogin) !== normalizeLogin(calendarLogin)) return false;
+          return item.removable !== false;
+        });
+        for (const item of removable) {
+          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
+          await readJson(response, "Не удалось снять рабочие дни");
+        }
+        setToast(`${selectedDatesCount} дней сняты с графика`);
+      }
+
+      if (action === "add-shift") {
+        setShiftOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.add(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setAbsenceOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setToast(`${selectedDatesCount} смен добавлены в календарь`);
+      }
+
+      if (action === "clear-shift") {
+        setShiftOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setToast("Локальные смены очищены");
+      }
+
+      if (action === "add-comment") {
+        const comment = window.prompt(`Комментарий для ${selectedDatesCount} дней`);
+        if (comment == null) {
+          setCalendarSaveStatus("idle");
+          return;
+        }
+        setDayComments((prev) => {
+          const next = { ...prev };
+          for (const date of sortedSelectedDates) {
+            next[`${calendarLogin || "all"}:${date}`] = comment;
+          }
+          return next;
+        });
+        setToast("Комментарий добавлен");
+      }
+
+      if (action === "clear-comment") {
+        setDayComments((prev) => {
+          const next = { ...prev };
+          for (const date of sortedSelectedDates) delete next[`${calendarLogin || "all"}:${date}`];
+          return next;
+        });
+        setToast("Комментарии очищены");
+      }
+
+      if (action === "mark-absence") {
+        setAbsenceOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.add(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setShiftOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setToast(`${selectedDatesCount} дней отмечены отсутствием`);
+      }
+
+      if (action === "reset-local") {
+        setShiftOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setAbsenceOverrides((prev) => {
+          const next = new Set(prev);
+          for (const user of targetUsers) {
+            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
+          }
+          return next;
+        });
+        setDayComments((prev) => {
+          const next = { ...prev };
+          for (const date of sortedSelectedDates) delete next[`${calendarLogin || "all"}:${date}`];
+          return next;
+        });
+        setToast("Выбранные локальные изменения сброшены");
+      }
+
+      await loadCalendarDays();
+      await loadPayroll();
+      setCalendarSaveStatus("saved");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось выполнить массовое действие");
+      setCalendarSaveStatus("dirty");
+    } finally {
+      setCalendarBusy(false);
+    }
+  }
 
   async function toggleWorkingDay(targetDate: string, shouldBeWorking: boolean) {
     if (!canManagePayroll) return;
@@ -1269,10 +1619,21 @@ export default function SalaryDashboard({
     },
   ] as const;
 
-  const selectedDayItems = getCalendarItemsForDate(selectedDate);
-  const selectedDayWorking = selectedDayItems.some((item) => item.source === "scheduled" || item.source === "both");
-  const selectedDayActual = selectedDayItems.some((item) => item.source === "actual" || item.source === "both");
+  const selectedDayState = getEffectiveDayState(selectedDate);
+  const selectedDayItems = selectedDayState.items;
+  const selectedDayWorking = selectedDayState.hasWorking;
+  const selectedDayActual = selectedDayState.hasActual;
   const selectedDayCommentKey = `${calendarLogin || "all"}:${selectedDate}`;
+  const selectedBulkStats = sortedSelectedDates.reduce(
+    (stats, date) => {
+      const state = getEffectiveDayState(date);
+      if (state.hasWorking) stats.working += 1;
+      if (state.hasActual) stats.actual += 1;
+      if (state.hasAbsence) stats.absence += 1;
+      return stats;
+    },
+    { working: 0, actual: 0, absence: 0 }
+  );
 
   const selectedBreakdown = selectedRow
     ? vehicleHistory
@@ -1617,12 +1978,43 @@ export default function SalaryDashboard({
                   <ChevronRight size={16} />
                 </button>
               </div>
-              <EcoSelect value={calendarFilter} onChange={(event) => setCalendarFilter(event.target.value as typeof calendarFilter)}>
-                <option value="all">Все</option>
-                <option value="working">Рабочие</option>
-                <option value="actual">Фактические смены</option>
-                <option value="absence">Отсутствия</option>
-              </EcoSelect>
+              <EcoButton type="button" size="sm" onClick={() => {
+                const today = new Date();
+                const todayKey = toLocalDateInputValue(today);
+                setCalendarDate(new Date(today.getFullYear(), today.getMonth(), 1));
+                applyDateSelection([todayKey], todayKey);
+              }}>
+                Сегодня
+              </EcoButton>
+            </div>
+          </div>
+
+          <div className="eco-payroll-calendar-topline">
+            <div className="eco-payroll-calendar-filters" aria-label="Фильтр дней">
+              {[
+                ["all", "Все"],
+                ["working", "Рабочие"],
+                ["actual", "Смены"],
+                ["absence", "Пропуски"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={calendarFilter === value ? "is-active" : ""}
+                  onClick={() => setCalendarFilter(value as typeof calendarFilter)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className={`eco-payroll-save-state is-${calendarSaveStatus}`}>
+              {calendarBusy || calendarSaveStatus === "saving"
+                ? "Сохраняем..."
+                : calendarSaveStatus === "saved"
+                  ? "Сохранено"
+                  : selectedDatesCount > 1
+                    ? "Есть выбранные дни"
+                    : "Готово"}
             </div>
           </div>
 
@@ -1649,19 +2041,64 @@ export default function SalaryDashboard({
           </div>
 
           {canManagePayroll && (
-            <div className="eco-payroll-bulk-actions">
-              <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("weekdays")} disabled={calendarBusy}>
-                Назначить будни рабочими
-              </EcoButton>
-              <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("copy")} disabled={calendarBusy}>
-                Скопировать график прошлого месяца
-              </EcoButton>
-              <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("clear")} disabled={calendarBusy}>
-                Очистить месяц
-              </EcoButton>
-              <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("masters")} disabled={calendarBusy || !calendarLogin}>
-                Применить ко всем мастерам
-              </EcoButton>
+            <div className="eco-payroll-selection-tools">
+              <div className="eco-payroll-quick-select">
+                <EcoButton type="button" size="sm" onClick={toggleMultiSelectMode}>
+                  {multiSelectEnabled ? "Одиночный выбор" : "Выбрать несколько"}
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => selectCalendarPreset("weekdays")}>
+                  Выбрать будни
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => selectCalendarPreset("weekends")}>
+                  Выбрать выходные
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => selectCalendarPreset("week")}>
+                  Выбрать всю неделю
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => selectCalendarPreset("month")}>
+                  Выбрать весь месяц
+                </EcoButton>
+                <EcoButton type="button" size="sm" variant="ghost" onClick={() => selectCalendarPreset("clear")}>
+                  Очистить выбор
+                </EcoButton>
+              </div>
+              <div className="eco-payroll-bulk-actions">
+                <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedDaysAction("mark-working")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Назначить выбранные рабочими
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-working")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Снять рабочие дни
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Добавить смену
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-shift")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Очистить смены
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("mark-absence")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Отметить пропуском
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-comment")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Добавить комментарий
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-comment")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Очистить комментарии
+                </EcoButton>
+                <EcoButton type="button" size="sm" variant="ghost" onClick={() => void runSelectedDaysAction("reset-local")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Сбросить выбранные изменения
+                </EcoButton>
+              </div>
+              <div className="eco-payroll-month-actions">
+                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("copy")} disabled={calendarBusy}>
+                  Скопировать график прошлого месяца
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("clear")} disabled={calendarBusy}>
+                  Очистить месяц
+                </EcoButton>
+                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("masters")} disabled={calendarBusy || !calendarLogin}>
+                  Применить ко всем мастерам
+                </EcoButton>
+              </div>
             </div>
           )}
 
@@ -1675,7 +2112,7 @@ export default function SalaryDashboard({
               {calendarLoading ? (
                 <SkeletonRows rows={5} />
               ) : (
-                <div className="eco-payroll-calendar-grid">
+                <div className="eco-payroll-calendar-grid" onPointerLeave={endCalendarDrag}>
                   {WEEKDAYS.map((weekday) => (
                     <div key={weekday} className="eco-payroll-calendar-weekday">{weekday}</div>
                   ))}
@@ -1689,27 +2126,41 @@ export default function SalaryDashboard({
                     return cells.map(({ key, day }) => {
                       if (day == null) return <span key={key} className="eco-payroll-calendar-empty" />;
                       const dateKey = `${calendarDate.getFullYear()}-${String(calendarDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                      const items = getCalendarItemsForDate(dateKey);
-                      const hasWorking = items.some((item) => item.source === "scheduled" || item.source === "both");
-                      const hasActual = items.some((item) => item.source === "actual" || item.source === "both");
-                      const hasAbsence = hasWorking && !hasActual && dateKey < todayKey;
+                      const dayState = getEffectiveDayState(dateKey);
+                      const { hasWorking, hasActual, hasAbsence, items } = dayState;
                       const hiddenByFilter =
                         (calendarFilter === "working" && !hasWorking) ||
                         (calendarFilter === "actual" && !hasActual) ||
                         (calendarFilter === "absence" && !hasAbsence);
+                      const isSelected = selectedDates.has(dateKey);
+                      const prevDate = getDateRangeKeys(dateKey, dateKey)[0]
+                        ? toLocalDateInputValue(new Date(new Date(`${dateKey}T00:00:00`).setDate(new Date(`${dateKey}T00:00:00`).getDate() - 1)))
+                        : "";
+                      const nextDate = getDateRangeKeys(dateKey, dateKey)[0]
+                        ? toLocalDateInputValue(new Date(new Date(`${dateKey}T00:00:00`).setDate(new Date(`${dateKey}T00:00:00`).getDate() + 1)))
+                        : "";
+                      const isRangeStart = isSelected && !selectedDates.has(prevDate);
+                      const isRangeEnd = isSelected && !selectedDates.has(nextDate);
                       return (
                         <button
                           key={dateKey}
                           type="button"
                           className={[
                             "eco-payroll-calendar-day",
-                            selectedDate === dateKey ? "is-selected" : "",
+                            isSelected ? "is-selected" : "",
+                            isSelected && selectedDatesCount > 1 ? "is-range" : "",
+                            isRangeStart && selectedDatesCount > 1 ? "is-range-start" : "",
+                            isRangeEnd && selectedDatesCount > 1 ? "is-range-end" : "",
+                            todayKey === dateKey ? "is-today" : "",
                             hasWorking ? "has-working" : "",
                             hasActual ? "has-actual" : "",
                             hasAbsence ? "has-absence" : "",
                             hiddenByFilter ? "is-muted" : "",
                           ].filter(Boolean).join(" ")}
-                          onClick={() => setSelectedDate(dateKey)}
+                          onPointerDown={(event) => handleCalendarPointerDown(dateKey, event)}
+                          onPointerEnter={() => handleCalendarPointerEnter(dateKey)}
+                          onPointerUp={endCalendarDrag}
+                          onClick={(event) => handleCalendarDayClick(dateKey, event)}
                         >
                           <span>{day}</span>
                           <small>{items.length > 1 ? items.length : ""}</small>
@@ -1723,53 +2174,112 @@ export default function SalaryDashboard({
             </div>
 
             <aside className="eco-payroll-day-panel">
-              <div className="eco-page-kicker">Выбранный день</div>
-              <h3>{formatDate(selectedDate)}</h3>
-              <dl>
-                <div>
-                  <dt>Сотрудник</dt>
-                  <dd>
-                    {calendarLogin
-                      ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))?.name ?? calendarLogin
-                      : `Все сотрудники (${selectedDayItems.length})`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Рабочий день</dt>
-                  <dd>{selectedDayWorking ? "Да" : "Нет"}</dd>
-                </div>
-                <div>
-                  <dt>Фактическая смена</dt>
-                  <dd>{selectedDayActual ? "Есть" : "Нет"}</dd>
-                </div>
-                <div>
-                  <dt>Часы</dt>
-                  <dd>{selectedDayActual || selectedDayWorking ? formatHours(8) : "—"}</dd>
-                </div>
-              </dl>
-              <textarea
-                className="eco-input eco-payroll-comment"
-                value={dayComments[selectedDayCommentKey] ?? ""}
-                onChange={(event) =>
-                  setDayComments((prev) => ({ ...prev, [selectedDayCommentKey]: event.target.value }))
-                }
-                placeholder="Комментарий к дню"
-                rows={3}
-              />
-              <div className="eco-payroll-day-actions">
-                <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || selectedDayWorking}>
-                  Отметить рабочим
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !selectedDayWorking}>
-                  Снять рабочий день
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => setToast("Фактическая смена добавляется через модуль смен")}>
-                  Добавить смену
-                </EcoButton>
-                <EcoButton type="button" size="sm" variant="ghost" onClick={() => setToast("Комментарий сохранён локально")}>
-                  Добавить комментарий
-                </EcoButton>
-              </div>
+              {selectedDatesCount > 1 ? (
+                <>
+                  <div className="eco-page-kicker">Выбрано дней</div>
+                  <h3>{selectedDatesCount}</h3>
+                  <dl>
+                    <div>
+                      <dt>Сотрудник</dt>
+                      <dd>
+                        {calendarLogin
+                          ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))?.name ?? calendarLogin
+                          : "Все сотрудники"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Период</dt>
+                      <dd>{formatDate(firstSelectedDate)} - {formatDate(lastSelectedDate)}</dd>
+                    </div>
+                    <div>
+                      <dt>Рабочих уже</dt>
+                      <dd>{selectedBulkStats.working}</dd>
+                    </div>
+                    <div>
+                      <dt>Выходных</dt>
+                      <dd>{selectedDatesCount - selectedBulkStats.working}</dd>
+                    </div>
+                    <div>
+                      <dt>Со сменами</dt>
+                      <dd>{selectedBulkStats.actual}</dd>
+                    </div>
+                    <div>
+                      <dt>Пропуски</dt>
+                      <dd>{selectedBulkStats.absence}</dd>
+                    </div>
+                  </dl>
+                  <div className="eco-payroll-day-actions">
+                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedDaysAction("mark-working")} disabled={!canManagePayroll || calendarBusy}>
+                      Отметить рабочими
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-working")} disabled={!canManagePayroll || calendarBusy}>
+                      Снять рабочие дни
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={!canManagePayroll || calendarBusy}>
+                      Добавить смену
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-shift")} disabled={!canManagePayroll || calendarBusy}>
+                      Очистить смены
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-comment")} disabled={!canManagePayroll || calendarBusy}>
+                      Добавить комментарий
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" variant="ghost" onClick={() => selectCalendarPreset("clear")}>
+                      Сбросить выбор
+                    </EcoButton>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="eco-page-kicker">Выбранный день</div>
+                  <h3>{formatDate(selectedDate)}</h3>
+                  <dl>
+                    <div>
+                      <dt>Сотрудник</dt>
+                      <dd>
+                        {calendarLogin
+                          ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))?.name ?? calendarLogin
+                          : `Все сотрудники (${selectedDayItems.length})`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Рабочий день</dt>
+                      <dd>{selectedDayWorking ? "Да" : "Нет"}</dd>
+                    </div>
+                    <div>
+                      <dt>Фактическая смена</dt>
+                      <dd>{selectedDayActual ? "Есть" : "Нет"}</dd>
+                    </div>
+                    <div>
+                      <dt>Часы</dt>
+                      <dd>{selectedDayActual || selectedDayWorking ? formatHours(8) : "—"}</dd>
+                    </div>
+                  </dl>
+                  <textarea
+                    className="eco-input eco-payroll-comment"
+                    value={dayComments[selectedDayCommentKey] ?? ""}
+                    onChange={(event) =>
+                      setDayComments((prev) => ({ ...prev, [selectedDayCommentKey]: event.target.value }))
+                    }
+                    placeholder="Комментарий к дню"
+                    rows={3}
+                  />
+                  <div className="eco-payroll-day-actions">
+                    <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || selectedDayWorking}>
+                      Отметить рабочим
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !selectedDayWorking}>
+                      Снять рабочий день
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={!canManagePayroll || calendarBusy}>
+                      Добавить смену
+                    </EcoButton>
+                    <EcoButton type="button" size="sm" variant="ghost" onClick={() => setToast("Комментарий сохранён локально")}>
+                      Добавить комментарий
+                    </EcoButton>
+                  </div>
+                </>
+              )}
             </aside>
           </div>
         </section>

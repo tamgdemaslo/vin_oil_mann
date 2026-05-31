@@ -240,12 +240,37 @@ function companyTypeTone(value: string) {
   return "rust" as const;
 }
 
+function cleanDisplayText(value: string | null | undefined) {
+  return (value ?? "").trim();
+}
+
+function isTrashName(value: string) {
+  const clean = cleanDisplayText(value);
+  return !clean || clean === "." || clean === "/" || clean === "-" || clean === "—";
+}
+
+function looksLikePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length >= value.replace(/\s/g, "").length - 4;
+}
+
 function displayName(row: CounterpartyRow) {
-  return row.name || row.legalTitle || "Клиент без имени";
+  const name = cleanDisplayText(row.name);
+  const legalTitle = cleanDisplayText(row.legalTitle);
+  if (!isTrashName(name)) return name;
+  if (!isTrashName(legalTitle)) return legalTitle;
+  const phone = cleanDisplayText(row.phone || row.additionalPhone);
+  if (phone && looksLikePhone(phone)) return formatPhone(phone);
+  return "Без имени";
+}
+
+function hasDisplayName(row: CounterpartyRow) {
+  return !isTrashName(cleanDisplayText(row.name)) || !isTrashName(cleanDisplayText(row.legalTitle));
 }
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (name === "Без имени") return "БИ";
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   return (parts[0] ?? "К").slice(0, 2).toUpperCase();
 }
@@ -288,12 +313,20 @@ function hasRequisites(row: CounterpartyRow) {
   return Boolean(requisitesSummary(row) || row.legalAddress || row.bankName || row.bik);
 }
 
+function cleanCounterpartyTypeName(value: string) {
+  const clean = cleanDisplayText(value);
+  if (!clean || clean === "individual" || clean === "legal" || clean === "company") return "";
+  return clean;
+}
+
 function clientSubtitle(row: CounterpartyRow) {
   if (row.source === "snapshot") return "клиент из импортированных отгрузок";
   if (row.source === "supplier") return "поставщик из карточек товаров";
+  if (!hasDisplayName(row)) return row.phone || row.additionalPhone ? "имя не указано" : companyTypeLabel(row.companyType);
   if (row.comment) return row.comment;
   if (row.legalTitle && row.legalTitle !== row.name) return row.legalTitle;
-  if (row.counterpartyTypeName) return row.counterpartyTypeName;
+  const typeName = cleanCounterpartyTypeName(row.counterpartyTypeName);
+  if (typeName) return typeName;
   return row.demandCount > 0 ? "клиент из отгрузок" : "локальная карточка клиента";
 }
 
@@ -308,9 +341,29 @@ function vehicleLabel(row: CounterpartyRow) {
     .join(" · ");
 }
 
+function vehicleDisplay(row: CounterpartyRow) {
+  const model = [row.vehicleModel, row.vehicleYear].filter(Boolean).join(" ").trim();
+  const plate = cleanDisplayText(row.vehiclePlate);
+  const vin = cleanDisplayText(row.vehicleVin);
+  const stored = cleanDisplayText(row.vehicleLabel);
+  const primary = [model, plate].filter(Boolean).join(" · ") || stored || (vin ? `VIN ${vin}` : "");
+  let secondary = "";
+  if (row.vehicleCount > 1) secondary = `ещё ${row.vehicleCount - 1} авто`;
+  else if (vin && !primary.includes(vin)) secondary = `VIN ${vin}`;
+  return { primary, secondary, title: [primary, secondary].filter(Boolean).join(" · ") };
+}
+
+function lastDemandShortName(value: string) {
+  const clean = cleanDisplayText(value);
+  if (!clean) return "нет истории";
+  const match = clean.match(/(?:№\s*)?([A-Za-zА-Яа-я0-9-]{3,})$/);
+  return match?.[1] ?? clean;
+}
+
 function getRowStatus(row: CounterpartyRow) {
   if (row.archived) return { tone: "warning" as const, label: "Архив" };
   if (!row.phone && !row.additionalPhone) return { tone: "danger" as const, label: "Без телефона" };
+  if (row.demandCount === 0) return { tone: "neutral" as const, label: "Без истории" };
   if (!hasRequisites(row) && row.companyType !== "individual") return { tone: "neutral" as const, label: "Нет реквизитов" };
   return { tone: "success" as const, label: "Активен" };
 }
@@ -799,7 +852,7 @@ export default function CounterpartiesClient() {
                     <th>Клиент</th>
                     <th>Телефон</th>
                     <th>Тип</th>
-                    <th>Реквизиты</th>
+                    <th className="eco-clients-optional-col">Реквизиты</th>
                     <th>Авто</th>
                     <th>Отгрузки</th>
                     <th>Активность</th>
@@ -813,7 +866,9 @@ export default function CounterpartiesClient() {
                     : rows.map((row) => {
                         const statusInfo = getRowStatus(row);
                         const reqs = requisitesSummary(row);
-                        const vehicle = vehicleLabel(row);
+                        const vehicle = vehicleDisplay(row);
+                        const name = displayName(row);
+                        const phone = row.phone || row.additionalPhone;
                         return (
                           <tr key={row.id} onClick={() => setDetailRow(row)} className="eco-clients-row">
                             <td className="eco-clients-check-cell" onClick={(event) => event.stopPropagation()}>
@@ -833,19 +888,21 @@ export default function CounterpartiesClient() {
                               />
                             </td>
                             <td className="eco-clients-name-cell">
-                              <span className="eco-client-avatar" aria-hidden>
-                                {row.companyType === "individual" ? <UserRound className="eco-icon" /> : <Building2 className="eco-icon" />}
-                              </span>
-                              <span>
-                                <strong>{displayName(row)}</strong>
-                                <em>{clientSubtitle(row)}</em>
-                              </span>
+                              <div className="eco-clients-name-layout">
+                                <span className="eco-client-avatar" aria-hidden>
+                                  {row.companyType === "individual" ? <UserRound className="eco-icon" /> : <Building2 className="eco-icon" />}
+                                </span>
+                                <span>
+                                  <strong title={name}>{name}</strong>
+                                  <em title={clientSubtitle(row)}>{clientSubtitle(row)}</em>
+                                </span>
+                              </div>
                             </td>
                             <td className="eco-clients-phone-cell">
-                              {row.phone || row.additionalPhone ? (
-                                <button type="button" onClick={(event) => { event.stopPropagation(); void copyPhone(row); }}>
+                              {phone ? (
+                                <button type="button" title={formatPhone(phone)} onClick={(event) => { event.stopPropagation(); void copyPhone(row); }}>
                                   <Phone aria-hidden className="eco-icon" />
-                                  {formatPhone(row.phone || row.additionalPhone)}
+                                  <span>{formatPhone(phone)}</span>
                                   <ClipboardCopy aria-hidden className="eco-icon eco-copy-icon" />
                                 </button>
                               ) : (
@@ -856,15 +913,15 @@ export default function CounterpartiesClient() {
                             <td>
                               <EcoBadge tone={companyTypeTone(row.companyType)}>{companyTypeLabel(row.companyType)}</EcoBadge>
                             </td>
-                            <td className="eco-clients-requisites-cell">
-                              {reqs ? <strong>{reqs}</strong> : <span className="eco-muted-value">нет реквизитов</span>}
+                            <td className="eco-clients-requisites-cell eco-clients-optional-col">
+                              {reqs ? <strong title={reqs}>{reqs}</strong> : <span className="eco-muted-value">нет реквизитов</span>}
                               {row.bankName && <em>{row.bankName}</em>}
                             </td>
                             <td className="eco-clients-vehicle-cell">
-                              {vehicle ? (
+                              {vehicle.primary ? (
                                 <>
-                                  <strong>{vehicle}</strong>
-                                  {row.vehicleCount > 1 && <em>ещё {row.vehicleCount - 1}</em>}
+                                  <strong title={vehicle.title}>{vehicle.primary}</strong>
+                                  {vehicle.secondary && <em title={vehicle.title}>{vehicle.secondary}</em>}
                                 </>
                               ) : (
                                 <span className="eco-muted-value">—</span>
@@ -876,7 +933,7 @@ export default function CounterpartiesClient() {
                             </td>
                             <td className="eco-clients-date-cell">
                               <strong>{formatDate(row.lastDemandAt || row.updatedAt || row.createdAt)}</strong>
-                              <em>{row.lastDemandName || "изменение карточки"}</em>
+                              <em title={row.lastDemandName || undefined}>{row.lastDemandName ? lastDemandShortName(row.lastDemandName) : "изменение карточки"}</em>
                             </td>
                             <td>
                               <EcoBadge tone={statusInfo.tone} dot>{statusInfo.label}</EcoBadge>

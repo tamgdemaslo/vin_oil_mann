@@ -1,4 +1,18 @@
 {
-  "shifts": [],
+  "shifts": [
+    {
+      "id": "shift_mpph16jc_9nqeo545",
+      "serviceDate": "2026-05-28",
+      "timezone": "Europe/Kaliningrad",
+      "status": "open",
+      "openedAt": "2026-05-28T12:30:31.512Z",
+      "openedBy": {
+        "login": "ilya",
+        "name": "Илья",
+        "role": "owner"
+      },
+      "openingCash": 0
+    }
+  ],
   "operations": []
 }
