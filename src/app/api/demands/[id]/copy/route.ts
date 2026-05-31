@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { buildDemandCreatePayload, type CreateDemandBody } from "@/lib/demand-create-payload";
-import { loadDemandDetailPayload } from "@/lib/demand-detail-load";
-import { createLocalDemand, isLocalInventoryWritesEnabled, loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
-import { moyskladFetch } from "@/lib/moysklad";
+import { type CreateDemandBody } from "@/lib/demand-create-payload";
+import { createLocalDemand, loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import { toMoyskladMomentString } from "@/lib/time";
-
-type AttributeMeta = { id: string; name: string; type: string; meta: { href: string; type: string; mediaType: string } };
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -15,13 +11,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   if (!id?.trim()) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const localWrites = isLocalInventoryWritesEnabled();
-  const loaded = localWrites
-    ? await loadLocalDemandDetailPayload(id.trim()).then(async (local) =>
-        local.ok ? local : loadDemandDetailPayload(id.trim())
-      )
-    : await loadDemandDetailPayload(id.trim());
-  if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: 502 });
+  const loaded = await loadLocalDemandDetailPayload(id.trim());
+  if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.notFound ? 404 : 400 });
 
   const raw = loaded.data.raw as {
     organization?: { meta?: { href: string; type: string; mediaType: string } };
@@ -32,7 +23,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const orgM = raw.organization?.meta;
   const agentM = raw.agent?.meta;
   const storeM = raw.store?.meta;
-  if ((!localWrites && !orgM?.href) || !agentM?.href || !storeM?.href) {
+  if (!agentM?.href || !storeM?.href) {
     return NextResponse.json(
       { error: "В отгрузке нет организации, контрагента или склада — копирование невозможно" },
       { status: 400 }
@@ -69,51 +60,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         : undefined,
   };
 
-  if (localWrites) {
-    const created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
-    if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
-    return NextResponse.json(created);
-  }
-
-  try {
-    const metaRes = await moyskladFetch<{ rows?: AttributeMeta[] } | AttributeMeta[]>(
-      "/entity/demand/metadata/attributes",
-      { cache: "no-store" }
-    );
-    if (metaRes.ok) {
-      const d: unknown = metaRes.data;
-      const list: AttributeMeta[] = Array.isArray(d) ? d : Array.isArray((d as { rows?: AttributeMeta[] })?.rows) ? (d as { rows: AttributeMeta[] }).rows : [];
-      const ecoAttr = list.find(
-        (a) => (a.name ?? "").toString().trim().toLowerCase() === "эко пользователь".toLowerCase()
-      );
-      if (ecoAttr) {
-        const ecoValue = (session.user.name || session.user.login).toString();
-        const existing = Array.isArray(body.attributes) ? body.attributes.filter((a) => a.id !== ecoAttr.id) : [];
-        body.attributes = [
-          ...existing,
-          {
-            id: ecoAttr.id,
-            name: ecoAttr.name,
-            meta: ecoAttr.meta,
-            value: ecoValue,
-          },
-        ];
-      }
-    }
-  } catch {
-    // как в POST /api/demands
-  }
-
-  const payload = buildDemandCreatePayload(body);
-  const result = await moyskladFetch<{ id: string; name: string; meta: { href: string } }>(
-    "/entity/demand",
-    { method: "POST", body: JSON.stringify(payload), cache: "no-store" }
-  );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
-  return NextResponse.json({
-    id: result.data.id,
-    name: result.data.name,
-    href: result.data.meta?.href,
-  });
+  const created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
+  if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
+  return NextResponse.json(created);
 }

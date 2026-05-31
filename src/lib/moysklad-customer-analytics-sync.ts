@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { documentProfitFromComputedPositions } from "@/lib/customer-analytics-profit";
 import { prisma } from "@/lib/db";
+import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import { listRawPhonesFromCounterparty, pickNormalizedPhoneFromCounterparty } from "@/lib/phone-normalize";
@@ -501,6 +502,10 @@ async function runCustomerAnalyticsSync(options?: {
 }): Promise<
   SyncCustomerAnalyticsResult | SyncCustomerAnalyticsError
 > {
+  if (!isMoySkladSyncEnabled()) {
+    return { ok: false, error: moyskladDisabledMessage("sync") };
+  }
+
   if (!getMoySkladHeaders()) {
     return { ok: false, error: "МойСклад не настроен" };
   }

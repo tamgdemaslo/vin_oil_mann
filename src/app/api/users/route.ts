@@ -11,6 +11,6 @@ export async function GET() {
   }
 
   const envUsers = await getUsersFromEnv();
-  const users = envUsers.map((u) => ({ login: u.login, name: u.name || u.login }));
+  const users = envUsers.map((u) => ({ login: u.login, name: u.name || u.login, role: u.role }));
   return NextResponse.json({ users });
 }

@@ -19,7 +19,7 @@ export function ShipmentRowActions({ shipmentId }: { shipmentId: string }) {
         window.alert(typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку");
         return;
       }
-      if (json.id) router.push(`/shipment/${json.id}`);
+      if (json.id) router.push(`/shipment/${json.id}/edit?copied=1`);
     } catch {
       window.alert("Ошибка сети при копировании");
     } finally {
@@ -31,7 +31,7 @@ export function ShipmentRowActions({ shipmentId }: { shipmentId: string }) {
     e.preventDefault();
     e.stopPropagation();
     if (phase !== "idle") return;
-    if (!window.confirm("Удалить отгрузку в МойСклад? Действие необратимо.")) return;
+    if (!window.confirm("Удалить локальную отгрузку? Действие необратимо.")) return;
     setPhase("delete");
     try {
       const res = await fetch(`/api/demands/${encodeURIComponent(shipmentId)}`, { method: "DELETE" });

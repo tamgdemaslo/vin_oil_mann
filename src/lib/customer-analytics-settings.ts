@@ -24,8 +24,8 @@ function parseOptionalCents(name: string): number | null {
 
 export async function getCustomerAnalyticsSettings(): Promise<CustomerAnalyticsResolvedSettings> {
   const envDefaults: CustomerAnalyticsResolvedSettings = {
-    inactiveDaysThreshold: parseIntEnv("CUSTOMER_ANALYTICS_INACTIVE_DAYS", 365),
-    regularVisitThreshold: parseIntEnv("CUSTOMER_ANALYTICS_REGULAR_VISITS", 5),
+    inactiveDaysThreshold: parseIntEnv("CUSTOMER_ANALYTICS_INACTIVE_DAYS", 90),
+    regularVisitThreshold: parseIntEnv("CUSTOMER_ANALYTICS_REGULAR_VISITS", 3),
     vipThresholdCents: parseOptionalCents("CUSTOMER_ANALYTICS_VIP_THRESHOLD_CENTS"),
     vipMetric: process.env.CUSTOMER_ANALYTICS_VIP_METRIC === "profit" ? "profit" : "revenue",
     vipWindow: process.env.CUSTOMER_ANALYTICS_VIP_WINDOW === "selected_period" ? "selected_period" : "all",
@@ -34,7 +34,14 @@ export async function getCustomerAnalyticsSettings(): Promise<CustomerAnalyticsR
   try {
     await prisma.customerAnalyticsSettings.upsert({
       where: { id: "default" },
-      create: { id: "default" },
+      create: {
+        id: "default",
+        inactiveDaysThreshold: envDefaults.inactiveDaysThreshold,
+        regularVisitThreshold: envDefaults.regularVisitThreshold,
+        vipThresholdCents: envDefaults.vipThresholdCents,
+        vipMetric: envDefaults.vipMetric,
+        vipWindow: envDefaults.vipWindow,
+      },
       update: {},
     });
     const row = await prisma.customerAnalyticsSettings.findUnique({ where: { id: "default" } });

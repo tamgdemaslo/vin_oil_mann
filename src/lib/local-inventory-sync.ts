@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import {
@@ -980,6 +981,13 @@ export async function waitForLocalInventorySync(): Promise<LocalInventorySyncSta
 }
 
 async function runLocalInventorySync(options: LocalInventorySyncOptions): Promise<LocalInventorySyncStatus> {
+  if (!isMoySkladSyncEnabled()) {
+    const error = moyskladDisabledMessage("sync");
+    setStatus({ ...createDefaultStatus(), phase: "error", error, message: error });
+    await persistStatus({ lastError: error });
+    return { ...runtimeStatus };
+  }
+
   if (!getMoySkladHeaders()) {
     const error = "МойСклад не настроен: нужны MOYSKLAD_TOKEN или MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD";
     setStatus({ ...createDefaultStatus(), phase: "error", error, message: error });

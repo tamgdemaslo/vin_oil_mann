@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { MoreHorizontal, Pencil, Search } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ImagePlus,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Save,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
 
 type StockRow = {
@@ -25,6 +37,7 @@ type ProductPhoto = {
 
 type ProductRow = {
   id: string;
+  moyskladId?: string;
   name: string;
   article: string;
   code: string;
@@ -76,6 +89,8 @@ type ProductRow = {
   totalQuantity: number;
   totalAvailable: number;
 };
+
+type ProductFormErrors = Partial<Record<keyof ProductForm, string>>;
 
 type ProductSortKey =
   | "name"
@@ -171,6 +186,19 @@ type ProductForm = {
   mannCharacteristicName: string;
 };
 
+type ProductFieldRenderOptions = {
+  type?: "text" | "number" | "textarea" | "money";
+  placeholder?: string;
+  required?: boolean;
+  full?: boolean;
+  rows?: number;
+  step?: string;
+  aliases?: string[];
+  hint?: string;
+};
+
+type ProductEditorSectionId = "main" | "pricing" | "codes" | "oil" | "extra" | "technical";
+
 const emptyForm: ProductForm = {
   name: "",
   article: "",
@@ -217,42 +245,84 @@ const emptyForm: ProductForm = {
   mannCharacteristicName: "",
 };
 
-const productExtraFields: Array<{ key: keyof ProductForm; label: string; type?: "number" | "textarea" }> = [
-  { key: "externalCode", label: "Внешний код" },
-  { key: "groupPath", label: "Группы" },
-  { key: "uomName", label: "Единица" },
-  { key: "minimumBalance", label: "Неснижаемый остаток", type: "number" },
-  { key: "barcodeEan13", label: "Штрихкод EAN13" },
-  { key: "barcodeEan8", label: "Штрихкод EAN8" },
-  { key: "barcodeCode128", label: "Штрихкод Code128" },
-  { key: "description", label: "Описание", type: "textarea" },
-  { key: "minPrice", label: "Минимальная цена", type: "number" },
-  { key: "minPriceCurrencyName", label: "Валюта мин. цены" },
-  { key: "countryName", label: "Страна" },
-  { key: "vatLabel", label: "НДС" },
-  { key: "supplierName", label: "Поставщик" },
-  { key: "weight", label: "Вес", type: "number" },
-  { key: "volume", label: "Объём", type: "number" },
+const searchImpactFields = new Set<keyof ProductForm>([
+  "name",
+  "article",
+  "code",
+  "brand",
+  "groupPath",
+  "barcodeEan13",
+  "barcodeEan8",
+  "barcodeCode128",
+  "oem",
+  "oemParts",
+  "sae",
+]);
+
+const shipmentImpactFields = new Set<keyof ProductForm>([
+  "name",
+  "entityType",
+  "salePrice",
+  "buyPrice",
+  "uomName",
+  "minimumBalance",
+  "groupPath",
+  "vatLabel",
+  "cell",
+]);
+
+const criticalFieldLabels: Partial<Record<keyof ProductForm, string>> = {
+  name: "название",
+  article: "артикул",
+  code: "код",
+  groupPath: "группа",
+  salePrice: "цена продажи",
+  buyPrice: "закупочная цена",
+  uomName: "единица",
+  minimumBalance: "неснижаемый остаток",
+  barcodeEan13: "EAN",
+  oem: "OEM",
+};
+
+const technicalFieldLabels: Array<{ key: keyof ProductForm; label: string; type?: "number" | "textarea"; aliases?: string[] }> = [
+  { key: "externalCode", label: "Внешний код", aliases: ["external code"] },
   { key: "modificationCode", label: "Код модификации" },
-  { key: "tnvedCode", label: "Код ТН ВЭД" },
-  { key: "brand", label: "Brand" },
-  { key: "sae", label: "SAE" },
-  { key: "oem", label: "OEM", type: "textarea" },
-  { key: "acea", label: "ACEA" },
-  { key: "apiSpec", label: "API" },
-  { key: "packageVolume", label: "Объём упаковки" },
-  { key: "atf", label: "ATF" },
-  { key: "ilsac", label: "ILSAC" },
-  { key: "aceaExtra", label: "ACEA (!)" },
+  { key: "supplierAttribute", label: "Supplier raw field", aliases: ["supplier"] },
+  { key: "mannCharacteristicName", label: "Характеристика Mann" },
   { key: "oemAtf", label: "OEM ATF", type: "textarea" },
-  { key: "mannName", label: "Наиминование по Mann" },
-  { key: "rosskoPartNumber", label: "rossko_part_number" },
-  { key: "rosskoBrand", label: "rossko_brand" },
-  { key: "rosskoMin", label: "rossko_min" },
-  { key: "supplierAttribute", label: "Supplier" },
-  { key: "oemParts", label: "OEM PARTS", type: "textarea" },
-  { key: "cell", label: "Ячейка" },
-  { key: "mannCharacteristicName", label: "Характеристика: Нименование по Mann" },
+];
+
+const productEditorSections: Array<{ id: ProductEditorSectionId; label: string; aliases: string[] }> = [
+  {
+    id: "main",
+    label: "Основное",
+    aliases: ["главное", "название", "артикул", "код", "тип", "бренд", "группа", "единица", "ean", "oem"],
+  },
+  {
+    id: "pricing",
+    label: "Цены и склад",
+    aliases: ["цена", "закупка", "валюта", "минимальная цена", "остаток", "доступно", "резерв", "поставщик", "ндс", "ячейка"],
+  },
+  {
+    id: "codes",
+    label: "Коды и OEM",
+    aliases: ["коды", "штрихкод", "barcode", "ean8", "code128", "oem", "кроссы", "rossko", "внешний артикул"],
+  },
+  {
+    id: "oil",
+    label: "Характеристики",
+    aliases: ["характеристики", "масло", "жидкость", "sae", "api", "acea", "ilsac", "atf", "объем", "фасовка"],
+  },
+  {
+    id: "extra",
+    label: "Дополнительно",
+    aliases: ["описание", "страна", "тн вэд", "вес", "авито", "справочная информация"],
+  },
+  {
+    id: "technical",
+    label: "Технические",
+    aliases: ["технические", "uuid", "id", "external", "moysklad", "интеграции", "служебные"],
+  },
 ];
 
 const sortOptions: Array<{ key: ProductSortKey; label: string; defaultDirection: SortDirection }> = [
@@ -392,6 +462,57 @@ function formatFileSize(value: number) {
   return `${(value / 1024 / 1024).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МБ`;
 }
 
+function normalizeFieldSearch(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function productEditorSectionElementId(sectionId: ProductEditorSectionId) {
+  return `product-editor-${sectionId}`;
+}
+
+function sectionMatchesSearch(section: { label: string; aliases: string[] }, needle: string) {
+  if (!needle) return false;
+  const haystack = normalizeFieldSearch([section.label, ...section.aliases].join(" "));
+  return haystack.includes(needle) || needle.includes(haystack);
+}
+
+function entityTypeLabel(value: string) {
+  if (value === "service") return "Услуга";
+  if (value === "variant") return "Модификация";
+  if (value === "bundle") return "Комплект";
+  return "Товар";
+}
+
+function compactHeaderValue(value: string | null | undefined, fallback = "не указан") {
+  return value?.trim() || fallback;
+}
+
+function isOilProduct(form: ProductForm) {
+  return [form.groupPath, form.name, form.sae, form.apiSpec, form.acea, form.packageVolume]
+    .join(" ")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .match(/масл|oil|sae|вязк|atf|трансмисс/) != null;
+}
+
+function validateProductForm(values: ProductForm): ProductFormErrors {
+  const errors: ProductFormErrors = {};
+  if (!values.name.trim()) errors.name = "Введите название товара";
+  if (!values.entityType.trim()) errors.entityType = "Выберите тип";
+  if (!values.salePrice.trim()) errors.salePrice = "Укажите цену продажи";
+  if (!values.uomName.trim()) errors.uomName = "Укажите единицу измерения";
+  if (!values.article.trim() && !values.code.trim()) {
+    errors.article = "Укажите артикул или код";
+    errors.code = "Укажите артикул или код";
+  }
+  return errors;
+}
+
 function marginValue(row: ProductRow) {
   return row.buyPrice == null ? null : row.salePrice - row.buyPrice;
 }
@@ -457,21 +578,27 @@ function formFromProduct(product: ProductRow): ProductForm {
 export default function ProductsClient() {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get("product")?.trim() ?? "";
+  const initialSearch = searchParams.get("search")?.trim() ?? "";
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>(emptyFilters);
   const [sort, setSort] = useState<ProductSortKey>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [formBaseline, setFormBaseline] = useState<ProductForm>(emptyForm);
+  const [formErrors, setFormErrors] = useState<ProductFormErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSearch, setFormSearch] = useState("");
+  const [technicalOpen, setTechnicalOpen] = useState(false);
   const [newGroupMode, setNewGroupMode] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
@@ -482,8 +609,8 @@ export default function ProductsClient() {
   const defaultGroupAppliedRef = useRef(false);
 
   const editingProduct = useMemo(
-    () => rows.find((row) => row.id === editingId) ?? null,
-    [editingId, rows]
+    () => activeProduct ?? rows.find((row) => row.id === editingId) ?? null,
+    [activeProduct, editingId, rows]
   );
   const editingName = editingProduct?.name ?? "";
   const filterOptions = meta?.filterOptions ?? emptyFilterOptions;
@@ -514,6 +641,34 @@ export default function ProductsClient() {
   const activeFiltersCount = useMemo(
     () => Object.entries(filters).filter(([key, value]) => key === "stock" ? value !== "all" : Boolean(value)).length,
     [filters]
+  );
+  const formDirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(formBaseline),
+    [form, formBaseline]
+  );
+  const changedCriticalFields = useMemo(
+    () => Object.entries(criticalFieldLabels)
+      .filter(([key]) => form[key as keyof ProductForm] !== formBaseline[key as keyof ProductForm])
+      .map(([, label]) => label)
+      .filter(Boolean),
+    [form, formBaseline]
+  );
+  const formSearchNeedle = useMemo(() => normalizeFieldSearch(formSearch), [formSearch]);
+  const technicalFieldsMatched = useMemo(
+    () => technicalFieldLabels.some((field) => {
+      if (!formSearchNeedle) return false;
+      const haystack = normalizeFieldSearch([field.key, field.label, ...(field.aliases ?? [])].join(" "));
+      return haystack.includes(formSearchNeedle);
+    }),
+    [formSearchNeedle]
+  );
+  const highlightedEditorSections = useMemo(
+    () => new Set(
+      productEditorSections
+        .filter((section) => sectionMatchesSearch(section, formSearchNeedle))
+        .map((section) => section.id)
+    ),
+    [formSearchNeedle]
   );
 
   function buildListParams(
@@ -602,36 +757,8 @@ export default function ProductsClient() {
     }
   }
 
-  async function syncMoySklad() {
-    setSyncing(true);
-    setError(null);
-    setInfo(null);
-    try {
-      const res = await fetch("/api/local-inventory/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          includeProducts: true,
-          includeStores: true,
-          includeStock: true,
-          includeCounterparties: false,
-          includeDemands: false,
-          wait: false,
-        }),
-      });
-      const data = await readJson<{ started?: boolean; status?: { message?: string | null }; error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Не удалось запустить синхронизацию");
-      setInfo(data?.started === false ? (data?.status?.message ?? "Синхронизация уже выполняется") : "Синхронизация МойСклад запущена");
-      await load(search, sort, direction, filters);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   useEffect(() => {
-    void load("");
+    void load(initialSearch);
     return () => {
       listAbortRef.current?.abort();
       loadMoreAbortRef.current?.abort();
@@ -663,13 +790,7 @@ export default function ProductsClient() {
         if (!res.ok || !product) throw new Error(product?.error ?? "Товар не найден в локальной БД");
         if (cancelled) return;
         setRows((prev) => [product, ...prev.filter((row) => row.id !== product.id)]);
-        setEditingId(product.id);
-        setForm(formFromProduct(product));
-        setNewGroupMode(false);
-        setUploadingPhotos(false);
-        setDeletingPhotoId(null);
-        setInfo(null);
-        setFormOpen(true);
+        openProductEditor(product);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
@@ -697,11 +818,25 @@ export default function ProductsClient() {
 
   function updateForm(patch: Partial<ProductForm>) {
     setForm((prev) => ({ ...prev, ...patch }));
+    setFormError(null);
+    setFormErrors((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(patch) as Array<keyof ProductForm>) {
+        delete next[key];
+      }
+      return next;
+    });
   }
 
   function resetForm() {
     setEditingId(null);
+    setActiveProduct(null);
     setForm(emptyForm);
+    setFormBaseline(emptyForm);
+    setFormErrors({});
+    setFormError(null);
+    setFormSearch("");
+    setTechnicalOpen(false);
     setNewGroupMode(false);
     setUploadingPhotos(false);
     setDeletingPhotoId(null);
@@ -710,13 +845,42 @@ export default function ProductsClient() {
 
   function openNewProduct() {
     setEditingId(null);
+    setActiveProduct(null);
     setForm(emptyForm);
+    setFormBaseline(emptyForm);
+    setFormErrors({});
+    setFormError(null);
+    setFormSearch("");
+    setTechnicalOpen(false);
     setNewGroupMode(false);
     setUploadingPhotos(false);
     setDeletingPhotoId(null);
     setInfo(null);
     setError(null);
     setFormOpen(true);
+  }
+
+  function openProductEditor(product: ProductRow) {
+    const nextForm = formFromProduct(product);
+    setEditingId(product.id);
+    setActiveProduct(product);
+    setForm(nextForm);
+    setFormBaseline(nextForm);
+    setFormErrors({});
+    setFormError(null);
+    setFormSearch("");
+    setTechnicalOpen(false);
+    setNewGroupMode(false);
+    setUploadingPhotos(false);
+    setDeletingPhotoId(null);
+    setInfo(null);
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    if (formDirty && !window.confirm("Закрыть карточку без сохранения изменений?")) return;
+    resetForm();
   }
 
   function changeSort(key: ProductSortKey) {
@@ -758,9 +922,17 @@ export default function ProductsClient() {
     );
   }
 
-  async function submit() {
+  async function submit(closeAfter = false) {
+    const validation = validateProductForm(form);
+    if (Object.keys(validation).length) {
+      setFormErrors(validation);
+      setFormError("Проверьте обязательные поля перед сохранением.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
+    setFormError(null);
     setInfo(null);
     try {
       const payload = {
@@ -818,11 +990,21 @@ export default function ProductsClient() {
       );
       const data = await readJson<ProductRow & { error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось сохранить товар");
-      setInfo(editingId ? "Товар обновлён" : "Товар добавлен");
-      resetForm();
-      await load(search, sort, direction, filters);
+      if (!data) throw new Error("Сервер не вернул карточку товара");
+      const savedForm = formFromProduct(data);
+      setRows((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
+      setActiveProduct(data);
+      setEditingId(data.id);
+      setForm(savedForm);
+      setFormBaseline(savedForm);
+      setFormErrors({});
+      if (closeAfter) {
+        setInfo(editingId ? "Товар обновлён" : "Товар добавлен");
+        resetForm();
+        await load(search, sort, direction, filters);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -839,6 +1021,17 @@ export default function ProductsClient() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  async function refreshProduct(productId: string) {
+    const res = await fetch(`/api/local-inventory/products/${encodeURIComponent(productId)}`, {
+      cache: "no-store",
+    });
+    const product = await readJson<ProductRow & { error?: string }>(res);
+    if (!res.ok || !product) throw new Error(product?.error ?? "Не удалось обновить карточку товара");
+    setRows((prev) => [product, ...prev.filter((row) => row.id !== product.id)]);
+    setActiveProduct(product);
+    return product;
   }
 
   async function uploadProductPhotos(fileList: FileList | null) {
@@ -860,9 +1053,9 @@ export default function ProductsClient() {
       const data = await readJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить фото");
       setInfo(files.length === 1 ? "Фото прикреплено" : `Фото прикреплены: ${files.length}`);
-      await load(search, sort, direction, filters);
+      await refreshProduct(editingId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setUploadingPhotos(false);
     }
@@ -878,259 +1071,491 @@ export default function ProductsClient() {
       const data = await readJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось удалить фото");
       setInfo("Фото удалено");
-      await load(search, sort, direction, filters);
+      await refreshProduct(editingId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setDeletingPhotoId(null);
     }
   }
 
+  function prepareEditorSection(sectionId: ProductEditorSectionId) {
+    if (sectionId === "technical") setTechnicalOpen(true);
+  }
+
+  function fieldMatches(key: keyof ProductForm, label: string, aliases: string[] = []) {
+    if (!formSearchNeedle) return false;
+    const haystack = normalizeFieldSearch([key, label, ...aliases].join(" "));
+    return haystack.includes(formSearchNeedle) || formSearchNeedle.includes(haystack);
+  }
+
+  function renderField(key: keyof ProductForm, label: string, options: ProductFieldRenderOptions = {}) {
+    const isHighlighted = fieldMatches(key, label, options.aliases);
+    const errorMessage = formErrors[key];
+    const fieldClass = [
+      "product-editor-field",
+      options.full ? "is-full" : "",
+      isHighlighted ? "is-highlighted" : "",
+      errorMessage ? "has-error" : "",
+    ].filter(Boolean).join(" ");
+    const inputClass = `eco-input product-editor-input ${errorMessage ? "has-error" : ""}`;
+    const inputId = `product-field-${String(key)}`;
+
+    return (
+      <label key={key} htmlFor={inputId} className={fieldClass}>
+        <span className="product-editor-label">
+          <span>
+            {label}
+            {options.required ? <b aria-hidden="true"> *</b> : null}
+          </span>
+          <span className="product-editor-label-tags">
+            {searchImpactFields.has(key) ? <em>поиск</em> : null}
+            {shipmentImpactFields.has(key) ? <em>отгрузка</em> : null}
+          </span>
+        </span>
+        {options.type === "textarea" ? (
+          <textarea
+            id={inputId}
+            value={form[key]}
+            rows={options.rows ?? 3}
+            placeholder={options.placeholder}
+            onChange={(event) => updateForm({ [key]: event.target.value } as Partial<ProductForm>)}
+            className={inputClass}
+          />
+        ) : options.type === "money" ? (
+          <MoneyInput
+            id={inputId}
+            value={form[key]}
+            placeholder={options.placeholder}
+            onValueChange={(value, draft) => updateForm({ [key]: draft ? String(value) : "" } as Partial<ProductForm>)}
+            className={inputClass}
+          />
+        ) : (
+          <input
+            id={inputId}
+            type={options.type === "number" ? "number" : "text"}
+            step={options.step ?? (options.type === "number" ? "0.001" : undefined)}
+            value={form[key]}
+            placeholder={options.placeholder}
+            onChange={(event) => updateForm({ [key]: event.target.value } as Partial<ProductForm>)}
+            className={inputClass}
+          />
+        )}
+        {options.hint ? <span className="product-editor-hint">{options.hint}</span> : null}
+        {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
+      </label>
+    );
+  }
+
+  function renderEntityTypeField() {
+    const key: keyof ProductForm = "entityType";
+    const errorMessage = formErrors[key];
+    return (
+      <label className={`product-editor-field ${fieldMatches(key, "Тип", ["товар услуга"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
+        <span className="product-editor-label">
+          <span>Тип *</span>
+          <span className="product-editor-label-tags">
+            <em>отгрузка</em>
+          </span>
+        </span>
+        <select
+          value={form.entityType}
+          onChange={(event) => updateForm({ entityType: event.target.value })}
+          className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
+        >
+          <option value="product">Товар</option>
+          <option value="variant">Модификация</option>
+          <option value="bundle">Комплект</option>
+          <option value="service">Услуга</option>
+        </select>
+        {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
+      </label>
+    );
+  }
+
+  function renderGroupField() {
+    const key: keyof ProductForm = "groupPath";
+    const errorMessage = formErrors[key];
+    return (
+      <label className={`product-editor-field ${fieldMatches(key, "Группа", ["категория"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
+        <span className="product-editor-label">
+          <span>Группа</span>
+          <span className="product-editor-label-tags">
+            <em>поиск</em>
+            <em>отгрузка</em>
+          </span>
+        </span>
+        <select
+          value={newGroupMode ? NEW_GROUP_VALUE : form.groupPath}
+          onChange={(event) => {
+            if (event.target.value === NEW_GROUP_VALUE) {
+              setNewGroupMode(true);
+              updateForm({ groupPath: "" });
+              return;
+            }
+            setNewGroupMode(false);
+            updateForm({ groupPath: event.target.value });
+          }}
+          className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
+        >
+          <option value="">Без группы</option>
+          {groupOptions.map((group) => (
+            <option key={group} value={group}>{group}</option>
+          ))}
+          <option value={NEW_GROUP_VALUE}>Новая группа...</option>
+        </select>
+        {newGroupMode ? (
+          <input
+            value={form.groupPath}
+            onChange={(event) => updateForm({ groupPath: event.target.value })}
+            placeholder="Название новой группы"
+            className="eco-input product-editor-input"
+          />
+        ) : null}
+        {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
+      </label>
+    );
+  }
+
+  function renderAvitoField() {
+    const key: keyof ProductForm = "avito";
+    return (
+      <label className={`product-editor-field ${fieldMatches(key, "Авито") ? "is-highlighted" : ""}`}>
+        <span className="product-editor-label">
+          <span>Авито</span>
+        </span>
+        <select
+          value={form.avito}
+          onChange={(event) => updateForm({ avito: event.target.value })}
+          className="eco-input product-editor-input"
+        >
+          <option value="">Не указано</option>
+          <option value="true">Да</option>
+          <option value="false">Нет</option>
+        </select>
+      </label>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {formOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-3 py-6 backdrop-blur-sm sm:px-6">
-          <section
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-3xl rounded-lg border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">
-            {editingId ? "Редактирование товара" : "Новый товар"}
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {editingId ? editingName : "Карточка будет создана только в локальной БД."}
-          </p>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Название *</span>
-            <input
-              value={form.name}
-              onChange={(event) => updateForm({ name: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-zinc-500">Артикул</span>
-              <input
-                value={form.article}
-                onChange={(event) => updateForm({ article: event.target.value })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-zinc-500">Код</span>
-              <input
-                value={form.code}
-                onChange={(event) => updateForm({ code: event.target.value })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-          </div>
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Тип</span>
-            <select
-              value={form.entityType}
-              onChange={(event) => updateForm({ entityType: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="product">Товар</option>
-              <option value="variant">Модификация</option>
-              <option value="bundle">Комплект</option>
-              <option value="service">Услуга</option>
-            </select>
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-zinc-500">Цена продажи</span>
-              <MoneyInput
-                value={form.salePrice}
-                onValueChange={(salePrice, draft) => updateForm({ salePrice: draft ? String(salePrice) : "" })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs font-medium text-zinc-500">Цена закупки</span>
-              <MoneyInput
-                value={form.buyPrice}
-                onValueChange={(buyPrice, draft) => updateForm({ buyPrice: draft ? String(buyPrice) : "" })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-              />
-            </label>
-          </div>
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Валюта</span>
-            <input
-              value={form.currencyName}
-              onChange={(event) => updateForm({ currencyName: event.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-          <section className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Фотографии</h3>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  {editingId ? "Можно прикрепить несколько изображений к карточке товара." : "Фото можно добавить после создания товара."}
-                </p>
+        <div className="product-editor-backdrop">
+          <section role="dialog" aria-modal="true" className="product-editor-drawer">
+            <header className="product-editor-header">
+              <div className="product-editor-title-block">
+                <div className="product-editor-kicker">{editingId ? "Редактирование товара" : "Новый товар"}</div>
+                <h2>{form.name.trim() || editingName || "Новая карточка товара"}</h2>
+                <div className="product-editor-meta-line">
+                  <span>Артикул {compactHeaderValue(form.article)}</span>
+                  <span>Код {compactHeaderValue(form.code)}</span>
+                  <span className="product-editor-type-badge">{entityTypeLabel(form.entityType)}</span>
+                  {editingProduct?.archived ? <span className="product-editor-archive-badge">Архив</span> : <span>Активен</span>}
+                </div>
               </div>
-              <label
-                className={`inline-flex cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium ${
-                  editingId && !uploadingPhotos
-                    ? "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                    : "pointer-events-none border-zinc-200 text-zinc-400 dark:border-zinc-800"
-                }`}
-              >
-                {uploadingPhotos ? "Загрузка..." : "Прикрепить фото"}
+              <div className="product-editor-header-actions">
+                <span className={`product-editor-save-state ${saving ? "is-saving" : formDirty ? "is-dirty" : "is-saved"}`}>
+                  {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : formDirty ? <AlertCircle aria-hidden className="eco-icon" /> : <CheckCircle2 aria-hidden className="eco-icon" />}
+                  {saving ? "Сохраняем..." : formDirty ? "Есть изменения" : "Сохранено"}
+                </span>
+                <button type="button" className="product-editor-icon-button" onClick={closeForm} aria-label="Закрыть">
+                  <X aria-hidden className="eco-icon" />
+                </button>
+              </div>
+            </header>
+
+            <nav className="product-editor-nav" aria-label="Разделы карточки товара">
+              {productEditorSections.map((section) => (
+                <a
+                  key={section.id}
+                  href={`#${productEditorSectionElementId(section.id)}`}
+                  onClick={() => prepareEditorSection(section.id)}
+                  className={`product-editor-nav-button ${highlightedEditorSections.has(section.id) ? "is-highlighted" : ""}`}
+                >
+                  {section.label}
+                </a>
+              ))}
+            </nav>
+
+            <div className="product-editor-scroll">
+              <div className="product-editor-search">
+                <Search aria-hidden className="eco-icon" />
                 <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  disabled={!editingId || uploadingPhotos}
-                  className="sr-only"
-                  onChange={(event) => {
-                    void uploadProductPhotos(event.target.files);
-                    event.target.value = "";
-                  }}
+                  value={formSearch}
+                  onChange={(event) => setFormSearch(event.target.value)}
+                  placeholder="Найти поле..."
+                  className="eco-input"
                 />
-              </label>
-            </div>
-            {editingProduct?.photos.length ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                {editingProduct.photos.map((photo) => (
-                  <div key={photo.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
-                    <div className="aspect-square bg-zinc-100 dark:bg-zinc-900">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo.url} alt={photo.fileName || "Фото товара"} className="h-full w-full object-cover" />
+                {formSearch ? (
+                  <button
+                    type="button"
+                    className="product-editor-search-clear"
+                    onClick={() => setFormSearch("")}
+                    aria-label="Очистить поиск по полям"
+                  >
+                    <X aria-hidden className="eco-icon" />
+                  </button>
+                ) : null}
+              </div>
+
+              {formError ? (
+                <div className="product-editor-alert is-error">
+                  <AlertCircle aria-hidden className="eco-icon" />
+                  <span>{formError}</span>
+                </div>
+              ) : null}
+
+              {changedCriticalFields.length > 0 ? (
+                <div className="product-editor-alert is-warning">
+                  <AlertCircle aria-hidden className="eco-icon" />
+                  <span>
+                    Изменены рабочие поля: {changedCriticalFields.join(", ")}. Проверьте поиск, склад и отгрузку перед сохранением.
+                  </span>
+                </div>
+              ) : null}
+
+              <div className="product-editor-priority-layout">
+                <section id={productEditorSectionElementId("main")} className="product-editor-section product-editor-main-card">
+                  <div className="product-editor-section-head">
+                    <div>
+                      <h3>Главное</h3>
+                      <p>Продажа, поиск, склад и отгрузка</p>
                     </div>
-                    <div className="space-y-2 p-2">
-                      <div className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                        {photo.fileName || "Фото товара"}
-                      </div>
-                      <div className="text-xs text-zinc-500">{formatFileSize(photo.sizeBytes)}</div>
-                      <button
-                        type="button"
-                        onClick={() => void deleteProductPhoto(photo.id)}
-                        disabled={deletingPhotoId === photo.id}
-                        className="w-full rounded-lg border border-red-200 px-2 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
-                      >
-                        {deletingPhotoId === photo.id ? "Удаление..." : "Удалить"}
-                      </button>
+                    <div className="product-editor-kpi-row">
+                      <span>
+                        <b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b>
+                        доступно
+                      </span>
+                      <span>
+                        <b>{formatMoneyWhole(parseMoneyInput(form.salePrice))}</b>
+                        ₽ продажа
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 rounded-lg border border-dashed border-zinc-300 px-3 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
-                Фото пока не прикреплены.
-              </div>
-            )}
-          </section>
-          <details className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" open={Boolean(editingId)}>
-            <summary className="cursor-pointer text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-              Дополнительные поля
-            </summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="block text-sm sm:col-span-2">
-                <span className="text-xs font-medium text-zinc-500">Авито</span>
-                <select
-                  value={form.avito}
-                  onChange={(event) => updateForm({ avito: event.target.value })}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                >
-                  <option value="">Не указано</option>
-                  <option value="true">Да</option>
-                  <option value="false">Нет</option>
-                </select>
-              </label>
-              {productExtraFields.map((field) => (
-                <label
-                  key={field.key}
-                  className={`block text-sm ${field.type === "textarea" || field.key === "groupPath" ? "sm:col-span-2" : ""}`}
-                >
-                  <span className="text-xs font-medium text-zinc-500">{field.label}</span>
-                  {field.key === "groupPath" ? (
-                    <div className="mt-1 space-y-2">
-                      <select
-                        value={newGroupMode ? NEW_GROUP_VALUE : form.groupPath}
-                        onChange={(event) => {
-                          if (event.target.value === NEW_GROUP_VALUE) {
-                            setNewGroupMode(true);
-                            updateForm({ groupPath: "" });
-                            return;
-                          }
-                          setNewGroupMode(false);
-                          updateForm({ groupPath: event.target.value });
-                        }}
-                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                      >
-                        <option value="">Без группы</option>
-                        {groupOptions.map((group) => (
-                          <option key={group} value={group}>{group}</option>
-                        ))}
-                        <option value={NEW_GROUP_VALUE}>Новая группа...</option>
-                      </select>
-                      {newGroupMode && (
-                        <input
-                          value={form.groupPath}
-                          onChange={(event) => updateForm({ groupPath: event.target.value })}
-                          placeholder="Название новой группы"
-                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                        />
-                      )}
-                    </div>
-                  ) : field.type === "textarea" ? (
-                    <textarea
-                      value={form[field.key]}
-                      rows={2}
-                      onChange={(event) => updateForm({ [field.key]: event.target.value } as Partial<ProductForm>)}
-                      className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  ) : field.key === "minPrice" ? (
-                    <MoneyInput
-                      value={form.minPrice}
-                      onValueChange={(minPrice, draft) =>
-                        updateForm({ minPrice: draft ? String(minPrice) : "" })
-                      }
-                      className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  ) : (
-                    <input
-                      type={field.type === "number" ? "number" : "text"}
-                      step={field.type === "number" ? "0.001" : undefined}
-                      value={form[field.key]}
-                      onChange={(event) => updateForm({ [field.key]: event.target.value } as Partial<ProductForm>)}
-                      className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  )}
-                </label>
-              ))}
-            </div>
-          </details>
-        </div>
+                  <div className="product-editor-grid">
+                    {renderField("name", "Название товара", { required: true, full: true, placeholder: "Например: Mobil 1 ESP 5W-30, 1 л" })}
+                    {renderField("article", "Артикул", { required: true, placeholder: "156202" })}
+                    {renderField("code", "Код", { required: true, placeholder: "30015649815" })}
+                    {renderEntityTypeField()}
+                    {renderField("brand", "Бренд", { placeholder: "Mobil" })}
+                    {renderGroupField()}
+                    {renderField("uomName", "Единица", { required: true, placeholder: "шт" })}
+                    {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
+                    {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
+                    {renderField("minimumBalance", "Неснижаемый остаток", { type: "number", placeholder: "0" })}
+                    {renderField("cell", "Ячейка склада", { placeholder: "A-12" })}
+                    {renderField("barcodeEan13", "EAN / штрихкод", { placeholder: "460..." })}
+                    {renderField("oem", "OEM / основные кроссы", {
+                      type: "textarea",
+                      full: true,
+                      rows: 3,
+                      placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
+                      hint: "Разделяйте значения пробелом, запятой или новой строкой",
+                    })}
+                  </div>
+                </section>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={saving}
-            className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-950"
-          >
-            {saving ? "Сохранение..." : editingId ? "Сохранить" : "Добавить"}
-          </button>
-          <button
-            type="button"
-            onClick={resetForm}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Отмена
-          </button>
-        </div>
-      </section>
+                <aside className="product-editor-priority-side">
+                  <section id={productEditorSectionElementId("pricing")} className="product-editor-section product-editor-pricing-card">
+                    <div className="product-editor-section-head">
+                      <div>
+                        <h3>Цены и склад</h3>
+                        <p>Данные, которые оператор проверяет перед продажей</p>
+                      </div>
+                    </div>
+                    <div className="product-editor-stock-grid">
+                      <span><b>{formatQty(editingProduct?.totalQuantity ?? 0)}</b>остаток</span>
+                      <span><b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b>доступно</span>
+                      <span><b>{formatQty(editingProduct ? reserveValue(editingProduct) : 0)}</b>резерв</span>
+                    </div>
+                    <div className="product-editor-grid product-editor-compact-grid">
+                      {renderField("currencyName", "Валюта", { placeholder: "руб." })}
+                      {renderField("minPrice", "Минимальная цена", { type: "money", placeholder: "0,00" })}
+                      {renderField("minPriceCurrencyName", "Валюта мин. цены", { placeholder: "руб." })}
+                      {renderField("vatLabel", "НДС", { placeholder: "Без НДС / 20%" })}
+                      {renderField("supplierName", "Поставщик", { full: true, placeholder: "Название поставщика" })}
+                    </div>
+                    {editingProduct?.stock.length ? (
+                      <div className="product-editor-stock-list">
+                        {editingProduct.stock.map((stockRow) => (
+                          <div key={stockRow.storeId}>
+                            <span>{stockRow.storeName || "Склад"}</span>
+                            <b>{formatQty(stockRow.available)}</b>
+                            <em>{stockRow.slotName || "без ячейки"}</em>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section className="product-editor-section product-editor-photo-section">
+                    <div className="product-editor-section-head">
+                      <div>
+                        <h3>Фото</h3>
+                        <p>Миниатюры для карточки и поиска</p>
+                      </div>
+                      <label className={`eco-btn eco-btn--sm ${editingId && !uploadingPhotos ? "" : "is-disabled"}`}>
+                        <ImagePlus aria-hidden className="eco-icon" />
+                        {uploadingPhotos ? "Загрузка..." : "Прикрепить"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={!editingId || uploadingPhotos}
+                          className="sr-only"
+                          onChange={(event) => {
+                            void uploadProductPhotos(event.target.files);
+                            event.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {editingProduct?.photos.length ? (
+                      <div className="product-editor-photo-grid">
+                        {editingProduct.photos.map((photo) => (
+                          <div key={photo.id} className="product-editor-photo">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={photo.url} alt={photo.fileName || "Фото товара"} />
+                            <div>
+                              <span>{photo.fileName || "Фото товара"}</span>
+                              <em>{formatFileSize(photo.sizeBytes)}</em>
+                              <button
+                                type="button"
+                                onClick={() => void deleteProductPhoto(photo.id)}
+                                disabled={deletingPhotoId === photo.id}
+                                aria-label="Удалить фото"
+                              >
+                                {deletingPhotoId === photo.id ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Trash2 aria-hidden className="eco-icon" />}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="product-editor-photo-empty">
+                        <strong>Фото не прикреплено</strong>
+                        <span>Добавьте фото товара для карточки и поиска</span>
+                      </div>
+                    )}
+                  </section>
+                </aside>
+              </div>
+
+              <section id={productEditorSectionElementId("codes")} className="product-editor-section">
+                <div className="product-editor-section-head">
+                  <div>
+                    <h3>Коды и OEM</h3>
+                    <p>Поля, которые помогают находить товар и сопоставлять поставщиков</p>
+                  </div>
+                </div>
+                <div className="product-editor-grid">
+                  {renderField("barcodeEan8", "Штрихкод EAN8", { placeholder: "EAN8" })}
+                  {renderField("barcodeCode128", "Штрихкод Code128", { placeholder: "Code128" })}
+                  {renderField("oemParts", "OEM parts", {
+                    type: "textarea",
+                    full: true,
+                    rows: 4,
+                    placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
+                    hint: "Длинные списки можно вводить строками или через запятую",
+                  })}
+                  {renderField("rosskoPartNumber", "rossko_part_number", { placeholder: "Внешний артикул" })}
+                  {renderField("rosskoBrand", "rossko_brand", { placeholder: "Бренд Rossko" })}
+                  {renderField("rosskoMin", "rossko_min", { placeholder: "Минимум Rossko" })}
+                </div>
+              </section>
+
+              <section id={productEditorSectionElementId("oil")} className={`product-editor-section ${isOilProduct(form) ? "is-oil" : ""}`}>
+                <div className="product-editor-section-head">
+                  <div>
+                    <h3>Характеристики масла</h3>
+                    <p>Вязкость, допуски и фасовка отдельно от цен и склада</p>
+                  </div>
+                  {isOilProduct(form) ? <span className="product-editor-type-badge">Масло / жидкость</span> : null}
+                </div>
+                <div className="product-editor-grid">
+                  {renderField("sae", "SAE / вязкость", { placeholder: "5W-30" })}
+                  {renderField("apiSpec", "API", { placeholder: "SN / SP" })}
+                  {renderField("acea", "ACEA", { placeholder: "C3" })}
+                  {renderField("aceaExtra", "ACEA A/B", { placeholder: "A3/B4" })}
+                  {renderField("ilsac", "ILSAC", { placeholder: "GF-6" })}
+                  {renderField("atf", "ATF", { placeholder: "Dexron VI" })}
+                  {renderField("packageVolume", "Фасовка", { placeholder: "1 л / 4 л" })}
+                  {renderField("volume", "Объём", { type: "number", placeholder: "1" })}
+                  {renderField("mannName", "Наименование по Mann", { full: true, placeholder: "Mann reference" })}
+                </div>
+              </section>
+
+              <section id={productEditorSectionElementId("extra")} className="product-editor-section">
+                <div className="product-editor-section-head">
+                  <div>
+                    <h3>Описание и дополнительно</h3>
+                    <p>Справочная информация без технического шума</p>
+                  </div>
+                </div>
+                <div className="product-editor-grid">
+                  {renderField("description", "Описание", { type: "textarea", rows: 4, full: true, placeholder: "Краткое описание товара" })}
+                  {renderField("countryName", "Страна", { placeholder: "Россия" })}
+                  {renderField("tnvedCode", "Код ТН ВЭД", { placeholder: "Код классификации" })}
+                  {renderField("weight", "Вес", { type: "number", placeholder: "0" })}
+                  {renderAvitoField()}
+                </div>
+              </section>
+
+              <details
+                id={productEditorSectionElementId("technical")}
+                className="product-editor-section product-editor-technical"
+                open={technicalOpen || technicalFieldsMatched}
+                onToggle={(event) => setTechnicalOpen(event.currentTarget.open)}
+              >
+                <summary>
+                  <span>
+                    <b>Технические поля</b>
+                    <em>ID, интеграции и редко редактируемые значения</em>
+                  </span>
+                </summary>
+                <div className="product-editor-readonly-grid">
+                  {editingId ? <span><b>local id</b><em>{editingId}</em></span> : null}
+                </div>
+                <div className="product-editor-grid">
+                  {technicalFieldLabels.map((field) => renderField(field.key, field.label, {
+                    type: field.type,
+                    full: field.type === "textarea",
+                    rows: field.type === "textarea" ? 3 : undefined,
+                    aliases: field.aliases,
+                  }))}
+                </div>
+              </details>
+            </div>
+
+            <footer className="product-editor-footer">
+              <div className="product-editor-footer-note">
+                {saving ? "Сохраняем карточку..." : formDirty ? "Есть несохранённые изменения" : "Изменений нет"}
+              </div>
+              <div className="product-editor-footer-actions">
+                <button type="button" className="eco-btn" onClick={closeForm}>
+                  <RotateCcw aria-hidden className="eco-icon" />
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submit(false)}
+                  disabled={saving || !formDirty}
+                  className="eco-btn eco-btn--primary"
+                >
+                  {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Save aria-hidden className="eco-icon" />}
+                  {saving ? "Сохраняем..." : "Сохранить"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submit(true)}
+                  disabled={saving || !formDirty}
+                  className="eco-btn"
+                >
+                  Сохранить и закрыть
+                </button>
+              </div>
+            </footer>
+          </section>
         </div>
       )}
 
@@ -1146,9 +1571,6 @@ export default function ProductsClient() {
           <div className="eco-products-actions">
             <button type="button" className="eco-btn">
               Выгрузить
-            </button>
-            <button type="button" className="eco-btn" onClick={() => void syncMoySklad()} disabled={syncing}>
-              {syncing ? "Синхр..." : "Синхр. МойСклад"}
             </button>
             <button
               type="button"
@@ -1337,16 +1759,7 @@ export default function ProductsClient() {
                   <td className="eco-product-actions">
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditingId(row.id);
-                        setForm(formFromProduct(row));
-                        setNewGroupMode(false);
-                        setUploadingPhotos(false);
-                        setDeletingPhotoId(null);
-                        setInfo(null);
-                        setError(null);
-                        setFormOpen(true);
-                      }}
+                      onClick={() => openProductEditor(row)}
                       className="eco-icon-action"
                       aria-label="Править"
                     >

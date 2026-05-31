@@ -172,8 +172,8 @@ model MoySkladAnalyticsSyncState {
 /// Пороги статусов аналитики (singleton id = default)
 model CustomerAnalyticsSettings {
   id                    String @id @default("default")
-  inactiveDaysThreshold Int    @default(365) @map("inactive_days_threshold")
-  regularVisitThreshold Int    @default(5) @map("regular_visit_threshold")
+  inactiveDaysThreshold Int    @default(90) @map("inactive_days_threshold")
+  regularVisitThreshold Int    @default(3) @map("regular_visit_threshold")
   vipThresholdCents     Int?   @map("vip_threshold_cents")
   vipMetric             String @default("revenue") @map("vip_metric")
   vipWindow             String @default("all") @map("vip_window")
@@ -214,6 +214,8 @@ model CrmDeal {
   vehicle                  String?
   source                   String?
   amountCents              Int?      @map("amount_cents")
+  clientType               String?   @map("client_type")
+  nextAction               String?   @map("next_action")
   stageId                  String    @map("stage_id")
   responsibleLogin         String?   @map("responsible_login")
   moyskladCounterpartyId   String?   @map("moysklad_counterparty_id")
@@ -221,8 +223,12 @@ model CrmDeal {
   moyskladCounterpartyHref String?   @map("moysklad_counterparty_href") @db.Text
   yclientsRecordId         String?   @map("yclients_record_id")
   moyskladDemandId         String?   @map("moysklad_demand_id")
+  suppliesNote             String?   @map("supplies_note") @db.Text
+  suppliesSupplier         String?   @map("supplies_supplier")
+  suppliesExpectedAt       DateTime? @map("supplies_expected_at")
   nextContactAt            DateTime? @map("next_contact_at")
   status                   String    @default("open") // open | won | lost
+  closeReason              String?   @map("close_reason")
   notes                    String?   @db.Text
   createdByLogin           String    @map("created_by_login")
   createdAt                DateTime  @default(now()) @map("created_at")
@@ -232,6 +238,8 @@ model CrmDeal {
 
   @@index([phoneNormalized])
   @@index([moyskladCounterpartyId])
+  @@index([clientType])
+  @@index([nextContactAt])
   @@index([stageId])
   @@index([status])
   @@map("crm_deals")
@@ -370,7 +378,8 @@ model LocalOrganization {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  demands LocalDemand[]
+  demands           LocalDemand[]
+  cashExpenseOrders CashExpenseOrder[]
 
   @@index([name])
   @@index([isActive])
@@ -393,6 +402,7 @@ model LocalStore {
   stockBalances      LocalStockBalance[]
   demands            LocalDemand[]
   inventoryDocuments LocalInventoryDocument[]
+  cashExpenseOrders  CashExpenseOrder[]
 
   @@index([name])
   @@map("local_stores")
@@ -501,12 +511,12 @@ model LocalStockBalance {
   storeId   String       @map("store_id")
   store     LocalStore   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  quantity  Decimal  @default(0) @db.Decimal(14, 3)
-  reserve   Decimal  @default(0) @db.Decimal(14, 3)
-  available Decimal  @default(0) @db.Decimal(14, 3)
-  buyPriceCents Int?  @map("buy_price_cents")
-  slotName  String?  @map("slot_name")
-  syncedAt  DateTime @default(now()) @map("synced_at")
+  quantity      Decimal  @default(0) @db.Decimal(14, 3)
+  reserve       Decimal  @default(0) @db.Decimal(14, 3)
+  available     Decimal  @default(0) @db.Decimal(14, 3)
+  buyPriceCents Int?     @map("buy_price_cents")
+  slotName      String?  @map("slot_name")
+  syncedAt      DateTime @default(now()) @map("synced_at")
 
   @@unique([productId, storeId])
   @@index([productId])
@@ -554,11 +564,102 @@ model LocalCounterparty {
 
   demands            LocalDemand[]
   inventoryDocuments LocalInventoryDocument[]
+  cashExpenseOrders  CashExpenseOrder[]
 
   @@index([name])
   @@index([normalizedPhone])
   @@index([inn])
   @@map("local_counterparties")
+}
+
+/// Локальный справочник статей расхода для кассовых расходных ордеров.
+model CashExpenseItem {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  isActive     Boolean  @default(true) @map("is_active")
+  source       String   @default("local")
+  moyskladId   String?  @unique @map("moysklad_id")
+  moyskladHref String?  @map("moysklad_href") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  orders CashExpenseOrder[]
+
+  @@index([isActive])
+  @@index([source])
+  @@map("cash_expense_items")
+}
+
+/// Локальный расходный ордер кассы. МойСклад-поля остаются nullable для импорта/синхронизации.
+model CashExpenseOrder {
+  id             String             @id @default(cuid())
+  shiftId        String             @map("shift_id")
+  organizationId String?            @map("organization_id")
+  organization   LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  warehouseId    String?            @map("warehouse_id")
+  warehouse      LocalStore?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  number      String @unique
+  status      String @default("draft")
+  amountCents Int    @map("amount_cents")
+  currency    String @default("RUB")
+
+  expenseDate String @map("expense_date")
+
+  expenseItemId   String?          @map("expense_item_id")
+  expenseItem     CashExpenseItem? @relation(fields: [expenseItemId], references: [id], onDelete: SetNull)
+  expenseItemName String           @map("expense_item_name")
+
+  counterpartyId   String?            @map("counterparty_id")
+  counterparty     LocalCounterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  counterpartyName String             @map("counterparty_name")
+
+  article        String? @db.Text
+  paymentPurpose String? @map("payment_purpose") @db.Text
+  paymentType    String  @default("cash") @map("payment_type")
+  attachmentUrl  String? @map("attachment_url") @db.Text
+  comment        String? @db.Text
+
+  createdBy     String   @map("created_by")
+  createdByName String?  @map("created_by_name")
+  createdByRole String?  @map("created_by_role")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  postedAt     DateTime? @map("posted_at")
+  postedBy     String?   @map("posted_by")
+  postedByName String?   @map("posted_by_name")
+
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelledBy     String?   @map("cancelled_by")
+  cancelledByName String?   @map("cancelled_by_name")
+  cancelReason    String?   @map("cancel_reason") @db.Text
+
+  source                   String    @default("local")
+  moyskladId               String?   @unique @map("moysklad_id")
+  moyskladHref             String?   @map("moysklad_href") @db.Text
+  moyskladMetaHref         String?   @map("moysklad_meta_href") @db.Text
+  externalCode             String?   @map("external_code")
+  moyskladCashoutHref      String?   @map("moysklad_cashout_href") @db.Text
+  moyskladExpenseItemHref  String?   @map("moysklad_expense_item_href") @db.Text
+  moyskladCounterpartyHref String?   @map("moysklad_counterparty_href") @db.Text
+  syncedAt                 DateTime? @map("synced_at")
+  syncStatus               String?   @map("sync_status")
+  syncError                String?   @map("sync_error") @db.Text
+
+  supplierInvoicePayments LocalSupplierInvoicePayment[]
+
+  @@index([shiftId])
+  @@index([status])
+  @@index([expenseDate])
+  @@index([expenseItemId])
+  @@index([counterpartyId])
+  @@index([paymentType])
+  @@index([source])
+  @@index([externalCode])
+  @@index([syncedAt])
+  @@index([syncStatus])
+  @@map("cash_expense_orders")
 }
 
 /// Локальные отгрузки. На первом этапе это зеркало МойСклад, дальше станет рабочей сущностью.
@@ -578,13 +679,13 @@ model LocalDemand {
   agentMoyskladId   String?            @map("agent_moysklad_id")
   agentNameSnapshot String?            @map("agent_name_snapshot")
 
-  storeId           String?     @map("store_id")
-  store             LocalStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
-  storeMoyskladId   String?     @map("store_moysklad_id")
-  storeNameSnapshot String?     @map("store_name_snapshot")
+  storeId           String?            @map("store_id")
+  store             LocalStore?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  storeMoyskladId   String?            @map("store_moysklad_id")
+  storeNameSnapshot String?            @map("store_name_snapshot")
   organizationId    String?            @map("organization_id")
   organization      LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  organizationName  String?     @map("organization_name")
+  organizationName  String?            @map("organization_name")
 
   attributes Json?
   raw        Json?
@@ -665,11 +766,19 @@ model LocalInventoryDocument {
   store             LocalStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
   storeNameSnapshot String?     @map("store_name_snapshot")
 
-  createdByLogin String?  @map("created_by_login")
-  createdByName  String?  @map("created_by_name")
-  raw            Json?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdByLogin   String?   @map("created_by_login")
+  createdByName    String?   @map("created_by_name")
+  raw              Json?
+  source           String    @default("local")
+  moyskladId       String?   @unique @map("moysklad_id")
+  moyskladHref     String?   @map("moysklad_href") @db.Text
+  moyskladMetaHref String?   @map("moysklad_meta_href") @db.Text
+  externalCode     String?   @map("external_code")
+  syncedAt         DateTime? @map("synced_at")
+  syncStatus       String?   @map("sync_status")
+  syncError        String?   @map("sync_error") @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   positions       LocalInventoryDocumentPosition[]
   supplierInvoice LocalSupplierInvoice?
@@ -680,24 +789,40 @@ model LocalInventoryDocument {
   @@index([applicable])
   @@index([counterpartyId])
   @@index([storeId])
+  @@index([source])
+  @@index([externalCode])
+  @@index([syncedAt])
+  @@index([syncStatus])
   @@map("local_inventory_documents")
 }
 
 /// Позиции локального складского документа.
 model LocalInventoryDocumentPosition {
-  id                String                 @id @default(cuid())
-  documentId        String                 @map("document_id")
-  document          LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  productId         String?                @map("product_id")
-  product           LocalProduct?          @relation(fields: [productId], references: [id], onDelete: SetNull)
-  productName       String                 @map("product_name")
-  quantity          Decimal                @default(0) @db.Decimal(14, 3)
-  priceCentsPerUnit Int                    @default(0) @map("price_cents_per_unit")
-  slotName          String?                @map("slot_name")
-  raw               Json?
+  id                 String                 @id @default(cuid())
+  documentId         String                 @map("document_id")
+  document           LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId          String?                @map("product_id")
+  product            LocalProduct?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName        String                 @map("product_name")
+  quantity           Decimal                @default(0) @db.Decimal(14, 3)
+  priceCentsPerUnit  Int                    @default(0) @map("price_cents_per_unit")
+  slotName           String?                @map("slot_name")
+  raw                Json?
+  source             String                 @default("local")
+  moyskladPositionId String?                @unique @map("moysklad_position_id")
+  moyskladHref       String?                @map("moysklad_href") @db.Text
+  moyskladMetaHref   String?                @map("moysklad_meta_href") @db.Text
+  externalCode       String?                @map("external_code")
+  syncedAt           DateTime?              @map("synced_at")
+  syncStatus         String?                @map("sync_status")
+  syncError          String?                @map("sync_error") @db.Text
 
   @@index([documentId])
   @@index([productId])
+  @@index([source])
+  @@index([externalCode])
+  @@index([syncedAt])
+  @@index([syncStatus])
   @@map("local_inventory_document_positions")
 }
 
@@ -711,16 +836,69 @@ model LocalSupplierInvoice {
   dueDate                  String?                @map("due_date")
   status                   String                 @default("unpaid")
   sumCents                 Int                    @default(0) @map("sum_cents")
+  paidAmountCents          Int                    @default(0) @map("paid_amount_cents")
+  source                   String                 @default("receipt")
+  comment                  String?                @db.Text
+  attachmentUrl            String?                @map("attachment_url") @db.Text
+  createdBy                String?                @map("created_by")
   counterpartyNameSnapshot String?                @map("counterparty_name_snapshot")
   raw                      Json?
+  moyskladId               String?                @unique @map("moysklad_id")
+  moyskladHref             String?                @map("moysklad_href") @db.Text
+  moyskladMetaHref         String?                @map("moysklad_meta_href") @db.Text
+  externalCode             String?                @map("external_code")
+  syncedAt                 DateTime?              @map("synced_at")
+  syncStatus               String?                @map("sync_status")
+  syncError                String?                @map("sync_error") @db.Text
   createdAt                DateTime               @default(now()) @map("created_at")
   updatedAt                DateTime               @updatedAt @map("updated_at")
+
+  payments LocalSupplierInvoicePayment[]
 
   @@index([invoiceDate])
   @@index([dueDate])
   @@index([status])
+  @@index([source])
   @@index([counterpartyNameSnapshot])
+  @@index([externalCode])
+  @@index([syncedAt])
+  @@index([syncStatus])
   @@map("local_supplier_invoices")
+}
+
+/// История оплат локального счёта поставщика.
+model LocalSupplierInvoicePayment {
+  id                 String               @id @default(cuid())
+  invoiceId          String               @map("invoice_id")
+  invoice            LocalSupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountCents        Int                  @map("amount_cents")
+  paymentDate        String               @map("payment_date")
+  paymentType        String               @map("payment_type")
+  cashExpenseOrderId String?              @map("cash_expense_order_id")
+  cashExpenseOrder   CashExpenseOrder?    @relation(fields: [cashExpenseOrderId], references: [id], onDelete: SetNull)
+  comment            String?              @db.Text
+  createdAt          DateTime             @default(now()) @map("created_at")
+  createdBy          String               @map("created_by")
+  createdByName      String?              @map("created_by_name")
+  raw                Json?
+  source             String               @default("local")
+  moyskladId         String?              @unique @map("moysklad_id")
+  moyskladHref       String?              @map("moysklad_href") @db.Text
+  moyskladMetaHref   String?              @map("moysklad_meta_href") @db.Text
+  externalCode       String?              @map("external_code")
+  syncedAt           DateTime?            @map("synced_at")
+  syncStatus         String?              @map("sync_status")
+  syncError          String?              @map("sync_error") @db.Text
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+  @@index([paymentType])
+  @@index([cashExpenseOrderId])
+  @@index([source])
+  @@index([externalCode])
+  @@index([syncedAt])
+  @@index([syncStatus])
+  @@map("local_supplier_invoice_payments")
 }
 
 /// Состояние импорта локального складского зеркала.

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
+import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
 import { prisma } from "@/lib/db";
 import { invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
@@ -17,8 +18,12 @@ type MoySkladMeta = {
 };
 
 type UpdateDemandBody = {
+  organization?: { meta: MoySkladMeta };
+  agent?: { meta: MoySkladMeta };
+  store?: { meta: MoySkladMeta };
   name?: string;
   description?: string;
+  moment?: string;
   applicable?: boolean;
   attributes?: unknown[];
   positions?: {
@@ -322,7 +327,7 @@ async function applyStockMovements(
 async function findLocalDemand(id: string) {
   return prisma.localDemand.findFirst({
     where: { OR: [{ id }, { moyskladId: id }] },
-    include: { positions: true, counterparty: true, store: true },
+    include: { positions: true, counterparty: true, store: true, organization: true },
   });
 }
 
@@ -423,6 +428,25 @@ export async function updateLocalDemand(
   const current = await findLocalDemand(id);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
 
+  const storeLookupId = entityIdFromMeta(body.store?.meta);
+  const agentLookupId = entityIdFromMeta(body.agent?.meta);
+  const organizationLookupId = entityIdFromMeta(body.organization?.meta);
+  const [nextStore, nextCounterparty, nextOrganization] = await Promise.all([
+    storeLookupId
+      ? prisma.localStore.findFirst({ where: { OR: [{ id: storeLookupId }, { moyskladId: storeLookupId }] } })
+      : current.store,
+    agentLookupId
+      ? prisma.localCounterparty.findFirst({ where: { OR: [{ id: agentLookupId }, { moyskladId: agentLookupId }] } })
+      : current.counterparty,
+    organizationLookupId
+      ? prisma.localOrganization.findFirst({ where: { OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      : current.organization,
+  ]);
+
+  if (body.store?.meta && !nextStore) return { ok: false, error: "Склад не найден в локальной БД" };
+  if (body.agent?.meta && !nextCounterparty) return { ok: false, error: "Контрагент не найден в локальной БД" };
+  if (body.organization?.meta && !nextOrganization) return { ok: false, error: "Организация не найдена в локальной БД" };
+
   const existingById = new Map(
     current.positions.map((position) => [
       position.id,
@@ -456,16 +480,24 @@ export async function updateLocalDemand(
   const nextApplicable = typeof body.applicable === "boolean" ? body.applicable : current.applicable;
   const nextDescription = typeof body.description === "string" ? body.description.trim() : current.description;
   const nextName = typeof body.name === "string" && body.name.trim() ? body.name.trim() : current.name;
+  const nextMoment = body.moment ? parseMoment(body.moment) : { documentDate: current.documentDate, momentAt: current.momentAt };
+  const nextStoreId = nextStore?.id ?? current.storeId;
+  const storeChanged = Boolean(nextStoreId && nextStoreId !== current.storeId);
 
   const updated = await prisma.$transaction(async (tx) => {
-    await applyStockMovements(
-      tx,
-      current.storeId,
-      current.positions,
-      current.applicable,
-      nextPositions,
-      nextApplicable
-    );
+    if (storeChanged) {
+      await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
+      await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable);
+    } else {
+      await applyStockMovements(
+        tx,
+        current.storeId,
+        current.positions,
+        current.applicable,
+        nextPositions,
+        nextApplicable
+      );
+    }
 
     if (Array.isArray(body.positions)) {
       await tx.localDemandPosition.deleteMany({ where: { demandId: current.id } });
@@ -494,8 +526,18 @@ export async function updateLocalDemand(
       where: { id: current.id },
       data: {
         name: nextName,
+        momentAt: nextMoment.momentAt,
+        documentDate: nextMoment.documentDate,
         applicable: nextApplicable,
         description: nextDescription || null,
+        counterpartyId: nextCounterparty?.id ?? current.counterpartyId,
+        agentMoyskladId: nextCounterparty ? nextCounterparty.moyskladId ?? nextCounterparty.id : current.agentMoyskladId,
+        agentNameSnapshot: nextCounterparty?.name ?? current.agentNameSnapshot,
+        storeId: nextStore?.id ?? current.storeId,
+        storeMoyskladId: nextStore ? nextStore.moyskladId ?? nextStore.id : current.storeMoyskladId,
+        storeNameSnapshot: nextStore?.name ?? current.storeNameSnapshot,
+        organizationId: nextOrganization?.id ?? current.organizationId,
+        organizationName: nextOrganization?.name ?? current.organizationName,
         attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
         sumCents: sumPositionsCents(nextPositions),
         raw: toJson({ ...(typeof current.raw === "object" && current.raw ? current.raw : {}), lastLocalUpdate: new Date().toISOString() }),
@@ -587,8 +629,30 @@ export async function loadLocalDemandDetailPayload(
     });
   }
 
-  const attributes: DemandDetailAttribute[] = Array.isArray(demand.attributes)
-    ? (demand.attributes as Array<{ definitionId?: string; id?: string; name?: string; type?: string; value?: unknown }>).map((attr) => {
+  const currentAttributes = Array.isArray(demand.attributes)
+    ? (demand.attributes as Array<{ definitionId?: string; id?: string; name?: string; type?: string; value?: unknown }>)
+    : [];
+  const currentById = new Map<string, (typeof currentAttributes)[number]>();
+  const currentByName = new Map<string, (typeof currentAttributes)[number]>();
+  for (const attr of currentAttributes) {
+    const id = attr.definitionId ?? attr.id ?? "";
+    if (id) currentById.set(id, attr);
+    if (attr.name) currentByName.set(normalizeAttributeName(attr.name), attr);
+  }
+
+  const metaRes = await ensureDemandAttributeMetadata();
+  const attributes: DemandDetailAttribute[] = metaRes.ok && metaRes.attributes.length > 0
+    ? metaRes.attributes.map((definition) => {
+        const current = currentById.get(definition.id) ?? currentByName.get(normalizeAttributeName(definition.name));
+        return {
+          id: definition.id,
+          name: definition.name,
+          type: definition.type,
+          meta: definition.meta,
+          value: current?.value ?? null,
+        };
+      })
+    : currentAttributes.map((attr) => {
         const id = attr.definitionId ?? attr.id ?? attr.name ?? "";
         return {
           id,
@@ -597,8 +661,7 @@ export async function loadLocalDemandDetailPayload(
           meta: localMeta("demand-attribute", id),
           value: attr.value ?? null,
         };
-      })
-    : [];
+      });
   const agentMeta = demand.counterparty
     ? entityMeta("counterparty", demand.counterparty.moyskladId, demand.counterparty.moyskladHref, demand.counterparty.id)
     : demand.agentMoyskladId
@@ -609,6 +672,9 @@ export async function loadLocalDemandDetailPayload(
     : demand.storeMoyskladId
       ? moyskladMeta("store", demand.storeMoyskladId, null)
       : undefined;
+  const organizationMeta = demand.organization
+    ? entityMeta("organization", demand.organization.moyskladId, demand.organization.moyskladHref, demand.organization.id)
+    : undefined;
 
   const data: DemandDetailPayload = {
     header: {
@@ -642,7 +708,13 @@ export async function loadLocalDemandDetailPayload(
           }
         : undefined,
       store: demand.store ? { id: demand.store.moyskladId ?? demand.store.id, name: demand.store.name, meta: storeMeta } : undefined,
-      organization: demand.organization?.name || demand.organizationName ? { name: demand.organization?.name ?? demand.organizationName ?? "" } : undefined,
+      organization: demand.organization?.name || demand.organizationName
+        ? {
+            id: demand.organization?.moyskladId ?? demand.organization?.id,
+            name: demand.organization?.name ?? demand.organizationName ?? "",
+            meta: organizationMeta,
+          }
+        : undefined,
     },
     rawPositions: positions.map((position) => ({
       id: position.id,

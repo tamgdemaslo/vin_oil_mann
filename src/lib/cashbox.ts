@@ -1,7 +1,17 @@
 import fs from "fs";
 import path from "path";
 import { getSession, type User } from "./auth";
-import { moyskladFetch, type MoySkladMeta } from "./moysklad";
+import {
+  cancelCashExpenseOrder,
+  cashExpenseOrderToOperation,
+  createCashExpenseOrder,
+  getCashExpenseOrder,
+  listCashExpenseOrderOperationsForShift,
+  postCashExpenseOrder,
+  updateCashExpenseOrderDraft,
+  type CashExpenseOrderSource,
+  type CashExpenseOrderStatus,
+} from "./cash-expense-orders";
 import {
   endShift as endWorkShift,
   getCurrentShift as getCurrentWorkShift,
@@ -59,9 +69,17 @@ export type CashExpensePaymentType = "cash" | "card";
 
 export type CashExpense = CashOperationBase & {
   type: "expense";
+  orderId?: string;
+  number?: string;
   article: string; // основание / назначение платежа
+  expenseDate?: string;
+  amountCents?: number;
+  status?: CashExpenseOrderStatus;
+  source?: CashExpenseOrderSource;
+  counterpartyId?: string;
   counterpartyName?: string;
   counterpartyMetaHref?: string;
+  expenseItemId?: string;
   expenseItemName?: string;
   expenseItemMetaHref?: string;
   paymentType: CashExpensePaymentType;
@@ -175,11 +193,19 @@ export function listShifts(limit = 50): CashShift[] {
     .slice(0, limit);
 }
 
-export function listOperationsForShift(shiftId: string): CashOperation[] {
+export async function listOperationsForShift(shiftId: string): Promise<CashOperation[]> {
   const state = readState();
-  return state.operations
+  const fileOperations = state.operations
     .filter((op) => op.shiftId === shiftId)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    .map((op) =>
+      op.type === "expense" && !op.status
+        ? { ...op, status: "posted" as CashExpenseOrderStatus, source: "moysklad_import" as CashExpenseOrderSource }
+        : op
+    );
+  const localExpenses = await listCashExpenseOrderOperationsForShift(shiftId);
+  return [...fileOperations, ...localExpenses].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt)
+  );
 }
 
 async function ensureAdminWorkShiftOpened(user: User) {
@@ -278,11 +304,14 @@ export async function addExpense(params: {
   amount: number;
   article: string;
   expenseDate?: string;
+  expenseItemId?: string;
   counterpartyName?: string;
+  counterpartyId?: string;
   counterpartyMetaHref?: string;
   expenseItemName?: string;
   expenseItemMetaHref?: string;
   paymentType: CashExpensePaymentType;
+  status?: CashExpenseOrderStatus;
   comment?: string;
   attachmentUrl?: string;
   moyskladCashoutHref?: string;
@@ -297,39 +326,93 @@ export async function addExpense(params: {
   if (!Number.isFinite(params.amount) || params.amount <= 0) {
     throw new Error("Сумма должна быть положительным числом");
   }
-  let moyskladCashoutHref: string | undefined = params.moyskladCashoutHref;
+  if (!params.expenseDate?.trim()) {
+    throw new Error("Укажите дату расходного ордера");
+  }
+  if (!params.expenseItemName?.trim()) {
+    throw new Error("Выберите статью расхода");
+  }
+  if (!params.counterpartyName?.trim()) {
+    throw new Error("Выберите контрагента");
+  }
 
-  if (!moyskladCashoutHref) {
-    moyskladCashoutHref = await createMoyskladCashout({
+  const order = await createCashExpenseOrder(
+    {
+      shiftId: shift.id,
       amount: params.amount,
       article: params.article,
       expenseDate: params.expenseDate,
-      counterpartyMetaHref: params.counterpartyMetaHref,
+      expenseItemId: params.expenseItemId,
+      expenseItemName: params.expenseItemName,
       expenseItemMetaHref: params.expenseItemMetaHref,
+      counterpartyId: params.counterpartyId,
+      counterpartyName: params.counterpartyName,
+      counterpartyMetaHref: params.counterpartyMetaHref,
+      paymentType: params.paymentType,
+      status: params.status ?? "posted",
       comment: params.comment,
-    });
-  }
+      attachmentUrl: params.attachmentUrl,
+      moyskladCashoutHref: params.moyskladCashoutHref,
+    },
+    user
+  );
+  return cashExpenseOrderToOperation(order);
+}
 
-  const op: CashExpense = {
-    id: generateId("op"),
-    type: "expense",
-    shiftId: shift.id,
-    createdAt: new Date().toISOString(),
-    createdBy: userToSnapshot(user),
-    amount: Math.round(params.amount * 100) / 100,
-    article: params.article.trim(),
-    counterpartyName: params.counterpartyName?.trim() || undefined,
-    counterpartyMetaHref: params.counterpartyMetaHref?.trim() || undefined,
-    expenseItemName: params.expenseItemName?.trim() || undefined,
-    expenseItemMetaHref: params.expenseItemMetaHref?.trim() || undefined,
-    paymentType: params.paymentType,
-    comment: params.comment?.trim() || undefined,
-    attachmentUrl: params.attachmentUrl?.trim() || undefined,
-    moyskladCashoutHref,
-  };
-  state.operations.push(op);
-  writeState(state);
-  return op;
+export async function updateExpenseDraft(params: {
+  id: string;
+  amount?: number;
+  article?: string;
+  expenseDate?: string;
+  expenseItemId?: string;
+  expenseItemName?: string;
+  expenseItemMetaHref?: string;
+  counterpartyId?: string;
+  counterpartyName?: string;
+  counterpartyMetaHref?: string;
+  paymentType?: CashExpensePaymentType;
+  comment?: string;
+  attachmentUrl?: string;
+}): Promise<CashExpense> {
+  const user = await requireSessionUser();
+  assertOwnerOrAdmin(user);
+  const order = await getCashExpenseOrder(params.id);
+  if (!order) throw new Error("Расходный ордер не найден");
+  const state = readState();
+  const shift = state.shifts.find((s) => s.id === order.shiftId);
+  if (!shift || shift.status !== "open") {
+    throw new Error("Редактировать расходный ордер можно только в открытой смене");
+  }
+  const updated = await updateCashExpenseOrderDraft(params.id, params, user);
+  return cashExpenseOrderToOperation(updated);
+}
+
+export async function postExpense(params: { id: string }): Promise<CashExpense> {
+  const user = await requireSessionUser();
+  assertOwnerOrAdmin(user);
+  const order = await getCashExpenseOrder(params.id);
+  if (!order) throw new Error("Расходный ордер не найден");
+  const state = readState();
+  const shift = state.shifts.find((s) => s.id === order.shiftId);
+  if (!shift || shift.status !== "open") {
+    throw new Error("Провести расходный ордер можно только в открытой смене");
+  }
+  const updated = await postCashExpenseOrder(params.id, user);
+  return cashExpenseOrderToOperation(updated);
+}
+
+export async function cancelExpense(params: { id: string; reason?: string }): Promise<CashExpense> {
+  const user = await requireSessionUser();
+  assertOwnerOrAdmin(user);
+  const order = await getCashExpenseOrder(params.id);
+  if (!order) throw new Error("Расходный ордер не найден");
+  const state = readState();
+  const shift = state.shifts.find((s) => s.id === order.shiftId);
+  if (!shift || shift.status !== "open") {
+    throw new Error("Отменить расходный ордер можно только в открытой смене");
+  }
+  const updated = await cancelCashExpenseOrder(params.id, user, params.reason);
+  return cashExpenseOrderToOperation(updated);
 }
 
 export async function closeShift(params: {
@@ -352,12 +435,18 @@ export async function closeShift(params: {
 
   await ensureAdminWorkShiftClosed(user);
 
-  const ops = state.operations.filter((op) => op.shiftId === shift.id);
+  const ops = await listOperationsForShift(shift.id);
   const withdrawalsTotal = ops
     .filter((op): op is CashWithdrawal => op.type === "withdrawal")
     .reduce((sum, op) => sum + (op.amount || 0), 0);
   const cashExpensesTotal = ops
-    .filter((op): op is CashExpense => op.type === "expense" && op.paymentType === "cash")
+    .filter(
+      (op): op is CashExpense =>
+        op.type === "expense" &&
+        op.paymentType === "cash" &&
+        op.status !== "draft" &&
+        op.status !== "cancelled"
+    )
     .reduce((sum, op) => sum + (op.amount || 0), 0);
 
   const opening = shift.openingCash || 0;
@@ -387,65 +476,3 @@ export async function closeShift(params: {
   writeState(state);
   return updated;
 }
-
-async function createMoyskladCashout(params: {
-  amount: number;
-  article: string;
-  expenseDate?: string;
-  counterpartyMetaHref?: string;
-  expenseItemMetaHref?: string;
-  comment?: string;
-}): Promise<string> {
-  const orgHref = process.env.MOYSKLAD_CASHOUT_ORGANIZATION_HREF?.trim();
-  const agentHref =
-    params.counterpartyMetaHref?.trim() || process.env.MOYSKLAD_CASHOUT_AGENT_HREF?.trim();
-  const expenseItemHref =
-    params.expenseItemMetaHref?.trim() || process.env.MOYSKLAD_CASHOUT_EXPENSE_ITEM_HREF?.trim();
-  if (!orgHref || !agentHref || !expenseItemHref) {
-    throw new Error(
-      "Не удалось создать расходный ордер в МойСклад: не настроены organization, counterparty или expense item"
-    );
-  }
-
-  const metaFromHref = (href: string, type: MoySkladMeta["type"]): MoySkladMeta => ({
-    href,
-    type,
-    mediaType: "application/json",
-  });
-
-  const sum = Math.round(Math.max(0, params.amount || 0) * 100);
-  const moment = normalizeMoyskladDate(params.expenseDate);
-
-  const body = {
-    organization: { meta: metaFromHref(orgHref, "organization") },
-    agent: { meta: metaFromHref(agentHref, "counterparty") },
-    expenseItem: { meta: metaFromHref(expenseItemHref, "expenseitem") },
-    applicable: true,
-    ...(moment ? { moment } : {}),
-    sum,
-    description: params.comment?.trim() || params.article.trim(),
-    paymentPurpose: params.article.trim(),
-  };
-
-  const result = await moyskladFetch<{ meta?: MoySkladMeta }>("/entity/cashout", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  if (!result.ok) {
-    throw new Error(`Не удалось создать расходный ордер в МойСклад: ${result.error}`);
-  }
-  if (!result.data.meta?.href) {
-    throw new Error("МойСклад не вернул ссылку на созданный расходный ордер");
-  }
-  return result.data.meta.href;
-}
-
-function normalizeMoyskladDate(date?: string): string | undefined {
-  const trimmed = date?.trim();
-  if (!trimmed) return undefined;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("Дата расходного ордера должна быть в формате ГГГГ-ММ-ДД");
-  }
-  return `${trimmed} 00:00:00`;
-}
-

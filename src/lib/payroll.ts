@@ -1,4 +1,3 @@
-import { moyskladFetchWithRetry } from "@/lib/moysklad";
 import { prisma } from "@/lib/db";
 import { getShiftRateCents } from "@/lib/shifts";
 import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
@@ -17,17 +16,6 @@ const payrollCache = new Map<
   { promise?: Promise<PayrollSummary> }
 >();
 
-/** Повторы при лимите API и кратковременных сбоях МойСклад (расчёт зарплаты — много запросов подряд). */
-const MOYSKLAD_PAYROLL_FETCH_ATTEMPTS = Math.max(
-  4,
-  Math.min(10, parseInt(process.env.MOYSKLAD_PAYROLL_FETCH_ATTEMPTS ?? "7", 10) || 7)
-);
-const MOYSKLAD_PAYROLL_MIN_INTERVAL_MS = Math.max(
-  250,
-  Math.min(5_000, parseInt(process.env.MOYSKLAD_PAYROLL_MIN_INTERVAL_MS ?? "800", 10) || 800)
-);
-const payrollMoyskladRetryConfig = { minIntervalMs: MOYSKLAD_PAYROLL_MIN_INTERVAL_MS };
-
 function normalizeLogin(login: string): string {
   return canonicalizeLogin(login).trim().toLowerCase();
 }
@@ -40,26 +28,6 @@ const PAYROLL_CASHOUT_AGENT_TO_LOGIN: Record<string, string> = {
   [normalizePersonName("Бигожин Вадим Андреевич")]: "vadim",
   [normalizePersonName("Лобов Максим")]: "maksim",
 };
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  mapper: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function worker() {
-    while (true) {
-      const index = nextIndex++;
-      if (index >= items.length) break;
-      results[index] = await mapper(items[index], index);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
-}
 
 type PositionRow = {
   assortment: {
@@ -109,107 +77,81 @@ async function fetchDemandsWithPositions(
   dateFrom: string,
   dateTo: string
 ): Promise<{ demand: DemandRow; positions: PositionRow[] }[]> {
-  const fromMoment = `${dateFrom} 00:00:00`;
-  const toMoment = `${dateTo} 23:59:59`;
-  const pageLimit = 100;
-  const demands: DemandRow[] = [];
-  let offset = 0;
-
-  while (true) {
-    const qs = new URLSearchParams({
-      filter: `moment>=${fromMoment};moment<=${toMoment}`,
-      limit: String(pageLimit),
-      offset: String(offset),
-      order: "moment,asc",
-      expand: "agent",
-    });
-    const listRes = await moyskladFetchWithRetry<{
-      meta?: { size?: number; limit?: number; offset?: number };
-      rows?: DemandRow[];
-    }>(
-      `/entity/demand?${qs.toString()}`,
-      {
-        cache: "no-store",
-      },
-      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
-      payrollMoyskladRetryConfig
-    );
-    if (!listRes.ok) {
-      throw new Error(`Не удалось загрузить отгрузки из МойСклад: ${listRes.error}`);
-    }
-
-    const pageRows = listRes.data.rows ?? [];
-    demands.push(...pageRows);
-
-    const totalSize = listRes.data.meta?.size;
-    offset += pageRows.length;
-
-    if (pageRows.length < pageLimit) break;
-    if (typeof totalSize === "number" && offset >= totalSize) break;
-  }
-
-  async function fetchDemandPositions(demand: DemandRow): Promise<PositionRow[]> {
-    const path = `/entity/demand/${demand.id}/positions?expand=assortment`;
-    const posRes = await moyskladFetchWithRetry<{ rows: PositionRow[] }>(
-      path,
-      { cache: "no-store" },
-      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
-      payrollMoyskladRetryConfig
-    );
-    if (!posRes.ok) {
-      throw new Error(`Не удалось загрузить позиции отгрузки ${demand.name} из МойСклад: ${posRes.error}`);
-    }
-    return posRes.data.rows ?? [];
-  }
-
-  // Строго по одной отгрузке: параллельные запросы позиций упираются в лимит запросов API МойСклад.
-  return mapWithConcurrency(demands, 1, async (demand) => {
-    const positions = await fetchDemandPositions(demand);
-    return { demand, positions };
-  });
+  return fetchLocalDemandsWithPositions(dateFrom, dateTo);
 }
 
 async function fetchPayrollCashouts(dateFrom: string, dateTo: string): Promise<CashoutRow[]> {
-  const fromMoment = `${dateFrom} 00:00:00`;
-  const toMoment = `${dateTo} 23:59:59`;
-  const pageLimit = 100;
-  const cashouts: CashoutRow[] = [];
-  let offset = 0;
+  return fetchLocalPayrollCashouts(dateFrom, dateTo);
+}
 
-  while (true) {
-    const qs = new URLSearchParams({
-      filter: `moment>=${fromMoment};moment<=${toMoment};applicable=true`,
-      limit: String(pageLimit),
-      offset: String(offset),
-      order: "moment,asc",
-      expand: "agent,expenseItem",
-    });
-    const result = await moyskladFetchWithRetry<{
-      meta?: { size?: number; limit?: number; offset?: number };
-      rows?: CashoutRow[];
-    }>(
-      `/entity/cashout?${qs.toString()}`,
-      {
-        cache: "no-store",
-      },
-      MOYSKLAD_PAYROLL_FETCH_ATTEMPTS,
-      payrollMoyskladRetryConfig
-    );
-    if (!result.ok) {
-      throw new Error(`Не удалось загрузить расходные ордера из МойСклад: ${result.error}`);
-    }
+async function fetchLocalDemandsWithPositions(
+  dateFrom: string,
+  dateTo: string
+): Promise<{ demand: DemandRow; positions: PositionRow[] }[]> {
+  const demands = await prisma.localDemand.findMany({
+    where: { documentDate: { gte: dateFrom, lte: dateTo } },
+    include: {
+      counterparty: true,
+      positions: { include: { product: true }, orderBy: { id: "asc" } },
+    },
+    orderBy: { momentAt: "asc" },
+  });
 
-    const pageRows = result.data.rows ?? [];
-    cashouts.push(...pageRows);
+  return demands.map((demand) => ({
+    demand: {
+      id: demand.id,
+      name: demand.name,
+      moment: demand.momentAt.toISOString(),
+      sum: demand.sumCents,
+      agent: { name: demand.counterparty?.name ?? demand.agentNameSnapshot ?? "" },
+    },
+    positions: demand.positions.map((position) => {
+      const product = position.product;
+      const assortmentType = product?.entityType ?? position.assortmentType ?? "";
+      const assortmentId = product?.id ?? position.assortmentMoyskladId ?? position.id;
+      return {
+        assortment: {
+          meta: {
+            href: product?.moyskladHref ?? `local://${assortmentType || "product"}/${assortmentId}`,
+            type: assortmentType,
+          },
+          name: position.name,
+          pathName: product?.groupPath ?? undefined,
+          buyPrice: {
+            value: position.buyPriceCentsPerUnit ?? product?.buyPriceCents ?? 0,
+          },
+        },
+        quantity: position.quantity.toNumber(),
+        price: position.priceCentsPerUnit,
+      };
+    }),
+  }));
+}
 
-    const totalSize = result.data.meta?.size;
-    offset += pageRows.length;
+async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Promise<CashoutRow[]> {
+  const rows = await prisma.cashExpenseOrder.findMany({
+    where: {
+      expenseDate: { gte: dateFrom, lte: dateTo },
+      status: "posted",
+    },
+    include: {
+      counterparty: true,
+      expenseItem: true,
+    },
+    orderBy: { expenseDate: "asc" },
+  });
 
-    if (pageRows.length < pageLimit) break;
-    if (typeof totalSize === "number" && offset >= totalSize) break;
-  }
-
-  return cashouts;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.number,
+    moment: `${row.expenseDate} 00:00:00`,
+    sum: row.amountCents,
+    applicable: row.status === "posted",
+    paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment ?? "",
+    description: row.comment ?? "",
+    agent: { name: row.counterparty?.name ?? row.counterpartyName ?? "" },
+    expenseItem: { name: row.expenseItem?.name ?? row.expenseItemName ?? "" },
+  }));
 }
 
 /** Кто фактически был на смене по дням (shiftDate -> login[]) */

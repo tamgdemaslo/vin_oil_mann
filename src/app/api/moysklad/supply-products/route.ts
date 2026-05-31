@@ -1,20 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { moyskladFetch } from "@/lib/moysklad";
-
-type ProductRow = {
-  id: string;
-  name: string;
-  code?: string;
-  article?: string;
-  meta: { href: string; type: string; mediaType: string };
-  buyPrice?: { value?: number; currency?: { name?: string } };
-  salePrices?: { value?: number; currency?: { name?: string } }[];
-};
-
-function moneyFromCents(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value / 100 : 0;
-}
+import { searchLocalProducts } from "@/lib/local-inventory-read";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -29,30 +15,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ products: [] });
   }
 
-  const qs = new URLSearchParams();
-  qs.set("search", search);
-  qs.set("limit", String(limit));
-  qs.set("filter", "archived=false");
-
-  const result = await moyskladFetch<{ rows?: ProductRow[] }>(
-    `/entity/product?${qs.toString()}`,
-    { cache: "no-store" }
-  );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
-  const products = (result.data.rows ?? []).map((row) => {
-    const buyPrice = moneyFromCents(row.buyPrice?.value);
-    const salePrice = moneyFromCents(row.salePrices?.[0]?.value);
-    return {
+  const local = await searchLocalProducts({ search, limit });
+  return NextResponse.json({
+    products: local.products.map((row) => ({
       id: row.id,
       name: row.name,
       code: row.article ?? row.code ?? "",
-      price: buyPrice,
-      salePrice,
-      currency: row.buyPrice?.currency?.name ?? row.salePrices?.[0]?.currency?.name ?? "руб.",
+      price: row.cost ?? (row.buyPriceCents != null ? row.buyPriceCents / 100 : 0),
+      salePrice: row.price,
+      currency: row.currency,
       meta: row.meta,
-    };
+    })),
   });
-
-  return NextResponse.json({ products });
 }

@@ -1,53 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { buildSupplyCreatePayload, type CreateSupplyBody } from "@/lib/supply-create-payload";
-import { moyskladFetch } from "@/lib/moysklad";
-import { warmMoySkladLookupCaches } from "@/lib/moysklad-lookup-warmup";
-
-type Meta = { href: string; type: string; mediaType: string };
-
-type SupplyRow = {
-  id: string;
-  name: string;
-  moment: string;
-  applicable: boolean;
-  sum?: number;
-  payedSum?: number;
-  incomingNumber?: string;
-  incomingDate?: string;
-  description?: string;
-  meta: { href: string };
-  agent?: { name?: string };
-  organization?: { name?: string };
-  store?: { name?: string };
-};
-
-type SupplyCreateResult = {
-  id: string;
-  name: string;
-  moment?: string;
-  applicable?: boolean;
-  sum?: number;
-  meta: Meta;
-};
-
-function mapSupplyRow(row: SupplyRow) {
-  return {
-    id: row.id,
-    name: row.name,
-    moment: row.moment,
-    applicable: row.applicable,
-    sum: row.sum ?? 0,
-    payedSum: row.payedSum ?? 0,
-    incomingNumber: row.incomingNumber ?? "",
-    incomingDate: row.incomingDate ?? "",
-    description: row.description ?? "",
-    href: row.meta?.href,
-    agentName: row.agent?.name ?? "",
-    organizationName: row.organization?.name ?? "",
-    storeName: row.store?.name ?? "",
-  };
-}
+import { createLocalStockDocument, listLocalStockDocuments } from "@/lib/local-inventory-admin";
+import { type CreateSupplyBody } from "@/lib/supply-create-payload";
+import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -57,22 +12,24 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "30", 10) || 30);
   const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
 
-  const qs = new URLSearchParams();
-  qs.set("limit", String(limit));
-  qs.set("offset", String(offset));
-  qs.set("order", "moment,desc");
-  qs.set("expand", "agent,organization,store");
-  if (search.trim()) qs.set("search", search.trim());
-
-  const result = await moyskladFetch<{ meta: { size: number; limit: number; offset: number }; rows: SupplyRow[] }>(
-    `/entity/supply?${qs.toString()}`,
-    { cache: "no-store" }
-  );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
+  const local = await listLocalStockDocuments({ type: "receipt", search, limit, offset });
   return NextResponse.json({
-    meta: result.data.meta,
-    rows: (result.data.rows ?? []).map(mapSupplyRow),
+    meta: { size: local.meta.total, limit, offset, source: "local" },
+    rows: local.documents.map((document) => ({
+      id: document.id,
+      name: document.name,
+      moment: document.moment,
+      applicable: document.applicable,
+      sum: Math.round(document.sum * 100),
+      payedSum: document.invoice?.status === "paid" ? Math.round(document.sum * 100) : 0,
+      incomingNumber: document.invoice?.number ?? "",
+      incomingDate: document.invoice?.invoiceDate ?? document.documentDate,
+      description: document.description,
+      href: `local://receipt/${document.id}`,
+      agentName: document.counterpartyName,
+      organizationName: "",
+      storeName: document.storeName,
+    })),
   });
 }
 
@@ -98,21 +55,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Добавьте хотя бы одну позицию приёмки" }, { status: 400 });
   }
 
-  const payload = buildSupplyCreatePayload({ ...body, positions: validPositions });
-  const result = await moyskladFetch<SupplyCreateResult>(
-    "/entity/supply",
-    { method: "POST", body: JSON.stringify(payload), cache: "no-store" }
+  const result = await createLocalStockDocument(
+    {
+      type: "receipt",
+      storeId: extractMoyskladEntityId(body.store.meta.href) ?? body.store.meta.href,
+      counterpartyId: extractMoyskladEntityId(body.agent.meta.href) ?? body.agent.meta.href,
+      documentDate: (body.incomingDate || body.moment || new Date().toISOString()).slice(0, 10),
+      moment: body.moment,
+      description: body.description,
+      applicable: body.applicable !== false,
+      positions: validPositions.map((position) => ({
+        productId: extractMoyskladEntityId(position.assortment.meta.href) ?? position.assortment.meta.href,
+        quantity: Number(position.quantity) || 1,
+        price: Number(position.price) || 0,
+      })),
+    },
+    session.user
   );
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
-
-  warmMoySkladLookupCaches("supply-created");
-
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({
-    id: result.data.id,
-    name: result.data.name,
-    moment: result.data.moment,
-    applicable: result.data.applicable,
-    sum: result.data.sum ?? 0,
-    href: result.data.meta?.href,
+    id: result.document.id,
+    name: result.document.name,
+    moment: body.moment,
+    applicable: body.applicable !== false,
+    sum: Math.round(validPositions.reduce((sum, position) => {
+      const quantity = Number(position.quantity) || 1;
+      const price = Number(position.price) || 0;
+      const discount = Number(position.discount) || 0;
+      return sum + quantity * price * (1 - Math.min(100, Math.max(0, discount)) / 100);
+    }, 0) * 100),
+    href: `local://receipt/${result.document.id}`,
   });
 }

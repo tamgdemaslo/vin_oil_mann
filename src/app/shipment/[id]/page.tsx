@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
 import MoneyInput from "@/components/MoneyInput";
+import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -159,7 +160,6 @@ type DetailResponse = {
 };
 
 const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
-const MOYSKLAD_BASE = "https://api.moysklad.ru/api/remap/1.2";
 
 const FILTER_SECTION_META = {
   "oil-filter": { title: "Масляные фильтры", accent: "amber" },
@@ -560,13 +560,11 @@ export default function ShipmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
-  const [showRaw, setShowRaw] = useState(false);
   const [attributes, setAttributes] = useState<DemandAttribute[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [vin, setVin] = useState("");
@@ -580,18 +578,6 @@ export default function ShipmentDetailPage() {
   const [manualEnginePower, setManualEnginePower] = useState("");
   const [showVehicleOverrideDialog, setShowVehicleOverrideDialog] = useState(false);
   const [vehicleOverridePromptVin, setVehicleOverridePromptVin] = useState("");
-  const [printTemplate, setPrintTemplate] = useState<
-    | "default"
-    | "birka_own"
-    | "birka_box"
-    | "job_order"
-    | "eco_poster"
-    | "eco_poster_akpp_partial"
-    | "eco_poster_akpp_full"
-    | "under_hood_tags"
-    | "under_hood_tags_akpp_partial"
-    | "under_hood_tags_akpp_full"
-  >("eco_poster");
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
   const [productMannName, setProductMannName] = useState("");
@@ -654,6 +640,10 @@ export default function ShipmentDetailPage() {
           return;
         }
         if (cancelled) return;
+        if (json.header && !json.header.applicable) {
+          router.replace(`/shipment/${id}/edit`);
+          return;
+        }
         setData(json);
         setDescription(json.header.description ?? "");
         setApplicable(Boolean(json.header.applicable));
@@ -817,7 +807,7 @@ export default function ShipmentDetailPage() {
         const capped = maxAvailable > 0 ? Math.min(desiredQuantity, maxAvailable) : 0;
         if (capped <= 0) continue;
         const meta: Meta = {
-          href: `${MOYSKLAD_BASE}/entity/product/${it.productId}`,
+          href: `local://product/${it.productId}`,
           type: "product",
           mediaType: "application/json",
         };
@@ -942,7 +932,7 @@ export default function ShipmentDetailPage() {
           positions: positions.map((p) => ({
             id: p.id,
             quantity: p.quantity,
-            // обратно в копейки для API МойСклад
+            // обратно в копейки для локального API
             price: Math.round((p.price || 0) * 100),
             discount: typeof p.discount === "number" ? p.discount : 0,
             assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
@@ -991,8 +981,8 @@ export default function ShipmentDetailPage() {
         setError(typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку");
         return;
       }
-      if (json.id) router.push(`/shipment/${json.id}`);
-      else setError("МойСклад не вернул id новой отгрузки");
+      if (json.id) router.push(`/shipment/${json.id}/edit?copied=1`);
+      else setError("Локальная БД не вернула id новой отгрузки");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
@@ -1002,7 +992,7 @@ export default function ShipmentDetailPage() {
 
   async function handleDeleteShipment() {
     if (!id) return;
-    if (!window.confirm("Удалить отгрузку в МойСклад? Действие необратимо.")) return;
+    if (!window.confirm("Удалить локальную отгрузку? Действие необратимо.")) return;
     setRemoving(true);
     setError(null);
     setPaymentInfo(null);
@@ -1133,6 +1123,7 @@ export default function ShipmentDetailPage() {
   const vehicleVolume = getAttrValue(/^объем$/i);
   const vehicleOil = getAttrValue(/моторное масло/i);
   const documentVin = vin || getAttrValue(/vin/i);
+  const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
   const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
   const positionsDiscount = positions.reduce((sum, p) => {
     const base = (p.quantity || 0) * (p.price || 0);
@@ -1169,37 +1160,16 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={() => void handleDuplicate()}
-            disabled={saving || printing || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing}
             className="eco-shipment-detail-link-action"
           >
             {duplicating ? "Копирование…" : "Копировать"}
           </button>
-          <a href={`/api/demands/${data.header.id}/job-order`} className="eco-shipment-detail-action">
-            Заказ-наряд
-          </a>
-          <button
-            type="button"
-            onClick={async () => {
-              setPrinting(true);
-              setError(null);
-              try {
-                const saved = await saveShipment();
-                if (saved) window.open(`/shipment/${data.header.id}/tags?autoprint=1`, "_blank");
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Ошибка печати");
-              } finally {
-                setPrinting(false);
-              }
-            }}
-            disabled={saving || printing || paying || duplicating || removing}
-            className="eco-shipment-detail-action"
-          >
-            Наклейка
-          </button>
+          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} />
           <button
             type="button"
             onClick={handlePayment}
-            disabled={saving || printing || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing}
             className="eco-shipment-detail-action is-primary"
           >
             {paying ? "Открываем…" : "Открыть предчек"}
@@ -1430,7 +1400,7 @@ export default function ShipmentDetailPage() {
           <section className="eco-shipment-detail-table-card">
             {activeDetailTab === "positions" && (
               <div className="eco-shipment-detail-tab-panel">
-                <div className="eco-shipment-detail-product-search">
+                {!applicable && <div className="eco-shipment-detail-product-search">
                   <label className="eco-shipment-detail-search-main">
                     <span>Добавить товар</span>
                     <Search aria-hidden />
@@ -1484,7 +1454,7 @@ export default function ShipmentDetailPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </div>}
 
                 {positions.length > 0 ? (
                   <div className="eco-shipment-detail-table-wrap">
@@ -1492,13 +1462,13 @@ export default function ShipmentDetailPage() {
                       <thead>
                         <tr>
                           <th>#</th>
-                          <th>Артикул / название</th>
-                          <th>Ячейка</th>
-                          <th>Тип</th>
+                          <th>Товар</th>
+                          <th>Наличие</th>
+                          <th className="is-num">Скидка</th>
                           <th className="is-num">Кол.</th>
                           <th className="is-num">Цена</th>
                           <th className="is-num">Сумма</th>
-                          <th className="is-num">Действия</th>
+                          {!applicable && <th className="is-action">Действия</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -1508,66 +1478,117 @@ export default function ShipmentDetailPage() {
                           const type = p.assortmentMeta?.type === "service" ? "услуга" : "товар";
                           const productHref = localProductHref(p);
                           const sourceProductId = productIdFromMeta(p.assortmentMeta);
+                          const availabilityDetails = [
+                            p.slotName ? <strong key="slot">{p.slotName}</strong> : null,
+                            typeof p.stock?.quantity === "number" ? <span key="qty">Остаток: {p.stock.quantity}</span> : null,
+                            typeof p.stock?.reserve === "number" ? <span key="reserve">Резерв: {p.stock.reserve}</span> : null,
+                            typeof p.stock?.available === "number" ? <span key="available">Доступно: {p.stock.available}</span> : null,
+                          ].filter(Boolean);
                           return (
                             <tr key={p.id ?? `summary-${index}`}>
                               <td className="is-mono">{String(index + 1).padStart(2, "0")}</td>
-                              <td>
+                              <td className="eco-position-product-cell">
                                 {productHref ? (
                                   <Link className="eco-shipment-detail-product-link" href={productHref}>
-                                    <strong>{p.name}</strong>
+                                    <strong><span>{p.name}</span></strong>
                                     <ExternalLink aria-hidden />
                                   </Link>
                                 ) : (
                                   <strong>{p.name}</strong>
                                 )}
-                                <span>{sourceProductId || "локальная карточка"}</span>
+                                <span>{sourceProductId || "локальная карточка"} · {type}</span>
                               </td>
-                              <td className="is-mono">{p.slotName || "—"}</td>
-                              <td><span className="eco-shipment-detail-type">{type}</span></td>
-                              <td className="is-num">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.1}
-                                  inputMode="decimal"
-                                  value={p.quantity}
-                                  onChange={(e) => {
-                                    const q = parseDecimalInput(e.target.value);
-                                    const next = [...positions];
-                                    next[index] = { ...p, quantity: q };
-                                    setPositions(next);
-                                  }}
-                                  className="eco-shipment-detail-qty-input"
-                                />
+                              <td>
+                                <div className="eco-position-availability">
+                                  {availabilityDetails.length > 0 ? availabilityDetails : <span>—</span>}
+                                </div>
                               </td>
                               <td className="is-num">
-                                <MoneyInput
-                                  value={p.price}
-                                  onValueChange={(val) => {
-                                    const next = [...positions];
-                                    next[index] = { ...p, price: val };
-                                    setPositions(next);
-                                  }}
-                                  className="eco-shipment-detail-money-input"
-                                />
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{discount ? `${discount.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%` : "—"}</span>
+                                ) : (
+                                  <div className="eco-position-discount">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      step={0.1}
+                                      value={p.discount ?? 0}
+                                      onChange={(e) => {
+                                        const percent = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                                        const next = [...positions];
+                                        next[index] = { ...p, discountMode: "percent", discount: percent };
+                                        setPositions(next);
+                                      }}
+                                      className="eco-position-edit-input is-discount"
+                                    />
+                                    <select value="percent" disabled aria-label="Тип скидки">
+                                      <option value="percent">%</option>
+                                    </select>
+                                  </div>
+                                )}
                               </td>
-                              <td className="is-num is-mono">{lineTotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</td>
                               <td className="is-num">
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{p.quantity}</span>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    inputMode="decimal"
+                                    value={p.quantity}
+                                    onChange={(e) => {
+                                      const q = parseDecimalInput(e.target.value);
+                                      const next = [...positions];
+                                      next[index] = { ...p, quantity: q };
+                                      setPositions(next);
+                                    }}
+                                    className="eco-position-edit-input is-qty"
+                                  />
+                                )}
+                              </td>
+                              <td className="is-num">
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{p.price.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                ) : (
+                                  <MoneyInput
+                                    value={p.price}
+                                    onValueChange={(val) => {
+                                      const next = [...positions];
+                                      next[index] = { ...p, price: val };
+                                      setPositions(next);
+                                    }}
+                                    className="eco-position-edit-input is-price"
+                                  />
+                                )}
+                              </td>
+                              <td className="is-num">
+                                <strong className="eco-position-line-total">{lineTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</strong>
+                              </td>
+                              {!applicable && <td className="is-action">
                                 <button
                                   type="button"
-                                  className="eco-shipment-detail-delete-btn"
+                                  className="eco-position-row-action"
                                   onClick={() => setPositions((prev) => prev.filter((_, i) => i !== index))}
                                   aria-label={`Удалить ${p.name}`}
-                                  title="Удалить"
+                                  title="Удалить позицию"
                                 >
                                   <Trash2 aria-hidden />
                                 </button>
-                              </td>
+                              </td>}
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
+                    <div className="eco-shipment-new-table-foot">
+                      <span>Позиций: {positions.length}</span>
+                      <span>Кол-во всего: {positionsQty}</span>
+                      <strong>
+                        Итого: {positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+                      </strong>
+                    </div>
                   </div>
                 ) : (
                   <div className="eco-shipment-detail-empty">В отгрузке пока нет позиций. Найдите товар выше и добавьте его в документ.</div>
@@ -1636,7 +1657,7 @@ export default function ShipmentDetailPage() {
                       {vinLookupResult.moySkladItems.length > 0 ? (
                         <div className="eco-shipment-detail-vin-items">
                           <div className="eco-shipment-detail-vin-items-head">
-                            <strong>Найдено в МойСклад: {vinLookupResult.moySkladItems.length}</strong>
+                            <strong>Найдено в локальном каталоге: {vinLookupResult.moySkladItems.length}</strong>
                             <button
                               type="button"
                               onClick={() => addFromVinLookup(vinLookupResult.moySkladItems.filter((item) => item.quantity > 0))}
@@ -1694,14 +1715,6 @@ export default function ShipmentDetailPage() {
                       </label>
                     ))}
                 </div>
-                {data.raw ? (
-                  <div className="eco-shipment-detail-raw">
-                    <button type="button" onClick={() => setShowRaw((v) => !v)}>
-                      {showRaw ? "Скрыть все поля МойСклад" : "Показать все поля МойСклад (JSON)"}
-                    </button>
-                    {showRaw ? <pre>{JSON.stringify(data.raw, null, 2)}</pre> : null}
-                  </div>
-                ) : null}
               </div>
             )}
 
@@ -1721,106 +1734,17 @@ export default function ShipmentDetailPage() {
                     />
                     <span>Проведён</span>
                   </label>
-                  <label>
-                    <span>Шаблон печати</span>
-                    <select
-                      value={printTemplate}
-                      onChange={(e) =>
-                        setPrintTemplate(
-                          e.target.value as
-                            | "default"
-                            | "birka_own"
-                            | "birka_box"
-                            | "job_order"
-                            | "eco_poster"
-                            | "eco_poster_akpp_partial"
-                            | "eco_poster_akpp_full"
-                            | "under_hood_tags"
-                            | "under_hood_tags_akpp_partial"
-                            | "under_hood_tags_akpp_full"
-                        )
-                      }
-                    >
-                      <optgroup label="Печать из CRM">
-                        <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
-                        <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
-                        <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
-                        <option value="under_hood_tags">Бирка под капот</option>
-                        <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная</option>
-                        <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная</option>
-                      </optgroup>
-                      <optgroup label="Шаблоны МойСклад">
-                        <option value="default">Основной</option>
-                        <option value="birka_own">Бирка со своим</option>
-                        <option value="birka_box">Бирка коробка</option>
-                        <option value="job_order">Заказ-наряд (файл из МС)</option>
-                      </optgroup>
-                    </select>
-                  </label>
                   {error ? <p className="is-error">{error}</p> : null}
                   {paymentInfo ? <p className="is-success">{paymentInfo}</p> : null}
                   <div className="eco-shipment-detail-precheck-actions">
-                    <button type="button" onClick={handleSave} disabled={saving || printing || paying || duplicating || removing}>
+                    <button type="button" onClick={handleSave} disabled={saving || paying || duplicating || removing}>
                       {saving ? "Сохранение..." : "Сохранить"}
                     </button>
-                    <button type="button" onClick={handlePayment} disabled={saving || printing || paying || duplicating || removing}>
+                    <button type="button" onClick={handlePayment} disabled={saving || paying || duplicating || removing}>
                       {paying ? "Открытие..." : "Предчек / оплата"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setPrinting(true);
-                        setError(null);
-                        try {
-                          const saved = await saveShipment();
-                          if (!saved) return;
-                          const crmVariant = (tpl: string): string | null => {
-                            if (tpl.endsWith("_akpp_partial")) return "akpp_partial";
-                            if (tpl.endsWith("_akpp_full")) return "akpp_full";
-                            return null;
-                          };
-                          const crmPrintQuery = (tpl: string) => {
-                            const v = crmVariant(tpl);
-                            const parts = ["autoprint=1"];
-                            if (v) parts.unshift(`variant=${encodeURIComponent(v)}`);
-                            return `?${parts.join("&")}`;
-                          };
-                          if (printTemplate.startsWith("eco_poster")) {
-                            window.open(`/shipment/${data.header.id}/poster${crmPrintQuery(printTemplate)}`, "_blank");
-                            return;
-                          }
-                          if (printTemplate.startsWith("under_hood_tags")) {
-                            window.open(`/shipment/${data.header.id}/tags${crmPrintQuery(printTemplate)}`, "_blank");
-                            return;
-                          }
-                          const res = await fetch(`/api/demands/${data.header.id}/print`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ templateKey: printTemplate }),
-                          });
-                          const json = await res.json();
-                          if (!res.ok) {
-                            setError(json.error ?? "Ошибка печати");
-                            return;
-                          }
-                          if (json.location) {
-                            window.open(json.location, "_blank");
-                          } else {
-                            setError("МойСклад не вернул ссылку на файл печати.");
-                          }
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Ошибка печати");
-                        } finally {
-                          setPrinting(false);
-                        }
-                      }}
-                      disabled={printing || saving || paying || duplicating || removing}
-                    >
-                      {printing ? "Печать..." : "Печать"}
-                    </button>
-                    <a href={`/api/demands/${data.header.id}/job-order`}>Заказ-наряд Excel</a>
-                    {data.header.href ? <a href={data.header.href} target="_blank" rel="noreferrer">МойСклад</a> : null}
-                    <button type="button" className="is-danger" onClick={() => void handleDeleteShipment()} disabled={saving || printing || paying || duplicating || removing}>
+                    <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} align="left" />
+                    <button type="button" className="is-danger" onClick={() => void handleDeleteShipment()} disabled={saving || paying || duplicating || removing}>
                       {removing ? "Удаление..." : "Удалить"}
                     </button>
                   </div>
@@ -1878,14 +1802,6 @@ export default function ShipmentDetailPage() {
                 <strong>Диагностика</strong>
                 <span>{diagnosticRemote ? `${diagnosticRemote.status} · 🟢${diagnosticRemote.summaryGreen} 🟡${diagnosticRemote.summaryYellow} 🔴${diagnosticRemote.summaryRed}` : "не создана"}</span>
               </div>
-              <div>
-                <strong>МойСклад</strong>
-                {data.header.href ? (
-                  <a href={data.header.href} target="_blank" rel="noreferrer">открыть документ →</a>
-                ) : (
-                  <span>ссылка не указана</span>
-                )}
-              </div>
             </div>
           </section>
         </aside>
@@ -1929,7 +1845,7 @@ export default function ShipmentDetailPage() {
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <p className="mb-2 w-full text-xs text-zinc-500">
-              Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры, найдём товары в МойСклад.
+              Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры, найдём товары в локальном каталоге.
             </p>
             <button
               type="button"
@@ -2097,7 +2013,7 @@ export default function ShipmentDetailPage() {
                     if (allItems.length === 0) {
                       return (
                         <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
-                          В МойСклад по этому VIN позиции не подобраны (совпадений по OEM/допуску не найдено или нет доступа к складу).
+                          В локальном каталоге по этому VIN позиции не подобраны (совпадений по OEM/допуску не найдено или нет доступа к складу).
                         </div>
                       );
                     }
@@ -2564,7 +2480,7 @@ export default function ShipmentDetailPage() {
                             </div>
                           ) : (
                             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
-                              Подходящих масел по допуску не найдено в каталоге МойСклад.
+                              Подходящих масел по допуску не найдено в локальном каталоге.
                             </div>
                           );
                         })()}
@@ -2674,7 +2590,7 @@ export default function ShipmentDetailPage() {
       {attributes.length > 0 && (
         <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
           <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-            Дополнительные поля МойСклад
+            Дополнительные поля документа
           </h2>
           <dl className="grid gap-2 sm:grid-cols-2">
             {attributes
@@ -3030,7 +2946,7 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || printing || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
           >
             {saving ? "Сохранение…" : "Сохранить"}
@@ -3038,118 +2954,22 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handlePayment}
-            disabled={saving || printing || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
           >
             {paying ? "Открытие предчека…" : "Предчек / оплата"}
           </button>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500">Шаблон</label>
-            <select
-              value={printTemplate}
-              onChange={(e) =>
-                setPrintTemplate(
-                  e.target.value as
-                    | "eco_poster"
-                    | "eco_poster_akpp_partial"
-                    | "eco_poster_akpp_full"
-                    | "under_hood_tags"
-                    | "under_hood_tags_akpp_partial"
-                    | "under_hood_tags_akpp_full"
-                )
-              }
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
-            >
-              <option value="eco_poster">Заказ-наряд — постер Эко (А4)</option>
-              <option value="eco_poster_akpp_partial">Заказ-наряд — постер · АКПП частичная (+20 тыс. км)</option>
-              <option value="eco_poster_akpp_full">Заказ-наряд — постер · АКПП полная (+60 тыс. км)</option>
-              <option value="under_hood_tags">Бирка под капот (интервал из настроек)</option>
-              <option value="under_hood_tags_akpp_partial">Бирка под капот · АКПП частичная (+20 тыс. км)</option>
-              <option value="under_hood_tags_akpp_full">Бирка под капот · АКПП полная (+60 тыс. км)</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              setPrinting(true);
-              setError(null);
-              try {
-                const saved = await saveShipment();
-                if (!saved) return;
-
-                const crmVariant = (tpl: string): string | null => {
-                  if (tpl.endsWith("_akpp_partial")) return "akpp_partial";
-                  if (tpl.endsWith("_akpp_full")) return "akpp_full";
-                  return null;
-                };
-                const crmPrintQuery = (tpl: string) => {
-                  const v = crmVariant(tpl);
-                  const parts = ["autoprint=1"];
-                  if (v) parts.unshift(`variant=${encodeURIComponent(v)}`);
-                  return `?${parts.join("&")}`;
-                };
-                if (printTemplate.startsWith("eco_poster")) {
-                  window.open(`/shipment/${data.header.id}/poster${crmPrintQuery(printTemplate)}`, "_blank");
-                  return;
-                }
-                if (printTemplate.startsWith("under_hood_tags")) {
-                  window.open(`/shipment/${data.header.id}/tags${crmPrintQuery(printTemplate)}`, "_blank");
-                  return;
-                }
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Ошибка печати");
-              } finally {
-                setPrinting(false);
-              }
-            }}
-            disabled={printing || saving || paying || duplicating || removing}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            {printing ? "Печать…" : "Печать"}
-          </button>
-          <a
-            href={`/api/demands/${data.header.id}/job-order`}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Заказ-наряд (Excel)
-          </a>
-          {data.header.href && (
-            <a
-              href={data.header.href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-zinc-600 underline-offset-4 hover:underline dark:text-zinc-300"
-            >
-              Открыть в МойСклад →
-            </a>
-          )}
+          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} align="left" />
           <button
             type="button"
             onClick={() => void handleDeleteShipment()}
-            disabled={saving || printing || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing}
             className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
           >
             {removing ? "Удаление…" : "Удалить"}
           </button>
         </div>
       </div>
-
-      {data.raw ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <button
-            type="button"
-            onClick={() => setShowRaw((v) => !v)}
-            className="mb-3 text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-200"
-          >
-            {showRaw ? "Скрыть все поля МойСклад" : "Показать все поля МойСклад (JSON)"}
-          </button>
-          {showRaw && (
-            <div className="max-h-96 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-xs font-mono text-zinc-800 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100">
-              <pre>{JSON.stringify(data.raw, null, 2)}</pre>
-            </div>
-          )}
-        </div>
-      ) : null}
 
       </div>
 

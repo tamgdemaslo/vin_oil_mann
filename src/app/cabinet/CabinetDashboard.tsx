@@ -1,15 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, CreditCard, KeyRound, ShieldCheck } from "lucide-react";
+import { CalendarDays, CreditCard, KeyRound, Plug, ShieldCheck } from "lucide-react";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
 
-export default function CabinetDashboard() {
+type CabinetDashboardProps = {
+  role?: "owner" | "admin" | "master";
+};
+
+export default function CabinetDashboard({ role }: CabinetDashboardProps) {
+  const canManageIntegrations = role === "owner" || role === "admin";
   const links = [
     { href: "/cabinet/salary", label: "Зарплата", description: "Начисления, выплаты и детализация периода.", icon: CreditCard },
     { href: "/cabinet/shifts", label: "Смены", description: "История и рабочие смены сотрудника.", icon: CalendarDays },
     { href: "/cabinet/analytics", label: "Аналитика", description: "Показатели и расчётные блоки для руководителя.", icon: ShieldCheck },
+    ...(canManageIntegrations
+      ? [{ href: "/cabinet/integrations", label: "Интеграции", description: "Статус и ручные служебные запуски.", icon: Plug }]
+      : []),
   ];
 
   return (

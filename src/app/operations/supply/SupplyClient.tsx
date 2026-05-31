@@ -374,7 +374,7 @@ export default function SupplyClient() {
             Приёмка
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-            Создание документов поступления товаров в МойСклад и быстрый контроль последних приёмок.
+            Создание документов поступления товаров в локальной БД и быстрый контроль последних приёмок.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -688,7 +688,7 @@ export default function SupplyClient() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Журнал приёмок</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Последние документы из МойСклад.</p>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Последние локальные документы.</p>
             </div>
             <form
               className="flex gap-2"

@@ -18,6 +18,7 @@
     "db:deploy": "prisma db push --skip-generate",
     "db:migrate": "prisma migrate dev",
     "import:moysklad": "node scripts/import-from-moysklad.mjs",
+    "sync:moysklad:last-days": "node scripts/sync-moysklad-last-days.mjs",
     "moysklad:token": "node scripts/refresh-moysklad-token.mjs"
   },
   "dependencies": {

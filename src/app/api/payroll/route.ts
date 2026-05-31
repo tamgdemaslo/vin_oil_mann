@@ -14,11 +14,10 @@ function isDatabaseUnavailable(error: unknown) {
   );
 }
 
-/** Сообщения из расчёта зарплаты / МойСклад — можно показать пользователю без утечки стека. */
+/** Сообщения из расчёта зарплаты — можно показать пользователю без утечки стека. */
 function clientSafePayrollErrorMessage(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   const m = error.message;
-  if (m.includes("МойСклад") || m.includes("Таймаут запроса к МойСклад")) return m;
   if (m.startsWith("Не удалось загрузить ")) return m;
   return null;
 }

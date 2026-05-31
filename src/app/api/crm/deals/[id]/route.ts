@@ -5,6 +5,29 @@ import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
 type CounterpartyInput = { id?: unknown; name?: unknown; meta?: { href?: unknown } };
+const CLIENT_TYPES = new Set(["new_lead", "regular", "repeat", "unlinked"]);
+const LEGACY_DEAL_SELECT = {
+  id: true,
+  title: true,
+  customerName: true,
+  phoneNormalized: true,
+  vehicle: true,
+  source: true,
+  amountCents: true,
+  stageId: true,
+  responsibleLogin: true,
+  moyskladCounterpartyId: true,
+  moyskladCounterpartyName: true,
+  moyskladCounterpartyHref: true,
+  yclientsRecordId: true,
+  moyskladDemandId: true,
+  nextContactAt: true,
+  status: true,
+  notes: true,
+  createdByLogin: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 function parseOptionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -24,6 +47,17 @@ function parseDate(value: unknown): Date | null | undefined {
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseClientType(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  const raw = parseOptionalString(value);
+  return raw && CLIENT_TYPES.has(raw) ? raw : null;
+}
+
+function isClosedStageName(value: string) {
+  const name = value.toLowerCase();
+  return name.includes("закры") || name.includes("оплач") || name.includes("выиг") || name.includes("lost");
 }
 
 function parseCounterparty(value: unknown) {
@@ -58,6 +92,28 @@ function databaseHint(error: unknown) {
   );
 }
 
+function isMissingCrmCaseColumns(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("crm_deals.client_type") ||
+    message.includes("crm_deals.next_action") ||
+    message.includes("crm_deals.supplies_note") ||
+    message.includes("crm_deals.close_reason") ||
+    (message.includes("column") && message.includes("does not exist") && message.includes("crm_deals"))
+  );
+}
+
+function stripCaseUpdateFields(data: Record<string, unknown>) {
+  const next = { ...data };
+  delete next.clientType;
+  delete next.nextAction;
+  delete next.suppliesNote;
+  delete next.suppliesSupplier;
+  delete next.suppliesExpectedAt;
+  delete next.closeReason;
+  return next;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -70,12 +126,14 @@ export async function PATCH(
     const body = await request.json().catch(() => ({}));
     const data: Record<string, unknown> = {};
 
-    if (body.title !== undefined) data.title = parseOptionalString(body.title) ?? "Новая сделка";
+    if (body.title !== undefined) data.title = parseOptionalString(body.title) ?? "Новое дело клиента";
     if (body.customerName !== undefined) data.customerName = parseOptionalString(body.customerName);
     if (body.phone !== undefined) data.phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
     if (body.vehicle !== undefined) data.vehicle = parseOptionalString(body.vehicle);
     if (body.source !== undefined) data.source = parseOptionalString(body.source);
     if (body.amount !== undefined) data.amountCents = parseAmountCents(body.amount);
+    if (body.clientType !== undefined) data.clientType = parseClientType(body.clientType);
+    if (body.nextAction !== undefined) data.nextAction = parseOptionalString(body.nextAction);
     if (body.responsibleLogin !== undefined) data.responsibleLogin = parseOptionalString(body.responsibleLogin);
     if (body.moyskladCounterparty !== undefined) {
       const counterparty = parseCounterparty(body.moyskladCounterparty);
@@ -85,7 +143,11 @@ export async function PATCH(
     }
     if (body.yclientsRecordId !== undefined) data.yclientsRecordId = parseOptionalString(body.yclientsRecordId);
     if (body.moyskladDemandId !== undefined) data.moyskladDemandId = parseOptionalString(body.moyskladDemandId);
+    if (body.suppliesNote !== undefined) data.suppliesNote = parseOptionalString(body.suppliesNote);
+    if (body.suppliesSupplier !== undefined) data.suppliesSupplier = parseOptionalString(body.suppliesSupplier);
+    if (body.suppliesExpectedAt !== undefined) data.suppliesExpectedAt = parseDate(body.suppliesExpectedAt);
     if (body.nextContactAt !== undefined) data.nextContactAt = parseDate(body.nextContactAt);
+    if (body.closeReason !== undefined) data.closeReason = parseOptionalString(body.closeReason);
     if (body.notes !== undefined) data.notes = parseOptionalString(body.notes);
     if (body.status !== undefined) {
       const status = parseOptionalString(body.status);
@@ -97,12 +159,30 @@ export async function PATCH(
       const stage = await prisma.crmStage.findUnique({ where: { id: stageId } });
       if (!stage) return NextResponse.json({ error: "Стадия не найдена" }, { status: 404 });
       data.stageId = stageId;
+      if (body.status === undefined) data.status = isClosedStageName(stage.name) ? "won" : "open";
     }
 
-    const updated = await prisma.crmDeal.update({
-      where: { id },
-      data,
-    });
+    let updated;
+    try {
+      updated = await prisma.crmDeal.update({
+        where: { id },
+        data,
+      });
+    } catch (error) {
+      if (!isMissingCrmCaseColumns(error)) throw error;
+      const legacyData = stripCaseUpdateFields(data);
+      updated =
+        Object.keys(legacyData).length > 0
+          ? await prisma.crmDeal.update({
+              where: { id },
+              data: legacyData,
+              select: LEGACY_DEAL_SELECT,
+            })
+          : await prisma.crmDeal.findUnique({
+              where: { id },
+              select: LEGACY_DEAL_SELECT,
+            });
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

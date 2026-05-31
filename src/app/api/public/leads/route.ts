@@ -153,6 +153,8 @@ export async function POST(request: NextRequest) {
         phoneNormalized,
         vehicle: vehicle ?? (vin ? `VIN ${vin}` : null),
         source: "client-site",
+        clientType: "new_lead",
+        nextAction: "Перезвонить клиенту",
         stageId: firstStage.id,
         responsibleLogin,
         nextContactAt: preferred.date,

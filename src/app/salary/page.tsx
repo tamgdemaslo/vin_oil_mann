@@ -8,6 +8,7 @@ export default async function SalaryPage() {
     <SalaryDashboard
       role={session.user.role}
       login={session.user.login}
+      name={session.user.name}
       isOwner={session.user.role === "owner"}
     />
   );

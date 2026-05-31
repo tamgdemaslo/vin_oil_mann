@@ -24,7 +24,7 @@ export type CreateSupplyBody = {
   positions?: SupplyPositionInput[];
 };
 
-/** Тело POST /entity/supply (цены позиций — в копейках для API МойСклад). */
+/** Совместимое тело приёмки (цены позиций — в копейках для локального API). */
 export function buildSupplyCreatePayload(body: CreateSupplyBody): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     organization: body.organization,

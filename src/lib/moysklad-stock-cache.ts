@@ -1,4 +1,4 @@
-import { MOYSKLAD_BASE, moyskladFetch } from "@/lib/moysklad";
+import { prisma } from "@/lib/db";
 
 const LOOKUP_STOCK_CACHE_TTL_MS = Math.max(
   30_000,
@@ -23,8 +23,25 @@ let stockByStoreReportCache: StockCache | null = null;
 let stockByStoreReportInFlight: Promise<StockCache> | null = null;
 
 function extractProductIdFromHref(href?: string): string | null {
-  const match = (href ?? "").match(/entity\/product\/([0-9a-zA-Z-]+)/i);
-  return match?.[1] ?? null;
+  const source = (href ?? "").split("?", 1)[0].replace(/\/$/, "");
+  const match = source.match(/(?:entity\/product|local:\/\/product)\/([0-9a-zA-Z-]+)/i);
+  if (match?.[1]) return match[1];
+  const parts = source.split("/").filter(Boolean);
+  return parts.at(-1) ?? null;
+}
+
+function decimalToNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value && typeof value === "object" && "toNumber" in value && typeof value.toNumber === "function") {
+    const n = value.toNumber();
+    return typeof n === "number" && Number.isFinite(n) ? n : 0;
+  }
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function productMetaHref(product: { id: string; moyskladHref: string | null }) {
+  return product.moyskladHref ?? `local://product/${product.id}`;
 }
 
 export function mergeStockByStoreEntries(entries: StockByStoreEntry[] = []): StockByStoreEntry[] {
@@ -58,27 +75,34 @@ function buildStockByProductIdMap(
 }
 
 async function loadStockByStoreCache(): Promise<StockCache> {
-  const limit = 1000;
-  let offset = 0;
-  let size = Number.POSITIVE_INFINITY;
+  const balances = await prisma.localStockBalance.findMany({
+    include: {
+      product: { select: { id: true, moyskladHref: true } },
+      store: { select: { name: true } },
+    },
+    orderBy: [{ productId: "asc" }],
+  });
+
+  const byProduct = new Map<string, StockByStoreEntry[]>();
+  for (const balance of balances) {
+    const entries = byProduct.get(balance.productId) ?? [];
+    entries.push({
+      name: balance.store.name,
+      stock: decimalToNumber(balance.quantity),
+      reserve: decimalToNumber(balance.reserve),
+    });
+    byProduct.set(balance.productId, entries);
+  }
+
   const rows: StockReportRow[] = [];
-
-  while (offset < size) {
-    const stockData = await moyskladFetch<{
-      meta?: { size?: number; limit?: number; offset?: number };
-      rows?: StockReportRow[];
-    }>(`/report/stock/bystore?limit=${limit}&offset=${offset}`, { cache: "no-store" });
-    if (!stockData.ok) {
-      throw new Error(stockData.error || "Не удалось загрузить общий отчет остатков МойСклад");
-    }
-
-    const chunk = stockData.data.rows ?? [];
-    rows.push(...chunk);
-
-    const reportedSize = stockData.data.meta?.size;
-    size = typeof reportedSize === "number" && reportedSize > 0 ? reportedSize : rows.length;
-    if (chunk.length < limit) break;
-    offset += limit;
+  const productHrefById = new Map(balances.map((balance) => [balance.productId, productMetaHref(balance.product)]));
+  for (const [productId, entries] of byProduct) {
+    const href = productHrefById.get(productId) ?? `local://product/${productId}`;
+    rows.push({
+      meta: { href },
+      assortment: { meta: { href } },
+      stockByStore: mergeStockByStoreEntries(entries),
+    });
   }
 
   return { at: Date.now(), rows, byProductId: buildStockByProductIdMap(rows) };
@@ -126,11 +150,16 @@ export async function getCachedStockByProductIdMap(): Promise<Map<string, { stoc
 }
 
 export async function getDirectStockByProductId(productId: string): Promise<StockByStoreEntry[]> {
-  const productHref = `${MOYSKLAD_BASE}/entity/product/${productId}`;
-  const stock = await moyskladFetch<{ rows?: StockReportRow[] }>(
-    `/report/stock/bystore?filter=${encodeURIComponent(`product=${productHref}`)}&limit=100`,
-    { cache: "no-store" }
+  const product = await prisma.localProduct.findFirst({
+    where: { OR: [{ id: productId }, { moyskladId: productId }] },
+    include: { stockBalances: { include: { store: { select: { name: true } } } } },
+  });
+  if (!product) return [];
+  return mergeStockByStoreEntries(
+    product.stockBalances.map((balance) => ({
+      name: balance.store.name,
+      stock: decimalToNumber(balance.quantity),
+      reserve: decimalToNumber(balance.reserve),
+    }))
   );
-  if (!stock.ok) return [];
-  return mergeStockByStoreEntries((stock.data.rows ?? []).flatMap((row) => row.stockByStore ?? []));
 }

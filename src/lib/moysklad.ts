@@ -1,3 +1,9 @@
+import {
+  isMoySkladEnabled,
+  isMoySkladRequestAllowed,
+  moyskladDisabledMessage,
+} from "@/lib/moysklad-flags";
+
 export const MOYSKLAD_BASE = "https://api.moysklad.ru/api/remap/1.2";
 const MOYSKLAD_TIMEOUT_MS = Math.max(5_000, parseInt(process.env.MOYSKLAD_TIMEOUT_MS ?? "15000", 10) || 15_000);
 
@@ -83,6 +89,7 @@ export async function moyskladFetchWithRetry<T>(
  * Для работы только по токену: задайте MOYSKLAD_PREFER_BEARER=1.
  */
 export function getMoySkladAuthHeader(): string | null {
+  if (!isMoySkladEnabled()) return null;
   const login = process.env.MOYSKLAD_LOGIN?.trim();
   const password = process.env.MOYSKLAD_PASSWORD?.trim();
   const token = process.env.MOYSKLAD_TOKEN?.trim();
@@ -119,6 +126,13 @@ export async function moyskladFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<{ data: T; ok: true } | { error: string; ok: false }> {
+  const method = options?.method ?? "GET";
+  if (!isMoySkladRequestAllowed(method)) {
+    return {
+      ok: false,
+      error: moyskladDisabledMessage(method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? "read" : "write"),
+    };
+  }
   const headers = getMoySkladHeaders();
   if (!headers) {
     return { ok: false, error: "МойСклад: не заданы MOYSKLAD_TOKEN или пара MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD" };

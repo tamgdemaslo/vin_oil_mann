@@ -9,8 +9,12 @@ import {
 type Meta = { href: string; type: string; mediaType: string };
 
 type UpdateBody = {
+  organization?: { meta: Meta };
+  agent?: { meta: Meta };
+  store?: { meta: Meta };
   name?: string;
   description?: string;
+  moment?: string;
   applicable?: boolean;
   attributes?: unknown[];
   positions?: {

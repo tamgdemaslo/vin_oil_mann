@@ -1,20 +1,17 @@
 import { prisma } from "@/lib/db";
 
 export const DEFAULT_CRM_STAGES = [
-  { name: "Новый лид", sortOrder: 10, color: "amber" },
-  { name: "Связаться", sortOrder: 20, color: "sky" },
-  { name: "Записан", sortOrder: 30, color: "blue" },
-  { name: "Приехал", sortOrder: 40, color: "violet" },
-  { name: "Согласование работ", sortOrder: 50, color: "orange" },
-  { name: "В работе", sortOrder: 60, color: "zinc" },
-  { name: "Оплачено", sortOrder: 70, color: "emerald" },
-  { name: "Потерян / отложен", sortOrder: 80, color: "rose" },
+  { name: "Новый запрос", sortOrder: 10, color: "sky" },
+  { name: "Нужно связаться", sortOrder: 20, color: "emerald" },
+  { name: "Ждёт расчёт", sortOrder: 30, color: "amber" },
+  { name: "Ждём ответ", sortOrder: 40, color: "blue" },
+  { name: "Ждём расходники", sortOrder: 50, color: "orange" },
+  { name: "Нужно записать", sortOrder: 60, color: "violet" },
+  { name: "В работе", sortOrder: 70, color: "zinc" },
+  { name: "Закрыто", sortOrder: 80, color: "emerald" },
 ] as const;
 
 export async function ensureDefaultCrmStages() {
-  const count = await prisma.crmStage.count();
-  if (count > 0) return;
-
   await prisma.$transaction(
     DEFAULT_CRM_STAGES.map((stage) =>
       prisma.crmStage.upsert({

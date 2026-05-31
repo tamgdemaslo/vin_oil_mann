@@ -1,13 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FilePlus2, PackagePlus, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  Eye,
+  FilePlus2,
+  Loader2,
+  PackagePlus,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
-import { EcoBadge, EcoButton, EcoKpi } from "@/components/platform/EcoUI";
+import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 
 type StockDocumentType = "receipt" | "writeoff";
+type FormMode = "new" | "edit" | "view";
+type SaveAction = "draft" | "conduct";
 
 type StoreOption = { id: string; name: string };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
@@ -33,6 +50,8 @@ type Position = {
   productId: string;
   name: string;
   article: string;
+  code: string;
+  brand: string;
   quantity: number;
   price: number;
   slotName: string;
@@ -48,7 +67,9 @@ type MovementRow = {
   applicable: boolean;
   sum: number;
   description: string;
+  storeId: string;
   storeName: string;
+  counterpartyId: string;
   counterpartyName: string;
   positionsCount: number;
   totalQuantity: number;
@@ -60,14 +81,41 @@ type MovementRow = {
     status: string;
     sum: number;
   } | null;
-  positions: { id: string; name: string; quantity: number; price: number; slotName: string }[];
+  positions: {
+    id: string;
+    productId: string | null;
+    name: string;
+    article: string;
+    code: string;
+    brand: string;
+    quantity: number;
+    price: number;
+    slotName: string;
+  }[];
 };
+
 type ExistingInvoiceDraft = {
   documentId: string;
   number: string;
   invoiceDate: string;
   dueDate: string;
   status: string;
+};
+
+const emptySupplierDraft = {
+  name: "",
+  phone: "",
+  inn: "",
+  comment: "",
+};
+
+const emptyProductDraft = {
+  name: "",
+  article: "",
+  code: "",
+  brand: "",
+  buyPrice: 0,
+  salePrice: 0,
 };
 
 async function readJson<T>(res: Response): Promise<T | null> {
@@ -89,7 +137,7 @@ function todayInput() {
 
 function formatMoney(value: number | null | undefined) {
   const n = Number(value ?? 0);
-  return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString("ru-RU", { maximumFractionDigits: 0 });
 }
 
 function formatQty(value: number) {
@@ -108,29 +156,51 @@ function formatMoment(value: string) {
   });
 }
 
+function formatDate(value: string) {
+  if (!value) return "—";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 function invoiceStatusLabel(value: string) {
   if (value === "paid") return "оплачен";
   if (value === "partial") return "частично";
   return "не оплачен";
 }
 
+function statusMeta(document: Pick<MovementRow, "applicable">) {
+  return document.applicable
+    ? { label: "Проведена", tone: "success" as const }
+    : { label: "Черновик", tone: "warning" as const };
+}
+
 export default function StockDocumentClient({ type }: { type: StockDocumentType }) {
   const searchParams = useSearchParams();
+  const autoOpenedDocumentRef = useRef<string | null>(null);
   const isReceipt = type === "receipt";
   const title = isReceipt ? "Приёмка" : "Списание";
   const actionLabel = isReceipt ? "Создать приёмку" : "Создать списание";
-  const productPriceLabel = isReceipt ? "Цена закупки" : "Цена учёта";
+  const productPriceLabel = isReceipt ? "Закупочная цена" : "Цена учёта";
 
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
+  const [storesLoading, setStoresLoading] = useState(true);
+  const [storesError, setStoresError] = useState<string | null>(null);
+
   const [counterpartySearch, setCounterpartySearch] = useState("");
   const [counterparties, setCounterparties] = useState<CounterpartyOption[]>([]);
   const [selectedCounterparty, setSelectedCounterparty] = useState<CounterpartyOption | null>(null);
+  const [counterpartiesSearching, setCounterpartiesSearching] = useState(false);
+  const [counterpartiesLoading, setCounterpartiesLoading] = useState(true);
+  const [counterpartiesError, setCounterpartiesError] = useState<string | null>(null);
+
   const [productSearch, setProductSearch] = useState("");
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [productsSearching, setProductsSearching] = useState(false);
-  const [counterpartiesSearching, setCounterpartiesSearching] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
+
   const [documentDate, setDocumentDate] = useState(todayInput());
   const [createInvoice, setCreateInvoice] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -138,16 +208,30 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("unpaid");
   const [description, setDescription] = useState("");
-  const [applicable, setApplicable] = useState(true);
+
   const [documents, setDocuments] = useState<MovementRow[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [invoiceDraft, setInvoiceDraft] = useState<ExistingInvoiceDraft | null>(null);
+
   const [formOpen, setFormOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [formMode, setFormMode] = useState<FormMode>("new");
+  const [editingDocument, setEditingDocument] = useState<MovementRow | null>(null);
+  const [savingAction, setSavingAction] = useState<SaveAction | null>(null);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const [newSupplierOpen, setNewSupplierOpen] = useState(false);
+  const [newSupplier, setNewSupplier] = useState(emptySupplierDraft);
+  const [newSupplierSaving, setNewSupplierSaving] = useState(false);
+
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState(emptyProductDraft);
+  const [newProductSaving, setNewProductSaving] = useState(false);
+
+  const readOnly = formMode === "view" || Boolean(editingDocument?.applicable);
 
   const total = useMemo(
     () => positions.reduce((sum, position) => sum + position.quantity * position.price, 0),
@@ -157,6 +241,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     () => positions.reduce((sum, position) => sum + position.quantity, 0),
     [positions]
   );
+  const selectedStoreName = useMemo(
+    () => stores.find((store) => store.id === selectedStoreId)?.name ?? "",
+    [selectedStoreId, stores]
+  );
+  const lastDocument = documents[0] ?? null;
   const documentStats = useMemo(
     () => ({
       count: documents.length,
@@ -165,9 +254,23 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       invoices: documents.filter((document) => document.invoice).length,
       sum: documents.reduce((acc, document) => acc + document.sum, 0),
       quantity: documents.reduce((acc, document) => acc + document.totalQuantity, 0),
+      positions: documents.reduce((acc, document) => acc + document.positionsCount, 0),
     }),
     [documents]
   );
+
+  const hasInvalidQty = positions.some((position) => Number(position.quantity) <= 0);
+  const hasInvalidReceiptPrice = isReceipt && positions.some((position) => Number(position.price) <= 0);
+  const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction;
+  const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice;
+  const footerHelper = (() => {
+    if (readOnly) return "Проведённый документ открыт только для просмотра. Для нового прихода используйте копию.";
+    if (positions.length === 0) return "Добавьте хотя бы одну позицию, чтобы сохранить документ.";
+    if (hasInvalidQty) return "Количество по каждой позиции должно быть больше нуля.";
+    if (!selectedStoreId) return "Черновик можно сохранить без движения остатков; для проведения выберите склад.";
+    if (hasInvalidReceiptPrice) return "Для проведения укажите закупочную цену по каждой позиции.";
+    return "Черновик не меняет остатки. Проведение увеличит остаток выбранного склада.";
+  })();
 
   function resetDocumentForm() {
     const today = todayInput();
@@ -183,52 +286,131 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setInvoiceDate(today);
     setInvoiceDueDate("");
     setInvoiceStatus("unpaid");
-    setApplicable(true);
+    setEditingDocument(null);
+    setFormMode("new");
+    setFormError(null);
+    setNewSupplierOpen(false);
+    setNewSupplier(emptySupplierDraft);
+    setNewProductOpen(false);
+    setNewProduct(emptyProductDraft);
+  }
+
+  function closeDocumentForm() {
+    resetDocumentForm();
     setFormOpen(false);
   }
 
   function openDocumentForm() {
     resetDocumentForm();
     setInfo(null);
-    setError(null);
     setFormOpen(true);
   }
 
-  async function loadRefs() {
-    const [storeRes, counterpartyRes] = await Promise.all([
-      fetch("/api/local-inventory/stores", { cache: "no-store" }),
-      fetch("/api/local-inventory/counterparties?limit=30", { cache: "no-store" }),
-    ]);
-    const [storeData, counterpartyData] = await Promise.all([
-      readJson<{ stores?: StoreOption[]; error?: string }>(storeRes),
-      readJson<{ counterparties?: CounterpartyOption[]; error?: string }>(counterpartyRes),
-    ]);
-    if (!storeRes.ok) throw new Error(storeData?.error ?? "Не удалось загрузить склады");
-    if (!counterpartyRes.ok) throw new Error(counterpartyData?.error ?? "Не удалось загрузить контрагентов");
-    const nextStores = Array.isArray(storeData?.stores) ? storeData.stores : [];
-    setStores(nextStores);
-    setSelectedStoreId((prev) => prev || nextStores[0]?.id || "");
-    setCounterparties(Array.isArray(counterpartyData?.counterparties) ? counterpartyData.counterparties : []);
+  function fillFormFromDocument(document: MovementRow, mode: FormMode) {
+    const today = todayInput();
+    setEditingDocument(document);
+    setFormMode(mode);
+    setPositions(document.positions.map((position) => ({
+      localId: makeLocalId(),
+      productId: position.productId ?? "",
+      name: position.name,
+      article: position.article || position.code,
+      code: position.code,
+      brand: position.brand,
+      quantity: position.quantity,
+      price: position.price,
+      slotName: position.slotName,
+      available: 0,
+    })));
+    setDescription(document.description || "");
+    setSelectedStoreId(document.storeId || selectedStoreId);
+    setSelectedCounterparty(
+      document.counterpartyId
+        ? { id: document.counterpartyId, name: document.counterpartyName || "Поставщик" }
+        : null
+    );
+    setCounterpartySearch(document.counterpartyName || "");
+    setProductSearch("");
+    setProducts([]);
+    setDocumentDate(document.documentDate || today);
+    setCreateInvoice(Boolean(document.invoice));
+    setInvoiceNumber(document.invoice?.number ?? "");
+    setInvoiceDate(document.invoice?.invoiceDate || document.documentDate || today);
+    setInvoiceDueDate(document.invoice?.dueDate ?? "");
+    setInvoiceStatus(document.invoice?.status ?? "unpaid");
+    setFormError(null);
+    setInfo(null);
+    setFormOpen(true);
+  }
+
+  function openExistingDocument(document: MovementRow) {
+    fillFormFromDocument(document, document.applicable ? "view" : "edit");
+  }
+
+  function copyFromDocument(document: MovementRow) {
+    fillFormFromDocument({ ...document, id: "", name: "", applicable: false, invoice: null }, "new");
+    setEditingDocument(null);
+    setCreateInvoice(false);
+    setInvoiceNumber("");
+    setInfo(`Создана форма на основе ${document.name}. Сохраните её как новый черновик.`);
+  }
+
+  async function loadStores() {
+    setStoresLoading(true);
+    setStoresError(null);
+    try {
+      const res = await fetch("/api/local-inventory/stores", { cache: "no-store" });
+      const data = await readJson<{ stores?: StoreOption[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить склады");
+      const nextStores = Array.isArray(data?.stores) ? data.stores : [];
+      setStores(nextStores);
+      setSelectedStoreId((prev) => prev || nextStores[0]?.id || "");
+      if (nextStores.length === 0) setStoresError("В локальной базе нет доступных складов");
+    } catch (e) {
+      setStores([]);
+      setStoresError(e instanceof Error ? e.message : "Не удалось загрузить склады");
+    } finally {
+      setStoresLoading(false);
+    }
+  }
+
+  async function loadCounterparties(search = "") {
+    const initial = !search;
+    if (initial) setCounterpartiesLoading(true);
+    setCounterpartiesError(null);
+    try {
+      const params = new URLSearchParams({ limit: initial ? "30" : "20" });
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/local-inventory/counterparties?${params.toString()}`, { cache: "no-store" });
+      const data = await readJson<{ counterparties?: CounterpartyOption[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить поставщиков");
+      setCounterparties(Array.isArray(data?.counterparties) ? data.counterparties : []);
+    } catch (e) {
+      setCounterpartiesError(e instanceof Error ? e.message : "Не удалось загрузить поставщиков");
+      if (initial) setCounterparties([]);
+    } finally {
+      if (initial) setCounterpartiesLoading(false);
+    }
   }
 
   async function loadDocuments() {
-    const params = new URLSearchParams({ type, limit: "30" });
-    const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
-    const data = await readJson<{ documents?: MovementRow[]; error?: string }>(res);
-    if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
-    setDocuments(Array.isArray(data?.documents) ? data.documents : []);
+    setDocumentsLoading(true);
+    setDocumentsError(null);
+    try {
+      const params = new URLSearchParams({ type, limit: "30" });
+      const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
+      const data = await readJson<{ documents?: MovementRow[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
+      setDocuments(Array.isArray(data?.documents) ? data.documents : []);
+    } catch (e) {
+      setDocumentsError(e instanceof Error ? e.message : "Не удалось загрузить журнал");
+    } finally {
+      setDocumentsLoading(false);
+    }
   }
 
   async function loadAll() {
-    setLoading(true);
-    setError(null);
-    try {
-      await Promise.all([loadRefs(), loadDocuments()]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
+    await Promise.allSettled([loadStores(), loadCounterparties(), loadDocuments()]);
   }
 
   useEffect(() => {
@@ -238,9 +420,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   useEffect(() => {
     const documentId = searchParams.get("document");
-    if (documentId && documents.some((document) => document.id === documentId)) {
+    const document = documentId ? documents.find((row) => row.id === documentId) : null;
+    if (document) {
       setOpenId(documentId);
+      if (searchParams.get("open") === "edit" && autoOpenedDocumentRef.current !== documentId) {
+        autoOpenedDocumentRef.current = documentId;
+        fillFormFromDocument(document, document.applicable ? "view" : "edit");
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents, searchParams]);
 
   useEffect(() => {
@@ -248,23 +436,27 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     if (query.length < 2) {
       setProducts([]);
       setProductsSearching(false);
+      setProductsError(null);
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setProductsSearching(true);
+      setProductsError(null);
       try {
         const params = new URLSearchParams({ search: query, limit: "30" });
         const res = await fetch(`/api/local-inventory/products?${params.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
         });
-        const data = await readJson<{ products?: ProductOption[] }>(res);
-        if (res.ok) {
-          setProducts((Array.isArray(data?.products) ? data.products : []).filter((p) => p.entityType !== "service"));
-        }
+        const data = await readJson<{ products?: ProductOption[]; error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить товары");
+        setProducts((Array.isArray(data?.products) ? data.products : []).filter((p) => p.entityType !== "service"));
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === "AbortError")) setProducts([]);
+        if (!(e instanceof DOMException && e.name === "AbortError")) {
+          setProducts([]);
+          setProductsError(e instanceof Error ? e.message : "Не удалось загрузить товары");
+        }
       } finally {
         if (!controller.signal.aborted) setProductsSearching(false);
       }
@@ -277,23 +469,28 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   useEffect(() => {
     const query = counterpartySearch.trim();
-    if (query.length < 2) {
+    if (query.length < 2 || selectedCounterparty?.name === query) {
       setCounterpartiesSearching(false);
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setCounterpartiesSearching(true);
+      setCounterpartiesError(null);
       try {
         const params = new URLSearchParams({ search: query, limit: "20" });
         const res = await fetch(`/api/local-inventory/counterparties?${params.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
         });
-        const data = await readJson<{ counterparties?: CounterpartyOption[] }>(res);
-        if (res.ok) setCounterparties(Array.isArray(data?.counterparties) ? data.counterparties : []);
+        const data = await readJson<{ counterparties?: CounterpartyOption[]; error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить поставщиков");
+        setCounterparties(Array.isArray(data?.counterparties) ? data.counterparties : []);
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === "AbortError")) setCounterparties([]);
+        if (!(e instanceof DOMException && e.name === "AbortError")) {
+          setCounterparties([]);
+          setCounterpartiesError(e instanceof Error ? e.message : "Не удалось загрузить поставщиков");
+        }
       } finally {
         if (!controller.signal.aborted) setCounterpartiesSearching(false);
       }
@@ -302,7 +499,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [counterpartySearch]);
+  }, [counterpartySearch, selectedCounterparty?.name]);
 
   function availableForStore(product: ProductOption) {
     if (!selectedStoreId) return product.totalAvailable;
@@ -315,6 +512,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }
 
   function addProduct(product: ProductOption) {
+    if (readOnly) return;
     setPositions((prev) => {
       const existing = prev.find((position) => position.productId === product.id);
       if (existing) {
@@ -331,6 +529,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           productId: product.id,
           name: product.name,
           article: product.article || product.code,
+          code: product.code,
+          brand: product.brand || product.supplierName || "",
           quantity: 1,
           price: isReceipt ? product.buyPrice ?? 0 : product.buyPrice ?? product.salePrice ?? 0,
           slotName: slotForStore(product),
@@ -340,67 +540,203 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     });
     setProductSearch("");
     setProducts([]);
+    setNewProductOpen(false);
   }
 
   function updatePosition(localId: string, patch: Partial<Position>) {
+    if (readOnly) return;
     setPositions((prev) =>
       prev.map((position) => (position.localId === localId ? { ...position, ...patch } : position))
     );
   }
 
-  async function submit() {
-    if (!selectedStoreId) {
-      setError("Выберите склад");
+  async function createNewSupplier() {
+    const name = newSupplier.name.trim();
+    if (!name) {
+      setFormError("Укажите название поставщика");
       return;
     }
-    if (positions.length === 0) {
-      setError("Добавьте хотя бы одну позицию");
-      return;
-    }
-    if (isReceipt && createInvoice && !selectedCounterparty) {
-      setError("Выберите поставщика из выпадающего списка для счёта");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    setInfo(null);
+    setNewSupplierSaving(true);
+    setFormError(null);
     try {
-      const res = await fetch("/api/local-inventory/movements", {
+      const res = await fetch("/api/local-inventory/counterparties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
-          storeId: selectedStoreId,
-          counterpartyId: selectedCounterparty?.id ?? null,
-          documentDate,
-          description: description.trim() || undefined,
-          applicable,
-          invoice: isReceipt && createInvoice
-            ? {
-                create: true,
-                number: invoiceNumber.trim() || undefined,
-                invoiceDate,
-                dueDate: invoiceDueDate || undefined,
-                status: invoiceStatus,
-              }
-            : undefined,
-          positions: positions.map((position) => ({
-            productId: position.productId,
-            quantity: Number(position.quantity) || 0,
-            price: Number(position.price) || 0,
-            slotName: position.slotName || undefined,
-          })),
+          name,
+          legalTitle: name,
+          phone: newSupplier.phone.trim() || undefined,
+          inn: newSupplier.inn.trim() || undefined,
+          comment: newSupplier.comment.trim() || undefined,
+          companyType: "legal",
+          counterpartyTypeName: "Поставщик",
         }),
       });
-      const data = await readJson<{ name?: string; invoice?: { number?: string | null }; error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Не удалось создать документ");
-      setInfo(`${title} ${data?.name ?? ""} создана${data?.invoice ? `, счёт ${data.invoice.number ?? ""} добавлен` : ""}`);
-      resetDocumentForm();
+      const data = await readJson<(CounterpartyOption & { error?: string })>(res);
+      if (!res.ok || !data?.id) throw new Error(data?.error ?? "Не удалось создать поставщика");
+      const created = { id: data.id, name: data.name, phone: data.phone, legalTitle: data.legalTitle, inn: data.inn };
+      setCounterparties((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+      setSelectedCounterparty(created);
+      setCounterpartySearch(created.name);
+      setNewSupplierOpen(false);
+      setNewSupplier(emptySupplierDraft);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Не удалось создать поставщика");
+    } finally {
+      setNewSupplierSaving(false);
+    }
+  }
+
+  async function createNewProduct() {
+    const name = newProduct.name.trim();
+    if (!name) {
+      setFormError("Укажите название товара");
+      return;
+    }
+    setNewProductSaving(true);
+    setFormError(null);
+    try {
+      const res = await fetch("/api/local-inventory/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          article: newProduct.article.trim() || undefined,
+          code: newProduct.code.trim() || undefined,
+          brand: newProduct.brand.trim() || undefined,
+          supplierName: selectedCounterparty?.name || undefined,
+          buyPrice: newProduct.buyPrice,
+          salePrice: newProduct.salePrice,
+          entityType: "product",
+        }),
+      });
+      const data = await readJson<(ProductOption & { error?: string })>(res);
+      if (!res.ok || !data?.id) throw new Error(data?.error ?? "Не удалось создать товар");
+      addProduct(data);
+      setNewProduct(emptyProductDraft);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Не удалось создать товар");
+    } finally {
+      setNewProductSaving(false);
+    }
+  }
+
+  function buildCurrentDocument(data: { id?: string; name?: string; applicable?: boolean; invoice?: MovementRow["invoice"] | null }): MovementRow {
+    return {
+      id: data.id || editingDocument?.id || "",
+      type,
+      name: data.name || editingDocument?.name || "",
+      moment: editingDocument?.moment || new Date().toISOString(),
+      documentDate,
+      applicable: Boolean(data.applicable),
+      sum: total,
+      description,
+      storeId: selectedStoreId,
+      storeName: selectedStoreName,
+      counterpartyId: selectedCounterparty?.id || "",
+      counterpartyName: selectedCounterparty?.name || counterpartySearch,
+      positionsCount: positions.length,
+      totalQuantity: totalQty,
+      invoice: data.invoice ?? null,
+      positions: positions.map((position) => ({
+        id: position.localId,
+        productId: position.productId,
+        name: position.name,
+        article: position.article,
+        code: position.code,
+        brand: position.brand,
+        quantity: position.quantity,
+        price: position.price,
+        slotName: position.slotName,
+      })),
+    };
+  }
+
+  async function submit(nextApplicable: boolean) {
+    if (readOnly) return;
+    if (positions.length === 0) {
+      setFormError("Добавьте хотя бы одну позицию");
+      return;
+    }
+    if (hasInvalidQty) {
+      setFormError("Количество по каждой позиции должно быть больше нуля");
+      return;
+    }
+    if (nextApplicable && !selectedStoreId) {
+      setFormError("Выберите склад перед проведением приёмки");
+      return;
+    }
+    if (nextApplicable && hasInvalidReceiptPrice) {
+      setFormError("Укажите корректную закупочную цену перед проведением");
+      return;
+    }
+    if (isReceipt && createInvoice && !selectedCounterparty) {
+      setFormError("Выберите поставщика из списка или создайте нового поставщика для счёта");
+      return;
+    }
+
+    const action: SaveAction = nextApplicable ? "conduct" : "draft";
+    setSavingAction(action);
+    setFormError(null);
+    setInfo(null);
+    try {
+      const isUpdate = Boolean(editingDocument?.id && !editingDocument.applicable);
+      const res = await fetch(
+        isUpdate ? `/api/local-inventory/movements/${editingDocument!.id}` : "/api/local-inventory/movements",
+        {
+          method: isUpdate ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type,
+            storeId: selectedStoreId || undefined,
+            counterpartyId: selectedCounterparty?.id ?? null,
+            documentDate,
+            description: description.trim() || undefined,
+            applicable: nextApplicable,
+            invoice: isReceipt && createInvoice
+              ? {
+                  create: true,
+                  number: invoiceNumber.trim() || undefined,
+                  invoiceDate,
+                  dueDate: invoiceDueDate || undefined,
+                  status: invoiceStatus,
+                }
+              : undefined,
+            positions: positions.map((position) => ({
+              productId: position.productId,
+              quantity: Number(position.quantity) || 0,
+              price: Number(position.price) || 0,
+              slotName: position.slotName || undefined,
+            })),
+          }),
+        }
+      );
+      const data = await readJson<{
+        id?: string;
+        name?: string;
+        applicable?: boolean;
+        invoice?: MovementRow["invoice"] | null;
+        error?: string;
+      }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось сохранить документ");
+      const nextDocument = buildCurrentDocument({
+        id: data?.id,
+        name: data?.name,
+        applicable: nextApplicable,
+        invoice: data?.invoice ?? null,
+      });
+      setEditingDocument(nextDocument);
+      setFormMode(nextApplicable ? "view" : "edit");
+      setInfo(
+        nextApplicable
+          ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
+          : `${title} ${nextDocument.name} сохранена как черновик.`
+      );
       await loadDocuments();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSaving(false);
+      setSavingAction(null);
     }
   }
 
@@ -413,14 +749,14 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       dueDate: "",
       status: "unpaid",
     });
-    setError(null);
+    setFormError(null);
     setInfo(null);
   }
 
   async function createInvoiceForExistingReceipt(document: MovementRow) {
     if (!invoiceDraft || invoiceDraft.documentId !== document.id) return;
     setInvoiceSaving(true);
-    setError(null);
+    setFormError(null);
     setInfo(null);
     try {
       const res = await fetch("/api/local-inventory/supplier-invoices", {
@@ -440,330 +776,487 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       setInvoiceDraft(null);
       await loadDocuments();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setFormError(e instanceof Error ? e.message : String(e));
     } finally {
       setInvoiceSaving(false);
     }
   }
 
+  const renderSkeletonKpis = () => (
+    <div className="eco-receipt-kpis" aria-label="Загружаем приёмки…">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div key={index} className="eco-receipt-kpi is-skeleton">
+          <span />
+          <strong />
+          <em />
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="eco-stock-doc-page">
+    <div className="eco-stock-doc-page eco-receipt-page">
       {formOpen && (
-        <div className="eco-stock-modal fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-3 py-6 backdrop-blur-sm sm:px-6">
-          <section
-            role="dialog"
-            aria-modal="true"
-            className="eco-stock-dialog w-full max-w-5xl rounded-lg border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-          >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">{title}</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {isReceipt
-                ? "Поступление увеличивает остаток по выбранному складу."
-                : "Списание уменьшает остаток по выбранному складу."}
-            </p>
-          </div>
-          <label className="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
-            <input
-              type="checkbox"
-              checked={applicable}
-              onChange={(event) => setApplicable(event.target.checked)}
-              className="size-4 rounded border-zinc-300"
-            />
-            Провести
-          </label>
-        </div>
-
-        {(error || info) && (
-          <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
-            error
-              ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
-              : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200"
-          }`}>
-            {error || info}
-          </div>
-        )}
-
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Склад *</span>
-            <select
-              value={selectedStoreId}
-              onChange={(event) => setSelectedStoreId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            >
-              <option value="">Не выбран</option>
-              {stores.map((store) => (
-                <option key={store.id} value={store.id}>{store.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">
-              {isReceipt ? "Поставщик" : "Контрагент / основание"}
-            </span>
-            <input
-              value={selectedCounterparty?.name ?? counterpartySearch}
-              onChange={(event) => {
-                setSelectedCounterparty(null);
-                setCounterpartySearch(event.target.value);
-              }}
-              placeholder="Поиск"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Дата</span>
-            <input
-              type="date"
-              value={documentDate}
-              onChange={(event) => {
-                setDocumentDate(event.target.value);
-                if (!createInvoice) setInvoiceDate(event.target.value);
-              }}
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-        </div>
-
-        {isReceipt && (
-          <div className="mt-4 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <label className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-              <input
-                type="checkbox"
-                checked={createInvoice}
-                onChange={(event) => {
-                  setCreateInvoice(event.target.checked);
-                  if (event.target.checked && !invoiceDate) setInvoiceDate(documentDate);
-                }}
-                className="size-4 rounded border-zinc-300"
-              />
-              Создать счёт поставщика
-            </label>
-            {createInvoice && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                <label className="block text-sm">
-                  <span className="text-xs font-medium text-zinc-500">Номер счёта</span>
-                  <input
-                    value={invoiceNumber}
-                    onChange={(event) => setInvoiceNumber(event.target.value)}
-                    placeholder="авто"
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="text-xs font-medium text-zinc-500">Дата счёта</span>
-                  <input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(event) => setInvoiceDate(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="text-xs font-medium text-zinc-500">Оплатить до</span>
-                  <input
-                    type="date"
-                    value={invoiceDueDate}
-                    onChange={(event) => setInvoiceDueDate(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="text-xs font-medium text-zinc-500">Статус</span>
-                  <select
-                    value={invoiceStatus}
-                    onChange={(event) => setInvoiceStatus(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                  >
-                    <option value="unpaid">Не оплачен</option>
-                    <option value="partial">Частично</option>
-                    <option value="paid">Оплачен</option>
-                  </select>
-                </label>
+        <div className="eco-receipt-drawer-backdrop">
+          <aside role="dialog" aria-modal="true" className="eco-receipt-drawer">
+            <header className="eco-receipt-drawer-head">
+              <div>
+                <div className="eco-title-row">
+                  <h2>{editingDocument?.name ? `${title} ${editingDocument.name}` : `Новая ${title.toLowerCase()}`}</h2>
+                  <EcoBadge tone={readOnly ? "success" : "warning"} dot>
+                    {readOnly ? "Проведена" : "Черновик"}
+                  </EcoBadge>
+                </div>
+                <p>{isReceipt ? "Оприходование товаров на локальный склад" : "Корректировка остатков локального склада"}</p>
               </div>
-            )}
-          </div>
-        )}
-
-        {!selectedCounterparty && counterpartySearch.trim().length >= 2 && (
-          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
-            {counterpartiesSearching && counterparties.length === 0 && (
-              <div className="px-3 py-2 text-sm text-zinc-500">Ищем контрагента...</div>
-            )}
-            {!counterpartiesSearching && counterparties.length === 0 && (
-              <div className="px-3 py-2 text-sm text-zinc-500">Контрагенты не найдены</div>
-            )}
-            {counterparties.slice(0, 6).map((counterparty) => (
-              <button
-                key={counterparty.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCounterparty(counterparty);
-                  setCounterpartySearch(counterparty.name);
-                }}
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
-              >
-                <span className="font-medium text-zinc-950 dark:text-zinc-50">{counterparty.name}</span>
-                {(counterparty.legalTitle || counterparty.inn || counterparty.phone) && (
-                  <span className="ml-2 text-xs text-zinc-500">
-                    {[counterparty.legalTitle, counterparty.inn, counterparty.phone].filter(Boolean).join(" · ")}
-                  </span>
-                )}
+              <button type="button" className="eco-icon-btn eco-receipt-close" onClick={closeDocumentForm} aria-label="Закрыть">
+                <X size={18} />
               </button>
-            ))}
-          </div>
-        )}
+            </header>
 
-        <div className="mt-4">
-          <label className="block text-sm">
-            <span className="text-xs font-medium text-zinc-500">Добавить товар *</span>
-            <input
-              value={productSearch}
-              onChange={(event) => setProductSearch(event.target.value)}
-              placeholder="Название, артикул или код"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-            />
-          </label>
-          {(productSearch.trim().length >= 2 || products.length > 0) && (
-            <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
-              {productsSearching && products.length === 0 && (
-                <div className="px-3 py-2 text-sm text-zinc-500">Ищем товар...</div>
-              )}
-              {products.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => addProduct(product)}
-                  className="flex w-full flex-col gap-1 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <span>
-                    <span className="font-medium text-zinc-950 dark:text-zinc-50">{product.name}</span>
-                    <span className="ml-2 text-xs text-zinc-500">{product.article || product.code}</span>
-                    {(product.brand || product.sae || product.packageVolume || product.supplierName) && (
-                      <span className="ml-2 text-xs text-zinc-500">
-                        {[product.brand, product.sae, product.packageVolume, product.supplierName].filter(Boolean).join(" · ")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-sm text-zinc-500">
-                    доступно: {formatQty(availableForStore(product))}
-                  </span>
-                </button>
-              ))}
-              {!productsSearching && products.length === 0 && productSearch.trim().length >= 2 && (
-                <div className="px-3 py-2 text-sm text-zinc-500">Товары не найдены</div>
-              )}
-            </div>
-          )}
-        </div>
+            <div className="eco-receipt-drawer-body">
+              <main className="eco-receipt-form-main">
+                {(formError || info) && (
+                  <div className={formError ? "eco-receipt-inline-state is-error" : "eco-receipt-inline-state is-success"}>
+                    {formError ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+                    <span>{formError || info}</span>
+                  </div>
+                )}
 
-        <div className="mt-5 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-          <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-950">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Товар</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Кол-во</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{productPriceLabel}</th>
-                <th className="px-3 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Ячейка</th>
-                <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Сумма</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
-              {positions.map((position) => (
-                <tr key={position.localId}>
-                  <td className="min-w-[240px] px-3 py-2">
-                    <div className="font-medium text-zinc-950 dark:text-zinc-50">{position.name}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">
-                      {position.article || "без артикула"} · доступно {formatQty(position.available)}
+                <section className="eco-receipt-form-section">
+                  <div className="eco-receipt-section-head">
+                    <div>
+                      <span>Параметры документа</span>
+                      <h3>Склад, поставщик и основание</h3>
                     </div>
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.001}
-                      value={position.quantity}
-                      onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })}
-                      className="w-24 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-right dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <MoneyInput
-                      value={position.price}
-                      onValueChange={(price) => updatePosition(position.localId, { price })}
-                      className="w-28 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-right dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2">
-                    <input
-                      value={position.slotName}
-                      onChange={(event) => updatePosition(position.localId, { slotName: event.target.value })}
-                      className="w-28 rounded-lg border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-950"
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">
-                    {formatMoney(position.quantity * position.price)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setPositions((prev) => prev.filter((item) => item.localId !== position.localId))}
-                      className="rounded-lg px-2 py-1 text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    >
-                      Удалить
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {positions.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">Позиции ещё не добавлены.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                  <div className="eco-receipt-param-grid">
+                    <label className="eco-receipt-field">
+                      <span>Склад *</span>
+                      {storesLoading ? (
+                        <div className="eco-receipt-field-state is-loading">
+                          <Loader2 size={15} />
+                          Загружаем склады…
+                        </div>
+                      ) : storesError ? (
+                        <div className="eco-receipt-field-state is-error">
+                          <strong>Склад не выбран</strong>
+                          <small>{storesError}</small>
+                          <button type="button" onClick={() => void loadStores()}>Повторить загрузку складов</button>
+                        </div>
+                      ) : (
+                        <EcoSelect
+                          value={selectedStoreId}
+                          onChange={(event) => setSelectedStoreId(event.target.value)}
+                          disabled={readOnly}
+                        >
+                          <option value="">Не выбран</option>
+                          {stores.map((store) => (
+                            <option key={store.id} value={store.id}>{store.name}</option>
+                          ))}
+                        </EcoSelect>
+                      )}
+                    </label>
 
-        <label className="mt-4 block text-sm">
-          <span className="text-xs font-medium text-zinc-500">Комментарий</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={3}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-          />
-        </label>
+                    <label className="eco-receipt-field">
+                      <span>{isReceipt ? "Поставщик" : "Контрагент / основание"}</span>
+                      <div className="eco-receipt-search-field">
+                        <Search size={16} />
+                        <EcoInput
+                          value={selectedCounterparty?.name ?? counterpartySearch}
+                          onChange={(event) => {
+                            setSelectedCounterparty(null);
+                            setCounterpartySearch(event.target.value);
+                          }}
+                          placeholder={isReceipt ? "Найдите поставщика по названию или телефону" : "Найдите контрагента или основание"}
+                          disabled={readOnly}
+                        />
+                      </div>
+                    </label>
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-zinc-600 dark:text-zinc-400">
-            {positions.length} строк · {formatQty(totalQty)} шт. · {formatMoney(total)} ₽
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void submit()}
-              disabled={saving || loading}
-              className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-950"
-            >
-              {saving ? "Создание..." : actionLabel}
-            </button>
-            <button
-              type="button"
-              onClick={resetDocumentForm}
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            >
-              Отмена
-            </button>
-          </div>
-        </div>
-      </section>
+                    <label className="eco-receipt-field">
+                      <span>Дата</span>
+                      <EcoInput
+                        type="date"
+                        value={documentDate}
+                        onChange={(event) => {
+                          setDocumentDate(event.target.value);
+                          if (!createInvoice) setInvoiceDate(event.target.value);
+                        }}
+                        disabled={readOnly}
+                      />
+                    </label>
+
+                    <label className="eco-receipt-field">
+                      <span>Номер счёта / накладной</span>
+                      <EcoInput
+                        value={invoiceNumber}
+                        onChange={(event) => setInvoiceNumber(event.target.value)}
+                        placeholder="авто или номер поставщика"
+                        disabled={readOnly}
+                      />
+                    </label>
+                  </div>
+
+                  {!selectedCounterparty && counterpartySearch.trim().length >= 2 && !readOnly && (
+                    <div className="eco-receipt-result-panel">
+                      {counterpartiesSearching && (
+                        <div className="eco-receipt-result-hint">
+                          <Loader2 size={15} /> Ищем поставщиков…
+                        </div>
+                      )}
+                      {counterpartiesError && (
+                        <div className="eco-receipt-result-hint is-error">{counterpartiesError}</div>
+                      )}
+                      {!counterpartiesSearching && counterparties.length === 0 && (
+                        <div className="eco-receipt-empty-result">
+                          <strong>Поставщик не найден</strong>
+                          <button type="button" onClick={() => setNewSupplierOpen(true)}>
+                            <Plus size={14} /> Новый поставщик
+                          </button>
+                        </div>
+                      )}
+                      {counterparties.slice(0, 6).map((counterparty) => (
+                        <button
+                          key={counterparty.id}
+                          type="button"
+                          className="eco-receipt-counterparty-row"
+                          onClick={() => {
+                            setSelectedCounterparty(counterparty);
+                            setCounterpartySearch(counterparty.name);
+                          }}
+                        >
+                          <strong>{counterparty.name}</strong>
+                          <span>{[counterparty.legalTitle, counterparty.inn, counterparty.phone].filter(Boolean).join(" · ") || "без реквизитов"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {isReceipt && !readOnly && (
+                    <div className="eco-receipt-supplier-actions">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={createInvoice}
+                          onChange={(event) => {
+                            setCreateInvoice(event.target.checked);
+                            if (event.target.checked && !invoiceDate) setInvoiceDate(documentDate);
+                          }}
+                        />
+                        <span>Создать счёт поставщика</span>
+                      </label>
+                      <button type="button" onClick={() => setNewSupplierOpen((value) => !value)}>
+                        <Plus size={14} /> Новый поставщик
+                      </button>
+                    </div>
+                  )}
+
+                  {isReceipt && createInvoice && (
+                    <div className="eco-receipt-invoice-grid">
+                      <label className="eco-receipt-field">
+                        <span>Дата счёта</span>
+                        <EcoInput type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} disabled={readOnly} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Оплатить до</span>
+                        <EcoInput type="date" value={invoiceDueDate} onChange={(event) => setInvoiceDueDate(event.target.value)} disabled={readOnly} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Статус счёта</span>
+                        <EcoSelect value={invoiceStatus} onChange={(event) => setInvoiceStatus(event.target.value)} disabled={readOnly}>
+                          <option value="unpaid">Не оплачен</option>
+                          <option value="partial">Частично</option>
+                          <option value="paid">Оплачен</option>
+                        </EcoSelect>
+                      </label>
+                    </div>
+                  )}
+
+                  {newSupplierOpen && !readOnly && (
+                    <div className="eco-receipt-mini-form">
+                      <label className="eco-receipt-field">
+                        <span>Название</span>
+                        <EcoInput value={newSupplier.name} onChange={(event) => setNewSupplier({ ...newSupplier, name: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Телефон</span>
+                        <EcoInput value={newSupplier.phone} onChange={(event) => setNewSupplier({ ...newSupplier, phone: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>ИНН</span>
+                        <EcoInput value={newSupplier.inn} onChange={(event) => setNewSupplier({ ...newSupplier, inn: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field is-wide">
+                        <span>Комментарий</span>
+                        <textarea className="eco-input" rows={2} value={newSupplier.comment} onChange={(event) => setNewSupplier({ ...newSupplier, comment: event.target.value })} />
+                      </label>
+                      <div className="eco-receipt-mini-actions">
+                        <EcoButton type="button" variant="primary" onClick={() => void createNewSupplier()} disabled={newSupplierSaving}>
+                          {newSupplierSaving ? <Loader2 size={14} /> : <Plus size={14} />}
+                          Создать поставщика
+                        </EcoButton>
+                        <EcoButton type="button" onClick={() => setNewSupplierOpen(false)}>Отмена</EcoButton>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="eco-receipt-form-section">
+                  <div className="eco-receipt-section-head">
+                    <div>
+                      <span>Добавить товар</span>
+                      <h3>Поиск по каталогу и штрихкоду</h3>
+                    </div>
+                  </div>
+                  <div className="eco-receipt-product-search">
+                    <Search size={18} />
+                    <input
+                      value={productSearch}
+                      onChange={(event) => setProductSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && products[0]) {
+                          event.preventDefault();
+                          addProduct(products[0]);
+                        }
+                      }}
+                      placeholder="Поиск по названию, артикулу, коду, OEM или штрихкоду…"
+                      disabled={readOnly}
+                    />
+                  </div>
+
+                  {(productSearch.trim().length >= 2 || products.length > 0 || productsSearching || productsError) && !readOnly && (
+                    <div className="eco-receipt-product-results">
+                      {productsSearching && products.length === 0 && (
+                        <>
+                          <div className="eco-receipt-result-hint"><Loader2 size={15} /> Ищем товары…</div>
+                          {Array.from({ length: 3 }).map((_, index) => <div key={index} className="eco-receipt-product-skeleton" />)}
+                        </>
+                      )}
+                      {productsError && <div className="eco-receipt-result-hint is-error">{productsError}</div>}
+                      {products.map((product) => (
+                        <div key={product.id} className="eco-receipt-product-row">
+                          <div>
+                            <strong>{product.name}</strong>
+                            <span>{[product.article || product.code, product.brand, product.supplierName].filter(Boolean).join(" · ") || "без артикула"}</span>
+                          </div>
+                          <dl>
+                            <div><dt>Остаток</dt><dd>{formatQty(availableForStore(product))}</dd></div>
+                            <div><dt>Закупка</dt><dd>{formatMoney(product.buyPrice)} ₽</dd></div>
+                            <div><dt>Продажа</dt><dd>{formatMoney(product.salePrice)} ₽</dd></div>
+                          </dl>
+                          <button type="button" onClick={() => addProduct(product)}>Добавить</button>
+                        </div>
+                      ))}
+                      {!productsSearching && products.length === 0 && productSearch.trim().length >= 2 && (
+                        <div className="eco-receipt-empty-result">
+                          <strong>Товар не найден</strong>
+                          <button type="button" onClick={() => {
+                            setNewProductOpen(true);
+                            setNewProduct((prev) => ({ ...prev, name: productSearch }));
+                          }}>
+                            <Plus size={14} /> Создать новый товар
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {newProductOpen && !readOnly && (
+                    <div className="eco-receipt-mini-form">
+                      <label className="eco-receipt-field is-wide">
+                        <span>Название товара</span>
+                        <EcoInput value={newProduct.name} onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Артикул</span>
+                        <EcoInput value={newProduct.article} onChange={(event) => setNewProduct({ ...newProduct, article: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Код</span>
+                        <EcoInput value={newProduct.code} onChange={(event) => setNewProduct({ ...newProduct, code: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Бренд</span>
+                        <EcoInput value={newProduct.brand} onChange={(event) => setNewProduct({ ...newProduct, brand: event.target.value })} />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Закупочная цена</span>
+                        <MoneyInput value={newProduct.buyPrice} onValueChange={(buyPrice) => setNewProduct({ ...newProduct, buyPrice })} className="eco-input l-money" />
+                      </label>
+                      <label className="eco-receipt-field">
+                        <span>Продажная цена</span>
+                        <MoneyInput value={newProduct.salePrice} onValueChange={(salePrice) => setNewProduct({ ...newProduct, salePrice })} className="eco-input l-money" />
+                      </label>
+                      <div className="eco-receipt-mini-actions">
+                        <EcoButton type="button" variant="primary" onClick={() => void createNewProduct()} disabled={newProductSaving}>
+                          {newProductSaving ? <Loader2 size={14} /> : <Plus size={14} />}
+                          Создать товар
+                        </EcoButton>
+                        <EcoButton type="button" onClick={() => setNewProductOpen(false)}>Отмена</EcoButton>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="eco-receipt-form-section">
+                  <div className="eco-receipt-section-head">
+                    <div>
+                      <span>Позиции приёмки</span>
+                      <h3>{positions.length ? `${positions.length} строк` : "Позиции ещё не добавлены"}</h3>
+                    </div>
+                  </div>
+
+                  <div className="eco-receipt-position-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Товар</th>
+                          <th>Артикул / код</th>
+                          <th>Текущий остаток</th>
+                          <th>Кол-во</th>
+                          <th>{productPriceLabel}</th>
+                          <th>Сумма</th>
+                          <th>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {positions.map((position) => (
+                          <tr key={position.localId}>
+                            <td>
+                              <strong>{position.name}</strong>
+                              <span>{[position.brand, position.article, position.code].filter(Boolean).join(" · ") || "без дополнительных данных"}</span>
+                            </td>
+                            <td className="l-mono">{position.article || position.code || "—"}</td>
+                            <td className="l-number">{formatQty(position.available)}</td>
+                            <td>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.001}
+                                value={position.quantity}
+                                onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })}
+                                disabled={readOnly}
+                              />
+                            </td>
+                            <td>
+                              <MoneyInput
+                                value={position.price}
+                                onValueChange={(price) => updatePosition(position.localId, { price })}
+                                className="eco-input l-money"
+                                disabled={readOnly}
+                              />
+                            </td>
+                            <td className="l-number l-sum">{formatMoney(position.quantity * position.price)} ₽</td>
+                            <td>
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  className="eco-icon-btn"
+                                  title="Удалить позицию"
+                                  aria-label="Удалить позицию"
+                                  onClick={() => setPositions((prev) => prev.filter((item) => item.localId !== position.localId))}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {positions.length === 0 && (
+                      <div className="eco-receipt-empty-positions">
+                        <PackagePlus size={24} />
+                        <strong>Добавьте товары в приёмку</strong>
+                        <span>После выбора товара здесь появятся количество, закупочная цена и сумма строки.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="eco-receipt-position-cards">
+                    {positions.map((position) => (
+                      <div key={position.localId} className="eco-receipt-position-card">
+                        <div>
+                          <strong>{position.name}</strong>
+                          <span>{[position.brand, position.article || position.code].filter(Boolean).join(" · ") || "без артикула"}</span>
+                        </div>
+                        <label>
+                          Кол-во
+                          <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
+                        </label>
+                        <label>
+                          {productPriceLabel}
+                          <MoneyInput value={position.price} onValueChange={(price) => updatePosition(position.localId, { price })} className="eco-input l-money" disabled={readOnly} />
+                        </label>
+                        <div className="eco-receipt-position-card-total">
+                          <span>Сумма</span>
+                          <strong>{formatMoney(position.quantity * position.price)} ₽</strong>
+                        </div>
+                        {!readOnly && (
+                          <button type="button" onClick={() => setPositions((prev) => prev.filter((item) => item.localId !== position.localId))}>
+                            <Trash2 size={16} /> Удалить
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <label className="eco-receipt-field is-wide">
+                    <span>Комментарий</span>
+                    <textarea className="eco-input" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} disabled={readOnly} />
+                  </label>
+                </section>
+              </main>
+
+              <aside className="eco-receipt-summary">
+                <span>Итого</span>
+                <dl>
+                  <div><dt>Позиций</dt><dd>{positions.length}</dd></div>
+                  <div><dt>Кол-во</dt><dd>{formatQty(totalQty)}</dd></div>
+                  <div><dt>Сумма</dt><dd>{formatMoney(total)} ₽</dd></div>
+                  <div><dt>Склад</dt><dd>{selectedStoreName || "не выбран"}</dd></div>
+                  <div><dt>Поставщик</dt><dd>{selectedCounterparty?.name || counterpartySearch || "не выбран"}</dd></div>
+                  <div><dt>Статус</dt><dd>{readOnly ? "Проведена" : "Черновик"}</dd></div>
+                </dl>
+              </aside>
+            </div>
+
+            <footer className="eco-receipt-drawer-footer">
+              <div>
+                <strong>{positions.length} поз. · {formatQty(totalQty)} шт. · {formatMoney(total)} ₽</strong>
+                <span>{footerHelper}</span>
+              </div>
+              <div className="eco-receipt-footer-actions">
+                {readOnly ? (
+                  <>
+                    {editingDocument && (
+                      <EcoButton type="button" onClick={() => copyFromDocument(editingDocument)}>
+                        <Copy size={15} /> Создать на основе
+                      </EcoButton>
+                    )}
+                    <EcoButton type="button" variant="primary" onClick={closeDocumentForm}>Закрыть</EcoButton>
+                  </>
+                ) : (
+                  <>
+                    <EcoButton type="button" onClick={closeDocumentForm}>Отмена</EcoButton>
+                    <EcoButton type="button" variant="primary" onClick={() => void submit(false)} disabled={!canSaveDraft} title={!canSaveDraft ? footerHelper : undefined}>
+                      {savingAction === "draft" ? <Loader2 size={15} /> : <Save size={15} />}
+                      Сохранить черновик
+                    </EcoButton>
+                    <EcoButton type="button" className="eco-receipt-conduct-btn" onClick={() => void submit(true)} disabled={!canConduct} title={!canConduct ? footerHelper : undefined}>
+                      {savingAction === "conduct" ? <Loader2 size={15} /> : <CheckCircle2 size={15} />}
+                      Провести приёмку
+                    </EcoButton>
+                  </>
+                )}
+              </div>
+            </footer>
+          </aside>
         </div>
       )}
 
-      <section className="eco-page-head eco-stock-doc-head">
+      <section className="eco-page-head eco-stock-doc-head eco-receipt-head">
         <div>
           <div className="eco-page-crumbs">
             <Link href="/">Главная</Link>
@@ -775,7 +1268,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           <div className="eco-title-row">
             <h1 className="eco-page-title">{title}</h1>
             <EcoBadge tone={isReceipt ? "success" : "warning"} dot>
-              {isReceipt ? "поступление" : "корректировка"}
+              {isReceipt ? "Поступление" : "Корректировка"}
             </EcoBadge>
             <EcoBadge tone="neutral">{documentStats.count} документов</EcoBadge>
           </div>
@@ -786,7 +1279,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           </p>
         </div>
         <div className="eco-page-actions">
-          <EcoButton type="button" onClick={() => void loadDocuments()}>
+          <EcoButton type="button" onClick={() => void loadAll()} disabled={documentsLoading || storesLoading}>
             <RefreshCw size={15} />
             Обновить
           </EcoButton>
@@ -797,230 +1290,249 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         </div>
       </section>
 
-      <div className="eco-grid eco-grid--kpi eco-stock-doc-metrics">
-        <EcoKpi label="Документы" value={documentStats.count} tone="info" />
-        <EcoKpi label="Проведено" value={documentStats.conducted} sub={`${documentStats.drafts} черновиков`} tone="success" />
-        <EcoKpi label="Количество" value={formatQty(documentStats.quantity)} tone="neutral" />
-        <EcoKpi
-          label={isReceipt ? "Счета / сумма" : "Сумма"}
-          value={`${formatMoney(documentStats.sum)} ₽`}
-          sub={isReceipt ? `${documentStats.invoices} счетов` : undefined}
-          tone="rust"
-        />
-      </div>
+      {documentsLoading ? renderSkeletonKpis() : (
+        <div className="eco-receipt-kpis">
+          <div className="eco-receipt-kpi is-info">
+            <span>Документы</span>
+            <strong>{documentStats.count}</strong>
+            <em>за последние 30 дней</em>
+          </div>
+          <div className="eco-receipt-kpi is-success">
+            <span>Проведено</span>
+            <strong>{documentStats.conducted}</strong>
+            <em>{documentStats.drafts} черновика</em>
+          </div>
+          <div className="eco-receipt-kpi is-warning">
+            <span>Черновики</span>
+            <strong>{documentStats.drafts}</strong>
+            <em>можно редактировать</em>
+          </div>
+          <div className="eco-receipt-kpi is-neutral">
+            <span>Количество позиций</span>
+            <strong>{formatQty(documentStats.quantity)}</strong>
+            <em>{documentStats.positions} строк документов</em>
+          </div>
+          <div className="eco-receipt-kpi is-rust">
+            <span>Счета / сумма</span>
+            <strong>{formatMoney(documentStats.sum)} ₽</strong>
+            <em>{isReceipt ? `${documentStats.invoices} счетов` : "учётная сумма"}</em>
+          </div>
+          <div className="eco-receipt-kpi is-neutral">
+            <span>Последнее поступление</span>
+            <strong>{lastDocument ? formatDate(lastDocument.documentDate) : "—"}</strong>
+            <em>{lastDocument?.name || "документов пока нет"}</em>
+          </div>
+        </div>
+      )}
 
-      <section className="eco-card eco-stock-doc-journal">
-        <div className="eco-table-toolbar">
+      {storesError && (
+        <section className="eco-receipt-state-card is-warning">
+          <AlertTriangle size={20} />
+          <div>
+            <h2>Не удалось загрузить склады</h2>
+            <p>Проверьте локальную базу или повторите загрузку. Без склада нельзя провести приёмку.</p>
+          </div>
+          <EcoButton type="button" onClick={() => void loadStores()} disabled={storesLoading}>
+            <RefreshCw size={15} />
+            Повторить
+          </EcoButton>
+        </section>
+      )}
+
+      {counterpartiesError && (
+        <section className="eco-receipt-state-card is-warning">
+          <AlertTriangle size={20} />
+          <div>
+            <h2>Не удалось загрузить поставщиков</h2>
+            <p>Поиск поставщика временно недоступен. Черновик можно сохранить, но счёт поставщика потребует выбранного поставщика.</p>
+          </div>
+          <EcoButton type="button" onClick={() => void loadCounterparties()} disabled={counterpartiesLoading}>
+            <RefreshCw size={15} />
+            Повторить
+          </EcoButton>
+        </section>
+      )}
+
+      <section className="eco-card eco-stock-doc-journal eco-receipt-journal">
+        <div className="eco-table-toolbar eco-receipt-journal-head">
           <div>
             <div className="eco-page-kicker">Журнал</div>
-            <h2 className="eco-stock-doc-title">Последние локальные документы</h2>
+            <h2 className="eco-stock-doc-title">Последние документы</h2>
             <p className="eco-stock-doc-subtitle">
-              Последние локальные документы.
+              Последние локальные приёмки и документы поступления.
             </p>
           </div>
           <div className="grow" />
           <span className="l-meta">{documents.length} строк · {formatMoney(documentStats.sum)} ₽</span>
           <div className="eco-row-actions is-visible">
-            <EcoButton
-              type="button"
-              onClick={openDocumentForm}
-              size="sm"
-              variant="primary"
-            >
+            <EcoButton type="button" onClick={openDocumentForm} size="sm" variant="primary">
               <PackagePlus size={14} />
               {actionLabel}
             </EcoButton>
-            <EcoButton
-              type="button"
-              onClick={() => void loadDocuments()}
-              size="sm"
-            >
+            <EcoButton type="button" onClick={() => void loadDocuments()} size="sm" disabled={documentsLoading}>
               <RefreshCw size={14} />
               Обновить
             </EcoButton>
           </div>
         </div>
 
-        {(error || info) && (
-          <div className={error ? "eco-form-error eco-stock-message" : "eco-form-hint eco-stock-message is-info"}>
-            {error || info}
+        {info && !formOpen && (
+          <div className="eco-receipt-inline-state is-success eco-receipt-page-message">
+            <CheckCircle2 size={18} />
+            <span>{info}</span>
+          </div>
+        )}
+        {(documentsError || formError) && !formOpen && (
+          <div className="eco-receipt-inline-state is-error eco-receipt-page-message">
+            <AlertTriangle size={18} />
+            <span>{documentsError || formError}</span>
           </div>
         )}
 
-        <div className="eco-stock-doc-list">
-          {loading && (
-            <div className="rounded-lg border border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800">
-              Загрузка...
-            </div>
-          )}
-          {!loading && documents.length === 0 && (
-            <div className="rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-              Документов пока нет.
-            </div>
-          )}
-          {!loading && documents.map((document) => {
-            const open = openId === document.id;
-            return (
-              <div key={document.id} className="rounded-lg border border-zinc-200 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setOpenId(open ? null : document.id)}
-                  className="block w-full px-4 py-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/70"
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-zinc-950 dark:text-zinc-50">{document.name}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          document.applicable
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                            : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                        }`}>
-                          {document.applicable ? "проведён" : "черновик"}
-                        </span>
-                        {document.invoice && (
-                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
-                            счёт {document.invoice.number || "без номера"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                        {formatMoment(document.moment)} · {document.storeName || "склад не указан"}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        {document.counterpartyName || "без контрагента"} · {formatQty(document.totalQuantity)} шт.
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-left sm:text-right">
-                      <div className="font-semibold tabular-nums text-zinc-950 dark:text-zinc-50">
-                        {formatMoney(document.sum)} ₽
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">{document.positionsCount} поз.</div>
-                    </div>
-                  </div>
-                </button>
-                {open && (
-                  <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
-                    <div className="space-y-2">
-                      {document.positions.map((position) => (
-                        <div key={position.id} className="flex gap-3 text-sm">
-                          <div className="min-w-0 flex-1 text-zinc-800 dark:text-zinc-100">{position.name}</div>
-                          <div className="shrink-0 tabular-nums text-zinc-500">
-                            {formatQty(position.quantity)} × {formatMoney(position.price)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {document.description && (
-                      <div className="mt-3 text-sm text-zinc-500">{document.description}</div>
-                    )}
-                    {isReceipt && (
-                      <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <div className="font-medium text-zinc-950 dark:text-zinc-50">Связанные документы</div>
-                            <div className="mt-0.5 text-xs text-zinc-500">
-                              Счета поставщиков по этой приёмке хранятся в разделе Финансы.
-                            </div>
-                          </div>
-                          {!document.invoice && invoiceDraft?.documentId !== document.id && (
-                            <button
-                              type="button"
-                              onClick={() => startInvoiceForDocument(document)}
-                              className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                            >
-                              Создать счёт
-                            </button>
+        {documentsLoading && (
+          <div className="eco-receipt-table-skeleton">
+            <p>Загружаем приёмки…</p>
+            {Array.from({ length: 5 }).map((_, index) => <span key={index} />)}
+          </div>
+        )}
+
+        {!documentsLoading && documentsError && (
+          <div className="eco-receipt-empty-state is-error">
+            <AlertTriangle size={30} />
+            <h2>Не удалось загрузить приёмки</h2>
+            <p>Проверьте локальную базу или повторите загрузку журнала поступлений.</p>
+            <EcoButton type="button" onClick={() => void loadDocuments()}>
+              <RefreshCw size={15} />
+              Повторить
+            </EcoButton>
+          </div>
+        )}
+
+        {!documentsLoading && !documentsError && documents.length === 0 && (
+          <div className="eco-receipt-empty-state">
+            <PackagePlus size={30} />
+            <h2>Приёмок пока нет</h2>
+            <p>Создайте первую приёмку, чтобы оприходовать товары на локальный склад.</p>
+            <EcoButton type="button" variant="primary" onClick={openDocumentForm}>
+              <FilePlus2 size={15} />
+              Создать приёмку
+            </EcoButton>
+          </div>
+        )}
+
+        {!documentsLoading && documents.length > 0 && (
+          <div className="eco-receipt-doc-table-wrap">
+            <table className="eco-receipt-doc-table">
+              <thead>
+                <tr>
+                  <th>№ / дата</th>
+                  <th>Поставщик</th>
+                  <th>Склад</th>
+                  <th>Позиций</th>
+                  <th>Счёт / основание</th>
+                  <th>Статус</th>
+                  <th>Сумма</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((document) => {
+                  const open = openId === document.id;
+                  const status = statusMeta(document);
+                  return (
+                    <Fragment key={document.id}>
+                      <tr key={document.id}>
+                        <td className="l-mono">
+                          <button type="button" onClick={() => setOpenId(open ? null : document.id)}>
+                            <strong>{document.name}</strong>
+                            <span>{formatMoment(document.moment)}</span>
+                          </button>
+                        </td>
+                        <td>
+                          <strong>{document.counterpartyName || "без поставщика"}</strong>
+                          <span>{document.description || "поступление локального склада"}</span>
+                        </td>
+                        <td>{document.storeName || "склад не указан"}</td>
+                        <td className="l-number">{document.positionsCount} · {formatQty(document.totalQuantity)} шт.</td>
+                        <td>
+                          {document.invoice ? (
+                            <Link href={`/finance/invoices?invoice=${document.invoice.id}`}>
+                              счёт {document.invoice.number || "без номера"}
+                            </Link>
+                          ) : (
+                            <span className="l-muted">нет счёта</span>
                           )}
-                        </div>
-
-                        {document.invoice ? (
-                          <Link
-                            href={`/finance/invoices?invoice=${document.invoice.id}`}
-                            className="mt-3 block rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sky-950 hover:bg-sky-100 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100 dark:hover:bg-sky-950/50"
-                          >
-                            <div className="font-medium">
-                              Счёт {document.invoice.number || "без номера"} · {formatMoney(document.invoice.sum)} ₽
-                            </div>
-                            <div className="mt-1 text-xs text-sky-700 dark:text-sky-300">
-                              Дата: {document.invoice.invoiceDate}
-                              {document.invoice.dueDate ? ` · оплатить до ${document.invoice.dueDate}` : ""}
-                              {" · "}
-                              {invoiceStatusLabel(document.invoice.status)}
-                            </div>
-                          </Link>
-                        ) : (
-                          <div className="mt-3 text-xs text-zinc-500">Связанных счетов пока нет.</div>
-                        )}
-
-                        {invoiceDraft?.documentId === document.id && (
-                          <div className="mt-3 grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-4">
-                            <label className="block text-sm">
-                              <span className="text-xs font-medium text-zinc-500">Номер счёта</span>
-                              <input
-                                value={invoiceDraft.number}
-                                onChange={(event) => setInvoiceDraft({ ...invoiceDraft, number: event.target.value })}
-                                placeholder="авто"
-                                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                              />
-                            </label>
-                            <label className="block text-sm">
-                              <span className="text-xs font-medium text-zinc-500">Дата счёта</span>
-                              <input
-                                type="date"
-                                value={invoiceDraft.invoiceDate}
-                                onChange={(event) => setInvoiceDraft({ ...invoiceDraft, invoiceDate: event.target.value })}
-                                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                              />
-                            </label>
-                            <label className="block text-sm">
-                              <span className="text-xs font-medium text-zinc-500">Оплатить до</span>
-                              <input
-                                type="date"
-                                value={invoiceDraft.dueDate}
-                                onChange={(event) => setInvoiceDraft({ ...invoiceDraft, dueDate: event.target.value })}
-                                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                              />
-                            </label>
-                            <label className="block text-sm">
-                              <span className="text-xs font-medium text-zinc-500">Статус</span>
-                              <select
-                                value={invoiceDraft.status}
-                                onChange={(event) => setInvoiceDraft({ ...invoiceDraft, status: event.target.value })}
-                                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-                              >
-                                <option value="unpaid">Не оплачен</option>
-                                <option value="partial">Частично</option>
-                                <option value="paid">Оплачен</option>
-                              </select>
-                            </label>
-                            <div className="flex flex-wrap gap-2 sm:col-span-4">
-                              <button
-                                type="button"
-                                onClick={() => void createInvoiceForExistingReceipt(document)}
-                                disabled={invoiceSaving}
-                                className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-950"
-                              >
-                                {invoiceSaving ? "Создаю..." : "Сохранить счёт"}
+                        </td>
+                        <td><EcoBadge tone={status.tone}>{status.label}</EcoBadge></td>
+                        <td className="l-number l-sum">{formatMoney(document.sum)} ₽</td>
+                        <td>
+                          <div className="eco-receipt-table-actions">
+                            <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)}>
+                              {document.applicable ? <Eye size={16} /> : <Pencil size={16} />}
+                            </button>
+                            <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)}>
+                              <Copy size={16} />
+                            </button>
+                            {isReceipt && !document.invoice && (
+                              <button type="button" title="Создать счёт" aria-label="Создать счёт" onClick={() => startInvoiceForDocument(document)}>
+                                <FilePlus2 size={16} />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setInvoiceDraft(null)}
-                                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                              >
-                                Отмена
-                              </button>
-                            </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr className="eco-receipt-details-row">
+                          <td colSpan={8}>
+                            <div className="eco-receipt-details">
+                              <div>
+                                <h3>Позиции</h3>
+                                {document.positions.map((position) => (
+                                  <div key={position.id} className="eco-receipt-details-position">
+                                    <span>{position.name}</span>
+                                    <strong>{formatQty(position.quantity)} × {formatMoney(position.price)} ₽</strong>
+                                  </div>
+                                ))}
+                              </div>
+                              {isReceipt && (
+                                <div className="eco-receipt-details-side">
+                                  <h3>Связанные документы</h3>
+                                  {document.invoice ? (
+                                    <Link href={`/finance/invoices?invoice=${document.invoice.id}`}>
+                                      Счёт {document.invoice.number || "без номера"} · {formatMoney(document.invoice.sum)} ₽ · {invoiceStatusLabel(document.invoice.status)}
+                                    </Link>
+                                  ) : (
+                                    <p>Связанных счетов пока нет.</p>
+                                  )}
+                                  {invoiceDraft?.documentId === document.id && (
+                                    <div className="eco-receipt-invoice-draft">
+                                      <EcoInput value={invoiceDraft.number} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, number: event.target.value })} placeholder="Номер счёта" />
+                                      <EcoInput type="date" value={invoiceDraft.invoiceDate} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, invoiceDate: event.target.value })} />
+                                      <EcoInput type="date" value={invoiceDraft.dueDate} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, dueDate: event.target.value })} />
+                                      <EcoSelect value={invoiceDraft.status} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, status: event.target.value })}>
+                                        <option value="unpaid">Не оплачен</option>
+                                        <option value="partial">Частично</option>
+                                        <option value="paid">Оплачен</option>
+                                      </EcoSelect>
+                                      <EcoButton type="button" variant="primary" onClick={() => void createInvoiceForExistingReceipt(document)} disabled={invoiceSaving}>
+                                        {invoiceSaving ? <Loader2 size={14} /> : <Save size={14} />}
+                                        Сохранить счёт
+                                      </EcoButton>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

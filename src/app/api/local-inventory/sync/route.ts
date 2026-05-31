@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
 import {
   getLocalInventorySyncStatus,
   startLocalInventorySync,
@@ -37,6 +38,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const access = await requireAccess();
   if (!access.ok) return access.response;
+  if (!isMoySkladSyncEnabled()) {
+    return NextResponse.json({
+      started: false,
+      status: await getLocalInventorySyncStatus(),
+      error: moyskladDisabledMessage("sync"),
+    });
+  }
 
   let body: Record<string, unknown> = {};
   try {

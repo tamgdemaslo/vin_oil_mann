@@ -1,0 +1,194 @@
+{
+  "generatedAt": "2026-05-31T19:59:48.169Z",
+  "mode": "verify",
+  "days": 7,
+  "cutoff": "2026-05-23T22:00:00.000Z",
+  "summary": {
+    "missingLocally": 0,
+    "changedRemotely": 0,
+    "localOnly": 0,
+    "conflicts": 0,
+    "readyToImport": 0,
+    "needsManualReview": 18
+  },
+  "sections": {
+    "missingLocally": [],
+    "changedRemotely": [],
+    "localOnly": [],
+    "conflicts": [],
+    "readyToImport": [],
+    "needsManualReview": [
+      {
+        "entity": "payments",
+        "id": "0156497a-5848-11f1-0a80-09d2003a7cd5",
+        "name": "00041",
+        "reason": "Оплаты МойСклад имеют nullable legacy-поля локально, но требуют ручной проверки связи с локальным счётом/кассовым документом перед automatic import"
+      },
+      {
+        "entity": "payments",
+        "id": "993f7eb2-5847-11f1-0a80-1948003abd3e",
+        "name": "00040",
+        "reason": "Оплаты МойСклад имеют nullable legacy-поля локально, но требуют ручной проверки связи с локальным счётом/кассовым документом перед automatic import"
+      },
+      {
+        "entity": "supplierInvoices",
+        "id": "92e2410f-5847-11f1-0a80-09d2003a6604",
+        "name": "3470",
+        "reason": "LocalSupplierInvoice хранит nullable legacy-поля, но automatic import счетов поставщиков заблокирован до проверки связей с приёмками и оплатами"
+      },
+      {
+        "entity": "supplies",
+        "id": "114dbc9f-5cee-11f1-0a80-1b8b0022c48d",
+        "name": "00241",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "c8196b24-5cfa-11f1-0a80-041d00241381",
+        "name": "00243",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "31cfa0cc-5cf8-11f1-0a80-19be0023237d",
+        "name": "00242",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "8c14f09b-5c1c-11f1-0a80-130600197537",
+        "name": "00240",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "724c13d2-5c04-11f1-0a80-1aef001854c6",
+        "name": "00239",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "6a9bb5dc-5b52-11f1-0a80-1cae000d24a8",
+        "name": "00238",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "b2317bd4-5aaa-11f1-0a80-07fb002401b5",
+        "name": "00237",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "e10f86e0-5a9e-11f1-0a80-07fb0021227d",
+        "name": "00236",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "1b513bfd-5a63-11f1-0a80-09d80005721e",
+        "name": "00234",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "5e22f674-5a8e-11f1-0a80-0586000efa88",
+        "name": "00235",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "756a4139-59b6-11f1-0a80-03b6000b3264",
+        "name": "00233",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "fc6998b5-599b-11f1-0a80-157900059e58",
+        "name": "00232",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "5f2494a5-5921-11f1-0a80-1adf00adbada",
+        "name": "00231",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "be0488b5-58f0-11f1-0a80-1948004b8c4c",
+        "name": "00230",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      },
+      {
+        "entity": "supplies",
+        "id": "4bda5a51-58e2-11f1-0a80-10740046721d",
+        "name": "00229",
+        "reason": "LocalInventoryDocument хранит nullable legacy-поля, но automatic import приёмок заблокирован до проверки трансформации позиций и связей"
+      }
+    ]
+  },
+  "entities": {
+    "organizations": {
+      "remote": 0,
+      "local": 0
+    },
+    "stores": {
+      "remote": 0,
+      "local": 0
+    },
+    "products": {
+      "remote": 366,
+      "local": 935
+    },
+    "services": {
+      "remote": 0,
+      "local": 0
+    },
+    "counterparties": {
+      "remote": 10,
+      "local": 10
+    },
+    "demands": {
+      "remote": 48,
+      "local": 56
+    },
+    "demandPositions": {
+      "remote": 145,
+      "local": 162
+    },
+    "stock": {
+      "remote": 833,
+      "local": 837
+    },
+    "cashouts": {
+      "remote": 1,
+      "local": 1
+    },
+    "payments": {
+      "remote": 2,
+      "local": 0
+    },
+    "supplierInvoices": {
+      "remote": 1,
+      "local": 1
+    },
+    "supplies": {
+      "remote": 15,
+      "local": 1
+    },
+    "writeoffs": {
+      "remote": 0,
+      "local": 1
+    }
+  },
+  "readiness": {
+    "backupConfirmed": false,
+    "canBackfill": false,
+    "blockers": [
+      "Для import supplies/writeoffs нужен проверенный transformer/upsert; legacy-поля уже nullable и не блокируют локальную работу",
+      "Для import supplier invoices нужна проверка связей с приёмками/оплатами; legacy-поля уже nullable",
+      "Для import payments нужна проверка связи с локальным счётом/кассовым документом; legacy-поля уже nullable"
+    ]
+  }
+}

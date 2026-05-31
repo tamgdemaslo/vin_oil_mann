@@ -21,9 +21,10 @@ export async function GET(request: NextRequest) {
   }
 
   const sp = request.nextUrl.searchParams;
+  const clientKey = sp.get("clientKey")?.trim() || "";
   const phone = sp.get("phone")?.trim() || "";
-  if (!phone) {
-    return NextResponse.json({ error: "Укажите phone" }, { status: 400 });
+  if (!clientKey && !phone) {
+    return NextResponse.json({ error: "Укажите клиента" }, { status: 400 });
   }
 
   const dateFrom = sp.get("dateFrom")?.trim() || null;
@@ -31,7 +32,8 @@ export async function GET(request: NextRequest) {
   const services = parseServices(sp.get("services"));
 
   const result = await loadCustomerDemandHistory({
-    normalizedPhone: phone,
+    clientKey: clientKey || `phone:${phone}`,
+    normalizedPhone: phone || null,
     dateFrom,
     dateTo,
     serviceIds: services,

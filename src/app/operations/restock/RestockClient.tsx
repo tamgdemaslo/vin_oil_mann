@@ -1,9 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Settings2, ShoppingCart, Truck } from "lucide-react";
-import { EcoBadge, EcoButton, EcoKpi } from "@/components/platform/EcoUI";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  FilePlus2,
+  Loader2,
+  PackageCheck,
+  PackageSearch,
+  RefreshCw,
+  Search,
+  Settings2,
+  ShoppingCart,
+  Trash2,
+  Truck,
+  X,
+} from "lucide-react";
+import { EcoBadge, EcoButton, EcoInput, EcoKpi } from "@/components/platform/EcoUI";
 
 type RestockItem = {
   productId: string;
@@ -40,6 +56,7 @@ type RosskoSearchState = {
   error?: string;
   status?: string;
   results?: RosskoOffer[];
+  checkedAt?: number;
 };
 type RosskoCartLine = {
   partnumber: string;
@@ -49,12 +66,28 @@ type RosskoCartLine = {
   title: string;
   code: string;
   productId: string;
+  price: number | null;
+  delivery: string;
+  available: number | null;
+  city: string;
+  offerName: string;
+};
+type RosskoHealth = {
+  status: "checking" | "ok" | "error";
+  checkedAt?: number;
+  error?: string;
+};
+type RosskoBulkState = {
+  active: boolean;
+  current: number;
+  total: number;
 };
 
 const LS_QTY = "vin-oil-restock-qty";
 const LS_EXC = "vin-oil-restock-excluded";
 const LS_ROSSKO_CART = "vin-oil-restock-rossko-cart";
 const LS_ROSSKO_CACHE = "vin-oil-restock-rossko-search-cache";
+const LS_ROSSKO_OFFER_QTY = "vin-oil-restock-rossko-offer-qty";
 const ROSSKO_SUPPLIER_FIXED = 'ООО "ГРИНЛАЙТ"';
 const DEFAULT_RSSK_CONTACT_NAME = "ИП Елисеенко Илья Сергеевич";
 const DEFAULT_RSSK_CONTACT_PHONE = "+79058677833";
@@ -83,6 +116,16 @@ function fmtNum(n: number | null | undefined): string {
   return n.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
 }
 
+function fmtMoney(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtTime(ts: number | undefined): string {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
 function defaultQty(it: RestockItem): number {
   const s = it.shortage;
   if (s !== undefined && s !== null && Number.isFinite(s)) return Math.max(1, Math.ceil(s));
@@ -100,6 +143,44 @@ function isRosskoItem(it: RestockItem): boolean {
 function toNum(x: unknown): number | null {
   const v = Number(String(x ?? "").replace(",", "."));
   return Number.isFinite(v) ? v : null;
+}
+
+function stockCount(stock: RosskoStock): number | null {
+  return toNum(stock.count);
+}
+
+function stockPrice(stock: RosskoStock): number | null {
+  return toNum(stock.price);
+}
+
+function deliveryRank(stock: RosskoStock): number {
+  const raw = String(stock.delivery ?? "").toLowerCase().trim();
+  if (!raw || raw === "—") return Number.MAX_SAFE_INTEGER;
+  if (raw.includes("сегодня")) return 0;
+  if (raw.includes("завтра")) return 1;
+  const num = toNum(raw.replace(/[^\d,.]+/g, " "));
+  if (num !== null) return num;
+  return Number.MAX_SAFE_INTEGER - 1;
+}
+
+function deliveryLabel(stock: RosskoStock): string {
+  const raw = String(stock.delivery ?? "").trim();
+  if (!raw || raw === "—") return "уточняется";
+  const rank = deliveryRank(stock);
+  if (rank === 0 && /^\d+$/.test(raw)) return "сегодня";
+  if (rank === 1 && /^\d+$/.test(raw)) return "завтра";
+  return raw;
+}
+
+function offerStockKey(productId: string, offer: Pick<RosskoOffer, "brand" | "partnumber">, stock: Pick<RosskoStock, "id">): string {
+  return `${productId}||${offer.brand}||${offer.partnumber}||${stock.id}`;
+}
+
+function friendlyRosskoError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error ?? "");
+  if (/text должен/i.test(msg)) return "Не задан поисковый запрос";
+  if (/delivery|address|payment|key|не задан|не заданы/i.test(msg)) return "ROSSKO недоступен: проверьте настройки подключения";
+  return "Не удалось получить предложения ROSSKO";
 }
 
 function normSkuBlob(s: unknown): string {
@@ -250,8 +331,22 @@ function finalizeRosskoOffers(offers: RosskoOffer[], it: RestockItem): RosskoOff
   return (filtered.length ? filtered : offers).slice(0, 24);
 }
 
-function cartKey(line: Pick<RosskoCartLine, "partnumber" | "brand" | "stock">): string {
-  return `${line.brand}||${line.partnumber}||${line.stock}`;
+function normalizeRosskoCart(lines: RosskoCartLine[]): RosskoCartLine[] {
+  return lines
+    .filter((line) => line && line.partnumber && line.brand && line.stock && line.productId)
+    .map((line) => ({
+      ...line,
+      count: Math.max(1, Math.floor(Number(line.count || 1))),
+      price: typeof line.price === "number" && Number.isFinite(line.price) ? line.price : null,
+      delivery: line.delivery || "уточняется",
+      available: typeof line.available === "number" && Number.isFinite(line.available) ? line.available : null,
+      city: line.city || "",
+      offerName: line.offerName || `${line.brand} ${line.partnumber}`,
+    }));
+}
+
+function cartKey(line: Pick<RosskoCartLine, "productId" | "partnumber" | "brand" | "stock">): string {
+  return `${line.productId}||${line.brand}||${line.partnumber}||${line.stock}`;
 }
 
 export default function RestockClient() {
@@ -277,13 +372,21 @@ export default function RestockClient() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rosskoState, setRosskoState] = useState<Record<string, RosskoSearchState>>({});
   const [rosskoCart, setRosskoCart] = useState<RosskoCartLine[]>([]);
+  const [rosskoOfferQty, setRosskoOfferQty] = useState<Record<string, number>>({});
+  const [rosskoAddState, setRosskoAddState] = useState<Record<string, "loading" | "success" | "error">>({});
+  const [rosskoHealth, setRosskoHealth] = useState<RosskoHealth>({ status: "checking" });
+  const [rosskoBulk, setRosskoBulk] = useState<RosskoBulkState>({ active: false, current: 0, total: 0 });
+  const [rosskoManualQuery, setRosskoManualQuery] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [receiptDraftBusy, setReceiptDraftBusy] = useState(false);
 
   useEffect(() => {
     setQtyByProduct(loadJson<Record<string, number>>(LS_QTY, {}));
     setExcluded(loadJson<Record<string, boolean>>(LS_EXC, {}));
-    setRosskoCart(loadJson<RosskoCartLine[]>(LS_ROSSKO_CART, []));
+    setRosskoCart(normalizeRosskoCart(loadJson<RosskoCartLine[]>(LS_ROSSKO_CART, [])));
+    setRosskoOfferQty(loadJson<Record<string, number>>(LS_ROSSKO_OFFER_QTY, {}));
   }, []);
 
   const persistQty = useCallback((next: Record<string, number>) => {
@@ -297,8 +400,32 @@ export default function RestockClient() {
   }, []);
 
   const persistRosskoCart = useCallback((next: RosskoCartLine[]) => {
-    setRosskoCart(next);
-    saveJson(LS_ROSSKO_CART, next);
+    const normalized = normalizeRosskoCart(next);
+    setRosskoCart(normalized);
+    saveJson(LS_ROSSKO_CART, normalized);
+  }, []);
+
+  const persistRosskoOfferQty = useCallback((next: Record<string, number>) => {
+    setRosskoOfferQty(next);
+    saveJson(LS_ROSSKO_OFFER_QTY, next);
+  }, []);
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    window.setTimeout(() => setToast(""), 2800);
+  }, []);
+
+  const checkRosskoApi = useCallback(async () => {
+    setRosskoHealth((prev) => ({ ...prev, status: "checking", error: undefined }));
+    try {
+      const res = await fetch("/api/rossko/checkout-details", { headers: { Accept: "application/json" }, cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setRosskoHealth({ status: "ok", checkedAt: Date.now() });
+    } catch (e) {
+      console.warn("ROSSKO health-check failed", e);
+      setRosskoHealth({ status: "error", checkedAt: Date.now(), error: friendlyRosskoError(e) });
+    }
   }, []);
 
   const loadBelowMin = useCallback(async (refresh: boolean) => {
@@ -364,6 +491,10 @@ export default function RestockClient() {
     else void loadOutflowRef.current(false);
   }, [mode, loadBelowMin]);
 
+  useEffect(() => {
+    if (selected === "ROSSKO" && !rosskoHealth.checkedAt) void checkRosskoApi();
+  }, [checkRosskoApi, rosskoHealth.checkedAt, selected]);
+
   const suppliers = useMemo(() => {
     const set = new Set<string>();
     for (const it of items) {
@@ -403,6 +534,24 @@ export default function RestockClient() {
     () => rosskoCart.reduce((sum, x) => sum + Math.max(0, Number(x.count || 0)), 0),
     [rosskoCart]
   );
+  const rosskoCartSum = useMemo(
+    () => rosskoCart.reduce((sum, x) => sum + Math.max(0, Number(x.count || 0)) * Math.max(0, Number(x.price || 0)), 0),
+    [rosskoCart]
+  );
+  const cartQtyByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of rosskoCart) {
+      map.set(line.productId, (map.get(line.productId) ?? 0) + Math.max(0, Number(line.count || 0)));
+    }
+    return map;
+  }, [rosskoCart]);
+  const cartQtyByOffer = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of rosskoCart) {
+      map.set(cartKey(line), (map.get(cartKey(line)) ?? 0) + Math.max(0, Number(line.count || 0)));
+    }
+    return map;
+  }, [rosskoCart]);
   const restockStats = useMemo(
     () => ({
       all: items.length,
@@ -455,13 +604,14 @@ export default function RestockClient() {
     }
   }
 
-  async function rosskoSearch(pid: string, it: RestockItem) {
+  async function rosskoSearch(pid: string, it: RestockItem, queryOverride?: string) {
     setRosskoState((prev) => ({
       ...prev,
-      [pid]: { ...(prev[pid] ?? {}), open: true, loading: true, error: "", status: "поиск..." },
+      [pid]: { ...(prev[pid] ?? {}), open: true, loading: true, error: "", status: "loading" },
     }));
     try {
-      const primary = pickQueryFor(it);
+      const primary = (queryOverride?.trim() || pickQueryFor(it)).trim();
+      if (primary.length < 2) throw new Error("text должен быть не короче 2 символов");
       const cache = loadJson<Record<string, { ts: number; raw: RosskoOffer[] }>>(LS_ROSSKO_CACHE, {});
       const cacheKey = `${pid}||${primary.toLowerCase()}`;
       let raw = cache[cacheKey]?.ts && Date.now() - cache[cacheKey].ts < 24 * 60 * 60 * 1000 ? cache[cacheKey].raw : null;
@@ -495,20 +645,23 @@ export default function RestockClient() {
           open: true,
           loading: false,
           error: "",
-          status: shown.length ? "найдено" : "не найдено",
+          status: shown.length ? "found" : "not_found",
           results: shown,
+          checkedAt: Date.now(),
         },
       }));
     } catch (e) {
+      console.warn("ROSSKO search failed", e);
       setRosskoState((prev) => ({
         ...prev,
         [pid]: {
           ...(prev[pid] ?? {}),
           open: true,
           loading: false,
-          status: "ошибка",
-          error: e instanceof Error ? e.message : String(e),
+          status: "error",
+          error: friendlyRosskoError(e),
           results: [],
+          checkedAt: Date.now(),
         },
       }));
     }
@@ -521,16 +674,111 @@ export default function RestockClient() {
     if (open && !current?.results && !current?.loading) void rosskoSearch(pid, it);
   }
 
+  function setRosskoRowOpen(pid: string, open: boolean) {
+    setRosskoState((prev) => ({ ...prev, [pid]: { ...(prev[pid] ?? {}), open } }));
+  }
+
+  async function bulkRosskoSearch() {
+    const rows = filteredItems.filter((it) => !rosskoState[it.productId]?.loading);
+    if (!rows.length || rosskoBulk.active) return;
+    setRosskoBulk({ active: true, current: 0, total: rows.length });
+    for (let index = 0; index < rows.length; index += 1) {
+      const item = rows[index];
+      setRosskoBulk({ active: true, current: index + 1, total: rows.length });
+      await rosskoSearch(item.productId, item);
+    }
+    setRosskoBulk({ active: false, current: rows.length, total: rows.length });
+  }
+
+  function offerQty(key: string, it: RestockItem, stock: RosskoStock): number {
+    const saved = rosskoOfferQty[key];
+    const available = stockCount(stock);
+    const wanted = defaultQty(it);
+    const fallback = available !== null ? Math.min(wanted, Math.max(1, Math.floor(available))) : wanted;
+    const qty = typeof saved === "number" && saved > 0 ? Math.floor(saved) : fallback;
+    if (available !== null) return Math.min(Math.max(1, qty), Math.max(1, Math.floor(available)));
+    return Math.max(1, qty);
+  }
+
+  function setOfferQtyValue(key: string, value: number) {
+    const next = { ...rosskoOfferQty, [key]: Math.max(1, Math.floor(value || 1)) };
+    persistRosskoOfferQty(next);
+  }
+
   function addRosskoToCart(line: RosskoCartLine) {
+    const key = cartKey(line);
+    setRosskoAddState((prev) => ({ ...prev, [key]: "loading" }));
     const next = [...rosskoCart];
     const idx = next.findIndex((x) => cartKey(x) === cartKey(line));
     if (idx >= 0) {
-      next[idx] = { ...next[idx], count: Math.max(1, Number(next[idx].count || 1) + Number(line.count || 1)) };
+      const maxAvailable = line.available ?? next[idx].available ?? null;
+      const nextCount = Math.max(1, Number(next[idx].count || 1) + Number(line.count || 1));
+      next[idx] = { ...next[idx], ...line, count: maxAvailable !== null ? Math.min(nextCount, maxAvailable) : nextCount };
     } else {
       next.push(line);
     }
     persistRosskoCart(next);
-    setCartOpen(true);
+    setRosskoAddState((prev) => ({ ...prev, [key]: "success" }));
+    showToast("Позиция добавлена в корзину ROSSKO");
+  }
+
+  function updateCartQty(idx: number, count: number) {
+    const next = [...rosskoCart];
+    if (!next[idx]) return;
+    const available = next[idx].available;
+    const safeCount = Math.max(1, Math.floor(count || 1));
+    next[idx] = { ...next[idx], count: available !== null ? Math.min(safeCount, available) : safeCount };
+    persistRosskoCart(next);
+  }
+
+  function replaceRosskoOffer(line: RosskoCartLine) {
+    setCartOpen(false);
+    setRosskoRowOpen(line.productId, true);
+    const item = items.find((row) => row.productId === line.productId);
+    const current = rosskoState[line.productId];
+    if (item && !current?.results && !current?.loading) void rosskoSearch(line.productId, item);
+  }
+
+  async function createReceiptDraftFromRosskoCart() {
+    const lines = rosskoCart
+      .filter((line) => line.productId && Number(line.count) > 0)
+      .map((line) => ({
+        productId: line.productId,
+        quantity: Math.max(1, Math.floor(Number(line.count || 1))),
+        price: Number(line.price || 0),
+        raw: {
+          source: "ROSSKO",
+          partnumber: line.partnumber,
+          brand: line.brand,
+          stock: line.stock,
+          delivery: line.delivery,
+        },
+      }));
+    if (!lines.length) return;
+    setReceiptDraftBusy(true);
+    try {
+      const res = await fetch("/api/local-inventory/movements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          type: "receipt",
+          applicable: false,
+          counterpartyId: `supplier:${encodeURIComponent(ROSSKO_SUPPLIER_FIXED)}`,
+          documentDate: new Date().toISOString().slice(0, 10),
+          description: "Черновик приёмки из корзины ROSSKO. Остатки не увеличены.",
+          positions: lines,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error || !data.id) throw new Error(data.error || "Не удалось создать черновик приёмки");
+      showToast("Черновик приёмки создан");
+      window.location.href = `/inventory/receipts?document=${encodeURIComponent(data.id)}&open=edit`;
+    } catch (e) {
+      console.warn("ROSSKO receipt draft failed", e);
+      showToast(e instanceof Error ? e.message : "Не удалось создать черновик приёмки");
+    } finally {
+      setReceiptDraftBusy(false);
+    }
   }
 
   async function checkoutRosskoCart() {
@@ -571,9 +819,10 @@ export default function RestockClient() {
       }
       persistRosskoCart([]);
       setCartOpen(false);
-      alert(`ROSSKO: заказ оформлен${orderId ? ` #${orderId}` : ""}`);
+      showToast(`Заказ ROSSKO сформирован${orderId ? ` #${orderId}` : ""}`);
     } catch (e) {
-      alert(`Не удалось оформить заказ ROSSKO: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn("ROSSKO checkout failed", e);
+      showToast("Не удалось сформировать заказ ROSSKO");
     } finally {
       setCheckoutBusy(false);
     }
@@ -624,12 +873,10 @@ export default function RestockClient() {
               Обновить
             </EcoButton>
           )}
-          {selected === "ROSSKO" && (
-            <EcoButton type="button" variant="primary" onClick={() => setCartOpen((prev) => !prev)}>
-              <ShoppingCart size={15} />
-              Корзина ({rosskoCartTotal})
-            </EcoButton>
-          )}
+          <EcoButton type="button" variant="primary" onClick={() => setCartOpen(true)}>
+            <ShoppingCart size={15} />
+            Корзина ({rosskoCartTotal})
+          </EcoButton>
         </div>
       </section>
 
@@ -704,16 +951,8 @@ export default function RestockClient() {
                 Обновить
               </EcoButton>
             )}
-            {selected === "ROSSKO" && (
-              <EcoButton
-                type="button"
-                onClick={() => setCartOpen((prev) => !prev)}
-                size="sm"
-                variant="primary"
-              >
-                <ShoppingCart size={14} />
-                Корзина ROSSKO ({rosskoCartTotal})
-              </EcoButton>
+            {selected === "ROSSKO" && rosskoCartTotal > 0 && (
+              <EcoBadge tone="success">ROSSKO: {rosskoCartTotal}</EcoBadge>
             )}
           </div>
         </div>
@@ -776,32 +1015,29 @@ export default function RestockClient() {
 
         {!loading && selected === "ROSSKO" && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-100">
-              ROSSKO подключен через серверный SOAP API: можно искать наличие, добавлять позиции в корзину и оформлять заказ.
-            </div>
-            {cartOpen && (
-              <RosskoCart
-                lines={rosskoCart}
-                checkoutBusy={checkoutBusy}
-                onQty={(idx, count) => {
-                  const next = [...rosskoCart];
-                  if (!next[idx]) return;
-                  next[idx] = { ...next[idx], count: Math.max(1, Math.floor(count || 1)) };
-                  persistRosskoCart(next);
-                }}
-                onDelete={(idx) => persistRosskoCart(rosskoCart.filter((_, i) => i !== idx))}
-                onClear={() => persistRosskoCart([])}
-                onCheckout={() => void checkoutRosskoCart()}
-              />
-            )}
+            <RosskoStatusPanel
+              health={rosskoHealth}
+              bulk={rosskoBulk}
+              disabled={!filteredItems.length || rosskoBulk.active || rosskoHealth.status === "error"}
+              onRetry={() => void checkRosskoApi()}
+              onBulk={() => void bulkRosskoSearch()}
+            />
             <RosskoItemsTable
               grouped={grouped}
               showSpend={mode === "outflow" && outflowLoaded}
               ensureQty={ensureQty}
               rosskoState={rosskoState}
+              cartQtyByProduct={cartQtyByProduct}
+              cartQtyByOffer={cartQtyByOffer}
+              offerQty={offerQty}
+              setOfferQty={setOfferQtyValue}
+              addState={rosskoAddState}
+              manualQuery={rosskoManualQuery}
+              setManualQuery={(pid, value) => setRosskoManualQuery((prev) => ({ ...prev, [pid]: value }))}
               toggleRossko={toggleRossko}
-              refreshRossko={(pid, it) => void rosskoSearch(pid, it)}
+              refreshRossko={(pid, it, query) => void rosskoSearch(pid, it, query)}
               addToCart={addRosskoToCart}
+              apiUnavailable={rosskoHealth.status === "error"}
             />
           </div>
         )}
@@ -847,6 +1083,30 @@ export default function RestockClient() {
       </section>
       </div>
 
+      {cartOpen && (
+        <RosskoCartDrawer
+          lines={rosskoCart}
+          totalQty={rosskoCartTotal}
+          totalSum={rosskoCartSum}
+          checkoutBusy={checkoutBusy}
+          receiptDraftBusy={receiptDraftBusy}
+          onClose={() => setCartOpen(false)}
+          onQty={updateCartQty}
+          onDelete={(idx) => persistRosskoCart(rosskoCart.filter((_, i) => i !== idx))}
+          onClear={() => persistRosskoCart([])}
+          onReplace={replaceRosskoOffer}
+          onCheckout={() => void checkoutRosskoCart()}
+          onReceiptDraft={() => void createReceiptDraftFromRosskoCart()}
+        />
+      )}
+
+      {toast && (
+        <div className="eco-restock-toast" role="status">
+          <CheckCircle2 size={17} />
+          <span>{toast}</span>
+        </div>
+      )}
+
       {settingsOpen && (
         <button
           type="button"
@@ -880,82 +1140,393 @@ export default function RestockClient() {
   );
 }
 
-function RosskoCart({
+function RosskoStatusPanel({
+  health,
+  bulk,
+  disabled,
+  onRetry,
+  onBulk,
+}: {
+  health: RosskoHealth;
+  bulk: RosskoBulkState;
+  disabled: boolean;
+  onRetry: () => void;
+  onBulk: () => void;
+}) {
+  const ok = health.status === "ok";
+  const checking = health.status === "checking";
+  return (
+    <section className={`eco-restock-rossko-status ${ok || checking ? "is-ok" : "is-error"}`}>
+      <div className="eco-restock-rossko-status__icon">
+        {checking ? <Loader2 size={18} className="eco-spin" /> : ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+      </div>
+      <div className="eco-restock-rossko-status__body">
+        <strong>{ok || checking ? "ROSSKO подключён" : "ROSSKO недоступен"}</strong>
+        <span>
+          {ok || checking
+            ? "Можно искать наличие, добавлять позиции в корзину и оформлять заказ"
+            : "Поиск предложений временно невозможен. Попробуйте обновить позже"}
+        </span>
+        <em>Проверено: {fmtTime(health.checkedAt)}</em>
+        {bulk.active && (
+          <div className="eco-restock-rossko-progress">
+            <span>Проверяем {bulk.current} из {bulk.total}…</span>
+            <div><i style={{ width: `${bulk.total ? Math.round((bulk.current / bulk.total) * 100) : 0}%` }} /></div>
+          </div>
+        )}
+      </div>
+      <div className="eco-restock-rossko-status__actions">
+        {ok && (
+          <EcoButton type="button" onClick={onBulk} disabled={disabled} size="sm" variant="primary">
+            {bulk.active ? <Loader2 size={14} className="eco-spin" /> : <PackageSearch size={14} />}
+            Проверить наличие ROSSKO
+          </EcoButton>
+        )}
+        {!ok && (
+          <EcoButton type="button" onClick={onRetry} disabled={checking} size="sm">
+            <RefreshCw size={14} className={checking ? "eco-spin" : ""} />
+            Повторить проверку
+          </EcoButton>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RosskoCartDrawer({
   lines,
+  totalQty,
+  totalSum,
   checkoutBusy,
+  receiptDraftBusy,
+  onClose,
   onQty,
   onDelete,
   onClear,
+  onReplace,
   onCheckout,
+  onReceiptDraft,
 }: {
   lines: RosskoCartLine[];
+  totalQty: number;
+  totalSum: number;
   checkoutBusy: boolean;
+  receiptDraftBusy: boolean;
+  onClose: () => void;
   onQty: (idx: number, count: number) => void;
   onDelete: (idx: number) => void;
   onClear: () => void;
+  onReplace: (line: RosskoCartLine) => void;
   onCheckout: () => void;
+  onReceiptDraft: () => void;
 }) {
-  const total = lines.reduce((sum, x) => sum + Math.max(0, Number(x.count || 0)), 0);
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Корзина ROSSKO</div>
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">Позиций: {total}</div>
-        </div>
-        {!!lines.length && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Очистить
+    <div className="eco-restock-cart-shell" role="presentation">
+      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть корзину" onClick={onClose} />
+      <aside className="eco-restock-cart-drawer" role="dialog" aria-modal="true" aria-label="Корзина пополнения">
+        <header className="eco-restock-cart-head">
+          <div>
+            <span>Корзина пополнения</span>
+            <h2>ROSSKO</h2>
+          </div>
+          <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть">
+            <X size={18} />
           </button>
-        )}
-      </div>
-      {lines.length ? (
-        <div className="mt-3 space-y-2">
-          {lines.map((x, idx) => (
-            <div
-              key={`${cartKey(x)}:${idx}`}
-              className="flex flex-col gap-2 rounded-xl border border-zinc-100 p-3 dark:border-zinc-800 sm:flex-row sm:items-center"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  {x.brand} {x.partnumber} <span className="font-mono text-xs text-zinc-500">{x.stock}</span>
-                </div>
-                <div className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {x.title} {x.code ? `(${x.code})` : ""}
-                </div>
-              </div>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={x.count}
-                onChange={(e) => onQty(idx, parseInt(e.target.value, 10) || 1)}
-                className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm dark:border-zinc-700 dark:bg-zinc-950"
-              />
-              <button
-                type="button"
-                onClick={() => onDelete(idx)}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Удалить
-              </button>
+        </header>
+
+        <div className="eco-restock-cart-summary">
+          <div><span>Поставщик</span><strong>ROSSKO</strong></div>
+          <div><span>Позиции</span><strong>{lines.length}</strong></div>
+          <div><span>Единицы</span><strong>{fmtNum(totalQty)}</strong></div>
+          <div><span>Сумма</span><strong>{fmtMoney(totalSum)} ₽</strong></div>
+        </div>
+
+        <div className="eco-restock-cart-body">
+          {lines.length ? (
+            <div className="eco-restock-cart-group">
+              {lines.map((line, idx) => {
+                const sum = Math.max(0, Number(line.count || 0)) * Math.max(0, Number(line.price || 0));
+                return (
+                  <article key={`${cartKey(line)}:${idx}`} className="eco-restock-cart-line">
+                    <div className="eco-restock-cart-line__main">
+                      <strong>{line.title || "Локальный товар"}</strong>
+                      <span>{line.code || "без кода"}</span>
+                    </div>
+                    <div className="eco-restock-cart-line__offer">
+                      <b>{line.brand} {line.partnumber}</b>
+                      <span>{line.stock}{line.city ? ` · ${line.city}` : ""}</span>
+                    </div>
+                    <dl>
+                      <div><dt>Цена</dt><dd>{fmtMoney(line.price)} ₽</dd></div>
+                      <div><dt>Доставка</dt><dd>{line.delivery || "уточняется"}</dd></div>
+                      <div><dt>Сумма</dt><dd>{fmtMoney(sum)} ₽</dd></div>
+                    </dl>
+                    <div className="eco-restock-cart-line__actions">
+                      <EcoInput
+                        type="number"
+                        min={1}
+                        max={line.available ?? undefined}
+                        step={1}
+                        value={line.count}
+                        onChange={(event) => onQty(idx, parseInt(event.target.value, 10) || 1)}
+                        aria-label="Количество"
+                      />
+                      <EcoButton type="button" size="sm" onClick={() => onReplace(line)}>
+                        Заменить
+                      </EcoButton>
+                      <button type="button" onClick={() => onDelete(idx)} aria-label="Удалить" className="eco-restock-icon-danger">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={onCheckout}
-            disabled={checkoutBusy}
-            className="mt-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60 dark:bg-amber-600 dark:hover:bg-amber-700"
-          >
-            {checkoutBusy ? "Оформляем..." : "Оформить заказ"}
-          </button>
+          ) : (
+            <div className="eco-restock-cart-empty">
+              <ShoppingCart size={28} />
+              <strong>Корзина пустая</strong>
+              <span>Добавьте предложение ROSSKO из строки товара, чтобы собрать заказ или черновик приёмки.</span>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Корзина пустая.</div>
+
+        <footer className="eco-restock-cart-footer">
+          {!!lines.length && (
+            <button type="button" className="eco-restock-clear" onClick={onClear}>
+              Очистить корзину
+            </button>
+          )}
+          <EcoButton type="button" onClick={onClose}>
+            Закрыть
+          </EcoButton>
+          <EcoButton type="button" onClick={onReceiptDraft} disabled={!lines.length || receiptDraftBusy} variant="primary">
+            {receiptDraftBusy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
+            Создать черновик приёмки
+          </EcoButton>
+          <EcoButton type="button" onClick={onCheckout} disabled={!lines.length || checkoutBusy} className="eco-restock-order-btn">
+            {checkoutBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
+            Сформировать заказ
+          </EcoButton>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function statusLabel(st: RosskoSearchState, inCartQty: number): { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" } {
+  if (inCartQty > 0) return { label: "В корзине", tone: "success" };
+  if (st.loading) return { label: "Ищем…", tone: "info" };
+  if (st.error || st.status === "error") return { label: "Ошибка", tone: "danger" };
+  if (st.status === "not_found") return { label: "Не найдено", tone: "warning" };
+  if (st.results?.length) return { label: `${st.results.reduce((sum, offer) => sum + offer.stocks.length, 0)} предложения`, tone: "success" };
+  return { label: "Не искали", tone: "neutral" };
+}
+
+function offerBadges(rows: { offer: RosskoOffer; stock: RosskoStock }[], it: RestockItem, row: { offer: RosskoOffer; stock: RosskoStock }) {
+  const price = stockPrice(row.stock);
+  const count = stockCount(row.stock);
+  const need = defaultQty(it);
+  const prices = rows.map((x) => stockPrice(x.stock)).filter((x): x is number => x !== null);
+  const ranks = rows.map((x) => deliveryRank(x.stock));
+  const counts = rows.map((x) => stockCount(x.stock)).filter((x): x is number => x !== null);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const minDelivery = ranks.length ? Math.min(...ranks) : null;
+  const maxCount = counts.length ? Math.max(...counts) : null;
+  const hasEnough = count !== null && count >= need;
+  const recommended = hasEnough && (minPrice === null || price === minPrice);
+  const badges: string[] = [];
+  if (recommended) badges.push("Рекомендуем");
+  if (price !== null && minPrice !== null && price === minPrice) badges.push("Лучшая цена");
+  if (minDelivery !== null && deliveryRank(row.stock) === minDelivery) badges.push("Быстрее всего");
+  if (count !== null && maxCount !== null && count === maxCount && count > need) badges.push("Много в наличии");
+  return badges.slice(0, 3);
+}
+
+function flattenedOffers(results: RosskoOffer[] | undefined) {
+  return (results ?? []).flatMap((offer) => offer.stocks.map((stock) => ({ offer, stock })));
+}
+
+function RosskoManualSearch({
+  pid,
+  value,
+  loading,
+  onChange,
+  onSubmit,
+}: {
+  pid: string;
+  value: string;
+  loading: boolean;
+  onChange: (pid: string, value: string) => void;
+  onSubmit: (query: string) => void;
+}) {
+  return (
+    <form
+      className="eco-restock-manual-search"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(value);
+      }}
+    >
+      <Search size={15} />
+      <EcoInput
+        value={value}
+        onChange={(event) => onChange(pid, event.target.value)}
+        placeholder="Ручной поиск по названию, артикулу или бренду"
+      />
+      <EcoButton type="submit" size="sm" disabled={loading || value.trim().length < 2}>
+        {loading ? <Loader2 size={14} className="eco-spin" /> : <Search size={14} />}
+        Найти
+      </EcoButton>
+    </form>
+  );
+}
+
+function RosskoOfferPanel({
+  item,
+  state,
+  cartQtyByOffer,
+  offerQty,
+  setOfferQty,
+  addState,
+  manualQuery,
+  setManualQuery,
+  refreshRossko,
+  addToCart,
+}: {
+  item: RestockItem;
+  state: RosskoSearchState;
+  cartQtyByOffer: Map<string, number>;
+  offerQty: (key: string, item: RestockItem, stock: RosskoStock) => number;
+  setOfferQty: (key: string, value: number) => void;
+  addState: Record<string, "loading" | "success" | "error">;
+  manualQuery: string;
+  setManualQuery: (pid: string, value: string) => void;
+  refreshRossko: (pid: string, item: RestockItem, query?: string) => void;
+  addToCart: (line: RosskoCartLine) => void;
+}) {
+  const rows = flattenedOffers(state.results);
+  return (
+    <div className="eco-restock-offer-panel">
+      <div className="eco-restock-offer-panel__head">
+        <div>
+          <span>Предложения ROSSKO для:</span>
+          <strong>{item.name ?? "товар без названия"}</strong>
+        </div>
+        <EcoButton type="button" size="sm" onClick={() => refreshRossko(item.productId, item)} disabled={!!state.loading}>
+          {state.loading ? <Loader2 size={14} className="eco-spin" /> : <RefreshCw size={14} />}
+          Обновить
+        </EcoButton>
+      </div>
+
+      {state.loading && (
+        <div className="eco-restock-offer-state">
+          <Loader2 size={16} className="eco-spin" />
+          Ищем предложения ROSSKO…
+        </div>
+      )}
+      {state.error && (
+        <div className="eco-restock-offer-state is-error">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>{state.error}</strong>
+            <span>Технические детали сохранены в dev/log.</span>
+          </div>
+        </div>
+      )}
+      {!state.loading && !state.error && state.status === "not_found" && (
+        <div className="eco-restock-offer-state is-empty">
+          <AlertTriangle size={16} />
+          <div>
+            <strong>Предложений не найдено</strong>
+            <span>Можно повторить поиск или подобрать товар вручную.</span>
+          </div>
+        </div>
+      )}
+
+      {(state.error || state.status === "not_found") && (
+        <RosskoManualSearch
+          pid={item.productId}
+          value={manualQuery}
+          loading={!!state.loading}
+          onChange={setManualQuery}
+          onSubmit={(query) => refreshRossko(item.productId, item, query)}
+        />
+      )}
+
+      {!!rows.length && (
+        <div className="eco-restock-offer-list">
+          {rows.map((row) => {
+            const key = offerStockKey(item.productId, row.offer, row.stock);
+            const quantity = offerQty(key, item, row.stock);
+            const count = stockCount(row.stock);
+            const price = stockPrice(row.stock);
+            const inCart = cartQtyByOffer.get(key) ?? 0;
+            const badges = offerBadges(rows, item, row);
+            const shortage = defaultQty(item);
+            const insufficient = count !== null && count < shortage;
+            const qtyError = count !== null && quantity > count;
+            const stateKey = addState[key];
+            return (
+              <article key={key} className={`eco-restock-offer ${inCart ? "is-selected" : ""}`}>
+                <div className="eco-restock-offer__title">
+                  <strong>{row.offer.partnumber}</strong>
+                  <span>{row.offer.brand}{row.stock.city ? ` · ${row.stock.city}` : ""}</span>
+                </div>
+                <div className="eco-restock-offer__facts">
+                  <span>Наличие: <b>{fmtNum(count)}</b></span>
+                  <span>Цена: <b>{fmtMoney(price)} ₽</b></span>
+                  <span>Доставка: <b>{deliveryLabel(row.stock)}</b></span>
+                </div>
+                {!!badges.length && (
+                  <div className="eco-restock-offer__badges">
+                    {badges.map((badge) => <span key={badge}>{badge}</span>)}
+                  </div>
+                )}
+                <div className="eco-restock-offer__buy">
+                  <label>
+                    <span>К заказу</span>
+                    <EcoInput
+                      type="number"
+                      min={1}
+                      max={count ?? undefined}
+                      step={1}
+                      value={quantity}
+                      onChange={(event) => setOfferQty(key, parseInt(event.target.value, 10) || 1)}
+                    />
+                  </label>
+                  <EcoButton
+                    type="button"
+                    size="sm"
+                    variant={inCart ? "secondary" : "primary"}
+                    disabled={(!!stateKey && stateKey === "loading") || qtyError}
+                    onClick={() =>
+                      addToCart({
+                        productId: item.productId,
+                        title: String(item.name ?? ""),
+                        code: String(item.code ?? ""),
+                        partnumber: row.offer.partnumber,
+                        brand: row.offer.brand,
+                        stock: row.stock.id,
+                        count: quantity,
+                        price,
+                        delivery: deliveryLabel(row.stock),
+                        available: count,
+                        city: row.stock.city,
+                        offerName: row.offer.name,
+                      })
+                    }
+                  >
+                    {stateKey === "loading" ? <Loader2 size={14} className="eco-spin" /> : inCart ? <CheckCircle2 size={14} /> : <ShoppingCart size={14} />}
+                    {stateKey === "loading" ? "Добавляем…" : inCart ? `В корзине: ${inCart}` : "В корзину"}
+                  </EcoButton>
+                </div>
+                {insufficient && <p className="eco-restock-offer-warning">Доступно только {fmtNum(count)} из {fmtNum(shortage)}</p>}
+                {qtyError && <p className="eco-restock-offer-warning">Недостаточно наличия</p>}
+              </article>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -966,17 +1537,33 @@ function RosskoItemsTable({
   showSpend,
   ensureQty,
   rosskoState,
+  cartQtyByProduct,
+  cartQtyByOffer,
+  offerQty,
+  setOfferQty,
+  addState,
+  manualQuery,
+  setManualQuery,
   toggleRossko,
   refreshRossko,
   addToCart,
+  apiUnavailable,
 }: {
   grouped: [string, RestockItem[]][];
   showSpend: boolean;
   ensureQty: (pid: string, it: RestockItem) => number;
   rosskoState: Record<string, RosskoSearchState>;
+  cartQtyByProduct: Map<string, number>;
+  cartQtyByOffer: Map<string, number>;
+  offerQty: (key: string, item: RestockItem, stock: RosskoStock) => number;
+  setOfferQty: (key: string, value: number) => void;
+  addState: Record<string, "loading" | "success" | "error">;
+  manualQuery: Record<string, string>;
+  setManualQuery: (pid: string, value: string) => void;
   toggleRossko: (pid: string, it: RestockItem) => void;
-  refreshRossko: (pid: string, it: RestockItem) => void;
+  refreshRossko: (pid: string, it: RestockItem, query?: string) => void;
   addToCart: (line: RosskoCartLine) => void;
+  apiUnavailable: boolean;
 }) {
   if (grouped.length === 0) {
     return (
@@ -991,123 +1578,95 @@ function RosskoItemsTable({
       {grouped.map(([groupName, rows]) => (
         <div key={groupName}>
           <div className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{groupName}</div>
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
-            <table className="min-w-full divide-y divide-zinc-200 text-base dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900/80">
+          <div className="eco-restock-table-wrap">
+            <table className="eco-restock-rossko-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Код</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-600 dark:text-zinc-400">Название</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Остаток</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Мин.</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Дефицит</th>
+                  <th>Товар</th>
+                  <th>Код / артикул</th>
+                  <th>Остаток</th>
+                  <th>Мин.</th>
+                  <th>Дефицит</th>
                   {showSpend && (
-                    <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">Расход</th>
+                    <th>Расход</th>
                   )}
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-400">ROSSKO</th>
+                  <th>Предложения ROSSKO</th>
+                  <th>К заказу</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
+              <tbody>
                 {rows.map((it) => {
                   const pid = it.productId;
                   const st = rosskoState[pid] ?? {};
+                  const inCartQty = cartQtyByProduct.get(pid) ?? 0;
+                  const meta = statusLabel(st, inCartQty);
+                  const colSpan = showSpend ? 9 : 8;
+                  const hasResults = Boolean(st.results?.length);
+                  const actionLabel = (() => {
+                    if (apiUnavailable) return "Повторить проверку";
+                    if (st.loading) return "Ищем…";
+                    if (st.status === "error" || st.status === "not_found") return "Повторить";
+                    if (hasResults) return st.open ? "Скрыть" : `${flattenedOffers(st.results).length} предложения`;
+                    return "Найти предложения";
+                  })();
                   return (
-                    <tr key={pid} className="align-top">
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-zinc-700 dark:text-zinc-300">
-                        {it.code ?? "—"}
-                      </td>
-                      <td className="min-w-[520px] max-w-[720px] px-4 py-3 text-zinc-900 dark:text-zinc-100">
-                        <span className="line-clamp-2">{it.name ?? "—"}</span>
-                        {st.open && (
-                          <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                            <div className="mb-3 flex items-center justify-between gap-3">
-                              <span className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                                Предложения ROSSKO
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => refreshRossko(pid, it)}
-                                disabled={!!st.loading}
-                                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                              >
-                                Обновить
-                              </button>
-                            </div>
-                            {st.loading && <div className="py-2 text-base text-zinc-500">Запрос к ROSSKO...</div>}
-                            {st.error && <div className="py-2 text-base text-red-600 dark:text-red-400">{st.error}</div>}
-                            {!st.loading && !st.error && st.results && !st.results.length && (
-                              <div className="py-2 text-base text-zinc-500">Ничего не найдено.</div>
-                            )}
-                            {!st.loading && !st.error && st.results?.map((offer) => (
-                              <div
-                                key={`${offer.brand}:${offer.partnumber}`}
-                                className="mt-3 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
-                              >
-                                <div className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                                  {offer.brand} {offer.partnumber}
-                                </div>
-                                {offer.name && (
-                                  <div className="mt-1 text-sm leading-5 text-zinc-600 dark:text-zinc-300">
-                                    {offer.name}
-                                  </div>
-                                )}
-                                <div className="mt-3 space-y-2">
-                                  {offer.stocks.map((stock) => (
-                                    <div
-                                      key={`${offer.partnumber}:${stock.id}`}
-                                      className="grid gap-3 rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900 sm:grid-cols-[minmax(110px,1fr)_90px_110px_110px_auto] sm:items-center"
-                                    >
-                                      <span className="font-mono text-sm text-zinc-500 dark:text-zinc-400">{stock.id}</span>
-                                      <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                                        Нал: {fmtNum(toNum(stock.count) ?? undefined)}
-                                      </span>
-                                      <span className="text-zinc-700 dark:text-zinc-300">
-                                        Цена: {fmtNum(toNum(stock.price) ?? undefined)}
-                                      </span>
-                                      <span className="text-zinc-700 dark:text-zinc-300">
-                                        Доставка: {String(stock.delivery)}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          addToCart({
-                                            partnumber: offer.partnumber,
-                                            brand: offer.brand,
-                                            stock: stock.id,
-                                            count: ensureQty(pid, it),
-                                            title: String(it.name ?? ""),
-                                            code: String(it.code ?? ""),
-                                            productId: pid,
-                                          })
-                                        }
-                                        className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950"
-                                      >
-                                        В корзину
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtNum(it.stock)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtNum(it.minimumBalance)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums text-amber-700 dark:text-amber-400">
-                        {fmtNum(it.shortage)}
-                      </td>
-                      {showSpend && <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtNum(it.spentInPeriod)}</td>}
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => toggleRossko(pid, it)}
-                          className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                        >
-                          {st.open ? "Скрыть" : "Найти"}
-                        </button>
-                        {st.status && <div className="mt-1.5 text-sm text-zinc-500">{st.status}</div>}
-                      </td>
-                    </tr>
+                    <Fragment key={pid}>
+                      <tr className={`eco-restock-product-row ${inCartQty ? "is-in-cart" : ""}`}>
+                        <td className="eco-restock-product">
+                          <strong>{it.name ?? "—"}</strong>
+                          {it.group && <span>{it.group}</span>}
+                        </td>
+                        <td className="l-mono">{it.code ?? "—"}</td>
+                        <td className="l-number">{fmtNum(it.stock)}</td>
+                        <td className="l-number">{fmtNum(it.minimumBalance)}</td>
+                        <td className="l-number is-shortage">{fmtNum(it.shortage)}</td>
+                        {showSpend && <td className="l-number">{fmtNum(it.spentInPeriod)}</td>}
+                        <td>
+                          <EcoBadge tone={meta.tone} dot={meta.tone === "success"}>
+                            {meta.label}
+                          </EcoBadge>
+                          {st.checkedAt && <span className="eco-restock-check-time">Проверено: {fmtTime(st.checkedAt)}</span>}
+                        </td>
+                        <td className="l-number">
+                          {inCartQty ? (
+                            <span className="eco-restock-in-cart">В корзине: {fmtNum(inCartQty)}</span>
+                          ) : (
+                            <span>{fmtNum(ensureQty(pid, it))} шт.</span>
+                          )}
+                        </td>
+                        <td className="eco-restock-row-actions">
+                          <EcoButton
+                            type="button"
+                            size="sm"
+                            disabled={apiUnavailable || !!st.loading}
+                            onClick={() => toggleRossko(pid, it)}
+                            variant={hasResults || st.open ? "secondary" : "primary"}
+                          >
+                            {st.loading ? <Loader2 size={14} className="eco-spin" /> : hasResults && st.open ? <ChevronUp size={14} /> : hasResults ? <ChevronDown size={14} /> : <Search size={14} />}
+                            {actionLabel}
+                          </EcoButton>
+                        </td>
+                      </tr>
+                      {st.open && (
+                        <tr className="eco-restock-offer-row">
+                          <td colSpan={colSpan}>
+                            <RosskoOfferPanel
+                              item={it}
+                              state={st}
+                              cartQtyByOffer={cartQtyByOffer}
+                              offerQty={offerQty}
+                              setOfferQty={setOfferQty}
+                              addState={addState}
+                              manualQuery={manualQuery[pid] ?? ""}
+                              setManualQuery={setManualQuery}
+                              refreshRossko={refreshRossko}
+                              addToCart={addToCart}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

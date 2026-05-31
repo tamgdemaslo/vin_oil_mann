@@ -2,19 +2,13 @@ import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
 import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
-import { hasLocalInventoryDemands, isLocalInventoryReadsEnabled, loadLocalDemandList } from "@/lib/local-inventory-read";
-import { moyskladFetch } from "@/lib/moysklad";
-import {
-  listRawPhonesFromCounterparty,
-  normalizePhoneKey,
-  type CounterpartyPhoneSource,
-} from "@/lib/phone-normalize";
+import { loadLocalDemandList } from "@/lib/local-inventory-read";
 import { ShipmentRowActions } from "./ShipmentRowActions";
 
 type DemandAgent = {
   name?: string;
   meta?: { href?: string };
-} & NonNullable<CounterpartyPhoneSource>;
+};
 
 type DemandRow = {
   id: string;
@@ -35,8 +29,6 @@ type ListOk = {
   rows: DemandRow[];
 };
 
-const DEMAND_EXPAND = "agent,agent.contactpersons,organization,store,attributes";
-
 function rubles(sumKopecks: number): string {
   const v = (sumKopecks || 0) / 100;
   return v.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -49,27 +41,6 @@ function formatMoment(value: string): { date: string; time: string } {
     date: date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }),
     time: date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
   };
-}
-
-function normalizePlate(s: string): string {
-  const lookalikes: Record<string, string> = {
-    А: "A",
-    В: "B",
-    Е: "E",
-    К: "K",
-    М: "M",
-    Н: "H",
-    О: "O",
-    Р: "P",
-    С: "C",
-    Т: "T",
-    У: "Y",
-    Х: "X",
-  };
-  return s
-    .toUpperCase()
-    .replace(/[АВЕКМНОРСТУХ]/g, (ch) => lookalikes[ch] ?? ch)
-    .replace(/[^A-ZА-ЯЁ0-9]/g, "");
 }
 
 function getEcoUserName(row: DemandRow): string | undefined {
@@ -119,180 +90,10 @@ function getCounterpartyDisplay(row: DemandRow): string {
   return "—";
 }
 
-function counterpartyHaystack(row: DemandRow): string {
-  const parts: string[] = [];
-  if (row.agent?.name) parts.push(row.agent.name);
-  for (const a of row.attributes ?? []) {
-    const label = (a.name ?? "").toLowerCase();
-    if (/контрагент|клиент|заказчик|покупател|фио|организация\s*заказ/i.test(label)) {
-      parts.push(String(a.value ?? ""));
-    }
-  }
-  return parts.join(" ").toLowerCase();
-}
-
-/** Только доп. поля госномера — без номера документа и прочих атрибутов, чтобы «735» не ловило чужие значения. */
-function plateHaystack(row: DemandRow): string {
-  const parts: string[] = [];
-  const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
-  for (const a of row.attributes ?? []) {
-    if ((attrId && a.id === attrId) || isPlateAttributeName(a.name)) {
-      parts.push(String(a.value ?? ""));
-    }
-  }
-  return normalizePlate(parts.join(" "));
-}
-
-function matchesPlate(row: DemandRow, plateNorm: string): boolean {
-  if (!plateNorm) return true;
-  const display = getPlateDisplay(row);
-  if (display !== "—" && normalizePlate(display).includes(plateNorm)) return true;
-  return plateHaystack(row).includes(plateNorm);
-}
-
-function matchesCounterparty(row: DemandRow, q: string): boolean {
-  if (!q.trim()) return true;
-  return counterpartyHaystack(row).includes(q.trim().toLowerCase());
-}
-
-function matchesDocSearch(row: DemandRow, q: string): boolean {
-  if (!q.trim()) return true;
-  const s = q.trim().toLowerCase();
-  const name = (row.name ?? "").toLowerCase();
-  const desc = (row.description ?? "").toLowerCase();
-  return name.includes(s) || desc.includes(s);
-}
-
-function phoneKeyVariants(phoneKey: string): string[] {
-  const variants = new Set([phoneKey]);
-  if (/^7\d{10}$/.test(phoneKey)) variants.add(`8${phoneKey.slice(1)}`);
-  if (/^8\d{10}$/.test(phoneKey)) variants.add(`7${phoneKey.slice(1)}`);
-  if (phoneKey.length >= 10) variants.add(phoneKey.slice(-10));
-  return [...variants];
-}
-
-function rawTextMatchesPhone(value: unknown, phoneKey: string): boolean {
-  const raw = String(value ?? "").trim();
-  if (!raw) return false;
-  if (normalizePhoneKey(raw) === phoneKey) return true;
-  const digits = raw.replace(/\D/g, "");
-  if (!digits) return false;
-  return phoneKeyVariants(phoneKey).some((variant) => digits.includes(variant));
-}
-
-function matchesPhone(row: DemandRow, phoneKey: string): boolean {
-  if (!phoneKey) return true;
-  const candidates: unknown[] = [...listRawPhonesFromCounterparty(row.agent)];
-  if (row.description) candidates.push(row.description);
-  for (const a of row.attributes ?? []) {
-    const label = (a.name ?? "").toLowerCase();
-    if (/телефон|phone|контакт/i.test(label)) candidates.push(a.value);
-  }
-  return candidates.some((value) => rawTextMatchesPhone(value, phoneKey));
-}
-
-function dedupeDemands(rows: DemandRow[]): DemandRow[] {
-  const map = new Map<string, DemandRow>();
-  for (const r of rows) {
-    if (!map.has(r.id)) map.set(r.id, r);
-  }
-  return [...map.values()].sort((a, b) => String(b.moment).localeCompare(String(a.moment)));
-}
-
-async function collectRecentDemands(maxRows: number): Promise<{ ok: true; rows: DemandRow[] } | { ok: false; error: string }> {
-  const out: DemandRow[] = [];
-  const pageSize = 100;
-
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const limit = Math.min(pageSize, maxRows - offset);
-    const res = await moyskladFetch<ListOk>(
-      `/entity/demand?limit=${limit}&offset=${offset}&order=moment,desc&expand=${DEMAND_EXPAND}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return res;
-    out.push(...(res.data.rows ?? []));
-    if ((res.data.rows?.length ?? 0) < limit || offset + limit >= res.data.meta.size) break;
-  }
-
-  return { ok: true, rows: dedupeDemands(out) };
-}
-
-async function collectDemandsByPlate(plate: string): Promise<{ ok: true; rows: DemandRow[] } | { ok: false; error: string }> {
-  const out: DemandRow[] = [];
-
-  const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
-    `/entity/demand?search=${encodeURIComponent(plate)}&limit=450&order=moment,desc&expand=${DEMAND_EXPAND}`,
-    { cache: "no-store" }
-  );
-  if (bySearch.ok) out.push(...(bySearch.data.rows ?? []));
-
-  const scanLimit = Math.max(100, parseInt(process.env.MOYSKLAD_PLATE_SEARCH_SCAN_LIMIT ?? "1200", 10) || 1200);
-  const recent = await collectRecentDemands(scanLimit);
-  if (!recent.ok && !bySearch.ok) return recent;
-  if (recent.ok) out.push(...recent.rows);
-
-  return { ok: true, rows: dedupeDemands(out) };
-}
-
-async function collectDemandsByCounterparty(counterparty: string): Promise<DemandRow[]> {
-  const out: DemandRow[] = [];
-  const push = (rows: DemandRow[]) => out.push(...rows);
-
-  const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
-    `/entity/demand?search=${encodeURIComponent(counterparty)}&limit=300&order=moment,desc&expand=${DEMAND_EXPAND}`
-  );
-  if (bySearch.ok) push(bySearch.data.rows ?? []);
-
-  const cpList = await moyskladFetch<{ rows: { meta?: { href?: string } }[] }>(
-    `/entity/counterparty?search=${encodeURIComponent(counterparty)}&limit=15`
-  );
-  if (cpList.ok) {
-    for (const row of cpList.data.rows ?? []) {
-      const href = row.meta?.href;
-      if (!href) continue;
-      const res = await moyskladFetch<{ rows: DemandRow[] }>(
-        `/entity/demand?filter=${encodeURIComponent(`agent=${href}`)}&limit=80&order=moment,desc&expand=${DEMAND_EXPAND}`
-      );
-      if (res.ok) push(res.data.rows ?? []);
-    }
-  }
-
-  const orgList = await moyskladFetch<{ rows: { meta?: { href?: string } }[] }>(
-    `/entity/organization?search=${encodeURIComponent(counterparty)}&limit=8`
-  );
-  if (orgList.ok) {
-    for (const row of orgList.data.rows ?? []) {
-      const href = row.meta?.href;
-      if (!href) continue;
-      const res = await moyskladFetch<{ rows: DemandRow[] }>(
-        `/entity/demand?filter=${encodeURIComponent(`agent=${href}`)}&limit=80&order=moment,desc&expand=${DEMAND_EXPAND}`
-      );
-      if (res.ok) push(res.data.rows ?? []);
-    }
-  }
-
-  return dedupeDemands(out).filter((r) => matchesCounterparty(r, counterparty));
-}
-
-async function collectDemandsByPhone(phone: string): Promise<DemandRow[]> {
-  const phoneKey = normalizePhoneKey(phone);
-  if (!phoneKey) return [];
-
-  const out: DemandRow[] = [];
-  const searchTerms = [...new Set([phone.trim(), phoneKey, phoneKey.slice(-10)].filter(Boolean))];
-  for (const term of searchTerms) {
-    const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
-      `/entity/demand?search=${encodeURIComponent(term)}&limit=300&order=moment,desc&expand=${DEMAND_EXPAND}`,
-      { cache: "no-store" }
-    );
-    if (bySearch.ok) out.push(...(bySearch.data.rows ?? []));
-  }
-
-  const scanLimit = Math.max(100, parseInt(process.env.MOYSKLAD_PHONE_SEARCH_SCAN_LIMIT ?? "1200", 10) || 1200);
-  const recent = await collectRecentDemands(scanLimit);
-  if (recent.ok) out.push(...recent.rows);
-
-  return dedupeDemands(out).filter((r) => matchesPhone(r, phoneKey));
+function counterpartyCatalogHref(row: DemandRow): string | null {
+  const name = getCounterpartyDisplay(row);
+  if (!name || name === "—") return null;
+  return `/clients/counterparties?search=${encodeURIComponent(name)}`;
 }
 
 async function loadShipmentList(opts: {
@@ -303,69 +104,13 @@ async function loadShipmentList(opts: {
   offset: number;
   limit: number;
 }): Promise<{ ok: true; data: ListOk } | { ok: false; error: string }> {
-  if (isLocalInventoryReadsEnabled()) {
-    try {
-      if (await hasLocalInventoryDemands()) {
-        const data = await loadLocalDemandList(opts);
-        return { ok: true, data };
-      }
-    } catch (e) {
-      console.warn("[shipment] local inventory read failed, falling back to MoySklad:", e);
-    }
+  try {
+    const data = await loadLocalDemandList(opts);
+    return { ok: true, data };
+  } catch (e) {
+    console.error("[shipment] local inventory read failed:", e);
+    return { ok: false, error: "Не удалось загрузить локальные отгрузки" };
   }
-
-  const { search, counterparty, plate, phone, offset, limit } = opts;
-  const hasCp = counterparty.length > 0;
-  const hasPlate = plate.length > 0;
-  const hasPhone = phone.length > 0;
-  const hasDoc = search.length > 0;
-  const plateNorm = hasPlate ? normalizePlate(plate) : "";
-  const phoneKey = hasPhone ? normalizePhoneKey(phone) : null;
-
-  if (!hasCp && !hasPlate && !hasPhone) {
-    const qs = new URLSearchParams();
-    qs.set("limit", String(limit));
-    qs.set("offset", String(offset));
-    qs.set("order", "moment,desc");
-    qs.set("expand", DEMAND_EXPAND);
-    if (hasDoc) qs.set("search", search);
-    const result = await moyskladFetch<ListOk>(`/entity/demand?${qs.toString()}`, { cache: "no-store" });
-    return result;
-  }
-
-  let pool: DemandRow[] = [];
-  if (hasPhone) {
-    pool = phoneKey ? await collectDemandsByPhone(phone) : [];
-  } else if (hasCp) {
-    pool = await collectDemandsByCounterparty(counterparty);
-  } else {
-    const res = await collectDemandsByPlate(plate);
-    if (!res.ok) return res;
-    pool = res.rows;
-  }
-
-  if (hasPlate) {
-    pool = pool.filter((r) => matchesPlate(r, plateNorm));
-  }
-  if (hasCp) {
-    pool = pool.filter((r) => matchesCounterparty(r, counterparty));
-  }
-  if (hasPhone && phoneKey) {
-    pool = pool.filter((r) => matchesPhone(r, phoneKey));
-  }
-  if (hasDoc) {
-    pool = pool.filter((r) => matchesDocSearch(r, search));
-  }
-
-  const total = pool.length;
-  const rows = pool.slice(offset, offset + limit);
-  return {
-    ok: true,
-    data: {
-      meta: { size: total, limit, offset },
-      rows,
-    },
-  };
 }
 
 function listQuery(search: string, counterparty: string, plate: string, phone: string, offset: number): string {
@@ -395,9 +140,7 @@ export default async function ShipmentListPage({
   const limit = 50;
 
   const result = await loadShipmentList({ search, counterparty, plate, phone, offset, limit });
-  const sourceLabel = isLocalInventoryReadsEnabled()
-    ? "Отгрузки из локальной БД, с fallback на МойСклад"
-    : "Все отгрузки (demand) из МойСклад";
+  const sourceLabel = "Отгрузки из локальной БД";
   const rows = result.ok ? result.data.rows ?? [] : [];
   const postedCount = rows.filter((row) => row.applicable).length;
   const draftCount = rows.length - postedCount;
@@ -476,7 +219,7 @@ export default async function ShipmentListPage({
 
       {!result.ok ? (
         <div className="eco-card eco-card--padded text-sm text-[var(--eco-danger)]">
-          Ошибка МойСклад: {result.error}
+          Ошибка локальной БД: {result.error}
         </div>
       ) : (
         <>
@@ -513,6 +256,8 @@ export default async function ShipmentListPage({
               <tbody>
                 {rows.map((r) => {
                   const moment = formatMoment(r.moment);
+                  const counterpartyName = getCounterpartyDisplay(r);
+                  const counterpartyHref = counterpartyCatalogHref(r);
                   return (
                   <tr key={r.id}>
                     <td><span className="eco-check" /></td>
@@ -525,7 +270,17 @@ export default async function ShipmentListPage({
                       </div>
                     </td>
                     <td>
-                      <div style={{ color: "var(--eco-ink)", fontWeight: 500 }}>{getCounterpartyDisplay(r)}</div>
+                      {counterpartyHref ? (
+                        <Link
+                          href={counterpartyHref}
+                          className="eco-shipment-list-counterparty-link"
+                          title="Открыть контрагента"
+                        >
+                          {counterpartyName}
+                        </Link>
+                      ) : (
+                        <div style={{ color: "var(--eco-ink)", fontWeight: 500 }}>{counterpartyName}</div>
+                      )}
                       <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>телефон в карточке клиента</div>
                     </td>
                     <td>

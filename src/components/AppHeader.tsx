@@ -201,8 +201,8 @@ export default function AppHeader() {
           items: [
             {
               href: "/crm",
-              label: "Воронка продаж",
-              description: "Лиды, сделки и движение клиента до оплаты.",
+              label: "Дела клиентов",
+              description: "Следующие действия, дедлайны и контроль.",
               disabled: !canAccessCrm,
             },
           ],

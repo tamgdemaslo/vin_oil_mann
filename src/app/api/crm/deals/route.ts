@@ -3,12 +3,36 @@ import { getSession } from "@/lib/auth";
 import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
-import { moyskladFetch } from "@/lib/moysklad";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
 type Meta = { href: string; type: string; mediaType: string };
 type CounterpartyInput = { id?: unknown; name?: unknown; meta?: { href?: unknown; type?: unknown; mediaType?: unknown } };
 type CounterpartyLink = { id: string; name: string; meta: Meta };
+const CLIENT_TYPES = new Set(["new_lead", "regular", "repeat", "unlinked"]);
+type CrmDealCreateData = Parameters<typeof prisma.crmDeal.create>[0]["data"];
+type CrmStageWithDeals = Awaited<ReturnType<typeof loadStagesWithDeals>>;
+const LEGACY_DEAL_SELECT = {
+  id: true,
+  title: true,
+  customerName: true,
+  phoneNormalized: true,
+  vehicle: true,
+  source: true,
+  amountCents: true,
+  stageId: true,
+  responsibleLogin: true,
+  moyskladCounterpartyId: true,
+  moyskladCounterpartyName: true,
+  moyskladCounterpartyHref: true,
+  yclientsRecordId: true,
+  moyskladDemandId: true,
+  nextContactAt: true,
+  status: true,
+  notes: true,
+  createdByLogin: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 async function requireCrmSession() {
   const session = await getSession();
@@ -39,6 +63,11 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function parseClientType(value: unknown): string | null {
+  const raw = parseOptionalString(value);
+  return raw && CLIENT_TYPES.has(raw) ? raw : null;
+}
+
 function parseCounterparty(value: unknown): CounterpartyLink | null {
   if (!value || typeof value !== "object") return null;
   const input = value as CounterpartyInput;
@@ -51,29 +80,29 @@ function parseCounterparty(value: unknown): CounterpartyLink | null {
   return { id, name, meta: { href, type, mediaType } };
 }
 
-async function createMoyskladCounterparty(body: Record<string, unknown>): Promise<CounterpartyLink | { error: string }> {
+async function createLocalCounterpartyForDeal(body: Record<string, unknown>): Promise<CounterpartyLink | { error: string }> {
   const name =
     parseOptionalString(body.moyskladCounterpartyName) ??
     parseOptionalString(body.customerName) ??
     parseOptionalString(body.title);
-  if (!name) return { error: "Укажите имя клиента для создания контрагента в МойСклад" };
-
-  const payload: Record<string, string> = {
-    name,
-    companyType: "individual",
-  };
+  if (!name) return { error: "Укажите имя клиента для сохранения в локальной CRM" };
   const phone = parseOptionalString(body.phone);
-  if (phone) payload.phone = phone;
 
-  const result = await moyskladFetch<CounterpartyLink>("/entity/counterparty", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  const created = await prisma.localCounterparty.create({
+    data: {
+      name,
+      companyType: "individual",
+      phone: phone ?? null,
+      normalizedPhone: normalizePhoneKey(phone),
+      phonesRaw: phone ? [phone] : undefined,
+      searchText: [name, phone].filter(Boolean).join(" ").toLowerCase(),
+      raw: { source: "crm-local" },
+    },
   });
-  if (!result.ok) return { error: result.error };
   return {
-    id: result.data.id,
-    name: result.data.name,
-    meta: result.data.meta,
+    id: created.id,
+    name: created.name,
+    meta: { href: `local://counterparty/${created.id}`, type: "counterparty", mediaType: "application/json" },
   };
 }
 
@@ -88,21 +117,93 @@ function databaseHint(error: unknown) {
   );
 }
 
+function isMissingCrmCaseColumns(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("crm_deals.client_type") ||
+    message.includes("crm_deals.next_action") ||
+    message.includes("crm_deals.supplies_note") ||
+    message.includes("crm_deals.close_reason") ||
+    (message.includes("column") && message.includes("does not exist") && message.includes("crm_deals"))
+  );
+}
+
+function stripCaseFields(data: CrmDealCreateData): CrmDealCreateData {
+  const legacyData = { ...(data as CrmDealCreateData & Record<string, unknown>) };
+  delete legacyData.clientType;
+  delete legacyData.nextAction;
+  delete legacyData.suppliesNote;
+  delete legacyData.suppliesSupplier;
+  delete legacyData.suppliesExpectedAt;
+  delete legacyData.closeReason;
+  return legacyData as CrmDealCreateData;
+}
+
+async function loadStagesWithDeals() {
+  return prisma.crmStage.findMany({
+    orderBy: { sortOrder: "asc" },
+    include: {
+      deals: {
+        orderBy: [{ nextContactAt: "asc" }, { updatedAt: "desc" }],
+      },
+    },
+  });
+}
+
+async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
+  const stages = await prisma.crmStage.findMany({ orderBy: { sortOrder: "asc" } });
+  const deals = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT
+      id,
+      title,
+      customer_name AS "customerName",
+      phone_normalized AS "phoneNormalized",
+      vehicle,
+      source,
+      amount_cents AS "amountCents",
+      NULL::text AS "clientType",
+      NULL::text AS "nextAction",
+      stage_id AS "stageId",
+      responsible_login AS "responsibleLogin",
+      moysklad_counterparty_id AS "moyskladCounterpartyId",
+      moysklad_counterparty_name AS "moyskladCounterpartyName",
+      moysklad_counterparty_href AS "moyskladCounterpartyHref",
+      yclients_record_id AS "yclientsRecordId",
+      moysklad_demand_id AS "moyskladDemandId",
+      NULL::text AS "suppliesNote",
+      NULL::text AS "suppliesSupplier",
+      NULL::timestamp AS "suppliesExpectedAt",
+      next_contact_at AS "nextContactAt",
+      status,
+      NULL::text AS "closeReason",
+      notes,
+      created_by_login AS "createdByLogin",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+    FROM crm_deals
+    ORDER BY next_contact_at ASC NULLS LAST, updated_at DESC
+  `;
+  const dealsByStage = new Map<string, Array<Record<string, unknown>>>();
+  for (const deal of deals) {
+    const stageId = typeof deal.stageId === "string" ? deal.stageId : "";
+    dealsByStage.set(stageId, [...(dealsByStage.get(stageId) ?? []), deal]);
+  }
+  return stages.map((stage) => ({ ...stage, deals: (dealsByStage.get(stage.id) ?? []) as never[] })) as CrmStageWithDeals;
+}
+
 export async function GET() {
   const access = await requireCrmSession();
   if (access.response) return access.response;
 
   try {
     await ensureDefaultCrmStages();
-    const stages = await prisma.crmStage.findMany({
-      orderBy: { sortOrder: "asc" },
-      include: {
-        deals: {
-          where: { status: "open" },
-          orderBy: [{ updatedAt: "desc" }],
-        },
-      },
-    });
+    let stages: CrmStageWithDeals;
+    try {
+      stages = await loadStagesWithDeals();
+    } catch (error) {
+      if (!isMissingCrmCaseColumns(error)) throw error;
+      stages = await loadStagesWithLegacyDeals();
+    }
 
     return NextResponse.json({ stages });
   } catch (error) {
@@ -121,11 +222,12 @@ export async function POST(request: NextRequest) {
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
+    const clientType = parseClientType(body.clientType);
     const firstStage = await getFirstCrmStage();
     let counterparty = parseCounterparty(body.moyskladCounterparty);
 
-    if (!counterparty && body.createMoyskladCounterparty === true) {
-      const createdCounterparty = await createMoyskladCounterparty(body as Record<string, unknown>);
+    if (!counterparty && (body.createMoyskladCounterparty === true || body.createLocalClient === true)) {
+      const createdCounterparty = await createLocalCounterpartyForDeal(body as Record<string, unknown>);
       if ("error" in createdCounterparty) {
         return NextResponse.json({ error: createdCounterparty.error }, { status: 502 });
       }
@@ -139,26 +241,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Укажите название, клиента или телефон сделки" }, { status: 400 });
     }
 
-    const created = await prisma.crmDeal.create({
-      data: {
-        title: title ?? customerName ?? counterparty?.name ?? phoneNormalized ?? "Новая сделка",
-        customerName: customerName ?? counterparty?.name ?? null,
-        phoneNormalized,
-        vehicle: parseOptionalString(body.vehicle),
-        source: parseOptionalString(body.source),
-        amountCents: parseAmountCents(body.amount),
-        stageId: parseOptionalString(body.stageId) ?? firstStage.id,
-        responsibleLogin: parseOptionalString(body.responsibleLogin) ?? session.user.login,
-        moyskladCounterpartyId: counterparty?.id ?? null,
-        moyskladCounterpartyName: counterparty?.name ?? null,
-        moyskladCounterpartyHref: counterparty?.meta.href ?? null,
-        yclientsRecordId: parseOptionalString(body.yclientsRecordId),
-        moyskladDemandId: parseOptionalString(body.moyskladDemandId),
-        nextContactAt: parseDate(body.nextContactAt),
-        notes: parseOptionalString(body.notes),
-        createdByLogin: session.user.login,
-      },
-    });
+    const createData: CrmDealCreateData = {
+      title: title ?? customerName ?? counterparty?.name ?? phoneNormalized ?? "Новое дело клиента",
+      customerName: customerName ?? counterparty?.name ?? null,
+      phoneNormalized,
+      vehicle: parseOptionalString(body.vehicle),
+      source: parseOptionalString(body.source),
+      amountCents: parseAmountCents(body.amount),
+      clientType: clientType ?? (counterparty ? "regular" : phoneNormalized || customerName ? "new_lead" : "unlinked"),
+      nextAction: parseOptionalString(body.nextAction),
+      stageId: parseOptionalString(body.stageId) ?? firstStage.id,
+      responsibleLogin: parseOptionalString(body.responsibleLogin) ?? session.user.login,
+      moyskladCounterpartyId: counterparty?.id ?? null,
+      moyskladCounterpartyName: counterparty?.name ?? null,
+      moyskladCounterpartyHref: counterparty?.meta.href ?? null,
+      yclientsRecordId: parseOptionalString(body.yclientsRecordId),
+      moyskladDemandId: parseOptionalString(body.moyskladDemandId),
+      suppliesNote: parseOptionalString(body.suppliesNote),
+      suppliesSupplier: parseOptionalString(body.suppliesSupplier),
+      suppliesExpectedAt: parseDate(body.suppliesExpectedAt),
+      nextContactAt: parseDate(body.nextContactAt),
+      notes: parseOptionalString(body.notes),
+      createdByLogin: session.user.login,
+    };
+
+    let created;
+    try {
+      created = await prisma.crmDeal.create({ data: createData });
+    } catch (error) {
+      if (!isMissingCrmCaseColumns(error)) throw error;
+      created = await prisma.crmDeal.create({ data: stripCaseFields(createData), select: LEGACY_DEAL_SELECT });
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (error) {

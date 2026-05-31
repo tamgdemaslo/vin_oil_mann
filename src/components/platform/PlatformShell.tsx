@@ -188,6 +188,7 @@ export default function PlatformShell() {
   const locked = needsShift && !hasAnyActiveShift;
   const canAccessCash = user?.role === "owner" || user?.role === "admin";
   const canAccessCrm = user?.role === "owner" || user?.role === "admin";
+  const canManageIntegrations = user?.role === "owner" || user?.role === "admin";
 
   const navSections = useMemo<PlatformNavSection[]>(
     () => [
@@ -238,7 +239,7 @@ export default function PlatformShell() {
         label: "CRM",
         icon: CalendarDays,
         items: [
-          { href: "/crm", label: "Воронка", description: "Сделки и лиды.", disabled: !canAccessCrm },
+          { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: !canAccessCrm },
           { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: locked || !canAccessCash },
           { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: locked },
         ],
@@ -252,11 +253,17 @@ export default function PlatformShell() {
           { href: "/cabinet", label: "Профиль", description: "Смена пароля и личный блок." },
           { href: "/cabinet/shifts", label: "Смены", description: "История рабочих дней.", disabled: locked },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
+          {
+            href: "/cabinet/integrations",
+            label: "Интеграции",
+            description: "Статусы и ручные запуски.",
+            disabled: !canManageIntegrations,
+          },
           { href: "/cabinet/salary", label: "Зарплата", description: "Расчёты в кабинете.", disabled: locked },
         ],
       },
     ],
-    [canAccessCash, canAccessCrm, locked]
+    [canAccessCash, canAccessCrm, canManageIntegrations, locked]
   );
 
   async function handleLogout() {

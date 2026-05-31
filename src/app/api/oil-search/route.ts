@@ -4,7 +4,7 @@ import { fetchOilCandidatesByRequirements, scoreAndMatch } from "@/lib/oil-recom
 
 /**
  * GET /api/oil-search?approval=BMW+Longlife-04&sae=5W-30
- * Поиск масел в МойСклад только по допускам (без VIN, без OpenAI).
+ * Поиск масел в локальном каталоге только по допускам (без VIN, без OpenAI).
  */
 export async function GET(request: NextRequest) {
   try {

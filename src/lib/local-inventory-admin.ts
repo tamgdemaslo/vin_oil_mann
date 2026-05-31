@@ -1,4 +1,6 @@
 import { Prisma, type LocalCounterparty } from "@prisma/client";
+import type { User } from "@/lib/auth";
+import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { prisma } from "@/lib/db";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -72,6 +74,7 @@ const restockProductInclude = {
 type CounterpartyInput = {
   name?: string;
   phone?: string;
+  additionalPhone?: string;
   email?: string;
   companyType?: string;
   counterpartyTypeName?: string;
@@ -93,6 +96,11 @@ type CounterpartyInput = {
   ogrnip?: string;
   certificateNumber?: string;
   certificateDate?: string | null;
+  comment?: string;
+  vehiclePlate?: string;
+  vehicleVin?: string;
+  vehicleModel?: string;
+  vehicleYear?: string;
   archived?: boolean;
 };
 
@@ -127,6 +135,15 @@ type SupplierInvoiceInput = {
   status?: string;
 };
 
+type SupplierInvoicePaymentInput = {
+  amount?: number | string;
+  paymentDate?: string;
+  paymentType?: string;
+  comment?: string;
+  attachmentUrl?: string;
+  allowOverpay?: boolean;
+};
+
 type ActingUser = {
   login?: string;
   name?: string | null;
@@ -134,21 +151,85 @@ type ActingUser = {
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof productWithStockInclude }>;
 type RestockProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof restockProductInclude }>;
+const supplierInvoiceInclude = {
+  document: {
+    include: {
+      store: true,
+      counterparty: true,
+      positions: { orderBy: { id: "asc" as const } },
+    },
+  },
+  payments: {
+    include: {
+      cashExpenseOrder: { select: { id: true, number: true, status: true } },
+    },
+    orderBy: [{ paymentDate: "desc" as const }, { createdAt: "desc" as const }],
+  },
+} satisfies Prisma.LocalSupplierInvoiceInclude;
 type SupplierInvoiceWithDocument = Prisma.LocalSupplierInvoiceGetPayload<{
-  include: {
-    document: {
-      include: {
-        store: true;
-        counterparty: true;
-      };
-    };
-  };
+  include: typeof supplierInvoiceInclude;
 }>;
 type CounterpartyRow = LocalCounterparty;
 
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   if (value == null) return Prisma.JsonNull;
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function compactCounterpartyVehicleLabel(input: {
+  vehiclePlate?: string | null;
+  vehicleVin?: string | null;
+  vehicleModel?: string | null;
+  vehicleYear?: string | null;
+}) {
+  const model = input.vehicleModel?.trim() ?? "";
+  const year = input.vehicleYear?.trim() ?? "";
+  const plate = input.vehiclePlate?.trim() ?? "";
+  const vin = input.vehicleVin?.trim() ?? "";
+  return [
+    [model, year].filter(Boolean).join(" "),
+    plate,
+    vin ? `VIN ${vin}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function counterpartyRawExtra(raw: unknown) {
+  const record = jsonRecord(raw);
+  const vehicle = jsonRecord(record.vehicle);
+  return {
+    additionalPhone: stringFromRecord(record, "additionalPhone"),
+    comment: stringFromRecord(record, "comment"),
+    vehiclePlate: stringFromRecord(vehicle, "plate") || stringFromRecord(record, "vehiclePlate"),
+    vehicleVin: stringFromRecord(vehicle, "vin") || stringFromRecord(record, "vehicleVin"),
+    vehicleModel: stringFromRecord(vehicle, "model") || stringFromRecord(record, "vehicleModel"),
+    vehicleYear: stringFromRecord(vehicle, "year") || stringFromRecord(record, "vehicleYear"),
+  };
+}
+
+function counterpartyRawSearchText(raw: unknown) {
+  const extra = counterpartyRawExtra(raw);
+  return buildSearchText([
+    extra.additionalPhone,
+    normalizePhoneKey(extra.additionalPhone),
+    extra.comment,
+    extra.vehiclePlate,
+    extra.vehicleVin,
+    extra.vehicleModel,
+    extra.vehicleYear,
+    compactCounterpartyVehicleLabel(extra),
+  ]);
 }
 
 function centsFromRub(value: unknown): number {
@@ -400,6 +481,7 @@ function buildCounterpartySearchText(input: {
   certificateNumber?: string | null;
   counterpartyTypeName?: string | null;
   companyType?: string | null;
+  extraSearchText?: string | null;
 }): string {
   return buildSearchText([
     input.name,
@@ -425,6 +507,7 @@ function buildCounterpartySearchText(input: {
     input.certificateNumber,
     input.counterpartyTypeName,
     input.companyType,
+    input.extraSearchText,
   ]);
 }
 
@@ -576,6 +659,7 @@ type ProductAdminCache = {
   filterOptions: ProductFilterOptionsCacheEntry | null;
   rows: ProductRowsCacheEntry | null;
 };
+type CounterpartySource = "local" | "supplier" | "snapshot";
 type CounterpartyListRow = ReturnType<typeof mapCounterparty>;
 type CounterpartyRowsCacheEntry = { key: string; expiresAt: number; rows: CounterpartyListRow[] };
 type CounterpartyAdminCache = { rows: CounterpartyRowsCacheEntry | null };
@@ -946,11 +1030,14 @@ async function getProductFilterOptions(query: SearchQuery, includeArchived?: boo
 }
 
 function mapCounterparty(counterparty: CounterpartyRow) {
+  const rawExtra = counterpartyRawExtra(counterparty.raw);
   return {
     id: counterparty.id,
     moyskladId: counterparty.moyskladId,
+    source: "local" as CounterpartySource,
     name: counterparty.name,
     phone: counterparty.phone ?? "",
+    additionalPhone: rawExtra.additionalPhone,
     email: counterparty.email ?? "",
     companyType: counterparty.companyType ?? "legal",
     counterpartyTypeName: counterparty.counterpartyTypeName ?? "",
@@ -972,6 +1059,14 @@ function mapCounterparty(counterparty: CounterpartyRow) {
     ogrnip: counterparty.ogrnip ?? "",
     certificateNumber: counterparty.certificateNumber ?? "",
     certificateDate: counterparty.certificateDate?.toISOString().slice(0, 10) ?? "",
+    comment: rawExtra.comment,
+    vehiclePlate: rawExtra.vehiclePlate,
+    vehicleVin: rawExtra.vehicleVin,
+    vehicleModel: rawExtra.vehicleModel,
+    vehicleYear: rawExtra.vehicleYear,
+    vehicleLabel: compactCounterpartyVehicleLabel(rawExtra),
+    createdAt: counterparty.createdAt.toISOString(),
+    updatedAt: counterparty.updatedAt.toISOString(),
     searchText: buildCounterpartySearchText({
       name: counterparty.name,
       phone: counterparty.phone,
@@ -995,6 +1090,7 @@ function mapCounterparty(counterparty: CounterpartyRow) {
       certificateNumber: counterparty.certificateNumber,
       counterpartyTypeName: counterparty.counterpartyTypeName,
       companyType: counterparty.companyType,
+      extraSearchText: counterpartyRawSearchText(counterparty.raw),
     }),
     archived: counterparty.archived,
     meta: localMeta("counterparty", counterparty.id),
@@ -1005,8 +1101,10 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
   return {
     id: supplierSnapshotId(name),
     moyskladId: null,
+    source: "supplier",
     name,
     phone: "",
+    additionalPhone: "",
     email: "",
     companyType: "supplier",
     counterpartyTypeName: "Поставщик из карточек товаров",
@@ -1028,6 +1126,14 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
     ogrnip: "",
     certificateNumber: "",
     certificateDate: "",
+    comment: "",
+    vehiclePlate: "",
+    vehicleVin: "",
+    vehicleModel: "",
+    vehicleYear: "",
+    vehicleLabel: "",
+    createdAt: "",
+    updatedAt: "",
     searchText: buildCounterpartySearchText({
       name,
       legalTitle: name,
@@ -1036,6 +1142,500 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
     }),
     archived: false,
     meta: localMeta("supplier", supplierSnapshotId(name)),
+  };
+}
+
+type CounterpartyActivity = {
+  demandCount: number;
+  totalDemandSumCents: number;
+  lastDemandName: string;
+  lastDemandAt: string;
+  lastDemandSumCents: number | null;
+  vehicleCount: number;
+  vehicleLabel: string;
+  vehiclePlate: string;
+  vehicleVin: string;
+  crmSearchText: string;
+};
+
+type CounterpartyCrmRow = CounterpartyListRow & CounterpartyActivity;
+
+type ActivityBuilder = CounterpartyActivity & {
+  vehicleKeys: Set<string>;
+  searchParts: string[];
+};
+
+type SnapshotCounterpartyBuilder = {
+  key: string;
+  moyskladId: string | null;
+  name: string;
+  phone: string;
+  normalizedPhone: string;
+  demandCount: number;
+  totalDemandSumCents: number;
+  lastDemandName: string;
+  lastDemandAt: string;
+  lastDemandSumCents: number | null;
+  vehicleKeys: Set<string>;
+  vehicleLabel: string;
+  vehiclePlate: string;
+  vehicleVin: string;
+  searchParts: string[];
+};
+
+function emptyCounterpartyActivity(): CounterpartyActivity {
+  return {
+    demandCount: 0,
+    totalDemandSumCents: 0,
+    lastDemandName: "",
+    lastDemandAt: "",
+    lastDemandSumCents: null,
+    vehicleCount: 0,
+    vehicleLabel: "",
+    vehiclePlate: "",
+    vehicleVin: "",
+    crmSearchText: "",
+  };
+}
+
+function moyskladCounterpartyIdFromHref(href: string | null | undefined) {
+  const match = href?.match(/\/entity\/counterparty\/([^/?#]+)/);
+  return match?.[1] ?? null;
+}
+
+function phonesFromAnalyticsRaw(raw: unknown) {
+  if (Array.isArray(raw)) return phoneValuesFromUnknown(raw);
+  const record = jsonRecord(raw);
+  return [...phoneValuesFromUnknown(record.candidates), ...phoneValuesFromUnknown(record.phones)];
+}
+
+function phoneValuesFromUnknown(value: unknown) {
+  const values = Array.isArray(value) ? value : [];
+  return values
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        return String(record.phone ?? record.value ?? record.name ?? "").trim();
+      }
+      return String(item ?? "").trim();
+    })
+    .filter(Boolean);
+}
+
+function snapshotKey(input: { moyskladId?: string | null; normalizedPhone?: string | null; name?: string | null }) {
+  if (input.moyskladId) return `moysklad:${input.moyskladId}`;
+  if (input.normalizedPhone) return `phone:${input.normalizedPhone}`;
+  const name = normalizeSearchText(input.name ?? "");
+  return name ? `name:${name}` : "";
+}
+
+function ensureSnapshotBuilder(
+  builders: Map<string, SnapshotCounterpartyBuilder>,
+  input: { moyskladId?: string | null; name?: string | null; phone?: string | null; normalizedPhone?: string | null }
+) {
+  const name = input.name?.trim() ?? "";
+  const phone = input.phone?.trim() ?? "";
+  const normalizedPhone = input.normalizedPhone?.trim() || normalizePhoneKey(phone) || "";
+  const key = snapshotKey({ moyskladId: input.moyskladId, normalizedPhone, name });
+  if (!key || (!name && !phone && !normalizedPhone)) return null;
+
+  const existing = builders.get(key);
+  if (existing) {
+    if (!existing.name && name) existing.name = name;
+    if (!existing.phone && phone) existing.phone = phone;
+    if (!existing.normalizedPhone && normalizedPhone) existing.normalizedPhone = normalizedPhone;
+    if (!existing.moyskladId && input.moyskladId) existing.moyskladId = input.moyskladId;
+    return existing;
+  }
+
+  const builder: SnapshotCounterpartyBuilder = {
+    key,
+    moyskladId: input.moyskladId ?? null,
+    name: name || phone || normalizedPhone,
+    phone: phone || normalizedPhone,
+    normalizedPhone,
+    demandCount: 0,
+    totalDemandSumCents: 0,
+    lastDemandName: "",
+    lastDemandAt: "",
+    lastDemandSumCents: null,
+    vehicleKeys: new Set<string>(),
+    vehicleLabel: "",
+    vehiclePlate: "",
+    vehicleVin: "",
+    searchParts: [],
+  };
+  builders.set(key, builder);
+  return builder;
+}
+
+function addSnapshotDemand(
+  builder: SnapshotCounterpartyBuilder,
+  input: {
+    demandName: string;
+    momentAt: Date;
+    sumCents: number;
+    searchParts?: unknown[];
+    vehicle?: ReturnType<typeof demandVehicleInfo>;
+  }
+) {
+  const moment = input.momentAt.toISOString();
+  builder.demandCount += 1;
+  builder.totalDemandSumCents += input.sumCents;
+  builder.searchParts.push(input.demandName, ...(input.searchParts ?? []).map((part) => String(part ?? "").trim()).filter(Boolean));
+
+  if (!builder.lastDemandAt || input.momentAt.getTime() > new Date(builder.lastDemandAt).getTime()) {
+    builder.lastDemandName = input.demandName;
+    builder.lastDemandAt = moment;
+    builder.lastDemandSumCents = input.sumCents;
+  }
+
+  const vehicle = input.vehicle;
+  if (!vehicle?.label && !vehicle?.plate && !vehicle?.vin) return;
+  builder.searchParts.push(vehicle.label, vehicle.plate, vehicle.vin, vehicle.model, vehicle.year);
+  const vehicleKey = [vehicle.vin, vehicle.plate, vehicle.model, vehicle.year].filter(Boolean).join("|");
+  if (vehicleKey && !builder.vehicleKeys.has(vehicleKey)) {
+    builder.vehicleKeys.add(vehicleKey);
+    if (!builder.vehicleLabel) {
+      builder.vehicleLabel = vehicle.label;
+      builder.vehiclePlate = vehicle.plate;
+      builder.vehicleVin = vehicle.vin;
+    }
+  }
+}
+
+function snapshotBuilderMatchesExisting(builder: SnapshotCounterpartyBuilder, existingRows: CounterpartyListRow[]) {
+  const normalizedName = normalizeSearchText(builder.name);
+  return existingRows.some((row) => {
+    if (builder.moyskladId && row.moyskladId === builder.moyskladId) return true;
+    if (builder.normalizedPhone) {
+      const rowPhones = [row.phone, row.additionalPhone].map(normalizePhoneKey).filter(Boolean);
+      if (rowPhones.includes(builder.normalizedPhone)) return true;
+    }
+    return !builder.normalizedPhone && normalizedName && normalizeSearchText(row.name) === normalizedName;
+  });
+}
+
+function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): CounterpartyCrmRow {
+  const companyType = builder.normalizedPhone || builder.phone ? "individual" : "legal";
+  const createdAt = builder.lastDemandAt || new Date(0).toISOString();
+  const searchText = buildCounterpartySearchText({
+    name: builder.name,
+    phone: builder.phone,
+    counterpartyTypeName: "Клиент из импортированных отгрузок",
+    companyType,
+    extraSearchText: buildSearchText([
+      builder.normalizedPhone,
+      builder.lastDemandName,
+      builder.vehicleLabel,
+      builder.vehiclePlate,
+      builder.vehicleVin,
+      ...builder.searchParts,
+    ]),
+  });
+
+  return {
+    id: `snapshot:${builder.key}`,
+    moyskladId: builder.moyskladId,
+    source: "snapshot",
+    name: builder.name,
+    phone: builder.phone,
+    additionalPhone: "",
+    email: "",
+    companyType,
+    counterpartyTypeName: "Клиент из импортированных отгрузок",
+    legalTitle: "",
+    legalLastName: "",
+    legalFirstName: "",
+    legalMiddleName: "",
+    legalAddress: "",
+    inn: "",
+    kpp: "",
+    okpo: "",
+    fax: "",
+    bik: "",
+    bankName: "",
+    bankLocation: "",
+    correspondentAccount: "",
+    checkingAccount: "",
+    ogrn: "",
+    ogrnip: "",
+    certificateNumber: "",
+    certificateDate: "",
+    comment: "",
+    vehiclePlate: builder.vehiclePlate,
+    vehicleVin: builder.vehicleVin,
+    vehicleModel: "",
+    vehicleYear: "",
+    vehicleLabel: builder.vehicleLabel,
+    createdAt,
+    updatedAt: createdAt,
+    searchText,
+    archived: false,
+    meta: localMeta("counterparty-snapshot", builder.key),
+    demandCount: builder.demandCount,
+    totalDemandSumCents: builder.totalDemandSumCents,
+    lastDemandName: builder.lastDemandName,
+    lastDemandAt: builder.lastDemandAt,
+    lastDemandSumCents: builder.lastDemandSumCents,
+    vehicleCount: builder.vehicleKeys.size,
+    crmSearchText: buildSearchText(builder.searchParts),
+  };
+}
+
+async function getDemandSnapshotCounterpartyRows(existingRows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
+  const builders = new Map<string, SnapshotCounterpartyBuilder>();
+
+  try {
+    const demands = await prisma.localDemand.findMany({
+      where: {
+        OR: [
+          { agentMoyskladId: { not: null } },
+          { agentNameSnapshot: { not: null } },
+        ],
+      },
+      select: {
+        name: true,
+        momentAt: true,
+        sumCents: true,
+        description: true,
+        agentMoyskladId: true,
+        agentNameSnapshot: true,
+        attributes: true,
+        raw: true,
+      },
+      orderBy: { momentAt: "desc" },
+      take: 20_000,
+    });
+
+    for (const demand of demands) {
+      const raw = jsonRecord(demand.raw);
+      const agent = jsonRecord(raw.agent);
+      const rawPhones = [
+        stringFromRecord(agent, "phone"),
+        ...phoneValuesFromUnknown(agent.phones),
+      ].filter(Boolean);
+      const phone = rawPhones[0] ?? "";
+      const builder = ensureSnapshotBuilder(builders, {
+        moyskladId: demand.agentMoyskladId,
+        name: demand.agentNameSnapshot || stringFromRecord(agent, "name"),
+        phone,
+        normalizedPhone: normalizePhoneKey(phone),
+      });
+      if (!builder) continue;
+      addSnapshotDemand(builder, {
+        demandName: demand.name,
+        momentAt: demand.momentAt,
+        sumCents: demand.sumCents,
+        searchParts: [demand.description ?? "", phone, normalizePhoneKey(phone)],
+        vehicle: demandVehicleInfo(demand.attributes),
+      });
+    }
+  } catch {
+    // The CRM list should still work when the local demand mirror is not available yet.
+  }
+
+  try {
+    const analyticsDemands = await prisma.moySkladDemandSync.findMany({
+      where: {
+        applicable: true,
+        OR: [
+          { agentNameSnapshot: { not: null } },
+          { normalizedPhone: { not: null } },
+          { agentMetaHref: { not: null } },
+        ],
+      },
+      select: {
+        name: true,
+        momentAt: true,
+        sumCents: true,
+        agentMetaHref: true,
+        agentNameSnapshot: true,
+        phonesRaw: true,
+        normalizedPhone: true,
+      },
+      orderBy: { momentAt: "desc" },
+      take: 20_000,
+    });
+
+    for (const demand of analyticsDemands) {
+      const phones = phonesFromAnalyticsRaw(demand.phonesRaw);
+      const phone = phones[0] ?? demand.normalizedPhone ?? "";
+      const builder = ensureSnapshotBuilder(builders, {
+        moyskladId: moyskladCounterpartyIdFromHref(demand.agentMetaHref),
+        name: demand.agentNameSnapshot,
+        phone,
+        normalizedPhone: demand.normalizedPhone ?? normalizePhoneKey(phone),
+      });
+      if (!builder) continue;
+      addSnapshotDemand(builder, {
+        demandName: demand.name,
+        momentAt: demand.momentAt,
+        sumCents: demand.sumCents,
+        searchParts: [phone, demand.normalizedPhone ?? "", demand.agentMetaHref ?? ""],
+      });
+    }
+  } catch {
+    // Historical analytics may be disabled on local/dev databases.
+  }
+
+  return [...builders.values()]
+    .filter((builder) => !snapshotBuilderMatchesExisting(builder, existingRows))
+    .map(mapSnapshotCounterparty);
+}
+
+function jsonArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+}
+
+function attributeValueText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(attributeValueText).filter(Boolean).join(" ");
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return String(record.name ?? record.value ?? "").trim();
+  }
+  return String(value ?? "").trim();
+}
+
+function attrByName(attributes: unknown, matcher: RegExp): string {
+  for (const attr of jsonArray(attributes)) {
+    const name = String(attr.name ?? "").trim();
+    if (matcher.test(name)) return attributeValueText(attr.value);
+  }
+  return "";
+}
+
+function demandVehicleInfo(attributes: unknown) {
+  const plate = attrByName(attributes, /гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i);
+  const vin = attrByName(attributes, /vin|вин/i);
+  const model = attrByName(attributes, /модель|марка|авто|vehicle|car/i);
+  const year = attrByName(attributes, /^год$|год\s*вып|year/i);
+  const label = compactCounterpartyVehicleLabel({
+    vehiclePlate: plate,
+    vehicleVin: vin,
+    vehicleModel: model,
+    vehicleYear: year,
+  });
+  return { plate, vin, model, year, label };
+}
+
+async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
+  const ids = [...new Set(rows.map((row) => row.id).filter((id) => !supplierSnapshotNameFromId(id)))];
+  const byId = new Map<string, ActivityBuilder>();
+  for (const id of ids) {
+    byId.set(id, { ...emptyCounterpartyActivity(), vehicleKeys: new Set<string>(), searchParts: [] });
+  }
+  if (ids.length === 0) return byId;
+
+  const demands = await prisma.localDemand.findMany({
+    where: { counterpartyId: { in: ids } },
+    select: {
+      counterpartyId: true,
+      name: true,
+      momentAt: true,
+      sumCents: true,
+      description: true,
+      attributes: true,
+    },
+    orderBy: [{ momentAt: "desc" }],
+  });
+
+  for (const demand of demands) {
+    if (!demand.counterpartyId) continue;
+    const activity = byId.get(demand.counterpartyId);
+    if (!activity) continue;
+
+    activity.demandCount += 1;
+    activity.totalDemandSumCents += demand.sumCents ?? 0;
+    activity.searchParts.push(demand.name, demand.description ?? "");
+
+    if (!activity.lastDemandAt) {
+      activity.lastDemandName = demand.name;
+      activity.lastDemandAt = demand.momentAt.toISOString();
+      activity.lastDemandSumCents = demand.sumCents;
+    }
+
+    const vehicle = demandVehicleInfo(demand.attributes);
+    activity.searchParts.push(vehicle.label, vehicle.plate, vehicle.vin, vehicle.model, vehicle.year);
+    const vehicleKey = [vehicle.vin, vehicle.plate, vehicle.model, vehicle.year].filter(Boolean).join("|");
+    if (vehicleKey && !activity.vehicleKeys.has(vehicleKey)) {
+      activity.vehicleKeys.add(vehicleKey);
+      activity.vehicleCount = activity.vehicleKeys.size;
+      if (!activity.vehicleLabel) {
+        activity.vehicleLabel = vehicle.label;
+        activity.vehiclePlate = vehicle.plate;
+        activity.vehicleVin = vehicle.vin;
+      }
+    }
+  }
+
+  for (const activity of byId.values()) {
+    activity.crmSearchText = buildSearchText(activity.searchParts);
+  }
+  return byId;
+}
+
+async function enrichCounterpartyRows(rows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
+  const activityById = await buildCounterpartyActivity(rows);
+  return rows.map((row) => {
+    const activity = activityById.get(row.id) ?? ({ ...emptyCounterpartyActivity(), vehicleKeys: new Set<string>(), searchParts: [] } as ActivityBuilder);
+    const storedVehicleLabel = row.vehicleLabel || compactCounterpartyVehicleLabel(row);
+    const hasStoredVehicle = Boolean(storedVehicleLabel || row.vehiclePlate || row.vehicleVin);
+    const vehicleCount = activity.vehicleCount || (hasStoredVehicle ? 1 : 0);
+    const vehicleLabel = activity.vehicleLabel || storedVehicleLabel;
+    const vehiclePlate = activity.vehiclePlate || row.vehiclePlate;
+    const vehicleVin = activity.vehicleVin || row.vehicleVin;
+    return {
+      ...row,
+      demandCount: activity.demandCount,
+      totalDemandSumCents: activity.totalDemandSumCents,
+      lastDemandName: activity.lastDemandName,
+      lastDemandAt: activity.lastDemandAt,
+      lastDemandSumCents: activity.lastDemandSumCents,
+      vehicleCount,
+      vehicleLabel,
+      vehiclePlate,
+      vehicleVin,
+      crmSearchText: buildSearchText([
+        activity.crmSearchText,
+        row.comment,
+        row.additionalPhone,
+        row.vehiclePlate,
+        row.vehicleVin,
+        row.vehicleModel,
+        row.vehicleYear,
+        storedVehicleLabel,
+      ]),
+    };
+  });
+}
+
+function hasCounterpartyRequisites(row: CounterpartyListRow) {
+  return Boolean(
+    row.legalTitle ||
+      row.inn ||
+      row.kpp ||
+      row.okpo ||
+      row.ogrn ||
+      row.ogrnip ||
+      row.checkingAccount ||
+      row.correspondentAccount ||
+      row.bik ||
+      row.bankName ||
+      row.legalAddress
+  );
+}
+
+function counterpartyStats(rows: CounterpartyListRow[]) {
+  return {
+    total: rows.length,
+    active: rows.filter((row) => !row.archived).length,
+    archived: rows.filter((row) => row.archived).length,
+    individuals: rows.filter((row) => row.companyType === "individual").length,
+    companies: rows.filter((row) => row.companyType !== "individual").length,
+    noPhone: rows.filter((row) => !row.phone && !row.additionalPhone).length,
+    noRequisites: rows.filter((row) => !hasCounterpartyRequisites(row)).length,
   };
 }
 
@@ -1581,11 +2181,34 @@ async function getSupplierCounterpartyRows(existingRows: CounterpartyListRow[], 
     .map(mapSupplierNameCounterparty);
 }
 
-function counterpartyMatchesSearch(row: CounterpartyListRow, query: SearchQuery) {
-  return normalizedSearchTextMatches(row.searchText, query);
+type CounterpartyStatusFilter = "active" | "archive" | "all";
+type CounterpartyTypeFilter = "all" | "individual" | "company";
+type CounterpartyPresenceFilter = "all" | "with" | "without";
+type CounterpartySortKey = "name" | "createdAt" | "updatedAt" | "lastDemand";
+
+function normalizeCounterpartyStatus(value?: string, includeArchived?: boolean): CounterpartyStatusFilter {
+  if (value === "archive" || value === "all" || value === "active") return value;
+  return includeArchived ? "all" : "active";
 }
 
-function counterpartySearchRank(row: CounterpartyListRow, query: SearchQuery) {
+function normalizeCounterpartyType(value?: string): CounterpartyTypeFilter {
+  return value === "individual" || value === "company" ? value : "all";
+}
+
+function normalizePresenceFilter(value?: string): CounterpartyPresenceFilter {
+  return value === "with" || value === "without" ? value : "all";
+}
+
+function normalizeCounterpartySort(value?: string): CounterpartySortKey {
+  if (value === "createdAt" || value === "updatedAt" || value === "lastDemand") return value;
+  return "name";
+}
+
+function counterpartyMatchesSearch(row: CounterpartyCrmRow, query: SearchQuery) {
+  return normalizedSearchTextMatches([row.searchText, row.crmSearchText].join(" "), query);
+}
+
+function counterpartySearchRank(row: CounterpartyCrmRow, query: SearchQuery) {
   if (!query.normalized) return 0;
   const weightedFields: Array<[unknown, number]> = [
     [row.name, 0],
@@ -1596,9 +2219,15 @@ function counterpartySearchRank(row: CounterpartyListRow, query: SearchQuery) {
     [row.inn, 8],
     [row.phone, 10],
     [normalizePhoneKey(row.phone), 10],
-    [row.email, 12],
-    [row.ogrn, 14],
-    [row.ogrnip, 14],
+    [row.additionalPhone, 11],
+    [normalizePhoneKey(row.additionalPhone), 11],
+    [row.email, 13],
+    [row.vehiclePlate, 14],
+    [row.vehicleVin, 14],
+    [row.lastDemandName, 16],
+    [row.ogrn, 18],
+    [row.ogrnip, 18],
+    [row.crmSearchText, 40],
     [row.searchText, 60],
   ];
 
@@ -1610,11 +2239,35 @@ function counterpartySearchRank(row: CounterpartyListRow, query: SearchQuery) {
   return Number.isFinite(best) ? best : 10_000;
 }
 
-function compareCounterpartiesForSearch(a: CounterpartyListRow, b: CounterpartyListRow, query: SearchQuery) {
+function compareNullableDateString(a: string | null | undefined, b: string | null | undefined, direction: SortDirection) {
+  const aTime = a ? new Date(a).getTime() : NaN;
+  const bTime = b ? new Date(b).getTime() : NaN;
+  const aMissing = !Number.isFinite(aTime);
+  const bMissing = !Number.isFinite(bTime);
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  const result = aTime - bTime;
+  return direction === "asc" ? result : -result;
+}
+
+function compareCounterparties(
+  a: CounterpartyCrmRow,
+  b: CounterpartyCrmRow,
+  query: SearchQuery,
+  sort: CounterpartySortKey,
+  direction: SortDirection
+) {
   if (query.normalized) {
     const rankDiff = counterpartySearchRank(a, query) - counterpartySearchRank(b, query);
     if (rankDiff !== 0) return rankDiff;
   }
+  let result = 0;
+  if (sort === "name") result = compareText(a.name, b.name, direction);
+  if (sort === "createdAt") result = compareNullableDateString(a.createdAt, b.createdAt, direction);
+  if (sort === "updatedAt") result = compareNullableDateString(a.updatedAt, b.updatedAt, direction);
+  if (sort === "lastDemand") result = compareNullableDateString(a.lastDemandAt, b.lastDemandAt, direction);
+  if (result !== 0) return result;
   return compareText(a.name, b.name, "asc");
 }
 
@@ -1623,19 +2276,53 @@ export async function listLocalAdminCounterparties(params: {
   limit?: number;
   offset?: number;
   includeArchived?: boolean;
+  status?: string;
+  type?: string;
+  phone?: string;
+  requisites?: string;
+  shipments?: string;
+  sort?: string;
+  direction?: string;
 }) {
   const searchQuery = parseSearchQuery(params.search);
   const limit = Math.min(100, Math.max(1, params.limit ?? 30));
   const offset = Math.max(0, params.offset ?? 0);
-  const counterpartyRows = await getCounterpartyRowsForAdmin(params.includeArchived);
+  const status = normalizeCounterpartyStatus(params.status, params.includeArchived);
+  const type = normalizeCounterpartyType(params.type);
+  const phone = normalizePresenceFilter(params.phone);
+  const requisites = normalizePresenceFilter(params.requisites);
+  const shipments = normalizePresenceFilter(params.shipments);
+  const sort = normalizeCounterpartySort(params.sort);
+  const direction = normalizeSortDirection(params.direction);
+  const counterpartyRows = await getCounterpartyRowsForAdmin(status !== "active");
   const rows = searchQuery.normalized
-    ? [...counterpartyRows, ...(await getSupplierCounterpartyRows(counterpartyRows, params.includeArchived))]
+    ? [...counterpartyRows, ...(await getSupplierCounterpartyRows(counterpartyRows, status !== "active"))]
     : counterpartyRows;
-  const filteredCounterparties = rows
-    .filter((row) => counterpartyMatchesSearch(row, searchQuery))
-    .sort((a, b) => compareCounterpartiesForSearch(a, b, searchQuery));
+  const [enrichedBaseRows, snapshotRows] = await Promise.all([
+    enrichCounterpartyRows(rows),
+    getDemandSnapshotCounterpartyRows(counterpartyRows),
+  ]);
+  const enrichedRows = [...enrichedBaseRows, ...snapshotRows];
+  const filteredCounterparties = enrichedRows
+    .filter((row) => {
+      if (status === "active" && row.archived) return false;
+      if (status === "archive" && !row.archived) return false;
+      if (type === "individual" && row.companyType !== "individual") return false;
+      if (type === "company" && row.companyType === "individual") return false;
+      if (phone === "with" && !row.phone && !row.additionalPhone) return false;
+      if (phone === "without" && (row.phone || row.additionalPhone)) return false;
+      if (requisites === "with" && !hasCounterpartyRequisites(row)) return false;
+      if (requisites === "without" && hasCounterpartyRequisites(row)) return false;
+      if (shipments === "with" && row.demandCount === 0) return false;
+      if (shipments === "without" && row.demandCount > 0) return false;
+      return counterpartyMatchesSearch(row, searchQuery);
+    })
+    .sort((a, b) => compareCounterparties(a, b, searchQuery, sort, direction));
+  const allRowsForStats = await getCounterpartyRowsForAdmin(true);
+  const allSnapshotRowsForStats = await getDemandSnapshotCounterpartyRows(allRowsForStats);
   return {
     meta: { total: filteredCounterparties.length, limit, offset },
+    stats: counterpartyStats([...allRowsForStats, ...allSnapshotRowsForStats]),
     counterparties: filteredCounterparties.slice(offset, offset + limit),
   };
 }
@@ -1644,6 +2331,7 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
   const phone = body.phone?.trim() || null;
+  const additionalPhone = body.additionalPhone?.trim() || null;
   const email = body.email?.trim() || null;
   const companyType = body.companyType?.trim() || "legal";
   const legalTitle = body.legalTitle?.trim() || null;
@@ -1665,13 +2353,29 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput) {
   const ogrnip = cleanText(body.ogrnip);
   const certificateNumber = cleanText(body.certificateNumber);
   const certificateDate = dateFromInput(body.certificateDate);
+  const comment = cleanText(body.comment);
+  const vehiclePlate = cleanText(body.vehiclePlate);
+  const vehicleVin = cleanText(body.vehicleVin);
+  const vehicleModel = cleanText(body.vehicleModel);
+  const vehicleYear = cleanText(body.vehicleYear);
+  const rawPayload = {
+    ...body,
+    additionalPhone,
+    comment,
+    vehicle: {
+      plate: vehiclePlate,
+      vin: vehicleVin,
+      model: vehicleModel,
+      year: vehicleYear,
+    },
+  };
   const counterparty = await prisma.localCounterparty.create({
     data: {
       name,
       phone,
       email,
       normalizedPhone: normalizePhoneKey(phone),
-      phonesRaw: phone ? [phone] : undefined,
+      phonesRaw: [phone, additionalPhone].filter(Boolean),
       companyType,
       counterpartyTypeName,
       legalTitle,
@@ -1715,8 +2419,17 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput) {
         certificateNumber,
         counterpartyTypeName,
         companyType,
+        extraSearchText: buildSearchText([
+          additionalPhone,
+          normalizePhoneKey(additionalPhone),
+          comment,
+          vehiclePlate,
+          vehicleVin,
+          vehicleModel,
+          vehicleYear,
+        ]),
       }),
-      raw: toJson(body),
+      raw: toJson(rawPayload),
       syncedAt: new Date(),
     },
   });
@@ -1729,7 +2442,10 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
   if (!current) return { ok: false as const, error: "Контрагент не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
+  const currentExtra = counterpartyRawExtra(current.raw);
   const phone = body.phone == null ? current.phone : body.phone.trim() || null;
+  const additionalPhone =
+    body.additionalPhone === undefined ? currentExtra.additionalPhone || null : body.additionalPhone.trim() || null;
   const email = body.email == null ? current.email : body.email.trim() || null;
   const companyType = body.companyType == null ? current.companyType ?? "legal" : body.companyType.trim() || "legal";
   const legalTitle = body.legalTitle == null ? current.legalTitle : body.legalTitle.trim() || null;
@@ -1754,6 +2470,25 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
   const certificateNumber =
     body.certificateNumber === undefined ? current.certificateNumber : cleanText(body.certificateNumber);
   const certificateDate = body.certificateDate === undefined ? current.certificateDate : dateFromInput(body.certificateDate);
+  const comment = body.comment === undefined ? currentExtra.comment || null : cleanText(body.comment);
+  const vehiclePlate = body.vehiclePlate === undefined ? currentExtra.vehiclePlate || null : cleanText(body.vehiclePlate);
+  const vehicleVin = body.vehicleVin === undefined ? currentExtra.vehicleVin || null : cleanText(body.vehicleVin);
+  const vehicleModel = body.vehicleModel === undefined ? currentExtra.vehicleModel || null : cleanText(body.vehicleModel);
+  const vehicleYear = body.vehicleYear === undefined ? currentExtra.vehicleYear || null : cleanText(body.vehicleYear);
+  const currentRaw = jsonRecord(current.raw);
+  const rawPayload = {
+    ...currentRaw,
+    additionalPhone,
+    comment,
+    vehicle: {
+      ...jsonRecord(currentRaw.vehicle),
+      plate: vehiclePlate,
+      vin: vehicleVin,
+      model: vehicleModel,
+      year: vehicleYear,
+    },
+    lastLocalUpdate: new Date().toISOString(),
+  };
   const counterparty = await prisma.localCounterparty.update({
     where: { id: current.id },
     data: {
@@ -1761,7 +2496,7 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
       phone,
       email,
       normalizedPhone: normalizePhoneKey(phone),
-      phonesRaw: phone ? [phone] : undefined,
+      phonesRaw: [phone, additionalPhone].filter(Boolean),
       companyType,
       legalTitle,
       counterpartyTypeName,
@@ -1806,8 +2541,17 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
         certificateNumber,
         counterpartyTypeName,
         companyType,
+        extraSearchText: buildSearchText([
+          additionalPhone,
+          normalizePhoneKey(additionalPhone),
+          comment,
+          vehiclePlate,
+          vehicleVin,
+          vehicleModel,
+          vehicleYear,
+        ]),
       }),
-      raw: toJson({ ...(typeof current.raw === "object" && current.raw ? current.raw : {}), lastLocalUpdate: new Date().toISOString() }),
+      raw: toJson(rawPayload),
       syncedAt: new Date(),
     },
   });
@@ -1850,20 +2594,59 @@ async function nextSupplierInvoiceNumber(invoiceDate: string) {
   return `СЧ-${invoiceDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
 
-function normalizeSupplierInvoiceStatus(value?: string): "unpaid" | "paid" | "partial" {
-  if (value === "paid" || value === "partial") return value;
+function normalizeSupplierInvoiceStatus(value?: string): "draft" | "unpaid" | "paid" | "partial" | "cancelled" {
+  if (value === "draft" || value === "paid" || value === "partial" || value === "cancelled") return value;
+  if (value === "partially_paid") return "partial";
+  return "unpaid";
+}
+
+function normalizeSupplierInvoicePaymentType(value?: string): "cash" | "card" | "bank_transfer" {
+  if (value === "card" || value === "bank_transfer") return value;
+  return "cash";
+}
+
+function initialPaidCentsForStatus(status: string, sumCents: number) {
+  return status === "paid" ? sumCents : 0;
+}
+
+function effectivePaidCents(invoice: Pick<SupplierInvoiceWithDocument, "status" | "sumCents" | "paidAmountCents">) {
+  const fallbackPaid = invoice.status === "paid" && invoice.paidAmountCents === 0 ? invoice.sumCents : invoice.paidAmountCents;
+  return Math.min(invoice.sumCents, Math.max(0, fallbackPaid));
+}
+
+function effectiveInvoiceStatus(invoice: Pick<SupplierInvoiceWithDocument, "status" | "dueDate" | "sumCents" | "paidAmountCents">) {
+  const status = normalizeSupplierInvoiceStatus(invoice.status);
+  if (status === "cancelled" || status === "draft") return status;
+  const remainingCents = Math.max(0, invoice.sumCents - effectivePaidCents(invoice));
+  if (remainingCents <= 0) return "paid";
+  const today = new Date().toISOString().slice(0, 10);
+  if (invoice.dueDate && invoice.dueDate < today) return "overdue";
+  if (effectivePaidCents(invoice) > 0) return "partial";
   return "unpaid";
 }
 
 function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
   const document = invoice.document;
+  const paidAmountCents = effectivePaidCents(invoice);
+  const remainingAmountCents = normalizeSupplierInvoiceStatus(invoice.status) === "cancelled"
+    ? 0
+    : Math.max(0, invoice.sumCents - paidAmountCents);
   return {
     id: invoice.id,
     number: invoice.number ?? "",
     invoiceDate: invoice.invoiceDate,
     dueDate: invoice.dueDate ?? "",
-    status: invoice.status,
+    status: effectiveInvoiceStatus(invoice),
+    storedStatus: invoice.status,
     sum: invoice.sumCents / 100,
+    totalAmountCents: invoice.sumCents,
+    paidAmountCents,
+    remainingAmountCents,
+    paid: paidAmountCents / 100,
+    remaining: remainingAmountCents / 100,
+    source: invoice.source ?? "receipt",
+    comment: invoice.comment ?? "",
+    attachmentUrl: invoice.attachmentUrl ?? "",
     counterpartyName: invoice.counterpartyNameSnapshot ?? document.counterparty?.name ?? document.counterpartyNameSnapshot ?? "",
     createdAt: invoice.createdAt.toISOString(),
     updatedAt: invoice.updatedAt.toISOString(),
@@ -1877,11 +2660,37 @@ function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
       storeName: document.store?.name ?? document.storeNameSnapshot ?? "",
       counterpartyName: document.counterparty?.name ?? document.counterpartyNameSnapshot ?? "",
       sum: document.sumCents / 100,
+      positions: document.positions.map((position) => ({
+        id: position.id,
+        name: position.productName,
+        quantity: position.quantity.toNumber(),
+        price: position.priceCentsPerUnit / 100,
+        sum: Math.round(position.quantity.toNumber() * position.priceCentsPerUnit) / 100,
+        slotName: position.slotName ?? "",
+      })),
     },
+    payments: invoice.payments.map((payment) => ({
+      id: payment.id,
+      amount: payment.amountCents / 100,
+      amountCents: payment.amountCents,
+      paymentDate: payment.paymentDate,
+      paymentType: normalizeSupplierInvoicePaymentType(payment.paymentType),
+      comment: payment.comment ?? "",
+      createdAt: payment.createdAt.toISOString(),
+      createdBy: payment.createdBy,
+      createdByName: payment.createdByName ?? "",
+      cashExpenseOrder: payment.cashExpenseOrder
+        ? {
+            id: payment.cashExpenseOrder.id,
+            number: payment.cashExpenseOrder.number,
+            status: payment.cashExpenseOrder.status,
+          }
+        : null,
+    })),
   };
 }
 
-export async function createLocalSupplierInvoiceForReceipt(body: SupplierInvoiceInput) {
+export async function createLocalSupplierInvoiceForReceipt(body: SupplierInvoiceInput, user?: ActingUser) {
   const documentId = body.documentId?.trim() ?? "";
   if (!documentId) return { ok: false as const, error: "Не выбрана приёмка" };
   const document = await prisma.localInventoryDocument.findFirst({
@@ -1906,17 +2715,13 @@ export async function createLocalSupplierInvoiceForReceipt(body: SupplierInvoice
       dueDate,
       status,
       sumCents: document.sumCents,
+      paidAmountCents: initialPaidCentsForStatus(status, document.sumCents),
+      source: "receipt",
+      createdBy: user?.login ?? null,
       counterpartyNameSnapshot: document.counterparty?.name ?? document.counterpartyNameSnapshot,
       raw: toJson(body),
     },
-    include: {
-      document: {
-        include: {
-          store: true,
-          counterparty: true,
-        },
-      },
-    },
+    include: supplierInvoiceInclude,
   });
 
   invalidateSupplierInvoiceLists();
@@ -1927,45 +2732,145 @@ export async function createLocalSupplierInvoiceForReceipt(body: SupplierInvoice
 export async function listLocalSupplierInvoices(params: {
   search?: string;
   status?: string;
+  supplier?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  document?: string;
+  withoutReceipt?: boolean;
+  overdueOnly?: boolean;
+  source?: string;
+  sortBy?: string;
+  sortDir?: string;
   limit?: number;
   offset?: number;
 }): Promise<SupplierInvoiceAdminList> {
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
   const offset = Math.max(0, params.offset ?? 0);
   const search = params.search?.trim() ?? "";
-  const status = params.status === "unpaid" || params.status === "partial" || params.status === "paid"
+  const status = params.status === "unpaid" ||
+    params.status === "partial" ||
+    params.status === "partially_paid" ||
+    params.status === "paid" ||
+    params.status === "draft" ||
+    params.status === "cancelled" ||
+    params.status === "overdue"
     ? params.status
     : "";
-  const cacheKey = JSON.stringify({ search, status, limit, offset });
+  const supplier = params.supplier?.trim() ?? "";
+  const dateFrom = optionalDocumentDateFromInput(params.dateFrom);
+  const dateTo = optionalDocumentDateFromInput(params.dateTo);
+  const minAmount = Number.isFinite(params.minAmount) ? centsFromRub(params.minAmount) : null;
+  const maxAmount = Number.isFinite(params.maxAmount) ? centsFromRub(params.maxAmount) : null;
+  const documentSearch = params.document?.trim() ?? "";
+  const source = params.source === "local" ||
+    params.source === "receipt" ||
+    params.source === "import" ||
+    params.source === "moysklad_import"
+    ? params.source
+    : "";
+  const sortBy = ["invoiceDate", "dueDate", "sum", "supplier", "status"].includes(params.sortBy ?? "")
+    ? params.sortBy!
+    : "invoiceDate";
+  const sortDir = params.sortDir === "asc" ? "asc" : "desc";
+  const cacheKey = JSON.stringify({
+    search,
+    status,
+    supplier,
+    dateFrom,
+    dateTo,
+    minAmount,
+    maxAmount,
+    documentSearch,
+    withoutReceipt: params.withoutReceipt === true,
+    overdueOnly: params.overdueOnly === true,
+    source,
+    sortBy,
+    sortDir,
+    limit,
+    offset,
+  });
   const now = Date.now();
   const cached = inventoryListsCache.supplierInvoices.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
 
+  const today = new Date().toISOString().slice(0, 10);
+  const amountFromSearch = centsFromRub(search.replace(/[^\d,.]/g, "").replace(",", "."));
+  const and: Prisma.LocalSupplierInvoiceWhereInput[] = [];
+  if (status === "overdue" || params.overdueOnly) {
+    and.push({
+      dueDate: { lt: today },
+      status: { in: ["unpaid", "partial"] },
+    });
+  } else if (status) {
+    and.push({ status: status === "partially_paid" ? "partial" : status });
+  }
+  if (supplier) {
+    and.push({
+      OR: [
+        { counterpartyNameSnapshot: { contains: supplier, mode: "insensitive" } },
+        { document: { counterpartyNameSnapshot: { contains: supplier, mode: "insensitive" } } },
+        { document: { counterparty: { name: { contains: supplier, mode: "insensitive" } } } },
+      ],
+    });
+  }
+  if (dateFrom || dateTo) {
+    and.push({
+      invoiceDate: {
+        ...(dateFrom ? { gte: dateFrom } : {}),
+        ...(dateTo ? { lte: dateTo } : {}),
+      },
+    });
+  }
+  if (minAmount != null || maxAmount != null) {
+    and.push({
+      sumCents: {
+        ...(minAmount != null ? { gte: minAmount } : {}),
+        ...(maxAmount != null ? { lte: maxAmount } : {}),
+      },
+    });
+  }
+  if (documentSearch) {
+    and.push({ document: { name: { contains: documentSearch, mode: "insensitive" } } });
+  }
+  if (source) {
+    and.push({ source });
+  }
+  if (params.withoutReceipt) {
+    and.push({ documentId: "__missing_receipt__" });
+  }
+  if (search) {
+    and.push({
+      OR: [
+        { number: { contains: search, mode: "insensitive" } },
+        { counterpartyNameSnapshot: { contains: search, mode: "insensitive" } },
+        { document: { name: { contains: search, mode: "insensitive" } } },
+        { document: { counterpartyNameSnapshot: { contains: search, mode: "insensitive" } } },
+        ...(amountFromSearch > 0 ? [{ sumCents: amountFromSearch }] : []),
+      ],
+    });
+  }
+
   const where: Prisma.LocalSupplierInvoiceWhereInput = {
-    ...(status ? { status } : {}),
-    ...(search
-      ? {
-          OR: [
-            { number: { contains: search, mode: "insensitive" } },
-            { counterpartyNameSnapshot: { contains: search, mode: "insensitive" } },
-            { document: { name: { contains: search, mode: "insensitive" } } },
-          ],
-        }
-      : {}),
+    ...(and.length ? { AND: and } : {}),
   };
+  const orderBy: Prisma.LocalSupplierInvoiceOrderByWithRelationInput[] =
+    sortBy === "sum"
+      ? [{ sumCents: sortDir }, { createdAt: "desc" }]
+      : sortBy === "dueDate"
+        ? [{ dueDate: sortDir }, { createdAt: "desc" }]
+        : sortBy === "supplier"
+          ? [{ counterpartyNameSnapshot: sortDir }, { createdAt: "desc" }]
+          : sortBy === "status"
+            ? [{ status: sortDir }, { createdAt: "desc" }]
+            : [{ invoiceDate: sortDir }, { createdAt: "desc" }];
   const [total, invoices] = await Promise.all([
     prisma.localSupplierInvoice.count({ where }),
     prisma.localSupplierInvoice.findMany({
       where,
-      include: {
-        document: {
-          include: {
-            store: true,
-            counterparty: true,
-          },
-        },
-      },
-      orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
+      include: supplierInvoiceInclude,
+      orderBy,
       skip: offset,
       take: limit,
     }),
@@ -1982,13 +2887,149 @@ export async function listLocalSupplierInvoices(params: {
   return value;
 }
 
+export async function createLocalSupplierInvoicePayment(
+  invoiceId: string,
+  body: SupplierInvoicePaymentInput,
+  user: User
+) {
+  const id = invoiceId?.trim();
+  if (!id) return { ok: false as const, error: "Не выбран счёт поставщика" };
+
+  const amountCents = centsFromRub(body.amount);
+  if (amountCents <= 0) return { ok: false as const, error: "Сумма оплаты должна быть больше нуля" };
+
+  const paymentDate = documentDateFromInput(body.paymentDate || new Date().toISOString().slice(0, 10));
+  const paymentType = normalizeSupplierInvoicePaymentType(body.paymentType);
+  const invoice = await prisma.localSupplierInvoice.findUnique({
+    where: { id },
+    include: supplierInvoiceInclude,
+  });
+  if (!invoice) return { ok: false as const, error: "Счёт поставщика не найден", notFound: true };
+  const storedStatus = normalizeSupplierInvoiceStatus(invoice.status);
+  if (storedStatus === "cancelled") return { ok: false as const, error: "Отменённый счёт нельзя оплатить" };
+
+  const currentPaidCents = effectivePaidCents(invoice);
+  const remainingCents = Math.max(0, invoice.sumCents - currentPaidCents);
+  if (remainingCents <= 0) return { ok: false as const, error: "Счёт уже оплачен" };
+  if (amountCents > remainingCents && body.allowOverpay !== true) {
+    return { ok: false as const, error: "Сумма оплаты больше остатка по счёту" };
+  }
+
+  const supplierName =
+    invoice.counterpartyNameSnapshot ??
+    invoice.document.counterparty?.name ??
+    invoice.document.counterpartyNameSnapshot ??
+    "Поставщик";
+  let cashExpenseOrderId: string | null = null;
+
+  if (paymentType === "cash") {
+    const shift = getCurrentShift();
+    if (!shift) {
+      return {
+        ok: false as const,
+        error: "Кассовая смена не открыта. Наличную оплату нельзя провести через кассу.",
+        cashShiftClosed: true,
+      };
+    }
+    try {
+      const expense = await addExpense({
+        shiftId: shift.id,
+        amount: amountCents / 100,
+        article: `Оплата счёта поставщика ${invoice.number || invoice.document.name}`,
+        expenseDate: paymentDate,
+        expenseItemName: "Оплата поставщику",
+        counterpartyId: invoice.document.counterpartyId ?? undefined,
+        counterpartyName: supplierName,
+        paymentType: "cash",
+        status: "posted",
+        comment: body.comment?.trim() || `Счёт ${invoice.number || invoice.document.name}`,
+      });
+      cashExpenseOrderId = expense.orderId ?? null;
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Не удалось создать расходный ордер кассы",
+      };
+    }
+  }
+
+  const nextPaidCents = Math.min(invoice.sumCents, currentPaidCents + amountCents);
+  const nextStatus = nextPaidCents >= invoice.sumCents ? "paid" : "partial";
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.localSupplierInvoicePayment.create({
+      data: {
+        invoiceId: invoice.id,
+        amountCents,
+        paymentDate,
+        paymentType,
+        cashExpenseOrderId,
+        comment: body.comment?.trim() || null,
+        createdBy: user.login,
+        createdByName: user.name,
+        raw: toJson(body),
+      },
+    });
+    return tx.localSupplierInvoice.update({
+      where: { id: invoice.id },
+      data: {
+        paidAmountCents: nextPaidCents,
+        status: nextStatus,
+      },
+      include: supplierInvoiceInclude,
+    });
+  });
+
+  invalidateSupplierInvoiceLists();
+  return { ok: true as const, invoice: mapSupplierInvoice(updated) };
+}
+
+export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status: string, user?: ActingUser) {
+  const id = invoiceId?.trim();
+  if (!id) return { ok: false as const, error: "Не выбран счёт поставщика" };
+  const nextStatus = normalizeSupplierInvoiceStatus(status);
+  if (nextStatus !== "cancelled" && nextStatus !== "draft" && nextStatus !== "unpaid") {
+    return { ok: false as const, error: "Этот статус изменяется через оплату счёта" };
+  }
+
+  const current = await prisma.localSupplierInvoice.findUnique({
+    where: { id },
+    include: supplierInvoiceInclude,
+  });
+  if (!current) return { ok: false as const, error: "Счёт поставщика не найден", notFound: true };
+  if (current.payments.length > 0 && nextStatus === "cancelled") {
+    return { ok: false as const, error: "Нельзя отменить счёт с сохранёнными оплатами" };
+  }
+
+  const updated = await prisma.localSupplierInvoice.update({
+    where: { id: current.id },
+    data: {
+      status: nextStatus,
+      paidAmountCents: nextStatus === "unpaid" || nextStatus === "draft" || nextStatus === "cancelled"
+        ? 0
+        : current.paidAmountCents,
+      raw: toJson({
+        ...jsonRecord(current.raw),
+        statusChangedAt: new Date().toISOString(),
+        statusChangedBy: user?.login ?? null,
+      }),
+    },
+    include: supplierInvoiceInclude,
+  });
+
+  invalidateSupplierInvoiceLists();
+  return { ok: true as const, invoice: mapSupplierInvoice(updated) };
+}
+
 export async function createLocalStockDocument(body: StockDocumentInput, user?: ActingUser) {
   const type = body.type === "receipt" || body.type === "writeoff" ? body.type : null;
   if (!type) return { ok: false as const, error: "Неизвестный тип складского документа" };
   const storeId = body.storeId?.trim() ?? "";
-  if (!storeId) return { ok: false as const, error: "Выберите склад" };
-  const store = await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } });
-  if (!store) return { ok: false as const, error: "Склад не найден в локальной БД" };
+  const applicable = body.applicable !== false;
+  const store = storeId
+    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
+    : null;
+  if (storeId && !store) return { ok: false as const, error: "Склад не найден в локальной БД" };
+  if (applicable && !store) return { ok: false as const, error: "Выберите склад" };
   const documentDate = documentDateFromInput(body.documentDate);
   const momentAt = momentFromInput(body.moment, documentDate);
   const inputPositions = (body.positions ?? []).filter(
@@ -2039,7 +3080,6 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if ("error" in position) return sum;
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
-  const applicable = body.applicable !== false;
   const name = await nextStockDocumentName(type, documentDate);
   const invoiceRequested = type === "receipt" && body.invoice?.create === true;
   const invoiceDate = invoiceRequested ? documentDateFromInput(body.invoice?.invoiceDate || documentDate) : null;
@@ -2061,8 +3101,8 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         description: body.description?.trim() || null,
         counterpartyId: counterparty?.id ?? null,
         counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
-        storeId: store.id,
-        storeNameSnapshot: store.name,
+        storeId: store?.id ?? null,
+        storeNameSnapshot: store?.name ?? null,
         createdByLogin: user?.login ?? null,
         createdByName: user?.name ?? null,
         raw: toJson(body),
@@ -2093,6 +3133,9 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
           dueDate: invoiceDueDate,
           status: invoiceStatus!,
           sumCents,
+          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          source: "receipt",
+          createdBy: user?.login ?? null,
           counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
           raw: toJson(body.invoice),
         },
@@ -2100,6 +3143,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     }
 
     if (applicable) {
+      if (!store) throw new Error("Выберите склад");
       for (const position of positions) {
         if ("error" in position) throw new Error(position.error);
         const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
@@ -2165,6 +3209,226 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   };
 }
 
+export async function updateLocalStockDocument(documentId: string, body: StockDocumentInput, user?: ActingUser) {
+  const id = documentId?.trim();
+  if (!id) return { ok: false as const, error: "Не выбран складской документ" };
+
+  const current = await prisma.localInventoryDocument.findUnique({
+    where: { id },
+    include: { supplierInvoice: true },
+  });
+  if (!current) return { ok: false as const, error: "Складской документ не найден", notFound: true };
+  if (current.type !== "receipt" && current.type !== "writeoff") {
+    return { ok: false as const, error: "Неизвестный тип складского документа" };
+  }
+  if (body.type && body.type !== current.type) {
+    return { ok: false as const, error: "Тип складского документа нельзя изменить" };
+  }
+  if (current.applicable) {
+    return { ok: false as const, error: "Проведённый документ нельзя редактировать. Создайте документ на основе." };
+  }
+
+  const type = current.type as LocalStockDocumentType;
+  const storeId = body.storeId?.trim() ?? "";
+  const applicable = body.applicable === true;
+  const store = storeId
+    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
+    : null;
+  if (storeId && !store) return { ok: false as const, error: "Склад не найден в локальной БД" };
+  if (applicable && !store) return { ok: false as const, error: "Выберите склад" };
+
+  const documentDate = documentDateFromInput(body.documentDate || current.documentDate);
+  const momentAt = momentFromInput(body.moment, documentDate);
+  const inputPositions = (body.positions ?? []).filter(
+    (position) => position.productId?.trim() && Number(position.quantity) > 0
+  );
+  if (inputPositions.length === 0) {
+    return { ok: false as const, error: "Добавьте хотя бы одну позицию с количеством больше нуля" };
+  }
+
+  const productIds = [...new Set(inputPositions.map((position) => position.productId!.trim()))];
+  const products = await prisma.localProduct.findMany({
+    where: { OR: [{ id: { in: productIds } }, { moyskladId: { in: productIds } }] },
+  });
+  const productByAnyId = new Map<string, (typeof products)[number]>();
+  for (const product of products) {
+    productByAnyId.set(product.id, product);
+    if (product.moyskladId) productByAnyId.set(product.moyskladId, product);
+  }
+
+  const positions = inputPositions.map((position) => {
+    const product = productByAnyId.get(position.productId!.trim());
+    if (!product) return { error: `Товар не найден: ${position.productId}` as const };
+    if (!isStockTrackedType(product.entityType)) return { error: `Позиция не является складским товаром: ${product.name}` as const };
+    const quantity = Number(position.quantity) || 0;
+    const inputPriceCents = centsFromRub(position.price);
+    const priceCents = type === "writeoff" && inputPriceCents <= 0
+      ? product.buyPriceCents ?? 0
+      : inputPriceCents;
+    return {
+      product,
+      quantity: new Prisma.Decimal(quantity),
+      priceCents,
+      slotName: position.slotName?.trim() || null,
+      raw: position,
+    };
+  });
+  const positionError = positions.find((position) => "error" in position);
+  if (positionError && "error" in positionError) {
+    return { ok: false as const, error: positionError.error };
+  }
+
+  const counterpartyId = body.counterpartyId?.trim();
+  const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
+  const counterparty = counterpartyId && !supplierSnapshotName
+    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { moyskladId: counterpartyId }] } })
+    : null;
+  const sumCents = positions.reduce((sum, position) => {
+    if ("error" in position) return sum;
+    return sum + Math.round(position.quantity.toNumber() * position.priceCents);
+  }, 0);
+  const invoiceRequested = type === "receipt" && body.invoice?.create === true;
+  const invoiceDate = invoiceRequested ? documentDateFromInput(body.invoice?.invoiceDate || documentDate) : null;
+  const invoiceDueDate = invoiceRequested ? optionalDocumentDateFromInput(body.invoice?.dueDate) : null;
+  const invoiceStatus = invoiceRequested ? normalizeSupplierInvoiceStatus(body.invoice?.status) : null;
+  const invoiceNumber = invoiceRequested
+    ? body.invoice?.number?.trim() || current.supplierInvoice?.number || await nextSupplierInvoiceNumber(invoiceDate!)
+    : null;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const document = await tx.localInventoryDocument.update({
+      where: { id: current.id },
+      data: {
+        momentAt,
+        documentDate,
+        applicable,
+        sumCents,
+        description: body.description?.trim() || null,
+        counterpartyId: counterparty?.id ?? null,
+        counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
+        storeId: store?.id ?? null,
+        storeNameSnapshot: store?.name ?? null,
+        createdByLogin: user?.login ?? current.createdByLogin,
+        createdByName: user?.name ?? current.createdByName,
+        raw: toJson(body),
+      },
+    });
+
+    await tx.localInventoryDocumentPosition.deleteMany({ where: { documentId: document.id } });
+    await tx.localInventoryDocumentPosition.createMany({
+      data: positions.map((position) => {
+        if ("error" in position) throw new Error(position.error);
+        return {
+          documentId: document.id,
+          productId: position.product.id,
+          productName: position.product.name,
+          quantity: position.quantity,
+          priceCentsPerUnit: position.priceCents,
+          slotName: position.slotName,
+          raw: toJson(position.raw),
+        };
+      }),
+    });
+
+    if (invoiceRequested) {
+      await tx.localSupplierInvoice.upsert({
+        where: { documentId: document.id },
+        create: {
+          documentId: document.id,
+          number: invoiceNumber,
+          invoiceDate: invoiceDate!,
+          dueDate: invoiceDueDate,
+          status: invoiceStatus!,
+          sumCents,
+          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          source: "receipt",
+          createdBy: user?.login ?? null,
+          counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
+          raw: toJson(body.invoice),
+        },
+        update: {
+          number: invoiceNumber,
+          invoiceDate: invoiceDate!,
+          dueDate: invoiceDueDate,
+          status: invoiceStatus!,
+          sumCents,
+          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
+          raw: toJson(body.invoice),
+        },
+      });
+    } else {
+      await tx.localSupplierInvoice.deleteMany({ where: { documentId: document.id } });
+    }
+
+    if (applicable) {
+      if (!store) throw new Error("Выберите склад");
+      for (const position of positions) {
+        if ("error" in position) throw new Error(position.error);
+        const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
+        const currentBalance = await tx.localStockBalance.findUnique({
+          where: { productId_storeId: { productId: position.product.id, storeId: store.id } },
+        });
+        const reserve = currentBalance?.reserve.toNumber() ?? 0;
+        const nextQuantity = (currentBalance?.quantity.toNumber() ?? 0) + delta;
+        const nextAvailable = nextQuantity - reserve;
+        if (currentBalance) {
+          await tx.localStockBalance.update({
+            where: { id: currentBalance.id },
+            data: {
+              quantity: new Prisma.Decimal(nextQuantity),
+              available: new Prisma.Decimal(nextAvailable),
+              slotName: position.slotName ?? currentBalance.slotName,
+              syncedAt: new Date(),
+            },
+          });
+        } else {
+          await tx.localStockBalance.create({
+            data: {
+              productId: position.product.id,
+              storeId: store.id,
+              quantity: new Prisma.Decimal(nextQuantity),
+              reserve: new Prisma.Decimal(0),
+              available: new Prisma.Decimal(nextAvailable),
+              slotName: position.slotName,
+              syncedAt: new Date(),
+            },
+          });
+        }
+        if (type === "receipt" && position.priceCents > 0) {
+          await tx.localProduct.update({
+            where: { id: position.product.id },
+            data: { buyPriceCents: position.priceCents, syncedAt: new Date() },
+          });
+        }
+      }
+    }
+
+    return document;
+  });
+
+  invalidateWarehouseReadCaches();
+
+  return {
+    ok: true as const,
+    document: {
+      id: updated.id,
+      name: updated.name,
+      type: updated.type,
+      applicable: updated.applicable,
+      invoice: invoiceRequested
+        ? {
+            number: invoiceNumber,
+            invoiceDate,
+            dueDate: invoiceDueDate,
+            status: invoiceStatus,
+            sum: sumCents / 100,
+          }
+        : null,
+    },
+  };
+}
+
 export async function listLocalStockDocuments(params: {
   type?: string;
   search?: string;
@@ -2200,7 +3464,7 @@ export async function listLocalStockDocuments(params: {
       include: {
         store: true,
         counterparty: true,
-        positions: { orderBy: { id: "asc" } },
+        positions: { include: { product: true }, orderBy: { id: "asc" } },
         supplierInvoice: true,
       },
       orderBy: [{ momentAt: "desc" }],
@@ -2219,7 +3483,9 @@ export async function listLocalStockDocuments(params: {
       applicable: document.applicable,
       sum: document.sumCents / 100,
       description: document.description ?? "",
+      storeId: document.storeId ?? "",
       storeName: document.store?.name ?? document.storeNameSnapshot ?? "",
+      counterpartyId: document.counterpartyId ?? "",
       counterpartyName: document.counterparty?.name ?? document.counterpartyNameSnapshot ?? "",
       positionsCount: document.positions.length,
       totalQuantity: document.positions.reduce((sum, position) => sum + position.quantity.toNumber(), 0),
@@ -2237,6 +3503,9 @@ export async function listLocalStockDocuments(params: {
         id: position.id,
         productId: position.productId,
         name: position.productName,
+        article: position.product?.article ?? "",
+        code: position.product?.code ?? "",
+        brand: position.product?.brand ?? "",
         quantity: position.quantity.toNumber(),
         price: position.priceCentsPerUnit / 100,
         slotName: position.slotName ?? "",

@@ -1,44 +1,25 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { moyskladFetch } from "@/lib/moysklad";
 import { syncAqsiPendingOrder, type AqsiPendingOrderItem } from "@/lib/aqsi";
-import { toMoyskladMomentString } from "@/lib/time";
+import { getSession } from "@/lib/auth";
+import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import {
-  isRecognizedMotorOilMarkingCode,
   isLikelyMarkedMotorOilProductName,
   isMeasuredMotorOilQuantity,
+  isRecognizedMotorOilMarkingCode,
   normalizeMarkingCodeInput,
   parseMarkingCodesInput,
   requiredMarkingCodeCount,
 } from "@/lib/marking";
+import { toMoyskladMomentString } from "@/lib/time";
 
 type Meta = { href: string; type: string; mediaType: string };
 
-type DemandGet = {
-  id: string;
-  name: string;
-  moment: string;
-  description?: string;
-  agent?: {
-    name?: string;
-    phone?: string;
-    email?: string;
-    phones?: Array<{ phone?: string } | string>;
-    meta?: Meta;
-  } & Record<string, unknown>;
-} & Record<string, unknown>;
-
-type DemandPositionRow = {
-  id: string;
-  quantity: number;
-  price: number;
-  discount?: number;
-  assortment?: {
-    name?: string;
-    code?: string;
-    article?: string;
-    meta?: Meta;
-  } & Record<string, unknown>;
+type DemandAgent = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  phones?: Array<{ phone?: string } | string>;
+  meta?: Meta;
 } & Record<string, unknown>;
 
 type PaymentBody = {
@@ -47,7 +28,18 @@ type PaymentBody = {
   markingBypassPassword?: string;
 };
 
-function pickCustomerContact(agent: DemandGet["agent"]): string | undefined {
+type OrderPosition = {
+  id: string;
+  name: string;
+  quantity: number;
+  priceCents: number;
+  discountPercent: number;
+  sku?: string | null;
+  assortmentType?: string;
+  assortmentHref?: string;
+};
+
+function pickCustomerContact(agent: DemandAgent | undefined): string | undefined {
   if (!agent) return undefined;
 
   const directPhone = typeof agent.phone === "string" ? agent.phone.trim() : "";
@@ -88,51 +80,20 @@ function hasCorrectBypassPassword(password?: string): boolean {
   return password?.trim() === expected;
 }
 
-function isProductPosition(row: DemandPositionRow): boolean {
-  const meta = row.assortment?.meta;
-  if (meta?.type === "service") return false;
-  if (meta?.type === "product" || meta?.type === "variant") return true;
-  return /\/entity\/(product|variant)\//i.test(meta?.href ?? "");
+function isProductOrderPosition(row: OrderPosition): boolean {
+  const type = row.assortmentType ?? "";
+  if (type === "service") return false;
+  if (type === "product" || type === "variant" || type === "bundle") return true;
+  return /\/entity\/(?:product|variant|bundle)\//i.test(row.assortmentHref ?? "");
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  }
+function pickRawAgent(raw: unknown): DemandAgent | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const agent = (raw as { agent?: unknown }).agent;
+  return agent && typeof agent === "object" ? (agent as DemandAgent) : undefined;
+}
 
-  const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ error: "id не указан" }, { status: 400 });
-  }
-
-  let body: PaymentBody;
-  try {
-    body = await readPaymentBody(request);
-  } catch {
-    return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
-  }
-
-  const [demandRes, positionsRes] = await Promise.all([
-    moyskladFetch<DemandGet>(`/entity/demand/${id}?expand=agent`, {
-      cache: "no-store",
-    }),
-    moyskladFetch<{ rows: DemandPositionRow[] }>(
-      `/entity/demand/${id}/positions?expand=assortment`,
-      { cache: "no-store" }
-    ),
-  ]);
-
-  if (!demandRes.ok) {
-    return NextResponse.json({ error: demandRes.error }, { status: 502 });
-  }
-  if (!positionsRes.ok) {
-    return NextResponse.json({ error: positionsRes.error }, { status: 502 });
-  }
-
+function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOrderItem[] | NextResponse {
   const bypassIds = new Set(
     Array.isArray(body.markingBypassPositionIds)
       ? body.markingBypassPositionIds.map((id) => String(id).trim()).filter(Boolean)
@@ -147,17 +108,13 @@ export async function POST(
 
   const usedCodes = new Set<string>();
   const items: AqsiPendingOrderItem[] = [];
-  for (const row of positionsRes.data.rows ?? []) {
-    const name =
-      row.assortment?.name ??
-      row.assortment?.article ??
-      row.assortment?.code ??
-      "Позиция без названия";
+  for (const row of rows) {
+    const name = row.name || "Позиция без названия";
     const quantity = Number(row.quantity) || 0;
-    const unitPrice = (Number(row.price) || 0) / 100;
-    const discountPercent = typeof row.discount === "number" ? row.discount : 0;
-    const sku = row.assortment?.article ?? row.assortment?.code ?? undefined;
-    const markingRequired = isProductPosition(row) && isLikelyMarkedMotorOilProductName(name);
+    const unitPrice = (Number(row.priceCents) || 0) / 100;
+    const discountPercent = typeof row.discountPercent === "number" ? row.discountPercent : 0;
+    const sku = row.sku ?? undefined;
+    const markingRequired = isProductOrderPosition(row) && isLikelyMarkedMotorOilProductName(name);
     const measuredPour = markingRequired && isMeasuredMotorOilQuantity(name, quantity);
     const codes = normalizeCodes(body.markingCodes?.[row.id]);
     const requiredCount = requiredMarkingCodeCount(quantity, { measuredPour });
@@ -228,26 +185,93 @@ export async function POST(
     });
   }
 
-  try {
-    const aqsi = await syncAqsiPendingOrder({
-      id: demandRes.data.id,
-      number: demandRes.data.name || demandRes.data.id,
-      dateTime: toMoyskladMomentString(),
-      comment: demandRes.data.description ?? "",
-      customer: demandRes.data.agent?.name ?? "",
-      customerContact: pickCustomerContact(demandRes.data.agent),
-      items,
-    });
+  return items;
+}
 
-    return NextResponse.json({
-      ok: true,
-      orderId: aqsi.orderId,
-      uid: aqsi.uid,
-      status: aqsi.status,
-      deviceId: aqsi.deviceId,
-      shopId: aqsi.shopId,
-      cashierId: aqsi.cashierId,
-    });
+async function sendAqsiOrder(input: {
+  id: string;
+  number: string;
+  comment?: string | null;
+  customer?: string | null;
+  customerContact?: string | null;
+  items: AqsiPendingOrderItem[];
+}) {
+  const aqsi = await syncAqsiPendingOrder({
+    id: input.id,
+    number: input.number,
+    dateTime: toMoyskladMomentString(),
+    comment: input.comment ?? "",
+    customer: input.customer ?? "",
+    customerContact: input.customerContact ?? undefined,
+    items: input.items,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    orderId: aqsi.orderId,
+    uid: aqsi.uid,
+    status: aqsi.status,
+    deviceId: aqsi.deviceId,
+    shopId: aqsi.shopId,
+    cashierId: aqsi.cashierId,
+  });
+}
+
+async function trySendLocalDemand(id: string, body: PaymentBody): Promise<NextResponse | null> {
+  const loaded = await loadLocalDemandDetailPayload(id);
+  if (!loaded.ok) {
+    if (loaded.notFound) return null;
+    return NextResponse.json({ error: loaded.error }, { status: 400 });
+  }
+
+  const rows: OrderPosition[] = loaded.data.positions.map((position) => ({
+    id: position.id,
+    name: position.name,
+    quantity: position.quantity,
+    priceCents: position.price,
+    discountPercent: typeof position.discount === "number" ? position.discount : 0,
+    assortmentType: position.assortmentMeta?.type,
+    assortmentHref: position.assortmentMeta?.href,
+  }));
+  const items = buildAqsiItems(rows, body);
+  if (items instanceof NextResponse) return items;
+
+  const agent = pickRawAgent(loaded.data.raw);
+  return sendAqsiOrder({
+    id: loaded.data.header.id,
+    number: loaded.data.header.name || loaded.data.header.id,
+    comment: loaded.data.header.description ?? "",
+    customer: loaded.data.header.agentName ?? "",
+    customerContact: pickCustomerContact(agent),
+    items,
+  });
+}
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  if (!id) {
+    return NextResponse.json({ error: "id не указан" }, { status: 400 });
+  }
+
+  let body: PaymentBody;
+  try {
+    body = await readPaymentBody(request);
+  } catch {
+    return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
+  }
+
+  try {
+    const localResponse = await trySendLocalDemand(id, body);
+    if (localResponse) return localResponse;
+    return NextResponse.json({ error: "Локальная отгрузка не найдена" }, { status: 404 });
   } catch (error) {
     return NextResponse.json(
       {

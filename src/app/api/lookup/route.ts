@@ -502,7 +502,7 @@ async function getFiltersFromPartsCatalogs(vin: string): Promise<{
     cabinParts.length
   );
 
-  /** Собирает до maxCount уникальных OEM-номеров (чтобы пробивать в МойСклад по нескольким вариантам). */
+  /** Собирает до maxCount уникальных OEM-номеров (чтобы искать в локальном каталоге по нескольким вариантам). */
   const uniqueNumbers = (parts: PartItem[], maxCount: number): string[] => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -690,7 +690,7 @@ async function getStockItemsForProducts(
   return [...localItems, ...missingItems];
 }
 
-/** Нормализует OEM: убирает пробелы — в МойСклад ищет "11428575211", а не "11 42 8 575 211". */
+/** Нормализует OEM: убирает пробелы — в каталоге ищет "11428575211", а не "11 42 8 575 211". */
 function normalizeOem(oem: string): string {
   return oem.toUpperCase().replace(/[\s-]+/g, "");
 }
@@ -727,7 +727,7 @@ function extractOemNumbers(oilInfo: OilInfo): string[] {
   return [...new Set(parts)].slice(0, 15);
 }
 
-/** Mann-наименования для поиска в МойСклад (по названию/артикулу). */
+/** Mann-наименования для поиска в локальном каталоге (по названию/артикулу). */
 function extractMannDesignations(oilInfo: OilInfo): string[] {
   const parts: string[] = [];
   for (const raw of [
@@ -855,7 +855,7 @@ function scoreAndMatch(
   return { recommended, alternatives };
 }
 
-/** Только OEM фильтров + Mann — для поиска в МойСклад именно фильтров (без допусков масла). */
+/** Только OEM фильтров + Mann — для поиска в локальном каталоге именно фильтров (без допусков масла). */
 function extractSearchTermsForFilters(oilInfo: OilInfo): string[] {
   const oem = extractOemNumbers(oilInfo);
   const mann = extractMannDesignations(oilInfo);
@@ -1190,7 +1190,7 @@ function buildOilSearchStrategies(requirements: OilRequirements): Array<{ label:
   const strategies: Array<{ label: string; req: OilRequirements }> = [];
 
   // Сначала пробуем OEM+SAE, но не «глотаем» ACEA/API/ILSAC: в ответе OpenAI часто бывает
-  // и марочный допуск, и ACEA C3 — в карточках МойСклад C3 может быть только в поле ACEA.
+  // и марочный допуск, и ACEA C3 — в карточках каталога C3 может быть только в поле ACEA.
   // Раньше при hasOem выполнялась только эта ветка, из‑за чего C3 в UI был, а матчинг масла — пустой.
   if (hasOem) {
     strategies.push({
@@ -1640,7 +1640,7 @@ export async function POST(request: NextRequest) {
             (result.oilInfo.ilsac?.length ?? 0) > 0
         );
         result.moySkladError = hasFilterOem || hasOilParams
-          ? "По этим параметрам в МойСклад позиций не найдено."
+          ? "По этим параметрам в локальном каталоге позиций не найдено."
           : "Не удалось определить параметры масла/фильтров по VIN. Проверьте VIN или полноту данных в каталогах.";
       }
     } else {

@@ -1,17 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
+  CreditCard,
+  ExternalLink,
   PackagePlus,
+  Plus,
   Receipt,
   Search,
   Sparkles,
+  Trash2,
+  UserPlus,
+  Wrench,
+  X,
 } from "lucide-react";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
+import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -64,9 +74,30 @@ type AttributesJson = { attributes?: ShipmentAttribute[]; error?: string };
 type CounterpartiesJson = { counterparties?: Counterparty[]; error?: string };
 type ProductsJson = { products?: Product[]; error?: string };
 type AgentCreateJson = { id?: string; name?: string; meta?: Meta; error?: string };
-type DemandCreateJson = { id?: string; error?: string };
+type DemandCreateJson = { id?: string; name?: string; applicable?: boolean; description?: string; error?: string };
 type DiagnosticExistingJson = { diagnostic?: { id?: string }; error?: string };
 type DiagnosticCreateJson = { diagnosticId?: string; error?: string };
+
+type DemandDetailJson = {
+  header?: {
+    id: string;
+    name: string;
+    moment: string;
+    applicable: boolean;
+    description?: string;
+    agentName?: string;
+    organizationName?: string;
+    storeName?: string;
+  };
+  attributes?: ShipmentAttribute[];
+  positions?: Array<Position & { price: number }>;
+  raw?: {
+    agent?: { id?: string; name?: string; meta?: Meta };
+    organization?: { id?: string; name?: string; meta?: Meta };
+    store?: { id?: string; name?: string; meta?: Meta; isMain?: boolean };
+  };
+  error?: string;
+};
 
 const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
 
@@ -217,6 +248,30 @@ function getStockToneClass(value?: number): string {
   if (qty <= 0) return "text-red-600 dark:text-red-400";
   if (qty <= 2) return "text-amber-600 dark:text-amber-400";
   return "text-emerald-600 dark:text-emerald-400";
+}
+
+function localEntityIdFromMeta(meta?: Meta): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/(?:product|variant|service|counterparty)\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
+}
+
+function productCatalogHref(product: Product): string {
+  return `/inventory/products?product=${encodeURIComponent(product.id)}`;
+}
+
+function positionProductHref(position: Position): string {
+  const productId = localEntityIdFromMeta(position.assortmentMeta);
+  if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
+  return `/inventory/products?search=${encodeURIComponent(position.name)}`;
+}
+
+function counterpartyCatalogHref(counterparty: Counterparty): string {
+  const name = counterparty.name.trim();
+  return name ? `/clients/counterparties?search=${encodeURIComponent(name)}` : "/clients/counterparties";
 }
 
 function detectFilterKind(item: VinLookupItem): FilterSectionKind | null {
@@ -585,11 +640,21 @@ function buildMaintenanceMessage(result: VinLookupResult, offers: MaintenanceOff
   return [...header, ...body, "", "Цены актуальны на момент расчета, наличие лучше подтвердить перед заказом."].join("\n");
 }
 
-function NewShipmentForm() {
+type NewShipmentFormProps = {
+  demandId?: string;
+  copied?: boolean;
+};
+
+function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillCounterparty = searchParams.get("counterparty")?.trim() ?? "";
   const prefillPhone = searchParams.get("phone")?.trim() ?? "";
+  const prefillComment = searchParams.get("comment")?.trim() ?? "";
+  const prefillVin = searchParams.get("vin")?.trim() ?? "";
+  const prefillVehicle = searchParams.get("vehicle")?.trim() ?? "";
+  const prefillPlate = searchParams.get("plate")?.trim() ?? "";
+  const isExistingDraft = Boolean(demandId);
 
   const [organizations, setOrganizations] = useState<Org[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -601,6 +666,7 @@ function NewShipmentForm() {
   const [agentSearch, setAgentSearch] = useState("");
   const [agentOptions, setAgentOptions] = useState<Counterparty[]>([]);
   const [agentLoading, setAgentLoading] = useState(false);
+  const [agentSearchError, setAgentSearchError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Counterparty | null>(null);
 
   const [showCreateAgentForm, setShowCreateAgentForm] = useState(false);
@@ -615,6 +681,7 @@ function NewShipmentForm() {
 
   const [attributes, setAttributes] = useState<ShipmentAttribute[]>([]);
   const [attributesLoading, setAttributesLoading] = useState(true);
+  const [attributesError, setAttributesError] = useState<string | null>(null);
   const [vin, setVin] = useState("");
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
@@ -630,8 +697,10 @@ function NewShipmentForm() {
   const [productParams, setProductParams] = useState("");
   const [productOptions, setProductOptions] = useState<Product[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
+  const [productSearchError, setProductSearchError] = useState<string | null>(null);
 
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [momentStr, setMomentStr] = useState("");
@@ -646,9 +715,17 @@ function NewShipmentForm() {
   const [vehicleOverridePromptVin, setVehicleOverridePromptVin] = useState("");
 
   const [demandIdLocal, setDemandIdLocal] = useState<string | null>(null);
+  const [existingDemandName, setExistingDemandName] = useState<string | null>(null);
+  const [existingDemandLoading, setExistingDemandLoading] = useState(Boolean(demandId));
+  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saved" | "error">("idle");
+  const [copyNotice, setCopyNotice] = useState(copied);
   const [diagnosticModalOpen, setDiagnosticModalOpen] = useState(false);
   const [diagnosticRowId, setDiagnosticRowId] = useState<string | null>(null);
   const [summarySheetOpen, setSummarySheetOpen] = useState(false);
+
+  const markDraftDirty = useCallback(() => {
+    if (isExistingDraft) setSaveState("dirty");
+  }, [isExistingDraft]);
 
   useEffect(() => {
     if (prefillApplied) return;
@@ -657,8 +734,18 @@ function NewShipmentForm() {
       setNewAgentName(prefillCounterparty);
     }
     if (prefillPhone) setNewAgentPhone(prefillPhone);
+    if (!isExistingDraft) {
+      const descriptionLines = [
+        prefillComment,
+        prefillVehicle ? `Автомобиль: ${prefillVehicle}` : "",
+        prefillPlate ? `Госномер: ${prefillPlate}` : "",
+        prefillVin ? `VIN: ${prefillVin}` : "",
+      ].filter(Boolean);
+      if (descriptionLines.length > 0) setDescription(descriptionLines.join("\n"));
+      if (prefillVin) setVin(prefillVin);
+    }
     setPrefillApplied(true);
-  }, [prefillApplied, prefillCounterparty, prefillPhone]);
+  }, [isExistingDraft, prefillApplied, prefillComment, prefillCounterparty, prefillPhone, prefillPlate, prefillVehicle, prefillVin]);
 
   useEffect(() => {
     if (!prefillCounterparty || selectedAgent || agentOptions.length === 0) return;
@@ -753,11 +840,147 @@ function NewShipmentForm() {
     }
   }, [router, selectedStore]);
 
+  const loadAttributeMetadata = useCallback(async () => {
+    setAttributesLoading(true);
+    setAttributesError(null);
+    try {
+      const res = await fetch("/api/demands/metadata");
+      const data = await safeJson<AttributesJson>(res, {});
+      if (!res.ok || data.error) {
+        setAttributesError(data.error ?? "Не удалось загрузить дополнительные поля");
+        return;
+      }
+      if (data.attributes) {
+        const nextAttributes = data.attributes.map((attribute: ShipmentAttribute) => {
+          const name = String(attribute.name ?? "").toLowerCase();
+          if (prefillVin && /vin/i.test(name)) return { ...attribute, value: prefillVin };
+          if (prefillPlate && /гос|номер|plate/i.test(name)) return { ...attribute, value: prefillPlate };
+          if (prefillVehicle && /модель|авто|vehicle|car/i.test(name)) return { ...attribute, value: prefillVehicle };
+          return attribute;
+        });
+        setAttributes(nextAttributes);
+        const vinIdx = nextAttributes.findIndex((a: { name: string }) => /vin/i.test(a.name ?? ""));
+        if (vinIdx >= 0) setVin((prev) => prev || String(nextAttributes[vinIdx]?.value ?? ""));
+      }
+    } catch (error) {
+      setAttributesError(error instanceof Error ? error.message : "Не удалось загрузить дополнительные поля");
+    } finally {
+      setAttributesLoading(false);
+    }
+  }, [prefillPlate, prefillVehicle, prefillVin]);
+
   useEffect(() => {
     if (!authChecked) return;
     loadOrganizations();
     loadStores();
   }, [authChecked, loadOrganizations, loadStores]);
+
+  useEffect(() => {
+    if (!selectedOrg || organizations.length === 0) return;
+    if (organizations.some((org) => org.id === selectedOrg.id)) return;
+    const matched = organizations.find((org) => org.name === selectedOrg.name);
+    if (matched) setSelectedOrg(matched);
+  }, [organizations, selectedOrg]);
+
+  useEffect(() => {
+    if (!selectedStore || stores.length === 0) return;
+    if (stores.some((store) => store.id === selectedStore.id)) return;
+    const matched = stores.find((store) => store.name === selectedStore.name);
+    if (matched) setSelectedStore(matched);
+  }, [stores, selectedStore]);
+
+  useEffect(() => {
+    if (!authChecked || !demandId) {
+      if (!demandId) setExistingDemandLoading(false);
+      return;
+    }
+    const existingId = demandId;
+    let cancelled = false;
+    async function loadExistingDemand() {
+      setExistingDemandLoading(true);
+      setSubmitError(null);
+      try {
+        const res = await fetch(`/api/demands/${encodeURIComponent(existingId)}`, { cache: "no-store" });
+        const json = await safeJson<DemandDetailJson>(res, {});
+        if (!res.ok || !json.header) {
+          setSubmitError(json.error ?? "Ошибка загрузки отгрузки");
+          return;
+        }
+        if (cancelled) return;
+        if (json.header.applicable) {
+          router.replace(`/shipment/${encodeURIComponent(existingId)}`);
+          return;
+        }
+        setDemandIdLocal(json.header.id);
+        setExistingDemandName(json.header.name);
+        setDescription(json.header.description ?? "");
+        setApplicable(Boolean(json.header.applicable));
+        setMomentStr(json.header.moment ? formatLocalMoyskladMoment(new Date(json.header.moment)) : formatLocalMoyskladMoment());
+        const atts = Array.isArray(json.attributes) ? json.attributes : [];
+        setAttributes(atts);
+        setAttributesError(null);
+        setAttributesLoading(false);
+        const vinAttr = atts.find((a) => typeof a.name === "string" && /vin/i.test(a.name));
+        setVin(typeof vinAttr?.value === "string" ? vinAttr.value : vinAttr?.value != null ? String(vinAttr.value) : "");
+        setPositions(
+          (json.positions ?? []).map((p) => {
+            const priceRub = (Number(p.price) || 0) / 100;
+            const discount = typeof p.discount === "number" ? p.discount : 0;
+            const lineBase = (Number(p.quantity) || 0) * priceRub;
+            return {
+              ...p,
+              price: priceRub,
+              discount,
+              discountMode: "percent",
+              discountAmount: lineBase * (discount / 100),
+            };
+          })
+        );
+        const rawAgent = json.raw?.agent;
+        if (rawAgent?.meta) {
+          setSelectedAgent({
+            id: rawAgent.id ?? localEntityIdFromMeta(rawAgent.meta),
+            name: rawAgent.name ?? json.header.agentName ?? "Контрагент",
+            meta: rawAgent.meta,
+          });
+          setAgentSearch(rawAgent.name ?? json.header.agentName ?? "");
+          setAgentOptions([]);
+        }
+        const rawStore = json.raw?.store;
+        if (rawStore?.meta) {
+          setSelectedStore({
+            id: rawStore.id ?? localEntityIdFromMeta(rawStore.meta),
+            name: rawStore.name ?? json.header.storeName ?? "Склад",
+            meta: rawStore.meta,
+            isMain: rawStore.isMain,
+          });
+        }
+        const rawOrganization = json.raw?.organization;
+        if (rawOrganization?.meta) {
+          setSelectedOrg({
+            id: rawOrganization.id ?? localEntityIdFromMeta(rawOrganization.meta),
+            name: rawOrganization.name ?? json.header.organizationName ?? "Организация",
+            meta: rawOrganization.meta,
+          });
+        }
+        setSaveState("saved");
+      } catch (e) {
+        if (!cancelled) {
+          setSubmitError(e instanceof Error ? e.message : "Ошибка загрузки отгрузки");
+          setSaveState("error");
+        }
+      } finally {
+        if (!cancelled) {
+          setExistingDemandLoading(false);
+          setAttributesLoading(false);
+        }
+      }
+    }
+    void loadExistingDemand();
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, demandId, router]);
 
   const positionAssortmentKey = positions.map((p) => p.assortmentMeta?.href ?? "").sort().join(",");
   useEffect(() => {
@@ -810,69 +1033,79 @@ function NewShipmentForm() {
 
   useEffect(() => {
     if (!authChecked) return;
-    setAttributesLoading(true);
-    fetch("/api/demands/metadata")
-      .then((r) => safeJson<AttributesJson>(r, {}))
-      .then((data) => {
-        if (data.attributes) {
-          setAttributes(data.attributes);
-          const vinIdx = data.attributes.findIndex((a: { name: string }) => /vin/i.test(a.name ?? ""));
-          if (vinIdx >= 0) setVin(String(data.attributes[vinIdx]?.value ?? ""));
-        }
-      })
-      .finally(() => setAttributesLoading(false));
-  }, [authChecked]);
+    if (demandId) return;
+    void loadAttributeMetadata();
+  }, [authChecked, demandId, loadAttributeMetadata]);
 
   useEffect(() => {
-    if (!authChecked || !agentSearch.trim()) return;
+    if (!authChecked || selectedAgent || !agentSearch.trim()) {
+      if (!agentSearch.trim()) {
+        setAgentSearchError(null);
+        setAgentLoading(false);
+      }
+      return;
+    }
+    let cancelled = false;
+    setAgentLoading(true);
+    setAgentSearchError(null);
     const t = setTimeout(() => {
-      setAgentLoading(true);
       fetch(`/api/moysklad/counterparties?search=${encodeURIComponent(agentSearch)}&limit=20`)
-        .then((r) => safeJson<CounterpartiesJson>(r, {}))
-        .then((data) => {
-          if (data.counterparties) setAgentOptions(data.counterparties);
+        .then(async (r) => {
+          const data = await safeJson<CounterpartiesJson>(r, {});
+          if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить контрагентов");
+          return data;
         })
-        .finally(() => setAgentLoading(false));
+        .then((data) => {
+          if (cancelled) return;
+          setAgentOptions(data.counterparties ?? []);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setAgentOptions([]);
+          setAgentSearchError(error instanceof Error ? error.message : "Не удалось загрузить контрагентов");
+        })
+        .finally(() => {
+          if (!cancelled) setAgentLoading(false);
+        });
     }, 300);
-    return () => clearTimeout(t);
-  }, [authChecked, agentSearch]);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [authChecked, selectedAgent, agentSearch]);
 
   const loadInitialCounterparties = useCallback(() => {
     if (!authChecked || selectedAgent || agentSearch.trim()) return;
     setAgentLoading(true);
+    setAgentSearchError(null);
     fetch("/api/moysklad/counterparties?limit=30")
-      .then((r) => safeJson<CounterpartiesJson>(r, {}))
+      .then(async (r) => {
+        const data = await safeJson<CounterpartiesJson>(r, {});
+        if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить контрагентов");
+        return data;
+      })
       .then((data) => {
-        if (data.counterparties) setAgentOptions(data.counterparties);
+        setAgentOptions(data.counterparties ?? []);
+      })
+      .catch((error) => {
+        setAgentOptions([]);
+        setAgentSearchError(error instanceof Error ? error.message : "Не удалось загрузить контрагентов");
       })
       .finally(() => setAgentLoading(false));
   }, [authChecked, selectedAgent, agentSearch]);
-
-  const handleUseDemoAgent = useCallback(async () => {
-    if (!authChecked || selectedAgent) return;
-    setAgentLoading(true);
-    try {
-      const res = await fetch("/api/moysklad/counterparties?limit=1");
-      const data = await safeJson<CounterpartiesJson>(res, {});
-      const demo = Array.isArray(data.counterparties) ? data.counterparties[0] : null;
-      if (demo) {
-        setSelectedAgent(demo);
-        setAgentSearch(demo.name);
-        setAgentOptions([]);
-      }
-    } finally {
-      setAgentLoading(false);
-    }
-  }, [authChecked, selectedAgent]);
 
   useEffect(() => {
     const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
+      setProductSearchError(null);
+      setProductSearchLoading(false);
       return;
     }
+    let cancelled = false;
+    setProductSearchLoading(true);
+    setProductSearchError(null);
     const t = setTimeout(() => {
-      setProductSearchLoading(true);
       const params = new URLSearchParams();
       if (productSearch.trim()) params.set("search", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
@@ -882,13 +1115,28 @@ function NewShipmentForm() {
       if (selectedStore?.name) params.set("storeName", selectedStore.name);
       params.set("limit", "15");
       fetch(`/api/moysklad/products?${params.toString()}`)
-        .then((r) => safeJson<ProductsJson>(r, {}))
-        .then((data) => {
-          if (data.products) setProductOptions(data.products);
+        .then(async (r) => {
+          const data = await safeJson<ProductsJson>(r, {});
+          if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить товары");
+          return data;
         })
-        .finally(() => setProductSearchLoading(false));
+        .then((data) => {
+          if (cancelled) return;
+          setProductOptions(data.products ?? []);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setProductOptions([]);
+          setProductSearchError(error instanceof Error ? error.message : "Не удалось загрузить товары");
+        })
+        .finally(() => {
+          if (!cancelled) setProductSearchLoading(false);
+        });
     }, 300);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [productSearch, productOem, productMannName, productParams, selectedStore?.id, selectedStore?.name]);
 
   const openCreateAgentForm = () => {
@@ -1028,6 +1276,7 @@ function NewShipmentForm() {
             return a;
           })
         );
+        markDraftDirty();
       }
     } catch {
       setVinLookupResult({
@@ -1039,7 +1288,7 @@ function NewShipmentForm() {
     } finally {
       setVinLookupLoading(false);
     }
-  }, [vin]);
+  }, [markDraftDirty, vin]);
 
   const addFromVinLookup = useCallback((items: VinLookupItem[], desiredByProductId?: Record<string, number>) => {
     setPositions((prev) => {
@@ -1102,10 +1351,14 @@ function NewShipmentForm() {
   }, []);
 
   const removePosition = (index: number) => {
+    const position = positions[index];
+    if (position && !window.confirm(`Удалить позицию «${position.name}» из отгрузки?`)) return;
     setPositions((prev) => prev.filter((_, i) => i !== index));
+    markDraftDirty();
   };
 
   const ensureDemandForDiagnostic = async (): Promise<string | null> => {
+    if (demandIdLocal) return demandIdLocal;
     if (!selectedOrg || !selectedStore || !selectedAgent) {
       setSubmitError("Укажите организацию, склад и контрагента перед диагностикой");
       return null;
@@ -1219,6 +1472,7 @@ function NewShipmentForm() {
       return;
     }
     setSubmitError(null);
+    setSaveState("idle");
     setSubmitLoading(true);
     try {
       const atts = attributes.map((a) => {
@@ -1237,29 +1491,142 @@ function NewShipmentForm() {
         positions:
           positions.length > 0
             ? positions.map((p) => ({
+                id: isExistingDraft ? p.id : undefined,
                 quantity: p.quantity,
-                price: Number(p.price) || 0,
+                price: isExistingDraft ? Math.round((Number(p.price) || 0) * 100) : Number(p.price) || 0,
                 discount: typeof p.discount === "number" ? p.discount : 0,
                 assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
               }))
             : undefined,
       };
-      const res = await fetch("/api/demands", {
-        method: "POST",
+      const endpoint = isExistingDraft && demandIdLocal ? `/api/demands/${encodeURIComponent(demandIdLocal)}` : "/api/demands";
+      const res = await fetch(endpoint, {
+        method: isExistingDraft && demandIdLocal ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await safeJson<DemandCreateJson>(res, {});
       if (!res.ok) {
-        setSubmitError(data.error ?? "Ошибка создания отгрузки");
+        setSubmitError(data.error ?? (isExistingDraft ? "Ошибка сохранения отгрузки" : "Ошибка создания отгрузки"));
+        setSaveState("error");
         return;
       }
-      if (data.id) router.push(`/shipment/${data.id}`);
-      else setSubmitError("Локальная БД не вернула ID созданной отгрузки");
+      const nextId = data.id ?? demandIdLocal;
+      if (!nextId) {
+        setSubmitError("Локальная БД не вернула ID отгрузки");
+        setSaveState("error");
+        return;
+      }
+      setDemandIdLocal(nextId);
+      if (data.name) setExistingDemandName(data.name);
+      setSaveState("saved");
+      if (applicable) {
+        router.push(`/shipment/${nextId}`);
+      } else if (!isExistingDraft) {
+        router.push(`/shipment/${nextId}/edit`);
+      }
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Ошибка сети");
+      setSaveState("error");
     } finally {
       setSubmitLoading(false);
+    }
+  };
+
+  const saveDraftBeforeExternalAction = async (actionLabel: string, confirmMessage: string): Promise<boolean> => {
+    if (!demandIdLocal) return false;
+    if (!selectedOrg || !selectedStore || !selectedAgent) {
+      const missingBeforePrint = [
+        !selectedOrg ? "организация" : null,
+        !selectedStore ? "склад" : null,
+        !selectedAgent ? "клиент" : null,
+      ].filter(Boolean);
+      setSubmitError(`Перед ${actionLabel} нужно заполнить: ${missingBeforePrint.join(", ")}`);
+      setSaveState("error");
+      return false;
+    }
+    if (applicable) {
+      const ok = window.confirm(confirmMessage);
+      if (!ok) return false;
+    }
+    setSubmitError(null);
+    setSubmitLoading(true);
+    try {
+      const atts = attributes.map((a) => {
+        const name = normalizeAttrName(a.name);
+        if (name.includes("vin")) return { ...a, value: vin };
+        return a;
+      });
+      const res = await fetch(`/api/demands/${encodeURIComponent(demandIdLocal)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organization: { meta: selectedOrg.meta },
+          agent: { meta: selectedAgent.meta },
+          store: { meta: selectedStore.meta },
+          description: description.trim() || undefined,
+          applicable: false,
+          moment: momentStr || formatLocalMoyskladMoment(),
+          attributes: atts,
+          positions: positions.map((p) => ({
+            id: p.id,
+            quantity: p.quantity,
+            price: Math.round((Number(p.price) || 0) * 100),
+            discount: typeof p.discount === "number" ? p.discount : 0,
+            assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
+          })),
+        }),
+      });
+      const data = await safeJson<DemandCreateJson>(res, {});
+      if (!res.ok) {
+        setSubmitError(data.error ?? `Не удалось сохранить черновик перед ${actionLabel}`);
+        setSaveState("error");
+        return false;
+      }
+      setApplicable(false);
+      setSaveState("saved");
+      return true;
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : `Ошибка сохранения перед ${actionLabel}`);
+      setSaveState("error");
+      return false;
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const saveDraftBeforePrint = () =>
+    saveDraftBeforeExternalAction(
+      "печатью",
+      "Печать не проводит документ. Сохранить текущие данные как черновик перед печатью?"
+    );
+
+  const handleOpenPrecheck = async () => {
+    if (!demandIdLocal) {
+      setSubmitError("Сначала сохраните отгрузку");
+      return;
+    }
+    const precheckWindow = window.open("about:blank", "_blank");
+    precheckWindow?.document.write("<!doctype html><title>Предчек</title><body>Открываем предчек...</body>");
+    setPaying(true);
+    try {
+      const saved = await saveDraftBeforeExternalAction(
+        "открытием предчека",
+        "Предчек не проводит документ. Сохранить текущие данные как черновик перед открытием предчека?"
+      );
+      if (!saved) {
+        precheckWindow?.close();
+        return;
+      }
+      const url = `/shipment/${encodeURIComponent(demandIdLocal)}/precheck`;
+      if (precheckWindow) precheckWindow.location.href = url;
+      else router.push(url);
+    } catch (e) {
+      precheckWindow?.close();
+      setSubmitError(e instanceof Error ? e.message : "Ошибка открытия предчека");
+      setSaveState("error");
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -1351,66 +1718,97 @@ function NewShipmentForm() {
       mono: true,
     },
   ];
+  const hasProductSearchQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+  const showAgentSearchPanel =
+    !selectedAgent && !showCreateAgentForm && (agentSearch.trim() || agentOptions.length > 0 || agentLoading || agentSearchError);
+  const documentTitle = isExistingDraft ? `Отгрузка ${existingDemandName ?? demandIdLocal ?? demandId}` : "Новая отгрузка";
+  const saveButtonLabel = submitLoading
+    ? isExistingDraft
+      ? "Сохранение..."
+      : "Создание..."
+    : isExistingDraft
+      ? "Сохранить изменения"
+      : "Сохранить отгрузку";
+  const compactSaveButtonLabel = submitLoading ? (isExistingDraft ? "Сохранение..." : "Создание...") : "Сохранить";
+  const statusText = applicable ? "проведена" : "черновик";
+
+  if (existingDemandLoading) {
+    return (
+      <main className="eco-page eco-page--wide eco-shipment-new-page">
+        <section className="eco-card eco-card--padded">
+          <p className="eco-shipment-new-empty">Загрузка редактируемого черновика…</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="eco-page eco-page--wide eco-shipment-new-page">
       {showVehicleOverrideDialog && (
         <div className="eco-shipment-new-modal fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="eco-card eco-card--padded w-full max-w-md text-sm">
-            <h2>
-              Уточните данные двигателя
-            </h2>
-            <p className="eco-page-subtitle">
-              По VIN не удалось определить объём двигателя или мощность. Если знаете эти данные, укажите их — подбор масла будет точнее.
-            </p>
-            <div className="eco-shipment-new-modal-grid">
-              <label className="eco-field">
-                <span>Объём двигателя, л</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={manualEngineVolume}
-                  onChange={(e) => setManualEngineVolume(e.target.value)}
-                  placeholder="Например: 1.8"
-                  className="eco-input"
-                />
-              </label>
-              <label className="eco-field">
-                <span>Мощность, л.с.</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={manualEnginePower}
-                  onChange={(e) => setManualEnginePower(e.target.value)}
-                  placeholder="Например: 150"
-                  className="eco-input"
-                />
-              </label>
+            <div className="eco-shipment-new-modal-head">
+              <div>
+                <h2>Уточните данные двигателя</h2>
+                <p className="eco-page-subtitle">
+                  По VIN не удалось определить объём двигателя или мощность.
+                </p>
+              </div>
+              <button type="button" className="eco-shipment-icon-btn" onClick={() => setShowVehicleOverrideDialog(false)} aria-label="Закрыть">
+                <X className="eco-icon" aria-hidden />
+              </button>
             </div>
-            <div className="eco-actions eco-shipment-new-modal-actions">
-              <EcoButton
-                type="button"
-                onClick={() => setShowVehicleOverrideDialog(false)}
-              >
-                Продолжить без уточнения
-              </EcoButton>
-              <EcoButton
-                type="button"
-                disabled={!manualEngineVolume.trim() && !manualEnginePower.trim()}
-                onClick={() =>
-                  runVinLookup({
-                    displacementL: manualEngineVolume.trim() || undefined,
-                    enginePowerPS: manualEnginePower.trim() || undefined,
-                  })
-                }
-                variant="primary"
-              >
-                Повторить подбор
-              </EcoButton>
+            <div className="eco-shipment-new-modal-body">
+              <div className="eco-shipment-new-modal-grid">
+                <label className="eco-field">
+                  <span>Объём двигателя, л</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={manualEngineVolume}
+                    onChange={(e) => setManualEngineVolume(e.target.value)}
+                    placeholder="Например: 1.8"
+                    className="eco-input"
+                  />
+                </label>
+                <label className="eco-field">
+                  <span>Мощность, л.с.</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={manualEnginePower}
+                    onChange={(e) => setManualEnginePower(e.target.value)}
+                    placeholder="Например: 150"
+                    className="eco-input"
+                  />
+                </label>
+              </div>
+              <div className="eco-actions eco-shipment-new-modal-actions">
+                <EcoButton
+                  type="button"
+                  onClick={() => setShowVehicleOverrideDialog(false)}
+                >
+                  Продолжить без уточнения
+                </EcoButton>
+                <EcoButton
+                  type="button"
+                  disabled={!manualEngineVolume.trim() && !manualEnginePower.trim()}
+                  onClick={() =>
+                    runVinLookup({
+                      displacementL: manualEngineVolume.trim() || undefined,
+                      enginePowerPS: manualEnginePower.trim() || undefined,
+                    })
+                  }
+                  variant="primary"
+                >
+                  <Sparkles className="eco-icon" aria-hidden />
+                  Повторить подбор
+                </EcoButton>
+              </div>
+              {vehicleOverridePromptVin && (
+                <p className="eco-shipment-new-vin-note">VIN: {vehicleOverridePromptVin}</p>
+              )}
             </div>
-            {vehicleOverridePromptVin && (
-              <p className="eco-shipment-new-vin-note">VIN: {vehicleOverridePromptVin}</p>
-            )}
           </div>
         </div>
       )}
@@ -1420,64 +1818,132 @@ function NewShipmentForm() {
           <div className="eco-card eco-card--padded w-full max-w-lg text-sm">
             <div className="eco-shipment-card-head">
               <h2>Новый клиент</h2>
-              <button type="button" className="eco-shipment-link-btn" onClick={() => setShowCreateAgentForm(false)}>
-                Закрыть
+              <button type="button" className="eco-shipment-icon-btn" onClick={() => setShowCreateAgentForm(false)} aria-label="Закрыть">
+                <X className="eco-icon" aria-hidden />
               </button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="eco-field sm:col-span-2">
-                <span>Наименование *</span>
-                <input
-                  type="text"
-                  value={newAgentName}
-                  onChange={(e) => setNewAgentName(e.target.value)}
-                  placeholder="ООО Компания или ФИО"
-                  className="eco-input"
-                />
-              </label>
-              <label className="eco-field">
-                <span>Тип</span>
-                <select
-                  value={newAgentCompanyType}
-                  onChange={(e) => setNewAgentCompanyType(e.target.value as "legal" | "entrepreneur" | "individual")}
-                  className="eco-input"
-                >
-                  <option value="legal">Юридическое лицо</option>
-                  <option value="entrepreneur">ИП</option>
-                  <option value="individual">Физ. лицо</option>
-                </select>
-              </label>
-              <label className="eco-field">
-                <span>Телефон</span>
-                <input type="text" value={newAgentPhone} onChange={(e) => setNewAgentPhone(e.target.value)} className="eco-input" />
-              </label>
-              <label className="eco-field">
-                <span>Email</span>
-                <input type="email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)} className="eco-input" />
-              </label>
-              <label className="eco-field">
-                <span>Юр. наименование</span>
-                <input
-                  type="text"
-                  value={newAgentLegalTitle}
-                  onChange={(e) => setNewAgentLegalTitle(e.target.value)}
-                  placeholder="если отличается"
-                  className="eco-input"
-                />
-              </label>
-            </div>
-            {createAgentError && <p className="eco-shipment-new-error mt-3">{createAgentError}</p>}
-            <div className="eco-actions eco-shipment-new-modal-actions">
-              <EcoButton type="button" onClick={() => setShowCreateAgentForm(false)}>
-                Отмена
-              </EcoButton>
-              <EcoButton type="button" onClick={handleCreateAgent} disabled={createAgentLoading} variant="primary">
-                {createAgentLoading ? "Создание..." : "Создать"}
-              </EcoButton>
+            <div className="eco-shipment-new-modal-body">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="eco-field sm:col-span-2">
+                  <span>Наименование *</span>
+                  <input
+                    type="text"
+                    value={newAgentName}
+                    onChange={(e) => setNewAgentName(e.target.value)}
+                    placeholder="ООО Компания или ФИО"
+                    className="eco-input"
+                  />
+                </label>
+                <label className="eco-field">
+                  <span>Тип</span>
+                  <select
+                    value={newAgentCompanyType}
+                    onChange={(e) => setNewAgentCompanyType(e.target.value as "legal" | "entrepreneur" | "individual")}
+                    className="eco-input"
+                  >
+                    <option value="legal">Юридическое лицо</option>
+                    <option value="entrepreneur">ИП</option>
+                    <option value="individual">Физ. лицо</option>
+                  </select>
+                </label>
+                <label className="eco-field">
+                  <span>Телефон</span>
+                  <input type="text" value={newAgentPhone} onChange={(e) => setNewAgentPhone(e.target.value)} className="eco-input" />
+                </label>
+                <label className="eco-field">
+                  <span>Email</span>
+                  <input type="email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)} className="eco-input" />
+                </label>
+                <label className="eco-field">
+                  <span>Юр. наименование</span>
+                  <input
+                    type="text"
+                    value={newAgentLegalTitle}
+                    onChange={(e) => setNewAgentLegalTitle(e.target.value)}
+                    placeholder="если отличается"
+                    className="eco-input"
+                  />
+                </label>
+              </div>
+              {createAgentError && <p className="eco-shipment-new-error mt-3">{createAgentError}</p>}
+              <div className="eco-actions eco-shipment-new-modal-actions">
+                <EcoButton type="button" onClick={() => setShowCreateAgentForm(false)}>
+                  Отмена
+                </EcoButton>
+                <EcoButton type="button" onClick={handleCreateAgent} disabled={createAgentLoading} variant="primary">
+                  <UserPlus className="eco-icon" aria-hidden />
+                  {createAgentLoading ? "Создание..." : "Создать"}
+                </EcoButton>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      <header className="eco-shipment-new-head">
+        <div>
+          <div className="eco-page-kicker">
+            <Link href="/shipment">Операции / Отгрузки</Link>
+            <span>{isExistingDraft ? " / Редактирование" : " / Новая"}</span>
+          </div>
+          <div className="eco-shipment-new-title-row">
+            <h1 className="eco-page-title">{documentTitle}</h1>
+            <EcoBadge tone={applicable ? "success" : "warning"} dot>
+              {statusText}
+            </EcoBadge>
+          </div>
+        </div>
+        <div className="eco-actions">
+          <Link href="/shipment" className="eco-btn eco-shipment-back-link">
+            <ArrowLeft className="eco-icon" aria-hidden />
+            К отгрузкам
+          </Link>
+        </div>
+      </header>
+
+      {copyNotice && (
+        <div className="eco-shipment-copy-notice">
+          <span>Отгрузка скопирована. Вы можете отредактировать черновик перед сохранением.</span>
+          <button type="button" onClick={() => setCopyNotice(false)}>Закрыть</button>
+        </div>
+      )}
+
+      {isExistingDraft && (saveState === "saved" || saveState === "dirty") && (
+        <div className={`eco-shipment-save-state ${saveState === "dirty" ? "is-dirty" : ""}`}>
+          {saveState === "dirty" ? "Есть несохранённые изменения" : "Сохранено"}
+        </div>
+      )}
+
+      <section className="eco-shipment-step-strip" aria-label="Готовность отгрузки">
+        <div className={selectedAgent ? "is-ready" : ""}>
+          <span>01</span>
+          <strong>Клиент</strong>
+          <small>
+            {selectedAgent ? (
+              <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-inline-entity-link">
+                {selectedAgent.name}
+              </Link>
+            ) : (
+              "Выберите или создайте клиента"
+            )}
+          </small>
+        </div>
+        <div className={vin.replace(/\s/g, "").length >= 8 ? "is-ready" : ""}>
+          <span>02</span>
+          <strong>Автомобиль</strong>
+          <small>{vin.replace(/\s/g, "").length >= 8 ? vin : "VIN или данные для диагностики"}</small>
+        </div>
+        <div className={positions.length > 0 ? "is-ready" : ""}>
+          <span>03</span>
+          <strong>Позиции</strong>
+          <small>{positions.length > 0 ? `${positions.length} строк · ${positionsQty} шт.` : "Добавьте товары или подбор ТО"}</small>
+        </div>
+        <div className={!saveDisabled ? "is-ready" : ""}>
+          <span>04</span>
+          <strong>Сохранение</strong>
+          <small>{saveDisabledReason || "Можно сохранить отгрузку"}</small>
+        </div>
+      </section>
 
       <div className="eco-shipment-new-layout">
         <div className="eco-shipment-new-main">
@@ -1549,11 +2015,17 @@ function NewShipmentForm() {
         <div className="eco-shipment-card-body">
         <label className="eco-field eco-shipment-client-search">
           <span>Найти по имени / телефону / номеру</span>
+        {agentLoading ? (
+          <span className="eco-client-search-icon eco-search-spinner" aria-hidden />
+        ) : (
+          <Search className="eco-client-search-icon" aria-hidden />
+        )}
         <input
           type="text"
           value={agentSearch}
           onChange={(e) => {
             setAgentSearch(e.target.value);
+            setAgentSearchError(null);
             if (!e.target.value.trim()) setAgentOptions([]);
           }}
           onFocus={() => {
@@ -1567,39 +2039,77 @@ function NewShipmentForm() {
         {!selectedAgent && !showCreateAgentForm && (
           <div className="eco-shipment-client-actions">
             <EcoButton type="button" onClick={openCreateAgentForm} variant="primary">
+              <UserPlus className="eco-icon" aria-hidden />
               Новый клиент
             </EcoButton>
           </div>
         )}
-        {!selectedAgent && !showCreateAgentForm && (
-          <button type="button" className="eco-demo-fill" onClick={() => void handleUseDemoAgent()}>
-            Подставить демо →
-          </button>
-        )}
         {selectedAgent && (
           <div className="eco-shipment-selected-client">
-            <strong>{selectedAgent.name}</strong>
+            <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-linked-entity" title="Открыть контрагента">
+              <strong>{selectedAgent.name}</strong>
+              <ExternalLink className="eco-icon" aria-hidden />
+            </Link>
             <button type="button" onClick={() => { setSelectedAgent(null); setAgentSearch(""); }}>
-              сбросить
+              <X className="eco-icon" aria-hidden />
+              Сбросить
             </button>
           </div>
         )}
-        {!selectedAgent && !showCreateAgentForm && (agentSearch.trim() || agentOptions.length > 0) && (
-          <ul className="mt-1 max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-600">
-            {agentLoading && <li className="px-3 py-2 text-sm text-zinc-500">Загрузка…</li>}
-            {!agentLoading && agentOptions.map((a) => (
+        {showAgentSearchPanel && (
+          <div className="eco-counterparty-results" aria-live="polite">
+            {agentLoading ? (
+              <div className="eco-counterparty-results-state">
+                <div className="eco-product-loading-copy">
+                  <span className="eco-product-loading-spinner" aria-hidden />
+                  <div>
+                    <strong>Ищем контрагентов…</strong>
+                    <span>Проверяем локальную базу клиентов.</span>
+                  </div>
+                </div>
+                <div className="eco-product-skeleton-list" aria-hidden>
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="eco-counterparty-skeleton-row">
+                      <div>
+                        <span className="eco-skeleton-line is-title" />
+                        <span className="eco-skeleton-line is-code" />
+                      </div>
+                      <span className="eco-skeleton-pill" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : agentSearchError ? (
+              <div className="eco-counterparty-results-state is-error">
+                <strong>Не удалось загрузить контрагентов</strong>
+                <span>Повторите попытку.</span>
+              </div>
+            ) : agentOptions.length > 0 ? (
+          <ul className="eco-counterparty-results-list">
+            {agentOptions.map((a) => (
               <li key={a.id}>
-                <button
-                  type="button"
-                  className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                  onClick={() => { setSelectedAgent(a); setAgentSearch(a.name); setAgentOptions([]); }}
-                >
-                  {a.name}
-                </button>
+                <div className="eco-counterparty-option-row">
+                  <button
+                    type="button"
+                    className="eco-counterparty-option-main"
+                    onClick={() => { setSelectedAgent(a); setAgentSearch(a.name); setAgentOptions([]); }}
+                  >
+                    {a.name}
+                  </button>
+                  <Link href={counterpartyCatalogHref(a)} className="eco-entity-open-link" title="Открыть контрагента">
+                    <ExternalLink className="eco-icon" aria-hidden />
+                  </Link>
+                </div>
               </li>
             ))}
-            {!agentLoading && agentSearch && agentOptions.length === 0 && <li className="px-3 py-2 text-sm text-zinc-500">Ничего не найдено</li>}
           </ul>
+            ) : (
+              <div className="eco-counterparty-results-state">
+                <strong>Ничего не найдено</strong>
+                <span>Проверьте имя, телефон или номер клиента.</span>
+              </div>
+            )}
+          </div>
         )}
         {false && showCreateAgentForm && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-900/10">
@@ -1667,14 +2177,15 @@ function NewShipmentForm() {
                 next[vinAttrIndex] = { ...next[vinAttrIndex], value: v };
                 setAttributes(next);
               }
+              markDraftDirty();
             }}
             className="eco-input eco-shipment-new-vin-input"
             placeholder="Например: WBAXXXXX5JZ123456"
           />
                 <small className="eco-field-hint">Для подбора достаточно 8 символов, максимум 17.</small>
               </label>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <p className="mb-2 w-full text-xs text-zinc-500">
+          <div className="eco-shipment-vin-actions">
+            <p className="eco-shipment-vin-help">
               Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры по локальному каталогу.
             </p>
             <button
@@ -1699,14 +2210,15 @@ function NewShipmentForm() {
                   type="button"
                   disabled={diagDisabled}
                   onClick={() => void handleOpenDiagnostic()}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  className="eco-shipment-secondary-action"
                 >
+                  <Wrench className="eco-icon" aria-hidden />
                   Произвести диагностику
                 </button>
               );
             })()}
           </div>
-          {submitError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{submitError}</p>}
+          {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
             </div>
             {decodedVehicle && (
               <div className="eco-shipment-vin-spec-pane">
@@ -2462,7 +2974,15 @@ function NewShipmentForm() {
             </div>
           </div>
           {attributesLoading ? (
-            <p className="eco-shipment-new-empty">Загрузка дополнительных полей…</p>
+            <p className="eco-shipment-new-empty">Загружаем дополнительные поля…</p>
+          ) : attributesError ? (
+            <div className="eco-shipment-new-empty">
+              <strong>Не удалось загрузить дополнительные поля</strong>
+              <span>{attributesError}</span>
+              <button type="button" onClick={() => void loadAttributeMetadata()}>
+                Повторить
+              </button>
+            </div>
           ) : editableAttributes.length > 0 ? (
           <dl className="grid gap-2 sm:grid-cols-2">
             {editableAttributes.map(({ a, index }) => (
@@ -2471,11 +2991,12 @@ function NewShipmentForm() {
                 <dd className="mt-0.5">
                   <input
                     type="text"
-                    value={typeof a.value === "string" ? a.value : ""}
+                    value={a.value == null ? "" : String(a.value)}
                     onChange={(e) => {
                       const next = [...attributes];
                       next[index] = { ...a, value: e.target.value };
                       setAttributes(next);
+                      markDraftDirty();
                     }}
                     className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-mono dark:border-zinc-600 dark:bg-zinc-900"
                   />
@@ -2484,7 +3005,7 @@ function NewShipmentForm() {
             ))}
           </dl>
           ) : (
-            <p className="eco-shipment-new-empty">Редактируемых дополнительных полей для этой отгрузки пока нет.</p>
+            <p className="eco-shipment-new-empty">Дополнительные поля не настроены.</p>
           )}
         </section>
 
@@ -2500,7 +3021,11 @@ function NewShipmentForm() {
           <div>
             <label className="eco-field">
               <span>Наименование, код или артикул</span>
-              <Search className="eco-shipment-new-search-icon" aria-hidden />
+              {productSearchLoading ? (
+                <span className="eco-shipment-new-search-icon eco-search-spinner" aria-hidden />
+              ) : (
+                <Search className="eco-shipment-new-search-icon" aria-hidden />
+              )}
             <input
               id="shipment-product-search"
               type="text"
@@ -2553,9 +3078,9 @@ function NewShipmentForm() {
           </div>
           </details>
         </div>
-        {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
-            <div className="eco-product-results mt-1 max-h-80 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-              {!productSearchLoading && productOptions.length > 0 && (
+        {hasProductSearchQuery && (
+            <div className="eco-product-results" aria-live="polite">
+              {!productSearchLoading && !productSearchError && productOptions.length > 0 && (
                 <div className="eco-product-results-head border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
                   <span>Товар</span>
                   <span>Доступно</span>
@@ -2564,13 +3089,42 @@ function NewShipmentForm() {
                   <span />
                 </div>
               )}
-              <ul>
-              {productSearchLoading && <li className="px-3 py-2 text-sm text-zinc-500">Загрузка…</li>}
-              {!productSearchLoading && productOptions.map((p) => (
+              {productSearchLoading ? (
+                <div className="eco-product-results-state">
+                  <div className="eco-product-loading-copy">
+                    <span className="eco-product-loading-spinner" aria-hidden />
+                    <div>
+                      <strong>Ищем товары в каталоге…</strong>
+                      <span>Обычно это занимает пару секунд.</span>
+                    </div>
+                  </div>
+                  <div className="eco-product-skeleton-list" aria-hidden>
+                    {[0, 1, 2, 3].map((item) => (
+                      <div key={item} className="eco-product-skeleton-row">
+                        <div>
+                          <span className="eco-skeleton-line is-title" />
+                          <span className="eco-skeleton-line is-code" />
+                        </div>
+                        <span className="eco-skeleton-pill" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : productSearchError ? (
+                <div className="eco-product-results-state is-error">
+                  <strong>Не удалось загрузить товары</strong>
+                  <span>Повторите попытку.</span>
+                </div>
+              ) : productOptions.length > 0 ? (
+              <ul className="eco-product-results-list">
+              {productOptions.map((p) => (
                 <li key={p.id}>
                   <div className="eco-product-result-row px-3 py-2 text-sm">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate">{p.name}</span>
+                      <Link href={productCatalogHref(p)} className="eco-product-result-title" title="Открыть товар">
+                        <span className="truncate">{p.name}</span>
+                        <ExternalLink className="eco-icon" aria-hidden />
+                      </Link>
                       <span className="block truncate text-xs text-zinc-500">
                         Артикул: {p.article || "не указан"}
                       </span>
@@ -2592,10 +3146,13 @@ function NewShipmentForm() {
                   </div>
                 </li>
               ))}
-              {!productSearchLoading && productOptions.length === 0 && (
-                <li className="px-3 py-4 text-sm text-zinc-500">Ничего не найдено в локальном каталоге</li>
-              )}
               </ul>
+              ) : (
+                <div className="eco-product-results-state">
+                  <strong>Ничего не найдено</strong>
+                  <span>Попробуйте изменить запрос или воспользоваться расширенным поиском.</span>
+                </div>
+              )}
             </div>
         )}
       </section>
@@ -2603,19 +3160,27 @@ function NewShipmentForm() {
       {positions.length === 0 && (
         <section className="eco-card eco-card--padded eco-shipment-new-positions">
           <div className="eco-card__head">
-            <div>
+            <div className="eco-position-title-stack">
               <div className="eco-page-kicker">Документ</div>
-              <h2>Позиции отгрузки</h2>
+              <div className="eco-position-title-row">
+                <h2>Позиции отгрузки</h2>
+                <EcoBadge tone="neutral">0</EcoBadge>
+              </div>
             </div>
             <div className="eco-position-head-actions">
-              <EcoBadge tone="neutral">0</EcoBadge>
-              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>Найти товар</button>
-              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">Услугу</button>
+              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>
+                <Search className="eco-icon" aria-hidden />
+                Найти товар
+              </button>
+              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">
+                <Plus className="eco-icon" aria-hidden />
+                Услугу
+              </button>
             </div>
           </div>
           <div className="eco-shipment-empty-state">
-            <strong>Позиции пока не добавлены</strong>
-            <span>Найдите товар вручную или используйте подбор по VIN.</span>
+            <strong>В отгрузке пока нет позиций</strong>
+            <span>Найдите товар или добавьте услугу.</span>
           </div>
         </section>
       )}
@@ -2623,14 +3188,22 @@ function NewShipmentForm() {
       {positions.length > 0 && (
         <section className="eco-card eco-shipment-new-positions">
           <div className="eco-card__head">
-            <div>
+            <div className="eco-position-title-stack">
               <div className="eco-page-kicker">Документ</div>
-              <h2>Позиции отгрузки</h2>
+              <div className="eco-position-title-row">
+                <h2>Позиции отгрузки</h2>
+                <EcoBadge tone="rust">{positions.length}</EcoBadge>
+              </div>
             </div>
             <div className="eco-position-head-actions">
-              <EcoBadge tone="rust">{positions.length}</EcoBadge>
-              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>Найти товар</button>
-              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">Услугу</button>
+              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>
+                <Search className="eco-icon" aria-hidden />
+                Найти товар
+              </button>
+              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">
+                <Plus className="eco-icon" aria-hidden />
+                Услугу
+              </button>
             </div>
           </div>
           <div className="eco-position-cards">
@@ -2639,25 +3212,80 @@ function NewShipmentForm() {
               const available = stock?.available;
               const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
               const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
+              const slot = p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+              const availabilityDetails = [
+                slot ? `Ячейка ${slot}` : null,
+                typeof stock?.quantity === "number" ? `Остаток ${stock.quantity}` : null,
+                typeof available === "number" ? `Доступно ${available}` : null,
+              ].filter(Boolean);
               return (
                 <article key={p.assortmentMeta?.href ?? index} className={`eco-position-card ${overAvailable ? "is-warning" : ""}`}>
                   <div className="eco-position-card-head">
                     <div>
-                      <strong title={p.name}>{p.name}</strong>
+                      <Link href={positionProductHref(p)} className="eco-linked-entity" title="Открыть товар">
+                        <strong>{p.name}</strong>
+                        <ExternalLink className="eco-icon" aria-hidden />
+                      </Link>
                       <span>{p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
                     </div>
-                    <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию">
-                      Удалить
+                    <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию" title="Удалить позицию">
+                      <Trash2 className="eco-icon" aria-hidden />
                     </button>
                   </div>
-                  <div className="eco-position-chip-row">
-                    <span>Ячейка: {p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName ?? "—"}</span>
-                    <span>Остаток: {stock?.quantity ?? "—"}</span>
-                    <span>Резерв: {stock?.reserve ?? "—"}</span>
-                    <span>Доступно: {available ?? "—"}</span>
-                  </div>
+                  <div className="eco-position-card-availability">{availabilityDetails.length > 0 ? availabilityDetails.join(" · ") : "Наличие: —"}</div>
                   {overAvailable && <p className="eco-position-warning">Количество больше доступного остатка.</p>}
                   <div className="eco-position-card-controls">
+                    <label>
+                      <span>Скидка</span>
+                      <div className="eco-position-discount">
+                        {p.discountMode === "amount" ? (
+                          <MoneyInput
+                            value={p.discountAmount ?? 0}
+                            onValueChange={(val) => {
+                              const lineBase = (p.quantity || 0) * (p.price || 0);
+                              const percent = lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
+                              const next = [...positions];
+                              next[index] = { ...p, discountMode: "amount", discountAmount: val, discount: percent };
+                              setPositions(next);
+                              markDraftDirty();
+                            }}
+                            className="eco-position-edit-input is-discount"
+                          />
+                        ) : (
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            inputMode="decimal"
+                            value={p.discount ?? 0}
+                            onChange={(e) => {
+                              const percent = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                              const lineBase = (p.quantity || 0) * (p.price || 0);
+                              const amount = lineBase * (percent / 100);
+                              const next = [...positions];
+                              next[index] = { ...p, discountMode: "percent", discount: percent, discountAmount: amount };
+                              setPositions(next);
+                              markDraftDirty();
+                            }}
+                            className="eco-position-edit-input is-discount"
+                          />
+                        )}
+                        <select
+                          value={p.discountMode ?? "percent"}
+                          onChange={(e) => {
+                            const next = [...positions];
+                            next[index] = { ...p, discountMode: e.target.value as "percent" | "amount" };
+                            setPositions(next);
+                            markDraftDirty();
+                          }}
+                          aria-label="Тип скидки"
+                        >
+                          <option value="percent">%</option>
+                          <option value="amount">₽</option>
+                        </select>
+                      </div>
+                    </label>
                     <label>
                       <span>Кол-во</span>
                       <input
@@ -2670,7 +3298,9 @@ function NewShipmentForm() {
                           const next = [...positions];
                           next[index] = { ...p, quantity: parseDecimalInput(e.target.value) };
                           setPositions(next);
+                          markDraftDirty();
                         }}
+                        className="eco-position-edit-input is-qty"
                       />
                     </label>
                     <label>
@@ -2681,43 +3311,10 @@ function NewShipmentForm() {
                           const next = [...positions];
                           next[index] = { ...p, price };
                           setPositions(next);
+                          markDraftDirty();
                         }}
+                        className="eco-position-edit-input is-price"
                       />
-                    </label>
-                    <label>
-                      <span>Скидка {typeof p.discount === "number" ? `(${p.discount.toFixed(1)}%)` : ""}</span>
-                      <div className="eco-discount-control">
-                        <select
-                          value={p.discountMode ?? "percent"}
-                          onChange={(e) => {
-                            const next = [...positions];
-                            next[index] = { ...p, discountMode: e.target.value as "percent" | "amount" };
-                            setPositions(next);
-                          }}
-                        >
-                          <option value="percent">%</option>
-                          <option value="amount">₽</option>
-                        </select>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          inputMode="decimal"
-                          value={p.discountMode === "amount" ? p.discountAmount ?? 0 : p.discount ?? 0}
-                          onChange={(e) => {
-                            const raw = Math.max(0, Number(e.target.value) || 0);
-                            const lineBase = (p.quantity || 0) * (p.price || 0);
-                            const percent = p.discountMode === "amount" ? (lineBase > 0 ? Math.min(100, (raw / lineBase) * 100) : 0) : Math.min(100, raw);
-                            const next = [...positions];
-                            next[index] = {
-                              ...p,
-                              discount: percent,
-                              discountAmount: p.discountMode === "amount" ? raw : lineBase * (percent / 100),
-                            };
-                            setPositions(next);
-                          }}
-                        />
-                      </div>
                     </label>
                   </div>
                   <div className="eco-position-card-total">
@@ -2731,17 +3328,15 @@ function NewShipmentForm() {
           <div className="eco-table-wrap">
             <table className="eco-table eco-shipment-new-table">
               <thead>
-                <tr className="border-b border-zinc-200 text-left dark:border-zinc-700">
-                  <th className="px-2 py-2 font-medium text-zinc-500">Товар</th>
-                  <th className="px-2 py-2 font-medium text-zinc-500">Ячейка</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Остаток</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Резерв</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Доступно</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Скидка</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Кол-во</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Цена, ₽</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Сумма, ₽</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-500">Действия</th>
+                <tr>
+                  <th>№</th>
+                  <th>Товар</th>
+                  <th>Наличие</th>
+                  <th className="is-num">Скидка</th>
+                  <th className="is-num">Кол-во</th>
+                  <th className="is-num">Цена</th>
+                  <th className="is-num">Сумма</th>
+                  <th className="is-action">Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -2749,36 +3344,33 @@ function NewShipmentForm() {
                   const stock = getPositionStock(p);
                   const available = stock?.available;
                   const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
+                  const slot = p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+                  const availabilityDetails = [
+                    slot ? <strong key="slot">{slot}</strong> : null,
+                    typeof stock?.quantity === "number" ? <span key="qty">Остаток: {stock.quantity}</span> : null,
+                    typeof stock?.reserve === "number" ? <span key="reserve">Резерв: {stock.reserve}</span> : null,
+                    typeof available === "number" ? <span key="available">Доступно: {available}</span> : null,
+                  ].filter(Boolean);
+                  const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
                   return (
-                  <tr key={p.assortmentMeta?.href ?? index} className={`border-b border-zinc-100 dark:border-zinc-700 ${overAvailable ? "bg-amber-50/70 dark:bg-amber-950/20" : ""}`}>
-                    <td className="px-2 py-2" title={p.name}>{p.name}</td>
-                    <td className="px-2 py-2">
-                      {p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName ?? ""}
+                  <tr key={p.assortmentMeta?.href ?? index} className={overAvailable ? "is-warning" : ""}>
+                    <td className="eco-position-row-number">{String(index + 1).padStart(2, "0")}</td>
+                    <td className="eco-position-product-cell" title={p.name}>
+                      <Link href={positionProductHref(p)} className="eco-position-product-name eco-position-product-link" title="Открыть товар">
+                        <span>{p.name}</span>
+                        <ExternalLink className="eco-icon" aria-hidden />
+                      </Link>
+                      <span className="eco-position-product-code">
+                        {p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
+                      </span>
                     </td>
-                    <td className="px-2 py-2 text-right">
-                      {stock?.quantity ?? ""}
+                    <td>
+                      <div className="eco-position-availability">
+                        {availabilityDetails.length > 0 ? availabilityDetails : <span>—</span>}
+                      </div>
                     </td>
-                    <td className="px-2 py-2 text-right">
-                      {stock?.reserve ?? ""}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {available ?? ""}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <select
-                          value={p.discountMode ?? "percent"}
-                          onChange={(e) => {
-                            const mode = e.target.value as "percent" | "amount";
-                            const next = [...positions];
-                            next[index] = { ...p, discountMode: mode };
-                            setPositions(next);
-                          }}
-                          className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-600 dark:bg-zinc-900"
-                        >
-                          <option value="percent">%</option>
-                          <option value="amount">₽</option>
-                        </select>
+                    <td className="is-num">
+                      <div className="eco-position-discount">
                         {p.discountMode === "amount" ? (
                           <MoneyInput
                             value={p.discountAmount ?? 0}
@@ -2788,8 +3380,9 @@ function NewShipmentForm() {
                               const next = [...positions];
                               next[index] = { ...p, discountMode: "amount", discountAmount: val, discount: percent };
                               setPositions(next);
+                              markDraftDirty();
                             }}
-                            className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-right text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                            className="eco-position-edit-input is-discount"
                           />
                         ) : (
                           <input
@@ -2805,13 +3398,28 @@ function NewShipmentForm() {
                               const next = [...positions];
                               next[index] = { ...p, discountMode: "percent", discount: percent, discountAmount: amount };
                               setPositions(next);
+                              markDraftDirty();
                             }}
-                            className="w-16 rounded border border-zinc-300 bg-white px-2 py-1 text-right text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                            className="eco-position-edit-input is-discount"
                           />
                         )}
+                        <select
+                          value={p.discountMode ?? "percent"}
+                          onChange={(e) => {
+                            const mode = e.target.value as "percent" | "amount";
+                            const next = [...positions];
+                            next[index] = { ...p, discountMode: mode };
+                            setPositions(next);
+                            markDraftDirty();
+                          }}
+                          aria-label="Тип скидки"
+                        >
+                          <option value="percent">%</option>
+                          <option value="amount">₽</option>
+                        </select>
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-right">
+                    <td className="is-num">
                       <input
                         type="number"
                         min={0}
@@ -2822,27 +3430,36 @@ function NewShipmentForm() {
                           const next = [...positions];
                           next[index] = { ...p, quantity: parseDecimalInput(e.target.value) };
                           setPositions(next);
+                          markDraftDirty();
                         }}
-                        className="w-20 rounded border border-zinc-300 bg-white px-2 py-1 text-right text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                        className="eco-position-edit-input is-qty"
                       />
                     </td>
-                    <td className="px-2 py-2 text-right">
+                    <td className="is-num">
                       <MoneyInput
                         value={p.price}
                         onValueChange={(price) => {
                           const next = [...positions];
                           next[index] = { ...p, price };
                           setPositions(next);
+                          markDraftDirty();
                         }}
-                        className="w-24 rounded border border-zinc-300 bg-white px-2 py-1 text-right text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                        className="eco-position-edit-input is-price"
                       />
                     </td>
-                    <td className="px-2 py-2 text-right">
-                      {(p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100)).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <td className="is-num">
+                      <strong className="eco-position-line-total">{lineTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</strong>
                     </td>
-                    <td className="px-2 py-2 text-right">
+                    <td className="is-action">
                       <button
-                        type="button" onClick={() => removePosition(index)} className="text-xs text-red-600 hover:underline dark:text-red-400">Удалить</button>
+                        type="button"
+                        onClick={() => removePosition(index)}
+                        className="eco-position-row-action"
+                        aria-label="Удалить позицию"
+                        title="Удалить позицию"
+                      >
+                        <Trash2 className="eco-icon" aria-hidden />
+                      </button>
                     </td>
                   </tr>
                   );
@@ -2851,9 +3468,10 @@ function NewShipmentForm() {
             </table>
           </div>
           <div className="eco-shipment-new-table-foot">
+            <span>Позиций: {positions.length}</span>
             <span>Кол-во всего: {positionsQty}</span>
             <strong>
-              Сумма всего: {positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+              Итого: {positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
             </strong>
           </div>
         </section>
@@ -2865,7 +3483,7 @@ function NewShipmentForm() {
       <section className="eco-card eco-shipment-new-total-card">
         <div className="eco-shipment-card-head">
           <h2>Итого</h2>
-          <span className="eco-shipment-draft-badge">черновик</span>
+          <span className="eco-shipment-draft-badge">{statusText}</span>
         </div>
         <div className="eco-shipment-new-total-body">
           <div className="eco-shipment-new-total-line">
@@ -2900,10 +3518,10 @@ function NewShipmentForm() {
           </div>
           <label className="eco-field">
             <span>Комментарий</span>
-            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="eco-input eco-shipment-new-comment" />
+            <textarea rows={3} value={description} onChange={(e) => { setDescription(e.target.value); markDraftDirty(); }} className="eco-input eco-shipment-new-comment" />
           </label>
           <label className="eco-shipment-new-check">
-            <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => setApplicable(e.target.checked)} />
+            <input id="applicable" type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
             <span>Проведён. Списывает остатки локального склада.</span>
           </label>
           <div className="eco-readiness-list">
@@ -2923,11 +3541,25 @@ function NewShipmentForm() {
             className="eco-shipment-new-submit"
           >
             <Receipt className="eco-icon" aria-hidden />
-            {submitLoading ? "Создание..." : "Сохранить отгрузку"}
+            {saveButtonLabel}
           </EcoButton>
           <div className="eco-shipment-print-actions">
-            <button type="button" disabled={!demandIdLocal} title={!demandIdLocal ? "Доступно после сохранения" : undefined}>Заказ-наряд</button>
-            <button type="button" disabled={!demandIdLocal} title={!demandIdLocal ? "Доступно после сохранения" : undefined}>Под капот</button>
+            <ShipmentPrintMenu
+              shipmentId={demandIdLocal}
+              disabled={!demandIdLocal || submitLoading || paying}
+              disabledReason="Сначала сохраните отгрузку"
+              onBeforePrint={saveDraftBeforePrint}
+            />
+            <button
+              type="button"
+              className="eco-shipment-precheck-action"
+              onClick={() => void handleOpenPrecheck()}
+              disabled={!demandIdLocal || submitLoading || paying}
+              title={!demandIdLocal ? "Сначала сохраните отгрузку" : undefined}
+            >
+              <CreditCard className="eco-icon" aria-hidden />
+              {paying ? "Открываем…" : "Открыть предчек"}
+            </button>
           </div>
         </div>
       </section>
@@ -2943,7 +3575,15 @@ function NewShipmentForm() {
         </div>
         <div className="eco-shipment-new-side-row">
           <span>Клиент</span>
-          <strong>{selectedAgent?.name ?? "не выбран"}</strong>
+          <strong>
+            {selectedAgent ? (
+              <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-side-entity-link" title="Открыть контрагента">
+                {selectedAgent.name}
+              </Link>
+            ) : (
+              "не выбран"
+            )}
+          </strong>
         </div>
         <div className="eco-shipment-new-side-row">
           <span>Организация</span>
@@ -2959,7 +3599,7 @@ function NewShipmentForm() {
         </div>
         <div className="eco-shipment-new-side-row">
           <span>Статус</span>
-          <strong>{applicable ? "проведен" : "черновик"}</strong>
+          <strong>{statusText}</strong>
         </div>
         </div>
       </section>
@@ -2978,7 +3618,7 @@ function NewShipmentForm() {
           <strong>{positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽</strong>
         </button>
         <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary">
-          {submitLoading ? "Создание..." : "Сохранить"}
+          {compactSaveButtonLabel}
         </EcoButton>
       </div>
 
@@ -3006,10 +3646,10 @@ function NewShipmentForm() {
               </div>
               <label className="eco-field">
                 <span>Комментарий</span>
-                <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className="eco-input eco-shipment-new-comment" />
+                <textarea rows={3} value={description} onChange={(e) => { setDescription(e.target.value); markDraftDirty(); }} className="eco-input eco-shipment-new-comment" />
               </label>
               <label className="eco-shipment-new-check">
-                <input type="checkbox" checked={applicable} onChange={(e) => setApplicable(e.target.checked)} />
+                <input type="checkbox" checked={applicable} onChange={(e) => { setApplicable(e.target.checked); markDraftDirty(); }} />
                 <span>Проведён. Списывает остатки локального склада.</span>
               </label>
               <div className="eco-readiness-list">
@@ -3021,8 +3661,26 @@ function NewShipmentForm() {
               </div>
               {submitError && <p className="eco-shipment-new-error">{submitError}</p>}
               <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary" className="eco-shipment-new-submit">
-                {submitLoading ? "Создание..." : "Сохранить отгрузку"}
+                {saveButtonLabel}
               </EcoButton>
+              <div className="eco-shipment-print-actions">
+                <ShipmentPrintMenu
+                  shipmentId={demandIdLocal}
+                  disabled={!demandIdLocal || submitLoading || paying}
+                  disabledReason="Сначала сохраните отгрузку"
+                  onBeforePrint={saveDraftBeforePrint}
+                />
+                <button
+                  type="button"
+                  className="eco-shipment-precheck-action"
+                  onClick={() => void handleOpenPrecheck()}
+                  disabled={!demandIdLocal || submitLoading || paying}
+                  title={!demandIdLocal ? "Сначала сохраните отгрузку" : undefined}
+                >
+                  <CreditCard className="eco-icon" aria-hidden />
+                  {paying ? "Открываем…" : "Открыть предчек"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3061,6 +3719,6 @@ function NewShipmentForm() {
   );
 }
 
-export function NewShipmentPageClient() {
-  return <NewShipmentForm />;
+export function NewShipmentPageClient(props: NewShipmentFormProps) {
+  return <NewShipmentForm {...props} />;
 }

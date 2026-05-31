@@ -2,7 +2,18 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Loader2,
+  Printer,
+  Receipt,
+  RefreshCw,
+  Send,
+} from "lucide-react";
+import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import {
   isRecognizedMotorOilMarkingCode,
   isLikelyMarkedMotorOilProductName,
@@ -12,12 +23,30 @@ import {
   requiredMarkingCodeCount,
 } from "@/lib/marking";
 
+type Meta = {
+  href: string;
+  type: string;
+  mediaType: string;
+};
+
 type Header = {
   id: string;
   name: string;
   moment: string;
+  applicable?: boolean;
+  description?: string;
   sum: number;
   agentName: string;
+  organizationName?: string;
+  storeName?: string;
+};
+
+type Attribute = {
+  id?: string;
+  name?: string;
+  type?: string;
+  meta?: Meta;
+  value?: unknown;
 };
 
 type Position = {
@@ -26,23 +55,160 @@ type Position = {
   quantity: number;
   price: number;
   discount?: number;
+  slotName?: string;
+  assortmentMeta?: Meta;
 };
 
 type DetailResponse = {
   header: Header;
+  attributes?: Attribute[];
   positions: Position[];
+  raw?: unknown;
 };
 
-function rubles(valueKopecks: number): string {
-  return ((Number(valueKopecks) || 0) / 100).toLocaleString("ru-RU", {
-    minimumFractionDigits: 2,
+type SendState = "idle" | "sending" | "sent" | "error";
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function normalizeAttrName(value?: string): string {
+  return (value ?? "").toString().trim().toLowerCase().replace(/ё/g, "е");
+}
+
+function attributeValueToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value && typeof value === "object" && "name" in value) {
+    const name = (value as { name?: unknown }).name;
+    return typeof name === "string" ? name : "";
+  }
+  return "";
+}
+
+function formatMoney(valueKopecks: number): string {
+  return `${((Number(valueKopecks) || 0) / 100).toLocaleString("ru-RU", {
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
+  })} ₽`;
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return "не указана";
+  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
+}
+
+function positionBaseTotal(position: Position): number {
+  return (Number(position.price) || 0) * (Number(position.quantity) || 0);
 }
 
 function positionTotal(position: Position): number {
   const discount = typeof position.discount === "number" ? position.discount : 0;
-  return (Number(position.price) || 0) * (Number(position.quantity) || 0) * (1 - discount / 100);
+  return positionBaseTotal(position) * (1 - discount / 100);
+}
+
+function getAttributeValue(attributes: Attribute[] | undefined, matcher: RegExp): string {
+  const attr = (attributes ?? []).find((item) => matcher.test(normalizeAttrName(item.name)));
+  return attributeValueToString(attr?.value).trim();
+}
+
+function getRawAgent(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const agent = (raw as { agent?: unknown }).agent;
+  return agent && typeof agent === "object" ? (agent as Record<string, unknown>) : null;
+}
+
+function getAgentPhone(raw: unknown): string {
+  const agent = getRawAgent(raw);
+  if (!agent) return "";
+  if (typeof agent.phone === "string" && agent.phone.trim()) return agent.phone.trim();
+  const phones = agent.phones;
+  if (Array.isArray(phones)) {
+    for (const item of phones) {
+      if (typeof item === "string" && item.trim()) return item.trim();
+      if (item && typeof item === "object") {
+        const phone = (item as { phone?: unknown }).phone;
+        if (typeof phone === "string" && phone.trim()) return phone.trim();
+      }
+    }
+  }
+  return "";
+}
+
+function getAssortmentSource(position: Position): { label: string; code: string } {
+  const meta = position.assortmentMeta;
+  if (!meta?.href) return { label: "ручная позиция", code: "" };
+  const source = meta.href.startsWith("local://") ? "локальная БД" : "архивный источник";
+  const rawCode = (() => {
+    if (meta.href.startsWith("local://")) {
+      return meta.href.split("/").filter(Boolean).at(-1) ?? "";
+    }
+    try {
+      const url = new URL(meta.href);
+      return url.pathname.split("/").filter(Boolean).at(-1) ?? "";
+    } catch {
+      return meta.href.split(/[?#]/)[0]?.split("/").filter(Boolean).at(-1) ?? "";
+    }
+  })();
+  const code = rawCode.length > 14 ? `${rawCode.slice(0, 6)}…${rawCode.slice(-4)}` : rawCode;
+  return { label: source, code };
+}
+
+function PrecheckSkeleton() {
+  return (
+    <main className="eco-page eco-page--wide eco-precheck-page">
+      <section className="eco-precheck-head eco-precheck-skeleton-head">
+        <span className="eco-skeleton-line is-code" />
+        <span className="eco-skeleton-line is-title" />
+        <span className="eco-skeleton-line is-code" />
+      </section>
+      <div className="eco-precheck-layout">
+        <div className="eco-precheck-main">
+          <section className="eco-card eco-precheck-card">
+            <div className="eco-card__head">
+              <span className="eco-skeleton-line is-code" />
+            </div>
+            <div className="eco-precheck-context-grid">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <span key={index} className="eco-skeleton-line is-code" />
+              ))}
+            </div>
+          </section>
+          <section className="eco-card eco-precheck-card">
+            <div className="eco-card__head">
+              <span className="eco-skeleton-line is-code" />
+            </div>
+            <div className="eco-precheck-skeleton-table">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <span key={index} className="eco-skeleton-line is-code" />
+              ))}
+            </div>
+          </section>
+        </div>
+        <aside className="eco-precheck-aside">
+          <section className="eco-card eco-precheck-total-card">
+            <div className="eco-shipment-card-head">
+              <span className="eco-skeleton-line is-code" />
+            </div>
+            <div className="eco-precheck-total-body">
+              <span className="eco-skeleton-line is-title" />
+              <span className="eco-skeleton-line is-code" />
+              <span className="eco-skeleton-pill" />
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  );
 }
 
 export default function ShipmentPrecheckPage() {
@@ -52,42 +218,73 @@ export default function ShipmentPrecheckPage() {
 
   const [data, setData] = useState<DetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sendState, setSendState] = useState<SendState>("idle");
+  const [sentAt, setSentAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [markingInputs, setMarkingInputs] = useState<Record<string, string>>({});
   const [bypassed, setBypassed] = useState<Record<string, boolean>>({});
   const [bypassPassword, setBypassPassword] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
+  const loadData = useCallback(
+    async (mode: "initial" | "refresh" = "initial") => {
+      let cancelled = false;
+      if (mode === "initial") setLoading(true);
+      if (mode === "refresh") setRefreshing(true);
       setError(null);
+      setSuccess(null);
       try {
         const sess = await fetch("/api/auth/session").then((r) => r.json());
         if (!sess?.user) {
           router.push(`/login?from=/shipment/${id}/precheck`);
-          return;
+          return () => {
+            cancelled = true;
+          };
         }
         const res = await fetch(`/api/demands/${id}`, { cache: "no-store" });
         const json = await res.json();
         if (!res.ok) {
-          setError(json.error ?? "Ошибка загрузки предчека");
-          return;
+          setData(null);
+          setError(json.error ?? "Не удалось сформировать предчек");
+          return () => {
+            cancelled = true;
+          };
         }
-        if (!cancelled) setData(json);
+        if (!cancelled) {
+          setData(json);
+          setSendState("idle");
+          setSentAt(null);
+        }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Ошибка сети");
+        if (!cancelled) {
+          setData(null);
+          setError(e instanceof Error ? e.message : "Ошибка сети");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
+      return () => {
+        cancelled = true;
+      };
+    },
+    [id, router]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      const cleanup = await loadData("initial");
+      if (cancelled) cleanup?.();
     }
-    if (id) void load();
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [id, router]);
+  }, [loadData]);
 
   const requiredPositions = useMemo(
     () => (data?.positions ?? []).filter((position) => isLikelyMarkedMotorOilProductName(position.name)),
@@ -107,17 +304,49 @@ export default function ShipmentPrecheckPage() {
     [bypassed, markingInputs, requiredPositions]
   );
 
+  const totals = useMemo(() => {
+    const positions = data?.positions ?? [];
+    const subtotal = positions.reduce((sum, position) => sum + positionBaseTotal(position), 0);
+    const total = positions.reduce((sum, position) => sum + positionTotal(position), 0);
+    return {
+      subtotal,
+      discount: Math.max(0, subtotal - total),
+      total,
+      quantity: positions.reduce((sum, position) => sum + (Number(position.quantity) || 0), 0),
+    };
+  }, [data?.positions]);
+
+  const precheckStatus = useMemo(() => {
+    if (sendState === "sending") return { label: "Отправляем…", tone: "warning" as const };
+    if (sendState === "sent") return { label: "Отправлен на кассу", tone: "success" as const };
+    if (sendState === "error") return { label: "Ошибка отправки", tone: "danger" as const };
+    if (!data || data.positions.length === 0) return { label: "Черновик", tone: "neutral" as const };
+    if (missingPositions.length > 0) return { label: "Не отправлен", tone: "warning" as const };
+    return { label: "Готов к отправке", tone: "rust" as const };
+  }, [data, missingPositions.length, sendState]);
+
+  const clientName = data?.header.agentName?.trim() || "не указан";
+  const phone = getAgentPhone(data?.raw);
+  const vehicleModel = getAttributeValue(data?.attributes, /^модель авто$/i);
+  const vehicleYear = getAttributeValue(data?.attributes, /^год$/i);
+  const vehiclePlate = getAttributeValue(data?.attributes, /гос.*номер|номер/i);
+  const documentVin = getAttributeValue(data?.attributes, /vin/i);
+  const vehicleTitle = [vehicleModel, vehicleYear].filter(Boolean).join(" · ");
+  const createdAt = formatDateTime(data?.header.moment);
+  const canSend = Boolean(data && data.positions.length > 0 && missingPositions.length === 0);
+
   async function handleBypass(position: Position) {
     const password = window.prompt(`Пароль для пропуска маркировки: ${position.name}`);
     if (!password) return;
     setBypassPassword(password);
     setBypassed((prev) => ({ ...prev, [position.id]: true }));
     setError(null);
+    if (sendState === "error") setSendState("idle");
   }
 
   async function handleSend() {
-    if (!data || sending || missingPositions.length > 0) return;
-    setSending(true);
+    if (!data || sendState === "sending" || sendState === "sent" || !canSend) return;
+    setSendState("sending");
     setError(null);
     setSuccess(null);
     try {
@@ -143,189 +372,464 @@ export default function ShipmentPrecheckPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(typeof json.error === "string" ? json.error : "Не удалось отправить заказ в AQSI");
+        setSendState("error");
+        setError(typeof json.error === "string" ? json.error : "Не удалось отправить заказ на кассу");
         return;
       }
+      setSendState("sent");
+      setSentAt(new Date().toISOString());
       setSuccess(
         json.status
-          ? `Заказ отправлен в AQSI. Статус: ${json.status}.`
-          : "Заказ отправлен в AQSI и доступен в отложенных заказах."
+          ? `Заказ отправлен на кассу. Статус: ${json.status}.`
+          : "Заказ отправлен на кассу и доступен в отложенных заказах."
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка отправки в AQSI");
-    } finally {
-      setSending(false);
+      setSendState("error");
+      setError(e instanceof Error ? e.message : "Ошибка отправки на кассу");
     }
   }
 
-  if (loading) {
-    return (
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <p className="text-sm text-zinc-500">Загрузка предчека...</p>
-      </main>
-    );
-  }
+  if (loading) return <PrecheckSkeleton />;
 
   if (!data) {
     return (
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <p className="text-sm text-red-600 dark:text-red-400">{error ?? "Предчек не найден"}</p>
+      <main className="eco-page eco-page--wide eco-precheck-page">
+        <section className="eco-card eco-card--padded eco-precheck-state-card is-error">
+          <AlertTriangle className="eco-precheck-state-icon" aria-hidden />
+          <div>
+            <div className="eco-page-kicker">Предчек</div>
+            <h1>Не удалось сформировать предчек</h1>
+            <p>{error ?? "Проверьте позиции отгрузки и попробуйте ещё раз."}</p>
+          </div>
+          <div className="eco-actions">
+            <EcoButton type="button" variant="primary" onClick={() => void loadData("initial")}>
+              <RefreshCw className="eco-icon" aria-hidden />
+              Повторить
+            </EcoButton>
+            <Link href={`/shipment/${id}`} className="eco-btn">
+              <ArrowLeft className="eco-icon" aria-hidden />
+              К отгрузке
+            </Link>
+          </div>
+        </section>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <main className="eco-page eco-page--wide eco-precheck-page">
+      <header className="eco-precheck-head">
         <div>
-          <Link
-            href={`/shipment/${id}`}
-            className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-          >
-            ← К отгрузке
+          <Link href={`/shipment/${id}`} className="eco-precheck-back-link">
+            <ArrowLeft className="eco-icon" aria-hidden />
+            К отгрузке
           </Link>
-          <h1 className="mt-3 text-2xl font-bold text-zinc-950 dark:text-zinc-50">
-            Предчек {data.header.name}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {data.header.agentName || "Контрагент не указан"} · {data.header.moment}
+          <div className="eco-page-kicker eco-precheck-crumbs">
+            <Link href="/shipment">Операции / Отгрузки</Link>
+            <span>/ Предчек</span>
+          </div>
+          <div className="eco-precheck-title-row">
+            <h1 className="eco-page-title">Предчек {data.header.name}</h1>
+            <EcoBadge tone={precheckStatus.tone} dot>
+              {precheckStatus.label}
+            </EcoBadge>
+          </div>
+          <p className="eco-page-subtitle">
+            {clientName} · Отгрузка <span className="eco-precheck-mono">{data.header.name}</span> · {createdAt}
+          </p>
+          <p className="eco-precheck-head-meta">
+            {data.header.organizationName || "организация не указана"} · {data.header.storeName || "склад не указан"}
           </p>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-zinc-500">Сумма</div>
-          <div className="text-xl font-semibold text-zinc-950 dark:text-zinc-50">
-            {rubles(data.header.sum)} ₽
-          </div>
+        <div className="eco-actions">
+          <EcoButton type="button" onClick={() => void loadData("refresh")} disabled={refreshing || sendState === "sending"}>
+            <RefreshCw className={cx("eco-icon", refreshing && "eco-precheck-spin")} aria-hidden />
+            {refreshing ? "Обновляем…" : "Обновить"}
+          </EcoButton>
+          <button type="button" className="eco-btn" onClick={() => window.print()}>
+            <Printer className="eco-icon" aria-hidden />
+            Печать
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-        <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-700">
-          <thead className="bg-zinc-50 text-left text-xs font-medium uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-            <tr>
-              <th className="px-4 py-3">Позиция</th>
-              <th className="px-4 py-3 text-right">Кол-во</th>
-              <th className="px-4 py-3 text-right">Цена</th>
-              <th className="px-4 py-3 text-right">Итого</th>
-              <th className="px-4 py-3">Маркировка</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {data.positions.map((position) => {
-              const needsMarking = isLikelyMarkedMotorOilProductName(position.name);
-              const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
-              const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
-              const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
-              const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
-              const isMissing =
-                needsMarking && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
-              return (
-                <tr key={position.id} className={isMissing ? "bg-amber-50/70 dark:bg-amber-950/20" : ""}>
-                  <td className="max-w-xs px-4 py-3 align-top">
-                    <div className="font-medium text-zinc-950 dark:text-zinc-50">{position.name}</div>
-                    {needsMarking && (
-                      <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                        {measuredPour
-                          ? `Литры/розлив · один код на ${position.quantity} л`
-                          : `Автомасло · нужно кодов: ${needed}`}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right align-top">
-                    {position.quantity}
-                    {measuredPour ? " л" : ""}
-                  </td>
-                  <td className="px-4 py-3 text-right align-top">{rubles(position.price)} ₽</td>
-                  <td className="px-4 py-3 text-right align-top">{rubles(positionTotal(position))} ₽</td>
-                  <td className="min-w-72 px-4 py-3 align-top">
-                    {needsMarking ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={markingInputs[position.id] ?? ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
-                            if (parseMarkingCodesInput(value).length >= needed) {
-                              setBypassed((prev) => ({ ...prev, [position.id]: false }));
-                            }
-                          }}
-                          rows={needed > 1 ? Math.min(needed, 4) : 2}
-                          placeholder={measuredPour ? "Код маркировки" : "Код маркировки"}
-                          wrap="off"
-                          spellCheck={false}
-                          autoCapitalize="off"
-                          autoCorrect="off"
-                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-zinc-600 dark:bg-zinc-950"
-                        />
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`text-xs ${
-                              isMissing
-                                ? "text-amber-700 dark:text-amber-300"
-                                : "text-emerald-700 dark:text-emerald-300"
-                            }`}
-                          >
-                            {bypassed[position.id]
-                              ? "Пропуск разрешён"
-                              : `${Math.min(codes.length, needed)} из ${needed}`}
-                          </span>
-                          {codes.length > 0 && !codes.every(isRecognizedMotorOilMarkingCode) && (
-                            <span className="text-xs text-red-600 dark:text-red-400">
-                              Формат кода не распознан
-                            </span>
-                          )}
-                          {codes.some((code) => code !== normalizeMarkingCodeInput(markingInputs[position.id] ?? "")) && (
-                            <span className="text-xs text-zinc-400">
-                              GS-разделители будут восстановлены
-                            </span>
-                          )}
-                          {bypassed[position.id] ? (
-                            <button
-                              type="button"
-                              onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}
-                              className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                            >
-                              Отменить пропуск
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => void handleBypass(position)}
-                              className="rounded-lg border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/50"
-                            >
-                              Пропустить без маркировки
-                            </button>
-                          )}
+      <div className="eco-precheck-layout">
+        <div className="eco-precheck-main">
+          <section className="eco-card eco-precheck-card">
+            <div className="eco-card__head">
+              <div>
+                <div className="eco-page-kicker">Документ</div>
+                <h2>Клиент и документ</h2>
+              </div>
+              <EcoBadge tone={data.header.applicable ? "success" : "neutral"} dot>
+                {data.header.applicable ? "Отгрузка проведена" : "Отгрузка черновик"}
+              </EcoBadge>
+            </div>
+            <div className="eco-precheck-context-grid">
+              <div className="eco-precheck-context-item is-wide">
+                <span>Клиент</span>
+                <strong>{clientName}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Телефон</span>
+                <strong>{phone || "не указан"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Автомобиль</span>
+                <strong>{vehicleTitle || "не указан"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Гос. номер</span>
+                <strong className="eco-precheck-mono">{vehiclePlate || "не указан"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>VIN</span>
+                <strong className="eco-precheck-mono">{documentVin || "не указан"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Отгрузка</span>
+                <strong className="eco-precheck-mono">{data.header.name}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Организация</span>
+                <strong>{data.header.organizationName || "не указана"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Склад</span>
+                <strong>{data.header.storeName || "не указан"}</strong>
+              </div>
+              <div className="eco-precheck-context-item">
+                <span>Дата</span>
+                <strong>{createdAt}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="eco-card eco-precheck-card eco-precheck-positions">
+            <div className="eco-card__head">
+              <div>
+                <div className="eco-page-kicker">Документ</div>
+                <h2>Позиции предчека</h2>
+              </div>
+              <EcoBadge tone={data.positions.length > 0 ? "rust" : "neutral"}>
+                {data.positions.length} поз.
+              </EcoBadge>
+            </div>
+
+            {data.positions.length === 0 ? (
+              <div className="eco-precheck-empty-state">
+                <Receipt className="eco-precheck-state-icon" aria-hidden />
+                <strong>В предчеке пока нет позиций</strong>
+                <span>Вернитесь к отгрузке и добавьте товары или услуги.</span>
+                <Link href={`/shipment/${id}`} className="eco-btn eco-btn--primary">
+                  <ArrowLeft className="eco-icon" aria-hidden />
+                  К отгрузке
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="eco-precheck-position-cards">
+                  {data.positions.map((position, index) => {
+                    const source = getAssortmentSource(position);
+                    const needsMarking = isLikelyMarkedMotorOilProductName(position.name);
+                    const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
+                    const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
+                    const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
+                    const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
+                    const isMissing =
+                      needsMarking && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
+
+                    return (
+                      <article key={position.id} className={cx("eco-precheck-position-card", isMissing && "is-warning")}>
+                        <div className="eco-precheck-position-card-head">
+                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <div>
+                            <strong>{position.name}</strong>
+                            <small>
+                              {source.label}
+                              {source.code ? ` · ${source.code}` : ""}
+                            </small>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-zinc-400">Не требуется</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                        <div className="eco-precheck-position-card-grid">
+                          <span>Кол-во <strong>{position.quantity}</strong></span>
+                          <span>Цена <strong>{formatMoney(position.price)}</strong></span>
+                          <span>Скидка <strong>{position.discount ? `${position.discount}%` : "0"}</strong></span>
+                          <span>Сумма <strong>{formatMoney(positionTotal(position))}</strong></span>
+                        </div>
+                        {needsMarking ? (
+                          <div className="eco-precheck-marking-box">
+                            <EcoBadge tone={isMissing ? "warning" : "success"} dot>
+                              {bypassed[position.id] ? "Пропуск разрешён" : isMissing ? "Нужна маркировка" : "Маркировка готова"}
+                            </EcoBadge>
+                            <textarea
+                              value={markingInputs[position.id] ?? ""}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
+                                if (parseMarkingCodesInput(value).length >= needed) {
+                                  setBypassed((prev) => ({ ...prev, [position.id]: false }));
+                                }
+                                if (sendState === "error") setSendState("idle");
+                              }}
+                              rows={needed > 1 ? Math.min(needed, 4) : 2}
+                              placeholder="Код маркировки"
+                              wrap="off"
+                              spellCheck={false}
+                              autoCapitalize="off"
+                              autoCorrect="off"
+                              className="eco-precheck-marking-input"
+                            />
+                            <div className="eco-precheck-marking-actions">
+                              <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
+                              {bypassed[position.id] ? (
+                                <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
+                                  Отменить пропуск
+                                </button>
+                              ) : (
+                                <button type="button" onClick={() => void handleBypass(position)}>
+                                  Пропустить без маркировки
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <EcoBadge tone="neutral">Маркировка не требуется</EcoBadge>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
 
-      {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-      {success && <p className="mt-4 text-sm text-emerald-600 dark:text-emerald-400">{success}</p>}
+                <div className="eco-precheck-table-wrap">
+                  <table className="eco-precheck-table">
+                    <thead>
+                      <tr>
+                        <th>№</th>
+                        <th>Товар / услуга</th>
+                        <th>Артикул / код / источник</th>
+                        <th>Кол-во</th>
+                        <th>Цена</th>
+                        <th>Скидка</th>
+                        <th>Сумма</th>
+                        <th>Маркировка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.positions.map((position, index) => {
+                        const source = getAssortmentSource(position);
+                        const needsMarking = isLikelyMarkedMotorOilProductName(position.name);
+                        const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
+                        const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
+                        const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
+                        const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
+                        const isMissing =
+                          needsMarking && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void handleSend()}
-          disabled={sending || missingPositions.length > 0}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {sending ? "Отправка в AQSI..." : "Отправить заказ на кассу"}
-        </button>
-        {missingPositions.length > 0 && (
-          <span className="text-sm text-amber-700 dark:text-amber-300">
-            Заполните маркировку или оформите пропуск.
-          </span>
-        )}
+                        return (
+                          <tr key={position.id} className={isMissing ? "is-warning" : undefined}>
+                            <td className="eco-precheck-table-index">{index + 1}</td>
+                            <td>
+                              <strong className="eco-precheck-position-name">{position.name}</strong>
+                              <span className="eco-precheck-position-sub">
+                                {position.slotName ? `Ячейка: ${position.slotName}` : "позиция предчека"}
+                              </span>
+                            </td>
+                            <td>
+                              <span>{source.label}</span>
+                              <code>{source.code || "код не указан"}</code>
+                            </td>
+                            <td className="is-num">
+                              {position.quantity}
+                              {measuredPour ? " л" : ""}
+                            </td>
+                            <td className="is-num">{formatMoney(position.price)}</td>
+                            <td className="is-num">{position.discount ? `${position.discount}%` : "0"}</td>
+                            <td className="is-num is-total">{formatMoney(positionTotal(position))}</td>
+                            <td className="eco-precheck-marking-cell">
+                              {needsMarking ? (
+                                <div className="eco-precheck-marking-box">
+                                  <EcoBadge tone={isMissing ? "warning" : "success"} dot>
+                                    {bypassed[position.id] ? "Пропуск" : isMissing ? "Нужна маркировка" : "Готово"}
+                                  </EcoBadge>
+                                  <span className="eco-precheck-marking-note">
+                                    {measuredPour
+                                      ? `розлив · один код на ${position.quantity} л`
+                                      : `нужно кодов: ${needed}`}
+                                  </span>
+                                  <textarea
+                                    value={markingInputs[position.id] ?? ""}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
+                                      if (parseMarkingCodesInput(value).length >= needed) {
+                                        setBypassed((prev) => ({ ...prev, [position.id]: false }));
+                                      }
+                                      if (sendState === "error") setSendState("idle");
+                                    }}
+                                    rows={needed > 1 ? Math.min(needed, 4) : 2}
+                                    placeholder="Код маркировки"
+                                    wrap="off"
+                                    spellCheck={false}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                    className="eco-precheck-marking-input"
+                                  />
+                                  <div className="eco-precheck-marking-actions">
+                                    <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
+                                    {codes.length > 0 && !codes.every(isRecognizedMotorOilMarkingCode) && (
+                                      <span className="is-danger">формат не распознан</span>
+                                    )}
+                                    {codes.some((code) => code !== normalizeMarkingCodeInput(code)) && (
+                                      <span>GS-разделители будут восстановлены</span>
+                                    )}
+                                    {bypassed[position.id] ? (
+                                      <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
+                                        Отменить
+                                      </button>
+                                    ) : (
+                                      <button type="button" onClick={() => void handleBypass(position)}>
+                                        Пропустить
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <EcoBadge tone="neutral">Не требуется</EcoBadge>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={6}>Итого по предчеку</td>
+                        <td className="is-num is-total">{formatMoney(totals.total)}</td>
+                        <td>{data.positions.length} поз.</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+
+          {(data.header.description || error || success) && (
+            <section className="eco-card eco-precheck-card">
+              <div className="eco-card__head">
+                <div>
+                  <div className="eco-page-kicker">Служебно</div>
+                  <h2>Комментарий и статус</h2>
+                </div>
+              </div>
+              <div className="eco-precheck-service-body">
+                {data.header.description && <p>{data.header.description}</p>}
+                {error && (
+                  <div className="eco-precheck-message is-error" role="alert">
+                    <AlertTriangle className="eco-icon" aria-hidden />
+                    {error}
+                  </div>
+                )}
+                {success && (
+                  <div className="eco-precheck-message is-success">
+                    <CheckCircle2 className="eco-icon" aria-hidden />
+                    {success}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <aside className="eco-precheck-aside">
+          <section className="eco-card eco-precheck-total-card">
+            <div className="eco-shipment-card-head">
+              <h2>Итого</h2>
+              <EcoBadge tone={precheckStatus.tone} dot>
+                {precheckStatus.label}
+              </EcoBadge>
+            </div>
+            <div className="eco-precheck-total-body">
+              <div className="eco-precheck-total-line">
+                <span>Подытог</span>
+                <strong>{formatMoney(totals.subtotal)}</strong>
+              </div>
+              <div className="eco-precheck-total-line">
+                <span>Скидка</span>
+                <strong>{totals.discount > 0 ? `− ${formatMoney(totals.discount)}` : "0 ₽"}</strong>
+              </div>
+              <div className="eco-precheck-total-main">
+                <span>К оплате</span>
+                <strong>{formatMoney(totals.total)}</strong>
+              </div>
+              <div className="eco-precheck-total-line is-muted">
+                <span>Количество позиций</span>
+                <strong>{data.positions.length}</strong>
+              </div>
+              <div className="eco-precheck-total-line is-muted">
+                <span>Количество единиц</span>
+                <strong>{totals.quantity.toLocaleString("ru-RU")}</strong>
+              </div>
+              <div className="eco-precheck-total-line">
+                <span>Статус предчека</span>
+                <strong>{precheckStatus.label}</strong>
+              </div>
+              <div className="eco-precheck-total-line">
+                <span>Касса</span>
+                <strong>{sendState === "sent" ? "отправлен" : sendState === "error" ? "ошибка" : "не отправлен"}</strong>
+              </div>
+              {sentAt && (
+                <div className="eco-precheck-total-line is-muted">
+                  <span>Отправлен</span>
+                  <strong>{formatDateTime(sentAt)}</strong>
+                </div>
+              )}
+              {missingPositions.length > 0 && (
+                <div className="eco-readiness-list">
+                  {missingPositions.map((position) => (
+                    <span key={position.id}>• Нужна маркировка: {position.name}</span>
+                  ))}
+                </div>
+              )}
+              <EcoButton
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={!canSend || sendState === "sending" || sendState === "sent"}
+                title={!canSend ? "Заполните позиции и маркировку" : undefined}
+                variant="primary"
+                className="eco-precheck-submit"
+              >
+                {sendState === "sending" ? (
+                  <Loader2 className="eco-icon eco-precheck-spin" aria-hidden />
+                ) : sendState === "sent" ? (
+                  <CheckCircle2 className="eco-icon" aria-hidden />
+                ) : (
+                  <Send className="eco-icon" aria-hidden />
+                )}
+                {sendState === "sending"
+                  ? "Отправляем…"
+                  : sendState === "sent"
+                    ? "Отправлен на кассу"
+                    : "Отправить заказ на кассу"}
+              </EcoButton>
+              <div className="eco-precheck-side-actions">
+                <Link href={`/shipment/${id}`} className="eco-btn">
+                  <ArrowLeft className="eco-icon" aria-hidden />
+                  Вернуться к отгрузке
+                </Link>
+                <button type="button" className="eco-btn" onClick={() => void loadData("refresh")} disabled={refreshing || sendState === "sending"}>
+                  <RefreshCw className={cx("eco-icon", refreshing && "eco-precheck-spin")} aria-hidden />
+                  Обновить данные
+                </button>
+                <button type="button" className="eco-btn" onClick={() => window.print()}>
+                  <Printer className="eco-icon" aria-hidden />
+                  Печать
+                </button>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </main>
   );

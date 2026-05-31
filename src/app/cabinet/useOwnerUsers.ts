@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export type OwnerUser = {
   login: string;
   name: string;
+  role?: "owner" | "admin" | "master";
 };
 
 let cachedOwnerUsers: OwnerUser[] | null = null;

@@ -35,7 +35,7 @@ async function decodeVin(vin: string): Promise<VinDecodeResponse | null> {
   }
 }
 
-/** POST /api/oil-recommendations — подбор масел по VIN (требования через OpenAI, товары из МойСклад, скоринг). */
+/** POST /api/oil-recommendations — подбор масел по VIN (требования через OpenAI, товары из локального каталога, скоринг). */
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) {

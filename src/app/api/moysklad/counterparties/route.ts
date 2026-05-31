@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
     counterparties: counterparties.map((counterparty) => ({
       id: counterparty.id,
       name: counterparty.name,
+      phone: counterparty.phone,
+      normalizedPhone: counterparty.normalizedPhone,
       meta: counterpartyMeta(counterparty.id),
     })),
   });
@@ -78,6 +80,8 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     id: created.id,
     name: created.name,
+    phone: created.phone,
+    normalizedPhone: created.normalizedPhone,
     meta: counterpartyMeta(created.id),
   });
 }

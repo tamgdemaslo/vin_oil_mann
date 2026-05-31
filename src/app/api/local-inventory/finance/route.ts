@@ -8,5 +8,18 @@ export async function GET(request: NextRequest) {
 
   const dateFrom = request.nextUrl.searchParams.get("dateFrom") ?? undefined;
   const dateTo = request.nextUrl.searchParams.get("dateTo") ?? undefined;
-  return NextResponse.json(await getLocalInventoryFinance({ dateFrom, dateTo }));
+  const organizationId = request.nextUrl.searchParams.get("organizationId") ?? undefined;
+  const storeId = request.nextUrl.searchParams.get("storeId") ?? undefined;
+  const documentType = request.nextUrl.searchParams.get("documentType") ?? undefined;
+  const applicableOnly = request.nextUrl.searchParams.get("applicableOnly") !== "false";
+  const includeWriteoffs = request.nextUrl.searchParams.get("includeWriteoffs") !== "false";
+  return NextResponse.json(await getLocalInventoryFinance({
+    dateFrom,
+    dateTo,
+    organizationId,
+    storeId,
+    documentType,
+    applicableOnly,
+    includeWriteoffs,
+  }));
 }

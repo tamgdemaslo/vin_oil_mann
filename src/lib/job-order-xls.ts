@@ -3,7 +3,6 @@ import * as path from "node:path";
 import * as XLSX from "xlsx";
 import type { DemandDetailAttribute, DemandDetailPayload, DemandDetailPosition } from "@/lib/demand-detail-load";
 import { normalizeSellerPhonesForPrint } from "@/lib/job-order-seller-phone";
-import { moyskladFetch } from "@/lib/moysklad";
 
 const SHEET_NAMES_PREFERRED = ["Заказ-наряд"];
 
@@ -69,14 +68,8 @@ function pickDirector(org: Record<string, unknown>): string {
 }
 
 async function fetchOrganizationRecord(rawDemand: unknown): Promise<Record<string, unknown> | null> {
-  const href = (rawDemand as { organization?: { meta?: { href?: string } } })?.organization?.meta?.href;
-  if (!href) return null;
-  const id = href.split("/").filter(Boolean).pop();
-  if (!id) return null;
-  const res = await moyskladFetch<Record<string, unknown>>(`/entity/organization/${id}`, {
-    cache: "no-store",
-  });
-  return res.ok ? res.data : null;
+  const organization = (rawDemand as { organization?: unknown })?.organization;
+  return organization && typeof organization === "object" ? (organization as Record<string, unknown>) : null;
 }
 
 function sellerFromOrg(org: Record<string, unknown> | null): {
