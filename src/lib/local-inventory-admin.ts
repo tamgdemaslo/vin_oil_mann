@@ -1023,7 +1023,33 @@ async function getProductFilterOptions(query: SearchQuery, includeArchived?: boo
     return productAdminCache.filterOptions.options;
   }
 
-  const optionProducts = (await getProductRowsForAdmin(includeArchived)).filter((row) => rowMatchesSearch(row, query));
+  const optionProducts = await prisma.localProduct.findMany({
+    where: {
+      ...(includeArchived ? {} : { archived: false }),
+      ...(query.normalized
+        ? {
+            OR: [
+              { name: { contains: query.normalized, mode: "insensitive" } },
+              { article: { contains: query.normalized, mode: "insensitive" } },
+              { code: { contains: query.normalized, mode: "insensitive" } },
+              { externalCode: { contains: query.normalized, mode: "insensitive" } },
+              { searchText: { contains: query.normalized, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      brand: true,
+      sae: true,
+      supplierName: true,
+      groupPath: true,
+      entityType: true,
+      apiSpec: true,
+      acea: true,
+      packageVolume: true,
+    },
+    take: 10_000,
+  });
   const options = buildProductFilterOptions(optionProducts);
   productAdminCache.filterOptions = { key, expiresAt: now + PRODUCT_FILTER_OPTIONS_CACHE_MS, options };
   return options;
@@ -1639,6 +1665,41 @@ function counterpartyStats(rows: CounterpartyListRow[]) {
   };
 }
 
+async function fastCounterpartyStats() {
+  const requisitesMissing: Prisma.LocalCounterpartyWhereInput = {
+    AND: [
+      { OR: [{ legalTitle: null }, { legalTitle: "" }] },
+      { OR: [{ inn: null }, { inn: "" }] },
+      { OR: [{ kpp: null }, { kpp: "" }] },
+      { OR: [{ okpo: null }, { okpo: "" }] },
+      { OR: [{ ogrn: null }, { ogrn: "" }] },
+      { OR: [{ ogrnip: null }, { ogrnip: "" }] },
+      { OR: [{ checkingAccount: null }, { checkingAccount: "" }] },
+      { OR: [{ correspondentAccount: null }, { correspondentAccount: "" }] },
+      { OR: [{ bik: null }, { bik: "" }] },
+      { OR: [{ bankName: null }, { bankName: "" }] },
+      { OR: [{ legalAddress: null }, { legalAddress: "" }] },
+    ],
+  };
+  const [total, active, archived, individuals, noPhone, noRequisites] = await Promise.all([
+    prisma.localCounterparty.count(),
+    prisma.localCounterparty.count({ where: { archived: false } }),
+    prisma.localCounterparty.count({ where: { archived: true } }),
+    prisma.localCounterparty.count({ where: { companyType: "individual" } }),
+    prisma.localCounterparty.count({ where: { AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
+    prisma.localCounterparty.count({ where: { AND: [{ archived: false }, requisitesMissing] } }),
+  ]);
+  return {
+    total,
+    active,
+    archived,
+    individuals,
+    companies: Math.max(0, total - individuals),
+    noPhone,
+    noRequisites,
+  };
+}
+
 export async function listLocalAdminProducts(params: {
   search?: string;
   limit?: number;
@@ -1661,22 +1722,80 @@ export async function listLocalAdminProducts(params: {
   const offset = Math.max(0, params.offset ?? 0);
   const sort = normalizeProductSort(params.sort);
   const direction = normalizeSortDirection(params.direction);
-  const allRows = await getProductRowsForAdmin(params.includeArchived);
-  const [filteredProducts, filterOptions] = await Promise.all([
-    Promise.resolve(
-      allRows
-        .filter((row) => rowMatchesSearch(row, searchQuery))
-        .filter((row) => rowMatchesProductFilters(row, params))
-        .sort((a, b) => compareProductsForSearch(a, b, searchQuery, sort, direction))
-    ),
-    getProductFilterOptions(searchQuery, params.includeArchived),
-  ]);
-  const sortedProducts = filteredProducts;
-  const pageProducts = sortedProducts.slice(offset, offset + limit);
-  const hasMore = offset + limit < sortedProducts.length;
+  const stock = normalizeStockFilter(params.stock);
+  const canQueryPageDirectly = stock === "all" && sort !== "available" && sort !== "quantity" && sort !== "margin";
+  let total = 0;
+  let pageProducts: ProductListRow[] = [];
+  let filterOptions: ProductFilterOptions;
+
+  if (canQueryPageDirectly) {
+    const where: Prisma.LocalProductWhereInput = {
+      ...(params.includeArchived ? {} : { archived: false }),
+      ...(searchQuery.normalized
+        ? {
+            OR: [
+              { name: { contains: searchQuery.normalized, mode: "insensitive" } },
+              { article: { contains: searchQuery.normalized, mode: "insensitive" } },
+              { code: { contains: searchQuery.normalized, mode: "insensitive" } },
+              { externalCode: { contains: searchQuery.normalized, mode: "insensitive" } },
+              { searchText: { contains: searchQuery.normalized, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(cleanFilter(params.brand) ? { brand: cleanFilter(params.brand) } : {}),
+      ...(cleanFilter(params.sae) ? { sae: cleanFilter(params.sae) } : {}),
+      ...(cleanFilter(params.supplier) ? { supplierName: cleanFilter(params.supplier) } : {}),
+      ...(cleanFilter(params.group) ? { groupPath: cleanFilter(params.group) } : {}),
+      ...(cleanFilter(params.entityType) ? { entityType: cleanFilter(params.entityType) } : {}),
+      ...(cleanFilter(params.apiSpec) ? { apiSpec: cleanFilter(params.apiSpec) } : {}),
+      ...(cleanFilter(params.acea) ? { acea: cleanFilter(params.acea) } : {}),
+      ...(cleanFilter(params.packageVolume) ? { packageVolume: cleanFilter(params.packageVolume) } : {}),
+    };
+    const orderBy: Prisma.LocalProductOrderByWithRelationInput =
+      sort === "article"
+        ? { article: direction }
+        : sort === "code"
+          ? { code: direction }
+          : sort === "buyPrice"
+            ? { buyPriceCents: direction }
+            : sort === "salePrice"
+              ? { salePriceCents: direction }
+              : sort === "updatedAt"
+                ? { updatedAt: direction }
+                : { name: direction };
+    const [count, products, options] = await Promise.all([
+      prisma.localProduct.count({ where }),
+      prisma.localProduct.findMany({
+        where,
+        include: productWithStockInclude,
+        orderBy: [orderBy, { name: "asc" }],
+        skip: offset,
+        take: limit,
+      }),
+      getProductFilterOptions(searchQuery, params.includeArchived),
+    ]);
+    total = count;
+    pageProducts = products.map(mapProduct);
+    filterOptions = options;
+  } else {
+    const allRows = await getProductRowsForAdmin(params.includeArchived);
+    const [filteredProducts, options] = await Promise.all([
+      Promise.resolve(
+        allRows
+          .filter((row) => rowMatchesSearch(row, searchQuery))
+          .filter((row) => rowMatchesProductFilters(row, params))
+          .sort((a, b) => compareProductsForSearch(a, b, searchQuery, sort, direction))
+      ),
+      getProductFilterOptions(searchQuery, params.includeArchived),
+    ]);
+    total = filteredProducts.length;
+    pageProducts = filteredProducts.slice(offset, offset + limit);
+    filterOptions = options;
+  }
+  const hasMore = offset + limit < total;
   return {
     meta: {
-      total: sortedProducts.length,
+      total,
       hasMore,
       limit,
       offset,
@@ -2294,36 +2413,49 @@ export async function listLocalAdminCounterparties(params: {
   const shipments = normalizePresenceFilter(params.shipments);
   const sort = normalizeCounterpartySort(params.sort);
   const direction = normalizeSortDirection(params.direction);
-  const counterpartyRows = await getCounterpartyRowsForAdmin(status !== "active");
-  const rows = searchQuery.normalized
-    ? [...counterpartyRows, ...(await getSupplierCounterpartyRows(counterpartyRows, status !== "active"))]
-    : counterpartyRows;
-  const [enrichedBaseRows, snapshotRows] = await Promise.all([
-    enrichCounterpartyRows(rows),
-    getDemandSnapshotCounterpartyRows(counterpartyRows),
+  const where: Prisma.LocalCounterpartyWhereInput = {
+    ...(status === "active" ? { archived: false } : status === "archive" ? { archived: true } : {}),
+    ...(type === "individual" ? { companyType: "individual" } : type === "company" ? { NOT: { companyType: "individual" } } : {}),
+    ...(phone === "with"
+      ? { AND: [{ phone: { not: null } }, { NOT: { phone: "" } }] }
+      : phone === "without"
+        ? { OR: [{ phone: null }, { phone: "" }] }
+        : {}),
+    ...(searchQuery.normalized
+      ? {
+          OR: [
+            { name: { contains: searchQuery.normalized, mode: "insensitive" } },
+            { phone: { contains: searchQuery.normalized, mode: "insensitive" } },
+            { email: { contains: searchQuery.normalized, mode: "insensitive" } },
+            { legalTitle: { contains: searchQuery.normalized, mode: "insensitive" } },
+            { inn: { contains: searchQuery.normalized, mode: "insensitive" } },
+            { searchText: { contains: searchQuery.normalized, mode: "insensitive" } },
+            ...(searchQuery.compact ? [{ normalizedPhone: { contains: searchQuery.compact, mode: "insensitive" as const } }] : []),
+          ],
+        }
+      : {}),
+  };
+  const orderBy: Prisma.LocalCounterpartyOrderByWithRelationInput =
+    sort === "createdAt" ? { createdAt: direction } : sort === "updatedAt" ? { updatedAt: direction } : { name: direction };
+  const [total, baseRows, stats] = await Promise.all([
+    prisma.localCounterparty.count({ where }),
+    prisma.localCounterparty.findMany({
+      where,
+      orderBy: [orderBy, { name: "asc" }],
+      skip: offset,
+      take: limit,
+    }),
+    fastCounterpartyStats(),
   ]);
-  const enrichedRows = [...enrichedBaseRows, ...snapshotRows];
-  const filteredCounterparties = enrichedRows
-    .filter((row) => {
-      if (status === "active" && row.archived) return false;
-      if (status === "archive" && !row.archived) return false;
-      if (type === "individual" && row.companyType !== "individual") return false;
-      if (type === "company" && row.companyType === "individual") return false;
-      if (phone === "with" && !row.phone && !row.additionalPhone) return false;
-      if (phone === "without" && (row.phone || row.additionalPhone)) return false;
-      if (requisites === "with" && !hasCounterpartyRequisites(row)) return false;
-      if (requisites === "without" && hasCounterpartyRequisites(row)) return false;
-      if (shipments === "with" && row.demandCount === 0) return false;
-      if (shipments === "without" && row.demandCount > 0) return false;
-      return counterpartyMatchesSearch(row, searchQuery);
-    })
-    .sort((a, b) => compareCounterparties(a, b, searchQuery, sort, direction));
-  const allRowsForStats = await getCounterpartyRowsForAdmin(true);
-  const allSnapshotRowsForStats = await getDemandSnapshotCounterpartyRows(allRowsForStats);
+  let filteredCounterparties = await enrichCounterpartyRows(baseRows.map(mapCounterparty));
+  if (requisites === "with") filteredCounterparties = filteredCounterparties.filter(hasCounterpartyRequisites);
+  if (requisites === "without") filteredCounterparties = filteredCounterparties.filter((row) => !hasCounterpartyRequisites(row));
+  if (shipments === "with") filteredCounterparties = filteredCounterparties.filter((row) => row.demandCount > 0);
+  if (shipments === "without") filteredCounterparties = filteredCounterparties.filter((row) => row.demandCount === 0);
   return {
-    meta: { total: filteredCounterparties.length, limit, offset },
-    stats: counterpartyStats([...allRowsForStats, ...allSnapshotRowsForStats]),
-    counterparties: filteredCounterparties.slice(offset, offset + limit),
+    meta: { total, limit, offset },
+    stats,
+    counterparties: filteredCounterparties,
   };
 }
 
