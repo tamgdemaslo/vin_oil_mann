@@ -141,17 +141,103 @@ export const NODE_TAGS: Record<string, TagDef[]> = {
   survey_sparks: [{ code: "sparks_unknown", label: "Неизвестно когда менялись" }],
 };
 
-function humanizeTagCode(code: string): string {
-  const text = code
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!text) return "Без названия";
-  return text.charAt(0).toUpperCase() + text.slice(1);
+const TAG_FALLBACK_LABELS: Record<string, string> = {
+  burnt_smell: "Запах гари",
+  slight_dark: "Лёгкое потемнение",
+  heavy_dark: "Сильное потемнение",
+  dark: "Потемнение",
+  dirty: "Загрязнён",
+  old_year: "Не менялся больше года",
+  unknown: "Неизвестно когда менялись",
+  low: "Низкий уровень",
+  leak: "Подтёки",
+  leaks: "Подтёки",
+  rust: "Коррозия",
+  noise: "Шум",
+  empty: "Пустой бачок",
+  metal_particles: "Блёстки металла",
+  metal_shavings: "Металлическая стружка",
+  emulsion: "Эмульсия",
+  grinding: "Хруст при включении",
+  crack: "Трещины",
+  pads_low: "Износ колодок",
+  disc_rust: "Коррозия дисков",
+};
+
+const TAG_PREFIXES_TO_DROP = [
+  ...ALL_NODES.map((node) => node.node),
+  "atf",
+  "mtf",
+  "diff",
+  "tc",
+  "bf",
+  "ps",
+  "cv",
+  "cabin",
+  "air",
+  "sparks",
+  "oil",
+  "coolant",
+  "washer",
+  "leak",
+];
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function tagLookupCandidates(node: string, code: string): string[] {
+  const normalized = code.trim().toLowerCase().replace(/[-\s]+/g, "_");
+  const candidates = [normalized];
+  for (const prefix of TAG_PREFIXES_TO_DROP) {
+    const normalizedPrefix = prefix.toLowerCase();
+    if (normalized.startsWith(`${normalizedPrefix}_`)) {
+      candidates.push(normalized.slice(normalizedPrefix.length + 1));
+    }
+  }
+  const nodeParts = node.split("_").filter(Boolean);
+  const nodeTail = nodeParts[nodeParts.length - 1];
+  if (nodeTail && normalized.startsWith(`${nodeTail}_`)) {
+    candidates.push(normalized.slice(nodeTail.length + 1));
+  }
+  return uniqueStrings(candidates);
+}
+
+function findTagLabelForNode(node: string, code: string): string | undefined {
+  const tags = NODE_TAGS[node] ?? [];
+  const candidates = tagLookupCandidates(node, code);
+  const nodeTag = tags.find((tag) =>
+    candidates.some((candidate) => (
+      tag.code === candidate ||
+      tag.code.endsWith(`_${candidate}`) ||
+      candidate.endsWith(`_${tag.code}`)
+    ))
+  );
+  if (nodeTag) return nodeTag.label;
+  return Object.values(NODE_TAGS).flat().find((tag) =>
+    candidates.some((candidate) => (
+      tag.code === candidate ||
+      tag.code.endsWith(`_${candidate}`) ||
+      candidate.endsWith(`_${tag.code}`)
+    ))
+  )?.label;
+}
+
+function humanizeTagCode(node: string, code: string): string {
+  const candidates = tagLookupCandidates(node, code);
+  for (const candidate of candidates) {
+    if (TAG_FALLBACK_LABELS[candidate]) return TAG_FALLBACK_LABELS[candidate];
+    const parts = candidate.split("_");
+    for (let index = 0; index < parts.length; index += 1) {
+      const tail = parts.slice(index).join("_");
+      if (TAG_FALLBACK_LABELS[tail]) return TAG_FALLBACK_LABELS[tail];
+    }
+  }
+  return "Дополнительный признак";
 }
 
 export function tagLabelForNode(node: string, code: string): string {
-  return NODE_TAGS[node]?.find((tag) => tag.code === code)?.label ?? humanizeTagCode(code);
+  return findTagLabelForNode(node, code) ?? humanizeTagCode(node, code);
 }
 
 export function tagLabelsForNode(node: string, codes: string[]): string[] {

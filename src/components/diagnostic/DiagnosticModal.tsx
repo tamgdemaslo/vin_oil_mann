@@ -160,12 +160,15 @@ type DiagnosticActionPanelProps = {
   canSummary: boolean;
   liveOffers: DiagnosticLiveOffer[];
   reportUrl: string | null;
+  reportActionsDisabled: boolean;
   quickActions: DiagnosticQuickActions;
   onAddLiveOffer: (offer: DiagnosticLiveOffer, variantIndex: number) => void;
   onSetOfferDecision: (key: string, decision: OfferDecision) => void;
   onSummary: () => void;
   onComplete: () => void;
   onCopyReportLink: () => void;
+  onOpenReport: () => void;
+  onPrintReport: () => void;
   compact?: boolean;
 };
 
@@ -697,21 +700,48 @@ export function DiagnosticModal({
     }
   };
 
-  const copyReportLink = async () => {
-    if (!activeId) return;
+  const getReportLink = async (): Promise<string | null> => {
+    if (!activeId) return null;
     const res = await fetch(`/api/diagnostic/${activeId}/report-link`, { method: "POST" });
     const json = await responseJson<{ error?: string; reportUrl?: string }>(res);
     if (!res.ok) {
       setToast(json.error ?? "Ошибка");
-      return;
+      return null;
     }
     setReportUrl(json.reportUrl ?? null);
+    return json.reportUrl ?? null;
+  };
+
+  const copyReportLink = async () => {
+    const url = await getReportLink();
+    if (!url) return;
     try {
-      await navigator.clipboard.writeText(json.reportUrl ?? "");
+      await navigator.clipboard.writeText(url);
       setToast("Ссылка для клиента скопирована в буфер обмена");
     } catch {
-      setToast(`Ссылка: ${json.reportUrl}`);
+      setToast(`Ссылка: ${url}`);
     }
+  };
+
+  const openClientReport = async () => {
+    if (data?.status !== "COMPLETED") {
+      setToast("Завершите диагностику перед открытием отчёта");
+      return;
+    }
+    const url = await getReportLink();
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const printClientReport = async () => {
+    if (data?.status !== "COMPLETED") {
+      setToast("Завершите диагностику перед печатью");
+      return;
+    }
+    const url = await getReportLink();
+    if (!url) return;
+    const separator = url.includes("?") ? "&" : "?";
+    window.open(`${url}${separator}print=1`, "_blank", "noopener,noreferrer");
   };
 
   const createCrmReminders = useCallback(
@@ -1121,6 +1151,7 @@ export function DiagnosticModal({
                 canSummary={canSummary}
                 liveOffers={liveOffers}
                 reportUrl={reportUrl}
+                reportActionsDisabled={data?.status !== "COMPLETED"}
                 quickActions={{
                   filterMode: quickFilterMode,
                   onFilterModeChange: setQuickFilterMode,
@@ -1140,12 +1171,15 @@ export function DiagnosticModal({
                 onSummary={() => void goSummary()}
                 onComplete={() => void completeDiagnostic()}
                 onCopyReportLink={() => void copyReportLink()}
+                onOpenReport={() => void openClientReport()}
+                onPrintReport={() => void printClientReport()}
               />
               <DiagnosticMobileActionBar
                 stats={stats}
                 canSummary={canSummary}
                 liveOffers={liveOffers}
                 reportUrl={reportUrl}
+                reportActionsDisabled={data?.status !== "COMPLETED"}
                 quickActions={{
                   filterMode: quickFilterMode,
                   onFilterModeChange: setQuickFilterMode,
@@ -1165,6 +1199,8 @@ export function DiagnosticModal({
                 onSummary={() => void goSummary()}
                 onComplete={() => void completeDiagnostic()}
                 onCopyReportLink={() => void copyReportLink()}
+                onOpenReport={() => void openClientReport()}
+                onPrintReport={() => void printClientReport()}
               />
             </div>
           ) : nav.screen === "block" ? (
@@ -1192,13 +1228,16 @@ export function DiagnosticModal({
               selectedOffers={selectedOffers}
               setSelectedOffers={setSelectedOffers}
               reportUrl={reportUrl}
+              reportActionsDisabled={data?.status !== "COMPLETED"}
               crmReminderPositionIds={crmReminderPositionIds}
               crmReminderLoading={crmReminderLoading}
               onBack={() => setNav({ screen: "quick" })}
               onAddShipment={addOffersToShipment}
               onCreateReminders={(positionIds) => void createCrmReminders(positionIds)}
               onCopyReportLink={copyReportLink}
-              onSendReportLater={() => setToast("Отправку можно сделать позже: ссылка отчёта сохранена в сводке")}
+              onOpenReport={openClientReport}
+              onPrintReport={printClientReport}
+              onSendReportLater={() => setToast("Ссылку отчёта можно скопировать позже из сводки")}
               onComplete={completeDiagnostic}
             />
           )}
@@ -1941,7 +1980,7 @@ function DiagnosticActionPanel(props: DiagnosticActionPanelProps) {
               {props.reportUrl}
             </a>
           ) : (
-            <span>Будет создана при отправке отчёта</span>
+            <span>Будет создана после завершения диагностики</span>
           )}
         </section>
       )}
@@ -2025,7 +2064,30 @@ function DiagnosticActionPanel(props: DiagnosticActionPanelProps) {
           <CheckCircle2 className="eco-icon" aria-hidden />
           Завершить
         </EcoButton>
-        <EcoButton type="button" onClick={props.onCopyReportLink}>
+        <EcoButton
+          type="button"
+          onClick={props.onOpenReport}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед открытием отчёта" : undefined}
+        >
+          <Eye className="eco-icon" aria-hidden />
+          Открыть отчёт
+        </EcoButton>
+        <EcoButton
+          type="button"
+          onClick={props.onPrintReport}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед печатью" : undefined}
+        >
+          <FileText className="eco-icon" aria-hidden />
+          Печать отчёта
+        </EcoButton>
+        <EcoButton
+          type="button"
+          onClick={props.onCopyReportLink}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед копированием ссылки" : undefined}
+        >
           <ClipboardCheck className="eco-icon" aria-hidden />
           Скопировать ссылку отчёта
         </EcoButton>
@@ -2911,12 +2973,15 @@ function SummaryScreen(props: {
   selectedOffers: Record<string, number>;
   setSelectedOffers: import("react").Dispatch<import("react").SetStateAction<Record<string, number>>>;
   reportUrl: string | null;
+  reportActionsDisabled: boolean;
   crmReminderPositionIds: string[];
   crmReminderLoading: boolean;
   onBack: () => void;
   onAddShipment: () => void;
   onCreateReminders: (positionIds?: string[]) => void;
   onCopyReportLink: () => void;
+  onOpenReport: () => void;
+  onPrintReport: () => void;
   onSendReportLater: () => void;
   onComplete: () => void;
 }) {
@@ -3117,7 +3182,7 @@ function SummaryScreen(props: {
             </span>
           </div>
           <p>
-            Клиент увидит проблемные пункты, рекомендации мастера и фото. Отправку можно сделать позже, ссылка уже доступна после завершения.
+            Клиент увидит проблемные пункты, рекомендации мастера и фото. Ссылка доступна после завершения диагностики.
           </p>
           {props.reportUrl ? (
             <a href={props.reportUrl} target="_blank" rel="noreferrer">
@@ -3128,13 +3193,39 @@ function SummaryScreen(props: {
           )}
         </div>
         <div className="eco-diagnostic-report-actions">
-          <EcoButton type="button" onClick={props.onCopyReportLink} size="sm">
+          <EcoButton
+            type="button"
+            onClick={props.onOpenReport}
+            disabled={props.reportActionsDisabled}
+            title={props.reportActionsDisabled ? "Завершите диагностику перед открытием отчёта" : undefined}
+            size="sm"
+          >
+            <Eye className="eco-icon" aria-hidden />
+            Открыть отчёт
+          </EcoButton>
+          <EcoButton
+            type="button"
+            onClick={props.onPrintReport}
+            disabled={props.reportActionsDisabled}
+            title={props.reportActionsDisabled ? "Завершите диагностику перед печатью" : undefined}
+            size="sm"
+          >
+            <FileText className="eco-icon" aria-hidden />
+            Печать отчёта
+          </EcoButton>
+          <EcoButton
+            type="button"
+            onClick={props.onCopyReportLink}
+            disabled={props.reportActionsDisabled}
+            title={props.reportActionsDisabled ? "Завершите диагностику перед копированием ссылки" : undefined}
+            size="sm"
+          >
             <ClipboardCheck className="eco-icon" aria-hidden />
             Копировать ссылку
           </EcoButton>
           <EcoButton type="button" onClick={props.onSendReportLater} variant="ghost" size="sm">
             <FileText className="eco-icon" aria-hidden />
-            Отправить позже
+            Скопировать позже
           </EcoButton>
         </div>
       </section>
@@ -3160,9 +3251,29 @@ function SummaryScreen(props: {
         <EcoButton
           type="button"
           onClick={props.onCopyReportLink}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед копированием ссылки" : undefined}
         >
           <ClipboardCheck className="eco-icon" aria-hidden />
           Скопировать ссылку отчёта
+        </EcoButton>
+        <EcoButton
+          type="button"
+          onClick={props.onOpenReport}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед открытием отчёта" : undefined}
+        >
+          <Eye className="eco-icon" aria-hidden />
+          Открыть отчёт
+        </EcoButton>
+        <EcoButton
+          type="button"
+          onClick={props.onPrintReport}
+          disabled={props.reportActionsDisabled}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед печатью" : undefined}
+        >
+          <FileText className="eco-icon" aria-hidden />
+          Печать отчёта
         </EcoButton>
         <EcoButton
           type="button"
