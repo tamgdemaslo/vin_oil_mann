@@ -17,6 +17,10 @@ export type VehicleHints = {
   hasAtf?: boolean;
   /** Ручная КПП — показывать масло МКПП */
   hasManualGearbox?: boolean;
+  /** Чистый EV — не показывать узлы ДВС */
+  electric?: boolean;
+  /** Гибрид — ДВС остаётся применимым */
+  hybrid?: boolean;
 };
 
 export type CatalogNode = {
@@ -63,13 +67,15 @@ export const ALL_NODES: CatalogNode[] = [
 
 export function filterNodesForVehicle(hints?: VehicleHints): CatalogNode[] {
   const h = hints ?? {};
-  const awd = h.awd !== false;
-  const hasAtf = h.hasAtf !== false;
-  const hasManual = h.hasManualGearbox !== false;
+  const awd = h.awd === true;
+  const hasAtf = h.hasAtf === true;
+  const hasManual = h.hasManualGearbox === true;
+  const pureElectric = h.electric === true && h.hybrid !== true;
   return ALL_NODES.filter((n) => {
     if (n.node === "atf") return hasAtf;
     if (n.node === "mtf") return hasManual;
     if (n.node === "front_diff" || n.node === "rear_diff" || n.node === "transfer_case") return awd;
+    if (pureElectric && (n.node === "engine_oil" || n.node === "survey_sparks")) return false;
     return true;
   });
 }
@@ -135,9 +141,26 @@ export const NODE_TAGS: Record<string, TagDef[]> = {
   survey_sparks: [{ code: "sparks_unknown", label: "Неизвестно когда менялись" }],
 };
 
+function humanizeTagCode(code: string): string {
+  const text = code
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "Без названия";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export function tagLabelForNode(node: string, code: string): string {
+  return NODE_TAGS[node]?.find((tag) => tag.code === code)?.label ?? humanizeTagCode(code);
+}
+
+export function tagLabelsForNode(node: string, codes: string[]): string[] {
+  return codes.map((code) => tagLabelForNode(node, code));
+}
+
 export const RECOMMENDATION_PRESETS: Record<string, string[]> = {
   default: ["Замена при следующем визите", "Контроль через 5000 км", "Рекомендуем записаться на сервис"],
-  atf: ["Аппаратная замена ATF", "Частичная замена ATF", "Диагностика АКПП"],
+  atf: ["Частичная замена ATF", "Аппаратная замена ATF", "Диагностика АКПП"],
   engine_oil: ["Замена масла и фильтра", "Доливка и контроль"],
 };
 
@@ -226,8 +249,9 @@ export const SURVEY_NEXT_VISIT_OFFERS: Partial<Record<string, OfferTemplate>> = 
 
 export function countFilledPositions(
   positions: { status: string }[],
-  totalNodes: number
+  _totalNodes: number
 ): { green: number; yellow: number; red: number; filled: number } {
+  void _totalNodes;
   let green = 0,
     yellow = 0,
     red = 0,

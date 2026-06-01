@@ -22,6 +22,7 @@ import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -1426,6 +1427,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       const plateStr = attrVal("гос") || attrVal("номер");
       const mileageStr = attrVal("пробег");
       const dec = vinLookupResult?.decoded;
+      const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
 
       let diagId = diagnosticRowId;
       const existingRes = await fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
@@ -1449,6 +1451,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
             licensePlate: plateStr || null,
             mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+            vehicleHints,
           }),
         });
         const createJson = await safeJson<DiagnosticCreateJson>(createRes, {});
@@ -1457,6 +1460,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           return;
         }
         diagId = createJson.diagnosticId as string;
+      }
+
+      if (diagId && Object.keys(vehicleHints).length > 0) {
+        await fetch(`/api/diagnostic/${diagId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vehicleHints }),
+        });
       }
 
       setDiagnosticRowId(diagId);

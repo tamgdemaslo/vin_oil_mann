@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
-import path from "path";
 import { prisma } from "@/lib/db";
+import { mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
 
 export async function GET(
   _request: NextRequest,
@@ -22,18 +22,9 @@ export async function GET(
 
   try {
     const buf = await fs.readFile(photo.filePath);
-    const ext = path.extname(photo.filePath).toLowerCase();
-    const mime =
-      ext === ".png"
-        ? "image/png"
-        : ext === ".webp"
-          ? "image/webp"
-          : ext === ".gif"
-            ? "image/gif"
-            : "image/jpeg";
     return new NextResponse(buf, {
       headers: {
-        "Content-Type": mime,
+        "Content-Type": mimeFromDiagnosticPhotoPath(photo.filePath),
         "Cache-Control": "public, max-age=86400",
       },
     });

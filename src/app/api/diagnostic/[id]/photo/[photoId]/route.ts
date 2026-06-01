@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import { prisma } from "@/lib/db";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
-import { deletePhotoFile } from "@/lib/diagnostic-photos";
+import { deletePhotoFile, mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
 
 export async function GET(
   _request: NextRequest,
@@ -21,7 +21,7 @@ export async function GET(
     const buf = await fs.readFile(photo.filePath);
     return new NextResponse(buf, {
       headers: {
-        "Content-Type": "image/jpeg",
+        "Content-Type": mimeFromDiagnosticPhotoPath(photo.filePath),
         "Cache-Control": "private, max-age=3600",
       },
     });

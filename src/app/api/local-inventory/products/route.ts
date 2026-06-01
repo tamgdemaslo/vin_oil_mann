@@ -5,6 +5,14 @@ import {
   listLocalAdminProducts,
 } from "@/lib/local-inventory-admin";
 
+function readFilterValues(request: NextRequest, key: string) {
+  return request.nextUrl.searchParams
+    .getAll(key)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
@@ -15,14 +23,14 @@ export async function GET(request: NextRequest) {
   const includeArchived = request.nextUrl.searchParams.get("archived") === "1";
   const sort = request.nextUrl.searchParams.get("sort") ?? "";
   const direction = request.nextUrl.searchParams.get("direction") ?? "";
-  const brand = request.nextUrl.searchParams.get("brand") ?? "";
-  const sae = request.nextUrl.searchParams.get("sae") ?? "";
-  const supplier = request.nextUrl.searchParams.get("supplier") ?? "";
-  const group = request.nextUrl.searchParams.get("group") ?? "";
-  const entityType = request.nextUrl.searchParams.get("entityType") ?? "";
-  const apiSpec = request.nextUrl.searchParams.get("apiSpec") ?? "";
-  const acea = request.nextUrl.searchParams.get("acea") ?? "";
-  const packageVolume = request.nextUrl.searchParams.get("packageVolume") ?? "";
+  const brand = readFilterValues(request, "brand");
+  const sae = readFilterValues(request, "sae");
+  const supplier = readFilterValues(request, "supplier");
+  const group = readFilterValues(request, "group");
+  const entityType = readFilterValues(request, "entityType");
+  const apiSpec = readFilterValues(request, "apiSpec");
+  const acea = readFilterValues(request, "acea");
+  const packageVolume = readFilterValues(request, "packageVolume");
   const stock = request.nextUrl.searchParams.get("stock") ?? "";
 
   return NextResponse.json(await listLocalAdminProducts({

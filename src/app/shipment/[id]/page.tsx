@@ -7,6 +7,7 @@ import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -705,6 +706,7 @@ export default function ShipmentDetailPage() {
   const handleOpenDiagnosticDetail = useCallback(async () => {
     if (!id) return;
     let diagId = diagnosticRowId;
+    const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
     if (!diagId) {
       const attrModel = String(
         attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
@@ -734,6 +736,7 @@ export default function ShipmentDetailPage() {
           year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
           licensePlate: plateStr || null,
           mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+          vehicleHints,
         }),
       });
       const cj = await cr.json();
@@ -751,6 +754,13 @@ export default function ShipmentDetailPage() {
         summaryRed: 0,
       });
     }
+    if (diagId && Object.keys(vehicleHints).length > 0) {
+      await fetch(`/api/diagnostic/${diagId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleHints }),
+      });
+    }
     setDiagnosticModalOpen(true);
   }, [
     id,
@@ -758,7 +768,7 @@ export default function ShipmentDetailPage() {
     attributes,
     vin,
     data?.raw,
-    vinLookupResult?.decoded,
+    vinLookupResult,
   ]);
 
   useEffect(() => {

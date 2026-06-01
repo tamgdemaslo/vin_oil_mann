@@ -13,13 +13,14 @@ export async function POST(
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const row = await prisma.diagnostic.update({
+  const row = await prisma.diagnostic.findUnique({
     where: { id },
-    data: { clientReportSentAt: new Date() },
     select: { clientReportToken: true },
   });
+  if (!row) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
 
-  const reportUrl = buildDiagnosticReportUrl(request, row.clientReportToken);
-
-  return NextResponse.json({ reportUrl, token: row.clientReportToken });
+  return NextResponse.json({
+    reportUrl: buildDiagnosticReportUrl(request, row.clientReportToken),
+    token: row.clientReportToken,
+  });
 }

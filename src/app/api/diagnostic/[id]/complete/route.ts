@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ALL_NODES } from "@/data/diagnostic-catalog";
 import { prisma } from "@/lib/db";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 import {
   regenerateOffersForDiagnostic,
   updateDiagnosticSummaryCounts,
 } from "@/lib/diagnostic-regenerate-offers";
+
+type DiagnosticCompleteBlocker = {
+  positionId: string;
+  node: string;
+  nodeLabel: string;
+  reason: "missing_photo" | "missing_required_field";
+  message: string;
+};
+
+function nodeLabel(node: string): string {
+  return ALL_NODES.find((item) => item.node === node)?.title ?? node;
+}
 
 export async function POST(
   _request: NextRequest,
@@ -23,16 +36,38 @@ export async function POST(
     where: { diagnosticId: id },
     include: { photos: true },
   });
-  for (const p of positions) {
-    if ((p.status === "YELLOW" || p.status === "RED") && p.photos.length < 1) {
-      return NextResponse.json(
-        {
-          error:
-            "Завершить нельзя: для жёлтых/красных позиций нужно хотя бы одно фото. Проверьте узлы в модалке.",
-        },
-        { status: 400 }
-      );
+
+  const blockers: DiagnosticCompleteBlocker[] = [];
+  for (const position of positions) {
+    const label = nodeLabel(position.node);
+    if ((position.status === "YELLOW" || position.status === "RED") && position.photos.length < 1) {
+      blockers.push({
+        positionId: position.id,
+        node: position.node,
+        nodeLabel: label,
+        reason: "missing_photo",
+        message: `${label} — нет фото`,
+      });
     }
+    if (position.status === "SKIPPED" && !position.notes?.trim()) {
+      blockers.push({
+        positionId: position.id,
+        node: position.node,
+        nodeLabel: label,
+        reason: "missing_required_field",
+        message: `${label} — укажите причину пропуска`,
+      });
+    }
+  }
+
+  if (blockers.length > 0) {
+    return NextResponse.json(
+      {
+        error: "Завершить нельзя: есть незаполненные требования",
+        blockers,
+      },
+      { status: 400 }
+    );
   }
 
   await updateDiagnosticSummaryCounts(id);

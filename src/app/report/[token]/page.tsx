@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ALL_NODES } from "@/data/diagnostic-catalog";
+import { ALL_NODES, tagLabelsForNode } from "@/data/diagnostic-catalog";
 
 type PublicPayload = {
   header: {
@@ -133,7 +133,7 @@ export default function ClientReportPage() {
             </div>
             {p.tags.length > 0 && (
               <div className="flex flex-wrap gap-1 px-4 pb-2">
-                {p.tags.map((t) => (
+                {tagLabelsForNode(p.node, p.tags).slice(0, 5).map((t) => (
                   <span
                     key={t}
                     className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800"
@@ -141,6 +141,18 @@ export default function ClientReportPage() {
                     {t}
                   </span>
                 ))}
+                {p.tags.length > 5 && (
+                  <details className="w-full text-xs text-zinc-500">
+                    <summary className="cursor-pointer py-1 font-semibold">Ещё {p.tags.length - 5}</summary>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {tagLabelsForNode(p.node, p.tags).slice(5).map((t) => (
+                        <span key={t} className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
             {p.recommendation && (

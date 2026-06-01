@@ -26,6 +26,14 @@ export function safeExtFromMime(mime: string): string {
   return "jpg";
 }
 
+export function mimeFromDiagnosticPhotoPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  return "image/jpeg";
+}
+
 export function deletePhotoFile(filePath: string): void {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);

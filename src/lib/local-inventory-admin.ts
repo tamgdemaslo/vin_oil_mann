@@ -67,6 +67,44 @@ const productWithStockInclude = {
     orderBy: { createdAt: "asc" as const },
   },
 } satisfies Prisma.LocalProductInclude;
+const productListIndexSelect = {
+  id: true,
+  moyskladId: true,
+  name: true,
+  article: true,
+  code: true,
+  externalCode: true,
+  groupPath: true,
+  entityType: true,
+  salePriceCents: true,
+  buyPriceCents: true,
+  barcodeEan13: true,
+  barcodeEan8: true,
+  barcodeCode128: true,
+  description: true,
+  supplierName: true,
+  sae: true,
+  oem: true,
+  acea: true,
+  apiSpec: true,
+  packageVolume: true,
+  brand: true,
+  atf: true,
+  ilsac: true,
+  aceaExtra: true,
+  oemAtf: true,
+  mannName: true,
+  rosskoPartNumber: true,
+  rosskoBrand: true,
+  rosskoMin: true,
+  supplierAttribute: true,
+  oemParts: true,
+  cell: true,
+  mannCharacteristicName: true,
+  searchText: true,
+  archived: true,
+  updatedAt: true,
+} satisfies Prisma.LocalProductSelect;
 const restockProductInclude = {
   stockBalances: { include: { store: true }, orderBy: { store: { name: "asc" as const } } },
 } satisfies Prisma.LocalProductInclude;
@@ -150,6 +188,7 @@ type ActingUser = {
 };
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof productWithStockInclude }>;
+type ProductListIndexProduct = Prisma.LocalProductGetPayload<{ select: typeof productListIndexSelect }>;
 type RestockProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof restockProductInclude }>;
 const supplierInvoiceInclude = {
   document: {
@@ -293,6 +332,28 @@ function tokenCanMatchInside(token: string): boolean {
   return token.length >= 5 || /\d/.test(token);
 }
 
+function commonPrefixLength(a: string, b: string) {
+  const max = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < max && a[index] === b[index]) index += 1;
+  return index;
+}
+
+function tokenStemMatches(token: string, textToken: string) {
+  if (!/^\p{L}+$/u.test(token) || !/^\p{L}+$/u.test(textToken)) return false;
+  const minLength = Math.min(token.length, textToken.length);
+  if (minLength < 6) return false;
+  return commonPrefixLength(token, textToken) >= Math.min(6, minLength - 1);
+}
+
+function tokenMatchesTextToken(token: string, textToken: string) {
+  return (
+    textToken.startsWith(token) ||
+    tokenStemMatches(token, textToken) ||
+    (tokenCanMatchInside(token) && textToken.includes(token))
+  );
+}
+
 function normalizedSearchTextMatches(text: string, query: SearchQuery) {
   if (!query.normalized) return true;
   const normalizedText = normalizeSearchText(text);
@@ -309,7 +370,7 @@ function normalizedSearchTextMatches(text: string, query: SearchQuery) {
   }
 
   return query.tokens.every((token) =>
-    textTokens.some((textToken) => textToken.startsWith(token) || (tokenCanMatchInside(token) && textToken.includes(token))) ||
+    textTokens.some((textToken) => tokenMatchesTextToken(token, textToken)) ||
     (tokenCanMatchInside(token) && compactText.includes(token))
   );
 }
@@ -323,7 +384,7 @@ function fieldSearchRank(value: unknown, query: SearchQuery): number | null {
 
   if (normalized === query.normalized || compact === query.compact) return 0;
   if (normalized.startsWith(query.normalized) || compact.startsWith(query.compact)) return 1;
-  if (query.tokens.every((token) => tokens.some((textToken) => textToken.startsWith(token)))) return 2;
+  if (query.tokens.every((token) => tokens.some((textToken) => tokenMatchesTextToken(token, textToken)))) return 2;
   if (query.normalized.length >= 5 && normalized.includes(query.normalized)) return 3;
   if ((query.compact.length >= 5 || /\d/.test(query.compact)) && compact.includes(query.compact)) return 4;
   if (
@@ -639,7 +700,121 @@ function mapProduct(product: ProductWithStock) {
   };
 }
 
+function mapProductSearchRow(
+  product: ProductListIndexProduct,
+  totals: { totalQuantity: number; totalAvailable: number } | undefined
+): ProductSearchRow {
+  return {
+    id: product.id,
+    name: product.name,
+    article: product.article ?? "",
+    code: product.code ?? "",
+    externalCode: product.externalCode ?? "",
+    groupPath: product.groupPath ?? "",
+    entityType: product.entityType,
+    salePrice: product.salePriceCents / 100,
+    buyPrice: product.buyPriceCents == null ? null : product.buyPriceCents / 100,
+    barcodeEan13: product.barcodeEan13 ?? "",
+    barcodeEan8: product.barcodeEan8 ?? "",
+    barcodeCode128: product.barcodeCode128 ?? "",
+    description: product.description ?? "",
+    supplierName: product.supplierName ?? "",
+    sae: product.sae ?? "",
+    oem: product.oem ?? "",
+    acea: product.acea ?? "",
+    apiSpec: product.apiSpec ?? "",
+    packageVolume: product.packageVolume ?? "",
+    brand: product.brand ?? "",
+    atf: product.atf ?? "",
+    ilsac: product.ilsac ?? "",
+    aceaExtra: product.aceaExtra ?? "",
+    oemAtf: product.oemAtf ?? "",
+    mannName: product.mannName ?? "",
+    rosskoPartNumber: product.rosskoPartNumber ?? "",
+    rosskoBrand: product.rosskoBrand ?? "",
+    rosskoMin: product.rosskoMin ?? "",
+    supplierAttribute: product.supplierAttribute ?? "",
+    oemParts: product.oemParts ?? "",
+    cell: product.cell ?? "",
+    mannCharacteristicName: product.mannCharacteristicName ?? "",
+    searchText: product.searchText || buildProductSearchText({
+      name: product.name,
+      article: product.article,
+      code: product.code,
+      externalCode: product.externalCode,
+      groupPath: product.groupPath,
+      barcodeEan13: product.barcodeEan13,
+      barcodeEan8: product.barcodeEan8,
+      barcodeCode128: product.barcodeCode128,
+      description: product.description,
+      supplierName: product.supplierName,
+      sae: product.sae,
+      oem: product.oem,
+      acea: product.acea,
+      apiSpec: product.apiSpec,
+      packageVolume: product.packageVolume,
+      brand: product.brand,
+      atf: product.atf,
+      ilsac: product.ilsac,
+      aceaExtra: product.aceaExtra,
+      oemAtf: product.oemAtf,
+      mannName: product.mannName,
+      rosskoPartNumber: product.rosskoPartNumber,
+      rosskoBrand: product.rosskoBrand,
+      rosskoMin: product.rosskoMin,
+      supplierAttribute: product.supplierAttribute,
+      oemParts: product.oemParts,
+      cell: product.cell,
+      mannCharacteristicName: product.mannCharacteristicName,
+      entityType: product.entityType,
+    }),
+    archived: product.archived,
+    updatedAt: product.updatedAt.toISOString(),
+    totalQuantity: totals?.totalQuantity ?? 0,
+    totalAvailable: totals?.totalAvailable ?? 0,
+  };
+}
+
 type ProductListRow = ReturnType<typeof mapProduct>;
+type ProductSearchRow = Pick<ProductListRow,
+  | "id"
+  | "name"
+  | "article"
+  | "code"
+  | "externalCode"
+  | "groupPath"
+  | "entityType"
+  | "salePrice"
+  | "buyPrice"
+  | "barcodeEan13"
+  | "barcodeEan8"
+  | "barcodeCode128"
+  | "description"
+  | "supplierName"
+  | "sae"
+  | "oem"
+  | "acea"
+  | "apiSpec"
+  | "packageVolume"
+  | "brand"
+  | "atf"
+  | "ilsac"
+  | "aceaExtra"
+  | "oemAtf"
+  | "mannName"
+  | "rosskoPartNumber"
+  | "rosskoBrand"
+  | "rosskoMin"
+  | "supplierAttribute"
+  | "oemParts"
+  | "cell"
+  | "mannCharacteristicName"
+  | "searchText"
+  | "archived"
+  | "updatedAt"
+  | "totalQuantity"
+  | "totalAvailable"
+>;
 type ProductSortKey =
   | "name"
   | "article"
@@ -652,11 +827,30 @@ type ProductSortKey =
   | "updatedAt";
 type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
-type ProductFilterOptions = ReturnType<typeof buildProductFilterOptions>;
-type ProductFilterOptionsCacheEntry = { key: string; expiresAt: number; options: ProductFilterOptions };
-type ProductRowsCacheEntry = { key: string; expiresAt: number; rows: ProductListRow[] };
+type MultiProductFilterValue = string | string[] | undefined;
+type ProductFilterParams = {
+  brand?: MultiProductFilterValue;
+  sae?: MultiProductFilterValue;
+  supplier?: MultiProductFilterValue;
+  group?: MultiProductFilterValue;
+  entityType?: MultiProductFilterValue;
+  apiSpec?: MultiProductFilterValue;
+  acea?: MultiProductFilterValue;
+  packageVolume?: MultiProductFilterValue;
+  stock?: string;
+};
+type ProductFilterOptions = {
+  brands: string[];
+  sae: string[];
+  suppliers: string[];
+  groups: string[];
+  entityTypes: string[];
+  apiSpecs: string[];
+  acea: string[];
+  packageVolumes: string[];
+};
+type ProductRowsCacheEntry = { key: string; expiresAt: number; rows: ProductSearchRow[] };
 type ProductAdminCache = {
-  filterOptions: ProductFilterOptionsCacheEntry | null;
   rows: ProductRowsCacheEntry | null;
 };
 type CounterpartySource = "local" | "supplier" | "snapshot";
@@ -751,7 +945,6 @@ const productSortKeys = new Set<ProductSortKey>([
   "updatedAt",
 ]);
 const ruCollator = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
-const PRODUCT_FILTER_OPTIONS_CACHE_MS = 60_000;
 const PRODUCT_ROWS_CACHE_MS = 60_000;
 const COUNTERPARTY_ROWS_CACHE_MS = 60_000;
 const STORE_ROWS_CACHE_MS = 300_000;
@@ -761,7 +954,7 @@ const LOCAL_RESTOCK_NEEDS_CACHE_MS = 60_000;
 const SUPPLIER_SNAPSHOT_ID_PREFIX = "supplier:";
 const productAdminCache = ((globalThis as typeof globalThis & {
   __localInventoryProductAdminCache?: ProductAdminCache;
-}).__localInventoryProductAdminCache ??= { filterOptions: null, rows: null });
+}).__localInventoryProductAdminCache ??= { rows: null });
 const counterpartyAdminCache = ((globalThis as typeof globalThis & {
   __localInventoryCounterpartyAdminCache?: CounterpartyAdminCache;
 }).__localInventoryCounterpartyAdminCache ??= { rows: null });
@@ -789,8 +982,23 @@ function normalizeStockFilter(value?: string): StockFilter {
   return value === "inStock" || value === "outOfStock" ? value : "all";
 }
 
-function cleanFilter(value?: string): string {
-  return value?.trim() ?? "";
+function cleanFilterValues(value: MultiProductFilterValue): string[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  const seen = new Set<string>();
+  for (const item of values) {
+    for (const part of String(item).split(",")) {
+      const clean = part.trim();
+      if (clean) seen.add(clean);
+    }
+  }
+  return [...seen];
+}
+
+function filterValuesInclude(values: string[], candidate: string | null | undefined) {
+  if (!values.length) return true;
+  const clean = candidate?.trim() ?? "";
+  const normalized = normalizeSearchText(clean);
+  return clean ? values.some((value) => value === clean || normalizeSearchText(value) === normalized) : false;
 }
 
 function uniqueSorted(values: Array<string | null | undefined>, limit = 200) {
@@ -817,11 +1025,11 @@ function compareNullableNumber(a: number | null | undefined, b: number | null | 
   return direction === "asc" ? result : -result;
 }
 
-function productMargin(product: ProductListRow): number | null {
+function productMargin(product: ProductSearchRow): number | null {
   return product.buyPrice == null ? null : product.salePrice - product.buyPrice;
 }
 
-function compareProducts(a: ProductListRow, b: ProductListRow, sort: ProductSortKey, direction: SortDirection) {
+function compareProducts(a: ProductSearchRow, b: ProductSearchRow, sort: ProductSortKey, direction: SortDirection) {
   let result = 0;
   if (sort === "name") result = compareText(a.name, b.name, direction);
   if (sort === "article") result = compareText(a.article || a.code || a.name, b.article || b.code || b.name, direction);
@@ -839,30 +1047,111 @@ function compareProducts(a: ProductListRow, b: ProductListRow, sort: ProductSort
   return compareText(a.name, b.name, "asc");
 }
 
-function buildProductFilterOptions(products: Array<{
-  brand: string | null;
-  sae: string | null;
-  supplierName: string | null;
-  groupPath: string | null;
-  entityType: string;
-  apiSpec: string | null;
-  acea: string | null;
-  packageVolume: string | null;
-}>) {
-  return {
-    brands: uniqueSorted(products.map((product) => product.brand)),
-    sae: uniqueSorted(products.map((product) => product.sae)),
-    suppliers: uniqueSorted(products.map((product) => product.supplierName)),
-    groups: uniqueSorted(products.map((product) => product.groupPath)),
-    entityTypes: uniqueSorted(products.map((product) => product.entityType)),
-    apiSpecs: uniqueSorted(products.map((product) => product.apiSpec)),
-    acea: uniqueSorted(products.map((product) => product.acea)),
-    packageVolumes: uniqueSorted(products.map((product) => product.packageVolume)),
+type ProductFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "packageVolume";
+type ProductFacetOption = { value: string; count: number };
+type ProductFacets = {
+  brands: ProductFacetOption[];
+  sae: ProductFacetOption[];
+  suppliers: ProductFacetOption[];
+  groups: ProductFacetOption[];
+  entityTypes: ProductFacetOption[];
+  apiSpecs: ProductFacetOption[];
+  acea: ProductFacetOption[];
+  packageVolumes: ProductFacetOption[];
+  stock: Record<StockFilter, number>;
+};
+
+function productFacetValue(row: ProductSearchRow, key: ProductFacetKey): string {
+  if (key === "brand") return row.brand;
+  if (key === "sae") return row.sae;
+  if (key === "supplier") return row.supplierName;
+  if (key === "group") return row.groupPath;
+  if (key === "entityType") return row.entityType;
+  if (key === "apiSpec") return row.apiSpec;
+  if (key === "acea") return row.acea;
+  return row.packageVolume;
+}
+
+function facetCollectionKey(key: ProductFacetKey): keyof Omit<ProductFacets, "stock"> {
+  if (key === "brand") return "brands";
+  if (key === "supplier") return "suppliers";
+  if (key === "group") return "groups";
+  if (key === "entityType") return "entityTypes";
+  if (key === "apiSpec") return "apiSpecs";
+  if (key === "packageVolume") return "packageVolumes";
+  return key;
+}
+
+function productFilterValues(params: ProductFilterParams, key: ProductFacetKey): string[] {
+  return cleanFilterValues(params[key]);
+}
+
+function productMatchesFacetFilter(row: ProductSearchRow, params: ProductFilterParams, key: ProductFacetKey) {
+  return filterValuesInclude(productFilterValues(params, key), productFacetValue(row, key));
+}
+
+function facetOptionsFromRows(rows: ProductSearchRow[], key: ProductFacetKey, params: ProductFilterParams) {
+  const selected = new Set(productFilterValues(params, key));
+  const selectedByNormalized = new Map([...selected].map((value) => [normalizeSearchText(value), value]));
+  const counts = new Map<string, { value: string; count: number }>();
+  for (const row of rows) {
+    const value = productFacetValue(row, key).trim();
+    if (!value) continue;
+    const normalized = normalizeSearchText(value);
+    const current = counts.get(normalized);
+    counts.set(normalized, {
+      value: current?.value ?? selectedByNormalized.get(normalized) ?? value,
+      count: (current?.count ?? 0) + 1,
+    });
+  }
+  for (const value of selected) {
+    const normalized = normalizeSearchText(value);
+    if (value && !counts.has(normalized)) counts.set(normalized, { value, count: 0 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => {
+      const selectedDiff =
+        Number(selected.has(b.value) || selectedByNormalized.has(normalizeSearchText(b.value))) -
+        Number(selected.has(a.value) || selectedByNormalized.has(normalizeSearchText(a.value)));
+      if (selectedDiff !== 0) return selectedDiff;
+      const countDiff = b.count - a.count;
+      if (countDiff !== 0) return countDiff;
+      return ruCollator.compare(a.value, b.value);
+    });
+}
+
+function buildProductFacets(searchRows: ProductSearchRow[], params: ProductFilterParams): ProductFacets {
+  const facetKeys: ProductFacetKey[] = ["brand", "sae", "supplier", "group", "entityType", "apiSpec", "acea", "packageVolume"];
+  const result = {
+    brands: [],
+    sae: [],
+    suppliers: [],
+    groups: [],
+    entityTypes: [],
+    apiSpecs: [],
+    acea: [],
+    packageVolumes: [],
+    stock: { all: 0, inStock: 0, outOfStock: 0 },
+  } as ProductFacets;
+
+  for (const key of facetKeys) {
+    const rowsForFacet = searchRows.filter((row) =>
+      facetKeys.every((otherKey) => otherKey === key || productMatchesFacetFilter(row, params, otherKey)) &&
+      rowMatchesProductStockFilter(row, params.stock)
+    );
+    result[facetCollectionKey(key)] = facetOptionsFromRows(rowsForFacet, key, params);
+  }
+
+  const rowsForStock = searchRows.filter((row) => facetKeys.every((key) => productMatchesFacetFilter(row, params, key)));
+  result.stock = {
+    all: rowsForStock.length,
+    inStock: rowsForStock.filter((row) => row.totalAvailable > 0).length,
+    outOfStock: rowsForStock.filter((row) => row.totalAvailable <= 0).length,
   };
+  return result;
 }
 
 export function invalidateProductFilterOptions() {
-  productAdminCache.filterOptions = null;
   productAdminCache.rows = null;
 }
 
@@ -893,14 +1182,29 @@ async function getProductRowsForAdmin(includeArchived?: boolean) {
     return productAdminCache.rows.rows;
   }
 
-  const products = await prisma.localProduct.findMany({
-    where: includeArchived ? {} : { archived: false },
-    include: productWithStockInclude,
-    orderBy: [{ name: "asc" }],
-  });
-  const rows = products.map(mapProduct);
+  const [products, balances] = await Promise.all([
+    prisma.localProduct.findMany({
+      where: includeArchived ? {} : { archived: false },
+      select: productListIndexSelect,
+      orderBy: [{ name: "asc" }],
+    }),
+    prisma.localStockBalance.findMany({
+      select: {
+        productId: true,
+        quantity: true,
+        available: true,
+      },
+    }),
+  ]);
+  const totalsByProduct = new Map<string, { totalQuantity: number; totalAvailable: number }>();
+  for (const balance of balances) {
+    const current = totalsByProduct.get(balance.productId) ?? { totalQuantity: 0, totalAvailable: 0 };
+    current.totalQuantity += decimalToNumber(balance.quantity);
+    current.totalAvailable += decimalToNumber(balance.available);
+    totalsByProduct.set(balance.productId, current);
+  }
+  const rows = products.map((product) => mapProductSearchRow(product, totalsByProduct.get(product.id)));
   productAdminCache.rows = { key, expiresAt: now + PRODUCT_ROWS_CACHE_MS, rows };
-  productAdminCache.filterOptions = null;
   return rows;
 }
 
@@ -913,7 +1217,7 @@ export async function getLocalAdminProduct(id: string) {
   return mapProduct(product);
 }
 
-function productIdentityMatchesSearch(row: ProductListRow, query: SearchQuery) {
+function productIdentityMatchesSearch(row: ProductSearchRow, query: SearchQuery) {
   const identityFields = [
     row.name,
     row.article,
@@ -934,14 +1238,14 @@ function productIdentityMatchesSearch(row: ProductListRow, query: SearchQuery) {
   return identityFields.some((field) => fieldSearchRank(field, query) != null);
 }
 
-function rowMatchesSearch(row: ProductListRow, query: SearchQuery) {
+function rowMatchesSearch(row: ProductSearchRow, query: SearchQuery) {
   if (!query.normalized) return true;
   if (productIdentityMatchesSearch(row, query)) return true;
   const canSearchDeepFields = query.tokens.some(tokenCanMatchInside);
   return canSearchDeepFields && normalizedSearchTextMatches(row.searchText, query);
 }
 
-function productSearchRank(row: ProductListRow, query: SearchQuery) {
+function productSearchRank(row: ProductSearchRow, query: SearchQuery) {
   if (!query.normalized) return 0;
   const weightedFields: Array<[unknown, number]> = [
     [row.article, 0],
@@ -978,8 +1282,8 @@ function productSearchRank(row: ProductListRow, query: SearchQuery) {
 }
 
 function compareProductsForSearch(
-  a: ProductListRow,
-  b: ProductListRow,
+  a: ProductSearchRow,
+  b: ProductSearchRow,
   query: SearchQuery,
   sort: ProductSortKey,
   direction: SortDirection
@@ -991,68 +1295,26 @@ function compareProductsForSearch(
   return compareProducts(a, b, sort, direction);
 }
 
-function rowMatchesProductFilters(row: ProductListRow, params: {
-  brand?: string;
-  sae?: string;
-  supplier?: string;
-  group?: string;
-  entityType?: string;
-  apiSpec?: string;
-  acea?: string;
-  packageVolume?: string;
-  stock?: string;
-}) {
-  const stock = normalizeStockFilter(params.stock);
-  if (cleanFilter(params.brand) && row.brand !== cleanFilter(params.brand)) return false;
-  if (cleanFilter(params.sae) && row.sae !== cleanFilter(params.sae)) return false;
-  if (cleanFilter(params.supplier) && row.supplierName !== cleanFilter(params.supplier)) return false;
-  if (cleanFilter(params.group) && row.groupPath !== cleanFilter(params.group)) return false;
-  if (cleanFilter(params.entityType) && row.entityType !== cleanFilter(params.entityType)) return false;
-  if (cleanFilter(params.apiSpec) && row.apiSpec !== cleanFilter(params.apiSpec)) return false;
-  if (cleanFilter(params.acea) && row.acea !== cleanFilter(params.acea)) return false;
-  if (cleanFilter(params.packageVolume) && row.packageVolume !== cleanFilter(params.packageVolume)) return false;
-  if (stock === "inStock" && row.totalAvailable <= 0) return false;
-  if (stock === "outOfStock" && row.totalAvailable > 0) return false;
+function rowMatchesProductStockFilter(row: ProductSearchRow, value?: string) {
+  const stock = normalizeStockFilter(value);
+  if (stock === "inStock") return row.totalAvailable > 0;
+  if (stock === "outOfStock") return row.totalAvailable <= 0;
   return true;
 }
 
-async function getProductFilterOptions(query: SearchQuery, includeArchived?: boolean) {
-  const key = JSON.stringify({ search: query.normalized, includeArchived: Boolean(includeArchived) });
-  const now = Date.now();
-  if (productAdminCache.filterOptions?.key === key && productAdminCache.filterOptions.expiresAt > now) {
-    return productAdminCache.filterOptions.options;
-  }
-
-  const optionProducts = await prisma.localProduct.findMany({
-    where: {
-      ...(includeArchived ? {} : { archived: false }),
-      ...(query.normalized
-        ? {
-            OR: [
-              { name: { contains: query.normalized, mode: "insensitive" } },
-              { article: { contains: query.normalized, mode: "insensitive" } },
-              { code: { contains: query.normalized, mode: "insensitive" } },
-              { externalCode: { contains: query.normalized, mode: "insensitive" } },
-              { searchText: { contains: query.normalized, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    select: {
-      brand: true,
-      sae: true,
-      supplierName: true,
-      groupPath: true,
-      entityType: true,
-      apiSpec: true,
-      acea: true,
-      packageVolume: true,
-    },
-    take: 10_000,
-  });
-  const options = buildProductFilterOptions(optionProducts);
-  productAdminCache.filterOptions = { key, expiresAt: now + PRODUCT_FILTER_OPTIONS_CACHE_MS, options };
-  return options;
+function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterParams) {
+  const stock = normalizeStockFilter(params.stock);
+  if (!filterValuesInclude(cleanFilterValues(params.brand), row.brand)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.sae), row.sae)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.supplier), row.supplierName)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.group), row.groupPath)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.entityType), row.entityType)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.apiSpec), row.apiSpec)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.acea), row.acea)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.packageVolume), row.packageVolume)) return false;
+  if (stock === "inStock" && row.totalAvailable <= 0) return false;
+  if (stock === "outOfStock" && row.totalAvailable > 0) return false;
+  return true;
 }
 
 function mapCounterparty(counterparty: CounterpartyRow) {
@@ -1707,14 +1969,14 @@ export async function listLocalAdminProducts(params: {
   includeArchived?: boolean;
   sort?: string;
   direction?: string;
-  brand?: string;
-  sae?: string;
-  supplier?: string;
-  group?: string;
-  entityType?: string;
-  apiSpec?: string;
-  acea?: string;
-  packageVolume?: string;
+  brand?: MultiProductFilterValue;
+  sae?: MultiProductFilterValue;
+  supplier?: MultiProductFilterValue;
+  group?: MultiProductFilterValue;
+  entityType?: MultiProductFilterValue;
+  apiSpec?: MultiProductFilterValue;
+  acea?: MultiProductFilterValue;
+  packageVolume?: MultiProductFilterValue;
   stock?: string;
 }) {
   const searchQuery = parseSearchQuery(params.search);
@@ -1722,76 +1984,48 @@ export async function listLocalAdminProducts(params: {
   const offset = Math.max(0, params.offset ?? 0);
   const sort = normalizeProductSort(params.sort);
   const direction = normalizeSortDirection(params.direction);
-  const stock = normalizeStockFilter(params.stock);
-  const canQueryPageDirectly = stock === "all" && sort !== "available" && sort !== "quantity" && sort !== "margin";
-  let total = 0;
-  let pageProducts: ProductListRow[] = [];
-  let filterOptions: ProductFilterOptions;
-
-  if (canQueryPageDirectly) {
-    const where: Prisma.LocalProductWhereInput = {
-      ...(params.includeArchived ? {} : { archived: false }),
-      ...(searchQuery.normalized
-        ? {
-            OR: [
-              { name: { contains: searchQuery.normalized, mode: "insensitive" } },
-              { article: { contains: searchQuery.normalized, mode: "insensitive" } },
-              { code: { contains: searchQuery.normalized, mode: "insensitive" } },
-              { externalCode: { contains: searchQuery.normalized, mode: "insensitive" } },
-              { searchText: { contains: searchQuery.normalized, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-      ...(cleanFilter(params.brand) ? { brand: cleanFilter(params.brand) } : {}),
-      ...(cleanFilter(params.sae) ? { sae: cleanFilter(params.sae) } : {}),
-      ...(cleanFilter(params.supplier) ? { supplierName: cleanFilter(params.supplier) } : {}),
-      ...(cleanFilter(params.group) ? { groupPath: cleanFilter(params.group) } : {}),
-      ...(cleanFilter(params.entityType) ? { entityType: cleanFilter(params.entityType) } : {}),
-      ...(cleanFilter(params.apiSpec) ? { apiSpec: cleanFilter(params.apiSpec) } : {}),
-      ...(cleanFilter(params.acea) ? { acea: cleanFilter(params.acea) } : {}),
-      ...(cleanFilter(params.packageVolume) ? { packageVolume: cleanFilter(params.packageVolume) } : {}),
-    };
-    const orderBy: Prisma.LocalProductOrderByWithRelationInput =
-      sort === "article"
-        ? { article: direction }
-        : sort === "code"
-          ? { code: direction }
-          : sort === "buyPrice"
-            ? { buyPriceCents: direction }
-            : sort === "salePrice"
-              ? { salePriceCents: direction }
-              : sort === "updatedAt"
-                ? { updatedAt: direction }
-                : { name: direction };
-    const [count, products, options] = await Promise.all([
-      prisma.localProduct.count({ where }),
-      prisma.localProduct.findMany({
-        where,
+  const filterParams: ProductFilterParams = {
+    brand: params.brand,
+    sae: params.sae,
+    supplier: params.supplier,
+    group: params.group,
+    entityType: params.entityType,
+    apiSpec: params.apiSpec,
+    acea: params.acea,
+    packageVolume: params.packageVolume,
+    stock: normalizeStockFilter(params.stock),
+  };
+  const allRows = await getProductRowsForAdmin(params.includeArchived);
+  const searchRows = allRows.filter((row) => rowMatchesSearch(row, searchQuery));
+  const facets = buildProductFacets(searchRows, filterParams);
+  const filteredProducts = searchRows
+    .filter((row) => rowMatchesProductFilters(row, filterParams))
+    .sort((a, b) => compareProductsForSearch(a, b, searchQuery, sort, direction));
+  const total = filteredProducts.length;
+  const pageRows = filteredProducts.slice(offset, offset + limit);
+  const pageIds = pageRows.map((row) => row.id);
+  const fullPageProducts = pageIds.length
+    ? await prisma.localProduct.findMany({
+        where: { id: { in: pageIds } },
         include: productWithStockInclude,
-        orderBy: [orderBy, { name: "asc" }],
-        skip: offset,
-        take: limit,
-      }),
-      getProductFilterOptions(searchQuery, params.includeArchived),
-    ]);
-    total = count;
-    pageProducts = products.map(mapProduct);
-    filterOptions = options;
-  } else {
-    const allRows = await getProductRowsForAdmin(params.includeArchived);
-    const [filteredProducts, options] = await Promise.all([
-      Promise.resolve(
-        allRows
-          .filter((row) => rowMatchesSearch(row, searchQuery))
-          .filter((row) => rowMatchesProductFilters(row, params))
-          .sort((a, b) => compareProductsForSearch(a, b, searchQuery, sort, direction))
-      ),
-      getProductFilterOptions(searchQuery, params.includeArchived),
-    ]);
-    total = filteredProducts.length;
-    pageProducts = filteredProducts.slice(offset, offset + limit);
-    filterOptions = options;
-  }
+      })
+    : [];
+  const fullPageById = new Map(fullPageProducts.map((product) => [product.id, mapProduct(product)]));
+  const pageProducts = pageRows.flatMap((row) => {
+    const product = fullPageById.get(row.id);
+    return product ? [product] : [];
+  });
+  const filterOptions: ProductFilterOptions = {
+    brands: facets.brands.map((item) => item.value),
+    sae: facets.sae.map((item) => item.value),
+    suppliers: facets.suppliers.map((item) => item.value),
+    groups: facets.groups.map((item) => item.value),
+    entityTypes: facets.entityTypes.map((item) => item.value),
+    apiSpecs: facets.apiSpecs.map((item) => item.value),
+    acea: facets.acea.map((item) => item.value),
+    packageVolumes: facets.packageVolumes.map((item) => item.value),
+  };
+
   const hasMore = offset + limit < total;
   return {
     meta: {
@@ -1802,17 +2036,18 @@ export async function listLocalAdminProducts(params: {
       sort,
       direction,
       filters: {
-        brand: cleanFilter(params.brand),
-        sae: cleanFilter(params.sae),
-        supplier: cleanFilter(params.supplier),
-        group: cleanFilter(params.group),
-        entityType: cleanFilter(params.entityType),
-        apiSpec: cleanFilter(params.apiSpec),
-        acea: cleanFilter(params.acea),
-        packageVolume: cleanFilter(params.packageVolume),
+        brand: cleanFilterValues(params.brand),
+        sae: cleanFilterValues(params.sae),
+        supplier: cleanFilterValues(params.supplier),
+        group: cleanFilterValues(params.group),
+        entityType: cleanFilterValues(params.entityType),
+        apiSpec: cleanFilterValues(params.apiSpec),
+        acea: cleanFilterValues(params.acea),
+        packageVolume: cleanFilterValues(params.packageVolume),
         stock: normalizeStockFilter(params.stock),
       },
       filterOptions,
+      facets,
     },
     products: pageProducts,
   };

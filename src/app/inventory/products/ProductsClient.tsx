@@ -106,15 +106,32 @@ type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
 
 type ProductFilters = {
-  brand: string;
-  sae: string;
-  supplier: string;
-  group: string;
-  entityType: string;
-  apiSpec: string;
-  acea: string;
-  packageVolume: string;
+  brand: string[];
+  sae: string[];
+  supplier: string[];
+  group: string[];
+  entityType: string[];
+  apiSpec: string[];
+  acea: string[];
+  packageVolume: string[];
   stock: StockFilter;
+};
+
+type ProductFacetOption = {
+  value: string;
+  count: number;
+};
+
+type ProductFacets = {
+  brands: ProductFacetOption[];
+  sae: ProductFacetOption[];
+  suppliers: ProductFacetOption[];
+  groups: ProductFacetOption[];
+  entityTypes: ProductFacetOption[];
+  apiSpecs: ProductFacetOption[];
+  acea: ProductFacetOption[];
+  packageVolumes: ProductFacetOption[];
+  stock: Record<StockFilter, number>;
 };
 
 type ProductFilterOptions = {
@@ -137,6 +154,7 @@ type ProductListMeta = {
   direction: SortDirection;
   filters: ProductFilters;
   filterOptions: ProductFilterOptions;
+  facets?: ProductFacets;
 };
 type ProductListResponse = { meta?: ProductListMeta; products?: ProductRow[]; error?: string };
 
@@ -338,14 +356,14 @@ const sortOptions: Array<{ key: ProductSortKey; label: string; defaultDirection:
 ];
 
 const emptyFilters: ProductFilters = {
-  brand: "",
-  sae: "",
-  supplier: "",
-  group: "",
-  entityType: "",
-  apiSpec: "",
-  acea: "",
-  packageVolume: "",
+  brand: [],
+  sae: [],
+  supplier: [],
+  group: [],
+  entityType: [],
+  apiSpec: [],
+  acea: [],
+  packageVolume: [],
   stock: "all",
 };
 
@@ -360,6 +378,18 @@ const emptyFilterOptions: ProductFilterOptions = {
   packageVolumes: [],
 };
 
+const emptyFacets: ProductFacets = {
+  brands: [],
+  sae: [],
+  suppliers: [],
+  groups: [],
+  entityTypes: [],
+  apiSpecs: [],
+  acea: [],
+  packageVolumes: [],
+  stock: { all: 0, inStock: 0, outOfStock: 0 },
+};
+
 const stockOptions: Array<{ value: StockFilter; label: string }> = [
   { value: "all", label: "Все остатки" },
   { value: "inStock", label: "В наличии" },
@@ -367,9 +397,7 @@ const stockOptions: Array<{ value: StockFilter; label: string }> = [
 ];
 const PRODUCT_PAGE_LIMIT = 50;
 const NEW_GROUP_VALUE = "__new_group__";
-const DEFAULT_GROUP_LABEL = "Моторное масло";
 const BRAND_ORDER = ["Shell", "Mobil", "ZIC", "Total", "Lukoil", "Bardahl", "ELF", "BMW", "Mann", "ZF", "VAG"];
-const PINNED_CATEGORY_LABELS = ["Моторное масло", "Фильтр масляный", "Трансмиссионное", "Расходник"];
 
 async function readJson<T>(res: Response): Promise<T | null> {
   try {
@@ -410,10 +438,6 @@ function normalizedGroupLabel(value: string) {
   return shortGroupLabel(value).toLowerCase().replace(/ё/g, "е").trim();
 }
 
-function findDefaultGroup(groups: string[]) {
-  return groups.find((group) => normalizedGroupLabel(group) === normalizedGroupLabel(DEFAULT_GROUP_LABEL)) ?? "";
-}
-
 function categoryPriority(value: string) {
   const label = normalizedGroupLabel(value);
   if (label === "моторное масло") return 0;
@@ -445,9 +469,55 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-function uniqueSortedStrings(values: string[]) {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, "ru", { numeric: true, sensitivity: "base" }));
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock">;
+type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
+
+const facetLabels: Record<FacetKey, { title: string; search: string; all: string }> = {
+  group: { title: "Категория", search: "Найти категорию", all: "Показать все категории" },
+  brand: { title: "Бренд", search: "Найти бренд", all: "Показать все бренды" },
+  sae: { title: "SAE / Вязкость", search: "Найти вязкость", all: "Показать все вязкости" },
+  supplier: { title: "Поставщик", search: "Найти поставщика", all: "Показать всех поставщиков" },
+  apiSpec: { title: "API", search: "Найти API", all: "Показать все API" },
+  acea: { title: "ACEA", search: "Найти ACEA", all: "Показать все ACEA" },
+  packageVolume: { title: "Фасовка", search: "Найти фасовку", all: "Показать все фасовки" },
+  entityType: { title: "Тип", search: "Найти тип", all: "Показать все типы" },
+};
+
+function facetOptionsKey(key: FacetKey): keyof ProductFacets {
+  if (key === "group") return "groups";
+  if (key === "brand") return "brands";
+  if (key === "supplier") return "suppliers";
+  if (key === "apiSpec") return "apiSpecs";
+  if (key === "packageVolume") return "packageVolumes";
+  if (key === "entityType") return "entityTypes";
+  return key;
+}
+
+function fallbackFilterOptionsKey(key: FacetKey): keyof ProductFilterOptions {
+  if (key === "group") return "groups";
+  if (key === "brand") return "brands";
+  if (key === "supplier") return "suppliers";
+  if (key === "apiSpec") return "apiSpecs";
+  if (key === "packageVolume") return "packageVolumes";
+  if (key === "entityType") return "entityTypes";
+  return key;
+}
+
+function filterLabel(key: FacetKey, value: string) {
+  if (key === "group") return shortGroupLabel(value);
+  if (key === "brand") return displayBrandLabel(value);
+  if (key === "entityType") return entityTypeLabel(value);
+  return value;
+}
+
+function filterPriority(key: FacetKey, value: string) {
+  if (key === "group") return categoryPriority(value);
+  if (key === "brand") return brandPriority(value);
+  return 20;
+}
+
+function selectedFilterValues(filters: ProductFilters, key: FacetKey) {
+  return filters[key as MultiFilterKey];
 }
 
 function usefulProductMetaLines(row: ProductRow) {
@@ -600,13 +670,16 @@ export default function ProductsClient() {
   const [formSearch, setFormSearch] = useState("");
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [newGroupMode, setNewGroupMode] = useState(false);
+  const [facetDialog, setFacetDialog] = useState<FacetKey | null>(null);
+  const [facetDraftValues, setFacetDraftValues] = useState<string[]>([]);
+  const [facetSearch, setFacetSearch] = useState("");
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const listAbortRef = useRef<AbortController | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreTargetRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
-  const defaultGroupAppliedRef = useRef(false);
+  const initialLoadStartedRef = useRef(false);
 
   const editingProduct = useMemo(
     () => activeProduct ?? rows.find((row) => row.id === editingId) ?? null,
@@ -614,34 +687,22 @@ export default function ProductsClient() {
   );
   const editingName = editingProduct?.name ?? "";
   const filterOptions = meta?.filterOptions ?? emptyFilterOptions;
+  const facets = meta?.facets ?? emptyFacets;
   const groupOptions = useMemo(() => {
     const values = new Set(filterOptions.groups);
     const currentGroup = form.groupPath.trim();
     if (currentGroup) values.add(currentGroup);
     return [...values].sort((a, b) => a.localeCompare(b, "ru", { numeric: true, sensitivity: "base" }));
   }, [filterOptions.groups, form.groupPath]);
-  const visibleGroupOptions = useMemo(() => {
-    const pinnedLabels = new Set(PINNED_CATEGORY_LABELS.map((label) => normalizedGroupLabel(label)));
-    const groups = uniqueGroupsByLabel(filterOptions.groups).filter((group) => pinnedLabels.has(normalizedGroupLabel(group)));
-    return groups.sort((a, b) => {
-      const priorityDiff = categoryPriority(a) - categoryPriority(b);
-      if (priorityDiff !== 0) return priorityDiff;
-      return shortGroupLabel(a).localeCompare(shortGroupLabel(b), "ru", { numeric: true, sensitivity: "base" });
-    });
-  }, [filterOptions.groups]);
-  const visibleBrandOptions = useMemo(() => {
-    const brands = uniqueSortedStrings(filterOptions.brands.concat(filters.brand)).filter((brand) => brand !== "-");
-    return brands.sort((a, b) => {
-      const priorityDiff = brandPriority(a) - brandPriority(b);
-      if (priorityDiff !== 0) return priorityDiff;
-      return a.localeCompare(b, "ru", { numeric: true, sensitivity: "base" });
-    });
-  }, [filterOptions.brands, filters.brand]);
 
   const activeFiltersCount = useMemo(
-    () => Object.entries(filters).filter(([key, value]) => key === "stock" ? value !== "all" : Boolean(value)).length,
+    () => Object.entries(filters).reduce((count, [key, value]) => {
+      if (key === "stock") return count + (value !== "all" ? 1 : 0);
+      return count + (Array.isArray(value) ? value.length : 0);
+    }, 0),
     [filters]
   );
+  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0;
   const formDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(formBaseline),
     [form, formBaseline]
@@ -684,9 +745,10 @@ export default function ProductsClient() {
     params.set("direction", nextDirection);
     for (const [key, value] of Object.entries(nextFilters)) {
       if (key === "stock") {
-        if (value !== "all") params.set(key, value);
-      } else if (value) {
-        params.set(key, value);
+        const stockValue = value as StockFilter;
+        if (stockValue !== "all") params.set(key, stockValue);
+      } else if (Array.isArray(value)) {
+        value.filter(Boolean).forEach((item) => params.append(key, item));
       }
     }
     return params;
@@ -713,7 +775,8 @@ export default function ProductsClient() {
       setMeta(data?.meta ?? null);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : String(e));
+      console.error("[inventory-products] list load failed:", e);
+      setError("Не удалось выполнить поиск");
       setRows([]);
       setMeta(null);
     } finally {
@@ -747,7 +810,8 @@ export default function ProductsClient() {
       setMeta(data?.meta ?? null);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : String(e));
+      console.error("[inventory-products] load more failed:", e);
+      setError("Не удалось выполнить поиск");
     } finally {
       if (loadMoreAbortRef.current === controller) {
         loadMoreAbortRef.current = null;
@@ -758,24 +822,21 @@ export default function ProductsClient() {
   }
 
   useEffect(() => {
-    void load(initialSearch);
     return () => {
       listAbortRef.current?.abort();
       loadMoreAbortRef.current?.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (defaultGroupAppliedRef.current || !filterOptions.groups.length || filters.group || search.trim()) return;
-    const defaultGroup = findDefaultGroup(filterOptions.groups);
-    if (!defaultGroup) return;
-    defaultGroupAppliedRef.current = true;
-    const nextFilters = { ...emptyFilters, group: defaultGroup };
-    setFilters(nextFilters);
-    void load(search, sort, direction, nextFilters);
+    const delay = initialLoadStartedRef.current ? 320 : 0;
+    initialLoadStartedRef.current = true;
+    const timer = window.setTimeout(() => {
+      void load(search, sort, direction, filters);
+    }, delay);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterOptions.groups, filters.group, search, sort, direction]);
+  }, [search, sort, direction, filters]);
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -890,18 +951,59 @@ export default function ProductsClient() {
       : option?.defaultDirection ?? "asc";
     setSort(key);
     setDirection(nextDirection);
-    void load(search, key, nextDirection, filters);
   }
 
-  function changeFilter(key: keyof ProductFilters, value: string) {
-    const nextFilters = { ...filters, [key]: key === "stock" ? value as StockFilter : value };
+  function changeStockFilter(value: StockFilter) {
+    setFilters((prev) => ({ ...prev, stock: value }));
+  }
+
+  function toggleFilterValue(key: MultiFilterKey, value: string) {
+    const nextValues = filters[key].includes(value)
+      ? filters[key].filter((item) => item !== value)
+      : [...filters[key], value];
+    const nextFilters = { ...filters, [key]: nextValues };
     setFilters(nextFilters);
-    void load(search, sort, direction, nextFilters);
   }
 
   function resetFilters() {
     setFilters(emptyFilters);
-    void load(search, sort, direction, emptyFilters);
+  }
+
+  function resetAll() {
+    setSearch("");
+    setFilters(emptyFilters);
+  }
+
+  function removeFilterValue(key: MultiFilterKey, value: string) {
+    setFilters((prev) => ({ ...prev, [key]: prev[key].filter((item) => item !== value) }));
+  }
+
+  function openFacetDialog(key: FacetKey) {
+    setFacetDialog(key);
+    setFacetDraftValues([...selectedFilterValues(filters, key)]);
+    setFacetSearch("");
+  }
+
+  function closeFacetDialog() {
+    setFacetDialog(null);
+    setFacetDraftValues([]);
+    setFacetSearch("");
+  }
+
+  function toggleFacetDraftValue(value: string) {
+    setFacetDraftValues((prev) => (
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    ));
+  }
+
+  function applyFacetDialog() {
+    if (!facetDialog) return;
+    setFilters((prev) => ({ ...prev, [facetDialog]: facetDraftValues }));
+    closeFacetDialog();
+  }
+
+  function clearFacetDialog() {
+    setFacetDraftValues([]);
   }
 
   function sortIndicator(key: ProductSortKey) {
@@ -920,6 +1022,132 @@ export default function ProductsClient() {
         <span className={`eco-product-sort-indicator ${sort === key ? "is-active" : ""}`}>{sortIndicator(key)}</span>
       </button>
     );
+  }
+
+  function getFacetOptions(key: FacetKey) {
+    const facetKey = facetOptionsKey(key);
+    const fromFacets = facets[facetKey];
+    const rawOptions = Array.isArray(fromFacets) && fromFacets.length
+      ? fromFacets
+      : (filterOptions[fallbackFilterOptionsKey(key)] as string[]).map((value) => ({ value, count: 0 }));
+    const selected = new Set(selectedFilterValues(filters, key));
+    const options = key === "group"
+      ? uniqueGroupsByLabel(rawOptions.map((option) => option.value)).map((value) => {
+          const matching = rawOptions.find((option) => normalizedGroupLabel(option.value) === normalizedGroupLabel(value));
+          return { value, count: matching?.count ?? 0 };
+        })
+      : rawOptions;
+    return [...options]
+      .filter((option) => option.value && option.value !== "-")
+      .sort((a, b) => {
+        const selectedDiff = Number(selected.has(b.value)) - Number(selected.has(a.value));
+        if (selectedDiff !== 0) return selectedDiff;
+        const priorityDiff = filterPriority(key, a.value) - filterPriority(key, b.value);
+        if (priorityDiff !== 0) return priorityDiff;
+        const countDiff = b.count - a.count;
+        if (countDiff !== 0) return countDiff;
+        return filterLabel(key, a.value).localeCompare(filterLabel(key, b.value), "ru", { numeric: true, sensitivity: "base" });
+      });
+  }
+
+  function renderFacetFilter(key: FacetKey, previewCount = 6) {
+    const options = getFacetOptions(key);
+    const preview = options.slice(0, previewCount);
+    const selected = selectedFilterValues(filters, key);
+    return (
+      <div className="eco-filter-group">
+        <div className="eco-filter-title">{facetLabels[key].title}</div>
+        {preview.length ? (
+          <div className="eco-filter-list">
+            {preview.map((option) => {
+              const active = selected.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`eco-filter-row ${active ? "is-active" : ""}`}
+                  onClick={() => toggleFilterValue(key, option.value)}
+                >
+                  <span className="eco-filter-row-label">
+                    <span className={`eco-check ${active ? "is-checked" : ""}`} />
+                    {filterLabel(key, option.value)}
+                  </span>
+                  <span className="ct">{option.count.toLocaleString("ru-RU")}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="eco-filter-empty">Нет значений</div>
+        )}
+        {options.length > previewCount ? (
+          <button type="button" className="eco-filter-more" onClick={() => openFacetDialog(key)}>
+            {facetLabels[key].all}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  function activeFilterChips() {
+    const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (search.trim()) {
+      chips.push({ key: "search", label: `Поиск: ${search.trim()}`, onRemove: () => setSearch("") });
+    }
+    (["group", "brand", "sae", "supplier", "apiSpec", "acea", "packageVolume", "entityType"] as FacetKey[]).forEach((key) => {
+      selectedFilterValues(filters, key).forEach((value) => {
+        chips.push({
+          key: `${key}:${value}`,
+          label: `${facetLabels[key].title}: ${filterLabel(key, value)}`,
+          onRemove: () => removeFilterValue(key, value),
+        });
+      });
+    });
+    if (filters.stock !== "all") {
+      chips.push({
+        key: "stock",
+        label: `Остаток: ${stockOptions.find((option) => option.value === filters.stock)?.label ?? filters.stock}`,
+        onRemove: () => changeStockFilter("all"),
+      });
+    }
+    return chips;
+  }
+
+  function emptyStateCopy() {
+    if (!search.trim() && activeFiltersCount === 0) {
+      return {
+        title: "Товаров пока нет",
+        text: "Создайте товар или проверьте импорт локального склада.",
+      };
+    }
+    if (search.trim() && activeFiltersCount > 0) {
+      return {
+        title: "Товары не найдены",
+        text: `По запросу "${search.trim()}" и выбранным фильтрам ничего не найдено.`,
+      };
+    }
+    if (search.trim()) {
+      return {
+        title: "Товары не найдены",
+        text: `По запросу "${search.trim()}" ничего не найдено.`,
+      };
+    }
+    return {
+      title: "Товары не найдены",
+      text: "По выбранным фильтрам ничего не найдено.",
+    };
+  }
+
+  function renderSkeletonRows() {
+    return Array.from({ length: 7 }, (_, index) => (
+      <tr key={`skeleton-${index}`} className="eco-product-skeleton-row">
+        {Array.from({ length: 12 }, (_cell, cellIndex) => (
+          <td key={cellIndex}>
+            <span className="eco-product-skeleton-line" />
+          </td>
+        ))}
+      </tr>
+    ));
   }
 
   async function submit(closeAfter = false) {
@@ -1559,6 +1787,64 @@ export default function ProductsClient() {
         </div>
       )}
 
+      {facetDialog && (
+        <div className="eco-facet-dialog-backdrop">
+          <section role="dialog" aria-modal="true" className="eco-facet-dialog">
+            <header className="eco-facet-dialog-head">
+              <div>
+                <div className="eco-products-breadcrumb">Фильтр</div>
+                <h3>{facetLabels[facetDialog].title}</h3>
+              </div>
+              <button type="button" className="eco-icon-action" onClick={closeFacetDialog} aria-label="Закрыть фильтр">
+                <X aria-hidden className="eco-icon" />
+              </button>
+            </header>
+            <div className="eco-search-wrap eco-facet-search">
+              <Search aria-hidden className="eco-icon" />
+              <input
+                value={facetSearch}
+                onChange={(event) => setFacetSearch(event.target.value)}
+                placeholder={facetLabels[facetDialog].search}
+                className="eco-input"
+                autoFocus
+              />
+            </div>
+            <div className="eco-facet-dialog-list">
+              {getFacetOptions(facetDialog)
+                .filter((option) => normalizeFieldSearch(filterLabel(facetDialog, option.value)).includes(normalizeFieldSearch(facetSearch)))
+                .map((option) => {
+                  const active = facetDraftValues.includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`eco-filter-row ${active ? "is-active" : ""}`}
+                      onClick={() => toggleFacetDraftValue(option.value)}
+                    >
+                      <span className="eco-filter-row-label">
+                        <span className={`eco-check ${active ? "is-checked" : ""}`} />
+                        {filterLabel(facetDialog, option.value)}
+                      </span>
+                      <span className="ct">{option.count.toLocaleString("ru-RU")}</span>
+                    </button>
+                  );
+                })}
+              {getFacetOptions(facetDialog).length === 0 ? (
+                <div className="eco-filter-empty">Нет значений</div>
+              ) : null}
+            </div>
+            <footer className="eco-facet-dialog-footer">
+              <button type="button" className="eco-btn" onClick={clearFacetDialog}>
+                Сбросить
+              </button>
+              <button type="button" className="eco-btn eco-btn--primary" onClick={applyFacetDialog}>
+                Применить
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       <section className="eco-products-shell">
         <div className="eco-products-head">
           <div>
@@ -1587,74 +1873,42 @@ export default function ProductsClient() {
             <div className="eco-filter-group">
               <div className="eco-filter-title">
                 Поиск
-                <button type="button" onClick={resetFilters} className="text-[var(--eco-rust)]">× очистить</button>
+                {hasActiveSearchOrFilters ? (
+                  <button type="button" onClick={resetAll} className="text-[var(--eco-rust)]">× очистить всё</button>
+                ) : null}
               </div>
               <div className="eco-search-wrap w-full">
-                <Search aria-hidden className="eco-icon" />
+                {loading ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Search aria-hidden className="eco-icon" />}
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") void load(search, sort, direction, filters);
+                    if (event.key === "Escape") setSearch("");
                   }}
-                  placeholder="Артикул, OEM, бренд…"
+                  placeholder="Название, артикул, OEM, бренд..."
                   className="eco-input"
                 />
-              </div>
-            </div>
-
-            <div className="eco-filter-group">
-              <div className="eco-filter-title">Категория</div>
-              {visibleGroupOptions.slice(0, 5).map((group) => (
-                <button key={group} type="button" className="eco-filter-row" onClick={() => changeFilter("group", filters.group === group ? "" : group)}>
-                  <span className="flex items-center gap-2">
-                    <span className={`eco-check ${filters.group === group ? "is-checked" : ""}`} />
-                    {shortGroupLabel(group)}
-                  </span>
-                  <span className="ct">—</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="eco-filter-group">
-              <div className="eco-filter-title">Бренд</div>
-              {visibleBrandOptions.slice(0, 8).map((brand) => (
-                <button key={brand} type="button" className="eco-filter-row" onClick={() => changeFilter("brand", filters.brand === brand ? "" : brand)}>
-                  <span className="flex items-center gap-2">
-                    <span className={`eco-check ${filters.brand === brand ? "is-checked" : ""}`} />
-                    {displayBrandLabel(brand)}
-                  </span>
-                  <span className="ct">—</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="eco-filter-group">
-              <div className="eco-filter-title">SAE / Вязкость</div>
-              <div className="flex flex-wrap gap-1">
-                {filterOptions.sae.slice(0, 12).map((sae) => (
-                  <button
-                    key={sae}
-                    type="button"
-                    className={`eco-pill ${filters.sae === sae ? "is-active" : ""}`}
-                    onClick={() => changeFilter("sae", filters.sae === sae ? "" : sae)}
-                    style={{ height: 24, fontSize: 11 }}
-                  >
-                    {sae}
+                {search.trim() ? (
+                  <button type="button" className="eco-search-clear" onClick={() => setSearch("")} aria-label="Очистить поиск">
+                    <X aria-hidden className="eco-icon" />
                   </button>
-                ))}
+                ) : null}
               </div>
             </div>
+
+            {renderFacetFilter("group", 7)}
+            {renderFacetFilter("brand", 8)}
+            {renderFacetFilter("sae", 8)}
 
             <div className="eco-filter-group">
               <div className="eco-filter-title">Остаток</div>
               {stockOptions.map((option) => (
-                <button key={option.value} type="button" className="eco-filter-row" onClick={() => changeFilter("stock", option.value)}>
-                  <span className="flex items-center gap-2">
+                <button key={option.value} type="button" className="eco-filter-row" onClick={() => changeStockFilter(option.value)}>
+                  <span className="eco-filter-row-label">
                     <span className={`eco-check ${filters.stock === option.value ? "is-checked" : ""}`} />
                     {option.label}
                   </span>
-                  <span className="ct">—</span>
+                  <span className="ct">{(facets.stock[option.value] ?? 0).toLocaleString("ru-RU")}</span>
                 </button>
               ))}
             </div>
@@ -1664,12 +1918,14 @@ export default function ProductsClient() {
 
         <div className="eco-products-strip">
           <div className="eco-products-chips">
-            {filters.group && <span className="eco-pill is-active">{shortGroupLabel(filters.group)}</span>}
-            {filters.brand && <span className="eco-pill is-active">{displayBrandLabel(filters.brand)}</span>}
-            {filters.sae && <span className="eco-pill is-active">{filters.sae}</span>}
-            {filters.stock !== "all" && <span className="eco-pill is-active">{stockOptions.find((option) => option.value === filters.stock)?.label}</span>}
-            {activeFiltersCount > 0 && (
-              <button type="button" className="eco-pill is-dashed" onClick={resetFilters}>
+            {activeFilterChips().map((chip) => (
+              <button key={chip.key} type="button" className="eco-pill is-active eco-filter-chip" onClick={chip.onRemove}>
+                <span>{chip.label}</span>
+                <X aria-hidden className="eco-icon" />
+              </button>
+            ))}
+            {hasActiveSearchOrFilters && (
+              <button type="button" className="eco-pill is-dashed" onClick={resetAll}>
                 × Сбросить всё
               </button>
             )}
@@ -1677,7 +1933,7 @@ export default function ProductsClient() {
           <span className="l-meta">{rows.length}{meta?.hasMore ? "+" : ""} из {meta?.total ?? rows.length} артикулов</span>
         </div>
 
-        {(error || info) && (
+        {((error && !(error === "Не удалось выполнить поиск" && rows.length === 0)) || info) && (
           <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
             error
               ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
@@ -1707,16 +1963,47 @@ export default function ProductsClient() {
             </thead>
             <tbody>
               {loading && (
+                renderSkeletonRows()
+              )}
+              {!loading && error === "Не удалось выполнить поиск" && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-zinc-500">Загрузка...</td>
+                  <td colSpan={12}>
+                    <div className="eco-products-empty is-error">
+                      <strong>Не удалось выполнить поиск</strong>
+                      <span>Попробуйте обновить страницу или изменить запрос.</span>
+                      <button type="button" className="eco-btn eco-btn--sm" onClick={() => void load(search, sort, direction, filters)}>
+                        Повторить
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-zinc-500">Товары не найдены.</td>
+                  <td colSpan={12}>
+                    <div className="eco-products-empty">
+                      <strong>{emptyStateCopy().title}</strong>
+                      <span>{emptyStateCopy().text}</span>
+                      <div className="eco-products-empty-actions">
+                        {activeFiltersCount > 0 ? (
+                          <button type="button" className="eco-btn eco-btn--sm" onClick={resetFilters}>
+                            Сбросить фильтры
+                          </button>
+                        ) : null}
+                        {search.trim() ? (
+                          <button type="button" className="eco-btn eco-btn--sm" onClick={() => setSearch("")}>
+                            Очистить поиск
+                          </button>
+                        ) : null}
+                        <button type="button" className="eco-btn eco-btn--primary eco-btn--sm" onClick={openNewProduct}>
+                          Создать товар
+                        </button>
+                      </div>
+                    </div>
+                  </td>
                 </tr>
               )}
-              {!loading && rows.map((row) => (
+              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => (
                 <tr key={row.id}>
                   <td><span className="eco-check" /></td>
                   <td className="eco-product-article">

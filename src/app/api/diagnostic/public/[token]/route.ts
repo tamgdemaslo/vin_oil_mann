@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { tagLabelsForNode } from "@/data/diagnostic-catalog";
 
 /** Публичный отчёт без авторизации (без служебных полей мастера). */
 export async function GET(
@@ -28,7 +29,7 @@ export async function GET(
       block: p.block,
       node: p.node,
       status: p.status,
-      tags: p.tags,
+      tags: tagLabelsForNode(p.node, p.tags),
       measurementValue: p.measurementValue,
       measurementUnit: p.measurementUnit,
       recommendation: p.recommendation,
