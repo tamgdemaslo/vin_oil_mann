@@ -260,6 +260,10 @@ function productKey(product: Pick<TopProduct, "productId" | "productName">) {
   return product.productId ?? product.productName;
 }
 
+function productEditHref(productId: string) {
+  return `/inventory/products?product=${encodeURIComponent(productId)}`;
+}
+
 function csvCell(value: string | number | null | undefined) {
   const text = value == null ? "" : String(value);
   return `"${text.replaceAll('"', '""')}"`;
@@ -940,10 +944,21 @@ function ProductsTable({
             {products.map((product) => (
               <tr key={productKey(product)} className={product.missingCostLines > 0 ? "is-warning" : ""}>
                 <td>
-                  <button type="button" className="eco-finance-product-link" onClick={() => onOpen(product)}>
-                    <strong>{product.productName}</strong>
-                    <span>{productMeta(product)}</span>
-                  </button>
+                  {product.productId ? (
+                    <Link
+                      href={productEditHref(product.productId)}
+                      className="eco-finance-product-link"
+                      title="Открыть карточку товара"
+                    >
+                      <strong>{product.productName}</strong>
+                      <span>{productMeta(product)}</span>
+                    </Link>
+                  ) : (
+                    <div className="eco-finance-product-link is-static">
+                      <strong>{product.productName}</strong>
+                      <span>{productMeta(product)}</span>
+                    </div>
+                  )}
                 </td>
                 <td className="is-number">{formatQty(product.quantity)}</td>
                 <td className="is-number">{formatMoney(product.revenue)}</td>
@@ -952,7 +967,7 @@ function ProductsTable({
                 <td className="is-number">{formatPercent(product.marginPercent)}</td>
                 <td className="is-number">{product.documentsCount}</td>
                 <td>
-                  <button type="button" className="eco-btn eco-btn--sm" onClick={() => onOpen(product)}>Открыть</button>
+                  <button type="button" className="eco-btn eco-btn--sm" onClick={() => onOpen(product)}>Отгрузки</button>
                 </td>
               </tr>
             ))}
@@ -969,7 +984,13 @@ function ProductsTable({
         {products.map((product) => (
           <article key={productKey(product)} className={product.missingCostLines > 0 ? "is-warning" : ""}>
             <div>
-              <strong>{product.productName}</strong>
+              {product.productId ? (
+                <Link href={productEditHref(product.productId)} className="eco-finance-product-link" title="Открыть карточку товара">
+                  <strong>{product.productName}</strong>
+                </Link>
+              ) : (
+                <strong>{product.productName}</strong>
+              )}
               <span>{productMeta(product)}</span>
             </div>
             <dl>
@@ -977,7 +998,14 @@ function ProductsTable({
               <div><dt>Прибыль</dt><dd>{formatMoney(product.profit)}</dd></div>
               <div><dt>Маржа</dt><dd>{formatPercent(product.marginPercent)}</dd></div>
             </dl>
-            <button type="button" className="eco-btn eco-btn--primary" onClick={() => onOpen(product)}>Открыть товар</button>
+            <div className="eco-finance-card-actions">
+              {product.productId && (
+                <Link className="eco-btn eco-btn--primary" href={productEditHref(product.productId)}>
+                  Карточка товара
+                </Link>
+              )}
+              <button type="button" className="eco-btn" onClick={() => onOpen(product)}>Отгрузки</button>
+            </div>
           </article>
         ))}
       </div>
@@ -1022,7 +1050,13 @@ function RowsTable({ title, subtitle, rows }: { title: string; subtitle: string;
                   </td>
                   <td>{formatDate(row.documentDate)}</td>
                   <td>
-                    <strong>{row.productName}</strong>
+                    {row.productId ? (
+                      <Link href={productEditHref(row.productId)} className="eco-finance-product-link" title="Открыть карточку товара">
+                        <strong>{row.productName}</strong>
+                      </Link>
+                    ) : (
+                      <strong>{row.productName}</strong>
+                    )}
                     <span>{[row.productArticle ? `арт. ${row.productArticle}` : "", row.productBrand].filter(Boolean).join(" · ") || row.costSource}</span>
                   </td>
                   <td className="is-number">{formatQty(row.quantity)}</td>
@@ -1033,7 +1067,7 @@ function RowsTable({ title, subtitle, rows }: { title: string; subtitle: string;
                   <td>
                     <span className={`eco-finance-status is-${status.tone}`}>{status.label}</span>
                     {row.status === "missing_cost" && row.productId && (
-                      <Link href={`/inventory/products?product=${encodeURIComponent(row.productId)}`} className="eco-finance-row-action">
+                      <Link href={productEditHref(row.productId)} className="eco-finance-row-action">
                         Исправить себестоимость
                       </Link>
                     )}
@@ -1056,7 +1090,13 @@ function RowsTable({ title, subtitle, rows }: { title: string; subtitle: string;
           return (
             <article key={row.id} className={status.tone === "warning" ? "is-warning" : status.tone === "danger" ? "is-danger" : ""}>
               <div>
-                <strong>{row.productName}</strong>
+                {row.productId ? (
+                  <Link href={productEditHref(row.productId)} className="eco-finance-product-link" title="Открыть карточку товара">
+                    <strong>{row.productName}</strong>
+                  </Link>
+                ) : (
+                  <strong>{row.productName}</strong>
+                )}
                 <span>{row.documentName} · {formatDate(row.documentDate)}</span>
               </div>
               <dl>
@@ -1106,7 +1146,7 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
               <div className="eco-finance-issue-actions">
                 {issue.amount != null && <b>{formatMoney(issue.amount)}</b>}
                 {issue.documentHref && <Link className="eco-btn eco-btn--sm" href={issue.documentHref}>Документ</Link>}
-                {issue.productId && <Link className="eco-btn eco-btn--sm" href={`/inventory/products?product=${encodeURIComponent(issue.productId)}`}>Товар</Link>}
+                {issue.productId && <Link className="eco-btn eco-btn--sm" href={productEditHref(issue.productId)}>Товар</Link>}
               </div>
             </article>
           ))}
@@ -1137,7 +1177,13 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
               {missingRows.map((row) => (
                 <tr key={row.id} className="is-warning">
                   <td>
-                    <strong>{row.productName}</strong>
+                    {row.productId ? (
+                      <Link href={productEditHref(row.productId)} className="eco-finance-product-link" title="Открыть карточку товара">
+                        <strong>{row.productName}</strong>
+                      </Link>
+                    ) : (
+                      <strong>{row.productName}</strong>
+                    )}
                     <span>{row.productArticle ? `арт. ${row.productArticle}` : "без артикула"}</span>
                   </td>
                   <td><Link className="eco-finance-doc-link" href={row.documentHref}>{row.documentName}</Link></td>
@@ -1147,7 +1193,7 @@ function ProblemsPanel({ issues, missingRows }: { issues: FinanceIssue[]; missin
                   <td className="is-number">{row.currentBuyPrice == null ? "—" : formatMoney(row.currentBuyPrice)}</td>
                   <td>
                     {row.productId
-                      ? <Link className="eco-btn eco-btn--sm eco-btn--primary" href={`/inventory/products?product=${encodeURIComponent(row.productId)}`}>Исправить закупочную цену</Link>
+                      ? <Link className="eco-btn eco-btn--sm eco-btn--primary" href={productEditHref(row.productId)}>Исправить закупочную цену</Link>
                       : <Link className="eco-btn eco-btn--sm" href={row.documentHref}>Открыть документ</Link>}
                   </td>
                 </tr>
@@ -1339,7 +1385,7 @@ function ProductDrawer({
             <h3>Строки без себестоимости</h3>
             <p>У товара есть строки, которые требуют закупочной цены.</p>
             {product.productId && (
-              <Link className="eco-btn eco-btn--primary" href={`/inventory/products?product=${encodeURIComponent(product.productId)}`}>
+              <Link className="eco-btn eco-btn--primary" href={productEditHref(product.productId)}>
                 Исправить закупочную цену
               </Link>
             )}

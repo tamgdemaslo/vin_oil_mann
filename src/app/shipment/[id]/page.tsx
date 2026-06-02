@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
+import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
@@ -195,10 +195,39 @@ function productIdFromMeta(meta?: Meta): string {
   return entityMatch?.[1] ?? "";
 }
 
+function localEntityIdFromMeta(meta?: Meta): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/(?:product|variant|service|counterparty)\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
+}
+
+function isServiceMeta(meta?: Meta): boolean {
+  return meta?.type === "service" || /^local:\/\/service\//i.test(meta?.href ?? "") || /\/entity\/service\//i.test(meta?.href ?? "");
+}
+
 function localProductHref(position: Position): string {
   const productId = productIdFromMeta(position.assortmentMeta);
   if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
   return `/inventory/products?search=${encodeURIComponent(position.name)}`;
+}
+
+function rawAgentFromDemand(raw: unknown): { id?: string; name?: string; meta?: Meta } | undefined {
+  if (!raw || typeof raw !== "object" || !("agent" in raw)) return undefined;
+  const agent = (raw as { agent?: unknown }).agent;
+  return agent && typeof agent === "object" ? (agent as { id?: string; name?: string; meta?: Meta }) : undefined;
+}
+
+function counterpartyHrefFromDemand(raw: unknown, fallbackName: string): string {
+  const agent = rawAgentFromDemand(raw);
+  const id = agent?.id?.trim() || localEntityIdFromMeta(agent?.meta);
+  if (id) return `/clients/counterparties?counterparty=${encodeURIComponent(id)}`;
+  const name = (agent?.name ?? fallbackName).trim();
+  return name && name !== "Клиент не выбран"
+    ? `/clients/counterparties?search=${encodeURIComponent(name)}`
+    : "/clients/counterparties";
 }
 
 function formatMoney(value: number, currency = "руб."): string {
@@ -573,7 +602,7 @@ export default function ShipmentDetailPage() {
   const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
   const [showAllOilGroups, setShowAllOilGroups] = useState(false);
   const [maintenanceCopyStatus, setMaintenanceCopyStatus] = useState<"idle" | "copied" | "error">("idle");
-  const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "history" | "precheck">("positions");
+  const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "diagnostic" | "history" | "precheck">("positions");
   const [vehicleEditing, setVehicleEditing] = useState(false);
   const [manualEngineVolume, setManualEngineVolume] = useState("");
   const [manualEnginePower, setManualEnginePower] = useState("");
@@ -604,9 +633,17 @@ export default function ShipmentDetailPage() {
   const [diagnosticRemote, setDiagnosticRemote] = useState<{
     id: string;
     status: string;
-    summaryGreen: number;
-    summaryYellow: number;
-    summaryRed: number;
+	    reportUrl?: string;
+	    counts?: {
+	      total?: number;
+	      good?: number;
+	      warn?: number;
+	      crit?: number;
+	      normal?: number;
+	      attention?: number;
+	      replace?: number;
+	      indirect?: number;
+    };
   } | null>(null);
 
   useEffect(() => {
@@ -687,21 +724,37 @@ export default function ShipmentDetailPage() {
     };
   }, [id, router]);
 
-  useEffect(() => {
+  const refreshDiagnosticRemote = useCallback(async () => {
     if (!id) return;
-    fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(id)}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (j.diagnostic?.id) {
-          setDiagnosticRemote(j.diagnostic);
-          setDiagnosticRowId(j.diagnostic.id);
-        } else {
-          setDiagnosticRemote(null);
-          setDiagnosticRowId(null);
-        }
-      })
-      .catch(() => {});
+    try {
+      const response = await fetch(`/api/diagnostics/for-shipment?shipmentId=${encodeURIComponent(id)}`);
+      const json = await response.json();
+      if (json.diagnostic?.id) {
+        setDiagnosticRemote(json.diagnostic);
+        setDiagnosticRowId(json.diagnostic.id);
+      } else {
+        setDiagnosticRemote(null);
+        setDiagnosticRowId(null);
+      }
+    } catch {
+      // Диагностика не должна ломать карточку отгрузки.
+    }
   }, [id]);
+
+  useEffect(() => {
+    void refreshDiagnosticRemote();
+  }, [refreshDiagnosticRemote]);
+
+  const copyDiagnosticReportLink = useCallback(async () => {
+    if (!diagnosticRemote?.reportUrl) return;
+    try {
+      await navigator.clipboard?.writeText(diagnosticRemote.reportUrl);
+      setPaymentInfo("Ссылка на отчёт скопирована");
+      window.setTimeout(() => setPaymentInfo(null), 2500);
+    } catch {
+      setError("Не удалось скопировать ссылку на отчёт");
+    }
+  }, [diagnosticRemote?.reportUrl]);
 
   const handleOpenDiagnosticDetail = useCallback(async () => {
     if (!id) return;
@@ -724,12 +777,13 @@ export default function ShipmentDetailPage() {
         data?.raw && typeof data.raw === "object" && data.raw !== null && "agent" in data.raw
           ? (data.raw as { agent?: { id?: string } }).agent?.id
           : undefined;
-      const cr = await fetch("/api/diagnostic", {
+      const cr = await fetch("/api/diagnostics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          shipmentMoySkladId: id,
-          agentMoySkladId: rawAgentId ?? null,
+          shipmentId: id,
+          clientId: rawAgentId ?? null,
+          clientName: data?.header.agentName ?? null,
           vin: vin.replace(/\s/g, "").toUpperCase() || null,
           brand: dec?.make || mp[0] || null,
           model: dec?.model || mp.slice(1).join(" ") || null,
@@ -749,16 +803,7 @@ export default function ShipmentDetailPage() {
       setDiagnosticRemote({
         id: diagId,
         status: "IN_PROGRESS",
-        summaryGreen: 0,
-        summaryYellow: 0,
-        summaryRed: 0,
-      });
-    }
-    if (diagId && Object.keys(vehicleHints).length > 0) {
-      await fetch(`/api/diagnostic/${diagId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vehicleHints }),
+        counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
       });
     }
     setDiagnosticModalOpen(true);
@@ -768,6 +813,7 @@ export default function ShipmentDetailPage() {
     attributes,
     vin,
     data?.raw,
+    data?.header.agentName,
     vinLookupResult,
   ]);
 
@@ -1133,6 +1179,7 @@ export default function ShipmentDetailPage() {
   const vehicleVolume = getAttrValue(/^объем$/i);
   const vehicleOil = getAttrValue(/моторное масло/i);
   const documentVin = vin || getAttrValue(/vin/i);
+  const agentHref = counterpartyHrefFromDemand(data.raw, agentName);
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
   const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
   const positionsDiscount = positions.reduce((sum, p) => {
@@ -1141,6 +1188,19 @@ export default function ShipmentDetailPage() {
     return sum + base * (discount / 100);
   }, 0);
   const positionsTotal = Math.max(0, positionsSubtotal - positionsDiscount);
+  const indexedPositions = positions.map((position, index) => ({ position, index }));
+  const positionGroups = [
+    {
+      key: "services",
+      title: "Услуги",
+      items: indexedPositions.filter(({ position }) => isServiceMeta(position.assortmentMeta)),
+    },
+    {
+      key: "products",
+      title: "Товары",
+      items: indexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
+    },
+  ].filter((group) => group.items.length > 0);
   const positionsCost = positions.reduce((sum, p) => {
     const cost = typeof p.stock?.cost === "number" ? p.stock.cost / 100 : 0;
     return sum + cost * (p.quantity || 0);
@@ -1257,7 +1317,12 @@ export default function ShipmentDetailPage() {
               <div className="eco-shipment-detail-client-row">
                 <div className="eco-shipment-detail-avatar">{agentInitials}</div>
                 <div>
-                  <h2>{agentName}</h2>
+                  <h2>
+                    <Link href={agentHref} className="eco-shipment-detail-client-link" title="Открыть контрагента">
+                      <span>{agentName}</span>
+                      <ExternalLink aria-hidden />
+                    </Link>
+                  </h2>
                   <p>{data.header.ecoUserName?.trim() || "Эко-платформа"} · {data.header.organizationName || "организация не указана"}</p>
                 </div>
               </div>
@@ -1393,6 +1458,13 @@ export default function ShipmentDetailPage() {
             </button>
             <button
               type="button"
+              className={activeDetailTab === "diagnostic" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("diagnostic")}
+            >
+              Диагностика <span>{diagnosticRemote?.counts?.total ?? 0}</span>
+            </button>
+            <button
+              type="button"
               className={activeDetailTab === "history" ? "is-active" : undefined}
               onClick={() => setActiveDetailTab("history")}
             >
@@ -1482,10 +1554,20 @@ export default function ShipmentDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {positions.map((p, index) => {
+                        {positionGroups.map((group) => (
+                          <Fragment key={group.key}>
+                            <tr className="eco-position-group-row">
+                              <td colSpan={applicable ? 7 : 8}>
+                                <div className="eco-position-group-label">
+                                  <span>{group.title}</span>
+                                  <b>{group.items.length}</b>
+                                </div>
+                              </td>
+                            </tr>
+                        {group.items.map(({ position: p, index }, groupRowIndex) => {
                           const discount = typeof p.discount === "number" ? p.discount : 0;
                           const lineTotal = (p.quantity || 0) * (p.price || 0) * (1 - discount / 100);
-                          const type = p.assortmentMeta?.type === "service" ? "услуга" : "товар";
+                          const type = isServiceMeta(p.assortmentMeta) ? "услуга" : "товар";
                           const productHref = localProductHref(p);
                           const sourceProductId = productIdFromMeta(p.assortmentMeta);
                           const availabilityDetails = [
@@ -1496,7 +1578,7 @@ export default function ShipmentDetailPage() {
                           ].filter(Boolean);
                           return (
                             <tr key={p.id ?? `summary-${index}`}>
-                              <td className="is-mono">{String(index + 1).padStart(2, "0")}</td>
+                              <td className="is-mono">{String(groupRowIndex + 1).padStart(2, "0")}</td>
                               <td className="eco-position-product-cell">
                                 {productHref ? (
                                   <Link className="eco-shipment-detail-product-link" href={productHref}>
@@ -1590,6 +1672,8 @@ export default function ShipmentDetailPage() {
                             </tr>
                           );
                         })}
+                          </Fragment>
+                        ))}
                       </tbody>
                     </table>
                     <div className="eco-shipment-new-table-foot">
@@ -1728,6 +1812,60 @@ export default function ShipmentDetailPage() {
               </div>
             )}
 
+            {activeDetailTab === "diagnostic" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <section className="eco-shipment-diagnostic-panel">
+                  <div className="eco-shipment-diagnostic-panel__head">
+                    <div>
+                      <span>Диагностика</span>
+                      <h2>{diagnosticRemote ? "Карта диагностики создана" : "Диагностика ещё не создана"}</h2>
+                      <p>
+                        {diagnosticRemote
+                          ? `${diagnosticRemote.status} · ${diagnosticRemote.counts?.total ?? 0} пунктов`
+                          : "Запустите карту диагностики из этой отгрузки."}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
+                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    </button>
+                  </div>
+
+                  <div className="eco-shipment-diagnostic-metrics">
+                    <div><b>{diagnosticRemote?.counts?.total ?? 0}</b><span>Пунктов</span></div>
+                    <div><b>{diagnosticRemote?.counts?.good ?? diagnosticRemote?.counts?.normal ?? 0}</b><span>Хорошо</span></div>
+                    <div><b>{diagnosticRemote?.counts?.warn ?? diagnosticRemote?.counts?.attention ?? 0}</b><span>Внимание</span></div>
+                    <div><b>{diagnosticRemote?.counts?.crit ?? diagnosticRemote?.counts?.replace ?? 0}</b><span>Критично</span></div>
+                    <div><b>{diagnosticRemote?.counts?.indirect ?? 0}</b><span>Косвенно</span></div>
+                  </div>
+
+                  <div className="eco-shipment-diagnostic-actions">
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
+                      {diagnosticRemote ? "Открыть карту" : "Создать диагностику"}
+                    </button>
+                    <a
+                      href={diagnosticRemote?.reportUrl ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!diagnosticRemote?.reportUrl}
+                    >
+                      Открыть отчёт
+                    </a>
+                    <a
+                      href={diagnosticRemote?.reportUrl ? `${diagnosticRemote.reportUrl}/print` : "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!diagnosticRemote?.reportUrl}
+                    >
+                      Печать
+                    </a>
+                    <button type="button" onClick={() => void copyDiagnosticReportLink()} disabled={!diagnosticRemote?.reportUrl}>
+                      Скопировать ссылку
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
             {activeDetailTab === "precheck" && (
               <div className="eco-shipment-detail-tab-panel">
                 <div className="eco-shipment-detail-precheck">
@@ -1810,7 +1948,18 @@ export default function ShipmentDetailPage() {
               </div>
               <div>
                 <strong>Диагностика</strong>
-                <span>{diagnosticRemote ? `${diagnosticRemote.status} · 🟢${diagnosticRemote.summaryGreen} 🟡${diagnosticRemote.summaryYellow} 🔴${diagnosticRemote.summaryRed}` : "не создана"}</span>
+                <span>
+	                  {diagnosticRemote
+	                    ? `${diagnosticRemote.status} · ${diagnosticRemote.counts?.total ?? 0} пунктов · хорошо ${diagnosticRemote.counts?.good ?? diagnosticRemote.counts?.normal ?? 0} · внимание ${diagnosticRemote.counts?.warn ?? diagnosticRemote.counts?.attention ?? 0} · критично ${diagnosticRemote.counts?.crit ?? diagnosticRemote.counts?.replace ?? 0} · косвенно ${diagnosticRemote.counts?.indirect ?? 0}`
+                    : "не создана"}
+                </span>
+                {diagnosticRemote?.reportUrl && (
+                  <span>
+                    <a href={diagnosticRemote.reportUrl} target="_blank" rel="noreferrer">Отчёт</a>{" "}
+                    ·{" "}
+                    <a href={`${diagnosticRemote.reportUrl}/print`} target="_blank" rel="noreferrer">Печать</a>
+                  </span>
+                )}
               </div>
             </div>
           </section>
@@ -1829,9 +1978,11 @@ export default function ShipmentDetailPage() {
             <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">VIN номер</h2>
             {diagnosticRemote && (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                Диагностика: {diagnosticRemote.status}{" "}
-                🟢{diagnosticRemote.summaryGreen} 🟡{diagnosticRemote.summaryYellow} 🔴
-                {diagnosticRemote.summaryRed}
+	                Диагностика: {diagnosticRemote.status} · {diagnosticRemote.counts?.total ?? 0} пунктов · хорошо{" "}
+	                {diagnosticRemote.counts?.good ?? diagnosticRemote.counts?.normal ?? 0} · внимание{" "}
+	                {diagnosticRemote.counts?.warn ?? diagnosticRemote.counts?.attention ?? 0} · критично{" "}
+	                {diagnosticRemote.counts?.crit ?? diagnosticRemote.counts?.replace ?? 0} · косвенно{" "}
+                {diagnosticRemote.counts?.indirect ?? 0}
               </span>
             )}
           </div>
@@ -2763,7 +2914,14 @@ export default function ShipmentDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p, index) => (
+                {positionGroups.map((group) => (
+                  <Fragment key={group.key}>
+                    <tr className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/40">
+                      <td className="px-2 py-2 font-semibold" colSpan={10}>
+                        {group.title} · {group.items.length}
+                      </td>
+                    </tr>
+                {group.items.map(({ position: p, index }) => (
                   <tr
                     key={p.id ?? `new-${index}`}
                     className="border-b border-zinc-100 dark:border-zinc-700"
@@ -2889,6 +3047,8 @@ export default function ShipmentDetailPage() {
                     </td>
                   </tr>
                 ))}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
@@ -2983,11 +3143,14 @@ export default function ShipmentDetailPage() {
 
       </div>
 
-      <DiagnosticModal
+      <DiagnosticMapModal
         open={diagnosticModalOpen}
-        onClose={() => setDiagnosticModalOpen(false)}
+        onClose={() => {
+          setDiagnosticModalOpen(false);
+          void refreshDiagnosticRemote();
+        }}
         diagnosticId={diagnosticRowId}
-        shipmentMoySkladId={id ?? null}
+        shipmentId={id ?? null}
         headerDraft={{
           vin,
           brand: String(
@@ -3007,19 +3170,15 @@ export default function ShipmentDetailPage() {
             attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
           ),
           mileage: String(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""),
-          agentMoySkladId:
-            data?.raw && typeof data.raw === "object" && data.raw !== null && "agent" in data.raw
-              ? (data.raw as { agent?: { id?: string } }).agent?.id ?? null
-              : null,
+          clientName: data?.header.agentName ?? "",
+          vehicleHints: inferDiagnosticVehicleHintsFromLookup(vinLookupResult),
         }}
         onDiagnosticCreated={(nid) => {
           setDiagnosticRowId(nid);
           setDiagnosticRemote({
             id: nid,
             status: "IN_PROGRESS",
-            summaryGreen: 0,
-            summaryYellow: 0,
-            summaryRed: 0,
+            counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
           });
         }}
         onAddedToShipment={() => window.location.reload()}

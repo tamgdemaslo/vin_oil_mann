@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * LEGACY DIAGNOSTIC UX.
+ *
+ * This component is intentionally kept only for historical compatibility while
+ * old Diagnostic/DiagnosticPosition records and old public tokens still exist.
+ * New shipment flows must use DiagnosticMapModal and /api/diagnostics/**.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,

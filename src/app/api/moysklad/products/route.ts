@@ -10,9 +10,11 @@ export async function GET(request: NextRequest) {
   const oem = request.nextUrl.searchParams.get("oem") ?? "";
   const mannName = request.nextUrl.searchParams.get("mannName") ?? "";
   const params = request.nextUrl.searchParams.get("params") ?? "";
+  const entityTypeParam = request.nextUrl.searchParams.get("entityType") ?? "";
+  const entityType = ["product", "service"].includes(entityTypeParam) ? entityTypeParam : "";
   const storeName = request.nextUrl.searchParams.get("storeName") ?? "";
   const storeId = request.nextUrl.searchParams.get("storeId") ?? "";
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "15", 10) || 15);
 
-  return NextResponse.json(await searchLocalProducts({ search, oem, mannName, params, storeName, storeId, limit }));
+  return NextResponse.json(await searchLocalProducts({ search, oem, mannName, params, entityType, storeName, storeId, limit }));
 }

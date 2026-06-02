@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { DiagnosticPublicReport } from "@/components/diagnostic/DiagnosticPublicReport";
 
-export default function DiagnosticReportPage() {
+export default function DiagnosticReportPrintPage() {
   const params = useParams<{ token: string }>();
-  return <DiagnosticPublicReport token={params.token} />;
+  return <DiagnosticPublicReport token={params.token} printMode />;
 }

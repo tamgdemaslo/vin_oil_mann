@@ -1,4 +1,9 @@
 /**
+ * LEGACY DIAGNOSTIC CATALOG.
+ *
+ * Kept for old Diagnostic/DiagnosticPosition records and old API fallback only.
+ * New diagnostics use src/data/diagnostic-map.ts and must not import this file.
+ *
  * Справочник узлов диагностики, тегов, правил измерений и шаблонов офферов.
  * Редактируется без миграций БД.
  */

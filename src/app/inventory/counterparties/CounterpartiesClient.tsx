@@ -69,6 +69,13 @@ type CounterpartyRow = {
   lastDemandName: string;
   lastDemandAt: string;
   lastDemandSumCents: number | null;
+  recentDemands?: Array<{
+    id: string;
+    name: string;
+    momentAt: string;
+    sumCents: number;
+    applicable: boolean;
+  }>;
   vehicleCount: number;
 };
 
@@ -299,6 +306,27 @@ function formatMoney(cents: number | null | undefined) {
   return `${(cents / 100).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`;
 }
 
+function shipmentHref(id: string) {
+  return `/shipment/${encodeURIComponent(id)}`;
+}
+
+function allClientShipmentsHref(row: CounterpartyRow) {
+  const params = new URLSearchParams();
+  const phone = row.phone || row.additionalPhone;
+  if (hasDisplayName(row)) params.set("counterparty", displayName(row));
+  else if (phone) params.set("phone", phone);
+  else params.set("counterparty", displayName(row));
+  return `/shipment?${params.toString()}`;
+}
+
+function demandStatusTone(applicable: boolean) {
+  return applicable ? "success" as const : "warning" as const;
+}
+
+function demandStatusLabel(applicable: boolean) {
+  return applicable ? "Проведена" : "Черновик";
+}
+
 function requisitesSummary(row: CounterpartyRow) {
   const main = [row.inn ? `ИНН ${row.inn}` : "", row.kpp ? `КПП ${row.kpp}` : ""].filter(Boolean).join(" · ");
   if (main) return main;
@@ -393,6 +421,7 @@ function canPersistCounterparty(row: CounterpartyRow) {
 export default function CounterpartiesClient() {
   const searchParams = useSearchParams();
   const initialSearch = searchParams.get("search")?.trim() ?? "";
+  const initialCounterpartyId = searchParams.get("counterparty")?.trim() ?? "";
 
   const [rows, setRows] = useState<CounterpartyRow[]>([]);
   const [stats, setStats] = useState<CounterpartyStats>(emptyStats);
@@ -417,6 +446,7 @@ export default function CounterpartiesClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CounterpartyForm>(emptyForm);
   const [detailRow, setDetailRow] = useState<CounterpartyRow | null>(null);
+  const [openedCounterpartyId, setOpenedCounterpartyId] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState<{ row: CounterpartyRow; restore?: boolean } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -481,6 +511,39 @@ export default function CounterpartiesClient() {
     void loadCounterparties(controller.signal);
     return () => controller.abort();
   }, [loadCounterparties]);
+
+  useEffect(() => {
+    if (!initialCounterpartyId || openedCounterpartyId === initialCounterpartyId) return;
+    const existingRow = rows.find((row) => row.id === initialCounterpartyId || row.moyskladId === initialCounterpartyId);
+    if (existingRow) {
+      setDetailRow(existingRow);
+      setOpenedCounterpartyId(initialCounterpartyId);
+      return;
+    }
+
+    let cancelled = false;
+    async function openCounterpartyById() {
+      try {
+        const res = await fetch(`/api/local-inventory/counterparties/${encodeURIComponent(initialCounterpartyId)}`, {
+          cache: "no-store",
+        });
+        const data = await readJson<CounterpartyRow & { error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? "Контрагент не найден");
+        if (cancelled) return;
+        setDetailRow(data);
+        setOpenedCounterpartyId(initialCounterpartyId);
+      } catch (e) {
+        if (cancelled) return;
+        setInfo(null);
+        setError(e instanceof Error ? e.message : "Не удалось открыть контрагента");
+        setOpenedCounterpartyId(initialCounterpartyId);
+      }
+    }
+    void openCounterpartyById();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCounterpartyId, openedCounterpartyId, rows]);
 
   function updateForm(patch: Partial<CounterpartyForm>) {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -1131,6 +1194,7 @@ function ClientDrawer({
 }) {
   const statusInfo = getRowStatus(row);
   const vehicle = vehicleLabel(row);
+  const recentDemands = row.recentDemands ?? [];
   return (
     <div className="eco-client-drawer-backdrop" role="presentation" onMouseDown={onClose}>
       <aside className="eco-client-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -1176,11 +1240,29 @@ function ClientDrawer({
             <InfoLine label="VIN" value={row.vehicleVin || "не указан"} muted={!row.vehicleVin} mono />
           </InfoBlock>
 
-          <InfoBlock title="Отгрузки" icon={<Truck aria-hidden className="eco-icon" />}>
-            <InfoLine label="Всего отгрузок" value={String(row.demandCount)} />
-            <InfoLine label="Последняя" value={row.lastDemandName || "нет истории"} muted={!row.lastDemandName} />
-            <InfoLine label="Дата" value={formatDate(row.lastDemandAt)} muted={!row.lastDemandAt} />
-            <InfoLine label="Сумма последней" value={formatMoney(row.lastDemandSumCents)} />
+          <InfoBlock title="Отгрузки" icon={<Truck aria-hidden className="eco-icon" />} className="eco-client-shipments-block">
+            <div className="eco-client-shipments-summary">
+              <InfoLine label="Всего отгрузок" value={String(row.demandCount)} />
+              <Link href={allClientShipmentsHref(row)} className="eco-client-shipments-all">
+                Все отгрузки клиента
+                <ChevronRight aria-hidden className="eco-icon" />
+              </Link>
+            </div>
+            {recentDemands.length > 0 ? (
+              <div className="eco-client-shipment-list">
+                {recentDemands.slice(0, 5).map((demand) => (
+                  <Link key={demand.id} href={shipmentHref(demand.id)} className="eco-client-shipment-row">
+                    <span>
+                      <strong>{demand.name}</strong>
+                      <em>{formatDate(demand.momentAt)} · {formatMoney(demand.sumCents)}</em>
+                    </span>
+                    <EcoBadge tone={demandStatusTone(demand.applicable)}>{demandStatusLabel(demand.applicable)}</EcoBadge>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="eco-muted-value">История отгрузок пока не найдена.</p>
+            )}
           </InfoBlock>
 
           <InfoBlock title="Реквизиты" icon={<FileText aria-hidden className="eco-icon" />}>
@@ -1204,9 +1286,9 @@ function ClientDrawer({
   );
 }
 
-function InfoBlock({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+function InfoBlock({ title, icon, children, className = "" }: { title: string; icon: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className="eco-client-info-block">
+    <section className={`eco-client-info-block ${className}`}>
       <h3>{icon}{title}</h3>
       {children}
     </section>

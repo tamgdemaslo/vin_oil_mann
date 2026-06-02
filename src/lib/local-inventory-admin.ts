@@ -1439,6 +1439,13 @@ type CounterpartyActivity = {
   lastDemandName: string;
   lastDemandAt: string;
   lastDemandSumCents: number | null;
+  recentDemands: Array<{
+    id: string;
+    name: string;
+    momentAt: string;
+    sumCents: number;
+    applicable: boolean;
+  }>;
   vehicleCount: number;
   vehicleLabel: string;
   vehiclePlate: string;
@@ -1478,6 +1485,7 @@ function emptyCounterpartyActivity(): CounterpartyActivity {
     lastDemandName: "",
     lastDemandAt: "",
     lastDemandSumCents: null,
+    recentDemands: [],
     vehicleCount: 0,
     vehicleLabel: "",
     vehiclePlate: "",
@@ -1667,6 +1675,7 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
     lastDemandName: builder.lastDemandName,
     lastDemandAt: builder.lastDemandAt,
     lastDemandSumCents: builder.lastDemandSumCents,
+    recentDemands: [],
     vehicleCount: builder.vehicleKeys.size,
     crmSearchText: buildSearchText(builder.searchParts),
   };
@@ -1820,9 +1829,12 @@ async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
     where: { counterpartyId: { in: ids } },
     select: {
       counterpartyId: true,
+      id: true,
+      moyskladId: true,
       name: true,
       momentAt: true,
       sumCents: true,
+      applicable: true,
       description: true,
       attributes: true,
     },
@@ -1837,6 +1849,15 @@ async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
     activity.demandCount += 1;
     activity.totalDemandSumCents += demand.sumCents ?? 0;
     activity.searchParts.push(demand.name, demand.description ?? "");
+    if (activity.recentDemands.length < 5) {
+      activity.recentDemands.push({
+        id: demand.moyskladId ?? demand.id,
+        name: demand.name,
+        momentAt: demand.momentAt.toISOString(),
+        sumCents: demand.sumCents ?? 0,
+        applicable: demand.applicable,
+      });
+    }
 
     if (!activity.lastDemandAt) {
       activity.lastDemandName = demand.name;
@@ -1881,6 +1902,7 @@ async function enrichCounterpartyRows(rows: CounterpartyListRow[]): Promise<Coun
       lastDemandName: activity.lastDemandName,
       lastDemandAt: activity.lastDemandAt,
       lastDemandSumCents: activity.lastDemandSumCents,
+      recentDemands: activity.recentDemands,
       vehicleCount,
       vehicleLabel,
       vehiclePlate,
@@ -2692,6 +2714,21 @@ export async function listLocalAdminCounterparties(params: {
     stats,
     counterparties: filteredCounterparties,
   };
+}
+
+export async function getLocalAdminCounterparty(id: string) {
+  const cleanId = id.trim();
+  if (!cleanId) return { ok: false as const, error: "id не указан", notFound: true as const };
+  const counterparty = await prisma.localCounterparty.findFirst({
+    where: {
+      OR: [{ id: cleanId }, { moyskladId: cleanId }],
+    },
+  });
+  if (!counterparty) {
+    return { ok: false as const, error: "Контрагент не найден", notFound: true as const };
+  }
+  const [row] = await enrichCounterpartyRows([mapCounterparty(counterparty)]);
+  return { ok: true as const, counterparty: row };
 }
 
 export async function createLocalAdminCounterparty(body: CounterpartyInput) {

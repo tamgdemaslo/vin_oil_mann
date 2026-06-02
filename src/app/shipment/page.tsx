@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
-import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
-import { ShipmentRowActions } from "./ShipmentRowActions";
+import { ShipmentListRow } from "./ShipmentListRow";
 
 type DemandAgent = {
+  id?: string;
   name?: string;
   meta?: { href?: string };
 };
@@ -90,7 +90,18 @@ function getCounterpartyDisplay(row: DemandRow): string {
   return "—";
 }
 
+function localCounterpartyIdFromMeta(meta?: { href?: string }): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/counterparty\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
+}
+
 function counterpartyCatalogHref(row: DemandRow): string | null {
+  const id = row.agent?.id?.trim() || localCounterpartyIdFromMeta(row.agent?.meta);
+  if (id) return `/clients/counterparties?counterparty=${encodeURIComponent(id)}`;
   const name = getCounterpartyDisplay(row);
   if (!name || name === "—") return null;
   return `/clients/counterparties?search=${encodeURIComponent(name)}`;
@@ -238,7 +249,7 @@ export default async function ShipmentListPage({
                 Колонки
               </button>
             </div>
-            <table className="eco-table">
+            <table className="eco-table eco-shipment-list-table">
               <thead>
                 <tr>
                   <th style={{ width: 36 }}><span className="eco-check" /></th>
@@ -259,62 +270,20 @@ export default async function ShipmentListPage({
                   const counterpartyName = getCounterpartyDisplay(r);
                   const counterpartyHref = counterpartyCatalogHref(r);
                   return (
-                  <tr key={r.id}>
-                    <td><span className="eco-check" /></td>
-                    <td>
-                      <Link href={`/shipment/${r.id}`} className="l-mono" style={{ color: "var(--eco-ink)", fontWeight: 600 }}>
-                        {r.name}
-                      </Link>
-                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>
-                        {moment.date} · {moment.time}
-                      </div>
-                    </td>
-                    <td>
-                      {counterpartyHref ? (
-                        <Link
-                          href={counterpartyHref}
-                          className="eco-shipment-list-counterparty-link"
-                          title="Открыть контрагента"
-                        >
-                          {counterpartyName}
-                        </Link>
-                      ) : (
-                        <div style={{ color: "var(--eco-ink)", fontWeight: 500 }}>{counterpartyName}</div>
-                      )}
-                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>телефон в карточке клиента</div>
-                    </td>
-                    <td>
-                      <div style={{ color: "var(--eco-ink-2)" }}>—</div>
-                      <div className="l-mono" style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>{getPlateDisplay(r)}</div>
-                    </td>
-                    <td>
-                      <div>{r.organization?.name ?? "—"}</div>
-                      <div style={{ color: "var(--eco-muted)", fontSize: 11, marginTop: 2 }}>{r.store?.name ?? "—"}</div>
-                    </td>
-                    <td>{getEcoUserName(r) ?? "—"}</td>
-                    <td>
-                      <EcoBadge tone={r.applicable ? "success" : "neutral"} dot>
-                        {r.applicable ? "Проведено" : "Черновик"}
-                      </EcoBadge>
-                    </td>
-                    <td>
-                      <EcoBadge tone={r.sum > 0 ? "success" : "warning"} dot>
-                        {r.sum > 0 ? "Оплачено" : "Не оплачено"}
-                      </EcoBadge>
-                    </td>
-                    <td className="l-money" style={{ color: "var(--eco-ink)", fontWeight: 600, textAlign: "right" }}>
-                      {rubles(r.sum)} ₽
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <div className="eco-row-actions">
-                        <ShipmentRowActions shipmentId={r.id} />
-                      </div>
-                    </td>
-                  </tr>
-                );
+                    <ShipmentListRow
+                      key={r.id}
+                      row={r}
+                      moment={moment}
+                      counterpartyName={counterpartyName}
+                      counterpartyHref={counterpartyHref}
+                      plate={getPlateDisplay(r)}
+                      ecoUserName={getEcoUserName(r) ?? "—"}
+                      sumLabel={`${rubles(r.sum)} ₽`}
+                    />
+                  );
                 })}
                 {rows.length === 0 && (
-                  <tr>
+                  <tr className="eco-shipment-list-empty-row">
                     <td colSpan={10} style={{ color: "var(--eco-muted)", padding: 32, textAlign: "center" }}>
                       Ничего не найдено
                     </td>

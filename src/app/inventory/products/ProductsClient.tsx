@@ -521,10 +521,10 @@ function selectedFilterValues(filters: ProductFilters, key: FacetKey) {
 }
 
 function usefulProductMetaLines(row: ProductRow) {
-  const compactMeta = [displayBrandLabel(row.brand), row.packageVolume]
+  const compactMeta = [shortGroupLabel(row.groupPath), displayBrandLabel(row.brand), row.packageVolume]
     .filter((value) => value && value !== "-")
     .join(" · ");
-  return [compactMeta || shortGroupLabel(row.groupPath)].filter(Boolean);
+  return [compactMeta].filter(Boolean);
 }
 
 function formatFileSize(value: number) {
@@ -1141,7 +1141,7 @@ export default function ProductsClient() {
   function renderSkeletonRows() {
     return Array.from({ length: 7 }, (_, index) => (
       <tr key={`skeleton-${index}`} className="eco-product-skeleton-row">
-        {Array.from({ length: 12 }, (_cell, cellIndex) => (
+        {Array.from({ length: 8 }, (_cell, cellIndex) => (
           <td key={cellIndex}>
             <span className="eco-product-skeleton-line" />
           </td>
@@ -1947,14 +1947,10 @@ export default function ProductsClient() {
           <table className="eco-table eco-product-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}><span className="eco-check" /></th>
-                <th>{sortHeader("Артикул", "article")}</th>
-                <th>{sortHeader("Название", "name")}</th>
-                <th>Спец.</th>
+                <th>{sortHeader("Название / категория", "name")}</th>
                 <th>Ячейка</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Остаток", "quantity", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Доступно", "available", "right")}</th>
-                <th style={{ textAlign: "right" }}>Резерв</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Закуп.", "buyPrice", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Цена", "salePrice", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Маржа", "margin", "right")}</th>
@@ -1967,7 +1963,7 @@ export default function ProductsClient() {
               )}
               {!loading && error === "Не удалось выполнить поиск" && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={8}>
                     <div className="eco-products-empty is-error">
                       <strong>Не удалось выполнить поиск</strong>
                       <span>Попробуйте обновить страницу или изменить запрос.</span>
@@ -1980,7 +1976,7 @@ export default function ProductsClient() {
               )}
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.length === 0 && (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={8}>
                     <div className="eco-products-empty">
                       <strong>{emptyStateCopy().title}</strong>
                       <span>{emptyStateCopy().text}</span>
@@ -2005,10 +2001,6 @@ export default function ProductsClient() {
               )}
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => (
                 <tr key={row.id}>
-                  <td><span className="eco-check" /></td>
-                  <td className="eco-product-article">
-                    {[row.article, row.code].filter(Boolean).join("-") || "без артикула"}
-                  </td>
                   <td className="eco-product-name-cell">
                     <div className="eco-product-title">{row.name}</div>
                     <div className="eco-product-meta">
@@ -2017,21 +2009,12 @@ export default function ProductsClient() {
                       ))}
                     </div>
                   </td>
-                  <td className="eco-product-spec">
-                    <strong>{row.sae || "—"}</strong>
-                    <span>
-                      {[row.apiSpec, row.acea].filter(Boolean).join(" · ") || "—"}
-                    </span>
-                  </td>
                   <td className="eco-product-cell">{row.cell || "—"}</td>
                   <td className="eco-product-number">
                     <span className="eco-stock-badge">{formatQty(row.totalQuantity)}</span>
                   </td>
                   <td className="eco-product-number">
                     {formatQty(row.totalAvailable)}
-                  </td>
-                  <td className="eco-product-number is-muted">
-                    {formatQty(reserveValue(row))}
                   </td>
                   <td className="eco-product-number is-muted">
                     {row.buyPrice == null ? "—" : formatMoneyWhole(row.buyPrice)}

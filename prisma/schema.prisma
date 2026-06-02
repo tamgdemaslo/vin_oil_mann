@@ -364,6 +364,171 @@ model DiagnosticOffer {
   @@map("diagnostic_offers")
 }
 
+// --- Новая карта диагностики ---
+
+enum DiagnosticMapSessionStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum DiagnosticMapItemStatus {
+  UNCHECKED
+  NORMAL
+  ATTENTION
+  REPLACE
+  NO_ACCESS
+  BY_MILEAGE
+  BY_CLIENT
+  SKIPPED
+  NOT_APPLICABLE
+}
+
+enum DiagnosticMapCheckMethod {
+  INSPECTION
+  CLIENT_WORDS
+  MILEAGE
+  NO_ACCESS
+  SKIPPED
+}
+
+enum DiagnosticMapApplicability {
+  APPLICABLE
+  NOT_APPLICABLE
+  HIDDEN
+}
+
+enum DiagnosticMapActionKind {
+  ADD_TO_SHIPMENT
+  CREATE_CRM_TASK
+  NEXT_VISIT
+  SHOW_IN_REPORT
+}
+
+model DiagnosticMapSession {
+  id       String @id @default(cuid())
+  demandId String? @map("demand_id")
+  demand   LocalDemand? @relation(fields: [demandId], references: [id], onDelete: SetNull)
+
+  clientId    String? @map("client_id")
+  clientName  String? @map("client_name")
+  clientPhone String? @map("client_phone")
+
+  vin          String?
+  brand        String?
+  model        String?
+  year         Int?
+  licensePlate String? @map("license_plate")
+  mileage      Int?
+  vehicleHints Json?   @map("vehicle_hints")
+
+  masterLogin String? @map("master_login")
+  masterName  String? @map("master_name")
+
+  status      DiagnosticMapSessionStatus @default(IN_PROGRESS)
+  publicToken String                     @unique @default(cuid()) @map("public_token")
+  startedAt   DateTime                   @default(now()) @map("started_at")
+  completedAt DateTime?                  @map("completed_at")
+  reportSentAt DateTime?                 @map("report_sent_at")
+  clientWantsReminder Boolean            @default(true) @map("client_wants_reminder")
+
+  totalCount       Int @default(0) @map("total_count")
+  normalCount      Int @default(0) @map("normal_count")
+  attentionCount   Int @default(0) @map("attention_count")
+  replaceCount     Int @default(0) @map("replace_count")
+  indirectCount    Int @default(0) @map("indirect_count")
+  noAccessCount    Int @default(0) @map("no_access_count")
+  byMileageCount   Int @default(0) @map("by_mileage_count")
+  byClientCount    Int @default(0) @map("by_client_count")
+  withPhotoCount   Int @default(0) @map("with_photo_count")
+  withoutPhotoCount Int @default(0) @map("without_photo_count")
+  nowRecommendationCount Int @default(0) @map("now_recommendation_count")
+  nextVisitRecommendationCount Int @default(0) @map("next_visit_recommendation_count")
+
+  items DiagnosticMapItem[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([demandId])
+  @@index([clientId])
+  @@index([vin])
+  @@index([status])
+  @@map("diagnostic_map_sessions")
+}
+
+model DiagnosticMapItem {
+  id        String               @id @default(cuid())
+  sessionId String               @map("session_id")
+  session   DiagnosticMapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  blockCode  String @map("block_code")
+  blockTitle String @map("block_title")
+  blockOrder Int    @map("block_order")
+  itemCode   String @map("item_code")
+  itemTitle  String @map("item_title")
+  itemOrder  Int    @map("item_order")
+  catalogSnapshot Json @map("catalog_snapshot")
+
+  applicability DiagnosticMapApplicability @default(APPLICABLE)
+  status        DiagnosticMapItemStatus    @default(UNCHECKED)
+  checkMethod   DiagnosticMapCheckMethod   @default(INSPECTION) @map("check_method")
+
+  value          String?
+  comment        String? @db.Text
+  recommendation String? @db.Text
+  nextVisit      Boolean @default(false) @map("next_visit")
+  showInReport   Boolean @default(true) @map("show_in_report")
+
+  selectedNotes String[] @map("selected_notes")
+  selectedRecommendations String[] @map("selected_recommendations")
+
+  photos  DiagnosticMapPhoto[]
+  actions DiagnosticMapRecommendationAction[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([sessionId, itemCode])
+  @@index([sessionId])
+  @@index([status])
+  @@map("diagnostic_map_items")
+}
+
+model DiagnosticMapPhoto {
+  id     String            @id @default(cuid())
+  itemId String            @map("item_id")
+  item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  filePath  String @map("file_path")
+  caption   String
+  sortOrder Int    @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([itemId])
+  @@map("diagnostic_map_photos")
+}
+
+model DiagnosticMapRecommendationAction {
+  id     String            @id @default(cuid())
+  itemId String            @map("item_id")
+  item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  kind DiagnosticMapActionKind
+  title String
+  status String @default("open")
+  localDemandPositionId String? @map("local_demand_position_id")
+  crmDealId String? @map("crm_deal_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([itemId])
+  @@index([kind])
+  @@map("diagnostic_map_recommendation_actions")
+}
+
 // --- Локальное складское ядро ---
 
 /// Локальный справочник организаций для документов.
@@ -694,6 +859,7 @@ model LocalDemand {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   positions LocalDemandPosition[]
+  diagnosticMapSessions DiagnosticMapSession[]
 
   @@index([documentDate])
   @@index([momentAt])

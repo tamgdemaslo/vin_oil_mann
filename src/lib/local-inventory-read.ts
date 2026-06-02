@@ -16,6 +16,7 @@ type LocalProductSearchParams = {
   oem?: string;
   mannName?: string;
   params?: string;
+  entityType?: string;
   storeName?: string;
   storeId?: string;
   limit?: number;
@@ -58,12 +59,58 @@ function compactSearchText(value: unknown): string {
   return String(value ?? "")
     .trim()
     .toLowerCase()
+    .replace(/ё/g, "е")
     .replace(/\s/g, "");
 }
 
 function textIncludesTerm(text: string, term?: string): boolean {
   const needle = compactSearchText(term);
   return needle.length >= 2 && compactSearchText(text).includes(needle);
+}
+
+function splitSearchTokens(term?: string): string[] {
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const token of String(term ?? "")
+    .toLowerCase()
+    .split(/[\s.,;:()[\]{}"'`«»/\\|+*_–—-]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2)) {
+    const key = compactSearchText(token);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+function stemSearchToken(token: string): string {
+  const compact = compactSearchText(token);
+  if (compact.length < 5) return compact;
+  return compact.replace(
+    /(иями|ями|ами|ого|его|ому|ему|ыми|ими|ая|яя|ое|ее|ые|ие|ый|ий|ой|ов|ев|ах|ях|ам|ям|ом|ем|а|я|ы|и|у|ю|о|е)$/i,
+    ""
+  );
+}
+
+function searchTokenVariants(token: string): string[] {
+  const compact = compactSearchText(token);
+  const stem = stemSearchToken(token);
+  return [...new Set([compact, stem].filter((item) => item.length >= 3))];
+}
+
+function textMatchesToken(haystack: string, token: string): boolean {
+  return searchTokenVariants(token).some((variant) => haystack.includes(variant));
+}
+
+function textMatchesQuery(text: string, term?: string): boolean {
+  if (textIncludesTerm(text, term)) return true;
+  const haystack = compactSearchText(text);
+  const tokens = splitSearchTokens(term);
+  if (tokens.length === 0) return false;
+  if (tokens.length <= 2) return tokens.every((token) => textMatchesToken(haystack, token));
+  const matched = tokens.filter((token) => textMatchesToken(haystack, token)).length;
+  return matched >= Math.max(2, tokens.length - 1);
 }
 
 function attributeValueText(value: unknown): string {
@@ -114,18 +161,18 @@ function productMatchesSearchFields(
   const mannName = params.mannName?.trim();
   const paramsValue = params.params?.trim();
 
-  if (search && !textIncludesTerm([productIdentityText(product), product.searchText].join(" "), search)) return false;
+  if (search && !textMatchesQuery([productIdentityText(product), product.searchText].join(" "), search)) return false;
   if (
     oem &&
-    !textIncludesTerm([product.oem, product.oemParts, attributeText(product.attributes, OEM_ATTR_ID, ["oem parts", "oem"])].join(" "), oem)
+    !textIncludesTerm([product.oem, product.oemParts, attributeText(product.attributes, OEM_ATTR_ID, ["oem parts", "oem"]), product.searchText].join(" "), oem)
   ) return false;
   if (
     mannName &&
-    !textIncludesTerm([product.mannName, attributeText(product.attributes, MANN_ATTR_ID, ["наименование по mann", "mann"])].join(" "), mannName)
+    !textIncludesTerm([product.mannName, attributeText(product.attributes, MANN_ATTR_ID, ["наименование по mann", "mann"]), product.searchText].join(" "), mannName)
   ) {
     return false;
   }
-  if (paramsValue && !textIncludesTerm([product.params, attributeText(product.attributes, PARAMS_ATTR_ID, ["параметры"])].join(" "), paramsValue)) {
+  if (paramsValue && !textIncludesTerm([product.params, attributeText(product.attributes, PARAMS_ATTR_ID, ["параметры"]), product.searchText].join(" "), paramsValue)) {
     return false;
   }
   return true;
@@ -176,10 +223,28 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
   const oem = params.oem?.trim() ?? "";
   const mannName = params.mannName?.trim() ?? "";
   const paramsValue = params.params?.trim() ?? "";
+  const entityType = params.entityType?.trim() ?? "";
+  const searchTokens = splitSearchTokens(search).slice(0, 6);
   const storeName = params.storeName?.trim() ?? "";
   const storeMoyskladId = params.storeId?.trim() ?? "";
   const andFilters = [];
+  const tokenSearchFilter = (token: string) => {
+    const variants = searchTokenVariants(token);
+    return variants.length <= 1
+      ? { searchText: { contains: variants[0] ?? token, mode: "insensitive" as const } }
+      : {
+          OR: variants.map((variant) => ({
+            searchText: { contains: variant, mode: "insensitive" as const },
+          })),
+        };
+  };
   if (search) {
+    const relaxedTokenFilters =
+      searchTokens.length >= 3
+        ? searchTokens.map((_, omittedIndex) => ({
+            AND: searchTokens.filter((__, tokenIndex) => tokenIndex !== omittedIndex).map(tokenSearchFilter),
+          }))
+        : [];
     andFilters.push({
       OR: [
         { name: { contains: search, mode: "insensitive" as const } },
@@ -188,11 +253,41 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
         { externalCode: { contains: search, mode: "insensitive" as const } },
         { brand: { contains: search, mode: "insensitive" as const } },
         { searchText: { contains: search.toLowerCase(), mode: "insensitive" as const } },
+        ...(searchTokens.length > 1
+          ? [
+              {
+                AND: searchTokens.map(tokenSearchFilter),
+              },
+              ...relaxedTokenFilters,
+            ]
+          : []),
       ],
     });
   }
-  for (const term of [oem, mannName, paramsValue].filter(Boolean)) {
-    andFilters.push({ searchText: { contains: term.toLowerCase(), mode: "insensitive" as const } });
+  if (oem) {
+    andFilters.push({
+      OR: [
+        { oem: { contains: oem, mode: "insensitive" as const } },
+        { oemParts: { contains: oem, mode: "insensitive" as const } },
+        { searchText: { contains: oem.toLowerCase(), mode: "insensitive" as const } },
+      ],
+    });
+  }
+  if (mannName) {
+    andFilters.push({
+      OR: [
+        { mannName: { contains: mannName, mode: "insensitive" as const } },
+        { searchText: { contains: mannName.toLowerCase(), mode: "insensitive" as const } },
+      ],
+    });
+  }
+  if (paramsValue) {
+    andFilters.push({
+      OR: [
+        { params: { contains: paramsValue, mode: "insensitive" as const } },
+        { searchText: { contains: paramsValue.toLowerCase(), mode: "insensitive" as const } },
+      ],
+    });
   }
 
   const store = storeMoyskladId
@@ -210,6 +305,7 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
   const products = await prisma.localProduct.findMany({
     where: {
       archived: false,
+      ...(entityType ? { entityType } : {}),
       ...(andFilters.length > 0 ? { AND: andFilters } : {}),
     },
     include: {
@@ -575,6 +671,8 @@ function localDemandToMoySkladShape(row: LocalDemandWithRelations) {
     description: row.description ?? "",
     agent: row.counterparty
       ? {
+          id: row.counterparty.id,
+          moyskladId: row.counterparty.moyskladId ?? undefined,
           name: row.counterparty.name,
           phone: row.counterparty.phone ?? undefined,
           phones: phonesRawArray(row.counterparty.phonesRaw).map((phone) => ({ phone })),
@@ -582,6 +680,7 @@ function localDemandToMoySkladShape(row: LocalDemandWithRelations) {
         }
       : row.agentNameSnapshot
         ? {
+            id: row.agentMoyskladId ?? undefined,
             name: row.agentNameSnapshot,
             meta: row.agentMoyskladId
               ? entityMeta("counterparty", row.agentMoyskladId, null, row.agentMoyskladId)

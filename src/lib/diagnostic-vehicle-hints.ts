@@ -1,4 +1,4 @@
-import type { VehicleHints } from "@/data/diagnostic-catalog";
+import type { VehicleHints } from "@/data/diagnostic-map";
 
 type DiagnosticVehicleHintSource = {
   decoded?: {

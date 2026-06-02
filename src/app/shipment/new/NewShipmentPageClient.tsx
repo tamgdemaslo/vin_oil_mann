@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
-import { DiagnosticModal } from "@/components/diagnostic/DiagnosticModal";
+import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
@@ -29,6 +29,7 @@ type Meta = { href: string; type: string; mediaType: string };
 type Org = { id: string; name: string; meta: Meta };
 type Store = { id: string; name: string; meta: Meta; isMain?: boolean };
 type Counterparty = { id: string; name: string; meta: Meta };
+type ProductSearchMode = "all" | "product" | "service";
 type Product = {
   id: string;
   name: string;
@@ -270,7 +271,13 @@ function positionProductHref(position: Position): string {
   return `/inventory/products?search=${encodeURIComponent(position.name)}`;
 }
 
+function isServiceMeta(meta?: Meta): boolean {
+  return meta?.type === "service" || /^local:\/\/service\//i.test(meta?.href ?? "") || /\/entity\/service\//i.test(meta?.href ?? "");
+}
+
 function counterpartyCatalogHref(counterparty: Counterparty): string {
+  const id = counterparty.id?.trim() || localEntityIdFromMeta(counterparty.meta);
+  if (id) return `/clients/counterparties?counterparty=${encodeURIComponent(id)}`;
   const name = counterparty.name.trim();
   return name ? `/clients/counterparties?search=${encodeURIComponent(name)}` : "/clients/counterparties";
 }
@@ -696,6 +703,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [productOem, setProductOem] = useState("");
   const [productMannName, setProductMannName] = useState("");
   const [productParams, setProductParams] = useState("");
+  const [productSearchMode, setProductSearchMode] = useState<ProductSearchMode>("all");
   const [productOptions, setProductOptions] = useState<Product[]>([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
   const [productSearchError, setProductSearchError] = useState<string | null>(null);
@@ -1096,7 +1104,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [authChecked, selectedAgent, agentSearch]);
 
   useEffect(() => {
-    const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+    const hasQuery = productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
       setProductSearchError(null);
@@ -1112,13 +1120,23 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       if (productOem.trim()) params.set("oem", productOem.trim());
       if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
+      if (productSearchMode !== "all") params.set("entityType", productSearchMode);
       if (selectedStore?.id) params.set("storeId", selectedStore.id);
       if (selectedStore?.name) params.set("storeName", selectedStore.name);
-      params.set("limit", "15");
+      params.set("limit", "50");
       fetch(`/api/moysklad/products?${params.toString()}`)
         .then(async (r) => {
           const data = await safeJson<ProductsJson>(r, {});
-          if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить товары");
+          if (!r.ok) {
+            throw new Error(
+              data.error ??
+                (productSearchMode === "service"
+                  ? "Не удалось загрузить услуги"
+                  : productSearchMode === "product"
+                    ? "Не удалось загрузить товары"
+                    : "Не удалось загрузить позиции")
+            );
+          }
           return data;
         })
         .then((data) => {
@@ -1128,7 +1146,15 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         .catch((error) => {
           if (cancelled) return;
           setProductOptions([]);
-          setProductSearchError(error instanceof Error ? error.message : "Не удалось загрузить товары");
+          setProductSearchError(
+            error instanceof Error
+              ? error.message
+              : productSearchMode === "service"
+                ? "Не удалось загрузить услуги"
+                : productSearchMode === "product"
+                  ? "Не удалось загрузить товары"
+                  : "Не удалось загрузить позиции"
+          );
         })
         .finally(() => {
           if (!cancelled) setProductSearchLoading(false);
@@ -1138,7 +1164,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [productSearch, productOem, productMannName, productParams, selectedStore?.id, selectedStore?.name]);
+  }, [productSearch, productOem, productMannName, productParams, productSearchMode, selectedStore?.id, selectedStore?.name]);
 
   const openCreateAgentForm = () => {
     setNewAgentName(agentSearch.trim() || "");
@@ -1214,6 +1240,24 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     ]);
     setProductSearch("");
     setProductOptions([]);
+    markDraftDirty();
+  };
+
+  const focusProductSearch = () => {
+    window.requestAnimationFrame(() => document.getElementById("shipment-product-search")?.focus());
+  };
+
+  const openProductSearch = () => {
+    setProductSearchMode("product");
+    focusProductSearch();
+  };
+
+  const openServiceSearch = () => {
+    setProductSearchMode("service");
+    setProductOem("");
+    setProductMannName("");
+    setProductParams("");
+    focusProductSearch();
   };
 
   const runVinLookup = useCallback(async (vehicleOverrides?: { displacementL?: string; enginePowerPS?: string }) => {
@@ -1430,7 +1474,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
 
       let diagId = diagnosticRowId;
-      const existingRes = await fetch(`/api/diagnostic/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
+      const existingRes = await fetch(`/api/diagnostics/for-shipment?shipmentId=${encodeURIComponent(sid)}`);
       const existingJson = await safeJson<DiagnosticExistingJson>(existingRes, {});
       if (!existingRes.ok) {
         setSubmitError(existingJson.error ?? "Не удалось проверить существующую диагностику");
@@ -1439,12 +1483,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       if (existingJson.diagnostic?.id) {
         diagId = existingJson.diagnostic.id as string;
       } else {
-        const createRes = await fetch("/api/diagnostic", {
+        const createRes = await fetch("/api/diagnostics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            shipmentMoySkladId: sid,
-            agentMoySkladId: selectedAgent?.id ?? null,
+            shipmentId: sid,
+            clientId: selectedAgent?.id ?? null,
+            clientName: selectedAgent?.name ?? null,
             vin: vin.replace(/\s/g, "").toUpperCase() || null,
             brand: dec?.make || modelParts[0] || null,
             model: dec?.model || modelParts.slice(1).join(" ") || null,
@@ -1460,14 +1505,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           return;
         }
         diagId = createJson.diagnosticId as string;
-      }
-
-      if (diagId && Object.keys(vehicleHints).length > 0) {
-        await fetch(`/api/diagnostic/${diagId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vehicleHints }),
-        });
       }
 
       setDiagnosticRowId(diagId);
@@ -1659,6 +1696,19 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const disc = typeof p.discount === "number" ? p.discount : 0;
     return sum + base * (1 - disc / 100);
   }, 0);
+  const indexedPositions = positions.map((position, index) => ({ position, index }));
+  const positionGroups = [
+    {
+      key: "services",
+      title: "Услуги",
+      items: indexedPositions.filter(({ position }) => isServiceMeta(position.assortmentMeta)),
+    },
+    {
+      key: "products",
+      title: "Товары",
+      items: indexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
+    },
+  ].filter((group) => group.items.length > 0);
   const positionsDiscount = Math.max(0, positionsSubtotal - positionsTotal);
   const hasIncompleteCost = positions.some((p) => {
     const stock = getPositionStock(p);
@@ -1729,7 +1779,27 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       mono: true,
     },
   ];
-  const hasProductSearchQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+  const hasProductSearchQuery = productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+  const productSearchEntityLabel =
+    productSearchMode === "service" ? "Услуга" : productSearchMode === "product" ? "Товар" : "Позиция";
+  const productSearchLoadingLabel =
+    productSearchMode === "service"
+      ? "Ищем услуги в каталоге…"
+      : productSearchMode === "product"
+        ? "Ищем товары в каталоге…"
+        : "Ищем товары и услуги в каталоге…";
+  const productSearchErrorLabel =
+    productSearchMode === "service"
+      ? "Не удалось загрузить услуги"
+      : productSearchMode === "product"
+        ? "Не удалось загрузить товары"
+        : "Не удалось загрузить позиции";
+  const productSearchEmptyHint =
+    productSearchMode === "service"
+      ? "Попробуйте изменить запрос или найти услугу по другому названию."
+      : productSearchMode === "product"
+        ? "Попробуйте изменить запрос или воспользуйтесь расширенным поиском."
+        : "Попробуйте изменить запрос или переключить поиск на услуги.";
   const showAgentSearchPanel =
     !selectedAgent && !showCreateAgentForm && (agentSearch.trim() || agentOptions.length > 0 || agentLoading || agentSearchError);
   const documentTitle = isExistingDraft ? `Отгрузка ${existingDemandName ?? demandIdLocal ?? demandId}` : "Новая отгрузка";
@@ -3037,14 +3107,20 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               ) : (
                 <Search className="eco-shipment-new-search-icon" aria-hidden />
               )}
-            <input
-              id="shipment-product-search"
-              type="text"
-              value={productSearch}
-              onChange={(e) => setProductSearch(e.target.value)}
-              placeholder="Поиск по названию или артикулу..."
-              className="eco-input"
-            />
+	            <input
+	              id="shipment-product-search"
+	              type="text"
+	              value={productSearch}
+	              onChange={(e) => setProductSearch(e.target.value)}
+	              placeholder={
+                  productSearchMode === "service"
+                    ? "Поиск услуги по названию..."
+                    : productSearchMode === "product"
+                      ? "Поиск товара по названию или артикулу..."
+                      : "Поиск товара, услуги или артикула..."
+                }
+	              className="eco-input"
+	            />
             </label>
           </div>
           <details className="eco-shipment-advanced-search">
@@ -3093,7 +3169,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <div className="eco-product-results" aria-live="polite">
               {!productSearchLoading && !productSearchError && productOptions.length > 0 && (
                 <div className="eco-product-results-head border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
-                  <span>Товар</span>
+	                  <span>{productSearchEntityLabel}</span>
                   <span>Доступно</span>
                   <span>Ячейка</span>
                   <span>Цена</span>
@@ -3105,8 +3181,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <div className="eco-product-loading-copy">
                     <span className="eco-product-loading-spinner" aria-hidden />
                     <div>
-                      <strong>Ищем товары в каталоге…</strong>
-                      <span>Обычно это занимает пару секунд.</span>
+	                      <strong>{productSearchLoadingLabel}</strong>
+	                      <span>Обычно это занимает пару секунд.</span>
                     </div>
                   </div>
                   <div className="eco-product-skeleton-list" aria-hidden>
@@ -3123,28 +3199,30 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </div>
               ) : productSearchError ? (
                 <div className="eco-product-results-state is-error">
-                  <strong>Не удалось загрузить товары</strong>
+	                  <strong>{productSearchErrorLabel}</strong>
                   <span>Повторите попытку.</span>
                 </div>
               ) : productOptions.length > 0 ? (
               <ul className="eco-product-results-list">
-              {productOptions.map((p) => (
+              {productOptions.map((p) => {
+                const isService = isServiceMeta(p.meta);
+                return (
                 <li key={p.id}>
                   <div className="eco-product-result-row px-3 py-2 text-sm">
                     <span className="min-w-0 flex-1">
-                      <Link href={productCatalogHref(p)} className="eco-product-result-title" title="Открыть товар">
+                      <Link href={productCatalogHref(p)} className="eco-product-result-title" title={isService ? "Открыть услугу" : "Открыть товар"}>
                         <span className="truncate">{p.name}</span>
                         <ExternalLink className="eco-icon" aria-hidden />
                       </Link>
                       <span className="block truncate text-xs text-zinc-500">
-                        Артикул: {p.article || "не указан"}
+                        {isService ? "локальная услуга" : `Артикул: ${p.article || "не указан"}`}
                       </span>
                     </span>
-                    <span className={`shrink-0 w-14 text-right tabular-nums ${getStockToneClass(p.availableQuantity ?? p.stockQuantity)}`}>
-                      {p.availableQuantity ?? p.stockQuantity ?? 0}
+                    <span className={`shrink-0 w-14 text-right tabular-nums ${isService ? "text-zinc-400" : getStockToneClass(p.availableQuantity ?? p.stockQuantity)}`}>
+                      {isService ? "—" : (p.availableQuantity ?? p.stockQuantity ?? 0)}
                     </span>
                     <span className="shrink-0 w-12 text-right text-zinc-500 tabular-nums">
-                      {p.cell ?? p.slotName ?? ""}
+                      {isService ? "—" : (p.cell ?? p.slotName ?? "")}
                     </span>
                     <span className="shrink-0 text-zinc-500">{p.price.toFixed(2)} {p.currency}</span>
                     <button
@@ -3156,12 +3234,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     </button>
                   </div>
                 </li>
-              ))}
+                );
+              })}
               </ul>
               ) : (
                 <div className="eco-product-results-state">
                   <strong>Ничего не найдено</strong>
-                  <span>Попробуйте изменить запрос или воспользоваться расширенным поиском.</span>
+                  <span>{productSearchEmptyHint}</span>
                 </div>
               )}
             </div>
@@ -3179,13 +3258,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </div>
             </div>
             <div className="eco-position-head-actions">
-              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>
-                <Search className="eco-icon" aria-hidden />
-                Найти товар
-              </button>
-              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">
-                <Plus className="eco-icon" aria-hidden />
-                Услугу
+	              <button type="button" onClick={openProductSearch} className={productSearchMode === "product" ? "is-active" : undefined}>
+	                <Search className="eco-icon" aria-hidden />
+	                Найти товар
+	              </button>
+	              <button type="button" onClick={openServiceSearch} className={productSearchMode === "service" ? "is-active" : undefined}>
+	                <Plus className="eco-icon" aria-hidden />
+	                Услугу
               </button>
             </div>
           </div>
@@ -3207,37 +3286,46 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </div>
             </div>
             <div className="eco-position-head-actions">
-              <button type="button" onClick={() => document.getElementById("shipment-product-search")?.focus()}>
-                <Search className="eco-icon" aria-hidden />
-                Найти товар
-              </button>
-              <button type="button" disabled title="Услуги будут добавлены отдельным справочником">
-                <Plus className="eco-icon" aria-hidden />
-                Услугу
+	              <button type="button" onClick={openProductSearch} className={productSearchMode === "product" ? "is-active" : undefined}>
+	                <Search className="eco-icon" aria-hidden />
+	                Найти товар
+	              </button>
+	              <button type="button" onClick={openServiceSearch} className={productSearchMode === "service" ? "is-active" : undefined}>
+	                <Plus className="eco-icon" aria-hidden />
+	                Услугу
               </button>
             </div>
           </div>
           <div className="eco-position-cards">
-            {positions.map((p, index) => {
-              const stock = getPositionStock(p);
-              const available = stock?.available;
-              const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
-              const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
-              const slot = p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
-              const availabilityDetails = [
-                slot ? `Ячейка ${slot}` : null,
-                typeof stock?.quantity === "number" ? `Остаток ${stock.quantity}` : null,
-                typeof available === "number" ? `Доступно ${available}` : null,
-              ].filter(Boolean);
+            {positionGroups.map((group) => (
+              <Fragment key={group.key}>
+                <div className="eco-position-card-group-title">
+                  <span>{group.title}</span>
+                  <b>{group.items.length}</b>
+                </div>
+	            {group.items.map(({ position: p, index }) => {
+	              const isService = isServiceMeta(p.assortmentMeta);
+	              const stock = getPositionStock(p);
+	              const available = isService ? undefined : stock?.available;
+	              const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
+	              const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
+	              const slot = isService ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+	              const availabilityDetails = isService
+	                ? []
+	                : [
+	                    slot ? `Ячейка ${slot}` : null,
+	                    typeof stock?.quantity === "number" ? `Остаток ${stock.quantity}` : null,
+	                    typeof available === "number" ? `Доступно ${available}` : null,
+	                  ].filter(Boolean);
               return (
                 <article key={p.assortmentMeta?.href ?? index} className={`eco-position-card ${overAvailable ? "is-warning" : ""}`}>
                   <div className="eco-position-card-head">
                     <div>
-                      <Link href={positionProductHref(p)} className="eco-linked-entity" title="Открыть товар">
+	                      <Link href={positionProductHref(p)} className="eco-linked-entity" title={isService ? "Открыть услугу" : "Открыть товар"}>
                         <strong>{p.name}</strong>
                         <ExternalLink className="eco-icon" aria-hidden />
                       </Link>
-                      <span>{p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
+	                      <span>{isService ? "локальная услуга" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}</span>
                     </div>
                     <button type="button" onClick={() => removePosition(index)} aria-label="Удалить позицию" title="Удалить позицию">
                       <Trash2 className="eco-icon" aria-hidden />
@@ -3335,6 +3423,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </article>
               );
             })}
+              </Fragment>
+            ))}
           </div>
           <div className="eco-table-wrap">
             <table className="eco-table eco-shipment-new-table">
@@ -3351,28 +3441,41 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p, index) => {
-                  const stock = getPositionStock(p);
-                  const available = stock?.available;
-                  const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
-                  const slot = p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
-                  const availabilityDetails = [
-                    slot ? <strong key="slot">{slot}</strong> : null,
-                    typeof stock?.quantity === "number" ? <span key="qty">Остаток: {stock.quantity}</span> : null,
-                    typeof stock?.reserve === "number" ? <span key="reserve">Резерв: {stock.reserve}</span> : null,
-                    typeof available === "number" ? <span key="available">Доступно: {available}</span> : null,
-                  ].filter(Boolean);
+                {positionGroups.map((group) => (
+                  <Fragment key={group.key}>
+                    <tr className="eco-position-group-row">
+                      <td colSpan={8}>
+                        <div className="eco-position-group-label">
+                          <span>{group.title}</span>
+                          <b>{group.items.length}</b>
+                        </div>
+                      </td>
+                    </tr>
+	                {group.items.map(({ position: p, index }, groupRowIndex) => {
+	                  const isService = isServiceMeta(p.assortmentMeta);
+	                  const stock = getPositionStock(p);
+	                  const available = isService ? undefined : stock?.available;
+	                  const overAvailable = typeof available === "number" && (p.quantity || 0) > available;
+	                  const slot = isService ? undefined : p.cell ?? cellByAssortment[p.assortmentMeta?.href ?? ""] ?? stock?.slotName;
+	                  const availabilityDetails = isService
+	                    ? []
+	                    : [
+	                        slot ? <strong key="slot">{slot}</strong> : null,
+	                        typeof stock?.quantity === "number" ? <span key="qty">Остаток: {stock.quantity}</span> : null,
+	                        typeof stock?.reserve === "number" ? <span key="reserve">Резерв: {stock.reserve}</span> : null,
+	                        typeof available === "number" ? <span key="available">Доступно: {available}</span> : null,
+	                      ].filter(Boolean);
                   const lineTotal = p.quantity * (p.price || 0) * (1 - (typeof p.discount === "number" ? p.discount : 0) / 100);
                   return (
                   <tr key={p.assortmentMeta?.href ?? index} className={overAvailable ? "is-warning" : ""}>
-                    <td className="eco-position-row-number">{String(index + 1).padStart(2, "0")}</td>
+                    <td className="eco-position-row-number">{String(groupRowIndex + 1).padStart(2, "0")}</td>
                     <td className="eco-position-product-cell" title={p.name}>
-                      <Link href={positionProductHref(p)} className="eco-position-product-name eco-position-product-link" title="Открыть товар">
+	                      <Link href={positionProductHref(p)} className="eco-position-product-name eco-position-product-link" title={isService ? "Открыть услугу" : "Открыть товар"}>
                         <span>{p.name}</span>
                         <ExternalLink className="eco-icon" aria-hidden />
                       </Link>
                       <span className="eco-position-product-code">
-                        {p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
+	                        {isService ? "локальная услуга" : p.assortmentMeta?.href ? "локальная позиция" : "ручная позиция"}
                       </span>
                     </td>
                     <td>
@@ -3475,6 +3578,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   </tr>
                   );
                 })}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
@@ -3697,11 +3802,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         </div>
       )}
 
-      <DiagnosticModal
+      <DiagnosticMapModal
         open={diagnosticModalOpen}
         onClose={() => setDiagnosticModalOpen(false)}
         diagnosticId={diagnosticRowId}
-        shipmentMoySkladId={demandIdLocal}
+        shipmentId={demandIdLocal}
         headerDraft={{
           vin,
           brand:
@@ -3721,7 +3826,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             "",
           licensePlate: getAttributeString(attributes, (name) => /гос|номер/i.test(name)),
           mileage: getAttributeString(attributes, (name) => /пробег/i.test(name)),
-          agentMoySkladId: selectedAgent?.id ?? null,
+          clientName: selectedAgent?.name ?? "",
+          vehicleHints: inferDiagnosticVehicleHintsFromLookup(vinLookupResult),
         }}
         onDiagnosticCreated={(id) => setDiagnosticRowId(id)}
         onAddedToShipment={() => router.refresh()}
