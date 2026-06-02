@@ -182,6 +182,30 @@ function reportUrlFromRequest(origin: string, token: string): string {
   return `${origin.replace(/\/$/, "")}/report/${token}`;
 }
 
+async function resolveDemandIds(shipmentId: string | null | undefined): Promise<string[]> {
+  const raw = asString(shipmentId);
+  if (!raw) return [];
+  const demand = await prisma.localDemand.findFirst({
+    where: {
+      OR: [{ id: raw }, { moyskladId: raw }, { name: raw }],
+    },
+    select: { id: true, moyskladId: true, name: true },
+  });
+  return [...new Set([raw, demand?.id, demand?.moyskladId, demand?.name].filter(Boolean) as string[])];
+}
+
+async function resolvePrimaryDemandId(shipmentId: string | null | undefined): Promise<string | null> {
+  const raw = asString(shipmentId);
+  if (!raw) return null;
+  const demand = await prisma.localDemand.findFirst({
+    where: {
+      OR: [{ id: raw }, { moyskladId: raw }, { name: raw }],
+    },
+    select: { id: true },
+  });
+  return demand?.id ?? null;
+}
+
 export function requestOrigin(request: Request): string {
   const envOrigin = process.env.NEXT_PUBLIC_APP_ORIGIN?.trim();
   if (envOrigin) return envOrigin;
@@ -267,7 +291,25 @@ async function ensureArchiveDiagnosticItems(sessionId: string) {
 }
 
 export async function createDiagnosticMapSession(input: CreateDiagnosticInput, user: SessionUser) {
-  const demandPayload = input.shipmentId ? await loadLocalDemandDetailPayload(input.shipmentId) : undefined;
+  const demandId = await resolvePrimaryDemandId(input.shipmentId);
+  if (asString(input.shipmentId) && !demandId) {
+    console.error("[diagnostics] create failed: shipment not found", { shipmentId: input.shipmentId });
+    throw new Error("Отгрузка для диагностики не найдена");
+  }
+  if (demandId) {
+    const existing = await findDiagnosticMapForShipment(demandId);
+    if (existing) {
+      console.info("[diagnostics] create reused existing session", {
+        shipmentId: input.shipmentId,
+        demandId,
+        diagnosticId: existing.id,
+        status: existing.status,
+      });
+      return existing;
+    }
+  }
+
+  const demandPayload = demandId ? await loadLocalDemandDetailPayload(demandId) : undefined;
   const vehicle = normalizeVehicle(input, demandPayload);
   const hints = (vehicle.vehicleHints ?? {}) as Record<string, unknown>;
   const demandData = demandPayload?.ok ? demandPayload.data : null;
@@ -279,7 +321,7 @@ export async function createDiagnosticMapSession(input: CreateDiagnosticInput, u
   const created = await prisma.$transaction(async (tx) => {
     const session = await tx.diagnosticMapSession.create({
       data: {
-        demandId: input.shipmentId || null,
+        demandId,
         clientId: input.clientId || null,
         clientName: clientName || asString(input.clientName) || null,
         clientPhone: asString(input.clientPhone) || null,
@@ -322,13 +364,26 @@ export async function createDiagnosticMapSession(input: CreateDiagnosticInput, u
     return session;
   });
   await updateSessionCounters(created.id);
+  console.info("[diagnostics] created session", {
+    shipmentId: input.shipmentId,
+    demandId,
+    diagnosticId: created.id,
+    itemCount: allDiagnosticMapItems().length,
+  });
   return getDiagnosticMapSession(created.id);
 }
 
 export async function findDiagnosticMapForShipment(shipmentId: string) {
+  const demandIds = await resolveDemandIds(shipmentId);
   const row = await prisma.diagnosticMapSession.findFirst({
-    where: { demandId: shipmentId },
+    where: { demandId: { in: demandIds.length ? demandIds : [shipmentId] } },
     orderBy: { createdAt: "desc" },
+  });
+  console.info("[diagnostics] find for shipment", {
+    shipmentId,
+    demandIds,
+    diagnosticId: row?.id ?? null,
+    status: row?.status ?? null,
   });
   return row ? getDiagnosticMapSession(row.id) : null;
 }
@@ -383,6 +438,21 @@ function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "") {
     items: row.items.filter((item) => item.blockCode === block.code).map((item) => serializeItem(row.id, item)),
   }));
   const items = blocks.flatMap((block) => block.items);
+  const applicableItems = items.filter((item) => item.applicability === "applicable");
+  const count = (status: DiagnosticMapStatusCode) => applicableItems.filter((item) => item.status === status).length;
+  const computedCounts = {
+    total: applicableItems.length,
+    good: count("good"),
+    warn: count("warn"),
+    crit: count("crit"),
+    unchecked: count("unchecked"),
+    noAccess: count("no-access"),
+    byMileage: count("by-mileage"),
+    byClient: count("by-client"),
+    indirect: applicableItems.filter((item) => ["no-access", "by-mileage", "by-client"].includes(item.status)).length,
+    withPhoto: applicableItems.filter((item) => item.photos.length > 0).length,
+    withoutPhoto: applicableItems.filter((item) => item.photos.length === 0).length,
+  };
   const recommendationsNow = items.filter((item) => item.recommendation && item.status === "crit" && !item.nextVisit);
   const recommendationsNext = items.filter(
     (item) =>
@@ -413,22 +483,22 @@ function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "") {
     completedAt: row.completedAt?.toISOString() ?? null,
     clientWantsReminder: row.clientWantsReminder,
     counts: {
-      total: row.totalCount,
-      good: row.normalCount,
-      warn: row.attentionCount,
-      crit: row.replaceCount,
-      normal: row.normalCount,
-      attention: row.attentionCount,
-      replace: row.replaceCount,
-      indirect: row.indirectCount,
-      noAccess: row.noAccessCount,
-      byMileage: row.byMileageCount,
-      byClient: row.byClientCount,
-      withPhoto: row.withPhotoCount,
-      withoutPhoto: row.withoutPhotoCount,
-      recommendationsNow: row.nowRecommendationCount,
-      recommendationsNext: row.nextVisitRecommendationCount,
-      unchecked: items.filter((item) => item.applicability === "applicable" && item.status === "unchecked").length,
+      total: computedCounts.total,
+      good: computedCounts.good,
+      warn: computedCounts.warn,
+      crit: computedCounts.crit,
+      normal: computedCounts.good,
+      attention: computedCounts.warn,
+      replace: computedCounts.crit,
+      indirect: computedCounts.indirect,
+      noAccess: computedCounts.noAccess,
+      byMileage: computedCounts.byMileage,
+      byClient: computedCounts.byClient,
+      withPhoto: computedCounts.withPhoto,
+      withoutPhoto: computedCounts.withoutPhoto,
+      recommendationsNow: recommendationsNow.length,
+      recommendationsNext: recommendationsNext.length,
+      unchecked: computedCounts.unchecked,
       missingRecommendedPhotos: items.filter(itemMissingRecommendedPhoto).length,
     },
     blocks,
@@ -577,6 +647,15 @@ export async function completeDiagnosticMapSession(sessionId: string) {
   await prisma.diagnosticMapSession.update({
     where: { id: sessionId },
     data: { status: "COMPLETED", completedAt: new Date() },
+  });
+  const statuses = await prisma.diagnosticMapItem.groupBy({
+    by: ["status"],
+    where: { sessionId },
+    _count: { status: true },
+  });
+  console.info("[diagnostics] completed session", {
+    diagnosticId: sessionId,
+    statuses: Object.fromEntries(statuses.map((row) => [row.status, row._count.status])),
   });
   return getDiagnosticMapSession(sessionId);
 }

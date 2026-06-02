@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatServiceDate, formatServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 
 type FinanceRowStatus =
   | "ok"
@@ -166,10 +167,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
 }
 
 function inputDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return toServiceDateInput(date);
 }
 
 function addDays(date: Date, days: number) {
@@ -207,22 +205,14 @@ function formatPercent(value: number | null | undefined) {
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function productMeta(product: Pick<TopProduct, "productArticle" | "productBrand" | "productCategory">) {

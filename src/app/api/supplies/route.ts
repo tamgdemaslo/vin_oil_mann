@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { toServiceDateInput } from "@/lib/date-time";
 import { createLocalStockDocument, listLocalStockDocuments } from "@/lib/local-inventory-admin";
 import { type CreateSupplyBody } from "@/lib/supply-create-payload";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       type: "receipt",
       storeId: extractMoyskladEntityId(body.store.meta.href) ?? body.store.meta.href,
       counterpartyId: extractMoyskladEntityId(body.agent.meta.href) ?? body.agent.meta.href,
-      documentDate: (body.incomingDate || body.moment || new Date().toISOString()).slice(0, 10),
+      documentDate: (body.incomingDate || body.moment || toServiceDateInput(new Date())).slice(0, 10),
       moment: body.moment,
       description: body.description,
       applicable: body.applicable !== false,

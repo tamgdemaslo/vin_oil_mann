@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Activity, Database, RefreshCw, ShieldCheck } from "lucide-react";
 import { EcoBadge, EcoButton, EcoCard, EcoKpi, EcoStatusDot } from "@/components/platform/EcoUI";
+import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 
 type InventoryStatus = {
@@ -61,15 +62,7 @@ function safeMessage(value: unknown, fallback = "Нет данных") {
 
 function formatDateTime(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatServiceDateTime(value);
 }
 
 function phaseLabel(value?: string | null) {

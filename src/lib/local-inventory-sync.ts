@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
@@ -275,11 +276,10 @@ function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull 
 }
 
 function asDateFromMoySkladMoment(moment?: string): { documentDate: string; momentAt: Date } {
-  const raw = moment?.trim() || new Date().toISOString();
-  const documentDate = raw.slice(0, 10);
-  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
-  const parsed = new Date(normalized);
-  const momentAt = Number.isFinite(parsed.getTime()) ? parsed : new Date(`${documentDate}T00:00:00`);
+  const raw = moment?.trim() || undefined;
+  const parsed = parseServiceDateTime(raw ?? new Date());
+  const documentDate = toServiceDateInput(parsed ?? new Date());
+  const momentAt = parsed ?? parseServiceDateTime(`${documentDate} 00:00:00`) ?? new Date();
   return { documentDate, momentAt };
 }
 

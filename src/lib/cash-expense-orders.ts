@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import type { User } from "@/lib/auth";
 
@@ -193,7 +194,7 @@ async function resolveCounterparty(params: { counterpartyId?: string; counterpar
 }
 
 async function generateCashExpenseNumber(attempt = 0): Promise<string> {
-  const ymd = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const ymd = toServiceDateInput(new Date()).replaceAll("-", "");
   const prefix = `РКО-${ymd}`;
   const count = await prisma.cashExpenseOrder.count({
     where: { number: { startsWith: prefix } },

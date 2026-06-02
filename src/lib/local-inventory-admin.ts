@@ -1,6 +1,7 @@
 import { Prisma, type LocalCounterparty } from "@prisma/client";
 import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
+import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -425,9 +426,9 @@ function decimalToNullableNumber(value: Prisma.Decimal | number | null | undefin
 function dateFromInput(value: unknown): Date | null {
   const raw = cleanText(value);
   if (!raw) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T00:00:00`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseServiceDateTime(`${raw} 00:00:00`);
   const parts = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-  if (parts) return new Date(`${parts[3]}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")}T00:00:00`);
+  if (parts) return parseServiceDateTime(`${parts[3]}-${parts[2].padStart(2, "0")}-${parts[1].padStart(2, "0")} 00:00:00`);
   const parsed = new Date(raw);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
@@ -435,7 +436,7 @@ function dateFromInput(value: unknown): Date | null {
 function documentDateFromInput(value?: string): string {
   const raw = value?.trim();
   if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  return new Date().toISOString().slice(0, 10);
+  return toServiceDateInput(new Date());
 }
 
 function optionalDocumentDateFromInput(value?: string | null): string | null {
@@ -446,9 +447,7 @@ function optionalDocumentDateFromInput(value?: string | null): string | null {
 
 function momentFromInput(value: string | undefined, documentDate: string): Date {
   const raw = value?.trim();
-  const normalized = raw ? raw.replace(" ", "T") : `${documentDate}T00:00:00`;
-  const parsed = new Date(normalized);
-  return Number.isFinite(parsed.getTime()) ? parsed : new Date(`${documentDate}T00:00:00`);
+  return parseServiceDateTime(raw || `${documentDate} 00:00:00`) ?? new Date();
 }
 
 function buildProductSearchText(input: {
@@ -2530,7 +2529,7 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput) {
   return { ok: true as const, product: mapProduct(product) };
 }
 
-function invalidateCounterpartyRows() {
+export function invalidateCounterpartyRows() {
   counterpartyAdminCache.rows = null;
 }
 
@@ -3023,7 +3022,7 @@ function effectiveInvoiceStatus(invoice: Pick<SupplierInvoiceWithDocument, "stat
   if (status === "cancelled" || status === "draft") return status;
   const remainingCents = Math.max(0, invoice.sumCents - effectivePaidCents(invoice));
   if (remainingCents <= 0) return "paid";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toServiceDateInput(new Date());
   if (invoice.dueDate && invoice.dueDate < today) return "overdue";
   if (effectivePaidCents(invoice) > 0) return "partial";
   return "unpaid";
@@ -3199,7 +3198,7 @@ export async function listLocalSupplierInvoices(params: {
   const cached = inventoryListsCache.supplierInvoices.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toServiceDateInput(new Date());
   const amountFromSearch = centsFromRub(search.replace(/[^\d,.]/g, "").replace(",", "."));
   const and: Prisma.LocalSupplierInvoiceWhereInput[] = [];
   if (status === "overdue" || params.overdueOnly) {
@@ -3302,7 +3301,7 @@ export async function createLocalSupplierInvoicePayment(
   const amountCents = centsFromRub(body.amount);
   if (amountCents <= 0) return { ok: false as const, error: "Сумма оплаты должна быть больше нуля" };
 
-  const paymentDate = documentDateFromInput(body.paymentDate || new Date().toISOString().slice(0, 10));
+  const paymentDate = documentDateFromInput(body.paymentDate || toServiceDateInput(new Date()));
   const paymentType = normalizeSupplierInvoicePaymentType(body.paymentType);
   const invoice = await prisma.localSupplierInvoice.findUnique({
     where: { id },

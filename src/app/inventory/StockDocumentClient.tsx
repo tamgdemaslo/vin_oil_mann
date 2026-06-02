@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
+import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
 type StockDocumentType = "receipt" | "writeoff";
 type FormMode = "new" | "edit" | "view";
@@ -132,7 +133,7 @@ function makeLocalId() {
 }
 
 function todayInput() {
-  return new Date().toISOString().slice(0, 10);
+  return toServiceDateInput(new Date());
 }
 
 function formatMoney(value: number | null | undefined) {
@@ -145,22 +146,14 @@ function formatQty(value: number) {
 }
 
 function formatMoment(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function formatDate(value: string) {
   if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function invoiceStatusLabel(value: string) {
@@ -626,7 +619,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       id: data.id || editingDocument?.id || "",
       type,
       name: data.name || editingDocument?.name || "",
-      moment: editingDocument?.moment || new Date().toISOString(),
+      moment: editingDocument?.moment || toServiceMomentString(),
       documentDate,
       applicable: Boolean(data.applicable),
       sum: total,

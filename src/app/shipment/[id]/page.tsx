@@ -7,6 +7,7 @@ import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { formatServiceDateTime } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
@@ -228,6 +229,13 @@ function counterpartyHrefFromDemand(raw: unknown, fallbackName: string): string 
   return name && name !== "Клиент не выбран"
     ? `/clients/counterparties?search=${encodeURIComponent(name)}`
     : "/clients/counterparties";
+}
+
+function diagnosticApiErrorMessage(status: number, body: { error?: string; needShift?: boolean } = {}): string {
+  if (status === 401) return "Необходима авторизация";
+  if (status === 403 && body.needShift) return "Откройте смену для проведения диагностики";
+  if (status === 403) return body.error || "Недостаточно прав для проведения диагностики";
+  return body.error || "Не удалось создать диагностику";
 }
 
 function formatMoney(value: number, currency = "руб."): string {
@@ -645,6 +653,7 @@ export default function ShipmentDetailPage() {
 	      indirect?: number;
     };
   } | null>(null);
+  const [diagnosticActionLoading, setDiagnosticActionLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -757,64 +766,107 @@ export default function ShipmentDetailPage() {
   }, [diagnosticRemote?.reportUrl]);
 
   const handleOpenDiagnosticDetail = useCallback(async () => {
-    if (!id) return;
-    let diagId = diagnosticRowId;
-    const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
-    if (!diagId) {
-      const attrModel = String(
-        attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
-      ).trim();
-      const mp = attrModel.split(/\s+/).filter(Boolean);
-      const yearStr = String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? "").trim();
-      const plateStr = String(
-        attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
-      ).trim();
-      const mileageStr = String(
-        attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""
-      ).trim();
-      const dec = vinLookupResult?.decoded;
-      const rawAgentId =
-        data?.raw && typeof data.raw === "object" && data.raw !== null && "agent" in data.raw
-          ? (data.raw as { agent?: { id?: string } }).agent?.id
-          : undefined;
-      const cr = await fetch("/api/diagnostics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shipmentId: id,
-          clientId: rawAgentId ?? null,
-          clientName: data?.header.agentName ?? null,
-          vin: vin.replace(/\s/g, "").toUpperCase() || null,
-          brand: dec?.make || mp[0] || null,
-          model: dec?.model || mp.slice(1).join(" ") || null,
-          year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
-          licensePlate: plateStr || null,
-          mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
-          vehicleHints,
-        }),
-      });
-      const cj = await cr.json();
-      if (!cr.ok) {
-        setError(cj.error ?? "Не удалось создать диагностику");
-        return;
-      }
-      diagId = cj.diagnosticId as string;
-      setDiagnosticRowId(diagId);
-      setDiagnosticRemote({
-        id: diagId,
-        status: "IN_PROGRESS",
-        counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
-      });
+    if (!id) {
+      setError("Не удалось определить отгрузку");
+      return;
     }
+    if (diagnosticActionLoading) return;
+    setDiagnosticActionLoading(true);
+    setError(null);
+    try {
+      let diagId = diagnosticRowId;
+      let remote = diagnosticRemote;
+      if (!diagId) {
+        const existingResponse = await fetch(`/api/diagnostics/for-shipment?shipmentId=${encodeURIComponent(id)}`);
+        const existingJson = await existingResponse.json().catch(() => ({})) as {
+          diagnostic?: typeof diagnosticRemote;
+          error?: string;
+          needShift?: boolean;
+        };
+        if (!existingResponse.ok) {
+          throw new Error(diagnosticApiErrorMessage(existingResponse.status, existingJson));
+        }
+        if (existingJson.diagnostic?.id) {
+          remote = existingJson.diagnostic;
+          diagId = existingJson.diagnostic.id;
+          setDiagnosticRemote(existingJson.diagnostic);
+          setDiagnosticRowId(existingJson.diagnostic.id);
+        }
+      }
+      if (!diagId) {
+        const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
+        const attrModel = String(
+          attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+        ).trim();
+        const mp = attrModel.split(/\s+/).filter(Boolean);
+        const yearStr = String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? "").trim();
+        const plateStr = String(
+          attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
+        ).trim();
+        const mileageStr = String(
+          attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""
+        ).trim();
+        const dec = vinLookupResult?.decoded;
+        const rawAgent = rawAgentFromDemand(data?.raw);
+        const rawAgentId = rawAgent?.id?.trim() || localEntityIdFromMeta(rawAgent?.meta);
+        const cr = await fetch("/api/diagnostics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentId: id,
+            clientId: rawAgentId || null,
+            clientName: data?.header.agentName ?? null,
+            vin: vin.replace(/\s/g, "").toUpperCase() || null,
+            brand: dec?.make || mp[0] || null,
+            model: dec?.model || mp.slice(1).join(" ") || null,
+            year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
+            licensePlate: plateStr || null,
+            mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+            vehicleHints,
+          }),
+        });
+        const cj = await cr.json().catch(() => ({})) as {
+          diagnostic?: typeof diagnosticRemote;
+          diagnosticId?: string;
+          error?: string;
+          needShift?: boolean;
+        };
+        if (!cr.ok) {
+          throw new Error(diagnosticApiErrorMessage(cr.status, cj));
+        }
+        diagId = cj.diagnostic?.id ?? cj.diagnosticId ?? null;
+        if (!diagId) throw new Error(cj.error ?? "Не удалось создать диагностику");
+        setDiagnosticRowId(diagId);
+        remote = cj.diagnostic ?? {
+          id: diagId,
+          status: "IN_PROGRESS",
+          counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
+        };
+        setDiagnosticRemote(remote);
+      }
+      if (remote?.id) {
+        setDiagnosticRemote(remote);
+        setDiagnosticRowId(remote.id);
+      }
     setDiagnosticModalOpen(true);
+      void refreshDiagnosticRemote();
+    } catch (e) {
+      console.error("[shipment] diagnostic open/create failed:", e);
+      setError(e instanceof Error ? e.message : "Не удалось создать диагностику");
+    } finally {
+      setDiagnosticActionLoading(false);
+    }
   }, [
     id,
     diagnosticRowId,
+    diagnosticRemote,
+    diagnosticActionLoading,
     attributes,
     vin,
     data?.raw,
     data?.header.agentName,
     vinLookupResult,
+    refreshDiagnosticRemote,
   ]);
 
   useEffect(() => {
@@ -1208,6 +1260,20 @@ export default function ShipmentDetailPage() {
   const positionsMargin = positionsTotal - positionsCost;
   const positionsMarginPct = positionsTotal > 0 ? Math.round((positionsMargin / positionsTotal) * 100) : 0;
   const documentStatus = applicable ? "Проведена" : "Черновик";
+  const diagnosticPrimaryLabel = diagnosticActionLoading
+    ? diagnosticRemote || diagnosticRowId
+      ? "Открываем диагностику..."
+      : "Создаём диагностику..."
+    : diagnosticRemote || diagnosticRowId
+      ? "Открыть диагностику"
+      : "Произвести диагностику";
+  const diagnosticMapActionLabel = diagnosticActionLoading
+    ? diagnosticRemote || diagnosticRowId
+      ? "Открываем карту..."
+      : "Создаём диагностику..."
+    : diagnosticRemote || diagnosticRowId
+      ? "Открыть карту"
+      : "Создать диагностику";
 
   return (
     <main className="eco-page eco-shipment-detail-page">
@@ -1324,6 +1390,7 @@ export default function ShipmentDetailPage() {
                     </Link>
                   </h2>
                   <p>{data.header.ecoUserName?.trim() || "Эко-платформа"} · {data.header.organizationName || "организация не указана"}</p>
+                  <p>Создана {formatServiceDateTime(data.header.moment)}</p>
                 </div>
               </div>
             </div>
@@ -1415,8 +1482,8 @@ export default function ShipmentDetailPage() {
                     >
                       {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
                     </button>
-                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
-                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticPrimaryLabel}
                     </button>
                     <button type="button" className="is-primary" onClick={() => setVehicleEditing(false)}>
                       Готово
@@ -1717,8 +1784,8 @@ export default function ShipmentDetailPage() {
                     >
                       {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
                     </button>
-                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
-                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticPrimaryLabel}
                     </button>
                   </div>
 
@@ -1825,8 +1892,8 @@ export default function ShipmentDetailPage() {
                           : "Запустите карту диагностики из этой отгрузки."}
                       </p>
                     </div>
-                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
-                      {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticPrimaryLabel}
                     </button>
                   </div>
 
@@ -1839,14 +1906,15 @@ export default function ShipmentDetailPage() {
                   </div>
 
                   <div className="eco-shipment-diagnostic-actions">
-                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()}>
-                      {diagnosticRemote ? "Открыть карту" : "Создать диагностику"}
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticMapActionLabel}
                     </button>
                     <a
                       href={diagnosticRemote?.reportUrl ?? "#"}
                       target="_blank"
                       rel="noreferrer"
                       aria-disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Открыть отчёт" : "Отчёт появится после создания диагностики"}
                     >
                       Открыть отчёт
                     </a>
@@ -1855,10 +1923,16 @@ export default function ShipmentDetailPage() {
                       target="_blank"
                       rel="noreferrer"
                       aria-disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Печать отчёта" : "Печать появится после создания диагностики"}
                     >
                       Печать
                     </a>
-                    <button type="button" onClick={() => void copyDiagnosticReportLink()} disabled={!diagnosticRemote?.reportUrl}>
+                    <button
+                      type="button"
+                      onClick={() => void copyDiagnosticReportLink()}
+                      disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Скопировать ссылку на отчёт" : "Ссылка появится после создания диагностики"}
+                    >
                       Скопировать ссылку
                     </button>
                   </div>
@@ -2016,27 +2090,14 @@ export default function ShipmentDetailPage() {
             >
               {vinLookupLoading ? "Подбор…" : "Подобрать по VIN"}
             </button>
-            {(() => {
-              const hasVin = vin.replace(/\s/g, "").length >= 8;
-              const modelCombined = String(
-                attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
-              ).trim();
-              const mp = modelCombined.split(/\s+/).filter(Boolean);
-              const dec = vinLookupResult?.decoded;
-              const brandModelOk =
-                mp.length >= 2 || Boolean((dec?.make ?? "").trim() && (dec?.model ?? "").trim());
-              const diagDisabled = !(hasVin || brandModelOk);
-              return (
-                <button
-                  type="button"
-                  disabled={diagDisabled}
-                  onClick={() => void handleOpenDiagnosticDetail()}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  {diagnosticRemote ? "Открыть диагностику" : "Произвести диагностику"}
-                </button>
-              );
-            })()}
+            <button
+              type="button"
+              disabled={diagnosticActionLoading}
+              onClick={() => void handleOpenDiagnosticDetail()}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {diagnosticPrimaryLabel}
+            </button>
           </div>
           {vinLookupResult && (
             <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800/50">
@@ -3180,6 +3241,10 @@ export default function ShipmentDetailPage() {
             status: "IN_PROGRESS",
             counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
           });
+        }}
+        onDiagnosticUpdated={(diagnostic) => {
+          setDiagnosticRowId(diagnostic.id);
+          setDiagnosticRemote(diagnostic);
         }}
         onAddedToShipment={() => window.location.reload()}
       />

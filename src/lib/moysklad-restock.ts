@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { toServiceDateInput } from "@/lib/date-time";
 
 export type RestockCatalogEntry = {
   id: string;
@@ -248,18 +249,7 @@ export function calendarRangeMomentBounds(
 
 /** Сегодня по календарю в часовом поясе Europe/Moscow. */
 export function todayIsoInMoscow(): string {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Moscow",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = fmt.formatToParts(new Date());
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  if (y && m && d) return `${y}-${m}-${d}`;
-  return new Date().toISOString().slice(0, 10);
+  return toServiceDateInput(new Date());
 }
 
 export async function aggregateOutflowFromEntities(momentFrom: string, momentTo: string): Promise<Record<string, number>> {

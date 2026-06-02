@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { getSession, type User } from "./auth";
+import { SERVICE_TIME_ZONE, toServiceDateInput } from "./date-time";
 import {
   cancelCashExpenseOrder,
   cashExpenseOrderToOperation,
@@ -99,7 +100,7 @@ const DEFAULT_TIMEZONE =
     ? process.env.SERVICE_TIMEZONE.trim()
     : process.env.APP_TIMEZONE && process.env.APP_TIMEZONE.trim()
       ? process.env.APP_TIMEZONE.trim()
-      : Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow";
+      : SERVICE_TIME_ZONE;
 
 function getDbFilePath() {
   const base =
@@ -152,7 +153,7 @@ function getTodayServiceDate(): string {
     });
     return formatter.format(new Date());
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    return toServiceDateInput(new Date());
   }
 }
 

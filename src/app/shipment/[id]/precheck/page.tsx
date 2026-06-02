@@ -14,6 +14,7 @@ import {
   Send,
 } from "lucide-react";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
+import { formatServiceDateTime } from "@/lib/date-time";
 import {
   isRecognizedMotorOilMarkingCode,
   isLikelyMarkedMotorOilProductName,
@@ -95,16 +96,8 @@ function formatMoney(valueKopecks: number): string {
 
 function formatDateTime(value?: string): string {
   if (!value) return "не указана";
-  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function positionBaseTotal(position: Position): number {
@@ -378,10 +371,15 @@ export default function ShipmentPrecheckPage() {
       }
       setSendState("sent");
       setSentAt(new Date().toISOString());
+      const aqsiTarget = json.shopId
+        ? `магазин AQSI ${json.shopId}`
+        : json.deviceId
+          ? `устройство AQSI ${json.deviceId}`
+          : "AQSI";
       setSuccess(
         json.status
-          ? `Заказ отправлен на кассу. Статус: ${json.status}.`
-          : "Заказ отправлен на кассу и доступен в отложенных заказах."
+          ? `Заказ создан в ${aqsiTarget}. Статус: ${json.status}.`
+          : `Заказ создан в ${aqsiTarget} и ожидает синхронизации с кассой.`
       );
     } catch (e) {
       setSendState("error");

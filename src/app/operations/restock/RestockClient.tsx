@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi } from "@/components/platform/EcoUI";
+import { formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
 type RestockItem = {
   productId: string;
@@ -123,7 +124,7 @@ function fmtMoney(n: number | null | undefined): string {
 
 function fmtTime(ts: number | undefined): string {
   if (!ts) return "—";
-  return new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return formatServiceTime(ts);
 }
 
 function defaultQty(it: RestockItem): number {
@@ -764,7 +765,7 @@ export default function RestockClient() {
           type: "receipt",
           applicable: false,
           counterpartyId: `supplier:${encodeURIComponent(ROSSKO_SUPPLIER_FIXED)}`,
-          documentDate: new Date().toISOString().slice(0, 10),
+          documentDate: toServiceDateInput(new Date()),
           description: "Черновик приёмки из корзины ROSSKO. Остатки не увеличены.",
           positions: lines,
         }),
@@ -800,7 +801,7 @@ export default function RestockClient() {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          comment: `Заказ из Пополнение остатков (${new Date().toISOString().slice(0, 10)})`,
+          comment: `Заказ из Пополнение остатков (${toServiceDateInput(new Date())})`,
           contact_name: DEFAULT_RSSK_CONTACT_NAME,
           contact_phone: DEFAULT_RSSK_CONTACT_PHONE,
           parts: lines,

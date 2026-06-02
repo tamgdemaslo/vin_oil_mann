@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { formatServiceTime } from "@/lib/date-time";
 import { tryResponseJson, responseJson } from "@/lib/response-json";
 
 type CurrentShift = {
@@ -147,8 +148,8 @@ export default function ShiftButton() {
         <>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
             {current
-              ? `Смена открыта с ${new Date(current.startedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`
-              : `Кассовая смена открыта с ${new Date(currentCashShift?.openedAt ?? "").toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`}
+              ? `Смена открыта с ${formatServiceTime(current.startedAt)}`
+              : `Кассовая смена открыта с ${formatServiceTime(currentCashShift?.openedAt)}`}
           </p>
           {role === "admin" && (
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">

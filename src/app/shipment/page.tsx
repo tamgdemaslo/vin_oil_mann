@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
 import { requireActiveShiftAccess } from "@/lib/app-access";
+import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
 import { ShipmentListRow } from "./ShipmentListRow";
 
@@ -38,8 +39,8 @@ function formatMoment(value: string): { date: string; time: string } {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return { date: value, time: "—" };
   return {
-    date: date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }),
-    time: date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+    date: formatServiceDate(date),
+    time: formatServiceTime(date),
   };
 }
 

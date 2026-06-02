@@ -28,6 +28,9 @@ const posterShellCss = `
   box-shadow: none;
   overflow: visible;
 }
+.print-document {
+  color-scheme: light;
+}
 .poster-order {
   height: 1123px;
   margin: 24px auto;
@@ -81,6 +84,11 @@ const posterShellCss = `
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  .print-document,
+  .print-document * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   /* Только страница постера — не конфликтует с /shipment/.../tags (tags-print.css) */
   body:has(#poster-print-mount) > *:not(#poster-print-mount) {
     display: none !important;
@@ -92,10 +100,6 @@ const posterShellCss = `
   #poster-print-mount * {
     outline: none !important;
     box-shadow: none !important;
-  }
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 }
 `;
@@ -146,7 +150,7 @@ export default async function ShipmentPosterPrintPage({
       <style dangerouslySetInnerHTML={{ __html: posterShellCss }} />
       <div id="poster-print-mount" className={`poster-print-root ${inter.className}`}>
         <PosterAutoPrint enabled={autoprint} />
-        <div className="poster-sheet">
+        <div className="poster-sheet print-document">
           <OrderPoster data={data} />
         </div>
       </div>

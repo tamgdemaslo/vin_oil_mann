@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { SERVICE_TIME_ZONE } from "@/lib/date-time";
 import { toLocalDateInputValue, useOwnerUsers } from "../useOwnerUsers";
 
 type WorkingDayItem = {
@@ -117,7 +118,11 @@ export default function WorkingDaysBlock() {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
   const rows = chunk(cells, 7);
-  const monthLabel = viewDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  const monthLabel = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: SERVICE_TIME_ZONE,
+    month: "long",
+    year: "numeric",
+  }).format(viewDate);
 
   return (
     <div className="space-y-6">

@@ -55,6 +55,7 @@ import type {
   DiagnosticStatus,
 } from "@prisma/client";
 import { EcoBadge, EcoButton, EcoKpi, type EcoBadgeTone } from "@/components/platform/EcoUI";
+import { formatServiceDate } from "@/lib/date-time";
 import { responseJson } from "@/lib/response-json";
 
 type Nav =
@@ -1710,12 +1711,12 @@ function QuickDiagnosticScreen(props: {
             {(history.demands ?? []).slice(0, 3).map((d, i) => (
               <li key={i}>
                 <span>Отгрузка {d.name}</span>
-                <b>{new Date(d.momentAt).toLocaleDateString("ru-RU")}</b>
+                <b>{formatServiceDate(d.momentAt)}</b>
               </li>
             ))}
             {(history.diagnostics ?? []).map((d) => (
               <li key={d.id}>
-                <span>Диагностика {new Date(d.startedAt).toLocaleDateString("ru-RU")}</span>
+                <span>Диагностика {formatServiceDate(d.startedAt)}</span>
                 <b>
                   {d.summaryGreen}/{d.summaryYellow}/{d.summaryRed}
                 </b>

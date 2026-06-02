@@ -42,6 +42,7 @@ import {
   EcoKpi,
   EcoSelect,
 } from "@/components/platform/EcoUI";
+import { SERVICE_TIME_ZONE, formatServiceDateTime } from "@/lib/date-time";
 import {
   getCurrentMonthRange,
   toLocalDateInputValue,
@@ -272,15 +273,8 @@ function formatDate(value: string) {
 }
 
 function formatDateTime(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function formatDays(count: number) {
@@ -310,7 +304,11 @@ function getMonthBounds(year: number, month: number) {
 }
 
 function getMonthLabel(date: Date) {
-  return date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: SERVICE_TIME_ZONE,
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function getPresetRange(preset: "current" | "previous" | "7" | "30") {

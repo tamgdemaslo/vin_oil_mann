@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
 import { EcoBadge, EcoButton, EcoKpi, type EcoBadgeTone } from "@/components/platform/EcoUI";
+import { formatServiceDateTime, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
 type ClientType = "new_lead" | "regular" | "repeat" | "unlinked";
 type ViewMode = "all" | "mine" | "overdue" | "today" | "noResponsible" | "new_lead" | "regular" | "repeat" | "unlinked" | "closed";
@@ -164,24 +165,12 @@ function formatPhone(value: string | null) {
 
 function formatDateTime(value: string | null) {
   if (!value) return "Без срока";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Без срока";
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? "Без срока" : formatted;
 }
 
 function formatDateShort(date: Date) {
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatServiceDateTime(date).replace(/\.\d{4},?/, "");
 }
 
 function dateInputValue(date: Date) {
@@ -199,11 +188,7 @@ function quickReminderInput(kind: "today" | "tomorrow" | "threeDays" | "week") {
 }
 
 function isSameDay(date: Date, compare: Date) {
-  return (
-    date.getFullYear() === compare.getFullYear() &&
-    date.getMonth() === compare.getMonth() &&
-    date.getDate() === compare.getDate()
-  );
+  return toServiceDateInput(date) === toServiceDateInput(compare);
 }
 
 function isTomorrow(date: Date) {
@@ -220,14 +205,14 @@ function deadlineInfo(value: string | null, inactive = false): { label: string; 
   if (overdue) return { label: `Просрочено · ${formatDateShort(date)}`, tone: "danger", overdue: true };
   if (isSameDay(date, new Date())) {
     return {
-      label: `Сегодня ${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`,
+      label: `Сегодня ${formatServiceTime(date)}`,
       tone: "warning",
       overdue: false,
     };
   }
   if (isTomorrow(date)) {
     return {
-      label: `Завтра ${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`,
+      label: `Завтра ${formatServiceTime(date)}`,
       tone: "info",
       overdue: false,
     };

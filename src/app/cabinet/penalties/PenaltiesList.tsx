@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
+import { toServiceDateInput } from "@/lib/date-time";
 import { getCurrentMonthRange, useOwnerUsers } from "../useOwnerUsers";
 
 type BonusPenalty = {
@@ -31,7 +32,7 @@ export default function PenaltiesList({ role, embedded }: { role: string; embedd
   const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
   const [dateTo, setDateTo] = useState(defaults.dateTo);
   const [addLogin, setAddLogin] = useState("");
-  const [addDate, setAddDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [addDate, setAddDate] = useState(() => toServiceDateInput(new Date()));
   const [addAmount, setAddAmount] = useState("");
   const [addType, setAddType] = useState<"bonus" | "penalty_manual">("bonus");
   const [addComment, setAddComment] = useState("");

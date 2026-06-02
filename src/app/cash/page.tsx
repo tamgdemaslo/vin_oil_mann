@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
 import { EcoBadge, EcoButton, EcoKpi } from "@/components/platform/EcoUI";
+import { formatServiceDate, formatServiceDateTime, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 
@@ -168,7 +169,7 @@ function getServiceDateForTimezone(timezone?: string): string {
     });
     return formatter.format(new Date());
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    return toServiceDateInput(new Date());
   }
 }
 
@@ -211,33 +212,18 @@ function parseMoneyInput(value: string) {
 
 function shortTime(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return formatServiceTime(value);
 }
 
 function dateTime(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatServiceDateTime(value);
 }
 
 function dateOnly(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10) || "—";
-  return date.toLocaleDateString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value.slice(0, 10) || "—" : formatted;
 }
 
 function cashoutStatus(cashout: CashoutRecord) {

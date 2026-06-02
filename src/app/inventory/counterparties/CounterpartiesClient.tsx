@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi, EcoSelect } from "@/components/platform/EcoUI";
+import { formatServiceDate } from "@/lib/date-time";
 
 type CounterpartyRow = {
   id: string;
@@ -296,9 +297,8 @@ function formatPhone(value: string) {
 
 function formatDate(value: string) {
   if (!value) return "нет данных";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "нет данных";
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? "нет данных" : formatted;
 }
 
 function formatMoney(cents: number | null | undefined) {

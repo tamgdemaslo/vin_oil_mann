@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import MoneyInput from "@/components/MoneyInput";
+import { formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
 type Meta = { href: string; type: string; mediaType: string };
 type RefOption = { id: string; name: string; meta: Meta };
@@ -70,25 +71,16 @@ function formatMoney(value: number | null | undefined, currency = "руб."): st
 
 function formatMoment(value?: string): string {
   if (!value) return "—";
-  const date = new Date(value.replace(" ", "T"));
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function formatDateForInput(date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return toServiceDateInput(date);
 }
 
 function formatMoyskladMoment(date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return toServiceMomentString(date);
 }
 
 function dateInputToMoyskladMoment(value: string): string | undefined {

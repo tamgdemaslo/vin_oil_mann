@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import ShiftButton from "@/components/ShiftButton";
 import { EcoBadge, EcoCard, EcoKpi, EcoStatusDot } from "@/components/platform/EcoUI";
+import { SERVICE_TIME_ZONE, formatServiceDayMonth, formatServiceTime } from "@/lib/date-time";
 import { tryResponseJson } from "@/lib/response-json";
 import { getCurrentMonthRange } from "./cabinet/useOwnerUsers";
 
@@ -85,27 +86,22 @@ function formatCount(value: number) {
 
 function formatTime(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatServiceTime(value);
 }
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  const formatted = formatServiceDayMonth(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function todayPhrase() {
-  return new Date().toLocaleDateString("ru-RU", {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: SERVICE_TIME_ZONE,
     day: "numeric",
     month: "long",
     weekday: "long",
-  });
+  }).format(new Date());
 }
 
 function statusTone(applicable: boolean) {

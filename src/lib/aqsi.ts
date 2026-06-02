@@ -352,11 +352,18 @@ async function resolveAqsiBinding(config: AqsiConfig): Promise<{
       : [];
 
   if (devices.length === 1 && devices[0]?.id != null) {
+    const discoveredShopId =
+      config.shopId ??
+      (devices[0].shopId != null ? String(devices[0].shopId) : undefined);
+    if (discoveredShopId) {
+      return {
+        shopId: discoveredShopId,
+        cashierId: config.cashierId,
+      };
+    }
+
     return {
       deviceId: String(devices[0].id),
-      shopId:
-        config.shopId ??
-        (devices[0].shopId != null ? String(devices[0].shopId) : undefined),
       cashierId: config.cashierId,
     };
   }

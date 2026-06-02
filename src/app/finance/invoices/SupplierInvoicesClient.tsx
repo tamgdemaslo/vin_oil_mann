@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi, EcoSelect, EcoTable } from "@/components/platform/EcoUI";
+import { formatServiceDate, toServiceDateInput } from "@/lib/date-time";
 
 type InvoiceStatus = "draft" | "unpaid" | "partial" | "paid" | "overdue" | "cancelled";
 type PaymentType = "cash" | "card" | "bank_transfer";
@@ -132,13 +133,12 @@ function formatMoney(value: number | null | undefined) {
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function todayInput() {
-  return new Date().toISOString().slice(0, 10);
+  return toServiceDateInput(new Date());
 }
 
 function paymentAmountInput(value: number) {
@@ -183,11 +183,11 @@ function periodRange(period: Filters["period"]) {
   if (period === "week") {
     const from = new Date(now);
     from.setDate(now.getDate() - 6);
-    return { dateFrom: from.toISOString().slice(0, 10), dateTo: today };
+    return { dateFrom: toServiceDateInput(from), dateTo: today };
   }
   if (period === "month") {
     const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { dateFrom: from.toISOString().slice(0, 10), dateTo: today };
+    return { dateFrom: toServiceDateInput(from), dateTo: today };
   }
   return { dateFrom: "", dateTo: "" };
 }

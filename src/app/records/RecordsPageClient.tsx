@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -28,6 +28,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { SERVICE_TIME_ZONE, formatServiceDate, toServiceDateInput } from "@/lib/date-time";
 import { EcoBadge, EcoButton, EcoStatusDot } from "@/components/platform/EcoUI";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
@@ -90,6 +91,14 @@ type ShipmentLookupState = {
   error: string | null;
 };
 
+type CreateShipmentFromRecordResponse = {
+  id?: string;
+  name?: string;
+  counterpartyId?: string;
+  counterpartyCreated?: boolean;
+  error?: string;
+};
+
 type AppointmentStatusKey =
   | "new"
   | "confirmed"
@@ -122,6 +131,9 @@ type TimelineRecord = {
   sourceLabel: string;
   syncLabel: string;
   isNewClient?: boolean;
+  recordDateTime: string;
+  clientExternalId: string;
+  yclientsClientId: string;
 };
 
 type ClientOption = {
@@ -132,6 +144,8 @@ type ClientOption = {
   vehicle: VehicleInfo;
   source: "crm" | "journal";
   subtitle: string;
+  matchLabel?: string;
+  matchRank?: number;
 };
 
 type RecordFormState = {
@@ -156,15 +170,39 @@ type RecordFormState = {
 type FormMode = "create" | "edit";
 type ViewMode = "timeline" | "list";
 type TimelineEventMode = "long" | "normal" | "compact" | "mini";
+type TimelineInteractionKind = "drag" | "resize";
+
+type TimelineInteraction = {
+  kind: TimelineInteractionKind;
+  recordId: number;
+  staffId: number;
+  pointerOffsetMinutes: number;
+  startMinute: number;
+  endMinute: number;
+  targetStartMinute: number;
+  targetEndMinute: number;
+  columnTop: number;
+  moved: boolean;
+};
+
+type MonthDayLoad = {
+  date: string;
+  recordCount: number;
+  busyMinutes: number;
+  freeMinutes: number;
+  freeWindows: number;
+  nearestFreeMinute: number | null;
+};
 
 const DEFAULT_RECORD_DURATION_SECONDS = 40 * 60;
-const DEFAULT_TIMELINE_START = 8 * 60;
-const DEFAULT_TIMELINE_END = 18 * 60;
+const DEFAULT_TIMELINE_START = 9 * 60;
+const DEFAULT_TIMELINE_END = 21 * 60;
 const MIN_SLOT_MINUTES = 30;
 const TIMELINE_MINUTE_PX = 1.6;
 const TIMELINE_AXIS_WIDTH = 78;
 const EVENT_GUTTER_PX = 8;
 const EVENT_LANE_GAP_PX = 4;
+const TIMELINE_SNAP_MINUTES = 5;
 
 type PositionedTimelineRecord = TimelineRecord & {
   displayMode: TimelineEventMode;
@@ -215,10 +253,7 @@ function cx(...classes: Array<string | false | null | undefined>) {
 }
 
 function toDateInputValue(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return toServiceDateInput(value);
 }
 
 function toDateTimeLocalValue(value: Date) {
@@ -291,6 +326,14 @@ function getApiErrorMessage(data: unknown, fallback: string) {
   return fallback;
 }
 
+function getRecordSaveErrorMessage(data: unknown, fallback: string) {
+  const message = getApiErrorMessage(data, fallback);
+  if (/нет\s+врем|no\s+time|busy|занят|недоступ/i.test(message)) {
+    return "YCLIENTS не подтвердил свободное окно. Проверьте график сотрудника / бокса и выбранное время.";
+  }
+  return message;
+}
+
 function numberFromUnknown(value: unknown): number | null {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : null;
@@ -322,11 +365,8 @@ function formatRubles(sumCents: number): string {
 }
 
 function formatShipmentDate(value: string): string {
-  const date = new Date(value);
-  if (!Number.isNaN(date.getTime())) {
-    return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
-  }
-  return value || "—";
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value || "—" : formatted.slice(0, 8);
 }
 
 function addDays(value: string, days: number): string {
@@ -336,11 +376,51 @@ function addDays(value: string, days: number): string {
   return toDateInputValue(date);
 }
 
+function addMonths(value: string, months: number): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  return toDateInputValue(date);
+}
+
+function monthStart(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function monthEnd(value: string): string {
+  const date = new Date(`${monthStart(value)}T00:00:00`);
+  date.setMonth(date.getMonth() + 1);
+  date.setDate(0);
+  return toDateInputValue(date);
+}
+
+function getMonthGridDays(value: string): string[] {
+  const start = new Date(`${monthStart(value)}T00:00:00`);
+  const end = new Date(`${monthEnd(value)}T00:00:00`);
+  const startOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - startOffset);
+  const endOffset = 6 - ((end.getDay() + 6) % 7);
+  end.setDate(end.getDate() + endOffset);
+  const out: string[] = [];
+  for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+    out.push(toDateInputValue(cursor));
+  }
+  return out;
+}
+
 function formatScheduleTitle(value: string): string {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value || "Дата";
-  const dateLabel = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-  const weekday = date.toLocaleDateString("ru-RU", { weekday: "short" }).replace(".", "");
+  const dateLabel = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: SERVICE_TIME_ZONE,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+  const weekday = new Intl.DateTimeFormat("ru-RU", { timeZone: SERVICE_TIME_ZONE, weekday: "short" }).format(date).replace(".", "");
   return `${dateLabel} · ${weekday}`;
 }
 
@@ -357,6 +437,23 @@ function durationLabel(minutes: number): string {
   const rest = minutes % 60;
   if (rest === 0) return `${hours} ч`;
   return `${hours} ч ${rest} мин`;
+}
+
+function workloadTone(stat: MonthDayLoad | null | undefined) {
+  if (!stat) return "empty";
+  if (stat.recordCount === 0) return "free";
+  const total = stat.busyMinutes + stat.freeMinutes;
+  const load = total > 0 ? stat.busyMinutes / total : 0;
+  if (load >= 0.9 || stat.freeWindows === 0) return "full";
+  if (load >= 0.6) return "busy";
+  return "open";
+}
+
+function loadLabel(stat: MonthDayLoad | null | undefined) {
+  if (!stat) return "нет данных";
+  if (stat.recordCount === 0) return "свободно";
+  if (stat.freeWindows === 0) return "полный день";
+  return `${stat.freeWindows} ${stat.freeWindows === 1 ? "окно" : stat.freeWindows < 5 ? "окна" : "окон"}`;
 }
 
 function getTimelineEventMode(durationMinutes: number): TimelineEventMode {
@@ -464,6 +561,17 @@ function getVehicleInfo(record: RecordItem): VehicleInfo {
   };
 }
 
+function getClientExternalId(record: RecordItem): string {
+  const client = objectFromUnknown(record.client);
+  return (
+    stringFromUnknown(client.id) ||
+    stringFromUnknown(client.client_id) ||
+    stringFromUnknown(client.yclients_id) ||
+    stringFromUnknown(record.client_id) ||
+    stringFromUnknown(record.yclients_client_id)
+  );
+}
+
 function vehicleLabel(vehicle: VehicleInfo) {
   return [vehicle.model, vehicle.plate, vehicle.vin ? `VIN ${vehicle.vin}` : ""].filter(Boolean).join(" · ");
 }
@@ -535,36 +643,6 @@ function shipmentHref(shipment: ShipmentLookupRow) {
   return shipment.applicable ? `/shipment/${shipment.id}` : `/shipment/${shipment.id}/edit`;
 }
 
-function createShipmentHrefFromParts(input: {
-  clientName: string;
-  phone: string;
-  comment?: string;
-  internalComment?: string;
-  services?: string[];
-  vehicle?: VehicleInfo;
-  recordId?: number | null;
-}) {
-  const params = new URLSearchParams();
-  if (input.clientName) params.set("counterparty", input.clientName);
-  const phone = normalizePhone(input.phone);
-  if (phone) params.set("phone", phone);
-  const description = [
-    input.services?.length ? `Услуги из записи: ${input.services.join(", ")}` : "",
-    input.comment?.trim() ?? "",
-    input.internalComment?.trim() ? `Внутренний комментарий: ${input.internalComment.trim()}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  if (description) params.set("comment", description);
-  const vehicle = input.vehicle;
-  if (vehicle?.model) params.set("vehicle", vehicle.model);
-  if (vehicle?.plate) params.set("plate", vehicle.plate);
-  if (vehicle?.vin) params.set("vin", vehicle.vin);
-  if (input.recordId) params.set("source_record", String(input.recordId));
-  const qs = params.toString();
-  return qs ? `/shipment/new?${qs}` : "/shipment/new";
-}
-
 function SectionTitle({ icon, title, action }: { icon: ReactNode; title: string; action?: ReactNode }) {
   return (
     <div className="eco-records-section-title">
@@ -581,6 +659,8 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 export default function RecordsPageClient() {
   const router = useRouter();
+  const clientPickerRef = useRef<HTMLDivElement | null>(null);
+  const timelineInteractionRef = useRef<TimelineInteraction | null>(null);
   const [user, setUser] = useState<User>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -603,6 +683,11 @@ export default function RecordsPageClient() {
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<{ staffId: number; minute: number } | null>(null);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [creatingShipmentRecordId, setCreatingShipmentRecordId] = useState<number | null>(null);
+  const [timelineInteraction, setTimelineInteraction] = useState<TimelineInteraction | null>(null);
+  const [timelineActionSaving, setTimelineActionSaving] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => monthStart(toDateInputValue(new Date())));
 
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>("create");
@@ -614,7 +699,11 @@ export default function RecordsPageClient() {
   const [localClientOptions, setLocalClientOptions] = useState<ClientOption[]>([]);
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [clientSearchError, setClientSearchError] = useState<string | null>(null);
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [shipmentLookupByPhone, setShipmentLookupByPhone] = useState<Record<string, ShipmentLookupState>>({});
+  const [monthRecords, setMonthRecords] = useState<RecordItem[]>([]);
+  const [monthLoading, setMonthLoading] = useState(false);
+  const [monthError, setMonthError] = useState<string | null>(null);
 
   const [configLoading, setConfigLoading] = useState(false);
   const [baseLoading, setBaseLoading] = useState(false);
@@ -683,6 +772,7 @@ export default function RecordsPageClient() {
       const vehicle = getVehicleInfo(record);
       const source = sourceInfo(record);
       const serviceTitles = (record.services ?? []).map((s) => s.title).filter(Boolean) as string[];
+      const clientExternalId = getClientExternalId(record);
 
       list.push({
         id: record.id,
@@ -703,6 +793,9 @@ export default function RecordsPageClient() {
         startedAtText: formatMinute(startMinute),
         endedAtText: formatMinute(endMinute),
         isNewClient: Boolean(record.client?.is_new),
+        recordDateTime: String(record.date ?? record.datetime ?? ""),
+        clientExternalId,
+        yclientsClientId: clientExternalId,
         ...source,
       });
     }
@@ -843,6 +936,43 @@ export default function RecordsPageClient() {
     setRefreshing(false);
   }, [loadRecords]);
 
+  const loadMonthRecords = useCallback(async () => {
+    if (!companyId || staff.length === 0) return;
+    const bookable = staff.filter((s) => s.bookable !== false);
+    const activeStaffIds = timelineStaffId
+      ? [timelineStaffId]
+      : (bookable.length > 0 ? bookable : staff).slice(0, 4).map((s) => String(s.id));
+    if (activeStaffIds.length === 0) return;
+    setMonthLoading(true);
+    setMonthError(null);
+    try {
+      const start = monthStart(calendarMonth);
+      const end = monthEnd(calendarMonth);
+      const responses = await Promise.all(
+        activeStaffIds.map(async (staffIdOne) => {
+          const params = new URLSearchParams({
+            action: "records",
+            company_id: companyId,
+            start_date: start,
+            end_date: end,
+            count: "500",
+            staff_id: staffIdOne,
+          });
+          const res = await fetch(`/api/yclients?${params.toString()}`, { cache: "no-store" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки календаря месяца");
+          return Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
+        })
+      );
+      setMonthRecords(responses.flat());
+    } catch (e) {
+      setMonthError(e instanceof Error ? e.message : "Не удалось загрузить календарь месяца");
+      setMonthRecords([]);
+    } finally {
+      setMonthLoading(false);
+    }
+  }, [calendarMonth, companyId, staff, timelineStaffId]);
+
   useEffect(() => {
     if (!canAccess || checkingAuth) return;
     void loadCompanyConfig();
@@ -857,6 +987,15 @@ export default function RecordsPageClient() {
     if (!canAccess || checkingAuth || !companyId || staff.length === 0) return;
     void loadRecords();
   }, [canAccess, checkingAuth, companyId, loadRecords, scheduleDate, staff.length, timelineStaffId]);
+
+  useEffect(() => {
+    setCalendarMonth(monthStart(scheduleDate));
+  }, [scheduleDate]);
+
+  useEffect(() => {
+    if (!datePickerOpen || !canAccess || checkingAuth || !companyId || staff.length === 0) return;
+    void loadMonthRecords();
+  }, [canAccess, checkingAuth, companyId, datePickerOpen, loadMonthRecords, staff.length]);
 
   useEffect(() => {
     if (!shipmentPhoneKey) {
@@ -910,22 +1049,29 @@ export default function RecordsPageClient() {
   }, [shipmentPhoneKey]);
 
   useEffect(() => {
-    if (!formOpen) return;
+    if (!formOpen) {
+      setClientDropdownOpen(false);
+      return;
+    }
     const query = form.clientSearch.trim();
     if (query.length < 2) {
       setLocalClientOptions([]);
       setClientSearchError(null);
       setClientSearchLoading(false);
+      setClientDropdownOpen(false);
       return;
     }
 
     const controller = new AbortController();
     setClientSearchLoading(true);
     setClientSearchError(null);
+    setClientDropdownOpen(true);
 
     async function searchClients() {
       try {
-        const res = await fetch(`/api/local-inventory/counterparties?search=${encodeURIComponent(query)}&limit=8`, {
+        const phoneQuery = normalizePhone(query);
+        const search = phoneQuery.length >= 7 ? phoneQuery : query;
+        const res = await fetch(`/api/local-inventory/counterparties?search=${encodeURIComponent(search)}&limit=12`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -970,6 +1116,15 @@ export default function RecordsPageClient() {
   }, [form.clientSearch, formOpen]);
 
   useEffect(() => {
+    if (!clientDropdownOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!clientPickerRef.current?.contains(event.target as Node)) setClientDropdownOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [clientDropdownOpen]);
+
+  useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timeout);
@@ -996,20 +1151,117 @@ export default function RecordsPageClient() {
     return [...map.values()];
   }, [records]);
 
-  const clientOptions = useMemo(() => {
-    const query = form.clientSearch.trim().toLowerCase();
+  const clientOptions = useMemo<ClientOption[]>(() => {
+    const queryRaw = form.clientSearch.trim();
+    const query = queryRaw.toLowerCase();
+    const phoneQuery = normalizePhone(queryRaw);
     const merged = [...localClientOptions, ...recordClientOptions];
     const seen = new Set<string>();
-    return merged
+    const ranked = merged
+      .map((option) => {
+        const optionPhone = normalizePhone(option.phone);
+        const searchable = [option.name, option.phone, option.email, vehicleLabel(option.vehicle)].join(" ").toLowerCase();
+        const phoneTail = phoneQuery.slice(-10);
+        let matchRank = 9;
+        let matchLabel = option.source === "crm" ? "CRM" : "Журнал";
+        if (phoneQuery && optionPhone && optionPhone === phoneQuery) {
+          matchRank = 0;
+          matchLabel = "совпадение по телефону";
+        } else if (phoneQuery && optionPhone && (optionPhone.includes(phoneQuery) || (phoneTail.length >= 7 && optionPhone.endsWith(phoneTail)))) {
+          matchRank = 1;
+          matchLabel = "частичное совпадение телефона";
+        } else if (query && option.name.toLowerCase().includes(query)) {
+          matchRank = 2;
+          matchLabel = "совпадение по имени";
+        } else if (!query || searchable.includes(query)) {
+          matchRank = 3;
+          matchLabel = option.source === "crm" ? "CRM" : "из журнала";
+        }
+        return { ...option, matchRank, matchLabel };
+      })
       .filter((option) => {
         const key = normalizePhone(option.phone) || option.name.toLowerCase();
-        if (seen.has(key)) return false;
+        if (seen.has(key) || option.matchRank === 9) return false;
         seen.add(key);
-        if (!query) return true;
-        return [option.name, option.phone, option.email, vehicleLabel(option.vehicle)].join(" ").toLowerCase().includes(query);
-      })
+        return true;
+      });
+    const exactPhoneMatches = phoneQuery ? ranked.filter((option) => option.matchRank === 0) : [];
+    return (exactPhoneMatches.length > 0 ? exactPhoneMatches : ranked)
+      .sort((a, b) => (a.matchRank ?? 9) - (b.matchRank ?? 9) || a.name.localeCompare(b.name, "ru"))
       .slice(0, 8);
   }, [form.clientSearch, localClientOptions, recordClientOptions]);
+
+  const calendarDays = useMemo(() => getMonthGridDays(calendarMonth), [calendarMonth]);
+
+  const monthLoadByDate = useMemo(() => {
+    const activeStaff = timelineStaff.length > 0 ? timelineStaff : staff.filter((item) => item.bookable !== false).slice(0, 4);
+    const staffCount = Math.max(1, activeStaff.length);
+    const defaultWorkingMinutes = (DEFAULT_TIMELINE_END - DEFAULT_TIMELINE_START) * staffCount;
+    const grouped = new Map<string, RecordItem[]>();
+    for (const record of monthRecords) {
+      const date = parseRecordDate(record);
+      if (!date) continue;
+      const key = toDateInputValue(date);
+      const arr = grouped.get(key) ?? [];
+      arr.push(record);
+      grouped.set(key, arr);
+    }
+
+    const out = new Map<string, MonthDayLoad>();
+    for (const day of calendarDays) {
+      const items = grouped.get(day) ?? [];
+      const byStaff = new Map<number, Array<{ start: number; end: number }>>();
+      for (const record of items) {
+        const date = parseRecordDate(record);
+        const staffIdNum = Number(record.staff_id ?? 0);
+        if (!date || !staffIdNum) continue;
+        const start = date.getHours() * 60 + date.getMinutes();
+        const lengthSec = Number(record.seance_length ?? record.length ?? DEFAULT_RECORD_DURATION_SECONDS);
+        const end = Math.min(DEFAULT_TIMELINE_END, start + Math.max(MIN_SLOT_MINUTES, Math.round((Number.isFinite(lengthSec) ? lengthSec : DEFAULT_RECORD_DURATION_SECONDS) / 60)));
+        const arr = byStaff.get(staffIdNum) ?? [];
+        arr.push({ start: Math.max(DEFAULT_TIMELINE_START, start), end });
+        byStaff.set(staffIdNum, arr);
+      }
+
+      let busyMinutes = 0;
+      let freeWindows = 0;
+      let nearestFreeMinute: number | null = null;
+      for (const staffItem of activeStaff) {
+        const blocks = (byStaff.get(staffItem.id) ?? [])
+          .filter((block) => block.end > block.start)
+          .sort((a, b) => a.start - b.start);
+        const merged: Array<{ start: number; end: number }> = [];
+        for (const block of blocks) {
+          const last = merged[merged.length - 1];
+          if (last && block.start <= last.end) last.end = Math.max(last.end, block.end);
+          else merged.push({ ...block });
+        }
+        let cursor = DEFAULT_TIMELINE_START;
+        for (const block of merged) {
+          busyMinutes += block.end - block.start;
+          if (block.start - cursor >= MIN_SLOT_MINUTES) {
+            freeWindows += 1;
+            nearestFreeMinute ??= cursor;
+          }
+          cursor = Math.max(cursor, block.end);
+        }
+        if (DEFAULT_TIMELINE_END - cursor >= MIN_SLOT_MINUTES) {
+          freeWindows += 1;
+          nearestFreeMinute ??= cursor;
+        }
+      }
+
+      out.set(day, {
+        date: day,
+        recordCount: items.length,
+        busyMinutes,
+        freeMinutes: Math.max(0, defaultWorkingMinutes - busyMinutes),
+        freeWindows,
+        nearestFreeMinute,
+      });
+    }
+    return out;
+  }, [calendarDays, monthRecords, staff, timelineStaff]);
 
   const timelineBounds = useMemo(() => {
     const starts = dayTimeline.map((item) => item.startMinute);
@@ -1199,6 +1451,23 @@ export default function RecordsPageClient() {
     });
   }, [editingRecordId, form.datetime, form.datetimeEnd, form.staffId, formMode, scheduleDate, timelineByStaff]);
 
+  const formTimeValidation = useMemo(() => {
+    const start = parseDateTimeLocal(form.datetime);
+    const end = parseDateTimeLocal(form.datetimeEnd);
+    if (!form.staffId) return { ok: false, message: "Не выбран сотрудник / бокс" };
+    if (!start || !end) return { ok: false, message: "Укажите дату и время записи" };
+    const startMinute = start.getHours() * 60 + start.getMinutes();
+    const endMinute = end.getHours() * 60 + end.getMinutes();
+    if (endMinute <= startMinute) return { ok: false, message: "Окончание записи должно быть позже начала" };
+    if (startMinute < timelineStartMinute || endMinute > timelineEndMinute) {
+      return { ok: false, message: "Время вне рабочего графика" };
+    }
+    if (formConflicts.length > 0 && !form.allowOverlap) {
+      return { ok: false, message: "В это время уже есть запись" };
+    }
+    return { ok: true, message: "Время свободно" };
+  }, [form.allowOverlap, form.datetime, form.datetimeEnd, form.staffId, formConflicts.length, timelineEndMinute, timelineStartMinute]);
+
   const nearestFormSlots = useMemo(() => {
     const staffIdNum = Number(form.staffId);
     const start = parseDateTimeLocal(form.datetime);
@@ -1258,8 +1527,8 @@ export default function RecordsPageClient() {
 
   const getRoundedMinute = useCallback(
     (minute: number) => {
-      const clamped = Math.max(timelineStartMinute, Math.min(timelineEndMinute - 5, minute));
-      return Math.floor(clamped / 5) * 5;
+      const clamped = Math.max(timelineStartMinute, Math.min(timelineEndMinute - TIMELINE_SNAP_MINUTES, minute));
+      return Math.floor(clamped / TIMELINE_SNAP_MINUTES) * TIMELINE_SNAP_MINUTES;
     },
     [timelineEndMinute, timelineStartMinute]
   );
@@ -1331,12 +1600,17 @@ export default function RecordsPageClient() {
       vehiclePlate: option.vehicle.plate || prev.vehiclePlate,
       vehicleVin: option.vehicle.vin || prev.vehicleVin,
     }));
+    setClientDropdownOpen(false);
   }, []);
 
   const handleSubmitRecord = useCallback(
     async (openShipmentAfterCreate = false) => {
-      if (!form.staffId || form.serviceIds.length === 0 || !form.datetime) {
-        setFormError("Для записи обязательны сотрудник, услуга и дата/время");
+      if (form.serviceIds.length === 0) {
+        setFormError("Выберите хотя бы одну услугу");
+        return;
+      }
+      if (!formTimeValidation.ok) {
+        setFormError(formTimeValidation.message);
         return;
       }
       if (!form.clientName.trim() || !form.clientPhone.trim()) {
@@ -1389,7 +1663,7 @@ export default function RecordsPageClient() {
           });
           const data = await res.json();
           if (!res.ok) {
-            setFormError(getApiErrorMessage(data, "Ошибка сохранения записи"));
+            setFormError(getRecordSaveErrorMessage(data, "Ошибка сохранения записи"));
             return;
           }
 
@@ -1399,17 +1673,29 @@ export default function RecordsPageClient() {
           setFormOpen(false);
           setToast("Запись создана");
           if (openShipmentAfterCreate) {
-            router.push(
-              createShipmentHrefFromParts({
+            const shipmentRes = await fetch("/api/demands/from-record", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                recordId: created?.id ?? null,
+                recordDateTime: form.datetime,
+                recordSource: "yclients",
+                sourceLabel: "YCLIENTS",
                 clientName: form.clientName.trim(),
-                phone,
+                clientPhone: phone,
+                clientEmail: form.clientEmail.trim(),
+                vehicle: { model: form.vehicleModel, plate: form.vehiclePlate, vin: form.vehicleVin },
                 comment: form.comment,
                 internalComment: form.internalComment,
                 services: form.serviceIds.map((id) => serviceById.get(id)?.title ?? "").filter(Boolean),
-                vehicle: { model: form.vehicleModel, plate: form.vehiclePlate, vin: form.vehicleVin },
-                recordId: created?.id ?? null,
-              })
-            );
+              }),
+            });
+            const shipmentData = (await shipmentRes.json().catch(() => ({}))) as CreateShipmentFromRecordResponse;
+            if (shipmentRes.ok && shipmentData.id) {
+              router.push(`/shipment/${encodeURIComponent(shipmentData.id)}/edit`);
+            } else {
+              setToast(shipmentData.error ?? "Запись создана, но отгрузку создать не удалось");
+            }
           }
           return;
         }
@@ -1445,7 +1731,7 @@ export default function RecordsPageClient() {
         });
         const data = await res.json();
         if (!res.ok) {
-          setFormError(getApiErrorMessage(data, "Ошибка редактирования записи"));
+          setFormError(getRecordSaveErrorMessage(data, "Ошибка редактирования записи"));
           return;
         }
 
@@ -1462,6 +1748,7 @@ export default function RecordsPageClient() {
       editingRecordId,
       form,
       formConflicts.length,
+      formTimeValidation,
       formMode,
       loadRecords,
       router,
@@ -1545,6 +1832,183 @@ export default function RecordsPageClient() {
     }
   }, []);
 
+  const handleCreateShipmentFromRecord = useCallback(
+    async (record: TimelineRecord) => {
+      if (creatingShipmentRecordId) return;
+      setCreatingShipmentRecordId(record.id);
+      setError(null);
+      try {
+        const res = await fetch("/api/demands/from-record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recordId: record.id,
+            recordDateTime: record.recordDateTime || `${scheduleDate}T${record.startedAtText}`,
+            recordSource: record.source,
+            sourceLabel: record.sourceLabel,
+            clientName: record.clientName,
+            clientPhone: record.phone,
+            clientEmail: record.email,
+            clientExternalId: record.clientExternalId,
+            yclientsClientId: record.yclientsClientId,
+            vehicle: record.vehicle,
+            comment: record.comment,
+            internalComment: record.internalComment,
+            services: record.serviceTitles.length ? record.serviceTitles : [record.serviceTitle],
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as CreateShipmentFromRecordResponse;
+        if (!res.ok || !data.id) {
+          throw new Error(data.error ?? "Не удалось создать отгрузку из записи");
+        }
+        setToast(data.counterpartyCreated ? "Клиент создан, черновик отгрузки открыт" : "Черновик отгрузки открыт");
+        router.push(`/shipment/${encodeURIComponent(data.id)}/edit`);
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : "Не удалось создать отгрузку из записи");
+      } finally {
+        setCreatingShipmentRecordId(null);
+      }
+    },
+    [creatingShipmentRecordId, router, scheduleDate]
+  );
+
+  useEffect(() => {
+    timelineInteractionRef.current = timelineInteraction;
+  }, [timelineInteraction]);
+
+  const commitTimelineTimeChange = useCallback(
+    async (interaction: TimelineInteraction) => {
+      if (!interaction.moved) return;
+      const record = dayTimeline.find((item) => item.id === interaction.recordId);
+      const original = records.find((item) => item.id === interaction.recordId);
+      if (!record || !original) return;
+      const startMinute = interaction.targetStartMinute;
+      const endMinute = interaction.targetEndMinute;
+      if (startMinute < timelineStartMinute || endMinute > timelineEndMinute) {
+        setToast("Время вне рабочего графика");
+        return;
+      }
+      const conflicts = (timelineByStaff.get(interaction.staffId) ?? []).filter((item) => {
+        if (item.id === record.id) return false;
+        return startMinute < item.endMinute && endMinute > item.startMinute;
+      });
+      if (conflicts.length > 0) {
+        setToast(`Слот занят: ${conflicts.map((item) => `${item.startedAtText}–${item.endedAtText}`).join(", ")}`);
+        return;
+      }
+      if (!companyId) {
+        setToast("Не удалось проверить доступность: не настроен филиал YCLIENTS");
+        return;
+      }
+
+      setTimelineActionSaving(true);
+      setError(null);
+      try {
+        const phone = normalizePhone(record.phone);
+        const payload = {
+          staff_id: interaction.staffId,
+          services: (original.services ?? []).map((service) => ({ id: Number(service.id) })).filter((service) => Number.isFinite(service.id)),
+          client: {
+            name: record.clientName,
+            phone,
+            email: record.email || fallbackEmail(phone),
+          },
+          datetime: `${scheduleDate} ${formatMinute(startMinute)}:00`,
+          seance_length: (endMinute - startMinute) * 60,
+          comment: original.comment || undefined,
+          confirmed: record.statusKey === "confirmed" ? 1 : undefined,
+          attendance: record.statusKey === "arrived" || record.statusKey === "in_work" || record.statusKey === "done" ? 1 : undefined,
+        };
+        const res = await fetch("/api/yclients", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update-record",
+            company_id: companyId,
+            record_id: record.id,
+            payload,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setToast(getRecordSaveErrorMessage(data, "Не удалось перенести запись"));
+          return;
+        }
+        await loadRecords();
+        setSelectedRecordId(record.id);
+        setToast(interaction.kind === "resize" ? "Длительность обновлена" : "Запись перенесена");
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : "Не удалось сохранить новое время");
+      } finally {
+        setTimelineActionSaving(false);
+      }
+    },
+    [companyId, dayTimeline, loadRecords, records, scheduleDate, timelineByStaff, timelineEndMinute, timelineStartMinute]
+  );
+
+  useEffect(() => {
+    if (!timelineInteraction) return;
+    const onPointerMove = (event: PointerEvent) => {
+      setTimelineInteraction((prev) => {
+        if (!prev) return prev;
+        const pointerMinute = (event.clientY - prev.columnTop) / minutePx + timelineStartMinute;
+        if (prev.kind === "resize") {
+          const nextEnd = Math.min(timelineEndMinute, Math.max(prev.startMinute + MIN_SLOT_MINUTES, getRoundedMinute(pointerMinute)));
+          const next = { ...prev, targetEndMinute: nextEnd, moved: nextEnd !== prev.endMinute };
+          timelineInteractionRef.current = next;
+          return next;
+        }
+        const duration = prev.endMinute - prev.startMinute;
+        const nextStart = Math.max(timelineStartMinute, Math.min(timelineEndMinute - duration, getRoundedMinute(pointerMinute - prev.pointerOffsetMinutes)));
+        const next = {
+          ...prev,
+          targetStartMinute: nextStart,
+          targetEndMinute: nextStart + duration,
+          moved: nextStart !== prev.startMinute,
+        };
+        timelineInteractionRef.current = next;
+        return next;
+      });
+    };
+    const onPointerUp = () => {
+      const finalInteraction = timelineInteractionRef.current;
+      setTimelineInteraction(null);
+      if (finalInteraction) void commitTimelineTimeChange(finalInteraction);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [commitTimelineTimeChange, getRoundedMinute, minutePx, timelineEndMinute, timelineInteraction, timelineStartMinute]);
+
+  const startTimelineInteraction = useCallback(
+    (kind: TimelineInteractionKind, record: PositionedTimelineRecord, event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0 || timelineActionSaving) return;
+      const column = event.currentTarget.closest(".eco-records-timeline-col");
+      if (!(column instanceof HTMLElement)) return;
+      const rect = column.getBoundingClientRect();
+      const pointerMinute = (event.clientY - rect.top) / minutePx + timelineStartMinute;
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedRecordId(record.id);
+      setTimelineInteraction({
+        kind,
+        recordId: record.id,
+        staffId: record.staffId,
+        pointerOffsetMinutes: Math.max(0, pointerMinute - record.startMinute),
+        startMinute: record.startMinute,
+        endMinute: record.endMinute,
+        targetStartMinute: record.startMinute,
+        targetEndMinute: record.endMinute,
+        columnTop: rect.top,
+        moved: false,
+      });
+    },
+    [minutePx, timelineActionSaving, timelineStartMinute]
+  );
+
   const formDate = form.datetime ? form.datetime.slice(0, 10) : scheduleDate;
   const formStartTime = form.datetime ? form.datetime.slice(11, 16) : "";
   const formEndTime = form.datetimeEnd ? form.datetimeEnd.slice(11, 16) : "";
@@ -1556,17 +2020,6 @@ export default function RecordsPageClient() {
   const selectedShipments = selectedPhoneKey ? shipmentLookupByPhone[selectedPhoneKey]?.rows ?? [] : [];
   const selectedShipmentsLoading = selectedPhoneKey ? shipmentLookupByPhone[selectedPhoneKey]?.loading : false;
   const selectedShipmentsError = selectedPhoneKey ? shipmentLookupByPhone[selectedPhoneKey]?.error : null;
-  const selectedShipmentHref = selectedTimelineRecord
-    ? createShipmentHrefFromParts({
-        clientName: selectedTimelineRecord.clientName,
-        phone: selectedTimelineRecord.phone,
-        comment: selectedTimelineRecord.comment,
-        internalComment: selectedTimelineRecord.internalComment,
-        services: selectedTimelineRecord.serviceTitles,
-        vehicle: selectedTimelineRecord.vehicle,
-        recordId: selectedTimelineRecord.id,
-      })
-    : "/shipment/new";
 
   const initialLoading = checkingAuth || configLoading || (baseLoading && staff.length === 0) || (recordsLoading && records.length === 0);
   const timelineColumnCount = Math.max(1, timelineStaff.length);
@@ -1626,14 +2079,81 @@ export default function RecordsPageClient() {
             <button type="button" className="eco-icon-btn" onClick={() => setScheduleDate((value) => addDays(value, -1))} aria-label="Предыдущий день">
               <ChevronLeft size={15} />
             </button>
-            <label className="eco-journal-date-card eco-records-date-card">
-              <CalendarDays size={16} />
-              <span>
-                <strong>{formatScheduleTitle(scheduleDate)}</strong>
-                <small>{isToday(scheduleDate) ? "сегодня" : "рабочий день"}</small>
-              </span>
-              <input type="date" value={scheduleDate} onChange={(event) => setScheduleDate(event.target.value)} />
-            </label>
+            <div className="eco-records-date-picker">
+              <button
+                type="button"
+                className="eco-journal-date-card eco-records-date-card eco-records-date-trigger"
+                onClick={() => setDatePickerOpen((value) => !value)}
+              >
+                <CalendarDays size={16} />
+                <span>
+                  <strong>{formatScheduleTitle(scheduleDate)}</strong>
+                  <small>{isToday(scheduleDate) ? "сегодня" : "рабочий день"}</small>
+                </span>
+              </button>
+              {datePickerOpen ? (
+                <div className="eco-records-month-popover">
+                  <div className="eco-records-month-head">
+                    <button type="button" className="eco-icon-btn" onClick={() => setCalendarMonth((value) => addMonths(value, -1))} aria-label="Предыдущий месяц">
+                      <ChevronLeft size={14} />
+                    </button>
+                    <strong>
+                      {new Intl.DateTimeFormat("ru-RU", {
+                        timeZone: SERVICE_TIME_ZONE,
+                        month: "long",
+                        year: "numeric",
+                      }).format(new Date(`${calendarMonth}T00:00:00`))}
+                    </strong>
+                    <button type="button" className="eco-icon-btn" onClick={() => setCalendarMonth((value) => addMonths(value, 1))} aria-label="Следующий месяц">
+                      <ChevronRight size={14} />
+                    </button>
+                    <button type="button" onClick={() => setScheduleDate(toDateInputValue(new Date()))}>Сегодня</button>
+                  </div>
+                  {monthLoading ? <div className="eco-records-month-state">Загружаю загрузку дней…</div> : null}
+                  {monthError ? <div className="eco-records-month-state is-error">{monthError}</div> : null}
+                  <div className="eco-records-month-weekdays">
+                    {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => <span key={day}>{day}</span>)}
+                  </div>
+                  <div className="eco-records-month-grid">
+                    {calendarDays.map((day) => {
+                      const stat = monthLoadByDate.get(day);
+                      const tone = workloadTone(stat);
+                      const inMonth = day.startsWith(calendarMonth.slice(0, 7));
+                      const title = stat
+                        ? `${formatScheduleTitle(day)}: записей ${stat.recordCount}; ${loadLabel(stat)}; свободно ${durationLabel(stat.freeMinutes)}${stat.nearestFreeMinute != null ? `; ближайшее ${formatMinute(stat.nearestFreeMinute)}` : ""}`
+                        : `${formatScheduleTitle(day)}: нет данных`;
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          title={title}
+                          className={cx(
+                            "eco-records-month-day",
+                            `is-${tone}`,
+                            !inMonth && "is-outside",
+                            day === scheduleDate && "is-selected",
+                            isToday(day) && "is-today"
+                          )}
+                          onClick={() => {
+                            setScheduleDate(day);
+                            setDatePickerOpen(false);
+                          }}
+                        >
+                          <span>{Number(day.slice(8, 10))}</span>
+                          <strong>{stat?.recordCount ?? 0}</strong>
+                          <small>{loadLabel(stat)}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="eco-records-month-legend">
+                    <span><i className="is-free" /> свободно</span>
+                    <span><i className="is-busy" /> средне</span>
+                    <span><i className="is-full" /> перегружено</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <button type="button" className="eco-icon-btn" onClick={() => setScheduleDate((value) => addDays(value, 1))} aria-label="Следующий день">
               <ChevronRight size={15} />
             </button>
@@ -1775,18 +2295,22 @@ export default function RecordsPageClient() {
         ) : (
           <section className="eco-records-layout">
             <div className="eco-records-calendar">
-              {dayTimeline.length === 0 ? (
-                <div className="eco-records-empty">
-                  <CalendarCheck size={28} />
-                  <strong>Записей на этот день нет</strong>
-                  <p>Создайте запись или выберите другую дату.</p>
-                  <EcoButton variant="primary" type="button" onClick={() => openCreateForm()}>
-                    <Plus size={15} />
-                    Новая запись
-                  </EcoButton>
-                </div>
-              ) : viewMode === "timeline" ? (
-                <div className="eco-records-timeline-shell">
+              {viewMode === "timeline" ? (
+                <>
+                  {dayTimeline.length === 0 ? (
+                    <div className="eco-records-empty-banner">
+                      <CalendarCheck size={18} />
+                      <div>
+                        <strong>Записей на этот день нет</strong>
+                        <span>Кликните по свободному времени в сетке, чтобы создать запись.</span>
+                      </div>
+                      <EcoButton variant="primary" type="button" size="sm" onClick={() => openCreateForm()}>
+                        <Plus size={14} />
+                        Новая запись
+                      </EcoButton>
+                    </div>
+                  ) : null}
+                  <div className="eco-records-timeline-shell">
                   <div className="eco-records-timeline" style={{ minWidth: `${timelineMinWidth}px` }}>
                     <div className="eco-records-timeline-head" style={{ gridTemplateColumns: timelineGridTemplate }}>
                       <div>Время</div>
@@ -1814,6 +2338,8 @@ export default function RecordsPageClient() {
 
                       {timelineStaff.map((staffItem) => {
                         const staffBlocks = positionedByStaff.get(staffItem.id) ?? [];
+                        const activeInteraction = timelineInteraction?.staffId === staffItem.id ? timelineInteraction : null;
+                        const activeRecord = activeInteraction ? dayTimeline.find((record) => record.id === activeInteraction.recordId) : null;
                         return (
                           <div
                             key={`col-${staffItem.id}`}
@@ -1849,8 +2375,23 @@ export default function RecordsPageClient() {
                                 <span>+ Создать запись · {formatMinute(hoveredSlot.minute)}</span>
                               </div>
                             ) : null}
+                            {activeInteraction && activeRecord ? (
+                              <div
+                                className="eco-records-drag-target"
+                                style={{
+                                  top: `${Math.max(0, (activeInteraction.targetStartMinute - timelineStartMinute) * minutePx)}px`,
+                                  height: `${Math.max(36, (activeInteraction.targetEndMinute - activeInteraction.targetStartMinute) * minutePx)}px`,
+                                }}
+                              >
+                                <span>
+                                  {formatMinute(activeInteraction.targetStartMinute)}–{formatMinute(activeInteraction.targetEndMinute)}
+                                </span>
+                                <strong>{activeInteraction.kind === "resize" ? "Новая длительность" : "Новое время"}</strong>
+                              </div>
+                            ) : null}
                             {staffBlocks.map((block) => {
                               const selected = selectedRecordId === block.id;
+                              const interacting = timelineInteraction?.recordId === block.id;
                               const vehicleName = vehicleLabel(block.vehicle);
                               const title = [
                                 `${block.startedAtText}–${block.endedAtText}`,
@@ -1888,14 +2429,17 @@ export default function RecordsPageClient() {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
+                                    if (timelineInteractionRef.current?.recordId === block.id) return;
                                     setSelectedRecordId(block.id);
                                   }}
+                                  onPointerDown={(event) => startTimelineInteraction("drag", block, event)}
                                   className={cx(
                                     "eco-record-card",
                                     `eco-record-card--${block.statusKey}`,
                                     `eco-record-card--${block.displayMode}`,
                                     laneCount > 1 && "is-overlap",
-                                    selected && "is-selected"
+                                    selected && "is-selected",
+                                    interacting && "is-interacting"
                                   )}
                                   title={title}
                                   style={{
@@ -1916,6 +2460,11 @@ export default function RecordsPageClient() {
                                     </small>
                                   ) : null}
                                   {block.displayMode === "long" ? <i>{block.sourceLabel}</i> : null}
+                                  <span
+                                    className="eco-record-card__resize"
+                                    aria-hidden="true"
+                                    onPointerDown={(event) => startTimelineInteraction("resize", block, event)}
+                                  />
                                 </button>
                               );
                             })}
@@ -1925,52 +2474,65 @@ export default function RecordsPageClient() {
                     </div>
                   </div>
                 </div>
+                </>
               ) : (
                 <div className="eco-records-list">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Время</th>
-                        <th>Клиент</th>
-                        <th>Телефон</th>
-                        <th>Авто</th>
-                        <th>Услуга</th>
-                        <th>Бокс / сотрудник</th>
-                        <th>Статус</th>
-                        <th>Отгрузка</th>
-                        <th>Действия</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTimeline.map((record) => {
-                        const phone = normalizePhone(record.phone);
-                        const shipments = phone ? shipmentLookupByPhone[phone]?.rows ?? [] : [];
-                        return (
-                          <tr key={record.id} className={selectedRecordId === record.id ? "is-selected" : undefined}>
-                            <td>{record.startedAtText}–{record.endedAtText}</td>
-                            <td>{record.clientName}</td>
-                            <td>{formatPhone(record.phone)}</td>
-                            <td>{vehicleLabel(record.vehicle) || "—"}</td>
-                            <td>{record.serviceTitle}</td>
-                            <td>{record.staffName}</td>
-                            <td><span className={cx("eco-record-status", `eco-record-status--${record.statusKey}`)}>{record.statusLabel}</span></td>
-                            <td>
-                              {shipments[0] ? (
-                                <Link href={shipmentHref(shipments[0])}>{shipments[0].name}</Link>
-                              ) : (
-                                <Link href={createShipmentHrefFromParts({ clientName: record.clientName, phone: record.phone, comment: record.comment, internalComment: record.internalComment, services: record.serviceTitles, vehicle: record.vehicle, recordId: record.id })}>
-                                  Создать
-                                </Link>
-                              )}
-                            </td>
-                            <td>
-                              <button type="button" onClick={() => setSelectedRecordId(record.id)}>Открыть</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  {filteredTimeline.length === 0 ? (
+                    <div className="eco-records-empty">
+                      <CalendarCheck size={28} />
+                      <strong>Записей на этот день нет</strong>
+                      <p>Переключитесь на таймлайн и кликните по свободному времени.</p>
+                      <EcoButton variant="primary" type="button" onClick={() => setViewMode("timeline")}>
+                        <CalendarDays size={15} />
+                        Открыть таймлайн
+                      </EcoButton>
+                    </div>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Время</th>
+                          <th>Клиент</th>
+                          <th>Телефон</th>
+                          <th>Авто</th>
+                          <th>Услуга</th>
+                          <th>Бокс / сотрудник</th>
+                          <th>Статус</th>
+                          <th>Отгрузка</th>
+                          <th>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTimeline.map((record) => {
+                          const phone = normalizePhone(record.phone);
+                          const shipments = phone ? shipmentLookupByPhone[phone]?.rows ?? [] : [];
+                          return (
+                            <tr key={record.id} className={selectedRecordId === record.id ? "is-selected" : undefined}>
+                              <td>{record.startedAtText}–{record.endedAtText}</td>
+                              <td>{record.clientName}</td>
+                              <td>{formatPhone(record.phone)}</td>
+                              <td>{vehicleLabel(record.vehicle) || "—"}</td>
+                              <td>{record.serviceTitle}</td>
+                              <td>{record.staffName}</td>
+                              <td><span className={cx("eco-record-status", `eco-record-status--${record.statusKey}`)}>{record.statusLabel}</span></td>
+                              <td>
+                                {shipments[0] ? (
+                                  <Link href={shipmentHref(shipments[0])}>{shipments[0].name}</Link>
+                                ) : (
+                                  <button type="button" disabled={creatingShipmentRecordId === record.id} onClick={() => void handleCreateShipmentFromRecord(record)}>
+                                    {creatingShipmentRecordId === record.id ? "Создаю…" : "Создать"}
+                                  </button>
+                                )}
+                              </td>
+                              <td>
+                                <button type="button" onClick={() => setSelectedRecordId(record.id)}>Открыть</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               )}
 
@@ -2037,13 +2599,31 @@ export default function RecordsPageClient() {
                   </section>
 
                   <section className="eco-records-detail-block">
-                    <SectionTitle icon={<PackagePlus size={15} />} title="Отгрузки" action={<Link href={selectedShipmentHref}>Создать из записи</Link>} />
+                    <SectionTitle
+                      icon={<PackagePlus size={15} />}
+                      title="Отгрузки"
+                      action={
+                        <button
+                          type="button"
+                          disabled={creatingShipmentRecordId === selectedTimelineRecord.id}
+                          onClick={() => void handleCreateShipmentFromRecord(selectedTimelineRecord)}
+                        >
+                          {creatingShipmentRecordId === selectedTimelineRecord.id ? "Создаю…" : "Создать из записи"}
+                        </button>
+                      }
+                    />
                     {selectedShipmentsLoading ? <p className="eco-records-muted">Проверяю связанные отгрузки…</p> : null}
                     {selectedShipmentsError ? <p className="eco-records-warning">Отгрузки не загрузились</p> : null}
                     {!selectedShipmentsLoading && selectedShipments.length === 0 ? (
                       <div className="eco-records-empty-inline">
                         <span>Связанных отгрузок нет</span>
-                        <Link href={selectedShipmentHref}>Создать отгрузку из записи</Link>
+                        <button
+                          type="button"
+                          disabled={creatingShipmentRecordId === selectedTimelineRecord.id}
+                          onClick={() => void handleCreateShipmentFromRecord(selectedTimelineRecord)}
+                        >
+                          {creatingShipmentRecordId === selectedTimelineRecord.id ? "Создаю…" : "Создать отгрузку из записи"}
+                        </button>
                       </div>
                     ) : null}
                     {selectedShipments.length > 0 ? (
@@ -2078,10 +2658,14 @@ export default function RecordsPageClient() {
                       <Edit3 size={15} />
                       Редактировать
                     </EcoButton>
-                    <Link href={selectedShipmentHref} className="eco-btn">
+                    <EcoButton
+                      type="button"
+                      disabled={creatingShipmentRecordId === selectedTimelineRecord.id}
+                      onClick={() => void handleCreateShipmentFromRecord(selectedTimelineRecord)}
+                    >
                       <PackagePlus size={15} />
-                      Создать отгрузку
-                    </Link>
+                      {creatingShipmentRecordId === selectedTimelineRecord.id ? "Создаю…" : "Создать отгрузку"}
+                    </EcoButton>
                     <EcoButton type="button" variant="danger" onClick={() => void handleCancelRecord()}>
                       <Ban size={15} />
                       Отменить запись
@@ -2150,8 +2734,16 @@ export default function RecordsPageClient() {
                     </select>
                   </label>
                 </div>
-                <div className="eco-records-availability-check">
-                  {formConflicts.length > 0 ? (
+                <div className={cx("eco-records-availability-check", !formTimeValidation.ok && "is-warning")}>
+                  {!formTimeValidation.ok && formConflicts.length === 0 ? (
+                    <>
+                      <AlertTriangle size={16} />
+                      <div>
+                        <strong>{formTimeValidation.message}</strong>
+                        <p>Проверьте рабочие часы, дату и выбранный ресурс.</p>
+                      </div>
+                    </>
+                  ) : formConflicts.length > 0 ? (
                     <>
                       <AlertTriangle size={16} />
                       <div>
@@ -2205,25 +2797,41 @@ export default function RecordsPageClient() {
 
               <section>
                 <SectionTitle icon={<UserRound size={15} />} title="Клиент" />
+                <div className="eco-records-client-field" ref={clientPickerRef}>
                 <label>
                   <span>Поиск клиента</span>
-                  <input value={form.clientSearch} onChange={(event) => setForm((prev) => ({ ...prev, clientSearch: event.target.value, selectedClientId: "", clientName: event.target.value }))} placeholder="Имя или телефон" />
+                  <input
+                    value={form.clientSearch}
+                    onFocus={() => form.clientSearch.trim().length >= 2 && setClientDropdownOpen(true)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((prev) => ({ ...prev, clientSearch: value, selectedClientId: "", clientName: value }));
+                      setClientDropdownOpen(value.trim().length >= 2);
+                    }}
+                    placeholder="Имя или телефон"
+                  />
                 </label>
+                {clientDropdownOpen ? (
                 <div className="eco-records-client-options">
                   {clientSearchLoading ? <div className="eco-records-muted">Ищу клиентов…</div> : null}
                   {clientSearchError ? <div className="eco-records-warning">{clientSearchError}</div> : null}
                   {clientOptions.map((option) => (
                     <button key={option.id} type="button" className={form.selectedClientId === option.id ? "is-selected" : undefined} onClick={() => selectClient(option)}>
                       <strong>{option.name}</strong>
-                      <span>{option.subtitle || (option.source === "crm" ? "CRM" : "Журнал")}</span>
+                      <span>{[option.matchLabel, option.subtitle || (option.source === "crm" ? "CRM" : "Журнал")].filter(Boolean).join(" · ")}</span>
                     </button>
                   ))}
                   {form.clientSearch.trim() && clientOptions.length === 0 && !clientSearchLoading ? (
-                    <button type="button" onClick={() => setForm((prev) => ({ ...prev, clientName: prev.clientSearch.trim(), selectedClientId: "new" }))}>
+                    <button type="button" onClick={() => {
+                      setForm((prev) => ({ ...prev, clientName: prev.clientSearch.trim(), selectedClientId: "new" }));
+                      setClientDropdownOpen(false);
+                    }}>
                       <strong>Создать нового клиента</strong>
                       <span>{form.clientSearch.trim()}</span>
                     </button>
                   ) : null}
+                </div>
+                ) : null}
                 </div>
                 <div className="eco-records-form-grid">
                   <label>

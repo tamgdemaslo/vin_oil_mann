@@ -91,6 +91,7 @@ type DiagnosticMapModalProps = {
     vehicleHints?: Record<string, unknown>;
   };
   onDiagnosticCreated?: (id: string) => void;
+  onDiagnosticUpdated?: (diagnostic: DiagnosticMapPayload) => void;
   onAddedToShipment?: () => void;
 };
 
@@ -246,6 +247,7 @@ export function DiagnosticMapModal({
   shipmentId,
   headerDraft,
   onDiagnosticCreated,
+  onDiagnosticUpdated,
   onAddedToShipment,
 }: DiagnosticMapModalProps) {
   const [activeId, setActiveId] = useState<string | null>(diagnosticId);
@@ -260,6 +262,9 @@ export function DiagnosticMapModal({
   const [photoUploads, setPhotoUploads] = useState<Record<string, PhotoUploadState[]>>({});
   const [lightbox, setLightbox] = useState<{ title: string; photo: DiagnosticMapPhoto } | null>(null);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pendingSavesRef = useRef(new Set<Promise<unknown>>());
+  const pendingUploadsRef = useRef(new Set<Promise<unknown>>());
+  const lastSaveErrorRef = useRef<string | null>(null);
 
   useEffect(() => setActiveId(diagnosticId), [diagnosticId]);
 
@@ -371,11 +376,12 @@ export function DiagnosticMapModal({
   }, []);
 
   const saveItem = useCallback(
-    async (itemCode: string, patch: Partial<DiagnosticMapItem>) => {
-      if (!activeId) return;
+    (itemCode: string, patch: Partial<DiagnosticMapItem>) => {
+      if (!activeId) return Promise.resolve();
+      lastSaveErrorRef.current = null;
       mutateItem(itemCode, patch);
       setSaveState("saving");
-      try {
+      const request = (async () => {
         const response = await fetch(`/api/diagnostics/${activeId}/item`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -385,13 +391,24 @@ export function DiagnosticMapModal({
         if (!response.ok || !json.item) throw new Error(json.error ?? "Не удалось сохранить пункт");
         mutateItem(itemCode, json.item);
         setSaveState("saved");
-      } catch (e) {
+      })().catch((e) => {
+        const message = e instanceof Error ? e.message : "Не удалось сохранить пункт";
+        lastSaveErrorRef.current = message;
         setSaveState("error");
-        setError(e instanceof Error ? e.message : "Не удалось сохранить пункт");
-      }
+        setError(message);
+      });
+      pendingSavesRef.current.add(request);
+      request.finally(() => pendingSavesRef.current.delete(request)).catch(() => {});
+      return request;
     },
     [activeId, mutateItem]
   );
+
+  async function waitForPendingWork() {
+    while (pendingSavesRef.current.size > 0 || pendingUploadsRef.current.size > 0) {
+      await Promise.allSettled([...pendingSavesRef.current, ...pendingUploadsRef.current]);
+    }
+  }
 
   function gotoPrevious() {
     if (!item) return;
@@ -456,14 +473,14 @@ export function DiagnosticMapModal({
     });
   }
 
-  async function runPhotoUpload(target: DiagnosticMapItem, upload: PhotoUploadState) {
+  function runPhotoUpload(target: DiagnosticMapItem, upload: PhotoUploadState) {
     setPhotoUploads((current) => ({
       ...current,
       [target.code]: (current[target.code] ?? []).map((candidate) => (
         candidate.id === upload.id ? { ...candidate, status: "uploading", progress: 6, error: undefined } : candidate
       )),
     }));
-    try {
+    const request = (async () => {
       const photo = await uploadPhotoXhr(target, upload);
       appendPhotoToItem(target.code, { ...photo, thumbnailUrl: photo.thumbnailUrl || photo.url });
       setPhotoUploads((current) => ({
@@ -472,7 +489,7 @@ export function DiagnosticMapModal({
       }));
       setPhotoCaptions((current) => ({ ...current, [target.code]: "" }));
       URL.revokeObjectURL(upload.previewUrl);
-    } catch (e) {
+    })().catch((e) => {
       const message = e instanceof Error ? e.message : "Фото не загрузилось. Попробуйте повторить.";
       setPhotoUploads((current) => ({
         ...current,
@@ -481,7 +498,11 @@ export function DiagnosticMapModal({
         )),
       }));
       setError(message);
-    }
+      throw e;
+    });
+    pendingUploadsRef.current.add(request);
+    request.finally(() => pendingUploadsRef.current.delete(request)).catch(() => {});
+    return request;
   }
 
   async function uploadPhoto(target: DiagnosticMapItem, file: File | null) {
@@ -496,7 +517,7 @@ export function DiagnosticMapModal({
       status: "uploading",
     };
     setPhotoUploads((current) => ({ ...current, [target.code]: [...(current[target.code] ?? []), upload] }));
-    await runPhotoUpload(target, upload);
+    await runPhotoUpload(target, upload).catch(() => {});
   }
 
   function updateUploadCaption(itemCode: string, uploadId: string, caption: string) {
@@ -532,6 +553,19 @@ export function DiagnosticMapModal({
 
   async function complete() {
     if (!activeId) return;
+    setSaveState("saving");
+    await waitForPendingWork();
+    if (lastSaveErrorRef.current) {
+      setSaveState("error");
+      setError(`Не все поля сохранились: ${lastSaveErrorRef.current}`);
+      return;
+    }
+    const failedUploads = Object.values(photoUploads).flat().filter((upload) => upload.status === "error");
+    if (failedUploads.length > 0) {
+      setSaveState("error");
+      setError("Есть фото с ошибкой загрузки. Повторите загрузку или уберите карточку перед завершением.");
+      return;
+    }
     const response = await fetch(`/api/diagnostics/${activeId}/complete`, { method: "POST" });
     const json = await responseJson<DiagnosticMapPayload & { error?: string }>(response, {} as DiagnosticMapPayload);
     if (!response.ok) {
@@ -539,6 +573,8 @@ export function DiagnosticMapModal({
       return;
     }
     setData(json);
+    setSaveState("saved");
+    onDiagnosticUpdated?.(json);
     setShowSummary(true);
   }
 

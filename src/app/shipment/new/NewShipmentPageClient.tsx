@@ -22,6 +22,7 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -102,11 +103,6 @@ type DemandDetailJson = {
 };
 
 const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
-
-function formatLocalMoyskladMoment(date = new Date()): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
 
 async function safeJson<T>(response: Response, fallback: T): Promise<T> {
   try {
@@ -767,7 +763,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [agentOptions, prefillCounterparty, selectedAgent]);
 
   useEffect(() => {
-    setMomentStr(formatLocalMoyskladMoment());
+    setMomentStr(toServiceMomentString());
   }, []);
 
   useEffect(() => {
@@ -924,7 +920,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         setExistingDemandName(json.header.name);
         setDescription(json.header.description ?? "");
         setApplicable(Boolean(json.header.applicable));
-        setMomentStr(json.header.moment ? formatLocalMoyskladMoment(new Date(json.header.moment)) : formatLocalMoyskladMoment());
+        setMomentStr(json.header.moment ? toServiceMomentString(json.header.moment) : toServiceMomentString());
         const atts = Array.isArray(json.attributes) ? json.attributes : [];
         setAttributes(atts);
         setAttributesError(null);
@@ -1422,7 +1418,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         store: { meta: selectedStore.meta },
         description: description.trim() || undefined,
         applicable,
-        moment: momentStr || formatLocalMoyskladMoment(),
+        moment: momentStr || toServiceMomentString(),
         attributes: atts,
         positions:
           positions.length > 0
@@ -1534,7 +1530,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         store: { meta: selectedStore.meta },
         description: description.trim() || undefined,
         applicable,
-        moment: momentStr || formatLocalMoyskladMoment(),
+        moment: momentStr || toServiceMomentString(),
         attributes: atts,
         positions:
           positions.length > 0
@@ -1614,7 +1610,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           store: { meta: selectedStore.meta },
           description: description.trim() || undefined,
           applicable: false,
-          moment: momentStr || formatLocalMoyskladMoment(),
+          moment: momentStr || toServiceMomentString(),
           attributes: atts,
           positions: positions.map((p) => ({
             id: p.id,
@@ -3687,7 +3683,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         <div className="eco-shipment-new-side-context-body">
         <div className="eco-shipment-new-side-row">
           <span>Дата</span>
-          <strong>{momentStr || "сейчас"}</strong>
+          <strong>{momentStr ? formatServiceDateTime(momentStr) : formatServiceDateTime(new Date())}</strong>
         </div>
         <div className="eco-shipment-new-side-row">
           <span>Клиент</span>
@@ -3830,6 +3826,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           vehicleHints: inferDiagnosticVehicleHintsFromLookup(vinLookupResult),
         }}
         onDiagnosticCreated={(id) => setDiagnosticRowId(id)}
+        onDiagnosticUpdated={(diagnostic) => setDiagnosticRowId(diagnostic.id)}
         onAddedToShipment={() => router.refresh()}
       />
     </main>

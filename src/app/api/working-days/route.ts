@@ -3,6 +3,13 @@ import { canonicalizeLogin, getLoginVariants, getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logChange } from "@/lib/change-log";
 
+function dateOnlyKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** GET: список рабочих дней. Возвращает плановые дни и фактические смены. */
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -114,7 +121,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "dateFrom не должен быть позже dateTo" }, { status: 400 });
     }
     for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-      toAdd.push(d.toISOString().slice(0, 10));
+      toAdd.push(dateOnlyKey(d));
     }
   } else {
     return NextResponse.json({ error: "Укажите date или dateFrom и dateTo" }, { status: 400 });

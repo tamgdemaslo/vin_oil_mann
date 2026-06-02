@@ -1,10 +1,12 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type LocalCounterparty } from "@prisma/client";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
 import { prisma } from "@/lib/db";
-import { invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
+import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
+import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { normalizePhoneKey } from "@/lib/phone-normalize";
 import type {
   DemandDetailAttribute,
   DemandDetailPayload,
@@ -33,6 +35,27 @@ type UpdateDemandBody = {
     discount?: number;
     assortment?: { meta: MoySkladMeta };
   }[];
+};
+
+export type CreateDemandFromRecordBody = {
+  recordId?: string | number | null;
+  recordDateTime?: string | null;
+  recordSource?: string | null;
+  sourceLabel?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientEmail?: string | null;
+  clientExternalId?: string | number | null;
+  yclientsClientId?: string | number | null;
+  vehicle?: {
+    model?: string | null;
+    plate?: string | null;
+    vin?: string | null;
+    year?: string | null;
+  } | null;
+  comment?: string | null;
+  internalComment?: string | null;
+  services?: string[];
 };
 
 type ResolvedPosition = {
@@ -96,18 +119,22 @@ function entityMeta(type: string, moyskladId: string | null | undefined, href: s
 }
 
 function parseMoment(value?: string): { documentDate: string; momentAt: Date } {
-  const raw = value?.trim() || new Date().toISOString();
-  const documentDate = raw.slice(0, 10);
-  const normalized = raw.includes(" ") ? raw.replace(" ", "T") : raw;
-  const parsed = new Date(normalized);
+  const raw = value?.trim() || undefined;
+  const parsed = parseServiceDateTime(raw ?? new Date());
+  const documentDate = toServiceDateInput(parsed ?? new Date());
   return {
     documentDate,
-    momentAt: Number.isFinite(parsed.getTime()) ? parsed : new Date(`${documentDate}T00:00:00`),
+    momentAt: parsed ?? parseServiceDateTime(`${documentDate} 00:00:00`) ?? new Date(),
   };
 }
 
 async function nextLocalDemandName(documentDate: string): Promise<string> {
   const count = await prisma.localDemand.count({ where: { documentDate } });
+  return `ЭКО-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
+}
+
+async function nextLocalDemandNameInTx(tx: Prisma.TransactionClient, documentDate: string): Promise<string> {
+  const count = await tx.localDemand.count({ where: { documentDate } });
   return `ЭКО-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
 
@@ -131,6 +158,48 @@ function isStockTrackedType(type: string): boolean {
 
 function normalizeAttributeName(value?: string): string {
   return (value ?? "").trim().toLowerCase().replace(/ё/g, "е");
+}
+
+function cleanRecordText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+}
+
+function normalizeSearchText(value: unknown): string {
+  if (value == null) return "";
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ё/g, "е")
+    .replace(/Ё/g, "е")
+    .toLocaleLowerCase("ru-RU")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function buildRecordCounterpartySearchText(parts: unknown[]): string {
+  return normalizeSearchText(parts.filter(Boolean).join(" "));
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+}
+
+function firstNonEmpty(...values: unknown[]): string | null {
+  for (const value of values) {
+    const text = cleanRecordText(value);
+    if (text) return text;
+  }
+  return null;
+}
+
+function mergeUniqueStrings(values: unknown[], nextValues: unknown[]): string[] {
+  const out: string[] = [];
+  for (const value of [...values, ...nextValues]) {
+    const text = cleanRecordText(value);
+    if (text && !out.includes(text)) out.push(text);
+  }
+  return out;
 }
 
 async function buildLocalDemandAttributes(
@@ -329,6 +398,312 @@ async function findLocalDemand(id: string) {
     where: { OR: [{ id }, { moyskladId: id }] },
     include: { positions: true, counterparty: true, store: true, organization: true },
   });
+}
+
+async function findDefaultRecordShipmentContext(tx: Prisma.TransactionClient) {
+  const [organization, store] = await Promise.all([
+    tx.localOrganization.findFirst({
+      where: { isActive: true },
+      orderBy: [{ createdAt: "asc" }],
+    }),
+    tx.localStore.findFirst({
+      where: { archived: false },
+      orderBy: [{ isMain: "desc" }, { name: "asc" }],
+    }),
+  ]);
+  return { organization, store };
+}
+
+async function findRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody) {
+  const mode = Prisma.QueryMode.insensitive;
+  const phone = cleanRecordText(input.clientPhone);
+  const normalizedPhone = normalizePhoneKey(phone);
+  const phoneTail = normalizedPhone?.slice(-10) ?? "";
+  const clientName = cleanRecordText(input.clientName);
+  const externalKeys = [
+    cleanRecordText(input.yclientsClientId),
+    cleanRecordText(input.clientExternalId),
+    cleanRecordText(input.recordId) ? `record:${cleanRecordText(input.recordId)}` : "",
+  ].filter(Boolean);
+
+  if (normalizedPhone) {
+    const byPhone = await tx.localCounterparty.findFirst({
+      where: {
+        archived: false,
+        OR: [
+          { normalizedPhone },
+          { phone: { contains: phoneTail || normalizedPhone, mode } },
+          { searchText: { contains: normalizedPhone, mode } },
+          ...(phoneTail ? [{ searchText: { contains: phoneTail, mode } }] : []),
+        ],
+      },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+    if (byPhone) return byPhone;
+  }
+
+  for (const key of externalKeys) {
+    const byExternal = await tx.localCounterparty.findFirst({
+      where: {
+        archived: false,
+        searchText: { contains: key, mode },
+      },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+    if (byExternal) return byExternal;
+  }
+
+  if (clientName && phone) {
+    return tx.localCounterparty.findFirst({
+      where: {
+        archived: false,
+        name: { equals: clientName, mode },
+        OR: [
+          { phone: { contains: phoneTail || phone, mode } },
+          ...(normalizedPhone ? [{ normalizedPhone }, { searchText: { contains: normalizedPhone, mode } }] : []),
+          { searchText: { contains: phone, mode } },
+        ],
+      },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+  }
+
+  return null;
+}
+
+function recordCounterpartyRaw(input: CreateDemandFromRecordBody, existing?: LocalCounterparty | null) {
+  const currentRaw = jsonRecord(existing?.raw);
+  const currentVehicle = jsonRecord(currentRaw.vehicle);
+  const vehicle = {
+    ...currentVehicle,
+    model: firstNonEmpty(currentVehicle.model, input.vehicle?.model),
+    plate: firstNonEmpty(currentVehicle.plate, input.vehicle?.plate),
+    vin: firstNonEmpty(currentVehicle.vin, input.vehicle?.vin),
+    year: firstNonEmpty(currentVehicle.year, input.vehicle?.year),
+  };
+  const recordId = cleanRecordText(input.recordId);
+  const records = mergeUniqueStrings(Array.isArray(currentRaw.recordIds) ? currentRaw.recordIds : [], [recordId]);
+  const yclientsClientId = firstNonEmpty(currentRaw.yclientsClientId, input.yclientsClientId, input.clientExternalId);
+  return {
+    ...currentRaw,
+    source: firstNonEmpty(currentRaw.source, "records"),
+    origin: firstNonEmpty(currentRaw.origin, input.recordSource, input.sourceLabel, "Журнал записей"),
+    yclientsClientId,
+    recordIds: records,
+    noPhone: !normalizePhoneKey(cleanRecordText(input.clientPhone)),
+    vehicle,
+    lastRecord: {
+      id: recordId || null,
+      datetime: cleanRecordText(input.recordDateTime) || null,
+      source: cleanRecordText(input.recordSource) || cleanRecordText(input.sourceLabel) || null,
+      services: (input.services ?? []).map(cleanRecordText).filter(Boolean),
+    },
+    lastLocalUpdate: new Date().toISOString(),
+  };
+}
+
+function recordCounterpartySearchText(input: CreateDemandFromRecordBody, values: {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  counterpartyTypeName: string | null;
+  companyType: string | null;
+  raw: Record<string, unknown>;
+}) {
+  const vehicle = jsonRecord(values.raw.vehicle);
+  const recordId = cleanRecordText(input.recordId);
+  const yclientsClientId = cleanRecordText(values.raw.yclientsClientId);
+  return buildRecordCounterpartySearchText([
+    values.name,
+    values.phone,
+    normalizePhoneKey(values.phone),
+    values.email,
+    values.counterpartyTypeName,
+    values.companyType,
+    cleanRecordText(input.clientExternalId),
+    cleanRecordText(input.yclientsClientId),
+    yclientsClientId,
+    recordId ? `record:${recordId}` : "",
+    cleanRecordText(input.recordSource),
+    cleanRecordText(input.sourceLabel),
+    vehicle.model,
+    vehicle.plate,
+    vehicle.vin,
+    vehicle.year,
+    values.raw.noPhone ? "без телефона" : "",
+  ]);
+}
+
+async function resolveRecordCounterparty(tx: Prisma.TransactionClient, input: CreateDemandFromRecordBody) {
+  const existing = await findRecordCounterparty(tx, input);
+  const phone = cleanRecordText(input.clientPhone);
+  const normalizedPhone = normalizePhoneKey(phone);
+  const email = cleanRecordText(input.clientEmail);
+  const fallbackName = normalizedPhone ? `Клиент ${normalizedPhone}` : "Клиент без телефона";
+  const name = cleanRecordText(input.clientName) || existing?.name || fallbackName;
+
+  if (!existing) {
+    const raw = recordCounterpartyRaw(input);
+    const companyType = "individual";
+    const counterpartyTypeName = "Клиент из журнала записей";
+    const created = await tx.localCounterparty.create({
+      data: {
+        name,
+        phone: phone || null,
+        email: email || null,
+        normalizedPhone,
+        phonesRaw: phone ? [phone] : [],
+        companyType,
+        counterpartyTypeName,
+        archived: false,
+        searchText: recordCounterpartySearchText(input, {
+          name,
+          phone: phone || null,
+          email: email || null,
+          companyType,
+          counterpartyTypeName,
+          raw,
+        }),
+        raw: toJson(raw),
+        syncedAt: new Date(),
+      },
+    });
+    return { counterparty: created, created: true };
+  }
+
+  const currentPhones = Array.isArray(existing.phonesRaw) ? existing.phonesRaw : [];
+  const nextPhone = existing.phone || phone || null;
+  const nextEmail = existing.email || email || null;
+  const nextRaw = recordCounterpartyRaw(input, existing);
+  const companyType = existing.companyType || "individual";
+  const counterpartyTypeName = existing.counterpartyTypeName || "Клиент из журнала записей";
+  const updated = await tx.localCounterparty.update({
+    where: { id: existing.id },
+    data: {
+      phone: nextPhone,
+      email: nextEmail,
+      normalizedPhone: existing.normalizedPhone || normalizePhoneKey(nextPhone),
+      phonesRaw: mergeUniqueStrings(currentPhones, [nextPhone, phone]),
+      companyType,
+      counterpartyTypeName,
+      archived: false,
+      searchText: recordCounterpartySearchText(input, {
+        name: existing.name,
+        phone: nextPhone,
+        email: nextEmail,
+        companyType,
+        counterpartyTypeName,
+        raw: nextRaw,
+      }),
+      raw: toJson(nextRaw),
+      syncedAt: new Date(),
+    },
+  });
+  return { counterparty: updated, created: false };
+}
+
+function buildRecordDemandDescription(input: CreateDemandFromRecordBody) {
+  const services = (input.services ?? []).map(cleanRecordText).filter(Boolean);
+  const vehicle = input.vehicle ?? {};
+  return [
+    services.length ? `Услуги из записи: ${services.join(", ")}` : "",
+    cleanRecordText(input.comment),
+    cleanRecordText(input.internalComment) ? `Внутренний комментарий: ${cleanRecordText(input.internalComment)}` : "",
+    cleanRecordText(vehicle.model) ? `Автомобиль: ${cleanRecordText(vehicle.model)}` : "",
+    cleanRecordText(vehicle.plate) ? `Госномер: ${cleanRecordText(vehicle.plate)}` : "",
+    cleanRecordText(vehicle.vin) ? `VIN: ${cleanRecordText(vehicle.vin)}` : "",
+    cleanRecordText(input.recordDateTime) ? `Запись: ${cleanRecordText(input.recordDateTime)}` : "",
+    cleanRecordText(input.sourceLabel) || cleanRecordText(input.recordSource) ? `Источник записи: ${cleanRecordText(input.sourceLabel) || cleanRecordText(input.recordSource)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function recordDemandAttributeInput(input: CreateDemandFromRecordBody) {
+  const vehicle = input.vehicle ?? {};
+  return [
+    { name: "VIN", value: cleanRecordText(vehicle.vin) || null },
+    { name: "Госномер", value: cleanRecordText(vehicle.plate) || null },
+    { name: "Модель авто", value: cleanRecordText(vehicle.model) || null },
+  ];
+}
+
+export async function createLocalDemandFromRecord(
+  input: CreateDemandFromRecordBody,
+  options?: { ecoUserName?: string }
+): Promise<
+  | { ok: true; id: string; name: string; href: string; counterpartyId: string; counterpartyCreated: boolean }
+  | { ok: false; error: string }
+> {
+  const moment = parseMoment(cleanRecordText(input.recordDateTime) || undefined);
+  const description = buildRecordDemandDescription(input);
+  const localAttributes = await buildLocalDemandAttributes(recordDemandAttributeInput(input), options?.ecoUserName);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const { organization, store } = await findDefaultRecordShipmentContext(tx);
+      if (!organization) throw new Error("Организация не найдена в локальной БД. Запустите импорт или seed.");
+      if (!store) throw new Error("Склад не найден в локальной БД. Запустите импорт складского зеркала.");
+
+      const resolved = await resolveRecordCounterparty(tx, input);
+      const name = await nextLocalDemandNameInTx(tx, moment.documentDate);
+      const raw = {
+        source: "records",
+        sourceRecord: {
+          id: cleanRecordText(input.recordId) || null,
+          datetime: cleanRecordText(input.recordDateTime) || null,
+          source: cleanRecordText(input.recordSource) || null,
+          sourceLabel: cleanRecordText(input.sourceLabel) || null,
+          services: (input.services ?? []).map(cleanRecordText).filter(Boolean),
+        },
+        counterpartyId: resolved.counterparty.id,
+        ecoUserName: options?.ecoUserName ?? null,
+      };
+
+      const demand = await tx.localDemand.create({
+        data: {
+          name,
+          moyskladHref: null,
+          momentAt: moment.momentAt,
+          documentDate: moment.documentDate,
+          applicable: false,
+          sumCents: 0,
+          description: description || null,
+          counterpartyId: resolved.counterparty.id,
+          agentMoyskladId: resolved.counterparty.moyskladId ?? resolved.counterparty.id,
+          agentNameSnapshot: resolved.counterparty.name,
+          storeId: store.id,
+          storeMoyskladId: store.moyskladId ?? store.id,
+          storeNameSnapshot: store.name,
+          organizationId: organization.id,
+          organizationName: organization.name,
+          attributes: toJson(localAttributes),
+          raw: toJson(raw),
+          syncedAt: new Date(),
+        },
+      });
+
+      return {
+        demand,
+        counterpartyId: resolved.counterparty.id,
+        counterpartyCreated: resolved.created,
+      };
+    });
+
+    invalidateWarehouseReadCaches();
+    invalidateDemandListCache();
+    invalidateCounterpartyRows();
+    return {
+      ok: true,
+      id: result.demand.id,
+      name: result.demand.name,
+      href: `local://demand/${result.demand.id}`,
+      counterpartyId: result.counterpartyId,
+      counterpartyCreated: result.counterpartyCreated,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось создать отгрузку из записи" };
+  }
 }
 
 export async function createLocalDemand(

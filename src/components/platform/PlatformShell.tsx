@@ -20,6 +20,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { formatServiceTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 import { EcoStatusDot } from "./EcoUI";
 
@@ -93,9 +94,8 @@ function shouldHideShell(pathname: string) {
 
 function formatTime(value?: string | null) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const formatted = formatServiceTime(value);
+  return formatted === "—" ? "" : formatted;
 }
 
 function routeContext(pathname: string) {

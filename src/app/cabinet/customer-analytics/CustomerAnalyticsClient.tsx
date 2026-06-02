@@ -18,6 +18,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { formatServiceDate, formatServiceDateTime, serviceDateTimeToUtc, toServiceDateInput } from "@/lib/date-time";
 
 type CustomerSource = "shipments" | "crm" | "yclients" | "manual";
 type ClientStatus = "new" | "repeat" | "regular" | "sleeping" | "active" | "no_history";
@@ -233,10 +234,7 @@ function readPersisted(userLogin: string): Record<string, unknown> {
 }
 
 function localYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return toServiceDateInput(d);
 }
 
 function addDaysYmd(ymd: string, delta: number): string {
@@ -272,16 +270,14 @@ function formatRub(cents: number): string {
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value : formatted.slice(0, 8);
 }
 
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const formatted = formatServiceDateTime(value);
+  return formatted === "—" ? value : formatted.replace(/\.\d{4},?/, "");
 }
 
 function formatPhoneDisplay(value: string | null): string {
@@ -705,9 +701,9 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
 
   async function createReminder(client: ClientRow, action: "callback" | "service" = "callback") {
     setCrmCreatingKey(client.clientKey);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + (action === "service" ? 1 : 0));
-    tomorrow.setHours(12, 0, 0, 0);
+    const reminderDate = addDaysYmd(localYmd(new Date()), action === "service" ? 1 : 0);
+    const [year, month, day] = reminderDate.split("-").map(Number);
+    const reminderAt = serviceDateTimeToUtc({ year, month, day, hour: 12, minute: 0, second: 0 });
     try {
       const res = await fetch("/api/crm/deals", {
         method: "POST",
@@ -720,7 +716,7 @@ export default function CustomerAnalyticsClient({ userLogin }: { userLogin: stri
           source: "customer-analytics",
           clientType: client.statuses.includes("regular") ? "regular" : client.statuses.includes("repeat") ? "repeat" : "new_lead",
           nextAction: action === "service" ? "Напомнить о ТО" : "Перезвонить",
-          nextContactAt: tomorrow.toISOString(),
+          nextContactAt: reminderAt.toISOString(),
           notes: client.daysSinceLastVisit != null ? `Не был ${client.daysSinceLastVisit} дней. Создано из аналитики клиентов.` : "Создано из аналитики клиентов.",
         }),
       });
