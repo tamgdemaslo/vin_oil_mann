@@ -12,9 +12,22 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { id, photoId } = await params;
   const photo = await getDiagnosticMapPhoto(id, photoId);
   if (!photo) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
+  if (photo.data && photo.data.byteLength > 0) {
+    return new NextResponse(Buffer.from(photo.data), {
+      headers: {
+        "Content-Type": diagnosticMapPhotoMime(photo.filePath, photo.contentType),
+        "Cache-Control": "private, max-age=300",
+      },
+    });
+  }
   try {
     const buf = await fs.readFile(photo.filePath);
-    return new NextResponse(buf, { headers: { "Content-Type": diagnosticMapPhotoMime(photo.filePath), "Cache-Control": "private, max-age=300" } });
+    return new NextResponse(buf, {
+      headers: {
+        "Content-Type": diagnosticMapPhotoMime(photo.filePath, photo.contentType),
+        "Cache-Control": "private, max-age=300",
+      },
+    });
   } catch {
     return NextResponse.json({ error: "Файл фото не найден" }, { status: 404 });
   }

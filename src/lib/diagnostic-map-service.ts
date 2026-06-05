@@ -52,11 +52,22 @@ type UpdateItemInput = {
   selectedRecommendations?: string[];
 };
 
+const DIAGNOSTIC_MAP_PHOTO_LIST_SELECT = {
+  id: true,
+  itemId: true,
+  filePath: true,
+  contentType: true,
+  caption: true,
+  sortOrder: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.DiagnosticMapPhotoSelect;
+
 type DiagnosticMapFullRow = Prisma.DiagnosticMapSessionGetPayload<{
   include: {
     items: {
       include: {
-        photos: true;
+        photos: { select: typeof DIAGNOSTIC_MAP_PHOTO_LIST_SELECT };
         actions: true;
       };
     };
@@ -65,7 +76,7 @@ type DiagnosticMapFullRow = Prisma.DiagnosticMapSessionGetPayload<{
 
 type DiagnosticMapItemFullRow = Prisma.DiagnosticMapItemGetPayload<{
   include: {
-    photos: true;
+    photos: { select: typeof DIAGNOSTIC_MAP_PHOTO_LIST_SELECT };
     actions: true;
   };
 }>;
@@ -165,7 +176,8 @@ function photoRoot(): string {
   return process.env.DIAGNOSTIC_MAP_PHOTOS_PATH?.trim() || path.join(process.cwd(), ".data", "diagnostic-map-photos");
 }
 
-export function diagnosticMapPhotoMime(filePath: string): string {
+export function diagnosticMapPhotoMime(filePath: string, contentType?: string | null): string {
+  if (contentType) return contentType;
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
@@ -395,7 +407,7 @@ export async function getDiagnosticMapSession(id: string, origin = "") {
     include: {
       items: {
         include: {
-          photos: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+          photos: { select: DIAGNOSTIC_MAP_PHOTO_LIST_SELECT, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
           actions: true,
         },
         orderBy: [{ blockOrder: "asc" }, { itemOrder: "asc" }],
@@ -414,7 +426,7 @@ export async function getDiagnosticMapByToken(token: string, origin = "") {
     include: {
       items: {
         include: {
-          photos: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+          photos: { select: DIAGNOSTIC_MAP_PHOTO_LIST_SELECT, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
           actions: true,
         },
         orderBy: [{ blockOrder: "asc" }, { itemOrder: "asc" }],
@@ -546,7 +558,7 @@ function serializeItem(sessionId: string, item: DiagnosticMapItemFullRow) {
       caption: photo.caption,
       url: `/api/diagnostics/${sessionId}/photos/${photo.id}`,
       thumbnailUrl: `/api/diagnostics/${sessionId}/photos/${photo.id}`,
-      mimeType: diagnosticMapPhotoMime(photo.filePath),
+      mimeType: diagnosticMapPhotoMime(photo.filePath, photo.contentType),
     })),
     reportText: buildDiagnosticReportText({
       title: item.itemTitle,
@@ -599,20 +611,34 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
   const safeCaption = asString(caption);
   const bytes = Buffer.from(await file.arrayBuffer());
   if (bytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
-  const ext = safeExtFromMime(file.type);
+  const contentType = file.type || "image/jpeg";
+  const ext = safeExtFromMime(contentType);
   const dir = path.join(photoRoot(), sessionId);
-  fs.mkdirSync(dir, { recursive: true });
   const photo = await prisma.diagnosticMapPhoto.create({
     data: {
       itemId: item.id,
       filePath: "",
+      contentType,
+      sizeBytes: bytes.length,
+      data: bytes,
       caption: safeCaption,
       sortOrder: item._count.photos,
     },
   });
   const filePath = path.join(dir, `${photo.id}.${ext}`);
-  await fsp.writeFile(filePath, bytes);
-  const updated = await prisma.diagnosticMapPhoto.update({ where: { id: photo.id }, data: { filePath } });
+  let updated = photo;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    await fsp.writeFile(filePath, bytes);
+    updated = await prisma.diagnosticMapPhoto.update({ where: { id: photo.id }, data: { filePath } });
+  } catch (error) {
+    console.warn("[diagnostics] photo saved in DB, disk cache failed", {
+      diagnosticId: sessionId,
+      itemCode,
+      photoId: photo.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   await updateSessionCounters(sessionId);
   return updated;
 }

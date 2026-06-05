@@ -319,6 +319,20 @@ function allClientShipmentsHref(row: CounterpartyRow) {
   return `/shipment?${params.toString()}`;
 }
 
+function newShipmentHref(row: CounterpartyRow) {
+  const params = new URLSearchParams();
+  const phone = row.phone || row.additionalPhone;
+  if (hasDisplayName(row)) params.set("counterparty", displayName(row));
+  if (phone) params.set("phone", phone);
+  if (row.comment) params.set("comment", row.comment);
+  if (row.vehicleVin) params.set("vin", row.vehicleVin);
+  if (row.vehiclePlate) params.set("plate", row.vehiclePlate);
+  const vehicle = vehicleLabel(row);
+  if (vehicle) params.set("vehicle", vehicle);
+  const query = params.toString();
+  return query ? `/shipment/new?${query}` : "/shipment/new";
+}
+
 function demandStatusTone(applicable: boolean) {
   return applicable ? "success" as const : "warning" as const;
 }
@@ -1213,7 +1227,7 @@ function ClientDrawer({
         </header>
 
         <div className="eco-client-drawer__actions">
-          <Link href="/shipment/new" className="eco-btn eco-btn--primary">
+          <Link href={newShipmentHref(row)} className="eco-btn eco-btn--primary">
             <Truck aria-hidden className="eco-icon" />
             Создать отгрузку
           </Link>

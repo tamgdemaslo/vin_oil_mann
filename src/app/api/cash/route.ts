@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const mode = searchParams.get("mode") ?? "current";
 
     if (mode === "history") {
-      const shifts = listShifts(100);
+      const shifts = await listShifts(100);
       return NextResponse.json({ shifts });
     }
 
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
       }
-      const shifts = listShifts(100);
+      const shifts = await listShifts(100);
       const shift = shifts.find((s) => s.id === shiftId);
       if (!shift) {
         return NextResponse.json({ error: "Смена не найдена" }, { status: 404 });
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ shift, operations });
     }
 
-    const shift = getCurrentShift();
+    const shift = await getCurrentShift();
     if (!shift) {
       return NextResponse.json({ shift: null, operations: [] });
     }

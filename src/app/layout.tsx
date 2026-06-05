@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import IdleLockGuard from "@/components/IdleLockGuard";
 import PlatformShell from "@/components/platform/PlatformShell";
+import RouteTitle from "@/components/platform/RouteTitle";
 
 export const metadata: Metadata = {
-  title: "Эко-платформа — продажи и деньги",
+  title: "Главная | Эко-платформа",
   description: "Эко-платформа автосервиса: отгрузки, касса, выплаты и личный кабинет",
 };
 
@@ -16,8 +16,8 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="antialiased">
+        <RouteTitle />
         <PlatformShell />
-        <IdleLockGuard />
         {children}
       </body>
     </html>

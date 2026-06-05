@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Диагностическая карта · Печать · Там где масло.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="icon" href="../assets/monogram-rust.svg" />
+<style>
+  /* Standalone print page: drop the dark app chrome, keep the paper centered */
+  body { background: #58514a; }
+  .diag-print-screen { padding-top: 0; }
+  .diag-print-toolbar { top: 0; }
+  /* standalone: the in-app nav links go nowhere — keep only the print action */
+  .diag-print-toolbar .btn:not(.primary) { display: none; }
+</style>
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#0A0A0A">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0A0A0A"/>
+    <circle cx="600" cy="330" r="140" fill="none" stroke="#C2410C" stroke-width="14"/>
+    <path d="M600 230 C 656 296, 684 352, 600 436 C 516 352, 544 296, 600 230 Z" fill="#C2410C"/>
+    <text x="600" y="560" text-anchor="middle" font-family="Oswald, sans-serif" font-weight="700" font-size="58" letter-spacing="3" fill="#F5F2ED">ДИАГНОСТИЧЕСКАЯ КАРТА</text>
+    <text x="600" y="612" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="22" letter-spacing="6" fill="#737373">ТАМ ГДЕ МАСЛО · A4 · ПЕЧАТЬ</text>
+  </svg>
+</template>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="screens/diag-print.jsx"></script>
+
+<script type="text/babel">
+  const { useState } = React;
+  // hash: #/diag-print/TGM-2026-0436  →  id
+  function parseId() {
+    const m = (location.hash || '').match(/diag-print\/([^/?#]+)/);
+    return m ? decodeURIComponent(m[1]) : DIAG_STATE.shipment;
+  }
+  function PrintApp() {
+    const [id, setId] = useState(parseId());
+    // minimal router so useRoute()/Link don't break; nav is a no-op here
+    const route = { params: { id }, path: 'diag-print', go: () => {}, navigate: () => {} };
+    return (
+      <RouterCtx.Provider value={route}>
+        <DiagnosticsPrintCard />
+      </RouterCtx.Provider>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<PrintApp />);
+</script>
+</body>
+</html>

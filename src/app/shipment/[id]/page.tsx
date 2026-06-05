@@ -161,7 +161,7 @@ type DetailResponse = {
   rawPositions?: unknown;
 };
 
-const EDITABLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
+const VEHICLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
 
 const FILTER_SECTION_META = {
   "oil-filter": { title: "Масляные фильтры", accent: "amber" },
@@ -174,6 +174,36 @@ type FilterSectionKind = keyof typeof FILTER_SECTION_META;
 
 function normalizeAttrName(value?: string): string {
   return (value ?? "").toString().trim().toLowerCase().replace(/ё/g, "е");
+}
+
+function formatVehicleAttributeInput(name: string | undefined, value: string): string {
+  const normalized = normalizeAttrName(name);
+  if (/vin/.test(normalized)) return value.replace(/\s/g, "").toUpperCase().slice(0, 17);
+  if (normalized === "модель авто" || normalized === "номер" || /гос.*номер|plate/.test(normalized)) return value.toUpperCase();
+  return value;
+}
+
+function isBlankUiValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "" || normalized === "null" || normalized === "undefined";
+}
+
+function attributeValueToString(value: unknown): string {
+  if (isBlankUiValue(value)) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value && typeof value === "object" && "name" in value) {
+    const name = (value as { name?: unknown }).name;
+    return isBlankUiValue(name) ? "" : String(name);
+  }
+  return "";
+}
+
+function isVehicleAttribute(name?: string): boolean {
+  const normalized = normalizeAttrName(name);
+  return VEHICLE_ATTR_NAMES.includes(normalized);
 }
 
 function hasText(value?: string): boolean {
@@ -244,6 +274,61 @@ function formatMoney(value: number, currency = "руб."): string {
 
 function parseDecimalInput(value: string): number {
   return Number(value.replace(",", ".")) || 0;
+}
+
+function formatQuantityInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return value.toLocaleString("ru-RU", { maximumFractionDigits: 3, useGrouping: false });
+}
+
+function normalizeQuantityInput(value: string): string {
+  const [whole, ...fraction] = value.replace(/\./g, ",").replace(/[^\d,]/g, "").split(",");
+  return fraction.length > 0 ? `${whole},${fraction.join("")}` : whole;
+}
+
+function QuantityInput({
+  value,
+  onValueChange,
+  className,
+}: {
+  value: number;
+  onValueChange: (value: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(formatQuantityInput(value));
+  const [isFocused, setIsFocused] = useState(false);
+  const inputValue = isFocused ? draft : formatQuantityInput(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      pattern="[0-9]*[,.]?[0-9]*"
+      value={inputValue}
+      onFocus={() => {
+        setDraft(formatQuantityInput(value));
+        setIsFocused(true);
+      }}
+      onChange={(e) => {
+        const next = normalizeQuantityInput(e.target.value);
+        setDraft(next);
+        onValueChange(parseDecimalInput(next));
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        const parsed = parseDecimalInput(draft);
+        const hasDecimalPart = draft.includes(",");
+        setDraft(
+          parsed.toLocaleString("ru-RU", {
+            minimumFractionDigits: hasDecimalPart ? 1 : 0,
+            maximumFractionDigits: 3,
+            useGrouping: false,
+          })
+        );
+      }}
+      className={className}
+    />
+  );
 }
 
 function formatVolume(volume?: number): string {
@@ -694,7 +779,12 @@ export default function ShipmentDetailPage() {
         setData(json);
         setDescription(json.header.description ?? "");
         setApplicable(Boolean(json.header.applicable));
-        const atts = Array.isArray(json.attributes) ? (json.attributes as DemandAttribute[]) : [];
+	        const atts = Array.isArray(json.attributes)
+	          ? (json.attributes as DemandAttribute[]).map((attr) => ({
+	              ...attr,
+	              value: typeof attr.value === "string" ? formatVehicleAttributeInput(attr.name, attributeValueToString(attr.value)) : attr.value,
+	            }))
+	          : [];
         setAttributes(atts);
         // VIN из доп. полей (по имени атрибута, содержащему "vin")
         const vinIndex = atts.findIndex(
@@ -702,7 +792,7 @@ export default function ShipmentDetailPage() {
         );
         if (vinIndex >= 0) {
           const v = atts[vinIndex]?.value;
-          setVin(typeof v === "string" ? v : v != null ? String(v) : "");
+          setVin(formatVehicleAttributeInput(atts[vinIndex]?.name, attributeValueToString(v)));
         } else {
           setVin("");
         }
@@ -795,17 +885,15 @@ export default function ShipmentDetailPage() {
       }
       if (!diagId) {
         const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
-        const attrModel = String(
-          attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+        const attrModel = attributeValueToString(
+          attributes.find((a) => normalizeAttrName(a.name) === "модель авто")?.value
         ).trim();
         const mp = attrModel.split(/\s+/).filter(Boolean);
-        const yearStr = String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? "").trim();
-        const plateStr = String(
-          attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
+        const yearStr = attributeValueToString(attributes.find((a) => normalizeAttrName(a.name) === "год")?.value).trim();
+        const plateStr = attributeValueToString(
+          attributes.find((a) => /^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i.test(normalizeAttrName(a.name)))?.value
         ).trim();
-        const mileageStr = String(
-          attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""
-        ).trim();
+        const mileageStr = attributeValueToString(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value).trim();
         const dec = vinLookupResult?.decoded;
         const rawAgent = rawAgentFromDemand(data?.raw);
         const rawAgentId = rawAgent?.id?.trim() || localEntityIdFromMeta(rawAgent?.meta);
@@ -988,7 +1076,7 @@ export default function ShipmentDetailPage() {
             const name = normalizeAttrName(a.name);
             if (decoded && name === "модель авто") {
               const val = [decoded.make, decoded.model].filter(Boolean).join(" ").trim();
-              return { ...a, value: val || null };
+              return { ...a, value: val ? formatVehicleAttributeInput(a.name, val) : null };
             }
             if (decoded && name === "год") {
               const val = (decoded.modelYear ?? "").trim();
@@ -996,7 +1084,7 @@ export default function ShipmentDetailPage() {
             }
             if (name === "объем") {
               const val = (data as VinLookupResult).oilInfo?.fillVolumeLiters?.trim();
-              if (val && !String(a.value ?? "").trim()) return { ...a, value: val };
+              if (val && !attributeValueToString(a.value).trim()) return { ...a, value: val };
             }
             return a;
           })
@@ -1086,13 +1174,24 @@ export default function ShipmentDetailPage() {
       const res = await fetch(`/api/demands/${encodeURIComponent(id)}/copy`, { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку");
+        const message = typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку";
+        setError(message);
+        window.alert(message);
         return;
       }
-      if (json.id) router.push(`/shipment/${json.id}/edit?copied=1`);
-      else setError("Локальная БД не вернула id новой отгрузки");
+      const copiedId = typeof json.id === "string" ? json.id : typeof json.demand?.id === "string" ? json.demand.id : "";
+      if (copiedId) {
+        router.push(`/shipment/${copiedId}/edit?copied=1`);
+        return;
+      }
+      console.error("[shipment] copy response without id:", json);
+      const message = "Отгрузка могла быть скопирована, но сервер не вернул id нового черновика";
+      setError(message);
+      window.alert(message);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка сети");
+      const message = e instanceof Error ? e.message : "Ошибка сети";
+      setError(message);
+      window.alert(message);
     } finally {
       setDuplicating(false);
     }
@@ -1167,15 +1266,13 @@ export default function ShipmentDetailPage() {
   const vinAttrIndex = attributes.findIndex(
     (a) => typeof a?.name === "string" && /vin/i.test(a.name)
   );
-  const getAttrValue = (matcher: RegExp) => {
-    const attr = attributes.find((a) => matcher.test(normalizeAttrName(a.name)));
-    const value = attr?.value;
-    if (value == null) return "";
-    return typeof value === "object" ? JSON.stringify(value) : String(value);
-  };
+	  const getAttrValue = (matcher: RegExp) => {
+	    const attr = attributes.find((a) => matcher.test(normalizeAttrName(a.name)));
+	    return attributeValueToString(attr?.value).trim();
+	  };
   const updateAttrValue = (matcher: RegExp, value: string) => {
     setAttributes((prev) =>
-      prev.map((attr) => (matcher.test(normalizeAttrName(attr.name)) ? { ...attr, value } : attr))
+      prev.map((attr) => (matcher.test(normalizeAttrName(attr.name)) ? { ...attr, value: formatVehicleAttributeInput(attr.name, value) } : attr))
     );
   };
   const addProductOption = (p: {
@@ -1226,11 +1323,19 @@ export default function ShipmentDetailPage() {
     getAttrValue(/^модель авто$/i) ||
     [vinLookupResult?.decoded?.make, vinLookupResult?.decoded?.model].filter(Boolean).join(" ");
   const vehicleYear = getAttrValue(/^год$/i) || vinLookupResult?.decoded?.modelYear || "";
-  const vehiclePlate = getAttrValue(/гос.*номер|номер/i);
+  const vehiclePlate = getAttrValue(/^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i);
   const vehicleMileage = getAttrValue(/пробег/i);
   const vehicleVolume = getAttrValue(/^объем$/i);
   const vehicleOil = getAttrValue(/моторное масло/i);
   const documentVin = vin || getAttrValue(/vin/i);
+  const vehicleVinPart = documentVin ? `VIN ${documentVin}` : "";
+  const clientVehicleSummary =
+    vehicleModel
+      ? [vehicleModel, vehiclePlate, vehicleVinPart].filter(Boolean).join(" · ")
+      : [vehiclePlate, vehicleVinPart].filter(Boolean).join(" · ") || "автомобиль не указан";
+  const additionalAttributes = attributes
+    .map((a, index) => ({ a, index }))
+    .filter(({ a }) => !isVehicleAttribute(a.name));
   const agentHref = counterpartyHrefFromDemand(data.raw, agentName);
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
   const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
@@ -1389,26 +1494,26 @@ export default function ShipmentDetailPage() {
                       <ExternalLink aria-hidden />
                     </Link>
                   </h2>
-                  <p>{data.header.ecoUserName?.trim() || "Эко-платформа"} · {data.header.organizationName || "организация не указана"}</p>
-                  <p>Создана {formatServiceDateTime(data.header.moment)}</p>
+	                  <p>{clientVehicleSummary}</p>
+	                  <p>Создана {formatServiceDateTime(data.header.moment)}</p>
                 </div>
               </div>
             </div>
             <div className="eco-shipment-detail-party is-car">
               <div className="eco-shipment-detail-section-head">
                 <div className="eco-shipment-detail-kicker">Автомобиль</div>
-                <button
-                  type="button"
-                  className="eco-shipment-detail-icon-btn"
-                  onClick={() => setVehicleEditing((value) => !value)}
+	                <button
+	                  type="button"
+	                  className="eco-shipment-detail-icon-btn"
+	                  onClick={() => setVehicleEditing((value) => !value)}
                   aria-label={vehicleEditing ? "Закрыть редактирование автомобиля" : "Редактировать автомобиль"}
                   title={vehicleEditing ? "Закрыть" : "Редактировать"}
                 >
-                  <Pencil aria-hidden />
-                </button>
-              </div>
-              {vehicleEditing ? (
-                <div className="eco-shipment-detail-car-edit">
+	                  <Pencil aria-hidden />
+	                </button>
+	              </div>
+	              {vehicleEditing ? (
+	                <div className="eco-shipment-detail-car-edit">
                   <label>
                     <span>Модель авто</span>
                     <input
@@ -1422,12 +1527,12 @@ export default function ShipmentDetailPage() {
                     <span>VIN</span>
                     <input
                       type="text"
-                      value={documentVin}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setVin(value);
-                        updateAttrValue(/vin/i, value);
-                      }}
+	                      value={documentVin}
+	                      onChange={(e) => {
+	                        const value = formatVehicleAttributeInput("vin", e.target.value);
+	                        setVin(value);
+	                        updateAttrValue(/vin/i, value);
+	                      }}
                       placeholder="WAUZZZ..."
                     />
                   </label>
@@ -1471,40 +1576,50 @@ export default function ShipmentDetailPage() {
                       onChange={(e) => updateAttrValue(/моторное масло/i, e.target.value)}
                     />
                   </label>
-                  <div className="eco-shipment-detail-car-edit-actions">
-                    <button
-                      type="button"
-                      disabled={documentVin.replace(/\s/g, "").length < 8 || vinLookupLoading}
-                      onClick={() => {
-                        setActiveDetailTab("vin");
-                        void runVinLookup();
-                      }}
-                    >
-                      {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
-                    </button>
-                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
-                      {diagnosticPrimaryLabel}
-                    </button>
-                    <button type="button" className="is-primary" onClick={() => setVehicleEditing(false)}>
-                      Готово
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <h2>{vehicleModel || "Автомобиль не указан"}</h2>
-                  <p>
-                    {vehiclePlate || "номер не указан"}
-                    {documentVin ? ` · VIN ${documentVin}` : " · VIN не указан"}
-                  </p>
-                  <p>
-                    {vehicleMileage ? `Пробег ${vehicleMileage}` : "Пробег не указан"}
-                    {vehicleYear ? ` · Год ${vehicleYear}` : ""}
-                    {vehicleVolume ? ` · Объём ${vehicleVolume}` : ""}
-                    {vehicleOil ? ` · ${vehicleOil}` : ""}
-                  </p>
-                </>
-              )}
+	                  <div className="eco-shipment-detail-car-edit-actions">
+	                    <button type="button" className="is-primary" onClick={() => setVehicleEditing(false)}>
+	                      Готово
+	                    </button>
+	                    <button type="button" onClick={() => setVehicleEditing(false)}>
+	                      Отмена
+	                    </button>
+	                  </div>
+	                </div>
+	              ) : (
+	                <div className="eco-shipment-detail-car-card">
+	                  <h2>{vehicleModel || "Автомобиль не указан"}</h2>
+	                  <dl>
+	                    <div>
+	                      <dt>VIN</dt>
+	                      <dd>{documentVin || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Госномер</dt>
+	                      <dd>{vehiclePlate || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Пробег</dt>
+	                      <dd>{vehicleMileage || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Объём</dt>
+	                      <dd>{vehicleVolume ? `${vehicleVolume} л` : "не указан"}</dd>
+	                    </div>
+	                    {vehicleYear && (
+	                      <div>
+	                        <dt>Год</dt>
+	                        <dd>{vehicleYear}</dd>
+	                      </div>
+	                    )}
+	                    {vehicleOil && (
+	                      <div>
+	                        <dt>Масло</dt>
+	                        <dd>{vehicleOil}</dd>
+	                      </div>
+	                    )}
+	                  </dl>
+	                </div>
+	              )}
             </div>
           </section>
 
@@ -1530,13 +1645,13 @@ export default function ShipmentDetailPage() {
             >
               Диагностика <span>{diagnosticRemote?.counts?.total ?? 0}</span>
             </button>
-            <button
-              type="button"
-              className={activeDetailTab === "history" ? "is-active" : undefined}
-              onClick={() => setActiveDetailTab("history")}
-            >
-              Поля <span>{attributes.length}</span>
-            </button>
+	            <button
+	              type="button"
+	              className={activeDetailTab === "history" ? "is-active" : undefined}
+	              onClick={() => setActiveDetailTab("history")}
+	            >
+	              Поля <span>{additionalAttributes.length}</span>
+	            </button>
             <button
               type="button"
               className={activeDetailTab === "precheck" ? "is-active" : undefined}
@@ -1689,16 +1804,11 @@ export default function ShipmentDetailPage() {
                               </td>
                               <td className="is-num">
                                 {applicable ? (
-                                  <span className="eco-position-readonly-value">{p.quantity}</span>
+                                  <span className="eco-position-readonly-value">{formatQuantityInput(p.quantity)}</span>
                                 ) : (
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.1}
-                                    inputMode="decimal"
+                                  <QuantityInput
                                     value={p.quantity}
-                                    onChange={(e) => {
-                                      const q = parseDecimalInput(e.target.value);
+                                    onValueChange={(q) => {
                                       const next = [...positions];
                                       next[index] = { ...p, quantity: q };
                                       setPositions(next);
@@ -1765,10 +1875,10 @@ export default function ShipmentDetailPage() {
                       <span>VIN · 17 знаков</span>
                       <input
                         type="text"
-                        value={vin}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setVin(v);
+	                        value={vin}
+	                        onChange={(e) => {
+	                          const v = formatVehicleAttributeInput("vin", e.target.value);
+	                          setVin(v);
                           setManualEngineVolume("");
                           setManualEnginePower("");
                           setShowVehicleOverrideDialog(false);
@@ -1855,29 +1965,32 @@ export default function ShipmentDetailPage() {
               </div>
             )}
 
-            {activeDetailTab === "history" && (
-              <div className="eco-shipment-detail-tab-panel">
-                <div className="eco-shipment-detail-fields-grid">
-                  {attributes
-                    .map((a, index) => ({ a, index }))
-                    .filter(({ a }) => EDITABLE_ATTR_NAMES.includes(normalizeAttrName(a.name)))
-                    .map(({ a, index }) => (
-                      <label key={a.id ?? a.name ?? index}>
-                        <span>{a.name ?? a.id}</span>
-                        <input
-                          type="text"
-                          value={typeof a.value === "object" ? JSON.stringify(a.value) : String(a.value ?? "")}
-                          onChange={(e) => {
-                            const next = [...attributes];
-                            next[index] = { ...a, value: e.target.value };
-                            setAttributes(next);
-                          }}
-                        />
-                      </label>
-                    ))}
-                </div>
-              </div>
-            )}
+	            {activeDetailTab === "history" && (
+	              <div className="eco-shipment-detail-tab-panel">
+	                {additionalAttributes.length > 0 ? (
+	                  <div className="eco-shipment-detail-fields-grid">
+	                    {additionalAttributes.map(({ a, index }) => (
+	                        <label key={a.id ?? a.name ?? index}>
+	                          <span>{a.name ?? a.id}</span>
+	                          <input
+	                            type="text"
+	                            value={attributeValueToString(a.value)}
+		                            onChange={(e) => {
+		                              const next = [...attributes];
+		                              next[index] = { ...a, value: e.target.value };
+		                              setAttributes(next);
+		                            }}
+	                          />
+	                        </label>
+	                      ))}
+	                  </div>
+	                ) : (
+	                  <div className="eco-shipment-detail-empty">
+	                    Дополнительных локальных полей нет. Основные данные автомобиля находятся в карточке «Автомобиль».
+	                  </div>
+	                )}
+	              </div>
+	            )}
 
             {activeDetailTab === "diagnostic" && (
               <div className="eco-shipment-detail-tab-panel">
@@ -2064,7 +2177,7 @@ export default function ShipmentDetailPage() {
             type="text"
             value={vin}
             onChange={(e) => {
-              const v = e.target.value;
+              const v = formatVehicleAttributeInput("vin", e.target.value);
               setVin(v);
               setManualEngineVolume("");
               setManualEnginePower("");
@@ -2809,33 +2922,24 @@ export default function ShipmentDetailPage() {
         </div>
       )}
 
-      {attributes.length > 0 && (
+      {additionalAttributes.length > 0 && (
         <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
           <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
             Дополнительные поля документа
           </h2>
-          <dl className="grid gap-2 sm:grid-cols-2">
-            {attributes
-              .map((a, index) => ({ a, index }))
-              .filter(({ a }) => {
-                return EDITABLE_ATTR_NAMES.includes(normalizeAttrName(a.name));
-              })
-              .map(({ a, index }) => (
-                <div key={a.id ?? a.name ?? index}>
-                  <dt className="text-xs text-zinc-500">{a.name ?? a.id}</dt>
-                  <dd className="mt-0.5">
-                    <input
-                      type="text"
-                      value={
-                        typeof a.value === "object"
-                          ? JSON.stringify(a.value)
-                          : String(a.value ?? "")
-                      }
-                      onChange={(e) => {
-                        const next = [...attributes];
-                        next[index] = { ...a, value: e.target.value };
-                        setAttributes(next);
-                      }}
+	          <dl className="grid gap-2 sm:grid-cols-2">
+	            {additionalAttributes.map(({ a, index }) => (
+	                <div key={a.id ?? a.name ?? index}>
+	                  <dt className="text-xs text-zinc-500">{a.name ?? a.id}</dt>
+	                  <dd className="mt-0.5">
+	                    <input
+	                      type="text"
+	                      value={attributeValueToString(a.value)}
+		                      onChange={(e) => {
+		                        const next = [...attributes];
+		                        next[index] = { ...a, value: e.target.value };
+		                        setAttributes(next);
+		                      }}
                       className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-mono dark:border-zinc-600 dark:bg-zinc-900"
                     />
                   </dd>
@@ -3058,14 +3162,9 @@ export default function ShipmentDetailPage() {
                       </div>
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.1}
-                        inputMode="decimal"
+                      <QuantityInput
                         value={p.quantity}
-                        onChange={(e) => {
-                          const q = parseDecimalInput(e.target.value);
+                        onValueChange={(q) => {
                           const next = [...positions];
                           next[index] = { ...p, quantity: q };
                           setPositions(next);
@@ -3226,11 +3325,9 @@ export default function ShipmentDetailPage() {
             .split(/\s+/)
             .slice(1)
             .join(" "),
-          year: String(attributes.find((a) => (a.name ?? "").toLowerCase() === "год")?.value ?? ""),
-          licensePlate: String(
-            attributes.find((a) => /гос|номер/i.test(a.name ?? ""))?.value ?? ""
-          ),
-          mileage: String(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value ?? ""),
+          year: attributeValueToString(attributes.find((a) => normalizeAttrName(a.name) === "год")?.value),
+          licensePlate: getAttrValue(/^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i),
+          mileage: attributeValueToString(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value),
           clientName: data?.header.agentName ?? "",
           vehicleHints: inferDiagnosticVehicleHintsFromLookup(vinLookupResult),
         }}

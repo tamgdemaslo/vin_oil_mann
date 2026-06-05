@@ -5,5 +5,5 @@ import { DiagnosticPublicReport } from "@/components/diagnostic/DiagnosticPublic
 
 export default function DiagnosticReportPage() {
   const params = useParams<{ token: string }>();
-  return <DiagnosticPublicReport token={params.token} />;
+  return <DiagnosticPublicReport token={params.token} mode="print" />;
 }

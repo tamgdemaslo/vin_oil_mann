@@ -160,6 +160,15 @@ type RawDemandPosition = {
   assortment?: { name?: string; meta?: { type?: string; href?: string } };
 };
 
+type LocalHistoryDemand = {
+  id: string;
+  name: string;
+  documentDate: string;
+  momentAt: Date;
+  attributes: unknown;
+  positions: Array<{ name: string; assortmentType: string }>;
+};
+
 function assortmentKind(pos: RawDemandPosition): "service" | "product" {
   const t = pos.assortment?.meta?.type;
   if (t === "service") return "service";
@@ -191,6 +200,150 @@ function pickNoteForSyncedDemand(
   if (oil) return oil;
   if (name && !isLikelyOrderNumberLabel(name)) return name;
   return "—";
+}
+
+function demandAttributesFromJson(value: unknown): DemandDetailAttribute[] {
+  if (!Array.isArray(value)) return [];
+  const out: DemandDetailAttribute[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as { definitionId?: unknown; id?: unknown; name?: unknown; type?: unknown; value?: unknown };
+    const id =
+      typeof record.definitionId === "string"
+        ? record.definitionId
+        : typeof record.id === "string"
+          ? record.id
+          : typeof record.name === "string"
+            ? record.name
+            : "";
+    const name = typeof record.name === "string" ? record.name : id;
+    if (!name) continue;
+    out.push({
+      id,
+      name,
+      type: typeof record.type === "string" ? record.type : "string",
+      meta: { href: `local://demand-attribute/${id}`, type: "demand-attribute", mediaType: "application/json" },
+      value: record.value ?? null,
+    });
+  }
+  return out;
+}
+
+function normalizeVehicleKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[\s\-_.]+/g, "");
+}
+
+function localDemandMatchesVehicle(demand: LocalHistoryDemand, currentVin: string, currentPlate: string): boolean {
+  const attrs = demandAttributesFromJson(demand.attributes);
+  const wantVin = normalizeVehicleKey(currentVin === "—" ? "" : currentVin);
+  const wantPlate = normalizeVehicleKey(currentPlate === "—" ? "" : currentPlate);
+  if (!wantVin && !wantPlate) return true;
+
+  const vin = normalizeVehicleKey(findVinValue(attrs));
+  const plate = normalizeVehicleKey(findPlateValue(attrs));
+  if (wantVin && vin && vin === wantVin) return true;
+  if (wantPlate && plate && plate === wantPlate) return true;
+  return false;
+}
+
+function localHistoryRowFromDemand(
+  demand: LocalHistoryDemand,
+  currentDemandId: string,
+  currentMileage: number,
+  rawRows: RawDemandPosition[]
+): PosterHistoryRow {
+  const attrs = demandAttributesFromJson(demand.attributes);
+  const attrMileage = parseIntRu(findAttr(attrs, "пробег").trim());
+  const km = demand.id === currentDemandId && currentMileage > 0 ? currentMileage : attrMileage > 0 ? attrMileage : null;
+  const note =
+    demand.id === currentDemandId
+      ? pickJournalOilNoteFromRawRows(rawRows) ||
+        pickNoteForSyncedDemand(demand.name, demand.positions)
+      : pickNoteForSyncedDemand(demand.name, demand.positions);
+  return {
+    date: demand.documentDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2.$1"),
+    km,
+    note,
+  };
+}
+
+async function fetchLocalPosterHistory(params: {
+  currentDemandId: string;
+  phoneKey: string | null;
+  currentVin: string;
+  currentPlate: string;
+  currentMileage: number;
+  rawRows: RawDemandPosition[];
+}): Promise<{ rows: PosterHistoryRow[]; visits: number; sinceVisit: string } | null> {
+  const current = await prisma.localDemand.findUnique({
+    where: { id: params.currentDemandId },
+    select: {
+      id: true,
+      counterpartyId: true,
+      agentMoyskladId: true,
+      counterparty: { select: { normalizedPhone: true } },
+    },
+  });
+  if (!current) return null;
+
+  const phoneKey = params.phoneKey ?? current.counterparty?.normalizedPhone ?? null;
+  const or = [
+    { id: current.id },
+    current.counterpartyId ? { counterpartyId: current.counterpartyId } : null,
+    current.agentMoyskladId ? { agentMoyskladId: current.agentMoyskladId } : null,
+    phoneKey ? { counterparty: { is: { normalizedPhone: phoneKey } } } : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  if (or.length === 0) return null;
+
+  const candidates = await prisma.localDemand.findMany({
+    where: { OR: or },
+    select: {
+      id: true,
+      name: true,
+      documentDate: true,
+      momentAt: true,
+      attributes: true,
+      positions: {
+        select: { name: true, assortmentType: true },
+        orderBy: { id: "asc" },
+      },
+    },
+    orderBy: { momentAt: "asc" },
+    take: 60,
+  });
+
+  const localCandidates: LocalHistoryDemand[] = candidates.map((demand) => ({
+    id: demand.id,
+    name: demand.name,
+    documentDate: demand.documentDate,
+    momentAt: demand.momentAt,
+    attributes: demand.attributes,
+    positions: demand.positions,
+  }));
+  const unique = [...new Map(localCandidates.map((demand) => [demand.id, demand])).values()];
+  if (unique.length === 0) return null;
+
+  const hasVehicleKey = normalizeVehicleKey(params.currentVin === "—" ? "" : params.currentVin) || normalizeVehicleKey(params.currentPlate === "—" ? "" : params.currentPlate);
+  const vehicleScoped = hasVehicleKey
+    ? unique.filter((demand) => demand.id === params.currentDemandId || localDemandMatchesVehicle(demand, params.currentVin, params.currentPlate))
+    : unique;
+  const scoped = vehicleScoped.length > 0 ? vehicleScoped : unique;
+  const window = scoped.slice(-5);
+  const rows = window.map((demand) =>
+    localHistoryRowFromDemand(demand, params.currentDemandId, params.currentMileage, params.rawRows)
+  );
+  if (rows.length === 0) return null;
+
+  return {
+    rows,
+    visits: Math.max(scoped.length, 1),
+    sinceVisit: scoped[0]!.documentDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2.$1"),
+  };
 }
 
 function shortPointFromAddress(address: string, city: string): string {
@@ -270,7 +423,22 @@ export async function buildJobOrderPosterModel(
   let visits = 1;
   let sinceVisit = formatDemandDateRu(header.moment);
 
-  if (phoneKey) {
+  const localHistory = await fetchLocalPosterHistory({
+    currentDemandId: demandId,
+    phoneKey,
+    currentVin: vin,
+    currentPlate: plate,
+    currentMileage: mileage,
+    rawRows,
+  }).catch(() => null);
+
+  if (localHistory) {
+    historyRows = localHistory.rows;
+    visits = localHistory.visits;
+    sinceVisit = localHistory.sinceVisit;
+  }
+
+  if (historyRows.length === 0 && phoneKey) {
     try {
       const synced = await prisma.moySkladDemandSync.findMany({
         where: { normalizedPhone: phoneKey },

@@ -406,8 +406,8 @@ enum DiagnosticMapActionKind {
 }
 
 model DiagnosticMapSession {
-  id       String @id @default(cuid())
-  demandId String? @map("demand_id")
+  id       String       @id @default(cuid())
+  demandId String?      @map("demand_id")
   demand   LocalDemand? @relation(fields: [demandId], references: [id], onDelete: SetNull)
 
   clientId    String? @map("client_id")
@@ -425,24 +425,24 @@ model DiagnosticMapSession {
   masterLogin String? @map("master_login")
   masterName  String? @map("master_name")
 
-  status      DiagnosticMapSessionStatus @default(IN_PROGRESS)
-  publicToken String                     @unique @default(cuid()) @map("public_token")
-  startedAt   DateTime                   @default(now()) @map("started_at")
-  completedAt DateTime?                  @map("completed_at")
-  reportSentAt DateTime?                 @map("report_sent_at")
-  clientWantsReminder Boolean            @default(true) @map("client_wants_reminder")
+  status              DiagnosticMapSessionStatus @default(IN_PROGRESS)
+  publicToken         String                     @unique @default(cuid()) @map("public_token")
+  startedAt           DateTime                   @default(now()) @map("started_at")
+  completedAt         DateTime?                  @map("completed_at")
+  reportSentAt        DateTime?                  @map("report_sent_at")
+  clientWantsReminder Boolean                    @default(true) @map("client_wants_reminder")
 
-  totalCount       Int @default(0) @map("total_count")
-  normalCount      Int @default(0) @map("normal_count")
-  attentionCount   Int @default(0) @map("attention_count")
-  replaceCount     Int @default(0) @map("replace_count")
-  indirectCount    Int @default(0) @map("indirect_count")
-  noAccessCount    Int @default(0) @map("no_access_count")
-  byMileageCount   Int @default(0) @map("by_mileage_count")
-  byClientCount    Int @default(0) @map("by_client_count")
-  withPhotoCount   Int @default(0) @map("with_photo_count")
-  withoutPhotoCount Int @default(0) @map("without_photo_count")
-  nowRecommendationCount Int @default(0) @map("now_recommendation_count")
+  totalCount                   Int @default(0) @map("total_count")
+  normalCount                  Int @default(0) @map("normal_count")
+  attentionCount               Int @default(0) @map("attention_count")
+  replaceCount                 Int @default(0) @map("replace_count")
+  indirectCount                Int @default(0) @map("indirect_count")
+  noAccessCount                Int @default(0) @map("no_access_count")
+  byMileageCount               Int @default(0) @map("by_mileage_count")
+  byClientCount                Int @default(0) @map("by_client_count")
+  withPhotoCount               Int @default(0) @map("with_photo_count")
+  withoutPhotoCount            Int @default(0) @map("without_photo_count")
+  nowRecommendationCount       Int @default(0) @map("now_recommendation_count")
   nextVisitRecommendationCount Int @default(0) @map("next_visit_recommendation_count")
 
   items DiagnosticMapItem[]
@@ -462,13 +462,13 @@ model DiagnosticMapItem {
   sessionId String               @map("session_id")
   session   DiagnosticMapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  blockCode  String @map("block_code")
-  blockTitle String @map("block_title")
-  blockOrder Int    @map("block_order")
-  itemCode   String @map("item_code")
-  itemTitle  String @map("item_title")
-  itemOrder  Int    @map("item_order")
-  catalogSnapshot Json @map("catalog_snapshot")
+  blockCode       String @map("block_code")
+  blockTitle      String @map("block_title")
+  blockOrder      Int    @map("block_order")
+  itemCode        String @map("item_code")
+  itemTitle       String @map("item_title")
+  itemOrder       Int    @map("item_order")
+  catalogSnapshot Json   @map("catalog_snapshot")
 
   applicability DiagnosticMapApplicability @default(APPLICABLE)
   status        DiagnosticMapItemStatus    @default(UNCHECKED)
@@ -480,7 +480,7 @@ model DiagnosticMapItem {
   nextVisit      Boolean @default(false) @map("next_visit")
   showInReport   Boolean @default(true) @map("show_in_report")
 
-  selectedNotes String[] @map("selected_notes")
+  selectedNotes           String[] @map("selected_notes")
   selectedRecommendations String[] @map("selected_recommendations")
 
   photos  DiagnosticMapPhoto[]
@@ -500,9 +500,12 @@ model DiagnosticMapPhoto {
   itemId String            @map("item_id")
   item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  filePath  String @map("file_path")
-  caption   String
-  sortOrder Int    @default(0) @map("sort_order")
+  filePath    String  @map("file_path")
+  contentType String? @map("content_type")
+  sizeBytes   Int?    @map("size_bytes")
+  data        Bytes?
+  caption     String
+  sortOrder   Int     @default(0) @map("sort_order")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -516,11 +519,11 @@ model DiagnosticMapRecommendationAction {
   itemId String            @map("item_id")
   item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  kind DiagnosticMapActionKind
-  title String
-  status String @default("open")
-  localDemandPositionId String? @map("local_demand_position_id")
-  crmDealId String? @map("crm_deal_id")
+  kind                  DiagnosticMapActionKind
+  title                 String
+  status                String                  @default("open")
+  localDemandPositionId String?                 @map("local_demand_position_id")
+  crmDealId             String?                 @map("crm_deal_id")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -737,6 +740,65 @@ model LocalCounterparty {
   @@map("local_counterparties")
 }
 
+/// Локальная кассовая смена. Источник истины для открытия/закрытия кассы.
+model CashShift {
+  id               String   @id @default(cuid())
+  serviceDate      String   @unique @map("service_date")
+  timezone         String
+  status           String   @default("open")
+  openedAt         DateTime @map("opened_at")
+  openedBy         String   @map("opened_by")
+  openedByName     String?  @map("opened_by_name")
+  openedByRole     String?  @map("opened_by_role")
+  openingCashCents Int      @default(0) @map("opening_cash_cents")
+
+  closedAt     DateTime? @map("closed_at")
+  closedBy     String?   @map("closed_by")
+  closedByName String?   @map("closed_by_name")
+  closedByRole String?   @map("closed_by_role")
+
+  cashOrdersTotalCents   Int?    @map("cash_orders_total_cents")
+  cardOrdersTotalCents   Int?    @map("card_orders_total_cents")
+  withdrawalsTotalCents  Int?    @map("withdrawals_total_cents")
+  cashExpensesTotalCents Int?    @map("cash_expenses_total_cents")
+  expectedCashCents      Int?    @map("expected_cash_cents")
+  actualCashCents        Int?    @map("actual_cash_cents")
+  discrepancyCents       Int?    @map("discrepancy_cents")
+  discrepancyComment     String? @map("discrepancy_comment") @db.Text
+
+  source    String   @default("local")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  withdrawals CashWithdrawal[]
+
+  @@index([status])
+  @@index([openedAt])
+  @@index([closedAt])
+  @@map("cash_shifts")
+}
+
+/// Локальное изъятие наличных из кассы.
+model CashWithdrawal {
+  id          String    @id @default(cuid())
+  shiftId     String    @map("shift_id")
+  shift       CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  amountCents Int       @map("amount_cents")
+  reason      String    @db.Text
+  comment     String?   @db.Text
+
+  createdBy     String   @map("created_by")
+  createdByName String?  @map("created_by_name")
+  createdByRole String?  @map("created_by_role")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  source        String   @default("local")
+
+  @@index([shiftId])
+  @@index([createdAt])
+  @@map("cash_withdrawals")
+}
+
 /// Локальный справочник статей расхода для кассовых расходных ордеров.
 model CashExpenseItem {
   id           String   @id @default(cuid())
@@ -858,7 +920,7 @@ model LocalDemand {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  positions LocalDemandPosition[]
+  positions             LocalDemandPosition[]
   diagnosticMapSessions DiagnosticMapSession[]
 
   @@index([documentDate])

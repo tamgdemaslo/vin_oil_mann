@@ -3326,7 +3326,7 @@ export async function createLocalSupplierInvoicePayment(
   let cashExpenseOrderId: string | null = null;
 
   if (paymentType === "cash") {
-    const shift = getCurrentShift();
+    const shift = await getCurrentShift();
     if (!shift) {
       return {
         ok: false as const,

@@ -96,6 +96,9 @@ type DiagnosticMapModalProps = {
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+type SaveOptions = {
+  debounce?: boolean;
+};
 
 type FieldContext = {
   label: string;
@@ -260,13 +263,56 @@ export function DiagnosticMapModal({
   const [error, setError] = useState<string | null>(null);
   const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
   const [photoUploads, setPhotoUploads] = useState<Record<string, PhotoUploadState[]>>({});
+  const [mobileStructureOpen, setMobileStructureOpen] = useState(false);
+  const [isEditingText, setIsEditingText] = useState(false);
   const [lightbox, setLightbox] = useState<{ title: string; photo: DiagnosticMapPhoto } | null>(null);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pendingSavesRef = useRef(new Set<Promise<unknown>>());
   const pendingUploadsRef = useRef(new Set<Promise<unknown>>());
+  const debouncedPatchesRef = useRef(new Map<string, Partial<DiagnosticMapItem>>());
+  const debounceTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const lastSaveErrorRef = useRef<string | null>(null);
 
   useEffect(() => setActiveId(diagnosticId), [diagnosticId]);
+
+  useEffect(() => {
+    if (!open) {
+      setMobileStructureOpen(false);
+      setIsEditingText(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !mobileStructureOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [mobileStructureOpen, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const isTextControl = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (isTextControl(event.target)) setIsEditingText(true);
+    };
+    const onBlur = () => {
+      window.setTimeout(() => setIsEditingText(isTextControl(document.activeElement)), 0);
+    };
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("focusout", onBlur);
+    return () => {
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("focusout", onBlur);
+    };
+  }, [open]);
 
   const load = useCallback(async (id: string) => {
     setLoading(true);
@@ -360,6 +406,28 @@ export function DiagnosticMapModal({
     });
   }, []);
 
+  const applySavedItem = useCallback((itemCode: string, saved: DiagnosticMapItem, requestPatch: Partial<DiagnosticMapItem>) => {
+    setData((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        blocks: current.blocks.map((block) => ({
+          ...block,
+          items: block.items.map((candidate) => {
+            if (candidate.code !== itemCode) return candidate;
+            const next = { ...saved };
+            for (const key of ["value", "comment", "recommendation"] as const) {
+              if (key in requestPatch && candidate[key] !== requestPatch[key]) {
+                next[key] = candidate[key];
+              }
+            }
+            return next;
+          }),
+        })),
+      };
+    });
+  }, []);
+
   const appendPhotoToItem = useCallback((itemCode: string, photo: DiagnosticMapPhoto) => {
     setData((current) => {
       if (!current) return current;
@@ -375,11 +443,10 @@ export function DiagnosticMapModal({
     });
   }, []);
 
-  const saveItem = useCallback(
+  const sendItemSave = useCallback(
     (itemCode: string, patch: Partial<DiagnosticMapItem>) => {
       if (!activeId) return Promise.resolve();
       lastSaveErrorRef.current = null;
-      mutateItem(itemCode, patch);
       setSaveState("saving");
       const request = (async () => {
         const response = await fetch(`/api/diagnostics/${activeId}/item`, {
@@ -389,7 +456,7 @@ export function DiagnosticMapModal({
         });
         const json = await responseJson<{ item?: DiagnosticMapItem; error?: string }>(response, {});
         if (!response.ok || !json.item) throw new Error(json.error ?? "Не удалось сохранить пункт");
-        mutateItem(itemCode, json.item);
+        applySavedItem(itemCode, json.item, patch);
         setSaveState("saved");
       })().catch((e) => {
         const message = e instanceof Error ? e.message : "Не удалось сохранить пункт";
@@ -401,12 +468,51 @@ export function DiagnosticMapModal({
       request.finally(() => pendingSavesRef.current.delete(request)).catch(() => {});
       return request;
     },
-    [activeId, mutateItem]
+    [activeId, applySavedItem]
   );
 
+  const saveItem = useCallback(
+    (itemCode: string, patch: Partial<DiagnosticMapItem>, options?: SaveOptions) => {
+      mutateItem(itemCode, patch);
+      if (!options?.debounce) return sendItemSave(itemCode, patch);
+
+      lastSaveErrorRef.current = null;
+      setSaveState("saving");
+      debouncedPatchesRef.current.set(itemCode, {
+        ...(debouncedPatchesRef.current.get(itemCode) ?? {}),
+        ...patch,
+      });
+      const currentTimer = debounceTimersRef.current.get(itemCode);
+      if (currentTimer) clearTimeout(currentTimer);
+      const timer = setTimeout(() => {
+        debounceTimersRef.current.delete(itemCode);
+        const queuedPatch = debouncedPatchesRef.current.get(itemCode);
+        if (!queuedPatch) return;
+        debouncedPatchesRef.current.delete(itemCode);
+        void sendItemSave(itemCode, queuedPatch);
+      }, 450);
+      debounceTimersRef.current.set(itemCode, timer);
+      return Promise.resolve();
+    },
+    [mutateItem, sendItemSave]
+  );
+
+  function flushDebouncedSaves() {
+    for (const [itemCode, timer] of debounceTimersRef.current.entries()) {
+      clearTimeout(timer);
+      debounceTimersRef.current.delete(itemCode);
+      const queuedPatch = debouncedPatchesRef.current.get(itemCode);
+      if (!queuedPatch) continue;
+      debouncedPatchesRef.current.delete(itemCode);
+      void sendItemSave(itemCode, queuedPatch);
+    }
+  }
+
   async function waitForPendingWork() {
+    flushDebouncedSaves();
     while (pendingSavesRef.current.size > 0 || pendingUploadsRef.current.size > 0) {
       await Promise.allSettled([...pendingSavesRef.current, ...pendingUploadsRef.current]);
+      flushDebouncedSaves();
     }
   }
 
@@ -597,7 +703,7 @@ export function DiagnosticMapModal({
   if (!open) return null;
 
   return (
-    <div className="diag-archive-screen">
+    <div className={`diag-archive-screen ${mobileStructureOpen ? "has-mobile-structure" : ""} ${isEditingText ? "is-editing-text" : ""}`}>
       <header className="diag-archive-topbar">
         <button type="button" className="diag-archive-close" onClick={onClose}>
           <ChevronLeft size={16} /> Закрыть
@@ -637,9 +743,32 @@ export function DiagnosticMapModal({
       {loading || !data || !block || !item ? (
         <div className="diag-archive-loading">Загрузка карты диагностики...</div>
       ) : (
+        <>
+        {!showSummary && (
+          <div className="diag-archive-mobilebar">
+            <button type="button" className="diag-archive-mobilebar-structure" onClick={() => setMobileStructureOpen(true)}>
+              <span>{block.title}</span>
+              <strong>Пункт {Math.max(activeIndex + 1, 1)} из {flatItems.length || 17}</strong>
+            </button>
+            <button type="button" className="diag-archive-mobilebar-summary" onClick={() => setShowSummary(true)}>
+              Итог
+            </button>
+          </div>
+        )}
         <div className="diag-archive-body">
+          {mobileStructureOpen && (
+            <button
+              type="button"
+              aria-label="Закрыть структуру диагностики"
+              className="diag-archive-drawer-backdrop"
+              onClick={() => setMobileStructureOpen(false)}
+            />
+          )}
           <aside className="diag-archive-sidebar">
-            <div className="diag-archive-sidebar-head">Структура диагностики</div>
+            <div className="diag-archive-sidebar-head">
+              <span>Структура диагностики</span>
+              <button type="button" aria-label="Закрыть структуру" onClick={() => setMobileStructureOpen(false)}>×</button>
+            </div>
             {data.blocks.map((candidate) => {
               const openBlock = candidate.code === block.code;
               const blockCounts = computeCounts([candidate]);
@@ -676,6 +805,7 @@ export function DiagnosticMapModal({
                             onClick={() => {
                               setActiveItem(candidateItem.code);
                               setShowSummary(false);
+                              setMobileStructureOpen(false);
                             }}
                           >
                             <b style={{ background: status.color }}>{status.icon}</b>
@@ -776,12 +906,15 @@ export function DiagnosticMapModal({
                 </section>
 
                 <section className={`diag-archive-field ${currentField?.warning ? "has-warning" : ""}`}>
-                  <span>{currentField?.label || "Состояние / уровень"}{item.unit && <small> · {item.unit}</small>}</span>
+                  <span>
+                    <b>Оценка / замер</b>
+                    <em>{currentField?.label || "Состояние / уровень"}{item.unit ? ` · ${item.unit}` : ""}</em>
+                  </span>
                   <input
                     value={item.value}
                     inputMode={currentField?.inputMode}
                     aria-invalid={Boolean(currentField?.warning)}
-                    onChange={(event) => void saveItem(item.code, { value: event.target.value })}
+                    onChange={(event) => void saveItem(item.code, { value: event.target.value }, { debounce: true })}
                     placeholder={currentField?.placeholder || "Опиши результат"}
                   />
                   <p>{currentField?.warning || currentField?.helper}</p>
@@ -849,7 +982,10 @@ export function DiagnosticMapModal({
                 </section>
 
                 <section className="diag-archive-comment">
-                  <span>Комментарий мастера</span>
+                  <span>
+                    <b>Комментарий мастера</b>
+                    <em>Пояснение клиенту: что увидели, почему выбран статус, что важно запомнить.</em>
+                  </span>
                   {item.notes.length > 0 && (
                     <div>
                       {item.notes.map((note) => (
@@ -861,7 +997,7 @@ export function DiagnosticMapModal({
                   )}
                   <textarea
                     value={item.comment}
-                    onChange={(event) => void saveItem(item.code, { comment: event.target.value })}
+                    onChange={(event) => void saveItem(item.code, { comment: event.target.value }, { debounce: true })}
                     placeholder="Что увидели · что насторожило · какие шумы / запахи"
                   />
                 </section>
@@ -878,7 +1014,7 @@ export function DiagnosticMapModal({
                     </div>
                     <textarea
                       value={item.recommendation}
-                      onChange={(event) => void saveItem(item.code, { recommendation: event.target.value })}
+                      onChange={(event) => void saveItem(item.code, { recommendation: event.target.value }, { debounce: true })}
                       placeholder="Что предлагаем сделать. С ценой и сроком."
                     />
                     <footer>
@@ -905,6 +1041,7 @@ export function DiagnosticMapModal({
             )}
           </main>
         </div>
+        </>
       )}
 
       <div className={`diag-archive-save is-${saveState}`}>

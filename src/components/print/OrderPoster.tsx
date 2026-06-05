@@ -81,7 +81,7 @@ function HexBg({ w, h, opacity = 0.06 }: { w: number; h: number; opacity?: numbe
       );
     }
   return (
-    <svg width={w} height={h} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+    <svg className="poster-hex-bg" width={w} height={h} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
       {cells}
     </svg>
   );
@@ -95,7 +95,7 @@ function PosterChess({ w, h = 14, n = 44 }: { w: number; h?: number; n?: number 
       if ((i + r) % 2 === 0)
         cells.push(<rect key={`${i}-${r}`} x={i * sq} y={r * (h / 2)} width={sq} height={h / 2} fill={Bink} />);
   return (
-    <svg width={w} height={h} style={{ display: "block" }}>
+    <svg className="poster-chess" width={w} height={h} style={{ display: "block" }}>
       {cells}
     </svg>
   );
@@ -115,6 +115,7 @@ function Stat({
   return (
     <div>
       <div
+        className="poster-stat-label poster-muted"
         style={{
           fontSize: 8.5,
           letterSpacing: "0.18em",
@@ -126,6 +127,7 @@ function Stat({
         {label}
       </div>
       <div
+        className={accent ? "poster-stat-value poster-rust" : "poster-stat-value poster-ink"}
         style={{
           fontSize: 28,
           fontWeight: 800,
@@ -138,7 +140,7 @@ function Stat({
         {big}
       </div>
       {sub ? (
-        <div style={{ fontSize: 9, color: Bmuted, marginTop: 4 }}>{sub}</div>
+        <div className="poster-muted" style={{ fontSize: 9, color: Bmuted, marginTop: 4 }}>{sub}</div>
       ) : null}
     </div>
   );
@@ -214,6 +216,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             {o.master.name}
           </div>
           <div
+            className="poster-muted"
             style={{
               fontSize: 8,
               letterSpacing: "0.22em",
@@ -225,7 +228,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           >
             ИСПОЛНИТЕЛЬ · МАСТЕР
           </div>
-          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
+          <div className="poster-muted" style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
             {posterFooterLifetimeLine(o.client)}
           </div>
         </div>
@@ -234,6 +237,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             {o.client.name}
           </div>
           <div
+            className="poster-muted"
             style={{
               fontSize: 8,
               letterSpacing: "0.22em",
@@ -245,7 +249,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           >
             ЗАКАЗЧИК · ПИЛОТ
           </div>
-          <div style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
+          <div className="poster-muted" style={{ fontSize: 10, color: Bmuted, marginTop: 10, lineHeight: 1.35 }}>
             {o.client.phone} · {posterFooterPilotTripLine(o.client)}
           </div>
         </div>
@@ -255,6 +259,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         <PosterChess w={B_W - 88} />
       </div>
       <div
+        className="poster-muted"
         style={{
           marginTop: 6,
           display: "flex",
@@ -270,7 +275,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         </span>
         <span>оформил: {o.ecoUser}</span>
         <span>
-          TGM<span style={{ color: Brust }}>.</span>
+          TGM<span className="poster-rust" style={{ color: Brust }}>.</span>
         </span>
       </div>
     </>
@@ -299,6 +304,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
       <div style={{ position: "relative" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div
+            className="poster-muted"
             style={{
               fontSize: 10,
               letterSpacing: "0.22em",
@@ -308,11 +314,11 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             }}
           >
             <div>наряд</div>
-            <div style={{ color: Brust, fontWeight: 700, fontSize: 13, marginTop: 2 }}>№ {o.number}</div>
+            <div className="poster-rust" style={{ color: Brust, fontWeight: 700, fontSize: 13, marginTop: 2 }}>№ {o.number}</div>
             <div style={{ marginTop: 6 }}>{o.date.replace(/\./g, " · ")}</div>
           </div>
-          <div style={{ textAlign: "right", fontSize: 9.5, color: Bmuted, lineHeight: 1.5 }}>
-            <div style={{ color: Bink, fontWeight: 600 }}>{o.ip.name}</div>
+          <div className="poster-muted" style={{ textAlign: "right", fontSize: 9.5, color: Bmuted, lineHeight: 1.5 }}>
+            <div className="poster-ink" style={{ color: Bink, fontWeight: 600 }}>{o.ip.name}</div>
             <div>
               ИНН {o.ip.inn} · ОГРН {o.ip.ogrn}
             </div>
@@ -323,6 +329,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         </div>
 
         <div
+          className="poster-ink"
           style={{
             fontFamily: '"Inter", system-ui, sans-serif',
             fontWeight: 800,
@@ -338,6 +345,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           {o.car.model}
         </div>
         <div
+          className="poster-muted"
           style={{
             marginTop: 8,
             fontSize: 11,
@@ -349,17 +357,18 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           }}
         >
           <span>{o.car.year}</span>
-          <span style={{ color: "rgba(10,10,10,0.25)" }}>·</span>
+          <span className="poster-muted" style={{ color: "rgba(10,10,10,0.25)" }}>·</span>
           <span style={{ fontFamily: 'ui-monospace, "SF Mono", monospace', letterSpacing: "0.04em" }}>
             VIN {o.car.vin}
           </span>
         </div>
 
         <div style={{ position: "absolute", right: 0, bottom: 6, textAlign: "right" }}>
-          <div style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
+          <div className="poster-muted" style={{ fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
             гос. номер
           </div>
           <div
+            className="poster-plate"
             style={{
               border: `2px solid ${Bink}`,
               padding: "2px 10px",
@@ -381,6 +390,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
       </div>
 
       <div
+        className="poster-rust-panel"
         style={{
           marginTop: 14,
           display: "flex",
@@ -392,6 +402,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         }}
       >
         <span
+          className="poster-rust"
           style={{
             fontSize: 9,
             letterSpacing: "0.2em",
@@ -405,12 +416,12 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         <span style={{ fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>
           {bfmt(o.milestone.value)} км
         </span>
-        <span style={{ flex: 1, borderBottom: `1px dotted ${Brust}`, opacity: 0.6 }} />
-        <span style={{ fontSize: 10, color: Bmuted }}>осталось</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: Brust, fontVariantNumeric: "tabular-nums" }}>
+        <span className="poster-rust-rule" style={{ flex: 1, borderBottom: `1px dotted ${Brust}`, opacity: 0.6 }} />
+        <span className="poster-muted" style={{ fontSize: 10, color: Bmuted }}>осталось</span>
+        <span className="poster-rust" style={{ fontSize: 14, fontWeight: 700, color: Brust, fontVariantNumeric: "tabular-nums" }}>
           {bfmt(o.milestone.leftKm)} км
         </span>
-        <span style={{ fontSize: 9, color: Bmuted, marginLeft: 4 }}>· поможем дотянуть</span>
+        <span className="poster-muted" style={{ fontSize: 9, color: Bmuted, marginLeft: 4 }}>· поможем дотянуть</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18, marginTop: 22 }}>
@@ -430,7 +441,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
 
       {hasTurnover ? (
         <div
-          className="poster-avoid-break"
+          className="poster-avoid-break poster-rust-panel poster-rust"
           style={{
             marginTop: 14,
             padding: "7px 10px",
@@ -448,7 +459,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         </div>
       ) : null}
 
-      <div style={{ height: 1, background: Bink, marginTop: 22 }} />
+      <div className="poster-rule" style={{ height: 1, background: Bink, marginTop: 22 }} />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginTop: 18, flex: 1 }}>
         <div>
@@ -464,7 +475,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             что сделали — пит-стоп
           </div>
           {o.works.length === 0 ? (
-            <div style={{ fontSize: 11, color: Bmuted }}>—</div>
+            <div className="poster-muted" style={{ fontSize: 11, color: Bmuted }}>—</div>
           ) : (
             split.firstWorks.map((w, i) => (
               <div
@@ -479,12 +490,12 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                 }}
               >
                 <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
-                  <span style={{ color: Brust, fontWeight: 700, width: 14 }}>·</span>
+                  <span className="poster-rust" style={{ color: Brust, fontWeight: 700, width: 14 }}>·</span>
                   <span style={{ fontWeight: 500 }}>{w.name}</span>
                 </div>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: Bmuted, whiteSpace: "nowrap" }}>
+                <span className="poster-muted" style={{ fontVariantNumeric: "tabular-nums", color: Bmuted, whiteSpace: "nowrap" }}>
                   {w.discount ? <s style={{ marginRight: 6 }}>{bfmt(w.price)}</s> : null}
-                  <b style={{ color: w.sum === 0 ? Brust : Bink }}>
+                  <b className={w.sum === 0 ? "poster-rust" : "poster-ink"} style={{ color: w.sum === 0 ? Brust : Bink }}>
                     {w.sum === 0 ? "в подарок" : `${bfmt(w.sum)} ₽`}
                   </b>
                 </span>
@@ -493,6 +504,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           )}
 
           <div
+            className="poster-muted"
             style={{
               fontSize: 9.5,
               letterSpacing: "0.2em",
@@ -505,7 +517,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             что залили / поставили
           </div>
           {o.parts.length === 0 ? (
-            <div style={{ fontSize: 11, color: Bmuted }}>—</div>
+            <div className="poster-muted" style={{ fontSize: 11, color: Bmuted }}>—</div>
           ) : split.firstParts.length > 0 ? (
             split.firstParts.map((p, i) => (
               <div
@@ -520,14 +532,14 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                 }}
               >
                 <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
-                  <span style={{ color: Bmuted, width: 22, fontVariantNumeric: "tabular-nums" }}>×{p.qty}</span>
+                  <span className="poster-muted" style={{ color: Bmuted, width: 22, fontVariantNumeric: "tabular-nums" }}>×{p.qty}</span>
                   <span style={{ fontWeight: 500 }}>{p.name}</span>
                 </div>
                 <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{bfmt(p.sum)} ₽</b>
               </div>
             ))
           ) : (
-            <div style={{ fontSize: 10, color: Bmuted, padding: "8px 0" }}>см. оборотную сторону</div>
+            <div className="poster-muted" style={{ fontSize: 10, color: Bmuted, padding: "8px 0" }}>см. оборотную сторону</div>
           )}
 
           <div
@@ -540,7 +552,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               borderTop: `2px solid ${Bink}`,
             }}
           >
-            <span style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
+            <span className="poster-muted" style={{ fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
               итого
             </span>
             <span
@@ -558,6 +570,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
 
         <div>
           <div
+            className="poster-muted"
             style={{
               fontSize: 9.5,
               letterSpacing: "0.2em",
@@ -568,11 +581,12 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           >
             бортжурнал
           </div>
-          <div style={{ fontSize: 9, color: Bmuted, lineHeight: 1.45, marginBottom: 14 }}>
+          <div className="poster-muted" style={{ fontSize: 9, color: Bmuted, lineHeight: 1.45, marginBottom: 14 }}>
             {ruTripsIntroLine(o.client.visits, o.client.sinceVisit)}
           </div>
           <div style={{ position: "relative" }}>
             <div
+              className="poster-timeline-rail"
               style={{
                 position: "absolute",
                 left: 6,
@@ -594,6 +608,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                   style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", position: "relative" }}
                 >
                   <span
+                    className={last ? "poster-timeline-dot is-current" : "poster-timeline-dot"}
                     style={{
                       width: 13,
                       height: 13,
@@ -609,6 +624,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
                       <span
+                        className={last ? "poster-rust" : "poster-ink"}
                         style={{
                           fontSize: 10.5,
                           fontWeight: 600,
@@ -629,7 +645,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                         {h.km != null ? `${bfmt(h.km)} км` : "—"}
                       </span>
                     </div>
-                    <div style={{ fontSize: 9, color: Bmuted, marginTop: 1 }}>
+                    <div className="poster-muted" style={{ fontSize: 9, color: Bmuted, marginTop: 1 }}>
                       {deltaKm != null && deltaKm >= 0 ? `+${bfmt(deltaKm)} км · ` : ""}
                       {h.note}
                     </div>
@@ -649,6 +665,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               }}
             >
               <span
+                className="poster-timeline-dot is-next"
                 style={{
                   width: 13,
                   height: 13,
@@ -663,14 +680,14 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
               />
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 10.5, fontVariantNumeric: "tabular-nums", letterSpacing: "0.02em", color: Bmuted }}>
+                  <span className="poster-muted" style={{ fontSize: 10.5, fontVariantNumeric: "tabular-nums", letterSpacing: "0.02em", color: Bmuted }}>
                     ждём {o.next.date}
                   </span>
-                  <span style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", color: Bmuted }}>
+                  <span className="poster-muted" style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", color: Bmuted }}>
                     {bfmt(o.next.mileage)} км
                   </span>
                 </div>
-                <div style={{ fontSize: 9, color: Bmuted, marginTop: 1 }}>
+                <div className="poster-muted" style={{ fontSize: 9, color: Bmuted, marginTop: 1 }}>
                   следующая замена — +{bfmt(o.next.intervalKm)} км / {o.next.intervalMonths} мес
                 </div>
               </div>
@@ -680,7 +697,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
       </div>
 
       <div
-        className="poster-avoid-break"
+        className="poster-avoid-break poster-warranty-panel"
         style={{
           marginTop: 14,
           padding: "10px 14px",
@@ -693,10 +710,11 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
         }}
       >
         <div>
-          <div style={{ fontSize: 8.5, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
+          <div className="poster-muted" style={{ fontSize: 8.5, letterSpacing: "0.2em", textTransform: "uppercase", color: Bmuted }}>
             гарантия
           </div>
           <div
+            className="poster-rust"
             style={{
               fontSize: 22,
               fontWeight: 800,
@@ -708,11 +726,11 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           >
             {o.warrantyDays} дней
           </div>
-          <div style={{ fontSize: 9, color: Bmuted, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+          <div className="poster-muted" style={{ fontSize: 9, color: Bmuted, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
             до {o.warrantyUntil}
           </div>
         </div>
-        <div style={{ fontSize: 7.5, lineHeight: 1.45, color: Bink }}>
+        <div className="poster-ink" style={{ fontSize: 7.5, lineHeight: 1.45, color: Bink }}>
           Исполнитель гарантирует корректное выполнение работ. Замена масла и технических жидкостей является
           обслуживанием, а не ремонтом агрегатов. Гарантия не распространяется на техническое состояние автомобиля, износ,
           скрытые неисправности, материалы Заказчика и последствия отказа от рекомендованных работ. Полные условия гарантии
@@ -758,6 +776,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           {split.restWorks.length > 0 ? (
             <div className="poster-avoid-break" style={{ position: "relative", marginBottom: 18 }}>
               <div
+                className="poster-muted"
                 style={{
                   fontSize: 9.5,
                   letterSpacing: "0.2em",
@@ -781,12 +800,12 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                   }}
                 >
                   <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
-                    <span style={{ color: Brust, fontWeight: 700, width: 14 }}>·</span>
+                    <span className="poster-rust" style={{ color: Brust, fontWeight: 700, width: 14 }}>·</span>
                     <span style={{ fontWeight: 500 }}>{w.name}</span>
                   </div>
-                  <span style={{ fontVariantNumeric: "tabular-nums", color: Bmuted, whiteSpace: "nowrap" }}>
+                  <span className="poster-muted" style={{ fontVariantNumeric: "tabular-nums", color: Bmuted, whiteSpace: "nowrap" }}>
                     {w.discount ? <s style={{ marginRight: 6 }}>{bfmt(w.price)}</s> : null}
-                    <b style={{ color: w.sum === 0 ? Brust : Bink }}>
+                    <b className={w.sum === 0 ? "poster-rust" : "poster-ink"} style={{ color: w.sum === 0 ? Brust : Bink }}>
                       {w.sum === 0 ? "в подарок" : `${bfmt(w.sum)} ₽`}
                     </b>
                   </span>
@@ -797,6 +816,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
           {split.restParts.length > 0 ? (
             <div className="poster-avoid-break" style={{ position: "relative", marginBottom: 18 }}>
               <div
+                className="poster-muted"
                 style={{
                   fontSize: 9.5,
                   letterSpacing: "0.2em",
@@ -820,7 +840,7 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
                   }}
                 >
                   <div style={{ display: "flex", gap: 10, paddingRight: 10 }}>
-                    <span style={{ color: Bmuted, width: 22, fontVariantNumeric: "tabular-nums" }}>×{p.qty}</span>
+                    <span className="poster-muted" style={{ color: Bmuted, width: 22, fontVariantNumeric: "tabular-nums" }}>×{p.qty}</span>
                     <span style={{ fontWeight: 500 }}>{p.name}</span>
                   </div>
                   <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{bfmt(p.sum)} ₽</b>

@@ -269,6 +269,22 @@ function parseDateTimeLocal(value: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function formatTimezoneOffset(value: Date) {
+  const offsetMinutes = -value.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absolute = Math.abs(offsetMinutes);
+  const hours = String(Math.floor(absolute / 60)).padStart(2, "0");
+  const minutes = String(absolute % 60).padStart(2, "0");
+  return `${sign}${hours}:${minutes}`;
+}
+
+function toYclientsDateTime(value: string) {
+  const normalized = value.replace(" ", "T").slice(0, 16);
+  const date = parseDateTimeLocal(normalized);
+  if (!date) return `${value.replace("T", " ")}:00`;
+  return `${normalized}:00${formatTimezoneOffset(date)}`;
+}
+
 function parseRecordDate(record: RecordItem): Date | null {
   const raw = String(record.date ?? record.datetime ?? "").replace(" ", "T");
   if (!raw) return null;
@@ -329,7 +345,7 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 function getRecordSaveErrorMessage(data: unknown, fallback: string) {
   const message = getApiErrorMessage(data, fallback);
   if (/нет\s+врем|no\s+time|busy|занят|недоступ/i.test(message)) {
-    return "YCLIENTS не подтвердил свободное окно. Проверьте график сотрудника / бокса и выбранное время.";
+    return "YCLIENTS не подтвердил свободное окно. Проверьте, что выбран именно свободный сотрудник / бокс, услуга доступна этому ресурсу и время совпадает с календарем YCLIENTS.";
   }
   return message;
 }
@@ -1454,18 +1470,24 @@ export default function RecordsPageClient() {
   const formTimeValidation = useMemo(() => {
     const start = parseDateTimeLocal(form.datetime);
     const end = parseDateTimeLocal(form.datetimeEnd);
-    if (!form.staffId) return { ok: false, message: "Не выбран сотрудник / бокс" };
-    if (!start || !end) return { ok: false, message: "Укажите дату и время записи" };
+    if (!form.staffId) return { ok: false, warning: false, message: "Не выбран сотрудник / бокс" };
+    if (!start || !end) return { ok: false, warning: false, message: "Укажите дату и время записи" };
     const startMinute = start.getHours() * 60 + start.getMinutes();
     const endMinute = end.getHours() * 60 + end.getMinutes();
-    if (endMinute <= startMinute) return { ok: false, message: "Окончание записи должно быть позже начала" };
-    if (startMinute < timelineStartMinute || endMinute > timelineEndMinute) {
-      return { ok: false, message: "Время вне рабочего графика" };
+    if (endMinute <= startMinute) {
+      return { ok: false, warning: false, message: "Окончание записи должно быть позже начала" };
     }
     if (formConflicts.length > 0 && !form.allowOverlap) {
-      return { ok: false, message: "В это время уже есть запись" };
+      return { ok: false, warning: false, message: "В это время уже есть запись" };
     }
-    return { ok: true, message: "Время свободно" };
+    if (startMinute < timelineStartMinute || endMinute > timelineEndMinute) {
+      return {
+        ok: true,
+        warning: true,
+        message: "Время вне отображаемой сетки. YCLIENTS проверит доступность при сохранении.",
+      };
+    }
+    return { ok: true, warning: false, message: "Время свободно" };
   }, [form.allowOverlap, form.datetime, form.datetimeEnd, form.staffId, formConflicts.length, timelineEndMinute, timelineStartMinute]);
 
   const nearestFormSlots = useMemo(() => {
@@ -1641,19 +1663,18 @@ export default function RecordsPageClient() {
       try {
         if (formMode === "create") {
           const payload = {
-            phone,
-            fullname: form.clientName.trim(),
-            email: form.clientEmail.trim() || fallbackEmail(phone),
+            staff_id: Number(form.staffId),
+            services: form.serviceIds.map((id) => ({ id: Number(id) })),
+            client: {
+              name: form.clientName.trim(),
+              phone,
+              email: form.clientEmail.trim() || fallbackEmail(phone),
+            },
+            datetime: toYclientsDateTime(form.datetime),
+            seance_length: seanceLength,
             comment: comment || undefined,
-            appointments: [
-              {
-                id: 1,
-                services: form.serviceIds.map(Number),
-                staff_id: Number(form.staffId),
-                datetime: `${form.datetime.replace("T", " ")}:00`,
-                seance_length: seanceLength,
-              },
-            ],
+            save_if_busy: form.allowOverlap,
+            send_sms: false,
           };
 
           const res = await fetch("/api/yclients", {
@@ -2734,7 +2755,7 @@ export default function RecordsPageClient() {
                     </select>
                   </label>
                 </div>
-                <div className={cx("eco-records-availability-check", !formTimeValidation.ok && "is-warning")}>
+                <div className={cx("eco-records-availability-check", (!formTimeValidation.ok || formTimeValidation.warning) && "is-warning")}>
                   {!formTimeValidation.ok && formConflicts.length === 0 ? (
                     <>
                       <AlertTriangle size={16} />
@@ -2765,6 +2786,14 @@ export default function RecordsPageClient() {
                           <input type="checkbox" checked={form.allowOverlap} onChange={(event) => setFormValue("allowOverlap", event.target.checked)} />
                           Разрешить пересечение явно
                         </label>
+                      </div>
+                    </>
+                  ) : formTimeValidation.warning ? (
+                    <>
+                      <AlertTriangle size={16} />
+                      <div>
+                        <strong>{formTimeValidation.message}</strong>
+                        <p>Локальная сетка не блокирует запись; окончательное окно проверит YCLIENTS.</p>
                       </div>
                     </>
                   ) : (

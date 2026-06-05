@@ -18,7 +18,9 @@ type ShipmentListRowProps = {
   moment: { date: string; time: string };
   counterpartyName: string;
   counterpartyHref: string | null;
-  plate: string;
+  vehiclePrimary: string;
+  vehicleSecondary: string;
+  vehicleTitle: string;
   ecoUserName: string;
   sumLabel: string;
 };
@@ -37,7 +39,9 @@ export function ShipmentListRow({
   moment,
   counterpartyName,
   counterpartyHref,
-  plate,
+  vehiclePrimary,
+  vehicleSecondary,
+  vehicleTitle,
   ecoUserName,
   sumLabel,
 }: ShipmentListRowProps) {
@@ -90,13 +94,13 @@ export function ShipmentListRow({
         )}
         <div className="l-mono eco-shipment-list-subtext">телефон в карточке клиента</div>
       </td>
-      <td>
-        <div className="eco-shipment-list-soft">—</div>
-        <div className="l-mono eco-shipment-list-subtext">{plate}</div>
+      <td title={vehicleTitle}>
+        <div className="eco-shipment-list-strong">{vehiclePrimary}</div>
+        <div className="l-mono eco-shipment-list-subtext">{vehicleSecondary || " "}</div>
       </td>
       <td>
-        <div>{row.organization?.name ?? "—"}</div>
-        <div className="eco-shipment-list-subtext">{row.store?.name ?? "—"}</div>
+        <div>{row.store?.name ?? "—"}</div>
+        <div className="eco-shipment-list-subtext">склад отгрузки</div>
       </td>
       <td>{ecoUserName}</td>
       <td>

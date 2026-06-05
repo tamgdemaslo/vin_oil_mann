@@ -85,6 +85,53 @@ async function resolveAuthHeader(path: string): Promise<{ header: string | null;
 
 type CompanyItem = { id?: number; title?: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function numberValue(value: unknown): number | undefined {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeCreateRecordPayload(rawPayload: unknown) {
+  if (!isRecord(rawPayload)) return {};
+  if (rawPayload.staff_id !== undefined || rawPayload.client !== undefined || rawPayload.datetime !== undefined) {
+    return rawPayload;
+  }
+
+  const appointments = Array.isArray(rawPayload.appointments) ? rawPayload.appointments : [];
+  const appointment = appointments.find(isRecord);
+  if (!appointment) return rawPayload;
+
+  const serviceIds = Array.isArray(appointment.services)
+    ? appointment.services.map(numberValue).filter((item): item is number => item !== undefined)
+    : [];
+
+  return {
+    staff_id: numberValue(appointment.staff_id),
+    services: serviceIds.map((id) => ({ id })),
+    client: {
+      name: stringValue(rawPayload.fullname) ?? stringValue(rawPayload.name) ?? "",
+      phone: stringValue(rawPayload.phone) ?? "",
+      email: stringValue(rawPayload.email),
+    },
+    datetime: stringValue(appointment.datetime),
+    seance_length: numberValue(appointment.seance_length),
+    comment: stringValue(rawPayload.comment),
+    save_if_busy: Boolean(rawPayload.save_if_busy),
+    send_sms: Boolean(rawPayload.send_sms),
+    sms_remain_hours: numberValue(rawPayload.sms_remain_hours),
+    email_remain_hours: numberValue(rawPayload.email_remain_hours),
+    attendance: numberValue(rawPayload.attendance),
+    api_id: stringValue(rawPayload.api_id) ?? stringValue(rawPayload.apiId),
+  };
+}
+
 async function fetchAccessibleCompanies(
   authHeader: string
 ): Promise<{ companies: CompanyItem[]; error?: string }> {
@@ -334,7 +381,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: { user_token: auth.token } });
   }
 
-  const companyId = String(body.company_id ?? YCLIENTS_COMPANY_ID);
+  const companyId = String(body.company_id ?? YCLIENTS_COMPANY_ID).trim();
   if (!companyId) {
     return NextResponse.json(
       { success: false, error: "Не удалось определить company_id" },
@@ -354,9 +401,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "create-record") {
-    return yclientsRequest(`/book_record/${companyId}`, {
+    return yclientsRequest(`/record/${companyId}`, {
       method: "POST",
-      body: JSON.stringify(body.payload ?? {}),
+      body: JSON.stringify(normalizeCreateRecordPayload(body.payload)),
     });
   }
 

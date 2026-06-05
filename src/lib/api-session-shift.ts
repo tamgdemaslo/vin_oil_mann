@@ -19,7 +19,7 @@ export async function requireApiSessionWithShift(): Promise<
     return { ok: true, session };
   }
   const workShift = await getCurrentShift(session.user.login);
-  const cashOpen = getCashShift();
+  const cashOpen = await getCashShift();
   if (workShift || cashOpen) {
     return { ok: true, session };
   }

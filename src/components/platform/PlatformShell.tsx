@@ -42,6 +42,14 @@ type CurrentCashShift = {
   openedAt?: string;
 } | null;
 
+type NotificationCounts = {
+  total: number;
+  urgent: number;
+  today: number;
+  soon: number;
+  info: number;
+};
+
 type PlatformNavItem = {
   href: string;
   label: string;
@@ -103,6 +111,7 @@ function routeContext(pathname: string) {
   if (pathname.startsWith("/shipment/new")) return { label: "Текущий раздел:", value: "Новая отгрузка" };
   if (pathname.startsWith("/shipment")) return { label: "Текущий раздел:", value: "Отгрузки" };
   if (pathname.startsWith("/inventory")) return { label: "Текущий раздел:", value: "Склад" };
+  if (pathname.startsWith("/notifications")) return { label: "Текущий раздел:", value: "Уведомления" };
   if (pathname.startsWith("/cash") || pathname.startsWith("/finance") || pathname.startsWith("/salary")) {
     return { label: "Текущий раздел:", value: "Финансы" };
   }
@@ -118,6 +127,7 @@ export default function PlatformShell() {
   const [user, setUser] = useState<PlatformUser>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -131,23 +141,29 @@ export default function PlatformShell() {
     async function loadShellState() {
       setLoading(true);
       try {
-        const [sessionRes, shiftRes, cashRes] = await Promise.all([
+        const [sessionRes, shiftRes, cashRes, dashboardRes] = await Promise.all([
           fetch("/api/auth/session", { cache: "no-store" }),
           fetch("/api/shifts/current", { cache: "no-store" }),
           fetch("/api/cash", { cache: "no-store" }),
+          fetch("/api/dashboard/operations", { cache: "no-store" }),
         ]);
         const sessionData = await safeReadJson<{ user?: PlatformUser }>(sessionRes);
         const shiftData = shiftRes.ok ? (await safeReadJson<NonNullable<CurrentShift>>(shiftRes)) ?? null : null;
         const cashData = cashRes.ok ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null : null;
+        const dashboardData = dashboardRes.ok
+          ? (await safeReadJson<{ notificationCounts?: NotificationCounts }>(dashboardRes)) ?? null
+          : null;
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
         setCurrentShift(shiftData);
         setCurrentCashShift(cashData?.shift ?? null);
+        setNotificationCounts(dashboardData?.notificationCounts ?? null);
       } catch {
         if (cancelled) return;
         setUser(null);
         setCurrentShift(null);
         setCurrentCashShift(null);
+        setNotificationCounts(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -363,9 +379,10 @@ export default function PlatformShell() {
                 <input readOnly tabIndex={-1} placeholder="Товар, VIN, № отгрузки, клиент…" />
                 <span className="platform-shell__search-kbd">⌘K</span>
               </div>
-              <button type="button" className="platform-shell__icon-btn" aria-label="Уведомления">
+              <Link href="/notifications" className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
-              </button>
+                {!!notificationCounts?.total && <span>{notificationCounts.total > 99 ? "99+" : notificationCounts.total}</span>}
+              </Link>
               <div className="platform-shell__profile">
                 <button
                   type="button"

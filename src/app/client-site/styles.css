@@ -457,16 +457,24 @@ button { font: inherit; cursor: pointer; }
     justify-content: flex-start;
     gap: 18px !important;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
   }
 
   header nav a {
+    display: inline-flex;
+    align-items: center;
     flex: 0 0 auto;
+    min-height: 40px;
   }
 
   header > .container:first-child > div:last-child {
     margin-left: auto;
     gap: 10px !important;
+  }
+
+  header > .container:first-child > div:last-child a {
+    min-height: 40px;
   }
 
   header > .container:nth-child(2) {
@@ -499,6 +507,28 @@ button { font: inherit; cursor: pointer; }
   main [style*="position: sticky"] {
     position: static !important;
     top: auto !important;
+  }
+
+  .section-head {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .section-head__main {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .section-head__right {
+    width: 100%;
+  }
+
+  .section-head__right .btn {
+    width: 100%;
   }
 
   .home-hero__grid,
@@ -562,6 +592,67 @@ button { font: inherit; cursor: pointer; }
   .numpanel {
     min-width: 0;
   }
+
+  .home-hero__grid {
+    padding-top: 36px !important;
+  }
+
+  .home-hero__poster > div:first-child,
+  .home-hero__poster > div:nth-of-type(2),
+  .home-hero > div:first-child .container {
+    flex-wrap: wrap !important;
+  }
+
+  .home-hero__portrait-grid {
+    gap: 18px !important;
+  }
+
+  .home-hero__stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .home-hero__stats .numpanel {
+    padding: 12px 10px 10px;
+  }
+
+  .home-hero__stats .numpanel .k,
+  .home-hero__stats .numpanel .u {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .home-hero__booking > div:first-child {
+    padding: 22px 20px 24px !important;
+  }
+
+  .home-hero__booking > div:first-child > div:first-child,
+  .home-hero__booking > div:first-child > div:nth-of-type(3) {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .client-footer__bottom {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 18px !important;
+  }
+
+  .client-footer__brand,
+  .client-footer__legal {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .client-footer__legal span,
+  .client-footer__legal a {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
 }
 
 @media (max-width: 640px) {
@@ -589,5 +680,31 @@ button { font: inherit; cursor: pointer; }
 
   .numpanel .v {
     font-size: 30px;
+  }
+
+  .home-hero__stats .numpanel .v {
+    font-size: 25px;
+  }
+
+  .home-hero__booking > div:last-child {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .free-change-banner__grid {
+    padding-top: 38px !important;
+    padding-bottom: 42px !important;
+  }
+
+  .free-change-banner__grid > :first-child > div:last-child {
+    font-size: 68px !important;
+  }
+
+  .closing-cta__copy > div:last-child {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .closing-cta__copy > div:last-child .btn {
+    width: 100%;
   }
 }

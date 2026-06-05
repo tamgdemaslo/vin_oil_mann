@@ -100,6 +100,69 @@ const posterShellCss = `
   #poster-print-mount * {
     outline: none !important;
     box-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    forced-color-adjust: none !important;
+  }
+  #poster-print-mount .poster-order {
+    background: #f5f2ed !important;
+    color: #0a0a0a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #poster-print-mount .poster-ink {
+    color: #0a0a0a !important;
+    -webkit-text-fill-color: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-muted {
+    color: #3d3d3d !important;
+    -webkit-text-fill-color: #3d3d3d !important;
+  }
+  #poster-print-mount .poster-rust {
+    color: #c2410c !important;
+    -webkit-text-fill-color: #c2410c !important;
+  }
+  #poster-print-mount .poster-rust-panel {
+    background: #f8e9df !important;
+    border-color: #c2410c !important;
+  }
+  #poster-print-mount .poster-warranty-panel {
+    background: #eee8de !important;
+    border-color: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-rule {
+    background: #0a0a0a !important;
+    border-color: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-rust-rule {
+    border-bottom-color: #c2410c !important;
+    opacity: 1 !important;
+  }
+  #poster-print-mount .poster-plate {
+    border-color: #0a0a0a !important;
+    color: #0a0a0a !important;
+    -webkit-text-fill-color: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-chess rect {
+    fill: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-hex-bg polygon {
+    stroke: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-timeline-rail {
+    background: #b8b0a4 !important;
+  }
+  #poster-print-mount .poster-timeline-dot {
+    background: #f5f2ed !important;
+    border-color: #0a0a0a !important;
+  }
+  #poster-print-mount .poster-timeline-dot.is-current {
+    background: #c2410c !important;
+    border-color: #c2410c !important;
+  }
+  #poster-print-mount .poster-timeline-dot.is-next {
+    background: transparent !important;
+    border-color: #3d3d3d !important;
   }
 }
 `;

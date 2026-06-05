@@ -4,15 +4,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
+  Archive,
+  ArchiveRestore,
   CheckCircle2,
+  Copy,
+  History,
   ImagePlus,
   Loader2,
   MoreHorizontal,
+  PackageOpen,
+  PanelLeftClose,
   Pencil,
   RotateCcw,
   Save,
   Search,
+  SlidersHorizontal,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
@@ -157,6 +165,11 @@ type ProductListMeta = {
   facets?: ProductFacets;
 };
 type ProductListResponse = { meta?: ProductListMeta; products?: ProductRow[]; error?: string };
+type ProductToast = {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
 
 type ProductForm = {
   name: string;
@@ -270,22 +283,15 @@ const searchImpactFields = new Set<keyof ProductForm>([
   "brand",
   "groupPath",
   "barcodeEan13",
-  "barcodeEan8",
-  "barcodeCode128",
   "oem",
-  "oemParts",
-  "sae",
 ]);
 
 const shipmentImpactFields = new Set<keyof ProductForm>([
   "name",
   "entityType",
   "salePrice",
-  "buyPrice",
   "uomName",
   "minimumBalance",
-  "groupPath",
-  "vatLabel",
   "cell",
 ]);
 
@@ -398,6 +404,8 @@ const stockOptions: Array<{ value: StockFilter; label: string }> = [
 const PRODUCT_PAGE_LIMIT = 50;
 const NEW_GROUP_VALUE = "__new_group__";
 const BRAND_ORDER = ["Shell", "Mobil", "ZIC", "Total", "Lukoil", "Bardahl", "ELF", "BMW", "Mann", "ZF", "VAG"];
+const FILTER_SIDEBAR_STORAGE_KEY = "inventory-products-filter-sidebar-collapsed";
+const FILTER_MOBILE_QUERY = "(max-width: 1180px)";
 
 async function readJson<T>(res: Response): Promise<T | null> {
   try {
@@ -471,6 +479,8 @@ function uniqueGroupsByLabel(groups: string[]) {
 
 type MultiFilterKey = Exclude<keyof ProductFilters, "stock">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
+type FacetOrderState = Record<FacetKey, Map<string, number>>;
+type FacetPreviewPinState = Record<FacetKey, Set<string>>;
 
 const facetLabels: Record<FacetKey, { title: string; search: string; all: string }> = {
   group: { title: "Категория", search: "Найти категорию", all: "Показать все категории" },
@@ -516,6 +526,44 @@ function filterPriority(key: FacetKey, value: string) {
   return 20;
 }
 
+function createFacetOrderState(): FacetOrderState {
+  return {
+    group: new Map(),
+    brand: new Map(),
+    sae: new Map(),
+    supplier: new Map(),
+    apiSpec: new Map(),
+    acea: new Map(),
+    packageVolume: new Map(),
+    entityType: new Map(),
+  };
+}
+
+function createFacetPreviewPinState(): FacetPreviewPinState {
+  return {
+    group: new Set(),
+    brand: new Set(),
+    sae: new Set(),
+    supplier: new Set(),
+    apiSpec: new Set(),
+    acea: new Set(),
+    packageVolume: new Set(),
+    entityType: new Set(),
+  };
+}
+
+function facetStableKey(key: FacetKey, value: string) {
+  return key === "group" ? normalizedGroupLabel(value) : normalizeFieldSearch(filterLabel(key, value));
+}
+
+function compareFacetInitialOrder(key: FacetKey, a: ProductFacetOption, b: ProductFacetOption) {
+  const priorityDiff = filterPriority(key, a.value) - filterPriority(key, b.value);
+  if (priorityDiff !== 0) return priorityDiff;
+  const countDiff = b.count - a.count;
+  if (countDiff !== 0) return countDiff;
+  return filterLabel(key, a.value).localeCompare(filterLabel(key, b.value), "ru", { numeric: true, sensitivity: "base" });
+}
+
 function selectedFilterValues(filters: ProductFilters, key: FacetKey) {
   return filters[key as MultiFilterKey];
 }
@@ -549,6 +597,16 @@ function sectionMatchesSearch(section: { label: string; aliases: string[] }, nee
   if (!needle) return false;
   const haystack = normalizeFieldSearch([section.label, ...section.aliases].join(" "));
   return haystack.includes(needle) || needle.includes(haystack);
+}
+
+function matchedEditorSection(needle: string): ProductEditorSectionId | null {
+  if (!needle) return null;
+  if (/(oem|еом|ean|штрих|barcode|code128|код|rossko|росско|крос)/i.test(needle)) return "codes";
+  if (/(sae|вязк|api|acea|ilsac|atf|объем|объ[её]м|фасов)/i.test(needle)) return "oil";
+  if (/(цен|марж|остат|доступ|резерв|поставщик|ндс|ячейк|валют|склад)/i.test(needle)) return "pricing";
+  if (/(опис|страна|тн|тнвэд|вес|авито|модификац|коммент)/i.test(needle)) return "extra";
+  if (/(uuid|id|external|moysklad|мойсклад|raw|legacy|служеб|техничес)/i.test(needle)) return "technical";
+  return productEditorSections.find((section) => sectionMatchesSearch(section, needle))?.id ?? null;
 }
 
 function entityTypeLabel(value: string) {
@@ -660,6 +718,7 @@ export default function ProductsClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [toast, setToast] = useState<ProductToast | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
@@ -668,13 +727,23 @@ export default function ProductsClient() {
   const [formErrors, setFormErrors] = useState<ProductFormErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [formSearch, setFormSearch] = useState("");
+  const [extraOpen, setExtraOpen] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [newGroupMode, setNewGroupMode] = useState(false);
   const [facetDialog, setFacetDialog] = useState<FacetKey | null>(null);
   const [facetDraftValues, setFacetDraftValues] = useState<string[]>([]);
   const [facetSearch, setFacetSearch] = useState("");
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [filtersSidebarReady, setFiltersSidebarReady] = useState(false);
+  const [filtersDrawerOpen, setFiltersDrawerOpen] = useState(false);
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+  const [archiveCandidate, setArchiveCandidate] = useState<ProductRow | null>(null);
+  const [archiveSaving, setArchiveSaving] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
+  const facetOrderRef = useRef<FacetOrderState>(createFacetOrderState());
+  const facetPreviewPinsRef = useRef<FacetPreviewPinState>(createFacetPreviewPinState());
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const listAbortRef = useRef<AbortController | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreTargetRef = useRef<HTMLDivElement | null>(null);
@@ -703,6 +772,11 @@ export default function ProductsClient() {
     [filters]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0;
+  const filtersLayoutClass = [
+    "eco-inventory-layout",
+    filtersCollapsed ? "is-filter-collapsed" : "",
+    filtersDrawerOpen ? "is-filter-drawer-open" : "",
+  ].filter(Boolean).join(" ");
   const formDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(formBaseline),
     [form, formBaseline]
@@ -724,13 +798,47 @@ export default function ProductsClient() {
     [formSearchNeedle]
   );
   const highlightedEditorSections = useMemo(
-    () => new Set(
-      productEditorSections
+    () => {
+      const sections = new Set(
+        productEditorSections
         .filter((section) => sectionMatchesSearch(section, formSearchNeedle))
         .map((section) => section.id)
-    ),
+      );
+      const matched = matchedEditorSection(formSearchNeedle);
+      if (matched) sections.add(matched);
+      return sections;
+    },
     [formSearchNeedle]
   );
+  const matchedEditorSectionId = useMemo(() => matchedEditorSection(formSearchNeedle), [formSearchNeedle]);
+  const salePriceDraft = useMemo(() => parseMoneyInput(form.salePrice), [form.salePrice]);
+  const buyPriceDraft = useMemo(
+    () => form.buyPrice.trim() ? parseMoneyInput(form.buyPrice) : null,
+    [form.buyPrice]
+  );
+  const marginDraft = buyPriceDraft == null ? null : salePriceDraft - buyPriceDraft;
+  const marginDraftPercent = marginDraft == null || salePriceDraft <= 0
+    ? null
+    : Math.round((marginDraft / salePriceDraft) * 100);
+  const completionItems = useMemo(() => [
+    { label: "Название", ok: Boolean(form.name.trim()) },
+    { label: "Артикул или код", ok: Boolean(form.article.trim() || form.code.trim()) },
+    { label: "Цена", ok: parseMoneyInput(form.salePrice) > 0 },
+    { label: "Группа", ok: Boolean(form.groupPath.trim()) },
+    { label: "Единица", ok: Boolean(form.uomName.trim()) },
+    { label: "Поставщик", ok: Boolean(form.supplierName.trim()) },
+    {
+      label: "OEM / EAN",
+      ok: Boolean(
+        form.oem.trim()
+        || form.oemParts.trim()
+        || form.barcodeEan13.trim()
+        || form.barcodeEan8.trim()
+        || form.barcodeCode128.trim()
+      ),
+    },
+  ], [form]);
+  const missingCompletionCount = completionItems.filter((item) => !item.ok).length;
 
   function buildListParams(
     nextSearch = search,
@@ -829,6 +937,70 @@ export default function ProductsClient() {
   }, []);
 
   useEffect(() => {
+    try {
+      setFiltersCollapsed(window.localStorage.getItem(FILTER_SIDEBAR_STORAGE_KEY) === "1");
+    } catch {
+      // localStorage can be unavailable in private or restricted contexts.
+    } finally {
+      setFiltersSidebarReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!filtersSidebarReady) return;
+    try {
+      window.localStorage.setItem(FILTER_SIDEBAR_STORAGE_KEY, filtersCollapsed ? "1" : "0");
+    } catch {
+      // Persisting the UI preference is optional.
+    }
+  }, [filtersCollapsed, filtersSidebarReady]);
+
+  useEffect(() => {
+    if (!activeActionMenuId) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+      if (target instanceof Node && actionMenuRef.current?.contains(target)) return;
+      setActiveActionMenuId(null);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setActiveActionMenuId(null);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeActionMenuId]);
+
+  useEffect(() => {
+    if (!archiveCandidate) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !archiveSaving) setArchiveCandidate(null);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [archiveCandidate, archiveSaving]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 6500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!formOpen || !matchedEditorSectionId || !formSearchNeedle) return;
+    if (matchedEditorSectionId === "extra") setExtraOpen(true);
+    if (matchedEditorSectionId === "technical") setTechnicalOpen(true);
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById(productEditorSectionElementId(matchedEditorSectionId))
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [formOpen, formSearchNeedle, matchedEditorSectionId]);
+
+  useEffect(() => {
     const delay = initialLoadStartedRef.current ? 320 : 0;
     initialLoadStartedRef.current = true;
     const timer = window.setTimeout(() => {
@@ -897,6 +1069,7 @@ export default function ProductsClient() {
     setFormErrors({});
     setFormError(null);
     setFormSearch("");
+    setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
     setUploadingPhotos(false);
@@ -912,6 +1085,36 @@ export default function ProductsClient() {
     setFormErrors({});
     setFormError(null);
     setFormSearch("");
+    setExtraOpen(false);
+    setTechnicalOpen(false);
+    setNewGroupMode(false);
+    setUploadingPhotos(false);
+    setDeletingPhotoId(null);
+    setInfo(null);
+    setError(null);
+    setFormOpen(true);
+  }
+
+  function openSimilarProduct(product: ProductRow) {
+    const nextForm = {
+      ...formFromProduct(product),
+      name: `Копия: ${product.name}`,
+      article: "",
+      code: "",
+      externalCode: "",
+      barcodeEan13: "",
+      barcodeEan8: "",
+      barcodeCode128: "",
+      rosskoPartNumber: "",
+    };
+    setEditingId(null);
+    setActiveProduct(null);
+    setForm(nextForm);
+    setFormBaseline(emptyForm);
+    setFormErrors({});
+    setFormError("Проверьте артикул или код перед сохранением похожего товара.");
+    setFormSearch("");
+    setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
     setUploadingPhotos(false);
@@ -930,6 +1133,7 @@ export default function ProductsClient() {
     setFormErrors({});
     setFormError(null);
     setFormSearch("");
+    setExtraOpen(false);
     setTechnicalOpen(false);
     setNewGroupMode(false);
     setUploadingPhotos(false);
@@ -953,16 +1157,31 @@ export default function ProductsClient() {
     setDirection(nextDirection);
   }
 
+  function closeFilterDrawerOnMobile() {
+    if (typeof window !== "undefined" && window.matchMedia(FILTER_MOBILE_QUERY).matches) {
+      setFiltersDrawerOpen(false);
+    }
+  }
+
+  function pinFacetPreviewValue(key: FacetKey, value: string) {
+    const stableKey = facetStableKey(key, value);
+    if (stableKey) facetPreviewPinsRef.current[key].add(stableKey);
+  }
+
   function changeStockFilter(value: StockFilter) {
     setFilters((prev) => ({ ...prev, stock: value }));
+    closeFilterDrawerOnMobile();
   }
 
   function toggleFilterValue(key: MultiFilterKey, value: string) {
-    const nextValues = filters[key].includes(value)
-      ? filters[key].filter((item) => item !== value)
-      : [...filters[key], value];
-    const nextFilters = { ...filters, [key]: nextValues };
-    setFilters(nextFilters);
+    pinFacetPreviewValue(key, value);
+    setFilters((prev) => {
+      const nextValues = prev[key].includes(value)
+        ? prev[key].filter((item) => item !== value)
+        : [...prev[key], value];
+      return { ...prev, [key]: nextValues };
+    });
+    closeFilterDrawerOnMobile();
   }
 
   function resetFilters() {
@@ -1000,6 +1219,7 @@ export default function ProductsClient() {
     if (!facetDialog) return;
     setFilters((prev) => ({ ...prev, [facetDialog]: facetDraftValues }));
     closeFacetDialog();
+    closeFilterDrawerOnMobile();
   }
 
   function clearFacetDialog() {
@@ -1024,36 +1244,57 @@ export default function ProductsClient() {
     );
   }
 
+  function rememberFacetOrder(key: FacetKey, options: ProductFacetOption[]) {
+    const order = facetOrderRef.current[key];
+    const seededOptions = [...options].sort((a, b) => compareFacetInitialOrder(key, a, b));
+    for (const option of seededOptions) {
+      const stableKey = facetStableKey(key, option.value);
+      if (!stableKey || order.has(stableKey)) continue;
+      order.set(stableKey, order.size);
+    }
+  }
+
   function getFacetOptions(key: FacetKey) {
     const facetKey = facetOptionsKey(key);
     const fromFacets = facets[facetKey];
     const rawOptions = Array.isArray(fromFacets) && fromFacets.length
       ? fromFacets
       : (filterOptions[fallbackFilterOptionsKey(key)] as string[]).map((value) => ({ value, count: 0 }));
-    const selected = new Set(selectedFilterValues(filters, key));
     const options = key === "group"
       ? uniqueGroupsByLabel(rawOptions.map((option) => option.value)).map((value) => {
           const matching = rawOptions.find((option) => normalizedGroupLabel(option.value) === normalizedGroupLabel(value));
           return { value, count: matching?.count ?? 0 };
         })
-      : rawOptions;
-    return [...options]
-      .filter((option) => option.value && option.value !== "-")
+      : [...rawOptions];
+    const selectedValues = selectedFilterValues(filters, key);
+    const selectedKeys = new Set(options.map((option) => facetStableKey(key, option.value)));
+    for (const value of selectedValues) {
+      const stableKey = facetStableKey(key, value);
+      if (!stableKey || selectedKeys.has(stableKey)) continue;
+      options.push({ value, count: 0 });
+      selectedKeys.add(stableKey);
+    }
+    const cleanedOptions = options.filter((option) => option.value && option.value !== "-");
+    rememberFacetOrder(key, cleanedOptions);
+    return [...cleanedOptions]
       .sort((a, b) => {
-        const selectedDiff = Number(selected.has(b.value)) - Number(selected.has(a.value));
-        if (selectedDiff !== 0) return selectedDiff;
-        const priorityDiff = filterPriority(key, a.value) - filterPriority(key, b.value);
-        if (priorityDiff !== 0) return priorityDiff;
-        const countDiff = b.count - a.count;
-        if (countDiff !== 0) return countDiff;
+        const order = facetOrderRef.current[key];
+        const orderDiff = (order.get(facetStableKey(key, a.value)) ?? Number.MAX_SAFE_INTEGER)
+          - (order.get(facetStableKey(key, b.value)) ?? Number.MAX_SAFE_INTEGER);
+        if (orderDiff !== 0) return orderDiff;
         return filterLabel(key, a.value).localeCompare(filterLabel(key, b.value), "ru", { numeric: true, sensitivity: "base" });
       });
   }
 
   function renderFacetFilter(key: FacetKey, previewCount = 6) {
     const options = getFacetOptions(key);
-    const preview = options.slice(0, previewCount);
     const selected = selectedFilterValues(filters, key);
+    const selectedSet = new Set(selected.map((value) => facetStableKey(key, value)));
+    const pinnedSet = facetPreviewPinsRef.current[key];
+    const preview = options.filter((option, index) => {
+      const stableKey = facetStableKey(key, option.value);
+      return index < previewCount || selectedSet.has(stableKey) || pinnedSet.has(stableKey);
+    });
     return (
       <div className="eco-filter-group">
         <div className="eco-filter-title">{facetLabels[key].title}</div>
@@ -1150,6 +1391,91 @@ export default function ProductsClient() {
     ));
   }
 
+  function renderRowActionsMenu(row: ProductRow) {
+    const isOpen = activeActionMenuId === row.id;
+    return (
+      <div className="eco-product-actions-menu-wrap" ref={isOpen ? actionMenuRef : null}>
+        <button
+          type="button"
+          className="eco-icon-action"
+          title="Действия"
+          aria-label="Действия"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onClick={(event) => {
+            event.stopPropagation();
+            setActiveActionMenuId((current) => current === row.id ? null : row.id);
+          }}
+        >
+          <MoreHorizontal aria-hidden className="eco-icon" />
+        </button>
+        {isOpen ? (
+          <div className="eco-product-actions-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setActiveActionMenuId(null);
+                openProductEditor(row);
+              }}
+            >
+              <PackageOpen aria-hidden className="eco-icon" />
+              <span>Открыть карточку</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setActiveActionMenuId(null);
+                openProductEditor(row);
+              }}
+            >
+              <Pencil aria-hidden className="eco-icon" />
+              <span>Редактировать</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setActiveActionMenuId(null);
+                openSimilarProduct(row);
+              }}
+            >
+              <Copy aria-hidden className="eco-icon" />
+              <span>Создать похожий</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => openProductHistory(row)}>
+              <History aria-hidden className="eco-icon" />
+              <span>История / движения</span>
+            </button>
+            <div className="eco-product-actions-separator" role="separator" />
+            {row.archived ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="is-restore"
+                onClick={() => void restoreProduct(row)}
+              >
+                <ArchiveRestore aria-hidden className="eco-icon" />
+                <span>Восстановить из архива</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                className="is-destructive"
+                onClick={() => requestArchive(row)}
+              >
+                <Archive aria-hidden className="eco-icon" />
+                <span>В архив</span>
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   async function submit(closeAfter = false) {
     const validation = validateProductForm(form);
     if (Object.keys(validation).length) {
@@ -1238,13 +1564,63 @@ export default function ProductsClient() {
     }
   }
 
-  async function archive(row: ProductRow) {
-    if (!window.confirm(`Архивировать товар "${row.name}"?`)) return;
+  function openProductHistory(row: ProductRow) {
+    setActiveActionMenuId(null);
+    setToast({ message: `История движений для "${row.name}" пока не подключена` });
+  }
+
+  function requestArchive(row: ProductRow) {
+    setActiveActionMenuId(null);
+    setArchiveCandidate(row);
+  }
+
+  async function archiveProduct(row: ProductRow) {
     setError(null);
+    setArchiveSaving(true);
     try {
       const res = await fetch(`/api/local-inventory/products/${row.id}`, { method: "DELETE" });
-      const data = await readJson<{ error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Не удалось архивировать товар");
+      const data = await readJson<(ProductRow & { error?: string }) | { error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось перенести товар в архив");
+      const archivedProduct = data && "id" in data ? data : null;
+      if (archivedProduct && editingId === archivedProduct.id) {
+        const nextForm = formFromProduct(archivedProduct);
+        setActiveProduct(archivedProduct);
+        setForm(nextForm);
+        setFormBaseline(nextForm);
+      }
+      setArchiveCandidate(null);
+      setToast({
+        message: "Товар перенесён в архив",
+        actionLabel: "Отменить",
+        onAction: () => void restoreProduct(row, { silent: true }),
+      });
+      await load(search, sort, direction, filters);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchiveSaving(false);
+    }
+  }
+
+  async function restoreProduct(row: ProductRow, options: { silent?: boolean } = {}) {
+    setActiveActionMenuId(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/local-inventory/products/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: false }),
+      });
+      const data = await readJson<ProductRow & { error?: string }>(res);
+      if (!res.ok || !data) throw new Error(data?.error ?? "Не удалось восстановить товар из архива");
+      setRows((prev) => [data, ...prev.filter((item) => item.id !== data.id)]);
+      if (editingId === data.id) {
+        const nextForm = formFromProduct(data);
+        setActiveProduct(data);
+        setForm(nextForm);
+        setFormBaseline(nextForm);
+      }
+      setToast({ message: options.silent ? "Архивация отменена" : "Товар восстановлен из архива" });
       await load(search, sort, direction, filters);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1320,6 +1696,10 @@ export default function ProductsClient() {
   function renderField(key: keyof ProductForm, label: string, options: ProductFieldRenderOptions = {}) {
     const isHighlighted = fieldMatches(key, label, options.aliases);
     const errorMessage = formErrors[key];
+    const tags = [
+      searchImpactFields.has(key) ? { label: "поиск", title: "Это поле участвует в поиске товара" } : null,
+      shipmentImpactFields.has(key) ? { label: "отгрузка", title: "Это поле важно для продажи и отгрузки" } : null,
+    ].filter((tag): tag is { label: string; title: string } => Boolean(tag));
     const fieldClass = [
       "product-editor-field",
       options.full ? "is-full" : "",
@@ -1336,10 +1716,11 @@ export default function ProductsClient() {
             {label}
             {options.required ? <b aria-hidden="true"> *</b> : null}
           </span>
-          <span className="product-editor-label-tags">
-            {searchImpactFields.has(key) ? <em>поиск</em> : null}
-            {shipmentImpactFields.has(key) ? <em>отгрузка</em> : null}
-          </span>
+          {tags.length ? (
+            <span className="product-editor-label-tags">
+              {tags.map((tag) => <em key={tag.label} title={tag.title}>{tag.label}</em>)}
+            </span>
+          ) : null}
         </span>
         {options.type === "textarea" ? (
           <textarea
@@ -1383,7 +1764,7 @@ export default function ProductsClient() {
         <span className="product-editor-label">
           <span>Тип *</span>
           <span className="product-editor-label-tags">
-            <em>отгрузка</em>
+            <em title="Это поле важно для продажи и отгрузки">отгрузка</em>
           </span>
         </span>
         <select
@@ -1409,8 +1790,7 @@ export default function ProductsClient() {
         <span className="product-editor-label">
           <span>Группа</span>
           <span className="product-editor-label-tags">
-            <em>поиск</em>
-            <em>отгрузка</em>
+            <em title="Это поле участвует в поиске товара">поиск</em>
           </span>
         </span>
         <select
@@ -1465,6 +1845,108 @@ export default function ProductsClient() {
     );
   }
 
+  function renderEditorActionButtons(placement: "side" | "footer" = "footer") {
+    const className = placement === "side" ? "product-editor-action-stack" : "product-editor-footer-actions";
+    return (
+      <div className={className}>
+        <button type="button" className="eco-btn" onClick={closeForm}>
+          <RotateCcw aria-hidden className="eco-icon" />
+          Отмена
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit(false)}
+          disabled={saving || !formDirty}
+          className="eco-btn eco-btn--primary"
+        >
+          {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Save aria-hidden className="eco-icon" />}
+          {saving ? "Сохраняем..." : "Сохранить"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit(true)}
+          disabled={saving || !formDirty}
+          className="eco-btn"
+        >
+          Сохранить и закрыть
+        </button>
+      </div>
+    );
+  }
+
+  function renderPhotoSection(compact = false) {
+    return (
+      <section className={`product-editor-side-card product-editor-photo-section ${compact ? "is-compact" : ""}`}>
+        <div className="product-editor-section-head">
+          <div>
+            <h3>Фото</h3>
+            <p>Миниатюры для карточки и поиска</p>
+          </div>
+          <label className={`eco-btn eco-btn--sm ${editingId && !uploadingPhotos ? "" : "is-disabled"}`}>
+            <ImagePlus aria-hidden className="eco-icon" />
+            {uploadingPhotos ? "Загрузка..." : "Прикрепить"}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={!editingId || uploadingPhotos}
+              className="sr-only"
+              onChange={(event) => {
+                void uploadProductPhotos(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+        {editingProduct?.photos.length ? (
+          <div className="product-editor-photo-grid">
+            {editingProduct.photos.map((photo) => (
+              <div key={photo.id} className="product-editor-photo">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photo.url} alt={photo.fileName || "Фото товара"} />
+                <div>
+                  <span>{photo.fileName || "Фото товара"}</span>
+                  <em>{formatFileSize(photo.sizeBytes)}</em>
+                  <button
+                    type="button"
+                    onClick={() => void deleteProductPhoto(photo.id)}
+                    disabled={deletingPhotoId === photo.id}
+                    aria-label="Удалить фото"
+                  >
+                    {deletingPhotoId === photo.id ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Trash2 aria-hidden className="eco-icon" />}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="product-editor-photo-empty">
+            <strong>Фото не прикреплено</strong>
+            <span>{editingId ? "Добавьте фото товара для карточки и поиска" : "Фото можно прикрепить после создания товара"}</span>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderEditorArchiveAction() {
+    if (!editingProduct) return null;
+    if (editingProduct.archived) {
+      return (
+        <button type="button" className="eco-btn product-editor-restore-action" onClick={() => void restoreProduct(editingProduct)}>
+          <ArchiveRestore aria-hidden className="eco-icon" />
+          Восстановить
+        </button>
+      );
+    }
+    return (
+      <button type="button" className="eco-btn eco-btn--danger product-editor-archive-action" onClick={() => requestArchive(editingProduct)}>
+        <Archive aria-hidden className="eco-icon" />
+        Перенести в архив
+      </button>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {formOpen && (
@@ -1478,7 +1960,13 @@ export default function ProductsClient() {
                   <span>Артикул {compactHeaderValue(form.article)}</span>
                   <span>Код {compactHeaderValue(form.code)}</span>
                   <span className="product-editor-type-badge">{entityTypeLabel(form.entityType)}</span>
-                  {editingProduct?.archived ? <span className="product-editor-archive-badge">Архив</span> : <span>Активен</span>}
+                  {editingProduct?.archived ? (
+                    <span className="product-editor-archive-badge">Архив</span>
+                  ) : editingId ? (
+                    <span>Активен</span>
+                  ) : (
+                    <span>Новый</span>
+                  )}
                 </div>
               </div>
               <div className="product-editor-header-actions">
@@ -1542,66 +2030,59 @@ export default function ProductsClient() {
                 </div>
               ) : null}
 
-              <div className="product-editor-priority-layout">
-                <section id={productEditorSectionElementId("main")} className="product-editor-section product-editor-main-card">
-                  <div className="product-editor-section-head">
-                    <div>
-                      <h3>Главное</h3>
-                      <p>Продажа, поиск, склад и отгрузка</p>
+              <div className="product-editor-workspace">
+                <div className="product-editor-main-flow">
+                  <section id={productEditorSectionElementId("main")} className="product-editor-section product-editor-main-card">
+                    <div className="product-editor-section-head">
+                      <div>
+                        <h3>Главное</h3>
+                        <p>Продажа, поиск, склад и отгрузка</p>
+                      </div>
+                      <div className="product-editor-kpi-row">
+                        <span>
+                          <b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b>
+                          доступно
+                        </span>
+                        <span>
+                          <b>{formatMoneyWhole(salePriceDraft)}</b>
+                          ₽ продажа
+                        </span>
+                      </div>
                     </div>
-                    <div className="product-editor-kpi-row">
-                      <span>
-                        <b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b>
-                        доступно
-                      </span>
-                      <span>
-                        <b>{formatMoneyWhole(parseMoneyInput(form.salePrice))}</b>
-                        ₽ продажа
-                      </span>
+                    <div className="product-editor-grid">
+                      {renderField("name", "Название товара", { required: true, full: true, placeholder: "Например: Mobil 1 ESP 5W-30, 1 л" })}
+                      {renderField("article", "Артикул", { required: true, placeholder: "156202" })}
+                      {renderField("code", "Код", { required: true, placeholder: "30015649815" })}
+                      {renderEntityTypeField()}
+                      {renderField("brand", "Бренд", { placeholder: "Mobil" })}
+                      {renderGroupField()}
+                      {renderField("uomName", "Единица", { required: true, placeholder: "шт" })}
+                      {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
+                      {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
+                      {renderField("minimumBalance", "Неснижаемый остаток", { type: "number", placeholder: "0" })}
+                      {renderField("cell", "Ячейка склада", { placeholder: "A-12" })}
+                      {renderField("barcodeEan13", "EAN / штрихкод", { placeholder: "460..." })}
+                      {renderField("oem", "OEM / основные кроссы", {
+                        type: "textarea",
+                        full: true,
+                        rows: 3,
+                        placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
+                        hint: "Разделяйте значения пробелом, запятой или новой строкой",
+                      })}
                     </div>
-                  </div>
-                  <div className="product-editor-grid">
-                    {renderField("name", "Название товара", { required: true, full: true, placeholder: "Например: Mobil 1 ESP 5W-30, 1 л" })}
-                    {renderField("article", "Артикул", { required: true, placeholder: "156202" })}
-                    {renderField("code", "Код", { required: true, placeholder: "30015649815" })}
-                    {renderEntityTypeField()}
-                    {renderField("brand", "Бренд", { placeholder: "Mobil" })}
-                    {renderGroupField()}
-                    {renderField("uomName", "Единица", { required: true, placeholder: "шт" })}
-                    {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
-                    {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
-                    {renderField("minimumBalance", "Неснижаемый остаток", { type: "number", placeholder: "0" })}
-                    {renderField("cell", "Ячейка склада", { placeholder: "A-12" })}
-                    {renderField("barcodeEan13", "EAN / штрихкод", { placeholder: "460..." })}
-                    {renderField("oem", "OEM / основные кроссы", {
-                      type: "textarea",
-                      full: true,
-                      rows: 3,
-                      placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
-                      hint: "Разделяйте значения пробелом, запятой или новой строкой",
-                    })}
-                  </div>
-                </section>
+                  </section>
 
-                <aside className="product-editor-priority-side">
                   <section id={productEditorSectionElementId("pricing")} className="product-editor-section product-editor-pricing-card">
                     <div className="product-editor-section-head">
                       <div>
                         <h3>Цены и склад</h3>
-                        <p>Данные, которые оператор проверяет перед продажей</p>
+                        <p>Складские показатели и финансовые параметры перед продажей</p>
                       </div>
                     </div>
                     <div className="product-editor-stock-grid">
                       <span><b>{formatQty(editingProduct?.totalQuantity ?? 0)}</b>остаток</span>
                       <span><b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b>доступно</span>
                       <span><b>{formatQty(editingProduct ? reserveValue(editingProduct) : 0)}</b>резерв</span>
-                    </div>
-                    <div className="product-editor-grid product-editor-compact-grid">
-                      {renderField("currencyName", "Валюта", { placeholder: "руб." })}
-                      {renderField("minPrice", "Минимальная цена", { type: "money", placeholder: "0,00" })}
-                      {renderField("minPriceCurrencyName", "Валюта мин. цены", { placeholder: "руб." })}
-                      {renderField("vatLabel", "НДС", { placeholder: "Без НДС / 20%" })}
-                      {renderField("supplierName", "Поставщик", { full: true, placeholder: "Название поставщика" })}
                     </div>
                     {editingProduct?.stock.length ? (
                       <div className="product-editor-stock-list">
@@ -1614,174 +2095,164 @@ export default function ProductsClient() {
                         ))}
                       </div>
                     ) : null}
+                    <div className="product-editor-grid product-editor-compact-grid">
+                      {renderField("currencyName", "Валюта", { placeholder: "руб." })}
+                      {renderField("minPrice", "Минимальная цена", { type: "money", placeholder: "0,00" })}
+                      {renderField("minPriceCurrencyName", "Валюта мин. цены", { placeholder: "руб." })}
+                      {renderField("vatLabel", "НДС", { placeholder: "Без НДС / 20%" })}
+                      {renderField("supplierName", "Поставщик", { full: true, placeholder: "Название поставщика" })}
+                    </div>
                   </section>
 
-                  <section className="product-editor-section product-editor-photo-section">
+                  <section id={productEditorSectionElementId("codes")} className="product-editor-section">
                     <div className="product-editor-section-head">
                       <div>
-                        <h3>Фото</h3>
-                        <p>Миниатюры для карточки и поиска</p>
+                        <h3>Коды и OEM</h3>
+                        <p>Поля, которые помогают находить товар и сопоставлять поставщиков</p>
                       </div>
-                      <label className={`eco-btn eco-btn--sm ${editingId && !uploadingPhotos ? "" : "is-disabled"}`}>
-                        <ImagePlus aria-hidden className="eco-icon" />
-                        {uploadingPhotos ? "Загрузка..." : "Прикрепить"}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          disabled={!editingId || uploadingPhotos}
-                          className="sr-only"
-                          onChange={(event) => {
-                            void uploadProductPhotos(event.target.files);
-                            event.target.value = "";
-                          }}
-                        />
-                      </label>
                     </div>
-                    {editingProduct?.photos.length ? (
-                      <div className="product-editor-photo-grid">
-                        {editingProduct.photos.map((photo) => (
-                          <div key={photo.id} className="product-editor-photo">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={photo.url} alt={photo.fileName || "Фото товара"} />
-                            <div>
-                              <span>{photo.fileName || "Фото товара"}</span>
-                              <em>{formatFileSize(photo.sizeBytes)}</em>
-                              <button
-                                type="button"
-                                onClick={() => void deleteProductPhoto(photo.id)}
-                                disabled={deletingPhotoId === photo.id}
-                                aria-label="Удалить фото"
-                              >
-                                {deletingPhotoId === photo.id ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Trash2 aria-hidden className="eco-icon" />}
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="product-editor-photo-empty">
-                        <strong>Фото не прикреплено</strong>
-                        <span>Добавьте фото товара для карточки и поиска</span>
-                      </div>
-                    )}
+                    <div className="product-editor-grid">
+                      {renderField("barcodeEan8", "Штрихкод EAN8", { placeholder: "EAN8" })}
+                      {renderField("barcodeCode128", "Штрихкод Code128", { placeholder: "Code128" })}
+                      {renderField("oemParts", "OEM parts", {
+                        type: "textarea",
+                        full: true,
+                        rows: 4,
+                        placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
+                        hint: "Длинные списки можно вводить строками или через запятую",
+                      })}
+                      {renderField("rosskoPartNumber", "rossko_part_number", { placeholder: "Внешний артикул" })}
+                      {renderField("rosskoBrand", "rossko_brand", { placeholder: "Бренд Rossko" })}
+                      {renderField("rosskoMin", "rossko_min", { placeholder: "Минимум Rossko" })}
+                    </div>
                   </section>
+
+                  <section id={productEditorSectionElementId("oil")} className={`product-editor-section ${isOilProduct(form) ? "is-oil" : ""}`}>
+                    <div className="product-editor-section-head">
+                      <div>
+                        <h3>Характеристики</h3>
+                        <p>Вязкость, допуски, фасовка и справочные характеристики</p>
+                      </div>
+                      {isOilProduct(form) ? <span className="product-editor-type-badge">Масло / жидкость</span> : null}
+                    </div>
+                    <div className="product-editor-grid">
+                      {renderField("sae", "SAE / вязкость", { placeholder: "5W-30" })}
+                      {renderField("apiSpec", "API", { placeholder: "SN / SP" })}
+                      {renderField("acea", "ACEA", { placeholder: "C3" })}
+                      {renderField("aceaExtra", "ACEA A/B", { placeholder: "A3/B4" })}
+                      {renderField("ilsac", "ILSAC", { placeholder: "GF-6" })}
+                      {renderField("atf", "ATF", { placeholder: "Dexron VI" })}
+                      {renderField("packageVolume", "Фасовка", { placeholder: "1 л / 4 л" })}
+                      {renderField("volume", "Объём", { type: "number", placeholder: "1" })}
+                      {renderField("mannName", "Наименование по Mann", { full: true, placeholder: "Mann reference" })}
+                    </div>
+                  </section>
+
+                  <details
+                    id={productEditorSectionElementId("extra")}
+                    className="product-editor-section product-editor-extra-details"
+                    open={extraOpen || highlightedEditorSections.has("extra")}
+                    onToggle={(event) => setExtraOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      <span>
+                        <b>Дополнительно</b>
+                        <em>Описание, страна, ТН ВЭД и второстепенные параметры</em>
+                      </span>
+                    </summary>
+                    <div className="product-editor-grid">
+                      {renderField("description", "Описание", { type: "textarea", rows: 4, full: true, placeholder: "Краткое описание товара" })}
+                      {renderField("countryName", "Страна", { placeholder: "Россия" })}
+                      {renderField("tnvedCode", "Код ТН ВЭД", { placeholder: "Код классификации" })}
+                      {renderField("modificationCode", "Код модификации", { placeholder: "Код модификации" })}
+                      {renderField("weight", "Вес", { type: "number", placeholder: "0" })}
+                      {renderAvitoField()}
+                    </div>
+                  </details>
+
+                  <details
+                    id={productEditorSectionElementId("technical")}
+                    className="product-editor-section product-editor-technical"
+                    open={technicalOpen || technicalFieldsMatched}
+                    onToggle={(event) => setTechnicalOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      <span>
+                        <b>Технические поля</b>
+                        <em>ID, интеграции и редко редактируемые значения</em>
+                      </span>
+                    </summary>
+                    <div className="product-editor-readonly-grid">
+                      {editingId ? <span><b>local id</b><em>{editingId}</em></span> : null}
+                      {editingProduct?.moyskladId ? <span><b>moysklad id</b><em>{editingProduct.moyskladId}</em></span> : null}
+                    </div>
+                    <div className="product-editor-grid">
+                      {technicalFieldLabels.map((field) => renderField(field.key, field.label, {
+                        type: field.type,
+                        full: field.type === "textarea",
+                        rows: field.type === "textarea" ? 3 : undefined,
+                        aliases: field.aliases,
+                      }))}
+                    </div>
+                  </details>
+                </div>
+
+                <aside className="product-editor-summary-rail" aria-label="Сводка товара">
+                  <section className="product-editor-side-card product-editor-summary-card">
+                    <div className="product-editor-side-title">
+                      <span>Сводка</span>
+                      <b className={editingProduct?.archived ? "is-archive" : editingId ? "is-active" : "is-new"}>
+                        {editingProduct?.archived ? "Архив" : editingId ? "Активен" : "Новый"}
+                      </b>
+                    </div>
+                    <div className="product-editor-summary-name">{form.name.trim() || "Новая карточка товара"}</div>
+                    <div className="product-editor-summary-grid">
+                      <span><em>Тип</em><b>{entityTypeLabel(form.entityType)}</b></span>
+                      <span><em>Бренд</em><b>{compactHeaderValue(form.brand, "не указан")}</b></span>
+                      <span className="is-wide"><em>Группа</em><b>{compactHeaderValue(shortGroupLabel(form.groupPath), "без группы")}</b></span>
+                      <span><em>Остаток</em><b>{formatQty(editingProduct?.totalQuantity ?? 0)}</b></span>
+                      <span><em>Доступно</em><b>{formatQty(editingProduct?.totalAvailable ?? 0)}</b></span>
+                      <span><em>Продажа</em><b>{formatMoneyWhole(salePriceDraft)} ₽</b></span>
+                      <span><em>Закупка</em><b>{buyPriceDraft == null ? "—" : `${formatMoneyWhole(buyPriceDraft)} ₽`}</b></span>
+                      <span><em>Маржа</em><b>{marginDraft == null ? "—" : `${formatMoneyWhole(marginDraft)} ₽${marginDraftPercent == null ? "" : ` · ${marginDraftPercent}%`}`}</b></span>
+                    </div>
+                  </section>
+
+                  <section className="product-editor-side-card">
+                    <div className="product-editor-side-title">
+                      <span>Заполненность</span>
+                      <b className={missingCompletionCount ? "is-warning" : "is-active"}>
+                        {missingCompletionCount ? `Не хватает ${missingCompletionCount}` : "Готово"}
+                      </b>
+                    </div>
+                    <div className="product-editor-completion-list">
+                      {completionItems.map((item) => (
+                        <span key={item.label} className={item.ok ? "is-ok" : "is-missing"}>
+                          {item.ok ? <CheckCircle2 aria-hidden className="eco-icon" /> : <AlertCircle aria-hidden className="eco-icon" />}
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="product-editor-side-card">
+                    <div className="product-editor-side-title">
+                      <span>Действия</span>
+                    </div>
+                    {renderEditorActionButtons("side")}
+                    {renderEditorArchiveAction()}
+                  </section>
+
+                  {renderPhotoSection(true)}
                 </aside>
               </div>
-
-              <section id={productEditorSectionElementId("codes")} className="product-editor-section">
-                <div className="product-editor-section-head">
-                  <div>
-                    <h3>Коды и OEM</h3>
-                    <p>Поля, которые помогают находить товар и сопоставлять поставщиков</p>
-                  </div>
-                </div>
-                <div className="product-editor-grid">
-                  {renderField("barcodeEan8", "Штрихкод EAN8", { placeholder: "EAN8" })}
-                  {renderField("barcodeCode128", "Штрихкод Code128", { placeholder: "Code128" })}
-                  {renderField("oemParts", "OEM parts", {
-                    type: "textarea",
-                    full: true,
-                    rows: 4,
-                    placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
-                    hint: "Длинные списки можно вводить строками или через запятую",
-                  })}
-                  {renderField("rosskoPartNumber", "rossko_part_number", { placeholder: "Внешний артикул" })}
-                  {renderField("rosskoBrand", "rossko_brand", { placeholder: "Бренд Rossko" })}
-                  {renderField("rosskoMin", "rossko_min", { placeholder: "Минимум Rossko" })}
-                </div>
-              </section>
-
-              <section id={productEditorSectionElementId("oil")} className={`product-editor-section ${isOilProduct(form) ? "is-oil" : ""}`}>
-                <div className="product-editor-section-head">
-                  <div>
-                    <h3>Характеристики масла</h3>
-                    <p>Вязкость, допуски и фасовка отдельно от цен и склада</p>
-                  </div>
-                  {isOilProduct(form) ? <span className="product-editor-type-badge">Масло / жидкость</span> : null}
-                </div>
-                <div className="product-editor-grid">
-                  {renderField("sae", "SAE / вязкость", { placeholder: "5W-30" })}
-                  {renderField("apiSpec", "API", { placeholder: "SN / SP" })}
-                  {renderField("acea", "ACEA", { placeholder: "C3" })}
-                  {renderField("aceaExtra", "ACEA A/B", { placeholder: "A3/B4" })}
-                  {renderField("ilsac", "ILSAC", { placeholder: "GF-6" })}
-                  {renderField("atf", "ATF", { placeholder: "Dexron VI" })}
-                  {renderField("packageVolume", "Фасовка", { placeholder: "1 л / 4 л" })}
-                  {renderField("volume", "Объём", { type: "number", placeholder: "1" })}
-                  {renderField("mannName", "Наименование по Mann", { full: true, placeholder: "Mann reference" })}
-                </div>
-              </section>
-
-              <section id={productEditorSectionElementId("extra")} className="product-editor-section">
-                <div className="product-editor-section-head">
-                  <div>
-                    <h3>Описание и дополнительно</h3>
-                    <p>Справочная информация без технического шума</p>
-                  </div>
-                </div>
-                <div className="product-editor-grid">
-                  {renderField("description", "Описание", { type: "textarea", rows: 4, full: true, placeholder: "Краткое описание товара" })}
-                  {renderField("countryName", "Страна", { placeholder: "Россия" })}
-                  {renderField("tnvedCode", "Код ТН ВЭД", { placeholder: "Код классификации" })}
-                  {renderField("weight", "Вес", { type: "number", placeholder: "0" })}
-                  {renderAvitoField()}
-                </div>
-              </section>
-
-              <details
-                id={productEditorSectionElementId("technical")}
-                className="product-editor-section product-editor-technical"
-                open={technicalOpen || technicalFieldsMatched}
-                onToggle={(event) => setTechnicalOpen(event.currentTarget.open)}
-              >
-                <summary>
-                  <span>
-                    <b>Технические поля</b>
-                    <em>ID, интеграции и редко редактируемые значения</em>
-                  </span>
-                </summary>
-                <div className="product-editor-readonly-grid">
-                  {editingId ? <span><b>local id</b><em>{editingId}</em></span> : null}
-                </div>
-                <div className="product-editor-grid">
-                  {technicalFieldLabels.map((field) => renderField(field.key, field.label, {
-                    type: field.type,
-                    full: field.type === "textarea",
-                    rows: field.type === "textarea" ? 3 : undefined,
-                    aliases: field.aliases,
-                  }))}
-                </div>
-              </details>
             </div>
 
             <footer className="product-editor-footer">
               <div className="product-editor-footer-note">
                 {saving ? "Сохраняем карточку..." : formDirty ? "Есть несохранённые изменения" : "Изменений нет"}
               </div>
-              <div className="product-editor-footer-actions">
-                <button type="button" className="eco-btn" onClick={closeForm}>
-                  <RotateCcw aria-hidden className="eco-icon" />
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submit(false)}
-                  disabled={saving || !formDirty}
-                  className="eco-btn eco-btn--primary"
-                >
-                  {saving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Save aria-hidden className="eco-icon" />}
-                  {saving ? "Сохраняем..." : "Сохранить"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submit(true)}
-                  disabled={saving || !formDirty}
-                  className="eco-btn"
-                >
-                  Сохранить и закрыть
-                </button>
-              </div>
+              {renderEditorActionButtons("footer")}
             </footer>
           </section>
         </div>
@@ -1845,6 +2316,74 @@ export default function ProductsClient() {
         </div>
       )}
 
+      {archiveCandidate && (
+        <div
+          className="eco-product-confirm-backdrop"
+          onMouseDown={() => {
+            if (!archiveSaving) setArchiveCandidate(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            className="eco-product-confirm"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="eco-product-confirm-icon">
+              <Archive aria-hidden className="eco-icon" />
+            </div>
+            <div className="eco-product-confirm-copy">
+              <h3>Перенести товар в архив?</h3>
+              <p>
+                Товар “{archiveCandidate.name}” будет скрыт из основного списка и поиска по активным товарам.
+                История отгрузок, приёмок и движений сохранится.
+              </p>
+            </div>
+            <footer className="eco-product-confirm-actions">
+              <button
+                type="button"
+                className="eco-btn"
+                onClick={() => setArchiveCandidate(null)}
+                disabled={archiveSaving}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="eco-btn eco-btn--danger"
+                onClick={() => void archiveProduct(archiveCandidate)}
+                disabled={archiveSaving}
+              >
+                {archiveSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Archive aria-hidden className="eco-icon" />}
+                {archiveSaving ? "Переносим..." : "Перенести в архив"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {toast ? (
+        <div className="eco-product-toast" role="status" aria-live="polite">
+          <span>{toast.message}</span>
+          {toast.actionLabel && toast.onAction ? (
+            <button
+              type="button"
+              onClick={() => {
+                const action = toast.onAction;
+                setToast(null);
+                action?.();
+              }}
+            >
+              <Undo2 aria-hidden className="eco-icon" />
+              {toast.actionLabel}
+            </button>
+          ) : null}
+          <button type="button" className="eco-product-toast-close" onClick={() => setToast(null)} aria-label="Закрыть уведомление">
+            <X aria-hidden className="eco-icon" />
+          </button>
+        </div>
+      ) : null}
+
       <section className="eco-products-shell">
         <div className="eco-products-head">
           <div>
@@ -1868,8 +2407,48 @@ export default function ProductsClient() {
           </div>
         </div>
 
-        <div className="eco-inventory-layout">
-          <aside className="eco-filter-rail">
+        <div className={filtersLayoutClass}>
+          <div className="eco-filter-slot">
+            <button
+              type="button"
+              className="eco-filter-drawer-backdrop"
+              onClick={() => setFiltersDrawerOpen(false)}
+              aria-label="Закрыть фильтры"
+            />
+            <button
+              type="button"
+              className="eco-filter-reopen"
+              onClick={() => setFiltersCollapsed(false)}
+              title="Фильтры"
+              aria-label="Показать фильтры"
+            >
+              <SlidersHorizontal aria-hidden className="eco-icon" />
+              <span>Фильтры</span>
+              {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
+            </button>
+            <aside className="eco-filter-rail" aria-label="Фильтры товаров">
+              <div className="eco-filter-panel-head">
+                <div className="eco-filter-panel-title">
+                  <span>Фильтры</span>
+                  {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
+                </div>
+                <button
+                  type="button"
+                  className="eco-filter-collapse"
+                  onClick={() => setFiltersCollapsed(true)}
+                >
+                  <PanelLeftClose aria-hidden className="eco-icon" />
+                  <span>Скрыть фильтры</span>
+                </button>
+                <button
+                  type="button"
+                  className="eco-filter-close-mobile"
+                  onClick={() => setFiltersDrawerOpen(false)}
+                  aria-label="Закрыть фильтры"
+                >
+                  <X aria-hidden className="eco-icon" />
+                </button>
+              </div>
             <div className="eco-filter-group">
               <div className="eco-filter-title">
                 Поиск
@@ -1903,7 +2482,12 @@ export default function ProductsClient() {
             <div className="eco-filter-group">
               <div className="eco-filter-title">Остаток</div>
               {stockOptions.map((option) => (
-                <button key={option.value} type="button" className="eco-filter-row" onClick={() => changeStockFilter(option.value)}>
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`eco-filter-row ${filters.stock === option.value ? "is-active" : ""}`}
+                  onClick={() => changeStockFilter(option.value)}
+                >
                   <span className="eco-filter-row-label">
                     <span className={`eco-check ${filters.stock === option.value ? "is-checked" : ""}`} />
                     {option.label}
@@ -1912,9 +2496,15 @@ export default function ProductsClient() {
                 </button>
               ))}
             </div>
-          </aside>
+            </aside>
+          </div>
 
           <div className="eco-inventory-main">
+            <button type="button" className="eco-filter-mobile-toggle" onClick={() => setFiltersDrawerOpen(true)}>
+              <SlidersHorizontal aria-hidden className="eco-icon" />
+              <span>Фильтры</span>
+              {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
+            </button>
 
         <div className="eco-products-strip">
           <div className="eco-products-chips">
@@ -2007,6 +2597,7 @@ export default function ProductsClient() {
                       {usefulProductMetaLines(row).map((line) => (
                         <span key={line}>· {line}</span>
                       ))}
+                      {row.archived ? <span className="eco-product-archive-badge">В архиве</span> : null}
                     </div>
                   </td>
                   <td className="eco-product-cell">{row.cell || "—"}</td>
@@ -2032,17 +2623,11 @@ export default function ProductsClient() {
                       onClick={() => openProductEditor(row)}
                       className="eco-icon-action"
                       aria-label="Править"
+                      title="Редактировать"
                     >
                       <Pencil aria-hidden className="eco-icon" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void archive(row)}
-                      className="eco-icon-action"
-                      aria-label="Архив"
-                    >
-                      <MoreHorizontal aria-hidden className="eco-icon" />
-                    </button>
+                    {renderRowActionsMenu(row)}
                   </td>
                 </tr>
               ))}

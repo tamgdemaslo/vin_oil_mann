@@ -38,6 +38,7 @@ export type DemandDetailPosition = {
     available?: number;
   };
   assortmentMeta?: MoySkladMeta;
+  copyMeta?: unknown;
 };
 
 export type DemandDetailPayload = {

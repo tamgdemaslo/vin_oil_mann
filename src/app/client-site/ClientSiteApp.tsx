@@ -642,15 +642,15 @@ function Tape({ items, kind = 'paper' }) {
 /* ---------- Section heading ---------- */
 function SectionHead({ eyebrow, title, right, paper, num }) {
   return (
-    <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 28, borderBottom: paper ? '1px solid var(--line-paper)' : '1px solid var(--line)', paddingBottom: 18}}>
-      <div style={{display: 'flex', alignItems: 'baseline', gap: 18}}>
+    <div className="section-head" style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 28, borderBottom: paper ? '1px solid var(--line-paper)' : '1px solid var(--line)', paddingBottom: 18}}>
+      <div className="section-head__main" style={{display: 'flex', alignItems: 'baseline', gap: 18}}>
         {num && <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--gray-2)', letterSpacing: '0.14em'}}>— {num}</div>}
         <div>
           {eyebrow && <div className="t-eyebrow" style={{marginBottom: 10}}>{eyebrow}</div>}
           <h2 className="t-headline" style={{margin: 0, fontSize: 'clamp(28px, 4vw, 48px)', lineHeight: 1}}>{title}</h2>
         </div>
       </div>
-      {right && <div style={{flexShrink: 0}}>{right}</div>}
+      {right && <div className="section-head__right" style={{flexShrink: 0}}>{right}</div>}
     </div>
   );
 }
@@ -851,12 +851,12 @@ function Footer() {
       <div className="chequered" />
 
       {/* Bottom bar */}
-      <div className="container" style={{padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
-        <div style={{display: 'flex', gap: 32, alignItems: 'center'}}>
+      <div className="container client-footer__bottom" style={{padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
+        <div className="client-footer__brand" style={{display: 'flex', gap: 32, alignItems: 'center'}}>
           <Logo variant="light" monogram h={32} />
           <span>© 2026 Там где масло. Калининград.</span>
         </div>
-        <div style={{display: 'flex', gap: 24}}>
+        <div className="client-footer__legal" style={{display: 'flex', gap: 24}}>
           <Link to="/privacy" style={{color: '#6B6B6B'}}>Политика конфиденциальности</Link>
           <Link to="/offer" style={{color: '#6B6B6B'}}>Договор оферты</Link>
           <span>ИП Елисеенко И. С. · ИНН 392302838630</span>

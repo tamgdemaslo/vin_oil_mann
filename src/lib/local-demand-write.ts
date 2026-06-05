@@ -30,6 +30,7 @@ type UpdateDemandBody = {
   attributes?: unknown[];
   positions?: {
     id?: string;
+    name?: string;
     quantity: number;
     price: number;
     discount?: number;
@@ -271,7 +272,7 @@ async function resolveCreatePositions(
       productId: product?.id ?? null,
       assortmentMoyskladId,
       assortmentType: meta?.type ?? product?.entityType ?? "",
-      name: product?.name ?? assortmentMoyskladId ?? "Позиция",
+      name: (product?.name ?? cleanRecordText(position.name)) || assortmentMoyskladId || "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
@@ -858,20 +859,23 @@ export async function updateLocalDemand(
   const nextMoment = body.moment ? parseMoment(body.moment) : { documentDate: current.documentDate, momentAt: current.momentAt };
   const nextStoreId = nextStore?.id ?? current.storeId;
   const storeChanged = Boolean(nextStoreId && nextStoreId !== current.storeId);
+  const importedDraftBeingPosted = Boolean(current.moyskladId) && !current.applicable && nextApplicable;
 
   const updated = await prisma.$transaction(async (tx) => {
-    if (storeChanged) {
-      await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
-      await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable);
-    } else {
-      await applyStockMovements(
-        tx,
-        current.storeId,
-        current.positions,
-        current.applicable,
-        nextPositions,
-        nextApplicable
-      );
+    if (!importedDraftBeingPosted) {
+      if (storeChanged) {
+        await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
+        await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable);
+      } else {
+        await applyStockMovements(
+          tx,
+          current.storeId,
+          current.positions,
+          current.applicable,
+          nextPositions,
+          nextApplicable
+        );
+      }
     }
 
     if (Array.isArray(body.positions)) {
@@ -963,6 +967,8 @@ export async function loadLocalDemandDetailPayload(
   if (!demand) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
 
   const positions: DemandDetailPosition[] = demand.positions.map((position) => {
+    const positionRaw = jsonRecord(position.raw);
+    const copyMeta = positionRaw.copyMeta;
     const assortmentMeta = position.product
       ? entityMeta(position.product.entityType, position.product.moyskladId, position.product.moyskladHref, position.product.id)
       : position.assortmentMoyskladId
@@ -979,6 +985,7 @@ export async function loadLocalDemandDetailPayload(
         cost: position.buyPriceCentsPerUnit ?? undefined,
       },
       assortmentMeta,
+      copyMeta,
     };
   });
 

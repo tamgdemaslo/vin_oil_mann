@@ -1,12 +1,14 @@
 import type { MoySkladMeta } from "@/lib/moysklad";
 
 export type DemandPositionInput = {
-  assortment: { meta: MoySkladMeta };
+  assortment?: { meta: MoySkladMeta };
+  name?: string;
   quantity: number;
   price: number; // рубли за единицу → в теле МойСклад в копейках
   discount?: number;
   vat?: number;
   vatEnabled?: boolean;
+  copyMeta?: unknown;
 };
 
 export type CreateDemandBody = {
@@ -40,11 +42,13 @@ export function buildDemandCreatePayload(body: CreateDemandBody): Record<string,
   if (Array.isArray(body.positions) && body.positions.length > 0) {
     payload.positions = body.positions.map((p) => ({
       assortment: p.assortment,
+      name: p.name,
       quantity: Number(p.quantity) || 1,
       price: Math.round((Number(p.price) || 0) * 100),
       discount: Number(p.discount) || 0,
       vat: p.vat ?? 0,
       vatEnabled: p.vatEnabled ?? false,
+      copyMeta: p.copyMeta,
     }));
   }
   return payload;

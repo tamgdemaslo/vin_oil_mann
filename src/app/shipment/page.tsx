@@ -60,6 +60,16 @@ function isPlateAttributeName(name: string | undefined): boolean {
   return /гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n);
 }
 
+function attributeText(row: DemandRow, matches: (name: string) => boolean): string {
+  for (const attr of row.attributes ?? []) {
+    const name = (attr.name ?? "").trim().toLowerCase();
+    if (!matches(name)) continue;
+    const value = attr.value;
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
 function getPlateDisplay(row: DemandRow): string {
   const attrs = row.attributes ?? [];
   const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
@@ -74,7 +84,23 @@ function getPlateDisplay(row: DemandRow): string {
       if (v !== undefined && v !== null && v !== "") return String(v);
     }
   }
-  return "—";
+  return "";
+}
+
+function getVehicleDisplay(row: DemandRow): { primary: string; secondary: string; title: string } {
+  const model = attributeText(row, (name) => /модель|марка|vehicle|car|авто/i.test(name) && !/гос|номер|vin|вин|масло/i.test(name));
+  const plate = getPlateDisplay(row);
+  const vin = attributeText(row, (name) => /vin|вин/i.test(name)).replace(/\s/g, "").toUpperCase();
+  const secondary = plate || (vin ? `VIN ${vin}` : "");
+  const primary = model || secondary || "автомобиль не указан";
+  const title = model
+    ? [model, plate, !plate && vin ? `VIN ${vin}` : plate && vin ? vin : ""].filter(Boolean).join(" · ")
+    : primary;
+  return {
+    primary,
+    secondary: model ? secondary : "",
+    title,
+  };
 }
 
 /** Контрагент в колонке: стандартный agent или типичные доп. поля, если agent пустой. */
@@ -257,7 +283,7 @@ export default async function ShipmentListPage({
                   <th>№ / дата</th>
                   <th>Клиент</th>
                   <th>Авто / гос. номер</th>
-                  <th>Организация / склад</th>
+	                  <th>Склад</th>
                   <th>Создал</th>
                   <th>Статус</th>
                   <th>Оплата</th>
@@ -270,14 +296,17 @@ export default async function ShipmentListPage({
                   const moment = formatMoment(r.moment);
                   const counterpartyName = getCounterpartyDisplay(r);
                   const counterpartyHref = counterpartyCatalogHref(r);
-                  return (
-                    <ShipmentListRow
+	                  const vehicle = getVehicleDisplay(r);
+	                  return (
+	                    <ShipmentListRow
                       key={r.id}
                       row={r}
                       moment={moment}
                       counterpartyName={counterpartyName}
                       counterpartyHref={counterpartyHref}
-                      plate={getPlateDisplay(r)}
+	                      vehiclePrimary={vehicle.primary}
+	                      vehicleSecondary={vehicle.secondary}
+	                      vehicleTitle={vehicle.title}
                       ecoUserName={getEcoUserName(r) ?? "—"}
                       sumLabel={`${rubles(r.sum)} ₽`}
                     />

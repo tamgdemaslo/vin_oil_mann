@@ -19,7 +19,13 @@ export function ShipmentRowActions({ shipmentId }: { shipmentId: string }) {
         window.alert(typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку");
         return;
       }
-      if (json.id) router.push(`/shipment/${json.id}/edit?copied=1`);
+      const copiedId = typeof json.id === "string" ? json.id : typeof json.demand?.id === "string" ? json.demand.id : "";
+      if (copiedId) {
+        router.push(`/shipment/${copiedId}/edit?copied=1`);
+        return;
+      }
+      console.error("[shipment] copy response without id:", json);
+      window.alert("Отгрузка могла быть скопирована, но сервер не вернул id нового черновика");
     } catch {
       window.alert("Ошибка сети при копировании");
     } finally {

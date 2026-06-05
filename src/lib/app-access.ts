@@ -14,7 +14,7 @@ export async function requireActiveShiftAccess(from: string) {
   if (session.user.role === "owner") return session;
 
   const currentShift = await getCurrentShift(session.user.login);
-  const currentCashShift = getCurrentCashShift();
+  const currentCashShift = await getCurrentCashShift();
   if (currentShift || currentCashShift) {
     return session;
   }

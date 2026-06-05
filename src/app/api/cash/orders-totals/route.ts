@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date");
 
-    const currentShift = getCurrentShift();
+    const currentShift = await getCurrentShift();
     const serviceDate =
       dateParam?.trim() ||
       currentShift?.serviceDate ||
