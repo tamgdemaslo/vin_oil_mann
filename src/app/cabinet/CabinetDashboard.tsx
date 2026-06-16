@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, CreditCard, KeyRound, Plug, ShieldCheck } from "lucide-react";
+import { KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
 
@@ -10,11 +10,20 @@ type CabinetDashboardProps = {
 };
 
 export default function CabinetDashboard({ role }: CabinetDashboardProps) {
+  const canAccessCrm = role === "owner" || role === "admin";
   const canManageIntegrations = role === "owner" || role === "admin";
   const links = [
-    { href: "/cabinet/salary", label: "Зарплата", description: "Начисления, выплаты и детализация периода.", icon: CreditCard },
-    { href: "/cabinet/shifts", label: "Смены", description: "История и рабочие смены сотрудника.", icon: CalendarDays },
-    { href: "/cabinet/analytics", label: "Аналитика", description: "Показатели и расчётные блоки для руководителя.", icon: ShieldCheck },
+    { href: "/cabinet", label: "Профиль", description: "Личные данные и смена пароля.", icon: UserRound },
+    ...(canAccessCrm
+      ? [
+          {
+            href: "/cabinet/customer-analytics",
+            label: "Аналитика клиентов",
+            description: "Повторы, прибыль и клиентские показатели.",
+            icon: ShieldCheck,
+          },
+        ]
+      : []),
     ...(canManageIntegrations
       ? [{ href: "/cabinet/integrations", label: "Интеграции", description: "Статус и ручные служебные запуски.", icon: Plug }]
       : []),
@@ -50,7 +59,7 @@ export default function CabinetDashboard({ role }: CabinetDashboardProps) {
           <div className="eco-card__head">
             <div>
               <div className="eco-page-kicker">Разделы</div>
-              <h2 className="eco-stock-doc-title">Рабочие блоки</h2>
+              <h2 className="eco-stock-doc-title">Личные и системные блоки</h2>
             </div>
           </div>
           <div className="eco-action-list">

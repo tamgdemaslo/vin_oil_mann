@@ -357,10 +357,10 @@ function notificationSortWeight(item: DashboardNotification) {
 }
 
 function crmStageKind(stageName?: string | null, nextAction?: string | null, suppliesNote?: string | null) {
-  const text = [stageName, nextAction, suppliesNote].join(" ").toLowerCase();
-  if (text.includes("расч") || text.includes("смет")) return "quote";
+  const text = [stageName, nextAction, suppliesNote].join(" ").toLowerCase().replace(/ё/g, "е");
+  if (text.includes("рассчитать") || text.includes("расчет") || text.includes("смет")) return "quote";
   if (text.includes("расход") || text.includes("запчаст") || text.includes("постав")) return "supplies";
-  if (text.includes("звон") || text.includes("перезвон")) return "callback";
+  if (text.includes("уточ") || text.includes("звон") || text.includes("перезвон") || text.includes("контрол")) return "callback";
   return "other";
 }
 
@@ -541,7 +541,7 @@ export async function GET() {
       description: [deal.customerName || deal.title, deal.phoneNormalized || "", deal.vehicle || ""].filter(Boolean).join(" · "),
       deadline: dueLabel(deal.nextContactAt),
       entityLabel: "CRM-дело",
-      entityHref: `/crm?deal=${deal.id}`,
+      entityHref: `/crm?dealId=${deal.id}`,
       actionLabel: "Открыть",
     });
   }
@@ -650,7 +650,7 @@ export async function GET() {
       description: [deal.customerName || deal.title, deal.phoneNormalized || "", deal.vehicle || ""].filter(Boolean).join(" · "),
       deadline: dueLabel(deal.nextContactAt),
       entityLabel: "CRM-дело",
-      entityHref: `/crm?deal=${deal.id}`,
+      entityHref: `/crm?dealId=${deal.id}`,
       actionLabel: "Открыть",
     });
   }

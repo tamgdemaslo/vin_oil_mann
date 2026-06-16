@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default async function CabinetShiftsPage() {
-  redirect("/cabinet");
+export default function CabinetShiftsPage() {
+  redirect("/finance/shifts");
 }

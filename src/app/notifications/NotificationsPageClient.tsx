@@ -7,35 +7,41 @@ import { EcoBadge, EcoCard, EcoStatusDot, type EcoBadgeTone } from "@/components
 import { formatServiceDateTime } from "@/lib/date-time";
 import { tryResponseJson } from "@/lib/response-json";
 
-type NotificationUrgency = "urgent" | "today" | "soon" | "info";
+type ClientCaseNotificationUrgency = "overdue" | "next_hour" | "today" | "info";
 
 type DashboardNotification = {
   id: string;
-  urgency: NotificationUrgency;
+  caseId: string;
+  urgency: ClientCaseNotificationUrgency;
+  type: "deadline_soon" | "due_now" | "overdue_repeat";
   title: string;
-  description: string;
+  body: string;
+  caseTitle: string;
+  client: string;
+  nextAction: string;
   deadline?: string | null;
-  entityLabel: string;
-  entityHref: string;
-  actionLabel: string;
+  overdueText: string | null;
+  responsible: string;
+  phone: string | null;
+  href: string;
 };
 
 type DashboardData = {
   notifications: DashboardNotification[];
-  notificationCounts: Record<NotificationUrgency | "total", number>;
+  notificationCounts: Record<ClientCaseNotificationUrgency | "total", number>;
 };
 
-const GROUPS: Array<{ id: NotificationUrgency; title: string; empty: string }> = [
-  { id: "urgent", title: "Срочно", empty: "Срочных задач нет" },
+const GROUPS: Array<{ id: ClientCaseNotificationUrgency; title: string; empty: string }> = [
+  { id: "overdue", title: "Просроченные", empty: "Просроченных клиентских дел нет" },
+  { id: "next_hour", title: "На ближайший час", empty: "На ближайший час дедлайнов нет" },
   { id: "today", title: "Сегодня", empty: "На сегодня всё спокойно" },
-  { id: "soon", title: "Скоро", empty: "Ближайших дедлайнов нет" },
   { id: "info", title: "Информационные", empty: "Информационных уведомлений нет" },
 ];
 
-function urgencyTone(urgency: NotificationUrgency): EcoBadgeTone {
-  if (urgency === "urgent") return "danger";
+function urgencyTone(urgency: ClientCaseNotificationUrgency): EcoBadgeTone {
+  if (urgency === "overdue") return "danger";
   if (urgency === "today") return "warning";
-  if (urgency === "soon") return "info";
+  if (urgency === "next_hour") return "info";
   return "neutral";
 }
 
@@ -49,26 +55,31 @@ export default function NotificationsPageClient() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/dashboard/operations", { cache: "no-store" });
-        if (cancelled) return;
-        setData(await tryResponseJson<DashboardData>(res));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/crm/deadline-notifications", { cache: "no-store" });
+      setData(await tryResponseJson<DashboardData>(res));
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     void load();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
+  async function runAction(item: DashboardNotification, action: "acknowledge" | "snooze" | "close", minutes?: number) {
+    await fetch("/api/crm/deadline-notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, notificationId: item.id, caseId: item.caseId, minutes }),
+    });
+    await load();
+  }
+
   const byGroup = useMemo(() => {
-    const map = new Map<NotificationUrgency, DashboardNotification[]>();
+    const map = new Map<ClientCaseNotificationUrgency, DashboardNotification[]>();
     for (const group of GROUPS) map.set(group.id, []);
     for (const item of data?.notifications ?? []) {
       map.get(item.urgency)?.push(item);
@@ -82,7 +93,7 @@ export default function NotificationsPageClient() {
         <div>
           <div className="eco-page-kicker">Центр задач</div>
           <h1 className="eco-page-title">
-            Уведомления <span className="muted">дедлайны, просрочки и контроль дня.</span>
+            Уведомления <span className="muted">дела клиентов, дедлайны и просрочки.</span>
           </h1>
         </div>
         <div className="eco-actions">
@@ -130,29 +141,38 @@ export default function NotificationsPageClient() {
                         <EcoStatusDot tone={urgencyTone(item.urgency)} />
                         <strong>{item.title}</strong>
                       </div>
-                      <p>{item.description}</p>
+                      <p>{item.body}</p>
                       <div className="eco-notification-card__meta">
                         <span>
                           <CalendarClock aria-hidden className="eco-icon" />
                           {deadlineLabel(item.deadline)}
                         </span>
-                        <span>{item.entityLabel}</span>
+                        {item.overdueText && <span>Просрочено на {item.overdueText}</span>}
+                        <span>{item.client}</span>
+                        <span>Ответственный: {item.responsible}</span>
+                      </div>
+                      <div className="eco-notification-card__case">
+                        <strong>{item.caseTitle}</strong>
+                        <span>{item.nextAction}</span>
                       </div>
                       <div className="eco-notification-card__actions">
-                        <Link href={item.entityHref} className="eco-btn eco-btn--primary eco-btn--sm">
-                          {item.actionLabel}
+                        <Link href={item.href} onClick={() => void runAction(item, "acknowledge")} className="eco-btn eco-btn--primary eco-btn--sm">
+                          Открыть дело
                         </Link>
-                        {item.actionLabel !== "Открыть" && (
-                          <Link href={item.entityHref} className="eco-btn eco-btn--ghost eco-btn--sm">
-                            Открыть
-                          </Link>
-                        )}
-                        <Link href={`${item.entityHref}${item.entityHref.includes("?") ? "&" : "?"}action=close`} className="eco-btn eco-btn--ghost eco-btn--sm">
+                        <button type="button" onClick={() => void runAction(item, "snooze", 15)} className="eco-btn eco-btn--ghost eco-btn--sm">
+                          Отложить на 15 минут
+                        </button>
+                        <button type="button" onClick={() => void runAction(item, "snooze", 60)} className="eco-btn eco-btn--ghost eco-btn--sm">
+                          Отложить на 1 час
+                        </button>
+                        <button type="button" onClick={() => void runAction(item, "close")} className="eco-btn eco-btn--ghost eco-btn--sm">
                           Закрыть
-                        </Link>
-                        <Link href={`${item.entityHref}${item.entityHref.includes("?") ? "&" : "?"}action=snooze`} className="eco-btn eco-btn--ghost eco-btn--sm">
-                          Отложить
-                        </Link>
+                        </button>
+                        {item.phone && (
+                          <a href={`tel:${item.phone}`} className="eco-btn eco-btn--ghost eco-btn--sm">
+                            Позвонить
+                          </a>
+                        )}
                       </div>
                     </article>
                   ))

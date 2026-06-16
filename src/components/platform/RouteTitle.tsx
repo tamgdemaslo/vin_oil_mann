@@ -56,6 +56,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/finance", title: () => `Финансы | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/finance/invoices", title: () => `Счета поставщиков | Финансы` },
   { match: (pathname) => pathname === "/finance/profit", title: () => `Прибыль | Финансы` },
+  { match: (pathname) => pathname === "/finance/shifts", title: () => `Смены | Финансы` },
   { match: (pathname) => pathname === "/salary", title: () => `Зарплата | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/crm", title: () => `CRM | ${APP_SUFFIX}` },
@@ -64,11 +65,11 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/clients/counterparties", title: () => `Клиенты | Контрагенты` },
 
   { match: (pathname) => pathname === "/cabinet", title: () => `Кабинет | ${APP_SUFFIX}` },
-  { match: (pathname) => pathname === "/cabinet/shifts", title: () => `Смены | Кабинет` },
+  { match: (pathname) => pathname === "/cabinet/shifts", title: () => `Смены | Финансы` },
   { match: (pathname) => pathname === "/cabinet/customer-analytics", title: () => `Аналитика клиентов | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/integrations", title: () => `Интеграции | Кабинет` },
-  { match: (pathname) => pathname === "/cabinet/salary", title: () => `Зарплата | Кабинет` },
-  { match: (pathname) => pathname === "/cabinet/analytics", title: () => `Аналитика | Кабинет` },
+  { match: (pathname) => pathname === "/cabinet/salary", title: () => `Зарплата | ${APP_SUFFIX}` },
+  { match: (pathname) => pathname === "/cabinet/analytics", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet/penalties", title: () => `Штрафы и бонусы | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/vehicles", title: () => `Автомобили | Кабинет` },
 

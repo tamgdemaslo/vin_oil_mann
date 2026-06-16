@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Clock3,
   Columns3,
   Copy,
@@ -96,6 +97,29 @@ type CreateShipmentFromRecordResponse = {
   name?: string;
   counterpartyId?: string;
   counterpartyCreated?: boolean;
+  error?: string;
+};
+
+type CrmDealLink = {
+  id: string;
+  title: string;
+  customerName: string | null;
+  phoneNormalized: string | null;
+  vehicle: string | null;
+  source: string | null;
+  clientType: string | null;
+  nextAction: string | null;
+  responsibleLogin: string | null;
+  yclientsRecordId: string | null;
+  moyskladDemandId: string | null;
+  nextContactAt: string | null;
+  status: string;
+  notes: string | null;
+  alreadyExists?: boolean;
+};
+
+type CrmDealsResponse = {
+  stages?: Array<{ deals?: CrmDealLink[] }>;
   error?: string;
 };
 
@@ -383,6 +407,12 @@ function formatRubles(sumCents: number): string {
 function formatShipmentDate(value: string): string {
   const formatted = formatServiceDate(value);
   return formatted === "—" ? value || "—" : formatted.slice(0, 8);
+}
+
+function formatCaseDate(value: string | null): string {
+  if (!value) return "Без дедлайна";
+  const formatted = formatServiceDate(value);
+  return formatted === "—" ? value : formatted;
 }
 
 function addDays(value: string, days: number): string {
@@ -675,8 +705,11 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 export default function RecordsPageClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const clientPickerRef = useRef<HTMLDivElement | null>(null);
   const timelineInteractionRef = useRef<TimelineInteraction | null>(null);
+  const crmPrefillAppliedRef = useRef(false);
+  const focusedRecordParamRef = useRef<string | null>(null);
   const [user, setUser] = useState<User>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -700,6 +733,12 @@ export default function RecordsPageClient() {
   const [hoveredSlot, setHoveredSlot] = useState<{ staffId: number; minute: number } | null>(null);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [creatingShipmentRecordId, setCreatingShipmentRecordId] = useState<number | null>(null);
+  const [creatingCaseRecordId, setCreatingCaseRecordId] = useState<number | null>(null);
+  const [crmDealByRecordId, setCrmDealByRecordId] = useState<Record<string, CrmDealLink>>({});
+  const [crmDealsLoading, setCrmDealsLoading] = useState(false);
+  const [crmDealsError, setCrmDealsError] = useState<string | null>(null);
+  const [linkedCreateDealId, setLinkedCreateDealId] = useState<string | null>(null);
+  const [pendingFocusRecordId, setPendingFocusRecordId] = useState<number | null>(null);
   const [timelineInteraction, setTimelineInteraction] = useState<TimelineInteraction | null>(null);
   const [timelineActionSaving, setTimelineActionSaving] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -836,6 +875,11 @@ export default function RecordsPageClient() {
   const selectedRecordItem = useMemo(
     () => records.find((item) => item.id === selectedRecordId) ?? null,
     [records, selectedRecordId]
+  );
+
+  const selectedRecordDeal = useMemo(
+    () => (selectedTimelineRecord ? crmDealByRecordId[String(selectedTimelineRecord.id)] ?? null : null),
+    [crmDealByRecordId, selectedTimelineRecord]
   );
 
   const confirmedCount = useMemo(
@@ -989,6 +1033,30 @@ export default function RecordsPageClient() {
     }
   }, [calendarMonth, companyId, staff, timelineStaffId]);
 
+  const loadCrmDeals = useCallback(async () => {
+    setCrmDealsLoading(true);
+    setCrmDealsError(null);
+    try {
+      const res = await fetch("/api/crm/deals", { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as CrmDealsResponse;
+      if (!res.ok) throw new Error(data.error ?? "Не удалось загрузить дела клиентов");
+      const map: Record<string, CrmDealLink> = {};
+      for (const stage of data.stages ?? []) {
+        for (const deal of stage.deals ?? []) {
+          if (deal.yclientsRecordId && !map[deal.yclientsRecordId]) {
+            map[deal.yclientsRecordId] = deal;
+          }
+        }
+      }
+      setCrmDealByRecordId(map);
+    } catch (e) {
+      setCrmDealsError(e instanceof Error ? e.message : "Не удалось загрузить дела клиентов");
+      setCrmDealByRecordId({});
+    } finally {
+      setCrmDealsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!canAccess || checkingAuth) return;
     void loadCompanyConfig();
@@ -1003,6 +1071,11 @@ export default function RecordsPageClient() {
     if (!canAccess || checkingAuth || !companyId || staff.length === 0) return;
     void loadRecords();
   }, [canAccess, checkingAuth, companyId, loadRecords, scheduleDate, staff.length, timelineStaffId]);
+
+  useEffect(() => {
+    if (!canAccess || checkingAuth) return;
+    void loadCrmDeals();
+  }, [canAccess, checkingAuth, loadCrmDeals]);
 
   useEffect(() => {
     setCalendarMonth(monthStart(scheduleDate));
@@ -1323,6 +1396,7 @@ export default function RecordsPageClient() {
       if (shipmentFilter === "without" && shipments.length > 0) return false;
       if (!query) return true;
       const haystack = [
+        String(record.id),
         record.startedAtText,
         record.endedAtText,
         record.serviceTitle,
@@ -1527,6 +1601,7 @@ export default function RecordsPageClient() {
       setEditingRecordId(null);
       setFormMode("create");
       setFormError(null);
+      setLinkedCreateDealId(null);
       setFormOpen(true);
     },
     [scheduleDate, serviceById, timelineStaff]
@@ -1546,6 +1621,74 @@ export default function RecordsPageClient() {
     },
     [openCreateForm, scheduleDate, selectedServiceDurationSeconds, timelineEndMinute, timelineStartMinute]
   );
+
+  useEffect(() => {
+    const crmDealId = searchParams.get("crmDealId");
+    const shouldOpen = searchParams.get("new") === "1" && Boolean(crmDealId);
+    if (!shouldOpen || crmPrefillAppliedRef.current || staff.length === 0) return;
+    crmPrefillAppliedRef.current = true;
+    const clientName = searchParams.get("client") ?? searchParams.get("search") ?? "";
+    const phone = searchParams.get("phone") ?? "";
+    const vehicle = searchParams.get("vehicle") ?? "";
+    const comment = searchParams.get("comment") ?? "";
+    openCreateForm({
+      clientSearch: clientName || phone,
+      clientName,
+      clientPhone: phone,
+      vehicleModel: vehicle,
+      comment,
+      internalComment: `Источник: CRM-дело ${crmDealId}`,
+    });
+    setLinkedCreateDealId(crmDealId);
+    setToast("Форма записи заполнена из дела клиента");
+  }, [openCreateForm, searchParams, staff.length]);
+
+  useEffect(() => {
+    const rawRecordId = searchParams.get("recordId");
+    if (!rawRecordId || !companyId || focusedRecordParamRef.current === rawRecordId) return;
+    const recordId = Number(rawRecordId);
+    if (!Number.isFinite(recordId) || recordId <= 0) return;
+    focusedRecordParamRef.current = rawRecordId;
+    const recordIdParam = rawRecordId;
+    setPendingFocusRecordId(recordId);
+    setSelectedRecordId(recordId);
+    setSearchQuery(rawRecordId);
+
+    const dateParam = searchParams.get("date");
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      setScheduleDate(dateParam);
+      return;
+    }
+
+    const controller = new AbortController();
+    async function loadRecordDate() {
+      try {
+        const params = new URLSearchParams({
+          action: "record",
+          company_id: companyId,
+          record_id: recordIdParam,
+        });
+        const res = await fetch(`/api/yclients?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const record = (data?.data ?? data) as RecordItem;
+        const date = parseRecordDate(record);
+        if (date) setScheduleDate(toDateInputValue(date));
+      } catch {
+        // Фокус останется по id в текущем дне, если отдельная запись не загрузилась.
+      }
+    }
+    void loadRecordDate();
+    return () => controller.abort();
+  }, [companyId, searchParams]);
+
+  useEffect(() => {
+    if (!pendingFocusRecordId) return;
+    if (dayTimeline.some((record) => record.id === pendingFocusRecordId)) {
+      setSelectedRecordId(pendingFocusRecordId);
+      setPendingFocusRecordId(null);
+    }
+  }, [dayTimeline, pendingFocusRecordId]);
 
   const getRoundedMinute = useCallback(
     (minute: number) => {
@@ -1691,8 +1834,26 @@ export default function RecordsPageClient() {
           const nextRecords = await loadRecords();
           const created = findCreatedRecord(nextRecords, form);
           if (created) setSelectedRecordId(created.id);
+          let successToast = "Запись создана";
+          if (created && linkedCreateDealId) {
+            const linkRes = await fetch(`/api/crm/deals/${encodeURIComponent(linkedCreateDealId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                yclientsRecordId: String(created.id),
+                nextAction: "Подготовить визит",
+                nextContactAt: form.datetime,
+              }),
+            });
+            if (linkRes.ok) {
+              await loadCrmDeals();
+            } else {
+              successToast = "Запись создана, но дело не связалось автоматически";
+            }
+          }
           setFormOpen(false);
-          setToast("Запись создана");
+          setToast(successToast);
+          setLinkedCreateDealId(null);
           if (openShipmentAfterCreate) {
             const shipmentRes = await fetch("/api/demands/from-record", {
               method: "POST",
@@ -1771,6 +1932,8 @@ export default function RecordsPageClient() {
       formConflicts.length,
       formTimeValidation,
       formMode,
+      linkedCreateDealId,
+      loadCrmDeals,
       loadRecords,
       router,
       selectedServiceDurationSeconds,
@@ -1891,6 +2054,75 @@ export default function RecordsPageClient() {
       }
     },
     [creatingShipmentRecordId, router, scheduleDate]
+  );
+
+  const handleCreateCaseFromRecord = useCallback(
+    async (record: TimelineRecord) => {
+      const existing = crmDealByRecordId[String(record.id)];
+      if (existing) {
+        router.push(`/crm?dealId=${encodeURIComponent(existing.id)}`);
+        return;
+      }
+      if (creatingCaseRecordId) return;
+      setCreatingCaseRecordId(record.id);
+      setError(null);
+      try {
+        const phone = normalizePhone(record.phone);
+        const shipments = phone ? shipmentLookupByPhone[phone]?.rows ?? [] : [];
+        const recordDate = parseRecordDate({ date: record.recordDateTime } as RecordItem);
+        const isPast = recordDate ? recordDate.getTime() < Date.now() : false;
+        const nextAction =
+          isPast && shipments.length === 0
+            ? "Создать отгрузку"
+            : record.serviceTitle.toLowerCase().includes("расход")
+              ? "Подготовить расходники"
+              : "Уточнить услугу";
+        const notes = [
+          `Создано из журнала записей: ${formatScheduleTitle(scheduleDate)} ${record.startedAtText}–${record.endedAtText}`,
+          record.comment ? `Комментарий клиента: ${record.comment}` : "",
+          record.internalComment ? `Внутренний комментарий: ${record.internalComment}` : "",
+          record.sourceLabel ? `Источник записи: ${record.sourceLabel}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const res = await fetch("/api/crm/deals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: record.serviceTitle || `Запись ${record.startedAtText}`,
+            customerName: record.clientName,
+            phone: record.phone,
+            vehicle: vehicleLabel(record.vehicle),
+            source: `Журнал записей / ${record.sourceLabel}`,
+            clientType: phone ? "regular" : "new_lead",
+            nextAction,
+            nextContactAt: isPast ? "" : record.recordDateTime,
+            notes,
+            yclientsRecordId: String(record.id),
+            moyskladDemandId: shipments[0]?.id ?? "",
+            createLocalClient: true,
+            moyskladCounterpartyName: record.clientName,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as CrmDealLink & { error?: string };
+        if (!res.ok || !data.id) {
+          throw new Error(data.error ?? "Не удалось создать дело клиента");
+        }
+        await loadCrmDeals();
+        setToast(
+          data.alreadyExists
+            ? "У записи уже есть дело клиента"
+            : phone
+              ? "Дело клиента создано"
+              : "Клиент создан без телефона, дело клиента создано"
+        );
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : "Не удалось создать дело клиента");
+      } finally {
+        setCreatingCaseRecordId(null);
+      }
+    },
+    [creatingCaseRecordId, crmDealByRecordId, loadCrmDeals, router, scheduleDate, shipmentLookupByPhone]
   );
 
   useEffect(() => {
@@ -2413,6 +2645,7 @@ export default function RecordsPageClient() {
                             {staffBlocks.map((block) => {
                               const selected = selectedRecordId === block.id;
                               const interacting = timelineInteraction?.recordId === block.id;
+                              const linkedDeal = crmDealByRecordId[String(block.id)];
                               const vehicleName = vehicleLabel(block.vehicle);
                               const title = [
                                 `${block.startedAtText}–${block.endedAtText}`,
@@ -2481,6 +2714,7 @@ export default function RecordsPageClient() {
                                     </small>
                                   ) : null}
                                   {block.displayMode === "long" ? <i>{block.sourceLabel}</i> : null}
+                                  {linkedDeal ? <span className="eco-record-card__case">Есть дело</span> : null}
                                   <span
                                     className="eco-record-card__resize"
                                     aria-hidden="true"
@@ -2527,6 +2761,7 @@ export default function RecordsPageClient() {
                         {filteredTimeline.map((record) => {
                           const phone = normalizePhone(record.phone);
                           const shipments = phone ? shipmentLookupByPhone[phone]?.rows ?? [] : [];
+                          const linkedDeal = crmDealByRecordId[String(record.id)];
                           return (
                             <tr key={record.id} className={selectedRecordId === record.id ? "is-selected" : undefined}>
                               <td>{record.startedAtText}–{record.endedAtText}</td>
@@ -2547,6 +2782,13 @@ export default function RecordsPageClient() {
                               </td>
                               <td>
                                 <button type="button" onClick={() => setSelectedRecordId(record.id)}>Открыть</button>
+                                {linkedDeal ? (
+                                  <Link href={`/crm?dealId=${encodeURIComponent(linkedDeal.id)}`}>Дело</Link>
+                                ) : (
+                                  <button type="button" disabled={creatingCaseRecordId === record.id} onClick={() => void handleCreateCaseFromRecord(record)}>
+                                    {creatingCaseRecordId === record.id ? "Создаю…" : "В дела"}
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -2564,6 +2806,7 @@ export default function RecordsPageClient() {
                     <strong>{record.serviceTitle}</strong>
                     <small>{record.clientName} · {formatPhone(record.phone)}</small>
                     <i className={cx("eco-record-status", `eco-record-status--${record.statusKey}`)}>{record.statusLabel}</i>
+                    {crmDealByRecordId[String(record.id)] ? <em>Есть дело</em> : null}
                   </button>
                 ))}
               </div>
@@ -2660,6 +2903,46 @@ export default function RecordsPageClient() {
                   </section>
 
                   <section className="eco-records-detail-block">
+                    <SectionTitle
+                      icon={<ClipboardList size={15} />}
+                      title="Дело клиента"
+                      action={
+                        selectedRecordDeal ? (
+                          <Link href={`/crm?dealId=${encodeURIComponent(selectedRecordDeal.id)}`}>Открыть дело</Link>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={creatingCaseRecordId === selectedTimelineRecord.id}
+                            onClick={() => void handleCreateCaseFromRecord(selectedTimelineRecord)}
+                          >
+                            {creatingCaseRecordId === selectedTimelineRecord.id ? "Создаю…" : "Добавить в дела"}
+                          </button>
+                        )
+                      }
+                    />
+                    {crmDealsLoading ? <p className="eco-records-muted">Проверяю клиентские дела…</p> : null}
+                    {crmDealsError ? <p className="eco-records-warning">Дела клиентов не загрузились</p> : null}
+                    {selectedRecordDeal ? (
+                      <div className="eco-records-case-link">
+                        <strong>{selectedRecordDeal.title}</strong>
+                        <span>{selectedRecordDeal.nextAction || selectedRecordDeal.status || "Следующий шаг не указан"}</span>
+                        <small>{formatCaseDate(selectedRecordDeal.nextContactAt)} · {selectedRecordDeal.responsibleLogin || "без ответственного"}</small>
+                      </div>
+                    ) : (
+                      <div className="eco-records-empty-inline">
+                        <span>По этой записи нет клиентского дела</span>
+                        <button
+                          type="button"
+                          disabled={creatingCaseRecordId === selectedTimelineRecord.id}
+                          onClick={() => void handleCreateCaseFromRecord(selectedTimelineRecord)}
+                        >
+                          {creatingCaseRecordId === selectedTimelineRecord.id ? "Создаю…" : "Создать дело"}
+                        </button>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="eco-records-detail-block">
                     <SectionTitle icon={<RefreshCw size={15} />} title="Синхронизация" />
                     <dl className="eco-records-detail-list">
                       <div><dt>Источник</dt><dd>{selectedTimelineRecord.sourceLabel}</dd></div>
@@ -2687,6 +2970,21 @@ export default function RecordsPageClient() {
                       <PackagePlus size={15} />
                       {creatingShipmentRecordId === selectedTimelineRecord.id ? "Создаю…" : "Создать отгрузку"}
                     </EcoButton>
+                    {selectedRecordDeal ? (
+                      <Link className="eco-btn" href={`/crm?dealId=${encodeURIComponent(selectedRecordDeal.id)}`}>
+                        <ClipboardList size={15} />
+                        Открыть дело
+                      </Link>
+                    ) : (
+                      <EcoButton
+                        type="button"
+                        disabled={creatingCaseRecordId === selectedTimelineRecord.id}
+                        onClick={() => void handleCreateCaseFromRecord(selectedTimelineRecord)}
+                      >
+                        <ClipboardList size={15} />
+                        {creatingCaseRecordId === selectedTimelineRecord.id ? "Создаю…" : "Добавить в дела"}
+                      </EcoButton>
+                    )}
                     <EcoButton type="button" variant="danger" onClick={() => void handleCancelRecord()}>
                       <Ban size={15} />
                       Отменить запись

@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import RecordsPageClient from "./RecordsPageClient";
 
 export default function RecordsPage() {
-  return <RecordsPageClient />;
+  return (
+    <Suspense fallback={null}>
+      <RecordsPageClient />
+    </Suspense>
+  );
 }

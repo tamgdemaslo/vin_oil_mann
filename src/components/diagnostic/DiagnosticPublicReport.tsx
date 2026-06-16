@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- report renders brand assets and diagnostic photos in browser/PDF layouts. */
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -20,6 +21,7 @@ type ReportItem = {
     resultText: string;
     recommendationText: string;
     photoText: string;
+    shortText?: string;
   };
   showInReport?: boolean;
   photos: { id: string; caption: string; url: string }[];
@@ -156,6 +158,34 @@ function statusLabel(status: string): string {
   if (normalized === "by-mileage") return "Вывод по пробегу";
   if (normalized === "by-client") return "Со слов клиента";
   return "Не проверено";
+}
+
+function itemShortResult(item: ReportItem): string {
+  const text = item.reportText?.shortText?.trim();
+  if (text) return text;
+  return item.value || item.statusLabel || statusLabel(item.status);
+}
+
+function itemResultText(item: ReportItem): string {
+  const text = item.reportText?.resultText?.trim();
+  if (text) return text;
+  return item.comment || item.statusText || statusLabel(item.status);
+}
+
+function itemRecommendationText(item: ReportItem): string {
+  const text = item.reportText?.recommendationText?.trim();
+  if (text) return text;
+  return item.recommendation || "Согласовать дальнейшие действия с мастером.";
+}
+
+function shouldShowRecommendation(result: string, recommendation: string): boolean {
+  const normalizedResult = result.toLowerCase();
+  const normalizedRecommendation = recommendation
+    .toLowerCase()
+    .replace(/^рекомендуем\s+/u, "")
+    .replace(/[.!?]/gu, "")
+    .trim();
+  return Boolean(normalizedRecommendation) && !normalizedResult.includes(normalizedRecommendation.slice(0, 26));
 }
 
 function formatDay(value?: string | null): string {
@@ -444,7 +474,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
           <div className="topstrip">
             <div className="container row">
               <div className="strip-group">
-                {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
                 <img src="/brand/logo-wordmark-light.svg" alt="Там где масло." className="wordmark" />
                 <span className="rust">ОТЧЁТ ДИАГНОСТИКИ</span>
                 <span>·</span>
@@ -516,7 +545,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                           return (
                             <div className="block-item" key={item.code}>
                               <div className="item-label">{item.title}</div>
-                              <div className="item-value">{item.value || item.statusLabel || statusLabel(normalized)}</div>
+                              <div className="item-value">{itemShortResult(item)}</div>
                               <div className={`item-status ${normalized}`}>{statusLabel(normalized)}</div>
                             </div>
                           );
@@ -547,9 +576,29 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                           <h3>{item.title}</h3>
                           <span className="rec-tag">{statusLabel(normalized)}</span>
                         </div>
-                        <div className="desc"><span>Обнаружено: </span>{item.comment || item.reportText?.sourceText || item.statusText || statusLabel(normalized)}. <b>{item.recommendation || item.reportText?.recommendationText || "Согласовать дальнейшие действия с мастером"}.</b></div>
-                        {(item.value || item.statusLabel) && <div className="measurement"><span>Замер</span><b>{item.value || item.statusLabel}</b></div>}
-                        {(item.comment || item.reportText?.sourceText) && <div className="quote">«{item.comment || item.reportText?.sourceText}»<br />— {masterName.split(" ")[0]}, мастер-диагност</div>}
+                        {(() => {
+                          const result = itemResultText(item);
+                          const recommendation = itemRecommendationText(item);
+                          return (
+                            <>
+                              <div className="desc">
+                                {result}
+                                {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
+                              </div>
+                              {(item.reportText?.shortText || item.value || item.statusLabel) && (
+                                <div className="measurement"><span>Итог</span><b>{itemShortResult(item)}</b></div>
+                              )}
+                              {item.photos.length > 0 && (
+                                <div className="rec-photos">
+                                  {item.photos.slice(0, 3).map((photo) => (
+                                    <img src={photo.url} alt={photo.caption || item.title} key={photo.id} />
+                                  ))}
+                                </div>
+                              )}
+                              {(item.comment || item.reportText?.sourceText) && <div className="quote">«{item.comment || item.reportText?.sourceText}»<br />— {masterName.split(" ")[0]}, мастер-диагност</div>}
+                            </>
+                          );
+                        })()}
                       </article>
                     );
                   })}
@@ -561,7 +610,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                 <div className="eyebrow muted">Наклейка-напоминание на лобовое</div>
                 <div className="sticker">
                   <div className="sticker-row">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
                     <img src="/brand/monogram-black.svg" alt="TGM" />
                     <div className="mini-checker" />
                   </div>
@@ -614,7 +662,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                       <div className="check-row" key={item.code}>
                         <span className="mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
                         <span className="check-label">{item.title}</span>
-                        <span className="check-val">{item.value || item.statusLabel || statusLabel(item.status)}</span>
+                        <span className="check-val">{itemShortResult(item)}</span>
                       </div>
                     ))}
                   </div>
@@ -643,7 +691,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <div className="container">
               <div className="foot">
                 <div className="foot-brand">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
                   <img src="/brand/monogram-light.svg" alt="TGM" />
                   <span>© 2026 ТАМ ГДЕ МАСЛО. КАЛИНИНГРАД.</span>
                 </div>
@@ -711,13 +758,25 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <div className="rep-recs">
               {recommendations.map((item) => {
                 const normalized = normalizeStatus(item.status);
+                const result = itemResultText(item);
+                const recommendation = itemRecommendationText(item);
                 return (
                   <div className="rep-rec" style={{ borderLeftColor: statusColor(normalized) }} key={`${item.blockTitle}-${item.code}`}>
                     <div className="rep-rec-head">
                       <h3>{item.title}</h3>
                       <span className="rep-rec-tag" style={{ background: statusColor(normalized) }}>{statusLabel(normalized)}</span>
                     </div>
-                    <div className="rep-rec-desc">{item.recommendation || item.reportText?.recommendationText || item.statusText || "Согласовать дальнейшие действия с мастером"}</div>
+                    <div className="rep-rec-desc">
+                      {result}
+                      {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
+                    </div>
+                    {item.photos.length > 0 && (
+                      <div className="rep-rec-photos">
+                        {item.photos.slice(0, 2).map((photo) => (
+                          <img src={photo.url} alt={photo.caption || item.title} key={photo.id} />
+                        ))}
+                      </div>
+                    )}
                     {(item.comment || item.reportText?.sourceText) && (
                       <div className="rep-rec-quote">«{item.comment || item.reportText?.sourceText}»<br /><span>— {masterName.split(" ")[0]}, мастер-диагност</span></div>
                     )}
@@ -761,7 +820,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                       <div className="rep-check-row" key={item.code}>
                         <span className="rep-mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
                         <span className="rep-check-label">{item.title}</span>
-                        <span className="rep-check-val">{item.value || "—"}</span>
+                        <span className="rep-check-val">{itemShortResult(item)}</span>
                       </div>
                     ))}
                   </div>

@@ -2,7 +2,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { Prisma } from "@prisma/client";
-import { ensureDefaultCrmStages } from "@/lib/crm";
+import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -148,6 +148,10 @@ function archiveCatalogEntries() {
 
 function archiveCatalogItemCodes(): Set<string> {
   return new Set(archiveCatalogEntries().map(({ item }) => item.code));
+}
+
+function currentCatalogItem(itemCode: string) {
+  return archiveCatalogEntries().find(({ item }) => item.code === itemCode)?.item ?? null;
 }
 
 function demandAttrValue(payload: Awaited<ReturnType<typeof loadLocalDemandDetailPayload>> | undefined, matcher: RegExp): string {
@@ -443,12 +447,17 @@ function itemMissingRecommendedPhoto(item: { status: string; photos: unknown[] }
 
 function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "") {
   const reportUrl = origin ? reportUrlFromRequest(origin, row.publicToken) : `/report/${row.publicToken}`;
-  const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => ({
-    code: block.code,
-    title: block.title,
-    short: block.short,
-    items: row.items.filter((item) => item.blockCode === block.code).map((item) => serializeItem(row.id, item)),
-  }));
+  const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => {
+    return {
+      code: block.code,
+      title: block.title,
+      short: block.short,
+      items: block.items
+        .map((catalogItem) => row.items.find((item) => item.blockCode === block.code && item.itemCode === catalogItem.code))
+        .filter((item): item is DiagnosticMapItemFullRow => Boolean(item))
+        .map((item) => serializeItem(row.id, item)),
+    };
+  });
   const items = blocks.flatMap((block) => block.items);
   const applicableItems = items.filter((item) => item.applicability === "applicable");
   const count = (status: DiagnosticMapStatusCode) => applicableItems.filter((item) => item.status === status).length;
@@ -528,13 +537,14 @@ function serializeItem(sessionId: string, item: DiagnosticMapItemFullRow) {
     item?: { notes?: string[]; recs?: string[]; norm?: string; measure?: string; unit?: string };
     commonRecommendations?: string[];
   };
+  const currentCatalog = currentCatalogItem(item.itemCode);
   return {
     id: item.id,
     sessionId,
     blockCode: item.blockCode,
     blockTitle: item.blockTitle,
     code: item.itemCode,
-    title: item.itemTitle,
+    title: currentCatalog?.title ?? item.itemTitle,
     order: item.itemOrder,
     applicability: item.applicability === "APPLICABLE" ? "applicable" : item.applicability === "HIDDEN" ? "hidden" : "not_applicable",
     status,
@@ -546,11 +556,11 @@ function serializeItem(sessionId: string, item: DiagnosticMapItemFullRow) {
     recommendation: item.recommendation ?? "",
     nextVisit: item.nextVisit,
     showInReport: item.showInReport,
-    notes: catalog.item?.notes ?? [],
-    recs: [...(catalog.item?.recs ?? []), ...(catalog.commonRecommendations ?? [])],
-    norm: catalog.item?.norm ?? "",
-    measure: catalog.item?.measure ?? "",
-    unit: catalog.item?.unit ?? "",
+    notes: currentCatalog?.notes ?? catalog.item?.notes ?? [],
+    recs: [...(currentCatalog?.recs ?? catalog.item?.recs ?? []), ...(catalog.commonRecommendations ?? [])],
+    norm: currentCatalog?.norm ?? catalog.item?.norm ?? "",
+    measure: currentCatalog?.measure ?? catalog.item?.measure ?? "",
+    unit: currentCatalog?.unit ?? catalog.item?.unit ?? "",
     selectedNotes: item.selectedNotes,
     selectedRecommendations: item.selectedRecommendations,
     photos: item.photos.map((photo) => ({
@@ -561,7 +571,8 @@ function serializeItem(sessionId: string, item: DiagnosticMapItemFullRow) {
       mimeType: diagnosticMapPhotoMime(photo.filePath, photo.contentType),
     })),
     reportText: buildDiagnosticReportText({
-      title: item.itemTitle,
+      code: item.itemCode,
+      title: currentCatalog?.title ?? item.itemTitle,
       status,
       checkMethod: METHOD_FROM_DB[item.checkMethod] ?? statusMethod(status),
       value: item.value,
@@ -735,7 +746,7 @@ export async function createDiagnosticCrmTask(sessionId: string, itemCode: strin
   if (!item) throw new Error("Пункт диагностики не найден");
   await ensureDefaultCrmStages();
   const stage =
-    (await prisma.crmStage.findUnique({ where: { sortOrder: 60 } })) ??
+    (await getCrmStageBySortOrder(90)) ??
     (await prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } }));
   if (!stage) throw new Error("CRM-воронка не настроена");
   const title = item.recommendation?.trim() || `Диагностика: ${item.itemTitle}`;

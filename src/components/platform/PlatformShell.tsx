@@ -19,7 +19,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { formatServiceTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 import { EcoStatusDot } from "./EcoUI";
@@ -47,6 +47,26 @@ type NotificationCounts = {
   urgent: number;
   today: number;
   soon: number;
+  info: number;
+};
+
+type DeadlineNotification = {
+  id: string;
+  caseId: string;
+  type: "deadline_soon" | "due_now" | "overdue_repeat";
+  urgency: "overdue" | "next_hour" | "today" | "info";
+  title: string;
+  body: string;
+  href: string;
+  phone: string | null;
+  sentAt: string;
+};
+
+type DeadlineNotificationCounts = {
+  total: number;
+  overdue: number;
+  next_hour: number;
+  today: number;
   info: number;
 };
 
@@ -128,11 +148,14 @@ export default function PlatformShell() {
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
+  const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
+  const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
   const [loading, setLoading] = useState(true);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const browserPushSeenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
@@ -177,6 +200,61 @@ export default function PlatformShell() {
       window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
     };
   }, [pathname]);
+
+  const loadDeadlineNotifications = useCallback(async () => {
+    if (shouldHideShell(pathname)) return;
+    const res = await fetch("/api/crm/deadline-notifications", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await safeReadJson<{
+      notifications?: DeadlineNotification[];
+      notificationCounts?: DeadlineNotificationCounts;
+    }>(res);
+    const notifications = data?.notifications ?? [];
+    setDeadlineCounts(data?.notificationCounts ?? null);
+    const top = notifications[0] ?? null;
+    setDeadlineToast(top);
+
+    if (!top || typeof window === "undefined" || !("Notification" in window)) return;
+    const browserPushEnabled = window.localStorage.getItem("eco-crm-browser-push") !== "off";
+    const pushKey = `${top.id}:${top.sentAt}`;
+    if (!browserPushEnabled || Notification.permission !== "granted" || browserPushSeenRef.current.has(pushKey)) return;
+    browserPushSeenRef.current.add(pushKey);
+    try {
+      const notification = new Notification(top.title, {
+        body: top.body,
+        tag: `crm-case-${top.caseId}`,
+        requireInteraction: top.urgency === "overdue",
+      });
+      notification.onclick = () => {
+        window.focus();
+        window.location.href = top.href;
+      };
+      void fetch("/api/crm/deadline-notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "browser_push", caseId: top.caseId, type: top.type, status: "sent" }),
+      });
+    } catch (error) {
+      void fetch("/api/crm/deadline-notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "browser_push",
+          caseId: top.caseId,
+          type: top.type,
+          status: "failed",
+          errorMessage: error instanceof Error ? error.message : "browser push failed",
+        }),
+      });
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (shouldHideShell(pathname)) return;
+    void loadDeadlineNotifications();
+    const timer = window.setInterval(() => void loadDeadlineNotifications(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadDeadlineNotifications, pathname]);
 
   useEffect(() => {
     setOpenSectionId(null);
@@ -243,10 +321,11 @@ export default function PlatformShell() {
         label: "Финансы",
         icon: CircleDollarSign,
         items: [
-          { href: "/cash", label: "Касса", description: "Открытие, расходы и закрытие.", disabled: locked || !canAccessCash },
+          { href: "/cash", label: "Касса", description: "Кассовая смена, расходы и закрытие.", disabled: locked || !canAccessCash },
           { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: locked },
           { href: "/finance/profit", label: "Прибыль", description: "Маржа и себестоимость.", disabled: locked },
           { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: locked },
+          { href: "/finance/shifts", label: "Смены", description: "Рабочие дни и фактические смены сотрудников.", disabled: locked },
         ],
       },
       {
@@ -267,7 +346,6 @@ export default function PlatformShell() {
         icon: Settings,
         items: [
           { href: "/cabinet", label: "Профиль", description: "Смена пароля и личный блок." },
-          { href: "/cabinet/shifts", label: "Смены", description: "История рабочих дней.", disabled: locked },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
           {
             href: "/cabinet/integrations",
@@ -275,7 +353,6 @@ export default function PlatformShell() {
             description: "Статусы и ручные запуски.",
             disabled: !canManageIntegrations,
           },
-          { href: "/cabinet/salary", label: "Зарплата", description: "Расчёты в кабинете.", disabled: locked },
         ],
       },
     ],
@@ -286,6 +363,30 @@ export default function PlatformShell() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     window.location.href = "/login";
+  }
+
+  async function handleDeadlineAction(action: "acknowledge" | "snooze" | "close", minutes?: number) {
+    const toast = deadlineToast;
+    if (!toast) return;
+    await fetch("/api/crm/deadline-notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        notificationId: toast.id,
+        caseId: toast.caseId,
+        minutes,
+      }),
+    });
+    setDeadlineToast(null);
+    void loadDeadlineNotifications();
+  }
+
+  async function enableBrowserPush() {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const permission = await Notification.requestPermission();
+    window.localStorage.setItem("eco-crm-browser-push", permission === "granted" ? "on" : "off");
+    void loadDeadlineNotifications();
   }
 
   if (shouldHideShell(pathname)) return null;
@@ -381,7 +482,9 @@ export default function PlatformShell() {
               </div>
               <Link href="/notifications" className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
-                {!!notificationCounts?.total && <span>{notificationCounts.total > 99 ? "99+" : notificationCounts.total}</span>}
+                {!!((deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)) && (
+                  <span>{(deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0) > 99 ? "99+" : (deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)}</span>
+                )}
               </Link>
               <div className="platform-shell__profile">
                 <button
@@ -461,6 +564,38 @@ export default function PlatformShell() {
           <div className="grow" />
           {locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после начала смены.</span>}
           <span className="platform-shell__version">internal · live data</span>
+        </div>
+      )}
+
+      {deadlineToast && (
+        <div className={`eco-crm-deadline-toast is-${deadlineToast.urgency}`} role="alert" aria-live="assertive">
+          <div>
+            <strong>{deadlineToast.title}</strong>
+            <span>{deadlineToast.body}</span>
+          </div>
+          <div className="eco-crm-deadline-toast__actions">
+            <Link href={deadlineToast.href} onClick={() => void handleDeadlineAction("acknowledge")}>
+              Открыть дело
+            </Link>
+            <button type="button" onClick={() => void handleDeadlineAction("snooze", 15)}>
+              15 мин
+            </button>
+            <button type="button" onClick={() => void handleDeadlineAction("snooze", 60)}>
+              1 час
+            </button>
+            <button type="button" onClick={() => void handleDeadlineAction("close")}>
+              Закрыть
+            </button>
+            {deadlineToast.phone && <a href={`tel:${deadlineToast.phone}`}>Позвонить</a>}
+            {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && (
+              <button type="button" onClick={() => void enableBrowserPush()}>
+                Browser push
+              </button>
+            )}
+          </div>
+          <button type="button" className="eco-crm-deadline-toast__close" onClick={() => setDeadlineToast(null)} aria-label="Скрыть уведомление">
+            <X aria-hidden className="eco-icon" />
+          </button>
         </div>
       )}
     </div>

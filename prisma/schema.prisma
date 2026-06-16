@@ -227,6 +227,7 @@ model CrmDeal {
   suppliesSupplier         String?   @map("supplies_supplier")
   suppliesExpectedAt       DateTime? @map("supplies_expected_at")
   nextContactAt            DateTime? @map("next_contact_at")
+  snoozeUntil              DateTime? @map("snooze_until")
   status                   String    @default("open") // open | won | lost
   closeReason              String?   @map("close_reason")
   notes                    String?   @db.Text
@@ -236,13 +237,35 @@ model CrmDeal {
 
   stage CrmStage @relation(fields: [stageId], references: [id])
 
+  notificationLogs ClientCaseNotificationLog[]
+
   @@index([phoneNormalized])
   @@index([moyskladCounterpartyId])
   @@index([clientType])
   @@index([nextContactAt])
+  @@index([snoozeUntil])
   @@index([stageId])
   @@index([status])
   @@map("crm_deals")
+}
+
+model ClientCaseNotificationLog {
+  id             String    @id @default(cuid())
+  caseId         String    @map("case_id")
+  userId         String    @map("user_id")
+  type           String
+  channel        String
+  sentAt         DateTime  @default(now()) @map("sent_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  snoozedUntil   DateTime? @map("snoozed_until") @db.Timestamptz(6)
+  status         String    @default("sent")
+  errorMessage   String?   @map("error_message") @db.Text
+
+  case CrmDeal @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, userId, type, channel, sentAt], map: "client_case_notification_log_dedupe_idx")
+  @@index([userId, acknowledgedAt, sentAt], map: "client_case_notification_log_user_feed_idx")
+  @@map("client_case_notification_log")
 }
 
 // --- Диагностический лист при отгрузке ---

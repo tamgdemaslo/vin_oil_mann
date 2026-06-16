@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
+import { ensureDefaultCrmStages, getCrmStageBySortOrder, getFirstCrmStage } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -27,6 +27,7 @@ const LEGACY_DEAL_SELECT = {
   yclientsRecordId: true,
   moyskladDemandId: true,
   nextContactAt: true,
+  snoozeUntil: true,
   status: true,
   notes: true,
   createdByLogin: true,
@@ -63,6 +64,10 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function defaultDeadline(hours = 1) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
+}
+
 function parseClientType(value: unknown): string | null {
   const raw = parseOptionalString(value);
   return raw && CLIENT_TYPES.has(raw) ? raw : null;
@@ -87,16 +92,41 @@ async function createLocalCounterpartyForDeal(body: Record<string, unknown>): Pr
     parseOptionalString(body.title);
   if (!name) return { error: "Укажите имя клиента для сохранения в локальной CRM" };
   const phone = parseOptionalString(body.phone);
+  const normalizedPhone = normalizePhoneKey(phone);
+
+  if (normalizedPhone) {
+    const existing = await prisma.localCounterparty.findFirst({
+      where: { archived: false, normalizedPhone },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+    if (existing) {
+      const updateData: Record<string, unknown> = {};
+      if (!existing.phone && phone) updateData.phone = phone;
+      if (!existing.normalizedPhone) updateData.normalizedPhone = normalizedPhone;
+      if (!existing.phonesRaw && phone) updateData.phonesRaw = [phone];
+      if (!existing.searchText.includes(normalizedPhone)) {
+        updateData.searchText = [existing.searchText, phone, normalizedPhone].filter(Boolean).join(" ").toLowerCase();
+      }
+      if (Object.keys(updateData).length > 0) {
+        await prisma.localCounterparty.update({ where: { id: existing.id }, data: updateData });
+      }
+      return {
+        id: existing.id,
+        name: existing.name,
+        meta: { href: `local://counterparty/${existing.id}`, type: "counterparty", mediaType: "application/json" },
+      };
+    }
+  }
 
   const created = await prisma.localCounterparty.create({
     data: {
       name,
       companyType: "individual",
       phone: phone ?? null,
-      normalizedPhone: normalizePhoneKey(phone),
+      normalizedPhone,
       phonesRaw: phone ? [phone] : undefined,
       searchText: [name, phone].filter(Boolean).join(" ").toLowerCase(),
-      raw: { source: "crm-local" },
+      raw: { source: "crm-local", withoutPhone: !phone },
     },
   });
   return {
@@ -122,6 +152,7 @@ function isMissingCrmCaseColumns(error: unknown) {
   return (
     message.includes("crm_deals.client_type") ||
     message.includes("crm_deals.next_action") ||
+    message.includes("crm_deals.snooze_until") ||
     message.includes("crm_deals.supplies_note") ||
     message.includes("crm_deals.close_reason") ||
     (message.includes("column") && message.includes("does not exist") && message.includes("crm_deals"))
@@ -132,6 +163,7 @@ function stripCaseFields(data: CrmDealCreateData): CrmDealCreateData {
   const legacyData = { ...(data as CrmDealCreateData & Record<string, unknown>) };
   delete legacyData.clientType;
   delete legacyData.nextAction;
+  delete legacyData.snoozeUntil;
   delete legacyData.suppliesNote;
   delete legacyData.suppliesSupplier;
   delete legacyData.suppliesExpectedAt;
@@ -174,6 +206,7 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
       NULL::text AS "suppliesSupplier",
       NULL::timestamp AS "suppliesExpectedAt",
       next_contact_at AS "nextContactAt",
+      NULL::timestamp AS "snoozeUntil",
       status,
       NULL::text AS "closeReason",
       notes,
@@ -225,6 +258,18 @@ export async function POST(request: NextRequest) {
     const clientType = parseClientType(body.clientType);
     const firstStage = await getFirstCrmStage();
     let counterparty = parseCounterparty(body.moyskladCounterparty);
+    const yclientsRecordId = parseOptionalString(body.yclientsRecordId);
+    const moyskladDemandId = parseOptionalString(body.moyskladDemandId);
+
+    if (yclientsRecordId && body.forceNew !== true) {
+      const existing = await prisma.crmDeal.findFirst({
+        where: { yclientsRecordId, status: "open" },
+        orderBy: [{ updatedAt: "desc" }],
+      });
+      if (existing) {
+        return NextResponse.json({ ...existing, alreadyExists: true });
+      }
+    }
 
     if (!counterparty && (body.createMoyskladCounterparty === true || body.createLocalClient === true)) {
       const createdCounterparty = await createLocalCounterpartyForDeal(body as Record<string, unknown>);
@@ -241,6 +286,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Укажите название, клиента или телефон сделки" }, { status: 400 });
     }
 
+    const requestedStageId = parseOptionalString(body.stageId);
+    const linkedStage =
+      moyskladDemandId
+        ? await getCrmStageBySortOrder(80)
+        : yclientsRecordId
+          ? await getCrmStageBySortOrder(70)
+          : null;
+    const stageId = requestedStageId ?? linkedStage?.id ?? firstStage.id;
+    const stage = await prisma.crmStage.findUnique({ where: { id: stageId } });
+    const stageName = stage?.name.toLowerCase() ?? "";
+    const parsedNextContactAt = parseDate(body.nextContactAt);
+    const nextContactAt = stageName.includes("расчёт отправлен") && !parsedNextContactAt ? defaultDeadline(1) : parsedNextContactAt;
+    const parsedSuppliesExpectedAt = parseDate(body.suppliesExpectedAt);
+    const suppliesExpectedAt = stageName.includes("ждём расходники") && !parsedSuppliesExpectedAt ? defaultDeadline(24) : parsedSuppliesExpectedAt;
+
     const createData: CrmDealCreateData = {
       title: title ?? customerName ?? counterparty?.name ?? phoneNormalized ?? "Новое дело клиента",
       customerName: customerName ?? counterparty?.name ?? null,
@@ -250,17 +310,17 @@ export async function POST(request: NextRequest) {
       amountCents: parseAmountCents(body.amount),
       clientType: clientType ?? (counterparty ? "regular" : phoneNormalized || customerName ? "new_lead" : "unlinked"),
       nextAction: parseOptionalString(body.nextAction),
-      stageId: parseOptionalString(body.stageId) ?? firstStage.id,
+      stageId,
       responsibleLogin: parseOptionalString(body.responsibleLogin) ?? session.user.login,
       moyskladCounterpartyId: counterparty?.id ?? null,
       moyskladCounterpartyName: counterparty?.name ?? null,
       moyskladCounterpartyHref: counterparty?.meta.href ?? null,
-      yclientsRecordId: parseOptionalString(body.yclientsRecordId),
-      moyskladDemandId: parseOptionalString(body.moyskladDemandId),
+      yclientsRecordId,
+      moyskladDemandId,
       suppliesNote: parseOptionalString(body.suppliesNote),
       suppliesSupplier: parseOptionalString(body.suppliesSupplier),
-      suppliesExpectedAt: parseDate(body.suppliesExpectedAt),
-      nextContactAt: parseDate(body.nextContactAt),
+      suppliesExpectedAt,
+      nextContactAt,
       notes: parseOptionalString(body.notes),
       createdByLogin: session.user.login,
     };

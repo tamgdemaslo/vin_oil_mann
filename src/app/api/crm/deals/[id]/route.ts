@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { getCrmStageBySortOrder } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
@@ -22,6 +23,7 @@ const LEGACY_DEAL_SELECT = {
   yclientsRecordId: true,
   moyskladDemandId: true,
   nextContactAt: true,
+  snoozeUntil: true,
   status: true,
   notes: true,
   createdByLogin: true,
@@ -47,6 +49,10 @@ function parseDate(value: unknown): Date | null | undefined {
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function defaultDeadline(hours = 1) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
 function parseClientType(value: unknown): string | null | undefined {
@@ -97,6 +103,7 @@ function isMissingCrmCaseColumns(error: unknown) {
   return (
     message.includes("crm_deals.client_type") ||
     message.includes("crm_deals.next_action") ||
+    message.includes("crm_deals.snooze_until") ||
     message.includes("crm_deals.supplies_note") ||
     message.includes("crm_deals.close_reason") ||
     (message.includes("column") && message.includes("does not exist") && message.includes("crm_deals"))
@@ -107,6 +114,7 @@ function stripCaseUpdateFields(data: Record<string, unknown>) {
   const next = { ...data };
   delete next.clientType;
   delete next.nextAction;
+  delete next.snoozeUntil;
   delete next.suppliesNote;
   delete next.suppliesSupplier;
   delete next.suppliesExpectedAt;
@@ -141,12 +149,15 @@ export async function PATCH(
       data.moyskladCounterpartyName = counterparty?.name ?? null;
       data.moyskladCounterpartyHref = counterparty?.href ?? null;
     }
-    if (body.yclientsRecordId !== undefined) data.yclientsRecordId = parseOptionalString(body.yclientsRecordId);
-    if (body.moyskladDemandId !== undefined) data.moyskladDemandId = parseOptionalString(body.moyskladDemandId);
+    const nextYclientsRecordId = body.yclientsRecordId !== undefined ? parseOptionalString(body.yclientsRecordId) : undefined;
+    const nextMoyskladDemandId = body.moyskladDemandId !== undefined ? parseOptionalString(body.moyskladDemandId) : undefined;
+    if (body.yclientsRecordId !== undefined) data.yclientsRecordId = nextYclientsRecordId;
+    if (body.moyskladDemandId !== undefined) data.moyskladDemandId = nextMoyskladDemandId;
     if (body.suppliesNote !== undefined) data.suppliesNote = parseOptionalString(body.suppliesNote);
     if (body.suppliesSupplier !== undefined) data.suppliesSupplier = parseOptionalString(body.suppliesSupplier);
     if (body.suppliesExpectedAt !== undefined) data.suppliesExpectedAt = parseDate(body.suppliesExpectedAt);
     if (body.nextContactAt !== undefined) data.nextContactAt = parseDate(body.nextContactAt);
+    if (body.snoozeUntil !== undefined) data.snoozeUntil = parseDate(body.snoozeUntil);
     if (body.closeReason !== undefined) data.closeReason = parseOptionalString(body.closeReason);
     if (body.notes !== undefined) data.notes = parseOptionalString(body.notes);
     if (body.status !== undefined) {
@@ -160,6 +171,22 @@ export async function PATCH(
       if (!stage) return NextResponse.json({ error: "Стадия не найдена" }, { status: 404 });
       data.stageId = stageId;
       if (body.status === undefined) data.status = isClosedStageName(stage.name) ? "won" : "open";
+    }
+    if (body.stageId === undefined && nextMoyskladDemandId) {
+      const visitStage = await getCrmStageBySortOrder(80);
+      if (visitStage) data.stageId = visitStage.id;
+    } else if (body.stageId === undefined && nextYclientsRecordId) {
+      const recordStage = await getCrmStageBySortOrder(70);
+      if (recordStage) data.stageId = recordStage.id;
+    }
+
+    if (data.stageId) {
+      const stage = await prisma.crmStage.findUnique({ where: { id: String(data.stageId) } });
+      const stageName = stage?.name.toLowerCase() ?? "";
+      if (stageName.includes("расчёт отправлен") && data.nextContactAt == null) data.nextContactAt = defaultDeadline(1);
+      if (stageName.includes("ждём расходники") && data.suppliesExpectedAt == null) {
+        data.suppliesExpectedAt = defaultDeadline(24);
+      }
     }
 
     let updated;

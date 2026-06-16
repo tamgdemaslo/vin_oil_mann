@@ -23,7 +23,17 @@ const closeTypeLabel: Record<string, string> = {
   auto: "закрыта автоматически",
 };
 
-export default function ShiftsList({ role, embedded }: { role: string; embedded?: boolean }) {
+export default function ShiftsList({
+  role,
+  embedded,
+  backHref = "/finance",
+  backLabel = "В финансы",
+}: {
+  role: string;
+  embedded?: boolean;
+  backHref?: string;
+  backLabel?: string;
+}) {
   const defaults = getCurrentMonthRange();
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,8 +186,8 @@ export default function ShiftsList({ role, embedded }: { role: string; embedded?
       </div>
       {!embedded && (
         <p className="mt-4">
-          <Link href="/cabinet" className="text-sm text-amber-600 hover:underline dark:text-amber-400">
-            ← В личный кабинет
+          <Link href={backHref} className="text-sm text-amber-600 hover:underline dark:text-amber-400">
+            ← {backLabel}
           </Link>
         </p>
       )}

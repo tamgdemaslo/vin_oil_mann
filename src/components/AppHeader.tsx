@@ -169,6 +169,12 @@ export default function AppHeader() {
           label: "Финансы",
           items: [
             {
+              href: "/cash#cash-state",
+              label: "Касса",
+              description: "Операции по кассе, закрытие кассовой смены и история.",
+              disabled: locked || !canAccessCash,
+            },
+            {
               href: "/finance/invoices",
               label: "Счета поставщиков",
               description: "Счета, созданные из локальных приёмок.",
@@ -181,15 +187,15 @@ export default function AppHeader() {
               disabled: locked,
             },
             {
-              href: "/cash#cash-state",
-              label: "Касса",
-              description: "Операции по кассе, закрытие смены и история.",
-              disabled: locked || !canAccessCash,
-            },
-            {
-              href: "/salary#payouts",
+              href: "/salary",
               label: "Зарплата",
               description: "Выплаты, ставки и правила сдельной части.",
+              disabled: locked,
+            },
+            {
+              href: "/finance/shifts",
+              label: "Смены",
+              description: "Рабочие дни и фактические смены сотрудников.",
               disabled: locked,
             },
           ],

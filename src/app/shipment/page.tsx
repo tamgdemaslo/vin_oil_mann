@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
+import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
 import { ShipmentListRow } from "./ShipmentListRow";
+import { ShipmentRowActions } from "./ShipmentRowActions";
 
 type DemandAgent = {
   id?: string;
@@ -139,6 +141,8 @@ async function loadShipmentList(opts: {
   counterparty: string;
   plate: string;
   phone: string;
+  dateFrom: string;
+  dateTo: string;
   offset: number;
   limit: number;
 }): Promise<{ ok: true; data: ListOk } | { ok: false; error: string }> {
@@ -151,21 +155,142 @@ async function loadShipmentList(opts: {
   }
 }
 
-function listQuery(search: string, counterparty: string, plate: string, phone: string, offset: number): string {
+function normalizeDateParam(value?: string): string {
+  const raw = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function yearRange(year: number): { dateFrom: string; dateTo: string } {
+  return { dateFrom: `${year}-01-01`, dateTo: `${year}-12-31` };
+}
+
+function periodLabel(dateFrom: string, dateTo: string): string {
+  if (!dateFrom && !dateTo) return "все годы";
+  const yearFrom = dateFrom.match(/^(\d{4})-01-01$/)?.[1];
+  const yearTo = dateTo.match(/^(\d{4})-12-31$/)?.[1];
+  if (yearFrom && yearFrom === yearTo) return `${yearFrom} год`;
+  if (dateFrom && dateTo) return `${dateFrom} — ${dateTo}`;
+  if (dateFrom) return `с ${dateFrom}`;
+  return `до ${dateTo}`;
+}
+
+function listQuery(
+  search: string,
+  counterparty: string,
+  plate: string,
+  phone: string,
+  dateFrom: string,
+  dateTo: string,
+  offset: number
+): string {
   const p = new URLSearchParams();
   if (search) p.set("search", search);
   if (counterparty) p.set("counterparty", counterparty);
   if (plate) p.set("plate", plate);
   if (phone) p.set("phone", phone);
+  if (dateFrom) p.set("dateFrom", dateFrom);
+  if (dateTo) p.set("dateTo", dateTo);
   if (offset > 0) p.set("offset", String(offset));
   const s = p.toString();
   return s ? `?${s}` : "";
 }
 
+function ShipmentMobileCard({
+  row,
+  moment,
+  counterpartyName,
+  counterpartyHref,
+  vehiclePrimary,
+  vehicleSecondary,
+  vehicleTitle,
+  ecoUserName,
+  sumLabel,
+}: {
+  row: DemandRow;
+  moment: { date: string; time: string };
+  counterpartyName: string;
+  counterpartyHref: string | null;
+  vehiclePrimary: string;
+  vehicleSecondary: string;
+  vehicleTitle: string;
+  ecoUserName: string;
+  sumLabel: string;
+}) {
+  const href = `/shipment/${row.id}`;
+
+  return (
+    <article className="eco-shipment-mobile-card">
+      <div className="eco-shipment-mobile-card__top">
+        <div>
+          <Link href={href} className="l-mono eco-shipment-list-number-link">
+            {row.name}
+          </Link>
+          <div className="l-mono eco-shipment-list-subtext">
+            {moment.date} · {moment.time}
+          </div>
+        </div>
+        <div className="l-money eco-shipment-mobile-card__sum">{sumLabel}</div>
+      </div>
+
+      <div className="eco-shipment-mobile-card__grid">
+        <div className="eco-shipment-mobile-field">
+          <span>Клиент</span>
+          {counterpartyHref ? (
+            <Link
+              href={counterpartyHref}
+              className="eco-shipment-list-counterparty-link"
+              title="Открыть контрагента"
+            >
+              {counterpartyName}
+            </Link>
+          ) : (
+            <strong>{counterpartyName}</strong>
+          )}
+        </div>
+        <div className="eco-shipment-mobile-field" title={vehicleTitle}>
+          <span>Авто</span>
+          <strong>{vehiclePrimary}</strong>
+          {vehicleSecondary && <em>{vehicleSecondary}</em>}
+        </div>
+        <div className="eco-shipment-mobile-field">
+          <span>Склад</span>
+          <strong>{row.store?.name ?? "—"}</strong>
+        </div>
+        <div className="eco-shipment-mobile-field">
+          <span>Создал</span>
+          <strong>{ecoUserName}</strong>
+        </div>
+      </div>
+
+      <div className="eco-shipment-mobile-card__foot">
+        <div className="eco-shipment-mobile-card__badges">
+          <EcoBadge tone={row.applicable ? "success" : "neutral"} dot>
+            {row.applicable ? "Проведено" : "Черновик"}
+          </EcoBadge>
+          <EcoBadge tone={row.sum > 0 ? "success" : "warning"} dot>
+            {row.sum > 0 ? "Оплачено" : "Не оплачено"}
+          </EcoBadge>
+        </div>
+        <div className="eco-shipment-mobile-card__actions" data-row-action>
+          <ShipmentRowActions shipmentId={row.id} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default async function ShipmentListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; counterparty?: string; plate?: string; phone?: string; offset?: string }>;
+  searchParams: Promise<{
+    search?: string;
+    counterparty?: string;
+    plate?: string;
+    phone?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    offset?: string;
+  }>;
 }) {
   await requireActiveShiftAccess("/shipment");
 
@@ -174,18 +299,26 @@ export default async function ShipmentListPage({
   const counterparty = (sp.counterparty ?? "").trim();
   const plate = (sp.plate ?? "").trim();
   const phone = (sp.phone ?? "").trim();
+  const dateFrom = normalizeDateParam(sp.dateFrom);
+  const dateTo = normalizeDateParam(sp.dateTo);
   const offset = Math.max(0, parseInt(sp.offset ?? "0", 10) || 0);
   const limit = 50;
+  const currentYear = new Date().getFullYear();
+  const quickYears = [currentYear, currentYear - 1, currentYear - 2];
+  const hasFilters = Boolean(search || counterparty || plate || phone || dateFrom || dateTo || offset > 0);
 
-  const result = await loadShipmentList({ search, counterparty, plate, phone, offset, limit });
+  const result = await loadShipmentList({ search, counterparty, plate, phone, dateFrom, dateTo, offset, limit });
   const sourceLabel = "Отгрузки из локальной БД";
   const rows = result.ok ? result.data.rows ?? [] : [];
   const postedCount = rows.filter((row) => row.applicable).length;
   const draftCount = rows.length - postedCount;
   const totalSum = rows.reduce((sum, row) => sum + (row.sum || 0), 0);
+  const emptyMessage = dateFrom || dateTo
+    ? `За период ${periodLabel(dateFrom, dateTo)} отгрузки не найдены. Если это старые документы 2025/2024 года, возможно, нужен полный импорт отгрузок из МойСклад.`
+    : "Ничего не найдено";
 
   return (
-    <main className="eco-page">
+    <main className="eco-page eco-shipment-page">
       <div className="eco-page-head">
         <div>
           <div className="eco-page-kicker">
@@ -234,16 +367,36 @@ export default async function ShipmentListPage({
         <input name="counterparty" defaultValue={counterparty} placeholder="Клиент" className="eco-input max-w-[170px]" />
         <input name="plate" defaultValue={plate} placeholder="Гос. номер" className="eco-input max-w-[140px] font-mono uppercase" />
         <input name="phone" defaultValue={phone} placeholder="Телефон" className="eco-input max-w-[150px]" />
+        <input name="dateFrom" type="date" defaultValue={dateFrom} className="eco-input max-w-[150px]" aria-label="Дата с" />
+        <input name="dateTo" type="date" defaultValue={dateTo} className="eco-input max-w-[150px]" aria-label="Дата по" />
         <button type="submit" className="eco-pill">
           <Filter aria-hidden className="eco-icon" />
           Найти
         </button>
-        {(search || counterparty || plate || phone || offset > 0) && (
+        {hasFilters && (
           <Link href="/shipment" className="eco-pill is-active">
             Сбросить <X aria-hidden className="eco-icon" />
           </Link>
         )}
-        <span className="eco-pill">Период · сегодня</span>
+        <span className="eco-pill">Период · {periodLabel(dateFrom, dateTo)}</span>
+        {quickYears.map((year) => {
+          const range = yearRange(year);
+          const active = dateFrom === range.dateFrom && dateTo === range.dateTo;
+          return (
+            <Link
+              key={year}
+              href={`/shipment${listQuery(search, counterparty, plate, phone, range.dateFrom, range.dateTo, 0)}`}
+              className={`eco-pill ${active ? "is-active" : ""}`}
+            >
+              {year}
+            </Link>
+          );
+        })}
+        {(dateFrom || dateTo) && (
+          <Link href={`/shipment${listQuery(search, counterparty, plate, phone, "", "", 0)}`} className="eco-pill">
+            Все годы
+          </Link>
+        )}
         <span className="eco-pill is-dashed">
           <Plus aria-hidden className="eco-icon" />
           Ещё фильтр
@@ -275,6 +428,33 @@ export default async function ShipmentListPage({
                 <SlidersHorizontal aria-hidden className="eco-icon" />
                 Колонки
               </button>
+            </div>
+            <div className="eco-shipment-mobile-list" aria-label="Список отгрузок">
+              {rows.map((r) => {
+                const moment = formatMoment(r.moment);
+                const counterpartyName = getCounterpartyDisplay(r);
+                const counterpartyHref = counterpartyCatalogHref(r);
+                const vehicle = getVehicleDisplay(r);
+                return (
+                  <ShipmentMobileCard
+                    key={r.id}
+                    row={r}
+                    moment={moment}
+                    counterpartyName={counterpartyName}
+                    counterpartyHref={counterpartyHref}
+                    vehiclePrimary={vehicle.primary}
+                    vehicleSecondary={vehicle.secondary}
+                    vehicleTitle={vehicle.title}
+                    ecoUserName={getEcoUserName(r) ?? "—"}
+                    sumLabel={`${rubles(r.sum)} ₽`}
+                  />
+                );
+              })}
+              {rows.length === 0 && (
+                <div className="eco-shipment-mobile-empty">
+                  {emptyMessage}
+                </div>
+              )}
             </div>
             <table className="eco-table eco-shipment-list-table">
               <thead>
@@ -315,7 +495,7 @@ export default async function ShipmentListPage({
                 {rows.length === 0 && (
                   <tr className="eco-shipment-list-empty-row">
                     <td colSpan={10} style={{ color: "var(--eco-muted)", padding: 32, textAlign: "center" }}>
-                      Ничего не найдено
+                      {emptyMessage}
                     </td>
                   </tr>
                 )}
@@ -329,7 +509,7 @@ export default async function ShipmentListPage({
             </div>
             <div className="flex gap-2">
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, phone, Math.max(0, offset - limit))}`}
+                href={`/shipment${listQuery(search, counterparty, plate, phone, dateFrom, dateTo, Math.max(0, offset - limit))}`}
                 className={`eco-btn eco-btn--sm ${
                   offset <= 0
                     ? "pointer-events-none opacity-50"
@@ -339,7 +519,7 @@ export default async function ShipmentListPage({
                 ← Назад
               </Link>
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, phone, offset + limit)}`}
+                href={`/shipment${listQuery(search, counterparty, plate, phone, dateFrom, dateTo, offset + limit)}`}
                 className={`eco-btn eco-btn--sm ${
                   offset + limit >= result.data.meta.size
                     ? "pointer-events-none opacity-50"

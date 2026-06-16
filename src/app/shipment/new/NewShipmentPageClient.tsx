@@ -751,6 +751,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const prefillVin = searchParams.get("vin")?.trim() ?? "";
   const prefillVehicle = searchParams.get("vehicle")?.trim() ?? "";
   const prefillPlate = searchParams.get("plate")?.trim() ?? "";
+  const crmDealId = searchParams.get("crmDealId")?.trim() ?? "";
   const prefillAgentQuery = prefillCounterparty || prefillPhone;
   const isExistingDraft = Boolean(demandId);
 
@@ -1673,6 +1674,16 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       }
       setDemandIdLocal(nextId);
       if (data.name) setExistingDemandName(data.name);
+      if (crmDealId) {
+        await fetch(`/api/crm/deals/${encodeURIComponent(crmDealId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            moyskladDemandId: nextId,
+            nextAction: applicable ? "Закрыть вопрос после визита" : "Подготовить документ к визиту",
+          }),
+        }).catch(() => undefined);
+      }
       setSaveState("saved");
       if (applicable) {
         router.push(`/shipment/${nextId}`);

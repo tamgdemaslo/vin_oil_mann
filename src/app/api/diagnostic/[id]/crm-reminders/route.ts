@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ALL_NODES, tagLabelsForNode } from "@/data/diagnostic-catalog";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
-import { ensureDefaultCrmStages } from "@/lib/crm";
+import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -86,7 +86,7 @@ export async function POST(
 
   await ensureDefaultCrmStages();
   const stage =
-    (await prisma.crmStage.findUnique({ where: { sortOrder: 60 } })) ??
+    (await getCrmStageBySortOrder(90)) ??
     (await prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } }));
 
   if (!stage) return NextResponse.json({ error: "Не найдены стадии CRM" }, { status: 500 });

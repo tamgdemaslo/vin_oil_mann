@@ -337,6 +337,10 @@ export async function GET(request: NextRequest) {
         if (staffId) params.set("staff_id", staffId);
         return yclientsRequest(`/records/${companyId}?${params.toString()}`);
       }
+      case "record": {
+        const recordId = getRequired(search, "record_id");
+        return yclientsRequest(`/record/${companyId}/${recordId}`);
+      }
       default:
         return NextResponse.json(
           { success: false, error: "Неизвестный action" },

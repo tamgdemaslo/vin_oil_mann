@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   CalendarClock,
   Car,
+  ChevronDown,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -28,7 +30,22 @@ import { EcoBadge, EcoButton, EcoKpi, type EcoBadgeTone } from "@/components/pla
 import { formatServiceDateTime, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
 type ClientType = "new_lead" | "regular" | "repeat" | "unlinked";
-type ViewMode = "all" | "mine" | "overdue" | "today" | "noResponsible" | "new_lead" | "regular" | "repeat" | "unlinked" | "closed";
+type ViewMode =
+  | "all"
+  | "mine"
+  | "overdue"
+  | "today"
+  | "noDeadline"
+  | "noResponsible"
+  | "new_lead"
+  | "regular"
+  | "repeat"
+  | "unlinked"
+  | "withRecord"
+  | "withoutDemand"
+  | "waitSupplies"
+  | "needsEstimate"
+  | "closed";
 type LinkFilter = "all" | "withRecord" | "withoutRecord" | "withDemand" | "withoutDemand";
 
 type Deal = {
@@ -52,6 +69,7 @@ type Deal = {
   suppliesSupplier: string | null;
   suppliesExpectedAt: string | null;
   nextContactAt: string | null;
+  snoozeUntil: string | null;
   status: "open" | "won" | "lost" | string;
   closeReason: string | null;
   notes: string | null;
@@ -133,9 +151,14 @@ const QUICK_FILTERS: Array<{ id: ViewMode; label: string }> = [
   { id: "mine", label: "Только мои" },
   { id: "overdue", label: "Просроченные" },
   { id: "today", label: "Сегодня" },
+  { id: "noDeadline", label: "Без дедлайна" },
   { id: "noResponsible", label: "Без ответственного" },
   { id: "new_lead", label: "Новые лиды" },
   { id: "regular", label: "Постоянные" },
+  { id: "withRecord", label: "Есть запись" },
+  { id: "withoutDemand", label: "Нет отгрузки" },
+  { id: "waitSupplies", label: "Ждут расходники" },
+  { id: "needsEstimate", label: "Требуют расчёта" },
   { id: "closed", label: "Закрытые" },
 ];
 
@@ -197,17 +220,53 @@ function isTomorrow(date: Date) {
   return isSameDay(date, tomorrow);
 }
 
-function deadlineInfo(value: string | null, inactive = false): { label: string; tone: EcoBadgeTone; overdue: boolean } {
-  if (!value) return { label: "Без срока", tone: "neutral", overdue: false };
+function durationLabel(milliseconds: number) {
+  const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours && rest) return `${hours} ч ${rest} мин`;
+  if (hours) return `${hours} ч`;
+  return `${rest} мин`;
+}
+
+function deadlineInfo(
+  value: string | null,
+  inactive = false,
+  snoozeUntil?: string | null
+): { label: string; tone: EcoBadgeTone; overdue: boolean; soon: boolean } {
+  if (snoozeUntil) {
+    const snoozeDate = new Date(snoozeUntil);
+    if (!Number.isNaN(snoozeDate.getTime()) && snoozeDate.getTime() > Date.now()) {
+      return { label: `Отложено до ${formatServiceTime(snoozeDate)}`, tone: "neutral", overdue: false, soon: false };
+    }
+  }
+  if (!value) return { label: "Без срока", tone: "neutral", overdue: false, soon: false };
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { label: "Без срока", tone: "neutral", overdue: false };
+  if (Number.isNaN(date.getTime())) return { label: "Без срока", tone: "neutral", overdue: false, soon: false };
   const overdue = !inactive && date.getTime() < Date.now();
-  if (overdue) return { label: `Просрочено · ${formatDateShort(date)}`, tone: "danger", overdue: true };
+  if (overdue) {
+    return {
+      label: `Просрочено на ${durationLabel(Date.now() - date.getTime())}`,
+      tone: "danger",
+      overdue: true,
+      soon: false,
+    };
+  }
+  const soon = !inactive && date.getTime() - Date.now() <= 60 * 60 * 1000;
+  if (soon) {
+    return {
+      label: `Скоро · через ${durationLabel(date.getTime() - Date.now())}`,
+      tone: "warning",
+      overdue: false,
+      soon: true,
+    };
+  }
   if (isSameDay(date, new Date())) {
     return {
       label: `Сегодня ${formatServiceTime(date)}`,
       tone: "warning",
       overdue: false,
+      soon: false,
     };
   }
   if (isTomorrow(date)) {
@@ -215,9 +274,10 @@ function deadlineInfo(value: string | null, inactive = false): { label: string; 
       label: `Завтра ${formatServiceTime(date)}`,
       tone: "info",
       overdue: false,
+      soon: false,
     };
   }
-  return { label: formatDateShort(date), tone: "neutral", overdue: false };
+  return { label: formatDateShort(date), tone: "neutral", overdue: false, soon: false };
 }
 
 function normalizeStageName(value: string) {
@@ -233,15 +293,6 @@ function stageAccent(color: string | null) {
   return "#52525b";
 }
 
-function sourceAccent(source: string | null) {
-  const value = (source ?? "").toLowerCase();
-  if (value.includes("yclients") || value.includes("онлайн")) return "#2563eb";
-  if (value.includes("сайт") || value.includes("web") || value.includes("client-site")) return "#c2410c";
-  if (value.includes("тел") || value.includes("звон")) return "#059669";
-  if (value.includes("соц") || value.includes("inst") || value.includes("vk")) return "#9333ea";
-  return "#71717a";
-}
-
 function isClosedStage(stage?: Stage | null) {
   if (!stage) return false;
   const name = normalizeStageName(stage.name);
@@ -249,13 +300,29 @@ function isClosedStage(stage?: Stage | null) {
 }
 
 function isEstimateStage(stage?: Stage | null) {
-  return Boolean(stage && normalizeStageName(stage.name).includes("расчет"));
+  if (!stage) return false;
+  const name = normalizeStageName(stage.name);
+  return name.includes("рассчитать") || name.includes("расчет");
 }
 
 function isSupplyStage(stage?: Stage | null) {
   if (!stage) return false;
   const name = normalizeStageName(stage.name);
   return name.includes("расход") || name.includes("запчаст");
+}
+
+function isQuoteSentStage(stage?: Stage | null) {
+  return Boolean(stage && normalizeStageName(stage.name).includes("расчет отправлен"));
+}
+
+function isRecordCreatedStage(stage?: Stage | null) {
+  return Boolean(stage && normalizeStageName(stage.name).includes("запись создана"));
+}
+
+function isVisitDocumentStage(stage?: Stage | null) {
+  if (!stage) return false;
+  const name = normalizeStageName(stage.name);
+  return name.includes("на визите") || name.includes("документ");
 }
 
 function isDealInactive(deal: Deal, stage?: Stage | null) {
@@ -310,6 +377,36 @@ function linkedClientSearch(deal: Deal) {
   return encodeURIComponent(deal.customerName || deal.moyskladCounterpartyName || deal.phoneNormalized || "");
 }
 
+function newShipmentHrefFromDeal(deal: Deal) {
+  const params = new URLSearchParams();
+  params.set("crmDealId", deal.id);
+  const clientName = deal.customerName || deal.moyskladCounterpartyName || "";
+  if (clientName) params.set("counterparty", clientName);
+  if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
+  if (deal.vehicle) params.set("vehicle", deal.vehicle);
+  if (deal.notes) params.set("comment", deal.notes);
+  const query = params.toString();
+  return query ? `/shipment/new?${query}` : "/shipment/new";
+}
+
+function recordsHrefFromDeal(deal: Deal) {
+  const params = new URLSearchParams();
+  if (deal.yclientsRecordId) {
+    params.set("recordId", deal.yclientsRecordId);
+    return `/records?${params.toString()}`;
+  }
+  params.set("new", "1");
+  params.set("crmDealId", deal.id);
+  params.set("source", "CRM-дело");
+  params.set("comment", [deal.title, deal.nextAction, deal.notes].filter(Boolean).join("\n"));
+  if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
+  if (deal.customerName || deal.moyskladCounterpartyName) params.set("client", deal.customerName || deal.moyskladCounterpartyName || "");
+  if (deal.vehicle) params.set("vehicle", deal.vehicle);
+  if (deal.responsibleLogin) params.set("responsible", deal.responsibleLogin);
+  const query = params.toString();
+  return query ? `/records?${query}` : "/records";
+}
+
 export default function CrmPipelineClient({
   userLogin,
   userName,
@@ -317,6 +414,7 @@ export default function CrmPipelineClient({
   userLogin: string;
   userName: string;
 }) {
+  const searchParams = useSearchParams();
   const [stages, setStages] = useState<Stage[]>([]);
   const [form, setForm] = useState<CreateForm>({ ...EMPTY_FORM, responsibleLogin: userLogin });
   const [formOpen, setFormOpen] = useState(false);
@@ -331,6 +429,7 @@ export default function CrmPipelineClient({
   const [dragDealId, setDragDealId] = useState<string | null>(null);
   const [dragStageId, setDragStageId] = useState<string | null>(null);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [expandedDealByStage, setExpandedDealByStage] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("all");
@@ -364,7 +463,7 @@ export default function CrmPipelineClient({
   );
 
   const kpi = useMemo(() => {
-    const overdue = activeDeals.filter((deal) => deadlineInfo(deal.nextContactAt).overdue).length;
+    const overdue = activeDeals.filter((deal) => deadlineInfo(deal.nextContactAt, false, deal.snoozeUntil).overdue).length;
     const today = activeDeals.filter((deal) => {
       if (!deal.nextContactAt) return false;
       const date = new Date(deal.nextContactAt);
@@ -382,6 +481,7 @@ export default function CrmPipelineClient({
       active: activeDeals.length,
       overdue,
       today,
+      noDeadline: activeDeals.filter((deal) => !deal.nextContactAt).length,
       newLeads: activeDeals.filter((deal) => resolveClientType(deal) === "new_lead").length,
       regularClients,
       waitEstimate: activeDeals.filter((deal) => isEstimateStage(stageById.get(deal.stageId))).length,
@@ -397,7 +497,7 @@ export default function CrmPipelineClient({
         const dealStage = stageById.get(deal.stageId);
         const inactive = isDealInactive(deal, dealStage);
         const clientType = resolveClientType(deal);
-        const deadline = deadlineInfo(deal.nextContactAt, inactive);
+        const deadline = deadlineInfo(deal.nextContactAt, inactive, deal.snoozeUntil);
 
         if (view === "closed") {
           if (!inactive) return false;
@@ -406,6 +506,7 @@ export default function CrmPipelineClient({
         }
         if (view === "mine" && deal.responsibleLogin !== userLogin) return false;
         if (view === "overdue" && !deadline.overdue) return false;
+        if (view === "noDeadline" && deal.nextContactAt) return false;
         if (view === "today") {
           if (!deal.nextContactAt) return false;
           const date = new Date(deal.nextContactAt);
@@ -413,6 +514,10 @@ export default function CrmPipelineClient({
         }
         if (view === "noResponsible" && deal.responsibleLogin) return false;
         if ((view === "new_lead" || view === "regular" || view === "repeat" || view === "unlinked") && clientType !== view) return false;
+        if (view === "withRecord" && !deal.yclientsRecordId) return false;
+        if (view === "withoutDemand" && deal.moyskladDemandId) return false;
+        if (view === "waitSupplies" && !(isSupplyStage(dealStage) || Boolean(deal.suppliesNote || deal.suppliesExpectedAt))) return false;
+        if (view === "needsEstimate" && !(isEstimateStage(dealStage) || normalizeStageName(deal.nextAction ?? "").includes("расчет"))) return false;
         if (responsibleFilter !== "all" && loginLabel(deal.responsibleLogin) !== responsibleFilter) return false;
         if (sourceFilter !== "all" && deal.source?.trim() !== sourceFilter) return false;
         if (stageFilter !== "all" && deal.stageId !== stageFilter) return false;
@@ -458,6 +563,15 @@ export default function CrmPipelineClient({
   useEffect(() => {
     void loadPipeline();
   }, [loadPipeline]);
+
+  useEffect(() => {
+    const focusDealId = searchParams.get("dealId") || searchParams.get("crmDealId") || searchParams.get("deal");
+    if (!focusDealId || allDeals.length === 0) return;
+    const deal = allDeals.find((item) => item.id === focusDealId);
+    if (!deal) return;
+    setSelectedDealId(deal.id);
+    setExpandedDealByStage((prev) => ({ ...prev, [deal.stageId]: deal.id }));
+  }, [allDeals, searchParams]);
 
   useEffect(() => {
     const queryText = counterpartySearch.trim();
@@ -572,17 +686,39 @@ export default function CrmPipelineClient({
     if (!res.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Не удалось обновить дело клиента");
   }
 
+  function askControlDeadline(deal: Deal, targetStage: Stage) {
+    if (!isQuoteSentStage(targetStage) || deal.nextContactAt) return deal.nextContactAt;
+    const fallback = new Date();
+    fallback.setHours(fallback.getHours() + 1, 0, 0, 0);
+    const value = window.prompt("Когда проконтролировать ответ по отправленному расчёту?", dateInputValue(fallback));
+    if (value == null) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      setError("Укажите корректный дедлайн контроля расчёта");
+      return null;
+    }
+    return value;
+  }
+
   async function moveDeal(deal: Deal, targetStage: Stage) {
     if (deal.stageId === targetStage.id) return;
     setMovingDealId(deal.id);
     setError(null);
     try {
+      const requiredDeadline = askControlDeadline(deal, targetStage);
+      if (isQuoteSentStage(targetStage) && !requiredDeadline) return;
       const patch: Record<string, unknown> = {
         stageId: targetStage.id,
         status: isClosedStage(targetStage) ? "won" : "open",
       };
       if (!deal.nextAction) patch.nextAction = defaultNextAction(targetStage.name);
-      if (!deal.nextContactAt && shouldSuggestReminder(targetStage.name)) {
+      if (isQuoteSentStage(targetStage)) {
+        patch.nextAction = "Проконтролировать ответ клиента";
+        patch.nextContactAt = requiredDeadline;
+      }
+      if (isRecordCreatedStage(targetStage) && !deal.nextAction) patch.nextAction = "Подготовить визит";
+      if (isVisitDocumentStage(targetStage) && !deal.nextAction) patch.nextAction = "Проконтролировать документ";
+      if (!deal.nextContactAt && patch.nextContactAt === undefined && shouldSuggestReminder(targetStage.name)) {
         patch.nextContactAt = quickReminderInput(targetStage.name.includes("ответ") ? "tomorrow" : "today");
       }
       await patchDeal(deal.id, patch);
@@ -609,12 +745,17 @@ export default function CrmPipelineClient({
   }
 
   async function closeDeal(deal: Deal, reason: string) {
+    const closeReason =
+      window.prompt(
+        "Причина закрытия: записан и обслужен / отказался / не отвечает / неактуально / дубль / нет возможности / перенесено",
+        reason
+      )?.trim() || reason;
     setMovingDealId(deal.id);
     try {
       const closedStage = stages.find(isClosedStage);
       await patchDeal(deal.id, {
         status: "won",
-        closeReason: reason,
+        closeReason,
         ...(closedStage ? { stageId: closedStage.id } : {}),
       });
       await loadPipeline();
@@ -629,6 +770,13 @@ export default function CrmPipelineClient({
   async function copyText(value: string | null) {
     if (!value) return;
     await navigator.clipboard?.writeText(value).catch(() => undefined);
+  }
+
+  function toggleDealExpanded(stageId: string, dealId: string) {
+    setExpandedDealByStage((prev) => ({
+      ...prev,
+      [stageId]: prev[stageId] === dealId ? null : dealId,
+    }));
   }
 
   return (
@@ -649,6 +797,7 @@ export default function CrmPipelineClient({
               {kpi.overdue} просрочено
             </EcoBadge>
             <EcoBadge tone="warning">{kpi.today} на сегодня</EcoBadge>
+            <EcoBadge tone={kpi.noDeadline ? "danger" : "neutral"}>{kpi.noDeadline} без срока</EcoBadge>
           </div>
           <p className="eco-page-subtitle">
             Рабочий канбан по следующим действиям: перезвонить, рассчитать, дождаться расходников, записать или закрыть вопрос.
@@ -671,6 +820,7 @@ export default function CrmPipelineClient({
         <EcoKpi label="Активные дела" value={kpi.active} tone="info" />
         <EcoKpi label="Просрочено" value={kpi.overdue} tone={kpi.overdue ? "danger" : "success"} />
         <EcoKpi label="На сегодня" value={kpi.today} tone="warning" />
+        <EcoKpi label="Без дедлайна" value={kpi.noDeadline} tone={kpi.noDeadline ? "danger" : "neutral"} />
         <EcoKpi label="Новые лиды" value={kpi.newLeads} tone="info" />
         <EcoKpi label="Постоянные с делами" value={kpi.regularClients} tone="success" />
         <EcoKpi label="Ждут расчёт" value={kpi.waitEstimate} tone="rust" />
@@ -757,7 +907,7 @@ export default function CrmPipelineClient({
           <div className="eco-crm-board" style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(300px, 320px))` }}>
             {filteredStages.map((stage) => {
               const stageAmount = stage.deals.reduce((sum, deal) => sum + (deal.amountCents ?? 0), 0);
-              const overdueCount = stage.deals.filter((deal) => deadlineInfo(deal.nextContactAt, isDealInactive(deal, stage)).overdue).length;
+              const overdueCount = stage.deals.filter((deal) => deadlineInfo(deal.nextContactAt, isDealInactive(deal, stage), deal.snoozeUntil).overdue).length;
 
               return (
                 <div
@@ -802,9 +952,13 @@ export default function CrmPipelineClient({
                           deal={deal}
                           stage={stage}
                           stages={stages}
+                          expanded={expandedDealByStage[stage.id] === deal.id}
                           moving={movingDealId === deal.id}
                           onOpen={() => setSelectedDealId(deal.id)}
+                          onToggle={() => toggleDealExpanded(stage.id, deal.id)}
                           onMove={(targetStage) => void moveDeal(deal, targetStage)}
+                          onReminder={(value) => void updateReminder(deal, value)}
+                          onCloseCase={(reason) => void closeDeal(deal, reason)}
                           onDragStart={(event) => {
                             setDragDealId(deal.id);
                             event.dataTransfer.setData("text/plain", deal.id);
@@ -835,9 +989,13 @@ export default function CrmPipelineClient({
               deal={deal}
               stage={stageById.get(deal.stageId)}
               stages={stages}
+              expanded={expandedDealByStage[deal.stageId] === deal.id}
               moving={movingDealId === deal.id}
               onOpen={() => setSelectedDealId(deal.id)}
+              onToggle={() => toggleDealExpanded(deal.stageId, deal.id)}
               onMove={(targetStage) => void moveDeal(deal, targetStage)}
+              onReminder={(value) => void updateReminder(deal, value)}
+              onCloseCase={(reason) => void closeDeal(deal, reason)}
             />
           ))
         )}
@@ -892,52 +1050,81 @@ export default function CrmPipelineClient({
 
 function defaultNextAction(stageName?: string | null) {
   const name = normalizeStageName(stageName ?? "");
-  if (name.includes("связ")) return "Перезвонить клиенту";
-  if (name.includes("расчет")) return "Отправить расчёт";
-  if (name.includes("ответ")) return "Дождаться ответа клиента";
-  if (name.includes("расход") || name.includes("запчаст")) return "Проверить поставку расходников";
-  if (name.includes("запис")) return "Записать клиента";
-  if (name.includes("работ")) return "Проконтролировать выполнение работ";
+  if (name.includes("новый")) return "Разобрать запрос";
+  if (name.includes("уточ")) return "Уточнить недостающие данные";
+  if (name.includes("рассчитать")) return "Подготовить расчёт";
+  if (name.includes("расчет отправлен")) return "Проконтролировать ответ клиента";
+  if (name.includes("проверить расход")) return "Проверить наличие расходников";
+  if (name.includes("ждем расход")) return "Проверить поставку расходников";
+  if (name.includes("запись создана")) return "Подготовить визит";
+  if (name.includes("на визите") || name.includes("документ")) return "Проконтролировать документ";
+  if (name.includes("контроль")) return "Закрыть хвост после визита";
   if (name.includes("закры")) return "Закрыть вопрос";
-  return "";
+  return "Определить следующий шаг";
 }
 
 function shouldSuggestReminder(stageName: string) {
   const name = normalizeStageName(stageName);
-  return name.includes("связ") || name.includes("ответ") || name.includes("расчет") || name.includes("контроль");
+  return name.includes("новый") || name.includes("уточ") || name.includes("расчет") || name.includes("контроль");
 }
 
 function DealCard({
   deal,
   stage,
   stages,
+  expanded,
   moving,
   onOpen,
+  onToggle,
   onMove,
+  onReminder,
+  onCloseCase,
   onDragStart,
   onDragEnd,
 }: {
   deal: Deal;
   stage?: Stage | null;
   stages: Stage[];
+  expanded: boolean;
   moving: boolean;
   onOpen: () => void;
+  onToggle: () => void;
   onMove: (stage: Stage) => void;
+  onReminder: (value: string | null) => void;
+  onCloseCase: (reason: string) => void;
   onDragStart?: React.DragEventHandler<HTMLElement>;
   onDragEnd?: React.DragEventHandler<HTMLElement>;
 }) {
   const inactive = isDealInactive(deal, stage);
-  const deadline = deadlineInfo(deal.nextContactAt, inactive);
+  const deadline = deadlineInfo(deal.nextContactAt, inactive, deal.snoozeUntil);
   const clientType = CLIENT_TYPE_META[resolveClientType(deal)];
   const hasSupplies = Boolean(deal.suppliesNote || deal.suppliesExpectedAt || isSupplyStage(stage));
+  const nextAction = deal.nextAction || defaultNextAction(stage?.name) || "Уточнить следующий шаг";
+  const hasComments = Boolean(deal.notes);
+  const hasRecord = Boolean(deal.yclientsRecordId);
+  const hasDemand = Boolean(deal.moyskladDemandId);
+  const hasDiagnostic = Boolean(deal.source?.toLowerCase().includes("diagnostic") || deal.notes?.toLowerCase().includes("диагност"));
+  const quoteSentStage = stages.find(isQuoteSentStage);
+  const suppliesCheckStage = stages.find((item) => normalizeStageName(item.name).includes("проверить расход"));
+  const visitStage = stages.find(isVisitDocumentStage);
 
   return (
     <article
-      className={cx("eco-deal-card", inactive && "is-muted", deadline.overdue && "is-overdue", moving && "is-moving")}
+      className={cx(
+        "eco-deal-card",
+        expanded && "is-expanded",
+        inactive && "is-muted",
+        deadline.overdue && "is-overdue",
+        deadline.soon && "is-soon",
+        moving && "is-moving"
+      )}
       draggable={!inactive}
-      onClick={onOpen}
+      onClick={onToggle}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") onOpen();
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onToggle();
+        }
       }}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -946,9 +1133,14 @@ function DealCard({
     >
       <div className="eco-deal-card__top">
         <span className="l-mono">{shortId(deal.id)}</span>
-        <span className="eco-deal-card__grab" title="Перетащить в другой статус">
-          <GripVertical size={14} />
-        </span>
+        <div className="eco-deal-card__top-actions">
+          <button type="button" className="eco-deal-card__chevron" aria-label={expanded ? "Свернуть дело" : "Раскрыть дело"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>
+            <ChevronDown size={14} />
+          </button>
+          <span className="eco-deal-card__grab" title="Перетащить в другой статус">
+            <GripVertical size={14} />
+          </span>
+        </div>
       </div>
       <div className="eco-deal-card__client">
         <div>
@@ -963,50 +1155,75 @@ function DealCard({
       </div>
       <p className="eco-deal-card__text">{deal.title}</p>
       <div className={cx("eco-deal-card__next", deadline.overdue && "is-overdue")}>
-        <span>Следующее</span>
-        <strong>{deal.nextAction || defaultNextAction(stage?.name) || "Уточнить следующий шаг"}</strong>
+        <span>Следующее:</span>
+        <strong>{nextAction}</strong>
       </div>
-      <div className="eco-deal-card__badges">
-        {stage && <EcoBadge tone="neutral">{stage.name}</EcoBadge>}
+      <div className="eco-deal-card__status-row">
         <EcoBadge tone={deadline.tone} dot>
           {deadline.label}
         </EcoBadge>
-        {deal.yclientsRecordId && <EcoBadge tone="info">Есть запись</EcoBadge>}
-        {deal.moyskladDemandId && <EcoBadge tone="success">Есть отгрузка</EcoBadge>}
-        {deal.amountCents ? <EcoBadge tone="rust">{formatMoney(deal.amountCents)}</EcoBadge> : null}
-        {hasSupplies && <EcoBadge tone="warning">Расходники</EcoBadge>}
-      </div>
-      {(resolveClientType(deal) === "regular" || resolveClientType(deal) === "repeat") && (
-        <div className="eco-deal-card__history">
-          <span>История клиента</span>
-          <strong>{deal.moyskladDemandId ? `отгрузка ${deal.moyskladDemandId}` : deal.moyskladCounterpartyName || "локальная карточка"}</strong>
-        </div>
-      )}
-      {deal.notes && <p className="eco-deal-card__notes">{deal.notes}</p>}
-      <div className="eco-deal-card__footer">
-        <span>
-          <i style={{ background: sourceAccent(deal.source) }} />
-          {deal.source || "Без источника"}
-        </span>
         <span>{loginLabel(deal.responsibleLogin)}</span>
       </div>
-      {!inactive && (
-        <div className="eco-deal-card__move" onClick={(event) => event.stopPropagation()}>
-          <select
-            value={deal.stageId}
-            disabled={moving}
-            aria-label="Переместить дело"
-            onChange={(event) => {
-              const target = stages.find((item) => item.id === event.target.value);
-              if (target) onMove(target);
-            }}
-          >
-            {stages.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+      <div className="eco-deal-card__links" aria-label="Связи дела">
+        <span className={cx(hasRecord && "is-on")} title={hasRecord ? "Есть запись" : "Нет записи"}><CalendarClock size={13} /></span>
+        <span className={cx(hasDemand && "is-on")} title={hasDemand ? "Есть отгрузка" : "Нет отгрузки"}><Truck size={13} /></span>
+        <span className={cx(hasDiagnostic && "is-on")} title={hasDiagnostic ? "Есть диагностика" : "Нет диагностики"}><ClipboardList size={13} /></span>
+        <span className={cx(hasSupplies && "is-on")} title={hasSupplies ? "Есть расходники" : "Нет расходников"}><PackageCheck size={13} /></span>
+        <span className={cx(hasComments && "is-on")} title={hasComments ? "Есть комментарии" : "Нет комментариев"}><MessageSquare size={13} /></span>
+      </div>
+
+      {expanded && (
+        <div className="eco-deal-card__expanded" onClick={(event) => event.stopPropagation()}>
+          <div className="eco-deal-card__badges">
+            {stage && <EcoBadge tone="neutral">{stage.name}</EcoBadge>}
+            {deal.amountCents ? <EcoBadge tone="rust">{formatMoney(deal.amountCents)}</EcoBadge> : null}
+            {hasRecord && <EcoBadge tone="info">Запись</EcoBadge>}
+            {hasDemand && <EcoBadge tone="success">Отгрузка</EcoBadge>}
+            {hasDiagnostic && <EcoBadge tone="info">Диагностика</EcoBadge>}
+            {hasSupplies && <EcoBadge tone="warning">Расходники</EcoBadge>}
+          </div>
+          {(resolveClientType(deal) === "regular" || resolveClientType(deal) === "repeat") && (
+            <div className="eco-deal-card__history">
+              <span>История клиента</span>
+              <strong>{deal.moyskladDemandId ? `отгрузка ${deal.moyskladDemandId}` : deal.moyskladCounterpartyName || "локальная карточка"}</strong>
+            </div>
+          )}
+          <div className="eco-deal-card__details">
+            <span>Источник: {deal.source || "без источника"}</span>
+            {deal.suppliesNote && <span>Расходники: {deal.suppliesNote}</span>}
+            {deal.suppliesExpectedAt && <span>Ожидаем: {formatDateTime(deal.suppliesExpectedAt)}</span>}
+          </div>
+          {deal.notes && <p className="eco-deal-card__notes">{deal.notes}</p>}
+          <div className="eco-deal-card__actions">
+            <button type="button" onClick={onOpen}>Открыть</button>
+            {deal.phoneNormalized && <a href={`tel:${deal.phoneNormalized}`}>Позвонить</a>}
+            {quoteSentStage && <button type="button" onClick={() => onMove(quoteSentStage)}>Отправить расчёт</button>}
+            <Link href={recordsHrefFromDeal(deal)}>{hasRecord ? "Открыть запись" : "Записать клиента"}</Link>
+            {suppliesCheckStage && <button type="button" onClick={() => onMove(suppliesCheckStage)}>Проверить расходники</button>}
+            <Link href={newShipmentHrefFromDeal(deal)}>Создать отгрузку</Link>
+            {visitStage && hasDemand && <button type="button" onClick={() => onMove(visitStage)}>В документ</button>}
+            <button type="button" onClick={() => onReminder(quickReminderInput("tomorrow"))}>Отложить</button>
+            <button type="button" onClick={() => onCloseCase("закрыто вручную")}>Закрыть</button>
+          </div>
+          {!inactive && (
+            <div className="eco-deal-card__move">
+              <select
+                value={deal.stageId}
+                disabled={moving}
+                aria-label="Переместить дело"
+                onChange={(event) => {
+                  const target = stages.find((item) => item.id === event.target.value);
+                  if (target) onMove(target);
+                }}
+              >
+                {stages.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
     </article>
@@ -1285,7 +1502,7 @@ function CaseDrawer({
   onCloseCase: (reason: string) => void;
 }) {
   const clientType = CLIENT_TYPE_META[resolveClientType(deal)];
-  const deadline = deadlineInfo(deal.nextContactAt, isDealInactive(deal, stage));
+  const deadline = deadlineInfo(deal.nextContactAt, isDealInactive(deal, stage), deal.snoozeUntil);
   const clientSearch = linkedClientSearch(deal);
 
   return (
@@ -1315,9 +1532,9 @@ function CaseDrawer({
               Перезвонить
             </a>
           )}
-          <Link className="eco-btn eco-btn--secondary eco-btn--sm" href={`/records?crmDealId=${encodeURIComponent(deal.id)}`}>
+          <Link className="eco-btn eco-btn--secondary eco-btn--sm" href={recordsHrefFromDeal(deal)}>
             <CalendarClock size={14} />
-            Создать запись
+            {deal.yclientsRecordId ? "Открыть запись" : "Записать клиента"}
           </Link>
           <Link className="eco-btn eco-btn--secondary eco-btn--sm" href={`/shipment/new?crmDealId=${encodeURIComponent(deal.id)}`}>
             <Truck size={14} />
@@ -1388,7 +1605,7 @@ function CaseDrawer({
               <Link2 size={16} />
               Связи
             </h3>
-            <RelatedLine icon={<CalendarClock size={15} />} label="Запись" value={deal.yclientsRecordId || "Не создана"} href={deal.yclientsRecordId ? `/records?search=${encodeURIComponent(deal.yclientsRecordId)}` : "/records"} />
+            <RelatedLine icon={<CalendarClock size={15} />} label="Запись" value={deal.yclientsRecordId || "Клиент ещё не записан"} href={recordsHrefFromDeal(deal)} />
             <RelatedLine icon={<Truck size={15} />} label="Отгрузка" value={deal.moyskladDemandId || "Нет отгрузки"} href={deal.moyskladDemandId ? `/shipment/${encodeURIComponent(deal.moyskladDemandId)}` : "/shipment/new"} />
             <RelatedLine icon={<ReceiptText size={15} />} label="Расчёт" value={deal.amountCents ? formatMoney(deal.amountCents) : "Без расчёта"} />
             <RelatedLine icon={<WalletCards size={15} />} label="Оплата" value="Проверить при необходимости" />

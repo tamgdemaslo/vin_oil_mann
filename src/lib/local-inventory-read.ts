@@ -28,6 +28,8 @@ type LocalDemandListParams = {
   counterparty?: string;
   plate?: string;
   phone?: string;
+  dateFrom?: string;
+  dateTo?: string;
   offset?: number;
   limit?: number;
 };
@@ -561,6 +563,13 @@ function phonesRawArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item ?? "")).filter(Boolean) : [];
 }
 
+function normalizeDateFilter(value?: string): string {
+  const raw = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? "" : raw;
+}
+
 export async function hasLocalInventoryDemands(): Promise<boolean> {
   const count = await prisma.localDemand.count();
   return count > 0;
@@ -571,6 +580,8 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   const counterparty = params.counterparty?.trim() ?? "";
   const plate = params.plate?.trim() ?? "";
   const phone = params.phone?.trim() ?? "";
+  const dateFrom = normalizeDateFilter(params.dateFrom);
+  const dateTo = normalizeDateFilter(params.dateTo);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
   const needsClientFilter = Boolean(plate || phone);
@@ -595,6 +606,14 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
     and.push({
       counterparty: {
         searchText: { contains: phone.replace(/\D/g, "").slice(-10) || phone, mode: "insensitive" as const },
+      },
+    });
+  }
+  if (dateFrom || dateTo) {
+    and.push({
+      documentDate: {
+        ...(dateFrom ? { gte: dateFrom } : {}),
+        ...(dateTo ? { lte: dateTo } : {}),
       },
     });
   }

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Copy,
   FilePlus2,
   Loader2,
   PackageCheck,
@@ -82,6 +83,11 @@ type RosskoBulkState = {
   active: boolean;
   current: number;
   total: number;
+};
+type SupplierStat = {
+  name: string;
+  count: number;
+  shortage: number;
 };
 
 const LS_QTY = "vin-oil-restock-qty";
@@ -350,6 +356,14 @@ function cartKey(line: Pick<RosskoCartLine, "productId" | "partnumber" | "brand"
   return `${line.productId}||${line.brand}||${line.partnumber}||${line.stock}`;
 }
 
+function supplierStatFor(name: string, rows: RestockItem[]): SupplierStat {
+  return {
+    name,
+    count: rows.length,
+    shortage: rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0),
+  };
+}
+
 export default function RestockClient() {
   const [mode, setMode] = useState<Mode>("below_min");
   const [items, setItems] = useState<RestockItem[]>([]);
@@ -496,14 +510,24 @@ export default function RestockClient() {
     if (selected === "ROSSKO" && !rosskoHealth.checkedAt) void checkRosskoApi();
   }, [checkRosskoApi, rosskoHealth.checkedAt, selected]);
 
-  const suppliers = useMemo(() => {
-    const set = new Set<string>();
+  useEffect(() => {
+    setMessageText("");
+  }, [selected]);
+
+  const supplierStats = useMemo(() => {
+    const map = new Map<string, RestockItem[]>();
     for (const it of items) {
-      if (isRosskoItem(it)) continue;
       const s = supplierName(it);
-      set.add(s);
+      const key = isRosskoItem(it) ? "ROSSKO" : s;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(it);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+    const rossko = map.has("ROSSKO") ? [supplierStatFor("ROSSKO", map.get("ROSSKO")!)] : [];
+    const rest = Array.from(map.entries())
+      .filter(([name]) => name !== "ROSSKO")
+      .map(([name, rows]) => supplierStatFor(name, rows))
+      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return [...rossko, ...rest];
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -558,10 +582,15 @@ export default function RestockClient() {
       all: items.length,
       shown: filteredItems.length,
       shortage: filteredItems.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0),
-      suppliers: suppliers.length + (items.some(isRosskoItem) ? 1 : 0),
+      suppliers: supplierStats.length,
       excluded: filteredItems.filter((item) => excluded[item.productId]).length,
     }),
-    [excluded, filteredItems, items, suppliers.length]
+    [excluded, filteredItems, items.length, supplierStats.length]
+  );
+  const canBuildMessage = useMemo(
+    () => selected !== "ROSSKO" && filteredItems.some((it) => !excluded[it.productId] && ensureQty(it.productId, it) > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [excluded, filteredItems, qtyByProduct, selected]
   );
 
   function ensureQty(pid: string, it: RestockItem): number {
@@ -579,8 +608,8 @@ export default function RestockClient() {
     persistExcluded({ ...excluded, [pid]: !excluded[pid] });
   }
 
-  function buildMessage() {
-    if (selected === "ROSSKO") return;
+  function composeSupplierMessage(): string {
+    if (selected === "ROSSKO") return "";
     const lines: string[] = [];
     lines.push(`Заказ поставщику: ${selected}`);
     lines.push("");
@@ -592,16 +621,27 @@ export default function RestockClient() {
       const name = it.name ? String(it.name) : "—";
       lines.push(`— ${code} / ${name} — ${q} шт. (остаток ${fmtNum(it.stock)}, мин. ${fmtNum(it.minimumBalance)})`);
     }
-    const text = lines.join("\n");
+    return lines.length > 2 ? lines.join("\n") : "";
+  }
+
+  function buildMessage() {
+    const text = composeSupplierMessage();
     setMessageText(text);
+    if (!text) showToast("Нет включённых позиций к заказу");
   }
 
   async function copyMessage() {
-    if (!messageText) return;
+    const text = composeSupplierMessage();
+    if (!text) {
+      showToast("Нет включённых позиций к заказу");
+      return;
+    }
+    setMessageText(text);
     try {
-      await navigator.clipboard.writeText(messageText);
+      await navigator.clipboard.writeText(text);
+      showToast("Сообщение скопировано");
     } catch {
-      /* ignore */
+      showToast("Не удалось скопировать сообщение");
     }
   }
 
@@ -894,30 +934,16 @@ export default function RestockClient() {
           <div className="eco-filter-title">
             Поставщики
           </div>
-          <div className="mt-3 flex flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => setSelected("ROSSKO")}
-              className={`rounded-xl px-3 py-2 text-left text-sm font-medium transition ${
-                selected === "ROSSKO"
-                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                  : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              }`}
-            >
-              ROSSKO
-            </button>
-            {suppliers.map((s) => (
+          <div className="eco-restock-supplier-list">
+            {supplierStats.map((supplier) => (
               <button
-                key={s}
+                key={supplier.name}
                 type="button"
-                onClick={() => setSelected(s)}
-                className={`rounded-xl px-3 py-2 text-left text-sm transition ${
-                  selected === s
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                }`}
+                onClick={() => setSelected(supplier.name)}
+                className={`eco-restock-supplier-btn ${selected === supplier.name ? "is-active" : ""}`}
               >
-                {s}
+                <span>{supplier.name}</span>
+                <em>{supplier.count} поз. · деф. {fmtNum(supplier.shortage)}</em>
               </button>
             ))}
           </div>
@@ -1046,6 +1072,7 @@ export default function RestockClient() {
         {!loading && selected !== "ROSSKO" && (
           <div className="space-y-4">
             <ItemsTable
+              supplier={selected}
               grouped={grouped}
               showSpend={mode === "outflow" && outflowLoaded}
               ensureQty={ensureQty}
@@ -1054,31 +1081,49 @@ export default function RestockClient() {
               toggleExcluded={toggleExcluded}
               readOnly={false}
             />
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={buildMessage}
-                className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
-              >
-                Сформировать сообщение
-              </button>
-              <button
-                type="button"
-                onClick={() => void copyMessage()}
-                disabled={!messageText}
-                className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                Копировать
-              </button>
-            </div>
-            {messageText ? (
-              <textarea
-                readOnly
-                value={messageText}
-                rows={10}
-                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
-            ) : null}
+            <section className="eco-restock-message-panel">
+              <div className="eco-restock-message-head">
+                <div>
+                  <span>Сообщение поставщику</span>
+                  <strong>{selected}</strong>
+                </div>
+                <div className="eco-restock-message-actions">
+                  <EcoButton
+                    type="button"
+                    onClick={buildMessage}
+                    disabled={!canBuildMessage}
+                    title={!canBuildMessage ? "Нет включённых позиций к заказу" : undefined}
+                    variant="primary"
+                  >
+                    <FilePlus2 size={15} />
+                    Сформировать сообщение
+                  </EcoButton>
+                  <EcoButton
+                    type="button"
+                    onClick={() => void copyMessage()}
+                    disabled={!canBuildMessage}
+                    title={!canBuildMessage ? "Сначала включите хотя бы одну позицию" : undefined}
+                  >
+                    <Copy size={15} />
+                    Копировать
+                  </EcoButton>
+                </div>
+              </div>
+              {messageText ? (
+                <textarea
+                  readOnly
+                  value={messageText}
+                  rows={10}
+                  className="eco-restock-message-preview"
+                  aria-label="Предпросмотр сообщения поставщику"
+                />
+              ) : (
+                <div className="eco-restock-message-empty">
+                  <strong>Сообщение ещё не сформировано</strong>
+                  <span>Проверьте количество, исключите лишние строки и нажмите «Сформировать сообщение».</span>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </section>
@@ -1680,6 +1725,7 @@ function RosskoItemsTable({
 }
 
 function ItemsTable({
+  supplier,
   grouped,
   showSpend,
   ensureQty,
@@ -1688,6 +1734,7 @@ function ItemsTable({
   toggleExcluded,
   readOnly,
 }: {
+  supplier: string;
   grouped: [string, RestockItem[]][];
   showSpend: boolean;
   ensureQty: (pid: string, it: RestockItem) => number;
@@ -1698,92 +1745,100 @@ function ItemsTable({
 }) {
   if (grouped.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-12 text-center text-sm text-zinc-500 dark:border-zinc-700">
-        Нет позиций для отображения.
+      <div className="eco-restock-empty-state">
+        <PackageSearch size={28} />
+        <strong>Нет позиций для отображения</strong>
+        <span>Для выбранного поставщика сейчас нет товаров ниже минимума.</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="eco-restock-supplier-stack">
       {grouped.map(([groupName, rows]) => (
-        <div key={groupName}>
-          <div className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{groupName}</div>
-          <div className="overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800">
-            <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900/80">
+        <section key={groupName} className="eco-restock-supplier-group">
+          <header className="eco-restock-supplier-group__head">
+            <div>
+              <span>{supplier}</span>
+              <strong>{groupName}</strong>
+            </div>
+            <div className="eco-restock-supplier-group__stats">
+              <span>{rows.length} позиций</span>
+              <span>Дефицит {fmtNum(rows.reduce((sum, item) => sum + Math.max(0, Number(item.shortage ?? 0)), 0))}</span>
+            </div>
+          </header>
+          <div className="eco-restock-table-wrap">
+            <table className="eco-restock-supplier-table">
+              <thead>
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Код</th>
-                  <th className="px-3 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Название</th>
-                  <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Остаток</th>
-                  <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Мин.</th>
-                  <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Дефицит</th>
+                  <th>Товар</th>
+                  <th>Код / артикул</th>
+                  <th>Остаток</th>
+                  <th>Мин.</th>
+                  <th>Дефицит</th>
                   {showSpend && (
-                    <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">
-                      Расход за период
-                    </th>
+                    <th>Расход</th>
                   )}
                   {!readOnly && (
                     <>
-                      <th className="px-3 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Заказ</th>
-                      <th className="px-3 py-2 text-center font-medium text-zinc-600 dark:text-zinc-400">Вкл.</th>
+                      <th>К заказу</th>
+                      <th>Вкл. / исключить</th>
+                      <th>Действия</th>
                     </>
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
-                {rows.map((it) => (
+              <tbody>
+                {rows.map((it) => {
+                  const isExcluded = excluded[it.productId];
+                  return (
                   <tr
                     key={it.productId}
-                    className={excluded[it.productId] ? "opacity-50" : ""}
+                    className={`eco-restock-supplier-row ${isExcluded ? "is-excluded" : ""}`}
                   >
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
-                      {it.code ?? "—"}
+                    <td className="eco-restock-product">
+                      <strong>{it.name ?? "—"}</strong>
+                      {it.group && <span>{it.group}</span>}
                     </td>
-                    <td className="max-w-[min(360px,45vw)] px-3 py-2 text-zinc-900 dark:text-zinc-100">
-                      <span className="line-clamp-2">{it.name ?? "—"}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{fmtNum(it.stock)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                      {fmtNum(it.minimumBalance)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums text-amber-700 dark:text-amber-400">
-                      {fmtNum(it.shortage)}
-                    </td>
+                    <td className="l-mono">{it.code ?? "—"}</td>
+                    <td className="l-number">{fmtNum(it.stock)}</td>
+                    <td className="l-number">{fmtNum(it.minimumBalance)}</td>
+                    <td className="l-number is-shortage">{fmtNum(it.shortage)}</td>
                     {showSpend && (
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                        {fmtNum(it.spentInPeriod)}
-                      </td>
+                      <td className="l-number">{fmtNum(it.spentInPeriod)}</td>
                     )}
                     {!readOnly && (
                       <>
-                        <td className="whitespace-nowrap px-3 py-2 text-right">
-                          <input
+                        <td className="eco-restock-order-qty">
+                          <EcoInput
                             type="number"
                             min={1}
                             step={1}
                             value={ensureQty(it.productId, it)}
                             onChange={(e) => setQty(it.productId, it, parseInt(e.target.value, 10) || 0)}
-                            className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-right dark:border-zinc-700 dark:bg-zinc-900"
+                            disabled={isExcluded}
+                            aria-label={`Количество к заказу: ${it.name ?? it.code ?? "товар"}`}
                           />
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => toggleExcluded(it.productId)}
-                            className="text-xs font-medium text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400"
-                          >
-                            {excluded[it.productId] ? "Вернуть" : "Исключить"}
-                          </button>
+                        <td>
+                          <EcoBadge tone={isExcluded ? "neutral" : "success"} dot={!isExcluded}>
+                            {isExcluded ? "Исключено" : "Включено"}
+                          </EcoBadge>
+                        </td>
+                        <td className="eco-restock-row-actions">
+                          <EcoButton type="button" size="sm" onClick={() => toggleExcluded(it.productId)}>
+                            {isExcluded ? "Вернуть" : "Исключить"}
+                          </EcoButton>
                         </td>
                       </>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       ))}
     </div>
   );
