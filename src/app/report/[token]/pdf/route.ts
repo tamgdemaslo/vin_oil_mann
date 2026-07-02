@@ -27,6 +27,17 @@ type RenderReportPdfOptions = {
   printerSafe?: boolean;
 };
 
+type CdpPdfResult = {
+  data?: string;
+  stream?: string;
+};
+
+type CdpStreamReadResult = {
+  data?: string;
+  eof?: boolean;
+  base64Encoded?: boolean;
+};
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   process.env.NEXT_CHROME_PATH,
@@ -53,6 +64,24 @@ const CHROME_CANDIDATES = [
   "/usr/bin/chromium-browser",
   "/usr/bin/chromium",
 ].filter(Boolean) as string[];
+
+const CDP_COMMAND_TIMEOUT_MS = 15_000;
+const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
+const CDP_PRINT_TIMEOUT_MS = 45_000;
+const CDP_STREAM_READ_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label}: таймаут ${Math.round(timeoutMs / 1000)} сек.`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 function canLaunchExecutable(candidate: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -91,22 +120,25 @@ async function findChromeExecutable(): Promise<string | null> {
 function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let stderr = "";
+    let chromeOutput = "";
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new Error(`Chrome DevTools endpoint не появился. ${stderr.slice(-800)}`));
-    }, 12_000);
+      reject(new Error(`Chrome DevTools endpoint не появился. ${chromeOutput.slice(-800)}`));
+    }, CHROME_DEVTOOLS_TIMEOUT_MS);
 
-    chrome.stderr.on("data", (chunk: Buffer) => {
+    const handleOutput = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
-      stderr += text;
-      const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
+      chromeOutput += text;
+      const match = chromeOutput.match(/DevTools listening on (ws:\/\/[^\s]+)/);
       if (!match || settled) return;
       settled = true;
       clearTimeout(timer);
       resolve(match[1]);
-    });
+    };
+
+    chrome.stderr.on("data", handleOutput);
+    chrome.stdout.on("data", handleOutput);
 
     chrome.once("error", (error) => {
       if (settled) return;
@@ -119,7 +151,7 @@ function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`Chrome завершился до генерации PDF: code=${code ?? "null"} signal=${signal ?? "null"}. ${stderr.slice(-800)}`));
+      reject(new Error(`Chrome завершился до генерации PDF: code=${code ?? "null"} signal=${signal ?? "null"}. ${chromeOutput.slice(-800)}`));
     });
   });
 }
@@ -189,10 +221,11 @@ async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<vo
   } = {};
 
   while (Date.now() < deadline) {
-    const result = await cdp.send<{ result?: { value?: typeof lastState } }>(
-      "Runtime.evaluate",
-      {
-        expression: `
+    const result = await withTimeout(
+      cdp.send<{ result?: { value?: typeof lastState } }>(
+        "Runtime.evaluate",
+        {
+          expression: `
           (() => {
             const heroCount = document.querySelectorAll('.paper-a4.rep .rep-hero').length;
             const verdictCount = document.querySelectorAll('.paper-a4.rep .rep-verdict').length;
@@ -210,9 +243,12 @@ async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<vo
             };
           })()
         `,
-        returnByValue: true,
-      },
-      sessionId
+          returnByValue: true,
+        },
+        sessionId
+      ),
+      CDP_COMMAND_TIMEOUT_MS,
+      "Ожидание готовности отчёта"
     );
     lastState = result.result?.value ?? lastState;
     if (lastState.hasReport) return;
@@ -230,28 +266,36 @@ async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<vo
 }
 
 async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<void> {
-  await cdp.send(
-    "Runtime.evaluate",
-    {
-      expression: `
+  await withTimeout(
+    cdp.send(
+      "Runtime.evaluate",
+      {
+        expression: `
         (async () => {
           if (!document.fonts?.ready) return true;
-          await document.fonts.ready;
+          await Promise.race([
+            document.fonts.ready,
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
           return document.fonts.status === 'loaded';
         })()
       `,
-      awaitPromise: true,
-      returnByValue: true,
-    },
-    sessionId
+        awaitPromise: true,
+        returnByValue: true,
+      },
+      sessionId
+    ),
+    CDP_COMMAND_TIMEOUT_MS,
+    "Ожидание шрифтов"
   );
 }
 
 async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string): Promise<void> {
-  const result = await cdp.send<{ result?: { value?: { optimizedPhotos?: number; skippedPhotos?: number } } }>(
-    "Runtime.evaluate",
-    {
-      expression: `
+  const result = await withTimeout(
+    cdp.send<{ result?: { value?: { optimizedPhotos?: number; skippedPhotos?: number } } }>(
+      "Runtime.evaluate",
+      {
+        expression: `
         (async () => {
           document.documentElement.classList.add('tgm-printer-safe');
 
@@ -293,16 +337,20 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
           const loadImage = (src) => new Promise((resolve, reject) => {
             const img = new Image();
             let settled = false;
+            const timer = setTimeout(() => fail(), 3500);
             const done = () => {
               if (settled) return;
               settled = true;
+              clearTimeout(timer);
               resolve(img);
             };
             const fail = () => {
               if (settled) return;
               settled = true;
+              clearTimeout(timer);
               reject(new Error('image failed'));
             };
+            img.decoding = 'async';
             img.onload = done;
             img.onerror = fail;
             img.src = src;
@@ -313,12 +361,12 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
           let optimizedPhotos = 0;
           let skippedPhotos = 0;
 
-          await Promise.all(tiles.map(async (tile) => {
+          for (const tile of tiles) {
             try {
               const rawUrl = parseBackgroundUrl(getComputedStyle(tile).backgroundImage);
               if (!rawUrl || rawUrl.startsWith('data:')) {
                 skippedPhotos += 1;
-                return;
+                continue;
               }
 
               const absoluteUrl = new URL(rawUrl, location.href).href;
@@ -327,11 +375,11 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
               const naturalHeight = image.naturalHeight || image.height;
               if (!naturalWidth || !naturalHeight) {
                 skippedPhotos += 1;
-                return;
+                continue;
               }
 
-              const maxSide = 840;
-              const maxPixels = 620000;
+              const maxSide = 620;
+              const maxPixels = 320000;
               const sideScale = Math.min(1, maxSide / naturalWidth, maxSide / naturalHeight);
               const pixelScale = Math.min(1, Math.sqrt(maxPixels / (naturalWidth * naturalHeight)));
               const scale = Math.min(sideScale, pixelScale);
@@ -344,31 +392,54 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
               const context = canvas.getContext('2d', { alpha: false });
               if (!context) {
                 skippedPhotos += 1;
-                return;
+                continue;
               }
 
               context.fillStyle = '#0a0a0a';
               context.fillRect(0, 0, width, height);
               context.drawImage(image, 0, 0, width, height);
-              const optimizedUrl = canvas.toDataURL('image/jpeg', 0.72);
+              const optimizedUrl = canvas.toDataURL('image/jpeg', 0.6);
               tile.style.backgroundImage = 'url("' + optimizedUrl + '")';
               tile.setAttribute('data-tgm-pdf-optimized', Math.round(optimizedUrl.length / 1024) + 'kb');
               optimizedPhotos += 1;
             } catch {
               skippedPhotos += 1;
             }
-          }));
+          }
 
           return { optimizedPhotos, skippedPhotos };
         })()
       `,
-      awaitPromise: true,
-      returnByValue: true,
-    },
-    sessionId
+        awaitPromise: true,
+        returnByValue: true,
+      },
+      sessionId
+    ),
+    30_000,
+    "Оптимизация фото для PDF"
   );
 
   console.info("[diagnostic-pdf] printer-safe optimizations", result.result?.value ?? {});
+}
+
+async function readCdpStream(cdp: CdpClient, stream: string, sessionId: string): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  try {
+    for (;;) {
+      const chunk = await withTimeout(
+        cdp.send<CdpStreamReadResult>("IO.read", { handle: stream }, sessionId),
+        CDP_STREAM_READ_TIMEOUT_MS,
+        "Чтение PDF stream"
+      );
+      if (chunk.data) {
+        chunks.push(Buffer.from(chunk.data, chunk.base64Encoded === false ? "utf8" : "base64"));
+      }
+      if (chunk.eof) break;
+    }
+  } finally {
+    await withTimeout(cdp.send("IO.close", { handle: stream }, sessionId), 2_000, "Закрытие PDF stream").catch(() => {});
+  }
+  return Buffer.concat(chunks);
 }
 
 async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
@@ -383,15 +454,26 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
 
   const userDataDir = join(tmpdir(), `tgm-pdf-${randomUUID()}`);
   await mkdir(userDataDir, { recursive: true });
+  console.info("[diagnostic-pdf] launching chrome", { chromePath, printerSafe, pageRanges: pageRanges ?? null });
 
   const chrome = spawn(chromePath, [
     "--headless=new",
     "--no-sandbox",
+    "--disable-setuid-sandbox",
     "--disable-gpu",
     "--disable-dev-shm-usage",
     "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
     "--disable-extensions",
     "--disable-sync",
+    "--disable-software-rasterizer",
+    "--disable-crash-reporter",
+    "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--no-default-browser-check",
+    "--no-first-run",
     "--force-color-profile=srgb",
     "--remote-debugging-port=0",
     `--user-data-dir=${userDataDir}`,
@@ -401,26 +483,43 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
   let cdp: CdpClient | null = null;
   try {
     const wsUrl = await waitForDevtools(chrome);
-    cdp = await connectCdp(wsUrl);
-    const created = await cdp.send<{ targetId: string }>("Target.createTarget", { url: "about:blank" });
-    const attached = await cdp.send<{ sessionId: string }>("Target.attachToTarget", { targetId: created.targetId, flatten: true });
+    cdp = await withTimeout(connectCdp(wsUrl), CDP_COMMAND_TIMEOUT_MS, "Подключение к Chrome DevTools");
+    const created = await withTimeout(
+      cdp.send<{ targetId: string }>("Target.createTarget", { url: "about:blank" }),
+      CDP_COMMAND_TIMEOUT_MS,
+      "Создание вкладки Chrome"
+    );
+    const attached = await withTimeout(
+      cdp.send<{ sessionId: string }>("Target.attachToTarget", { targetId: created.targetId, flatten: true }),
+      CDP_COMMAND_TIMEOUT_MS,
+      "Подключение к вкладке Chrome"
+    );
     const sessionId = attached.sessionId;
 
-    await cdp.send("Page.enable", {}, sessionId);
-    await cdp.send("Runtime.enable", {}, sessionId);
-    await cdp.send("Emulation.setEmulatedMedia", { media: "screen" }, sessionId);
-    await cdp.send("Emulation.setDeviceMetricsOverride", {
-      width: 1280,
-      height: 1800,
-      deviceScaleFactor: 1,
-      mobile: false,
-    }, sessionId);
-    await cdp.send("Page.navigate", { url }, sessionId);
+    await withTimeout(cdp.send("Page.enable", {}, sessionId), CDP_COMMAND_TIMEOUT_MS, "Page.enable");
+    await withTimeout(cdp.send("Runtime.enable", {}, sessionId), CDP_COMMAND_TIMEOUT_MS, "Runtime.enable");
+    await withTimeout(cdp.send("Emulation.setEmulatedMedia", { media: "screen" }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Emulation.setEmulatedMedia");
+    await withTimeout(
+      cdp.send(
+        "Emulation.setDeviceMetricsOverride",
+        {
+          width: 1280,
+          height: 1800,
+          deviceScaleFactor: 1,
+          mobile: false,
+        },
+        sessionId
+      ),
+      CDP_COMMAND_TIMEOUT_MS,
+      "Emulation.setDeviceMetricsOverride"
+    );
+    await withTimeout(cdp.send("Page.navigate", { url }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Переход на страницу отчёта");
     await waitForReportReady(cdp, sessionId);
-    await cdp.send(
-      "Runtime.evaluate",
-      {
-        expression: `
+    await withTimeout(
+      cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: `
           (() => {
             const style = document.createElement('style');
             style.setAttribute('data-tgm-pdf-render', 'true');
@@ -520,33 +619,46 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
             document.head.appendChild(style);
           })();
         `,
-      },
-      sessionId
+        },
+        sessionId
+      ),
+      CDP_COMMAND_TIMEOUT_MS,
+      "Подготовка CSS для PDF"
     );
     if (printerSafe) {
       await applyPrinterSafeOptimizations(cdp, sessionId);
     }
     await waitForFontsReady(cdp, sessionId);
 
-    const pdf = await cdp.send<{ data: string }>(
-      "Page.printToPDF",
-      {
-        printBackground: true,
-        preferCSSPageSize: true,
-        displayHeaderFooter: false,
-        ...(pageRanges ? { pageRanges } : {}),
-        paperWidth: 8.2677165354,
-        paperHeight: 11.692913386,
-        marginTop: 0,
-        marginRight: 0,
-        marginBottom: 0,
-        marginLeft: 0,
-        scale: 1,
-      },
-      sessionId
+    const pdf = await withTimeout(
+      cdp.send<CdpPdfResult>(
+        "Page.printToPDF",
+        {
+          printBackground: true,
+          preferCSSPageSize: true,
+          displayHeaderFooter: false,
+          ...(pageRanges ? { pageRanges } : {}),
+          paperWidth: 8.2677165354,
+          paperHeight: 11.692913386,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          scale: 1,
+        },
+        sessionId
+      ),
+      CDP_PRINT_TIMEOUT_MS,
+      "Печать отчёта в PDF"
     );
 
-    return Buffer.from(pdf.data, "base64");
+    if (pdf.data) {
+      return Buffer.from(pdf.data, "base64");
+    }
+    if (pdf.stream) {
+      return readCdpStream(cdp, pdf.stream, sessionId);
+    }
+    throw new Error("Chrome не вернул PDF-данные");
   } finally {
     cdp?.close();
     chrome.kill("SIGTERM");
@@ -554,6 +666,29 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       void rm(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 }).catch(() => {});
     }, 500);
   }
+}
+
+function isRetryablePdfError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /CDP connection closed|Target closed|WebSocket|DevTools|Chrome завершился|browser has disconnected/i.test(message);
+}
+
+async function renderReportPdfWithRetry(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        console.warn("[diagnostic-pdf] retrying PDF render", { attempt, url, printerSafe: options.printerSafe });
+      }
+      return await renderReportPdf(url, options);
+    } catch (error) {
+      lastError = error;
+      console.error("[diagnostic-pdf] render attempt failed", { attempt, error });
+      if (!isRetryablePdfError(error)) break;
+      await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function requestOrigin(request: NextRequest): string {
@@ -575,7 +710,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const printerSafe = request.nextUrl.searchParams.get("rich") !== "1";
 
   try {
-    const pdf = await renderReportPdf(reportUrl.toString(), { pageRanges, printerSafe });
+    const pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",

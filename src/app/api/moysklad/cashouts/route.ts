@@ -23,7 +23,7 @@ function parseStatus(value: string | null): CashExpenseOrderStatus | "all" {
 }
 
 function parseSource(value: string | null): CashExpenseOrderSource | "all" {
-  return value === "local" || value === "moysklad_import" || value === "sync" ? value : "all";
+  return value === "local" || value === "moysklad_import" || value === "sync" || value === "payroll" ? value : "all";
 }
 
 function parsePaymentType(value: string | null): CashExpensePaymentType | "all" {

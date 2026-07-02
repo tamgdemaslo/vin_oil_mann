@@ -109,14 +109,13 @@
   }
 
   #tags-print-mount .under-hood-tag-phone {
-    max-width: 31mm !important;
-    overflow: hidden !important;
+    max-width: 34mm !important;
+    overflow: visible !important;
     font-family: Arial, Helvetica, sans-serif !important;
     font-size: 7.4px !important;
     font-weight: 700 !important;
     letter-spacing: 0 !important;
     text-align: right !important;
-    text-overflow: ellipsis !important;
     white-space: nowrap !important;
   }
 

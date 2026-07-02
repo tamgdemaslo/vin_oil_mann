@@ -6,8 +6,9 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/inventory/products", label: "Товары" },
   { href: "/inventory/receipts", label: "Приёмка" },
-  { href: "/inventory/writeoffs", label: "Списание" },
+  { href: "/inventory/writeoffs", label: "Корректировки" },
   { href: "/inventory/restock", label: "Пополнение" },
+  { href: "/inventory/integrations/mann-pdf", label: "Интеграции" },
 ];
 
 export default function InventoryNav() {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, Database, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, Database, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
 import { EcoBadge, EcoButton, EcoCard, EcoKpi, EcoStatusDot } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
@@ -247,10 +247,16 @@ export default function IntegrationsClient() {
           </div>
           <p className="eco-page-subtitle">МойСклад оставлен только для служебного статуса и ручного восстановления данных.</p>
         </div>
-        <EcoButton type="button" variant="secondary" onClick={() => void loadStatus()} disabled={loading}>
-          <RefreshCw size={16} />
-          {loading ? "Обновляем..." : "Обновить статус"}
-        </EcoButton>
+        <div className="eco-page-actions">
+          <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--ghost">
+            <MessageSquareText size={16} />
+            Мессенджеры
+          </Link>
+          <EcoButton type="button" variant="secondary" onClick={() => void loadStatus()} disabled={loading}>
+            <RefreshCw size={16} />
+            {loading ? "Обновляем..." : "Обновить статус"}
+          </EcoButton>
+        </div>
       </section>
 
       <div className="eco-grid eco-grid--kpi">

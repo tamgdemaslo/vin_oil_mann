@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import type { User } from "@/lib/auth";
 
 export type CashExpenseOrderStatus = "draft" | "posted" | "cancelled";
-export type CashExpenseOrderSource = "local" | "moysklad_import" | "sync";
+export type CashExpenseOrderSource = "local" | "moysklad_import" | "sync" | "payroll";
 export type CashExpensePaymentType = "cash" | "card";
 
 export type CashExpenseOrderOperation = {
@@ -95,6 +95,7 @@ function normalizeStatus(value?: string, fallback: CashExpenseOrderStatus = "pos
 }
 
 function normalizeSource(value?: string): CashExpenseOrderSource {
+  if (value === "payroll") return "payroll";
   if (value === "moysklad_import" || value === "sync") return value;
   return "local";
 }

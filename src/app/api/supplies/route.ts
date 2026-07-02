@@ -4,6 +4,7 @@ import { toServiceDateInput } from "@/lib/date-time";
 import { createLocalStockDocument, listLocalStockDocuments } from "@/lib/local-inventory-admin";
 import { type CreateSupplyBody } from "@/lib/supply-create-payload";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { prisma } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -48,6 +49,17 @@ export async function POST(request: NextRequest) {
   if (!body.organization?.meta?.href || !body.agent?.meta?.href || !body.store?.meta?.href) {
     return NextResponse.json({ error: "Укажите организацию, поставщика и склад (meta.href)" }, { status: 400 });
   }
+  const organizationId = extractMoyskladEntityId(body.organization.meta.href) ?? body.organization.meta.href;
+  const storeId = extractMoyskladEntityId(body.store.meta.href) ?? body.store.meta.href;
+  const [organization, store] = await Promise.all([
+    prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationId }, { moyskladId: organizationId }] } }),
+    prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } }),
+  ]);
+  if (!organization) return NextResponse.json({ error: "Организация не найдена в локальной БД" }, { status: 400 });
+  if (!store) return NextResponse.json({ error: "Склад не найден в локальной БД" }, { status: 400 });
+  if (store.organizationId && store.organizationId !== organization.id) {
+    return NextResponse.json({ error: "Выбранный склад не относится к выбранной организации" }, { status: 400 });
+  }
 
   const validPositions = (body.positions ?? []).filter(
     (p) => p.assortment?.meta?.href && Number(p.quantity) > 0
@@ -59,7 +71,7 @@ export async function POST(request: NextRequest) {
   const result = await createLocalStockDocument(
     {
       type: "receipt",
-      storeId: extractMoyskladEntityId(body.store.meta.href) ?? body.store.meta.href,
+      storeId,
       counterpartyId: extractMoyskladEntityId(body.agent.meta.href) ?? body.agent.meta.href,
       documentDate: (body.incomingDate || body.moment || toServiceDateInput(new Date())).slice(0, 10),
       moment: body.moment,

@@ -6,16 +6,21 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  CheckSquare2,
   Copy,
+  Eraser,
   Eye,
+  ExternalLink,
   FilePlus2,
   Loader2,
+  MapPin,
   PackagePlus,
   Pencil,
   Plus,
   RefreshCw,
   Save,
   Search,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,6 +29,7 @@ import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
 type StockDocumentType = "receipt" | "writeoff";
+type AdjustmentType = "technical" | "expense";
 type FormMode = "new" | "edit" | "view";
 type SaveAction = "draft" | "conduct";
 
@@ -34,6 +40,7 @@ type ProductOption = {
   name: string;
   article: string;
   code: string;
+  cell?: string;
   brand?: string;
   sae?: string;
   packageVolume?: string;
@@ -46,6 +53,8 @@ type ProductOption = {
   stock: { storeId: string; storeName: string; available: number; slotName: string }[];
 };
 
+type KnownCell = { storeId: string; storeName: string; slotName: string; available: number };
+
 type Position = {
   localId: string;
   productId: string;
@@ -56,7 +65,12 @@ type Position = {
   quantity: number;
   price: number;
   slotName: string;
+  slotStoreId: string;
+  defaultCell: string;
+  makeDefaultCell: boolean;
+  knownCells: KnownCell[];
   available: number;
+  availableKnown: boolean;
 };
 
 type MovementRow = {
@@ -68,6 +82,10 @@ type MovementRow = {
   applicable: boolean;
   sum: number;
   description: string;
+  adjustmentType: AdjustmentType | null;
+  adjustmentMethod: string | null;
+  adjustmentReason: string;
+  affectsManagementProfit: boolean;
   storeId: string;
   storeName: string;
   counterpartyId: string;
@@ -92,8 +110,45 @@ type MovementRow = {
     quantity: number;
     price: number;
     slotName: string;
+    defaultCell?: string;
+    slotStoreId?: string;
+    knownCells?: KnownCell[];
+    makeDefaultCell?: boolean;
   }[];
 };
+
+type CellEditorState = {
+  mode: "single" | "bulk";
+  localId?: string;
+  selectedCell: string;
+  search: string;
+  createName: string;
+  makeDefaultCell: boolean;
+};
+
+const technicalAdjustmentReasons = [
+  "Ошибка начальных остатков",
+  "Ошибка импорта",
+  "Ошибка миграции",
+  "Дублирующий складской документ",
+  "Некорректное ручное проведение",
+  "Расхождение после инвентаризации",
+  "Ошибка единицы измерения",
+  "Ошибка старой базы",
+  "Другое техническое исправление",
+];
+
+const expenseWriteoffReasons = [
+  "Порча",
+  "Истёк срок хранения",
+  "Утрата",
+  "Кража",
+  "Использовано для внутренних нужд",
+  "Передано бесплатно",
+  "Гарантийная замена",
+  "Повреждено при работе",
+  "Другое фактическое списание",
+];
 
 type ExistingInvoiceDraft = {
   documentId: string;
@@ -168,12 +223,50 @@ function statusMeta(document: Pick<MovementRow, "applicable">) {
     : { label: "Черновик", tone: "warning" as const };
 }
 
+function adjustmentMeta(document: Pick<MovementRow, "adjustmentType" | "affectsManagementProfit">) {
+  return document.adjustmentType === "technical" || document.affectsManagementProfit === false
+    ? { label: "Техническая · без влияния", tone: "info" as const }
+    : { label: "Списание · расход", tone: "warning" as const };
+}
+
+function cleanCell(value: string | null | undefined) {
+  return (value ?? "").trim();
+}
+
+function productHref(productId: string) {
+  return `/inventory/products?product=${encodeURIComponent(productId)}`;
+}
+
+function knownCellsFromProduct(product: Pick<ProductOption, "stock" | "cell">) {
+  const rows = product.stock
+    .map((row) => ({
+      storeId: row.storeId,
+      storeName: row.storeName,
+      slotName: cleanCell(row.slotName),
+      available: Number(row.available) || 0,
+    }))
+    .filter((row) => row.slotName);
+  const defaultCell = cleanCell(product.cell);
+  if (!defaultCell) return rows;
+  if (rows.some((row) => row.slotName.toLowerCase() === defaultCell.toLowerCase())) return rows;
+  return [
+    ...rows,
+    { storeId: "", storeName: "Основная ячейка товара", slotName: defaultCell, available: 0 },
+  ];
+}
+
+function displayCells(cells: KnownCell[]) {
+  const unique = [...new Map(cells.map((cell) => [cell.slotName.toLowerCase(), cell])).values()];
+  if (unique.length === 0) return { label: "Не указана", extra: 0 };
+  return { label: unique[0].slotName, extra: Math.max(0, unique.length - 1) };
+}
+
 export default function StockDocumentClient({ type }: { type: StockDocumentType }) {
   const searchParams = useSearchParams();
   const autoOpenedDocumentRef = useRef<string | null>(null);
   const isReceipt = type === "receipt";
-  const title = isReceipt ? "Приёмка" : "Списание";
-  const actionLabel = isReceipt ? "Создать приёмку" : "Создать списание";
+  const title = isReceipt ? "Приёмка" : "Корректировка остатка";
+  const actionLabel = isReceipt ? "Создать приёмку" : "Списать / скорректировать";
   const productPriceLabel = isReceipt ? "Закупочная цена" : "Цена учёта";
 
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -193,6 +286,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [productsSearching, setProductsSearching] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
+  const [cellEditor, setCellEditor] = useState<CellEditorState | null>(null);
 
   const [documentDate, setDocumentDate] = useState(todayInput());
   const [createInvoice, setCreateInvoice] = useState(false);
@@ -201,6 +296,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("unpaid");
   const [description, setDescription] = useState("");
+  const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("expense");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
 
   const [documents, setDocuments] = useState<MovementRow[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(true);
@@ -238,6 +335,29 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     () => stores.find((store) => store.id === selectedStoreId)?.name ?? "",
     [selectedStoreId, stores]
   );
+  const warehouseCellOptions = useMemo(() => {
+    const map = new Map<string, KnownCell>();
+    const add = (cell: KnownCell) => {
+      const slotName = cleanCell(cell.slotName);
+      if (!slotName) return;
+      const key = slotName.toLowerCase();
+      if (!map.has(key)) map.set(key, { ...cell, slotName });
+    };
+    for (const product of products) {
+      for (const cell of knownCellsFromProduct(product)) {
+        if (!selectedStoreId || !cell.storeId || cell.storeId === selectedStoreId) add(cell);
+      }
+    }
+    for (const position of positions) {
+      for (const cell of position.knownCells) {
+        if (!selectedStoreId || !cell.storeId || cell.storeId === selectedStoreId) add(cell);
+      }
+      if (position.slotName && (!selectedStoreId || !position.slotStoreId || position.slotStoreId === selectedStoreId)) {
+        add({ storeId: position.slotStoreId, storeName: selectedStoreName, slotName: position.slotName, available: position.available });
+      }
+    }
+    return [...map.values()].sort((a, b) => a.slotName.localeCompare(b.slotName, "ru"));
+  }, [positions, products, selectedStoreId, selectedStoreName]);
   const lastDocument = documents[0] ?? null;
   const documentStats = useMemo(
     () => ({
@@ -245,6 +365,14 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       conducted: documents.filter((document) => document.applicable).length,
       drafts: documents.filter((document) => !document.applicable).length,
       invoices: documents.filter((document) => document.invoice).length,
+      technical: documents.filter((document) => document.adjustmentType === "technical" || document.affectsManagementProfit === false).length,
+      expense: documents.filter((document) => document.type === "writeoff" && document.adjustmentType !== "technical" && document.affectsManagementProfit !== false).length,
+      technicalSum: documents
+        .filter((document) => document.adjustmentType === "technical" || document.affectsManagementProfit === false)
+        .reduce((acc, document) => acc + document.sum, 0),
+      expenseSum: documents
+        .filter((document) => document.type === "writeoff" && document.adjustmentType !== "technical" && document.affectsManagementProfit !== false)
+        .reduce((acc, document) => acc + document.sum, 0),
       sum: documents.reduce((acc, document) => acc + document.sum, 0),
       quantity: documents.reduce((acc, document) => acc + document.totalQuantity, 0),
       positions: documents.reduce((acc, document) => acc + document.positionsCount, 0),
@@ -254,20 +382,35 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   const hasInvalidQty = positions.some((position) => Number(position.quantity) <= 0);
   const hasInvalidReceiptPrice = isReceipt && positions.some((position) => Number(position.price) <= 0);
+  const missingCellCount = isReceipt ? positions.filter((position) => !cleanCell(position.slotName)).length : 0;
+  const hasKnownWriteoffOverAvailable = !isReceipt && positions.some((position) => (
+    position.availableKnown && Number(position.quantity) > Number(position.available) + 0.000001
+  ));
+  const reasonOptions = adjustmentType === "technical" ? technicalAdjustmentReasons : expenseWriteoffReasons;
   const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction;
-  const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice;
+  const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice && (isReceipt || Boolean(adjustmentReason)) && !hasKnownWriteoffOverAvailable;
   const footerHelper = (() => {
-    if (readOnly) return "Проведённый документ открыт только для просмотра. Для нового прихода используйте копию.";
+    if (readOnly) return "Проведённый документ открыт только для просмотра. Для нового движения используйте копию.";
     if (positions.length === 0) return "Добавьте хотя бы одну позицию, чтобы сохранить документ.";
     if (hasInvalidQty) return "Количество по каждой позиции должно быть больше нуля.";
     if (!selectedStoreId) return "Черновик можно сохранить без движения остатков; для проведения выберите склад.";
     if (hasInvalidReceiptPrice) return "Для проведения укажите закупочную цену по каждой позиции.";
-    return "Черновик не меняет остатки. Проведение увеличит остаток выбранного склада.";
+    if (missingCellCount > 0 && isReceipt) return `У ${missingCellCount} поз. не указана ячейка. Проведение разрешено, если для склада ячейки не обязательны.`;
+    if (!isReceipt && !adjustmentReason) return "Для проведения выберите причину списания или корректировки.";
+    if (hasKnownWriteoffOverAvailable) return "Нельзя провести списание больше доступного остатка по выбранному складу.";
+    if (!isReceipt && adjustmentType === "technical") {
+      return "Проведение уменьшит остаток, но не попадёт в расходы и управленческую прибыль.";
+    }
+    return isReceipt
+      ? "Черновик не меняет остатки. Проведение увеличит остаток выбранного склада."
+      : "Черновик не меняет остатки. Проведение спишет товар с выбранного склада.";
   })();
 
   function resetDocumentForm() {
     const today = todayInput();
     setPositions([]);
+    setSelectedPositionIds([]);
+    setCellEditor(null);
     setDescription("");
     setSelectedCounterparty(null);
     setCounterpartySearch("");
@@ -279,6 +422,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setInvoiceDate(today);
     setInvoiceDueDate("");
     setInvoiceStatus("unpaid");
+    setAdjustmentType("expense");
+    setAdjustmentReason("");
     setEditingDocument(null);
     setFormMode("new");
     setFormError(null);
@@ -313,9 +458,18 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       quantity: position.quantity,
       price: position.price,
       slotName: position.slotName,
+      slotStoreId: position.slotStoreId || (position.slotName ? document.storeId : ""),
+      defaultCell: position.defaultCell || "",
+      makeDefaultCell: Boolean(position.makeDefaultCell),
+      knownCells: position.knownCells ?? [],
       available: 0,
+      availableKnown: false,
     })));
+    setSelectedPositionIds([]);
+    setCellEditor(null);
     setDescription(document.description || "");
+    setAdjustmentType(document.adjustmentType === "technical" ? "technical" : "expense");
+    setAdjustmentReason(document.adjustmentReason || "");
     setSelectedStoreId(document.storeId || selectedStoreId);
     setSelectedCounterparty(
       document.counterpartyId
@@ -425,6 +579,25 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }, [documents, searchParams]);
 
   useEffect(() => {
+    setSelectedPositionIds((prev) => prev.filter((id) => positions.some((position) => position.localId === id)));
+  }, [positions]);
+
+  useEffect(() => {
+    if (!selectedStoreId) return;
+    setPositions((prev) =>
+      prev.map((position) => {
+        const storeCell = position.knownCells.find((cell) => cell.storeId === selectedStoreId);
+        if (!storeCell) return { ...position, available: 0, availableKnown: true };
+        return {
+          ...position,
+          available: storeCell.available,
+          availableKnown: true,
+        };
+      })
+    );
+  }, [selectedStoreId]);
+
+  useEffect(() => {
     const query = productSearch.trim();
     if (query.length < 2) {
       setProducts([]);
@@ -499,13 +672,38 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     return product.stock.find((row) => row.storeId === selectedStoreId)?.available ?? 0;
   }
 
+  function stockRowForSelectedStore(product: ProductOption) {
+    return selectedStoreId ? product.stock.find((row) => row.storeId === selectedStoreId) : null;
+  }
+
   function slotForStore(product: ProductOption) {
-    if (!selectedStoreId) return "";
-    return product.stock.find((row) => row.storeId === selectedStoreId)?.slotName ?? "";
+    const warehouseCell = cleanCell(stockRowForSelectedStore(product)?.slotName);
+    return warehouseCell || cleanCell(product.cell);
+  }
+
+  function slotStoreForProduct(product: ProductOption) {
+    const row = stockRowForSelectedStore(product);
+    return cleanCell(row?.slotName) ? row?.storeId ?? "" : "";
+  }
+
+  function productSearchCellLabel(product: ProductOption) {
+    const cells = selectedStoreId
+      ? knownCellsFromProduct(product).filter((cell) => cell.storeId === selectedStoreId || !cell.storeId)
+      : knownCellsFromProduct(product);
+    const summary = displayCells(cells);
+    return summary.extra > 0 ? `${summary.label} + ещё ${summary.extra}` : summary.label;
+  }
+
+  function cellIssue(position: Position) {
+    if (!position.slotName) return "missing";
+    if (selectedStoreId && position.slotStoreId && position.slotStoreId !== selectedStoreId) return "wrong-store";
+    return "ok";
   }
 
   function addProduct(product: ProductOption) {
     if (readOnly) return;
+    const slotName = slotForStore(product);
+    const defaultCell = cleanCell(product.cell);
     setPositions((prev) => {
       const existing = prev.find((position) => position.productId === product.id);
       if (existing) {
@@ -526,8 +724,13 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           brand: product.brand || product.supplierName || "",
           quantity: 1,
           price: isReceipt ? product.buyPrice ?? 0 : product.buyPrice ?? product.salePrice ?? 0,
-          slotName: slotForStore(product),
+          slotName,
+          slotStoreId: slotStoreForProduct(product),
+          defaultCell,
+          makeDefaultCell: !defaultCell && Boolean(slotName),
+          knownCells: knownCellsFromProduct(product),
           available: availableForStore(product),
+          availableKnown: true,
         },
       ];
     });
@@ -540,6 +743,167 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     if (readOnly) return;
     setPositions((prev) =>
       prev.map((position) => (position.localId === localId ? { ...position, ...patch } : position))
+    );
+  }
+
+  function togglePositionSelection(localId: string) {
+    if (readOnly) return;
+    setSelectedPositionIds((prev) =>
+      prev.includes(localId) ? prev.filter((id) => id !== localId) : [...prev, localId]
+    );
+  }
+
+  function toggleAllPositionsSelection() {
+    if (readOnly) return;
+    setSelectedPositionIds((prev) => (
+      prev.length === positions.length ? [] : positions.map((position) => position.localId)
+    ));
+  }
+
+  function openCellEditor(position: Position) {
+    if (readOnly) return;
+    setFormError(null);
+    setCellEditor({
+      mode: "single",
+      localId: position.localId,
+      selectedCell: position.slotName,
+      search: "",
+      createName: "",
+      makeDefaultCell: position.makeDefaultCell || (!position.defaultCell && Boolean(position.slotName)),
+    });
+  }
+
+  function openBulkCellEditor() {
+    if (readOnly || selectedPositionIds.length === 0) return;
+    setFormError(null);
+    setCellEditor({
+      mode: "bulk",
+      selectedCell: "",
+      search: "",
+      createName: "",
+      makeDefaultCell: false,
+    });
+  }
+
+  function saveCellEditor() {
+    if (!cellEditor || readOnly) return;
+    const requestedCell = cleanCell(cellEditor.selectedCell || cellEditor.createName);
+    const existingCell = warehouseCellOptions.find((cell) => cell.slotName.toLowerCase() === requestedCell.toLowerCase());
+    const nextCell = existingCell?.slotName ?? requestedCell;
+    if (!selectedStoreId) {
+      setFormError("Выберите склад перед назначением ячейки");
+      return;
+    }
+    if (!nextCell) {
+      setFormError("Укажите ячейку");
+      return;
+    }
+    const targetIds = cellEditor.mode === "bulk" ? selectedPositionIds : [cellEditor.localId].filter(Boolean) as string[];
+    if (targetIds.length === 0) {
+      setFormError("Выберите строки для назначения ячейки");
+      return;
+    }
+    setPositions((prev) =>
+      prev.map((position) => {
+        if (!targetIds.includes(position.localId)) return position;
+        const nextKnown = position.knownCells.some(
+          (cell) => cell.storeId === selectedStoreId && cell.slotName.toLowerCase() === nextCell.toLowerCase()
+        )
+          ? position.knownCells
+          : [
+              ...position.knownCells,
+              { storeId: selectedStoreId, storeName: selectedStoreName, slotName: nextCell, available: position.available },
+            ];
+        return {
+          ...position,
+          slotName: nextCell,
+          slotStoreId: selectedStoreId,
+          knownCells: nextKnown,
+          makeDefaultCell: cellEditor.mode === "single"
+            ? cellEditor.makeDefaultCell
+            : cellEditor.makeDefaultCell || (!position.defaultCell && Boolean(nextCell)),
+        };
+      })
+    );
+    setInfo(targetIds.length > 1 ? `Ячейка ${nextCell} назначена для ${targetIds.length} строк.` : "Ячейка назначена.");
+    setFormError(null);
+    setCellEditor(null);
+  }
+
+  function renderCellEditor(targetPosition?: Position) {
+    if (!cellEditor) return null;
+    const query = cellEditor.search.trim().toLowerCase();
+    const options = warehouseCellOptions.filter((cell) => !query || cell.slotName.toLowerCase().includes(query));
+    const selectedCell = cleanCell(cellEditor.selectedCell || cellEditor.createName);
+    const defaultCell = targetPosition?.defaultCell ?? "";
+    const defaultWarning = cellEditor.mode === "single" && cellEditor.makeDefaultCell && defaultCell && selectedCell && defaultCell !== selectedCell;
+    const exactExisting = warehouseCellOptions.find((cell) => cell.slotName.toLowerCase() === cleanCell(cellEditor.createName).toLowerCase());
+    return (
+      <div className="eco-receipt-cell-popover" role="dialog" aria-label="Назначение ячейки">
+        <div className="eco-receipt-cell-popover-head">
+          <strong>{cellEditor.mode === "bulk" ? "Назначить ячейку строкам" : "Ячейка позиции"}</strong>
+          <button type="button" onClick={() => setCellEditor(null)} aria-label="Закрыть выбор ячейки">
+            <X size={14} />
+          </button>
+        </div>
+        {!selectedStoreId && (
+          <div className="eco-receipt-cell-warning">Сначала выберите склад документа.</div>
+        )}
+        <label className="eco-receipt-cell-search">
+          <Search size={14} />
+          <input
+            value={cellEditor.search}
+            onChange={(event) => setCellEditor({ ...cellEditor, search: event.target.value })}
+            placeholder="Поиск по ячейкам склада"
+          />
+        </label>
+        <div className="eco-receipt-cell-options">
+          {options.length === 0 ? (
+            <span>На выбранном складе известных ячеек пока нет.</span>
+          ) : options.slice(0, 8).map((cell) => (
+            <button
+              key={`${cell.storeId}-${cell.slotName}`}
+              type="button"
+              className={selectedCell === cell.slotName ? "is-active" : ""}
+              onClick={() => setCellEditor({ ...cellEditor, selectedCell: cell.slotName, createName: "" })}
+            >
+              <MapPin size={14} />
+              <strong>{cell.slotName}</strong>
+              <em>{formatQty(cell.available)} шт.</em>
+            </button>
+          ))}
+        </div>
+        <label className="eco-receipt-cell-create">
+          <span>Создать ячейку</span>
+          <input
+            value={cellEditor.createName}
+            onChange={(event) => setCellEditor({ ...cellEditor, createName: event.target.value, selectedCell: "" })}
+            placeholder="Например A-12"
+          />
+        </label>
+        {exactExisting && cellEditor.createName && (
+          <div className="eco-receipt-cell-warning">Такая ячейка уже есть. Будет использована существующая ячейка {exactExisting.slotName}.</div>
+        )}
+        {cellEditor.mode === "single" && (
+          <label className="eco-receipt-cell-checkbox">
+            <input
+              type="checkbox"
+              checked={cellEditor.makeDefaultCell}
+              onChange={(event) => setCellEditor({ ...cellEditor, makeDefaultCell: event.target.checked })}
+            />
+            <span>Сделать основной ячейкой товара</span>
+          </label>
+        )}
+        {defaultWarning && (
+          <div className="eco-receipt-cell-warning">
+            У товара уже указана ячейка {defaultCell}. Сделать {selectedCell} основной ячейкой товара?
+          </div>
+        )}
+        <div className="eco-receipt-cell-actions">
+          <button type="button" onClick={() => setCellEditor(null)}>Отмена</button>
+          <button type="button" className="is-primary" onClick={saveCellEditor}>Сохранить</button>
+        </div>
+      </div>
     );
   }
 
@@ -624,6 +988,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       applicable: Boolean(data.applicable),
       sum: total,
       description,
+      adjustmentType: isReceipt ? null : adjustmentType,
+      adjustmentMethod: isReceipt ? null : "WRITE_OFF_QUANTITY",
+      adjustmentReason: isReceipt ? "" : adjustmentReason,
+      affectsManagementProfit: isReceipt || adjustmentType !== "technical",
       storeId: selectedStoreId,
       storeName: selectedStoreName,
       counterpartyId: selectedCounterparty?.id || "",
@@ -641,6 +1009,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         quantity: position.quantity,
         price: position.price,
         slotName: position.slotName,
+        defaultCell: position.defaultCell,
+        slotStoreId: position.slotStoreId,
+        knownCells: position.knownCells,
+        makeDefaultCell: position.makeDefaultCell,
       })),
     };
   }
@@ -656,11 +1028,19 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       return;
     }
     if (nextApplicable && !selectedStoreId) {
-      setFormError("Выберите склад перед проведением приёмки");
+      setFormError(`Выберите склад перед проведением ${isReceipt ? "приёмки" : "списания"}`);
       return;
     }
     if (nextApplicable && hasInvalidReceiptPrice) {
       setFormError("Укажите корректную закупочную цену перед проведением");
+      return;
+    }
+    if (nextApplicable && !isReceipt && !adjustmentReason) {
+      setFormError("Выберите причину списания или технической корректировки");
+      return;
+    }
+    if (nextApplicable && hasKnownWriteoffOverAvailable) {
+      setFormError("Нельзя списать больше доступного остатка по выбранному складу");
       return;
     }
     if (isReceipt && createInvoice && !selectedCounterparty) {
@@ -685,6 +1065,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             counterpartyId: selectedCounterparty?.id ?? null,
             documentDate,
             description: description.trim() || undefined,
+            adjustmentType: isReceipt ? undefined : adjustmentType,
+            adjustmentMethod: isReceipt ? undefined : "WRITE_OFF_QUANTITY",
+            adjustmentReason: isReceipt ? undefined : adjustmentReason,
             applicable: nextApplicable,
             invoice: isReceipt && createInvoice
               ? {
@@ -700,6 +1083,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               quantity: Number(position.quantity) || 0,
               price: Number(position.price) || 0,
               slotName: position.slotName || undefined,
+              makeDefaultCell: position.makeDefaultCell,
             })),
           }),
         }
@@ -708,6 +1092,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         id?: string;
         name?: string;
         applicable?: boolean;
+        adjustmentType?: AdjustmentType | null;
+        adjustmentMethod?: string | null;
+        adjustmentReason?: string | null;
+        affectsManagementProfit?: boolean;
         invoice?: MovementRow["invoice"] | null;
         error?: string;
       }>(res);
@@ -820,7 +1208,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   <div className="eco-receipt-section-head">
                     <div>
                       <span>Параметры документа</span>
-                      <h3>Склад, поставщик и основание</h3>
+                      <h3>{isReceipt ? "Склад, поставщик и основание" : "Склад, тип операции и причина"}</h3>
                     </div>
                   </div>
                   <div className="eco-receipt-param-grid">
@@ -880,16 +1268,59 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       />
                     </label>
 
-                    <label className="eco-receipt-field">
-                      <span>Номер счёта / накладной</span>
-                      <EcoInput
-                        value={invoiceNumber}
-                        onChange={(event) => setInvoiceNumber(event.target.value)}
-                        placeholder="авто или номер поставщика"
-                        disabled={readOnly}
-                      />
-                    </label>
+                    {!isReceipt && (
+                      <>
+                        <label className="eco-receipt-field is-wide">
+                          <span>Тип операции *</span>
+                          <EcoSelect
+                            value={adjustmentType}
+                            onChange={(event) => {
+                              const nextType = event.target.value === "technical" ? "technical" : "expense";
+                              setAdjustmentType(nextType);
+                              const nextReasons = nextType === "technical" ? technicalAdjustmentReasons : expenseWriteoffReasons;
+                              setAdjustmentReason((current) => nextReasons.includes(current) ? current : "");
+                            }}
+                            disabled={readOnly}
+                          >
+                            <option value="technical">Техническая корректировка — не учитывать в управленческой прибыли</option>
+                            <option value="expense">Обычное списание — учитывать как расход</option>
+                          </EcoSelect>
+                        </label>
+                        <label className="eco-receipt-field">
+                          <span>Причина *</span>
+                          <EcoSelect
+                            value={adjustmentReason}
+                            onChange={(event) => setAdjustmentReason(event.target.value)}
+                            disabled={readOnly}
+                          >
+                            <option value="">Выберите причину</option>
+                            {reasonOptions.map((reason) => (
+                              <option key={reason} value={reason}>{reason}</option>
+                            ))}
+                          </EcoSelect>
+                        </label>
+                      </>
+                    )}
+
+                    {isReceipt && (
+                      <label className="eco-receipt-field">
+                        <span>Номер счёта / накладной</span>
+                        <EcoInput
+                          value={invoiceNumber}
+                          onChange={(event) => setInvoiceNumber(event.target.value)}
+                          placeholder="авто или номер поставщика"
+                          disabled={readOnly}
+                        />
+                      </label>
+                    )}
                   </div>
+
+                  {!isReceipt && adjustmentType === "technical" && (
+                    <div className="eco-receipt-inline-state is-success">
+                      <CheckCircle2 size={18} />
+                      <span>Техническая корректировка изменит остаток, но не попадёт в расходы и расчёт управленческой прибыли.</span>
+                    </div>
+                  )}
 
                   {!selectedCounterparty && counterpartySearch.trim().length >= 2 && !readOnly && (
                     <div className="eco-receipt-result-panel">
@@ -1031,10 +1462,18 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         <div key={product.id} className="eco-receipt-product-row">
                           <div>
                             <strong>{product.name}</strong>
-                            <span>{[product.article || product.code, product.brand, product.supplierName].filter(Boolean).join(" · ") || "без артикула"}</span>
+                            <span>
+                              {[
+                                product.article || product.code || "без артикула",
+                                product.brand,
+                                `остаток ${formatQty(availableForStore(product))} шт`,
+                                `ячейка ${productSearchCellLabel(product).toLowerCase()}`,
+                              ].filter(Boolean).join(" · ")}
+                            </span>
                           </div>
                           <dl>
                             <div><dt>Остаток</dt><dd>{formatQty(availableForStore(product))}</dd></div>
+                            <div><dt>Ячейка</dt><dd>{productSearchCellLabel(product)}</dd></div>
                             <div><dt>Закупка</dt><dd>{formatMoney(product.buyPrice)} ₽</dd></div>
                             <div><dt>Продажа</dt><dd>{formatMoney(product.salePrice)} ₽</dd></div>
                           </dl>
@@ -1095,33 +1534,83 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                 <section className="eco-receipt-form-section">
                   <div className="eco-receipt-section-head">
                     <div>
-                      <span>Позиции приёмки</span>
+                      <span>{isReceipt ? "Позиции приёмки" : "Позиции корректировки"}</span>
                       <h3>{positions.length ? `${positions.length} строк` : "Позиции ещё не добавлены"}</h3>
                     </div>
+                    {isReceipt && positions.length > 0 && !readOnly && (
+                      <div className="eco-receipt-bulk-cells">
+                        <button type="button" onClick={toggleAllPositionsSelection}>
+                          {selectedPositionIds.length === positions.length ? <CheckSquare2 size={14} /> : <Square size={14} />}
+                          {selectedPositionIds.length || "Выбрать"}
+                        </button>
+                        <button type="button" onClick={openBulkCellEditor} disabled={selectedPositionIds.length === 0}>
+                          <MapPin size={14} />
+                          Назначить ячейку
+                        </button>
+                        {cellEditor?.mode === "bulk" && renderCellEditor()}
+                      </div>
+                    )}
                   </div>
+                  {cellEditor?.mode === "single" && (
+                    <div className="eco-receipt-cell-editor-host">
+                      {renderCellEditor(positions.find((position) => position.localId === cellEditor.localId))}
+                    </div>
+                  )}
 
                   <div className="eco-receipt-position-table">
                     <table>
                       <thead>
                         <tr>
+                          <th className="eco-receipt-select-col" aria-label="Выбор строк" />
                           <th>Товар</th>
                           <th>Артикул / код</th>
                           <th>Текущий остаток</th>
                           <th>Кол-во</th>
                           <th>{productPriceLabel}</th>
                           <th>Сумма</th>
+                          <th>Ячейка</th>
                           <th>Действия</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {positions.map((position) => (
-                          <tr key={position.localId}>
+                        {positions.map((position) => {
+                          const issue = cellIssue(position);
+                          const sameStoreCells = selectedStoreId
+                            ? position.knownCells.filter((cell) => cell.storeId === selectedStoreId)
+                            : position.knownCells;
+                          const extraCells = position.slotName
+                            ? sameStoreCells.filter((cell) => cell.slotName.toLowerCase() !== position.slotName.toLowerCase()).length
+                            : 0;
+                          const selected = selectedPositionIds.includes(position.localId);
+                          return (
+                          <tr key={position.localId} className={selected ? "is-selected" : undefined}>
+                            <td className="eco-receipt-select-cell">
+                              {!readOnly && isReceipt && (
+                                <button
+                                  type="button"
+                                  className={selected ? "is-selected" : undefined}
+                                  onClick={() => togglePositionSelection(position.localId)}
+                                  aria-label={selected ? "Убрать строку из массового выбора" : "Выбрать строку"}
+                                >
+                                  {selected ? <CheckSquare2 size={15} /> : <Square size={15} />}
+                                </button>
+                              )}
+                            </td>
                             <td>
-                              <strong>{position.name}</strong>
+                              <a
+                                href={productHref(position.productId)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="eco-receipt-product-link"
+                                title="Открыть карточку товара в новой вкладке"
+                              >
+                                <strong>{position.name}</strong>
+                                <ExternalLink size={13} />
+                              </a>
                               <span>{[position.brand, position.article, position.code].filter(Boolean).join(" · ") || "без дополнительных данных"}</span>
                             </td>
                             <td className="l-mono">{position.article || position.code || "—"}</td>
-                            <td className="l-number">{formatQty(position.available)}</td>
+                            <td className="l-number">{position.availableKnown ? formatQty(position.available) : "—"}</td>
                             <td>
                               <input
                                 type="number"
@@ -1141,28 +1630,72 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                               />
                             </td>
                             <td className="l-number l-sum">{formatMoney(position.quantity * position.price)} ₽</td>
-                            <td>
-                              {!readOnly && (
+                            <td className="eco-receipt-cell-cell">
+                              <div className="eco-receipt-cell-wrap">
                                 <button
                                   type="button"
-                                  className="eco-icon-btn"
-                                  title="Удалить позицию"
-                                  aria-label="Удалить позицию"
-                                  onClick={() => setPositions((prev) => prev.filter((item) => item.localId !== position.localId))}
+                                  className={`eco-receipt-cell-pill is-${issue}`}
+                                  onClick={() => openCellEditor(position)}
+                                  disabled={readOnly || !isReceipt}
+                                  title={issue === "wrong-store" ? `Ячейка ${position.slotName} относится к другому складу` : "Назначить или изменить ячейку"}
                                 >
-                                  <Trash2 size={16} />
+                                  <MapPin size={13} />
+                                  <span>{position.slotName || "Не указана"}</span>
+                                  {extraCells > 0 && <em>+ ещё {extraCells}</em>}
                                 </button>
+                                {position.defaultCell && position.defaultCell !== position.slotName && (
+                                  <small>осн. {position.defaultCell}</small>
+                                )}
+                                {issue === "wrong-store" && <small className="is-danger">другой склад</small>}
+                              </div>
+                            </td>
+                            <td>
+                              {!readOnly && (
+                                <div className="eco-receipt-table-actions">
+                                  {isReceipt && (
+                                    <button
+                                      type="button"
+                                      className="eco-icon-btn"
+                                      title="Назначить ячейку"
+                                      aria-label="Назначить ячейку"
+                                      onClick={() => openCellEditor(position)}
+                                    >
+                                      <MapPin size={16} />
+                                    </button>
+                                  )}
+                                  {!isReceipt && position.availableKnown && position.available > 0 && (
+                                    <button
+                                      type="button"
+                                      className="eco-icon-btn"
+                                      title="Обнулить остаток"
+                                      aria-label="Обнулить остаток"
+                                      onClick={() => updatePosition(position.localId, { quantity: position.available })}
+                                    >
+                                      <Eraser size={16} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="eco-icon-btn"
+                                    title="Удалить позицию"
+                                    aria-label="Удалить позицию"
+                                    onClick={() => setPositions((prev) => prev.filter((item) => item.localId !== position.localId))}
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                     {positions.length === 0 && (
                       <div className="eco-receipt-empty-positions">
                         <PackagePlus size={24} />
-                        <strong>Добавьте товары в приёмку</strong>
-                        <span>После выбора товара здесь появятся количество, закупочная цена и сумма строки.</span>
+                        <strong>{isReceipt ? "Добавьте товары в приёмку" : "Добавьте товары для списания"}</strong>
+                        <span>{isReceipt ? "После выбора товара здесь появятся количество, закупочная цена и сумма строки." : "После выбора товара здесь появятся доступный остаток, количество списания и сумма корректировки."}</span>
                       </div>
                     )}
                   </div>
@@ -1171,9 +1704,31 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     {positions.map((position) => (
                       <div key={position.localId} className="eco-receipt-position-card">
                         <div>
-                          <strong>{position.name}</strong>
+                          <a
+                            href={productHref(position.productId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="eco-receipt-product-link"
+                            title="Открыть карточку товара в новой вкладке"
+                          >
+                            <strong>{position.name}</strong>
+                            <ExternalLink size={13} />
+                          </a>
                           <span>{[position.brand, position.article || position.code].filter(Boolean).join(" · ") || "без артикула"}</span>
                         </div>
+                        {isReceipt && (
+                          <div className="eco-receipt-card-cell">
+                            <button
+                              type="button"
+                              className={`eco-receipt-cell-pill is-${cellIssue(position)}`}
+                              onClick={() => openCellEditor(position)}
+                              disabled={readOnly}
+                            >
+                              <MapPin size={13} />
+                              <span>{position.slotName || "Не указана"}</span>
+                            </button>
+                          </div>
+                        )}
                         <label>
                           Кол-во
                           <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
@@ -1208,8 +1763,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   <div><dt>Позиций</dt><dd>{positions.length}</dd></div>
                   <div><dt>Кол-во</dt><dd>{formatQty(totalQty)}</dd></div>
                   <div><dt>Сумма</dt><dd>{formatMoney(total)} ₽</dd></div>
+                  {isReceipt && <div><dt>Без ячейки</dt><dd>{missingCellCount}</dd></div>}
                   <div><dt>Склад</dt><dd>{selectedStoreName || "не выбран"}</dd></div>
-                  <div><dt>Поставщик</dt><dd>{selectedCounterparty?.name || counterpartySearch || "не выбран"}</dd></div>
+                  <div><dt>{isReceipt ? "Поставщик" : "Основание"}</dt><dd>{selectedCounterparty?.name || counterpartySearch || "не выбран"}</dd></div>
+                  {!isReceipt && (
+                    <>
+                      <div><dt>Тип</dt><dd>{adjustmentType === "technical" ? "Техническая" : "Обычное списание"}</dd></div>
+                      <div><dt>Прибыль</dt><dd>{adjustmentType === "technical" ? "не влияет" : "учитывается расходом"}</dd></div>
+                    </>
+                  )}
                   <div><dt>Статус</dt><dd>{readOnly ? "Проведена" : "Черновик"}</dd></div>
                 </dl>
               </aside>
@@ -1239,7 +1801,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                     </EcoButton>
                     <EcoButton type="button" className="eco-receipt-conduct-btn" onClick={() => void submit(true)} disabled={!canConduct} title={!canConduct ? footerHelper : undefined}>
                       {savingAction === "conduct" ? <Loader2 size={15} /> : <CheckCircle2 size={15} />}
-                      Провести приёмку
+                      Провести {isReceipt ? "приёмку" : "списание"}
                     </EcoButton>
                   </>
                 )}
@@ -1301,17 +1863,17 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <em>можно редактировать</em>
           </div>
           <div className="eco-receipt-kpi is-neutral">
-            <span>Количество позиций</span>
-            <strong>{formatQty(documentStats.quantity)}</strong>
-            <em>{documentStats.positions} строк документов</em>
+            <span>{isReceipt ? "Количество позиций" : "Технические"}</span>
+            <strong>{isReceipt ? formatQty(documentStats.quantity) : documentStats.technical}</strong>
+            <em>{isReceipt ? `${documentStats.positions} строк документов` : `${formatMoney(documentStats.technicalSum)} ₽ без влияния на прибыль`}</em>
           </div>
           <div className="eco-receipt-kpi is-rust">
-            <span>Счета / сумма</span>
-            <strong>{formatMoney(documentStats.sum)} ₽</strong>
-            <em>{isReceipt ? `${documentStats.invoices} счетов` : "учётная сумма"}</em>
+            <span>{isReceipt ? "Счета / сумма" : "Обычные списания"}</span>
+            <strong>{formatMoney(isReceipt ? documentStats.sum : documentStats.expenseSum)} ₽</strong>
+            <em>{isReceipt ? `${documentStats.invoices} счетов` : `${documentStats.expense} документов как расход`}</em>
           </div>
           <div className="eco-receipt-kpi is-neutral">
-            <span>Последнее поступление</span>
+            <span>{isReceipt ? "Последнее поступление" : "Последняя корректировка"}</span>
             <strong>{lastDocument ? formatDate(lastDocument.documentDate) : "—"}</strong>
             <em>{lastDocument?.name || "документов пока нет"}</em>
           </div>
@@ -1323,7 +1885,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           <AlertTriangle size={20} />
           <div>
             <h2>Не удалось загрузить склады</h2>
-            <p>Проверьте локальную базу или повторите загрузку. Без склада нельзя провести приёмку.</p>
+            <p>Проверьте локальную базу или повторите загрузку. Без склада нельзя провести документ.</p>
           </div>
           <EcoButton type="button" onClick={() => void loadStores()} disabled={storesLoading}>
             <RefreshCw size={15} />
@@ -1352,7 +1914,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <div className="eco-page-kicker">Журнал</div>
             <h2 className="eco-stock-doc-title">Последние документы</h2>
             <p className="eco-stock-doc-subtitle">
-              Последние локальные приёмки и документы поступления.
+              {isReceipt ? "Последние локальные приёмки и документы поступления." : "Технические корректировки и обычные списания локального склада."}
             </p>
           </div>
           <div className="grow" />
@@ -1384,7 +1946,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
         {documentsLoading && (
           <div className="eco-receipt-table-skeleton">
-            <p>Загружаем приёмки…</p>
+            <p>Загружаем {isReceipt ? "приёмки" : "корректировки"}…</p>
             {Array.from({ length: 5 }).map((_, index) => <span key={index} />)}
           </div>
         )}
@@ -1392,8 +1954,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         {!documentsLoading && documentsError && (
           <div className="eco-receipt-empty-state is-error">
             <AlertTriangle size={30} />
-            <h2>Не удалось загрузить приёмки</h2>
-            <p>Проверьте локальную базу или повторите загрузку журнала поступлений.</p>
+            <h2>Не удалось загрузить {isReceipt ? "приёмки" : "корректировки"}</h2>
+            <p>Проверьте локальную базу или повторите загрузку журнала.</p>
             <EcoButton type="button" onClick={() => void loadDocuments()}>
               <RefreshCw size={15} />
               Повторить
@@ -1404,11 +1966,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         {!documentsLoading && !documentsError && documents.length === 0 && (
           <div className="eco-receipt-empty-state">
             <PackagePlus size={30} />
-            <h2>Приёмок пока нет</h2>
-            <p>Создайте первую приёмку, чтобы оприходовать товары на локальный склад.</p>
+            <h2>{isReceipt ? "Приёмок пока нет" : "Корректировок пока нет"}</h2>
+            <p>{isReceipt ? "Создайте первую приёмку, чтобы оприходовать товары на локальный склад." : "Создайте техническую корректировку или обычное списание, чтобы изменить остаток документом."}</p>
             <EcoButton type="button" variant="primary" onClick={openDocumentForm}>
               <FilePlus2 size={15} />
-              Создать приёмку
+              {actionLabel}
             </EcoButton>
           </div>
         )}
@@ -1419,10 +1981,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               <thead>
                 <tr>
                   <th>№ / дата</th>
-                  <th>Поставщик</th>
+                  <th>{isReceipt ? "Поставщик" : "Тип / причина"}</th>
                   <th>Склад</th>
                   <th>Позиций</th>
-                  <th>Счёт / основание</th>
+                  <th>{isReceipt ? "Счёт / основание" : "Влияние"}</th>
                   <th>Статус</th>
                   <th>Сумма</th>
                   <th>Действия</th>
@@ -1432,6 +1994,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                 {documents.map((document) => {
                   const open = openId === document.id;
                   const status = statusMeta(document);
+                  const adjustment = adjustmentMeta(document);
                   return (
                     <Fragment key={document.id}>
                       <tr key={document.id}>
@@ -1442,13 +2005,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           </button>
                         </td>
                         <td>
-                          <strong>{document.counterpartyName || "без поставщика"}</strong>
-                          <span>{document.description || "поступление локального склада"}</span>
+                          <strong>{isReceipt ? document.counterpartyName || "без поставщика" : document.adjustmentReason || "без причины"}</strong>
+                          <span>{isReceipt ? document.description || "поступление локального склада" : document.description || adjustment.label}</span>
                         </td>
                         <td>{document.storeName || "склад не указан"}</td>
                         <td className="l-number">{document.positionsCount} · {formatQty(document.totalQuantity)} шт.</td>
                         <td>
-                          {document.invoice ? (
+                          {!isReceipt ? (
+                            <EcoBadge tone={adjustment.tone}>{adjustment.label}</EcoBadge>
+                          ) : document.invoice ? (
                             <Link href={`/finance/invoices?invoice=${document.invoice.id}`}>
                               счёт {document.invoice.number || "без номера"}
                             </Link>

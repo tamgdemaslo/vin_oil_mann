@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
 import { syncAqsiPendingOrder, type AqsiPendingOrderItem } from "@/lib/aqsi";
 import { getSession } from "@/lib/auth";
+import { applyBulkOilSaleMovements } from "@/lib/local-inventory-admin";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import {
-  isLikelyMarkedMotorOilProductName,
-  isMeasuredMotorOilQuantity,
   isRecognizedMotorOilMarkingCode,
   normalizeMarkingCodeInput,
   parseMarkingCodesInput,
   requiredMarkingCodeCount,
 } from "@/lib/marking";
+import {
+  isBulkOilMarkingMode,
+  isLiterSaleUnit,
+  isPackagedMarkedGoodMode,
+  normalizeProductMarkingMode,
+  normalizeProductMarkingSettings,
+  productMarkingDefaultForGroup,
+} from "@/lib/product-marking";
 import { toMoyskladMomentString } from "@/lib/time";
 
 type Meta = { href: string; type: string; mediaType: string };
@@ -30,6 +37,7 @@ type PaymentBody = {
 
 type OrderPosition = {
   id: string;
+  productId?: string | null;
   name: string;
   quantity: number;
   priceCents: number;
@@ -37,6 +45,18 @@ type OrderPosition = {
   sku?: string | null;
   assortmentType?: string;
   assortmentHref?: string;
+  productName?: string | null;
+  productGroupPath?: string | null;
+  productUomName?: string | null;
+  productMarkingEnabled?: boolean;
+  productMarkingMode?: string | null;
+  productMarkingStatus?: string | null;
+  productMarkingSettings?: unknown;
+};
+
+type BuildAqsiResult = {
+  items: AqsiPendingOrderItem[];
+  bulkOilMovements: Array<{ productId: string; volumeLiters: number }>;
 };
 
 function pickCustomerContact(agent: DemandAgent | undefined): string | undefined {
@@ -93,7 +113,7 @@ function pickRawAgent(raw: unknown): DemandAgent | undefined {
   return agent && typeof agent === "object" ? (agent as DemandAgent) : undefined;
 }
 
-function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOrderItem[] | NextResponse {
+function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): BuildAqsiResult | NextResponse {
   const bypassIds = new Set(
     Array.isArray(body.markingBypassPositionIds)
       ? body.markingBypassPositionIds.map((id) => String(id).trim()).filter(Boolean)
@@ -108,20 +128,100 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOr
 
   const usedCodes = new Set<string>();
   const items: AqsiPendingOrderItem[] = [];
+  const bulkOilMovements: BuildAqsiResult["bulkOilMovements"] = [];
   for (const row of rows) {
     const name = row.name || "Позиция без названия";
     const quantity = Number(row.quantity) || 0;
     const unitPrice = (Number(row.priceCents) || 0) / 100;
     const discountPercent = typeof row.discountPercent === "number" ? row.discountPercent : 0;
     const sku = row.sku ?? undefined;
-    const markingRequired = isProductOrderPosition(row) && isLikelyMarkedMotorOilProductName(name);
-    const measuredPour = markingRequired && isMeasuredMotorOilQuantity(name, quantity);
+    const markingMode = normalizeProductMarkingMode(row.productMarkingMode);
+    const markingRequired = isProductOrderPosition(row) && Boolean(row.productMarkingEnabled) && markingMode !== "NOT_MARKED";
+    const bulkOil = markingRequired && isBulkOilMarkingMode(markingMode);
+    const packagedMarkedGood = markingRequired && isPackagedMarkedGoodMode(markingMode);
+    const bulkGroup = productMarkingDefaultForGroup(row.productGroupPath) === "BULK_OIL";
+    const measuredPour = bulkOil;
+    const settings = normalizeProductMarkingSettings(row.productMarkingSettings);
     const codes = normalizeCodes(body.markingCodes?.[row.id]);
     const requiredCount = requiredMarkingCodeCount(quantity, { measuredPour });
     const bypassed = markingRequired && bypassIds.has(row.id) && codes.length < requiredCount;
 
+    if (markingRequired && markingMode === "REQUIRES_CHECK") {
+      return NextResponse.json(
+        {
+          error:
+            `Товар «${name}» требует проверки маркировки. ` +
+            "Откройте карточку товара и выберите сценарий маркировки.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (packagedMarkedGood && isLiterSaleUnit(row.productUomName)) {
+      return NextResponse.json(
+        {
+          error:
+            `Товар продаётся в литрах, но маркировка настроена как обычная упаковка: «${name}». ` +
+            "Есть риск полного вывода кода из оборота. Откройте карточку товара и выберите сценарий “Масло на разлив из бочки”.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (markingRequired && bulkGroup && !bulkOil) {
+      return NextResponse.json(
+        {
+          error:
+            `Товар находится в группе масла на разлив, но маркировка настроена не как бочка: «${name}». ` +
+            "Продажа заблокирована, чтобы код бочки не был списан целиком.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (bulkOil && !isLiterSaleUnit(row.productUomName)) {
+      return NextResponse.json(
+        {
+          error: `Товар нельзя продать на разлив: для позиции «${name}» единица списания должна быть литр.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (bulkOil && !settings.partialWithdrawalEnabled) {
+      return NextResponse.json(
+        { error: `Товар нельзя продать на разлив: для позиции «${name}» не включено частичное выбытие.` },
+        { status: 400 }
+      );
+    }
+
+    if (bulkOil && !settings.activeBarrelMarkingCode) {
+      return NextResponse.json(
+        { error: `Для товара на разлив не выбрана активная бочка с кодом маркировки: «${name}».` },
+        { status: 400 }
+      );
+    }
+
+    if (bulkOil && settings.currentVolumeLiters != null && quantity > settings.currentVolumeLiters) {
+      return NextResponse.json(
+        {
+          error:
+            `Недостаточно остатка в активной бочке. Остаток: ${settings.currentVolumeLiters} л, требуется: ${quantity} л.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const activeBarrelCode = bulkOil ? normalizeMarkingCodeInput(settings.activeBarrelMarkingCode) : "";
+    if (bulkOil && codes.length > 0 && codes[0] !== activeBarrelCode) {
+      return NextResponse.json(
+        { error: `Код маркировки в предчеке не совпадает с активной бочкой для позиции «${name}».` },
+        { status: 400 }
+      );
+    }
+
     if (markingRequired && !bypassed) {
-      if (codes.length < requiredCount) {
+      if (!bulkOil && codes.length < requiredCount) {
         const missingMarkingError = measuredPour
           ? `Для позиции «${name}» нужно указать код маркировки для продажи в литрах.`
           : requiredCount > 1
@@ -133,7 +233,8 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOr
         );
       }
 
-      const invalidCode = codes.slice(0, requiredCount).find((code) => !isRecognizedMotorOilMarkingCode(code));
+      const codesForValidation = bulkOil ? [activeBarrelCode] : codes.slice(0, requiredCount);
+      const invalidCode = codesForValidation.find((code) => !isRecognizedMotorOilMarkingCode(code));
       if (invalidCode) {
         return NextResponse.json(
           {
@@ -145,14 +246,14 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOr
         );
       }
 
-      for (const code of codes.slice(0, requiredCount)) {
-        if (usedCodes.has(code)) {
+      for (const code of codesForValidation) {
+        if (!bulkOil && usedCodes.has(code)) {
           return NextResponse.json(
             { error: `Код маркировки повторяется: ${code}` },
             { status: 400 }
           );
         }
-        usedCodes.add(code);
+        if (!bulkOil) usedCodes.add(code);
       }
 
       if (!measuredPour && requiredCount > 1 && Number.isInteger(quantity)) {
@@ -172,6 +273,10 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOr
       }
     }
 
+    if (bulkOil && row.productId) {
+      bulkOilMovements.push({ productId: row.productId, volumeLiters: quantity });
+    }
+
     items.push({
       name,
       quantity,
@@ -179,13 +284,13 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): AqsiPendingOr
       discountPercent,
       sku,
       markingRequired,
-      markingCode: markingRequired && !bypassed ? codes[0] : undefined,
+      markingCode: markingRequired && !bypassed ? (bulkOil ? activeBarrelCode : codes[0]) : undefined,
       markingBypass: bypassed,
       measuredPour,
     });
   }
 
-  return items;
+  return { items, bulkOilMovements };
 }
 
 async function sendAqsiOrder(input: {
@@ -217,7 +322,11 @@ async function sendAqsiOrder(input: {
   });
 }
 
-async function trySendLocalDemand(id: string, body: PaymentBody): Promise<NextResponse | null> {
+async function trySendLocalDemand(
+  id: string,
+  body: PaymentBody,
+  actor?: { login?: string; name?: string | null } | null
+): Promise<NextResponse | null> {
   const loaded = await loadLocalDemandDetailPayload(id);
   if (!loaded.ok) {
     if (loaded.notFound) return null;
@@ -226,25 +335,35 @@ async function trySendLocalDemand(id: string, body: PaymentBody): Promise<NextRe
 
   const rows: OrderPosition[] = loaded.data.positions.map((position) => ({
     id: position.id,
+    productId: position.product?.id,
     name: position.name,
     quantity: position.quantity,
     priceCents: position.price,
     discountPercent: typeof position.discount === "number" ? position.discount : 0,
     assortmentType: position.assortmentMeta?.type,
     assortmentHref: position.assortmentMeta?.href,
+    productName: position.product?.name,
+    productGroupPath: position.product?.groupPath,
+    productUomName: position.product?.uomName,
+    productMarkingEnabled: position.product?.markingEnabled,
+    productMarkingMode: position.product?.markingMode,
+    productMarkingStatus: position.product?.markingStatus,
+    productMarkingSettings: position.product?.markingSettings,
   }));
-  const items = buildAqsiItems(rows, body);
-  if (items instanceof NextResponse) return items;
+  const built = buildAqsiItems(rows, body);
+  if (built instanceof NextResponse) return built;
 
   const agent = pickRawAgent(loaded.data.raw);
-  return sendAqsiOrder({
+  const response = await sendAqsiOrder({
     id: loaded.data.header.id,
     number: loaded.data.header.name || loaded.data.header.id,
     comment: loaded.data.header.description ?? "",
     customer: loaded.data.header.agentName ?? "",
     customerContact: pickCustomerContact(agent),
-    items,
+    items: built.items,
   });
+  await applyBulkOilSaleMovements(built.bulkOilMovements, actor);
+  return response;
 }
 
 export async function POST(
@@ -269,7 +388,7 @@ export async function POST(
   }
 
   try {
-    const localResponse = await trySendLocalDemand(id, body);
+    const localResponse = await trySendLocalDemand(id, body, session.user);
     if (localResponse) return localResponse;
     return NextResponse.json({ error: "Локальная отгрузка не найдена" }, { status: 404 });
   } catch (error) {

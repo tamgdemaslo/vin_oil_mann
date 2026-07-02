@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getCrmStageBySortOrder } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
+import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -122,6 +123,10 @@ function stripCaseUpdateFields(data: Record<string, unknown>) {
   return next;
 }
 
+function dealTaskTitle(deal: { title: string } & Record<string, unknown>) {
+  return typeof deal.nextAction === "string" && deal.nextAction.trim() ? deal.nextAction : deal.title;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -133,6 +138,10 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const data: Record<string, unknown> = {};
+    const current = await prisma.crmDeal.findUnique({
+      where: { id },
+      select: { id: true, responsibleLogin: true },
+    });
 
     if (body.title !== undefined) data.title = parseOptionalString(body.title) ?? "Новое дело клиента";
     if (body.customerName !== undefined) data.customerName = parseOptionalString(body.customerName);
@@ -209,6 +218,20 @@ export async function PATCH(
               where: { id },
               select: LEGACY_DEAL_SELECT,
             });
+    }
+
+    const nextResponsible = typeof updated?.responsibleLogin === "string" ? updated.responsibleLogin : null;
+    if (updated && body.responsibleLogin !== undefined && nextResponsible && nextResponsible !== current?.responsibleLogin) {
+      try {
+        await notifyClientCaseTaskAssigned({
+          caseId: updated.id,
+          employeeId: nextResponsible,
+          taskTitle: dealTaskTitle(updated),
+          dueAt: updated.nextContactAt,
+        });
+      } catch (error) {
+        console.warn("[crm/deals PATCH] telegram task notification failed", error);
+      }
     }
 
     return NextResponse.json(updated);

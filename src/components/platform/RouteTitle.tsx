@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
-const APP_SUFFIX = "Эко-платформа";
+const APP_SUFFIX = "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ";
 
 type RouteTitleRule = {
   match: (pathname: string) => boolean;
@@ -20,6 +20,7 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/", title: () => `Главная | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/dashboard", title: () => `Сводка | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/notifications", title: () => `Уведомления | ${APP_SUFFIX}` },
+  { match: (pathname) => pathname === "/messages", title: () => `Сообщения | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/shipment/new", title: () => `Новая отгрузка | ${APP_SUFFIX}` },
   {
@@ -45,8 +46,9 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/shipment", title: () => `Отгрузки | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/inventory/products", title: () => `Товары | Склад` },
+  { match: (pathname) => pathname === "/warehouse/inventory", title: () => `Инвентаризация | Склад` },
   { match: (pathname) => pathname === "/inventory/receipts", title: () => `Приемка | Склад` },
-  { match: (pathname) => pathname === "/inventory/writeoffs", title: () => `Списание | Склад` },
+  { match: (pathname) => pathname === "/inventory/writeoffs" || pathname === "/warehouse/adjustments", title: () => `Корректировки | Склад` },
   { match: (pathname) => pathname === "/inventory/restock", title: () => `Пополнение | Склад` },
   { match: (pathname) => pathname === "/inventory/profit", title: () => `Прибыль склада | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/inventory/counterparties", title: () => `Контрагенты | Склад` },
@@ -56,18 +58,20 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/finance", title: () => `Финансы | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/finance/invoices", title: () => `Счета поставщиков | Финансы` },
   { match: (pathname) => pathname === "/finance/profit", title: () => `Прибыль | Финансы` },
-  { match: (pathname) => pathname === "/finance/shifts", title: () => `Смены | Финансы` },
+  { match: (pathname) => pathname === "/finance/shifts", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/salary", title: () => `Зарплата | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/crm", title: () => `CRM | ${APP_SUFFIX}` },
+  { match: (pathname) => pathname === "/crm/messages", title: () => `Сообщения | CRM` },
   { match: (pathname) => pathname === "/records", title: () => `Записи | CRM` },
   { match: (pathname) => pathname === "/clients", title: () => `Клиенты | CRM` },
   { match: (pathname) => pathname === "/clients/counterparties", title: () => `Клиенты | Контрагенты` },
 
   { match: (pathname) => pathname === "/cabinet", title: () => `Кабинет | ${APP_SUFFIX}` },
-  { match: (pathname) => pathname === "/cabinet/shifts", title: () => `Смены | Финансы` },
+  { match: (pathname) => pathname === "/cabinet/shifts", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet/customer-analytics", title: () => `Аналитика клиентов | Кабинет` },
   { match: (pathname) => pathname === "/cabinet/integrations", title: () => `Интеграции | Кабинет` },
+  { match: (pathname) => pathname === "/cabinet/integrations/messenger", title: () => `Мессенджеры | Интеграции` },
   { match: (pathname) => pathname === "/cabinet/salary", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet/analytics", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/cabinet/penalties", title: () => `Штрафы и бонусы | Кабинет` },

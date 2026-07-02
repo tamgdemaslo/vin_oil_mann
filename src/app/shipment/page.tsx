@@ -174,6 +174,12 @@ function periodLabel(dateFrom: string, dateTo: string): string {
   return `до ${dateTo}`;
 }
 
+function shipmentNumberLabel(name: string): string {
+  const clean = name.trim();
+  const numeric = clean.match(/^\d+$/)?.[0] ?? clean.match(/-(\d+)$/)?.[1] ?? "";
+  return numeric ? numeric.padStart(4, "0") : clean;
+}
+
 function listQuery(
   search: string,
   counterparty: string,
@@ -217,13 +223,14 @@ function ShipmentMobileCard({
   sumLabel: string;
 }) {
   const href = `/shipment/${row.id}`;
+  const numberLabel = shipmentNumberLabel(row.name);
 
   return (
     <article className="eco-shipment-mobile-card">
       <div className="eco-shipment-mobile-card__top">
         <div>
           <Link href={href} className="l-mono eco-shipment-list-number-link">
-            {row.name}
+            {numberLabel}
           </Link>
           <div className="l-mono eco-shipment-list-subtext">
             {moment.date} · {moment.time}
@@ -460,10 +467,10 @@ export default async function ShipmentListPage({
               <thead>
                 <tr>
                   <th style={{ width: 36 }}><span className="eco-check" /></th>
-                  <th>№ / дата</th>
+                  <th>№</th>
                   <th>Клиент</th>
                   <th>Авто / гос. номер</th>
-	                  <th>Склад</th>
+                  <th>Склад</th>
                   <th>Создал</th>
                   <th>Статус</th>
                   <th>Оплата</th>
@@ -476,17 +483,17 @@ export default async function ShipmentListPage({
                   const moment = formatMoment(r.moment);
                   const counterpartyName = getCounterpartyDisplay(r);
                   const counterpartyHref = counterpartyCatalogHref(r);
-	                  const vehicle = getVehicleDisplay(r);
-	                  return (
-	                    <ShipmentListRow
+                  const vehicle = getVehicleDisplay(r);
+                  return (
+                    <ShipmentListRow
                       key={r.id}
                       row={r}
                       moment={moment}
                       counterpartyName={counterpartyName}
                       counterpartyHref={counterpartyHref}
-	                      vehiclePrimary={vehicle.primary}
-	                      vehicleSecondary={vehicle.secondary}
-	                      vehicleTitle={vehicle.title}
+                      vehiclePrimary={vehicle.primary}
+                      vehicleSecondary={vehicle.secondary}
+                      vehicleTitle={vehicle.title}
                       ecoUserName={getEcoUserName(r) ?? "—"}
                       sumLabel={`${rubles(r.sum)} ₽`}
                     />

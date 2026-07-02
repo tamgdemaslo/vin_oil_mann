@@ -7,6 +7,32 @@ function counterpartyMeta(id: string) {
   return { href: `local://counterparty/${id}`, type: "counterparty", mediaType: "application/json" };
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function counterpartyVehicle(raw: unknown) {
+  const record = jsonRecord(raw);
+  const vehicle = jsonRecord(record.vehicle);
+  const vehiclePlate = stringFromRecord(vehicle, "plate") || stringFromRecord(record, "vehiclePlate");
+  const vehicleVin = stringFromRecord(vehicle, "vin") || stringFromRecord(record, "vehicleVin");
+  const vehicleModel = stringFromRecord(vehicle, "model") || stringFromRecord(record, "vehicleModel");
+  const vehicleYear = stringFromRecord(vehicle, "year") || stringFromRecord(record, "vehicleYear");
+  const vehicleLabel = [
+    [vehicleModel, vehicleYear].filter(Boolean).join(" "),
+    vehiclePlate,
+    vehicleVin ? `VIN ${vehicleVin}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return { vehiclePlate, vehicleVin, vehicleModel, vehicleYear, vehicleLabel };
+}
+
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
@@ -33,13 +59,20 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({
-    counterparties: counterparties.map((counterparty) => ({
-      id: counterparty.id,
-      name: counterparty.name,
-      phone: counterparty.phone,
-      normalizedPhone: counterparty.normalizedPhone,
-      meta: counterpartyMeta(counterparty.id),
-    })),
+    counterparties: counterparties.map((counterparty) => {
+      const vehicle = counterpartyVehicle(counterparty.raw);
+      return {
+        id: counterparty.id,
+        name: counterparty.name,
+        phone: counterparty.phone,
+        normalizedPhone: counterparty.normalizedPhone,
+        companyType: counterparty.companyType,
+        counterpartyTypeName: counterparty.counterpartyTypeName,
+        legalTitle: counterparty.legalTitle,
+        ...vehicle,
+        meta: counterpartyMeta(counterparty.id),
+      };
+    }),
   });
 }
 
@@ -82,6 +115,14 @@ export async function POST(request: NextRequest) {
     name: created.name,
     phone: created.phone,
     normalizedPhone: created.normalizedPhone,
+    companyType: created.companyType,
+    counterpartyTypeName: created.counterpartyTypeName,
+    legalTitle: created.legalTitle,
+    vehiclePlate: "",
+    vehicleVin: "",
+    vehicleModel: "",
+    vehicleYear: "",
+    vehicleLabel: "",
     meta: counterpartyMeta(created.id),
   });
 }

@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
+import { Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
+import EmployeeTelegramCard from "./EmployeeTelegramCard";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
 
 type CabinetDashboardProps = {
   role?: "owner" | "admin" | "master";
+  canManageOrganizations?: boolean;
 };
 
-export default function CabinetDashboard({ role }: CabinetDashboardProps) {
+export default function CabinetDashboard({ role, canManageOrganizations = false }: CabinetDashboardProps) {
   const canAccessCrm = role === "owner" || role === "admin";
   const canManageIntegrations = role === "owner" || role === "admin";
   const links = [
@@ -25,7 +27,25 @@ export default function CabinetDashboard({ role }: CabinetDashboardProps) {
         ]
       : []),
     ...(canManageIntegrations
-      ? [{ href: "/cabinet/integrations", label: "Интеграции", description: "Статус и ручные служебные запуски.", icon: Plug }]
+      ? [
+          ...(canManageOrganizations
+            ? [
+                {
+                  href: "/cabinet/organizations",
+                  label: "Организации",
+                  description: "Реквизиты, банк, налоги и основная организация.",
+                  icon: Building2,
+                },
+              ]
+            : []),
+          { href: "/cabinet/integrations", label: "Интеграции", description: "Статус и ручные служебные запуски.", icon: Plug },
+          {
+            href: "/cabinet/integrations/messenger",
+            label: "Мессенджеры",
+            description: "Telegram webhook и будущие каналы.",
+            icon: Plug,
+          },
+        ]
       : []),
   ];
 
@@ -91,6 +111,8 @@ export default function CabinetDashboard({ role }: CabinetDashboardProps) {
           </div>
           <PasswordChangeCard />
         </div>
+
+        <EmployeeTelegramCard />
       </section>
     </main>
   );

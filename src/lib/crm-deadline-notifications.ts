@@ -1,8 +1,9 @@
 import crypto from "crypto";
 import { getUsersFromEnv, type User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { sendEmployeeTelegramTemplate } from "@/lib/messenger/messenger-employee-notifications";
 
-export type ClientCaseNotificationType = "deadline_soon" | "due_now" | "overdue_repeat";
+export type ClientCaseNotificationType = "deadline_soon" | "due_now" | "overdue_repeat" | "task_assigned" | "today_summary";
 export type ClientCaseNotificationChannel = "in_app" | "browser_push" | "telegram";
 export type ClientCaseNotificationStatus = "sent" | "failed" | "skipped";
 export type ClientCaseNotificationUrgency = "overdue" | "next_hour" | "today" | "info";
@@ -252,38 +253,57 @@ function typeForCase(row: CrmCaseRow, now: Date, warningMinutes: number[], repea
   return null;
 }
 
-function telegramChatIds() {
-  const raw = process.env.TELEGRAM_USER_CHAT_IDS?.trim() || process.env.CRM_CASE_TELEGRAM_CHAT_IDS?.trim() || "";
-  const map = new Map<string, string>();
-  if (!raw) return map;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    for (const [login, chatId] of Object.entries(parsed)) {
-      if (typeof chatId === "string" || typeof chatId === "number") map.set(normalizeLogin(login), String(chatId));
-    }
-    return map;
-  } catch {
-    for (const pair of raw.split(",")) {
-      const [login, chatId] = pair.split(":").map((part) => part.trim());
-      if (login && chatId) map.set(normalizeLogin(login), chatId);
-    }
-    return map;
-  }
+async function sendCaseOverdueTelegram(userId: string, row: CrmCaseRow, now: Date) {
+  const dueAt = row.nextContactAt ? `${formatTime(row.nextContactAt)} · просрочено на ${humanDuration(minutesBetween(row.nextContactAt, now))}` : "срок не указан";
+  const result = await sendEmployeeTelegramTemplate({
+    employeeId: userId,
+    templateKey: "case_overdue",
+    fallbackText: "Просрочено дело клиента:\n{{caseTitle}}\n\nКлиент: {{clientName}}\nСрок: {{dueAt}}",
+    variables: {
+      caseTitle: caseAction(row),
+      clientName: caseClient(row),
+      dueAt,
+    },
+  });
+  return {
+    status: result.ok ? (result.status === "failed" ? "failed" as const : "sent" as const) : result.status,
+    error: result.ok ? result.outbox.errorMessage : result.error,
+  };
 }
 
-async function sendTelegram(userId: string, item: { title: string; body: string; href: string }) {
-  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = telegramChatIds().get(normalizeLogin(userId));
-  if (!token || !chatId) return { status: "skipped" as const, error: null };
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim() || "";
-  const text = `${item.title}\n${item.body}${baseUrl ? `\n${baseUrl}${item.href}` : ""}`;
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+export async function notifyClientCaseTaskAssigned(input: {
+  caseId: string;
+  employeeId: string | null | undefined;
+  taskTitle: string;
+  dueAt?: Date | string | null;
+}) {
+  const employeeId = input.employeeId?.trim();
+  if (!employeeId) return { status: "skipped" as const, error: "Ответственный не указан" };
+  const dueAt =
+    input.dueAt instanceof Date
+      ? input.dueAt.toISOString()
+      : typeof input.dueAt === "string" && input.dueAt.trim()
+        ? input.dueAt.trim()
+        : "без срока";
+  const result = await sendEmployeeTelegramTemplate({
+    employeeId,
+    templateKey: "task_assigned",
+    fallbackText: "Вам назначена задача:\n{{taskTitle}}\n\nСрок: {{dueAt}}",
+    variables: {
+      taskTitle: input.taskTitle,
+      dueAt,
+    },
   });
-  if (!res.ok) return { status: "failed" as const, error: await res.text().catch(() => "telegram failed") };
-  return { status: "sent" as const, error: null };
+  const status = result.ok ? (result.status === "failed" ? "failed" as const : "sent" as const) : result.status;
+  await writeLog({
+    caseId: input.caseId,
+    userId: employeeId,
+    type: "task_assigned",
+    channel: "telegram",
+    status,
+    errorMessage: result.ok ? result.outbox.errorMessage : result.error,
+  });
+  return { status, error: result.ok ? result.outbox.errorMessage : result.error };
 }
 
 export async function processClientCaseDeadlineNotifications(now = new Date()) {
@@ -299,7 +319,6 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
     const type = typeForCase(row, now, config.warningMinutes, config.repeatMinutes);
     if (!type) continue;
     const recipients = await recipientsForCase(row, type, users);
-    const text = notificationText(row, type, now);
     for (const userId of recipients) {
       const recent = await loadRecentLog(row.id, userId, type, "in_app");
       if (recent) {
@@ -314,7 +333,7 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
       sent += 1;
 
       if (config.telegramEnabled && type === "overdue_repeat") {
-        const result = await sendTelegram(userId, { ...text, href: `/crm?dealId=${encodeURIComponent(row.id)}` });
+        const result = await sendCaseOverdueTelegram(userId, row, now);
         await writeLog({
           caseId: row.id,
           userId,

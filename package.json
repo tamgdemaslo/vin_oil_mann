@@ -15,11 +15,12 @@
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:deploy": "prisma db push --skip-generate",
+    "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
     "import:moysklad": "node scripts/import-from-moysklad.mjs",
     "sync:moysklad:last-days": "node scripts/sync-moysklad-last-days.mjs",
-    "moysklad:token": "node scripts/refresh-moysklad-token.mjs"
+    "moysklad:token": "node scripts/refresh-moysklad-token.mjs",
+    "worker:messenger-media": "node scripts/messenger-media-worker.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
@@ -30,6 +31,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "soap": "^1.9.1",
+    "telegram": "^2.26.22",
     "undici": "^7.25.0",
     "xlsx": "^0.18.5"
   },

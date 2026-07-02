@@ -2,31 +2,19 @@ import { prisma } from "@/lib/db";
 import { canonicalizeLogin, getLoginVariants } from "@/lib/auth";
 import {
   toLocalDateString,
-  getWorkdayStart,
   nowInAppTz,
   getYesterdayLocal,
 } from "@/lib/time";
 
-const LATE_PENALTY_PER_5MIN_CENTS = 500 * 100; // 500 ₽
-const LATE_PENALTY_MAX_CENTS = 1500 * 100;
 const UNCLOSED_PENALTY_CENTS = 300 * 100;
 
 export type CloseType = "by_employee" | "by_owner" | "auto";
 
-const APP_TZ = process.env.APP_TIMEZONE ?? "Europe/Moscow";
-
-/** Штраф за опоздание: 500 ₽ за каждые полные 5 минут, макс 1500 ₽. Округление вниз. Время в поясе приложения. */
+/** Автоматический штраф за позднее открытие смены отключён: поздние открытия не влияют на payroll. */
 export function calculateLatePenaltyCents(startedAt: Date, shiftDate: string): number {
-  const startedLocalStr = startedAt.toLocaleString("sv-SE", { timeZone: APP_TZ });
-  const startedDateOnly = startedLocalStr.slice(0, 10);
-  if (startedDateOnly !== shiftDate) return 0;
-  const [, timePart] = startedLocalStr.split(" ");
-  const [hours, min] = (timePart ?? "00:00:00").split(":").map(Number);
-  const workStart = getWorkdayStart(new Date(shiftDate + "T12:00:00"));
-  if (hours < workStart.hours || (hours === workStart.hours && min < workStart.minutes)) return 0;
-  const minutesLate = (hours - workStart.hours) * 60 + (min - workStart.minutes);
-  const full5Min = Math.floor(minutesLate / 5);
-  return Math.min(full5Min * LATE_PENALTY_PER_5MIN_CENTS, LATE_PENALTY_MAX_CENTS);
+  void startedAt;
+  void shiftDate;
+  return 0;
 }
 
 /** Найти ставку смены для сотрудника на дату (последняя с effectiveFrom <= shiftDate) */
@@ -69,19 +57,6 @@ export async function startShift(userLogin: string): Promise<
       latePenaltyCents: latePenaltyCents > 0 ? latePenaltyCents : null,
     },
   });
-
-  if (latePenaltyCents > 0) {
-    await prisma.bonusPenalty.create({
-      data: {
-        userLogin: canonicalUserLogin,
-        date: shiftDate,
-        amountCents: -latePenaltyCents,
-        type: "penalty_late",
-        comment: "Опоздание на смену",
-        createdByLogin: "system",
-      },
-    });
-  }
 
   return {
     ok: true,

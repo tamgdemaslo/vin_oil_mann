@@ -9,37 +9,19 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 
 const MASTERS = [
   {
-    id: 'lobov',
-    name: 'Максим Лобов',
-    role: 'Мастер по замене масла',
-    since: 2023,
-    swaps: 4217,
-    quote: '«Делаю то, для чего был рожден. Меняю масло.»',
-    city: 'Калининград',
-    helmet: 'stripes',
-  },
-  {
-    id: 'voitov',
+    id: 'ilya',
     name: 'Илья Елисеенко',
     role: 'Директор',
     since: 2024,
     swaps: 1850,
     quote: '«Скажу прямо, что нашёл. Покажу. Объясню. Дальше — ваше решение.»',
     city: 'Калининград',
+    photo: '/team/ilya.png',
+    photoPosition: '50% 18%',
     helmet: 'split',
   },
   {
-    id: 'lebedev',
-    name: 'Денис Духненко',
-    role: 'Управляющий',
-    since: 2024,
-    swaps: 2040,
-    quote: '«Аккуратность — это когда фильтр стоит ровно, прокладка целая, болт затянут.»',
-    city: 'Калининград',
-    helmet: 'arrow',
-  },
-  {
-    id: 'kosov',
+    id: 'vadim',
     name: 'Вадим Бигожин',
     role: 'Мастер-приемщик',
     since: 2023,
@@ -47,7 +29,33 @@ const MASTERS = [
     swapsLabel: 'клиентов',
     quote: '«Здравствуйте, проходите в зону ожидания. Чай, кофе?»',
     city: 'Калининград',
+    photo: '/team/vadim.png',
+    photoPosition: '50% 18%',
     helmet: 'star',
+  },
+  {
+    id: 'maksim',
+    name: 'Максим Лобов',
+    role: 'Мастер по замене масла',
+    since: 2023,
+    swaps: 4217,
+    quote: '«Делаю то, для чего был рожден. Меняю масло.»',
+    city: 'Калининград',
+    photo: '/team/maksim.png',
+    photoPosition: '50% 18%',
+    helmet: 'stripes',
+  },
+  {
+    id: 'denis',
+    name: 'Денис Духненко',
+    role: 'Управляющий',
+    since: 2024,
+    swaps: 2040,
+    quote: '«Аккуратность — это когда фильтр стоит ровно, прокладка целая, болт затянут.»',
+    city: 'Калининград',
+    photo: '/team/denis.png',
+    photoPosition: '50% 18%',
+    helmet: 'arrow',
   },
 ];
 
@@ -529,6 +537,54 @@ function F1Portrait({ helmet = 'stripes', mood = 'cold', label, sublabel }) {
   );
 }
 
+function MasterPhoto({ master, label, sublabel, priority = false }) {
+  if (!master?.photo) {
+    return <F1Portrait helmet={master?.helmet} label={label} sublabel={sublabel} />;
+  }
+
+  return (
+    <div style={{position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#111', overflow: 'hidden'}}>
+      <img
+        src={master.photo}
+        alt={`${master.name} — ${master.role}`}
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : 'auto'}
+        decoding="async"
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          objectPosition: master.photoPosition || '50% 18%',
+          filter: 'saturate(0.98) contrast(1.04)',
+        }}
+      />
+      <div style={{position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(10,10,10,0) 52%, rgba(10,10,10,0.72) 100%)'}} />
+      <div style={{
+        position: 'absolute', top: 16, left: 16,
+        fontFamily: 'JetBrains Mono, monospace', fontSize: 9,
+        color: 'rgba(245,242,237,0.74)', letterSpacing: '0.16em', textTransform: 'uppercase',
+      }}>
+        TGM · KGD
+      </div>
+      <div style={{
+        position: 'absolute', bottom: 14, right: 16,
+        fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
+        color: 'rgba(245,242,237,0.78)', letterSpacing: '0.1em',
+      }}>
+        N°{(label || '01').toString().padStart(2, '0')}
+      </div>
+      {sublabel && (
+        <div style={{
+          position: 'absolute', bottom: 14, left: 16, right: 60,
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
+          color: 'rgba(245,242,237,0.72)', letterSpacing: '0.1em', textTransform: 'uppercase',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{sublabel}</div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- "Сар week" — машина в стиле постера ---------- */
 function CarPlate({ palette = ['#1c1c1c', '#3d3d3d', '#C2410C'], label, sub, kind = 'bmw' }) {
   const carPaths = {
@@ -876,7 +932,7 @@ function HomeHero() {
   const r = useRoute();
   const [vin, setVin] = useState('');
   const submit = () => { r.go('/vin', { vin }); };
-  const master = MASTERS[0];
+  const master = MASTERS.find((m) => m.id === 'maksim') || MASTERS[0];
   const [swapsCount, setSwapsCount] = useState(master.swaps);
 
   useEffect(() => {
@@ -925,18 +981,18 @@ function HomeHero() {
             letterSpacing: '-0.02em', margin: 0, textTransform: 'uppercase',
             color: '#F5F2ED',
           }}>
-            Лобов<span style={{color: '#C2410C'}}>.</span>
+            {master.name.split(' ').slice(-1)[0]}<span style={{color: '#C2410C'}}>.</span>
           </h1>
           <div style={{display: 'flex', alignItems: 'baseline', gap: 14, marginTop: 10, marginBottom: 32}}>
-            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 22, letterSpacing: '0.04em', color: '#F5F2ED', textTransform: 'uppercase'}}>Мастер по замене масла</span>
+            <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 22, letterSpacing: '0.04em', color: '#F5F2ED', textTransform: 'uppercase'}}>{master.role}</span>
             <span style={{flex: 1, height: 1, background: '#3D3D3D'}} />
-            <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.12em'}}>с 2023 · {fmtNum(swapsCount)} замен</span>
+            <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.12em'}}>с {master.since} · {fmtNum(swapsCount)} {master.swapsLabel || 'замен'}</span>
           </div>
 
           {/* Portrait + quote */}
           <div className="home-hero__portrait-grid" style={{display: 'grid', gridTemplateColumns: '320px 1fr', gap: 28, alignItems: 'stretch'}}>
-            <div style={{aspectRatio: '4/5', border: '1px solid var(--line)'}}>
-              <F1Portrait helmet={master.helmet} label="1" sublabel={master.name} />
+            <div style={{aspectRatio: '4/5', border: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+              <MasterPhoto master={master} label="1" sublabel={master.name} priority />
             </div>
             <div style={{display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
               <div>
@@ -945,7 +1001,7 @@ function HomeHero() {
                   fontSize: 22, lineHeight: 1.3, color: '#F5F2ED', letterSpacing: '-0.01em',
                   borderLeft: '3px solid #C2410C', paddingLeft: 18,
                 }}>
-                  «Делаю то, для чего был рожден. Меняю масло.»
+                  {master.quote}
                 </blockquote>
               </div>
               <div className="home-hero__stats" style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 24}}>
@@ -1217,8 +1273,8 @@ function TeamPreview() {
           {MASTERS.map((m, idx) => (
             <Link key={m.id} to="/team">
               <div style={{display: 'flex', flexDirection: 'column', gap: 18, cursor: 'pointer'}}>
-                <div style={{aspectRatio: '4/5', border: '1px solid var(--line)'}}>
-                  <F1Portrait helmet={m.helmet} label={idx+1} sublabel={m.role} />
+                <div style={{aspectRatio: '4/5', border: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+                  <MasterPhoto master={m} label={idx+1} sublabel={m.role} />
                 </div>
                 <div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em', marginBottom: 8}}>N°0{idx+1}</div>
@@ -2834,8 +2890,8 @@ function TeamPage() {
 function MasterCard({ m, idx }) {
   return (
     <div style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
-      <div style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)'}}>
-        <F1Portrait helmet={m.helmet} label={idx+1} sublabel={m.role} />
+      <div style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+        <MasterPhoto master={m} label={idx+1} sublabel={m.role} priority />
       </div>
       <div style={{padding: '22px 24px 22px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
         <div>

@@ -3,10 +3,50 @@ import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
+import {
+  DEFAULT_BULK_OIL_MARKING_SETTINGS,
+  DEFAULT_MARKING_SETTINGS,
+  deriveProductMarkingStatus,
+  isLiterSaleUnit,
+  normalizeProductMarkingMode,
+  normalizeProductMarkingSettings,
+  productHasMarkingProblem,
+  productMarkingDefaultForGroup,
+  type ProductMarkingMode,
+  type ProductMarkingSettings,
+  type ProductMarkingStatus,
+} from "@/lib/product-marking";
+import { assertNoActiveInventoryLocks } from "@/lib/warehouse-inventory";
 
 export type LocalStockDocumentType = "receipt" | "writeoff";
+type LocalAdjustmentType = "technical" | "expense";
+
+const TECHNICAL_ADJUSTMENT_REASONS = new Set([
+  "Ошибка начальных остатков",
+  "Ошибка импорта",
+  "Ошибка миграции",
+  "Дублирующий складской документ",
+  "Некорректное ручное проведение",
+  "Расхождение после инвентаризации",
+  "Ошибка единицы измерения",
+  "Ошибка старой базы",
+  "Другое техническое исправление",
+]);
+
+const EXPENSE_WRITE_OFF_REASONS = new Set([
+  "Порча",
+  "Истёк срок хранения",
+  "Утрата",
+  "Кража",
+  "Использовано для внутренних нужд",
+  "Передано бесплатно",
+  "Гарантийная замена",
+  "Повреждено при работе",
+  "Другое фактическое списание",
+]);
 
 type ProductInput = {
   name?: string;
@@ -52,6 +92,10 @@ type ProductInput = {
   oemParts?: string;
   cell?: string;
   mannCharacteristicName?: string;
+  markingEnabled?: boolean | string | null;
+  markingMode?: string | null;
+  markingSettings?: Partial<ProductMarkingSettings> | null;
+  markingConfiguredManually?: boolean | string | null;
   archived?: boolean;
 };
 
@@ -76,6 +120,7 @@ const productListIndexSelect = {
   code: true,
   externalCode: true,
   groupPath: true,
+  uomName: true,
   entityType: true,
   salePriceCents: true,
   buyPriceCents: true,
@@ -102,6 +147,13 @@ const productListIndexSelect = {
   oemParts: true,
   cell: true,
   mannCharacteristicName: true,
+  markingEnabled: true,
+  markingMode: true,
+  markingStatus: true,
+  markingSettings: true,
+  markingConfiguredManually: true,
+  markingConfiguredAt: true,
+  markingConfiguredByLogin: true,
   searchText: true,
   archived: true,
   updatedAt: true,
@@ -150,12 +202,16 @@ type StockDocumentInput = {
   documentDate?: string;
   moment?: string;
   description?: string;
+  adjustmentType?: string;
+  adjustmentMethod?: string;
+  adjustmentReason?: string;
   applicable?: boolean;
   positions?: {
     productId?: string;
     quantity?: number;
     price?: number;
     slotName?: string;
+    makeDefaultCell?: boolean;
   }[];
   invoice?: {
     create?: boolean;
@@ -224,6 +280,160 @@ function jsonRecord(value: unknown): Record<string, unknown> {
 function stringFromRecord(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function markingEnabledFromInput(value: unknown, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  return booleanFromInput(value) ?? false;
+}
+
+export function productPayloadHasMarkingSettings(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const body = value as Record<string, unknown>;
+  return "markingEnabled" in body || "markingMode" in body || "markingSettings" in body || "markingConfiguredManually" in body;
+}
+
+export function canManageWarehouseMarking(user?: ActingUser & { role?: string }): boolean {
+  return user?.role === "owner" || user?.role === "admin";
+}
+
+function normalizedMarkingSettingsForMode(input: {
+  mode: ProductMarkingMode;
+  current?: unknown;
+  next?: unknown;
+}): ProductMarkingSettings | null {
+  if (input.mode !== "BULK_OIL_FROM_MARKED_BARREL") return null;
+  const base = {
+    ...DEFAULT_BULK_OIL_MARKING_SETTINGS,
+    ...normalizeProductMarkingSettings(input.current),
+  };
+  const next = input.next === undefined ? {} : normalizeProductMarkingSettings(input.next);
+  return { ...base, ...next };
+}
+
+function normalizeProductMarkingData(
+  body: ProductInput,
+  current?: {
+    markingEnabled: boolean;
+    markingMode: string;
+    markingStatus: string;
+    markingSettings: unknown;
+  },
+  nextUomName?: string | null,
+  nextGroupPath?: string | null
+): { ok: true; data: {
+  markingEnabled: boolean;
+  markingMode: ProductMarkingMode;
+  markingStatus: ProductMarkingStatus;
+  markingSettings: ProductMarkingSettings | null;
+} } | { ok: false; error: string } {
+  const currentMode = normalizeProductMarkingMode(current?.markingMode);
+  const hasExplicitMarking = productPayloadHasMarkingSettings(body);
+  const groupDefault = productMarkingDefaultForGroup(nextGroupPath);
+  let defaultEnabled = current?.markingEnabled ?? false;
+  let defaultMode = currentMode;
+
+  if (!current && !hasExplicitMarking) {
+    if (groupDefault === "PACKAGED") {
+      defaultEnabled = true;
+      defaultMode = "PACKAGED_MARKED_GOOD";
+    }
+    if (groupDefault === "BULK_OIL") {
+      defaultEnabled = true;
+      defaultMode = "BULK_OIL_FROM_MARKED_BARREL";
+    }
+  }
+
+  const markingEnabled = markingEnabledFromInput(body.markingEnabled, defaultEnabled);
+  let markingMode = body.markingMode === undefined ? defaultMode : normalizeProductMarkingMode(body.markingMode);
+
+  if (!markingEnabled) markingMode = "NOT_MARKED";
+  if (markingEnabled && markingMode === "NOT_MARKED") markingMode = "REQUIRES_CHECK";
+
+  if (
+    markingEnabled &&
+    markingMode === "PACKAGED_MARKED_GOOD" &&
+    (groupDefault === "BULK_OIL" || isLiterSaleUnit(nextUomName))
+  ) {
+    return {
+      ok: false,
+      error:
+        "Товар продаётся как мерный или находится в группе разлива, но маркировка настроена как обычная упаковка. " +
+        "Есть риск полного вывода кода из оборота.",
+    };
+  }
+
+  const markingSettings =
+    markingEnabled && markingMode === "BULK_OIL_FROM_MARKED_BARREL"
+      ? normalizedMarkingSettingsForMode({
+          mode: markingMode,
+          current: current?.markingSettings,
+          next: body.markingSettings,
+        })
+      : null;
+
+  if (markingEnabled && markingMode === "BULK_OIL_FROM_MARKED_BARREL" && !isLiterSaleUnit(nextUomName)) {
+    return {
+      ok: false,
+      error: "Для сценария «Масло на разлив из бочки» единица товара должна быть «л».",
+    };
+  }
+
+  const markingStatus = deriveProductMarkingStatus({
+    markingEnabled,
+    markingMode,
+    uomName: nextUomName,
+    settings: markingSettings ?? DEFAULT_MARKING_SETTINGS,
+  });
+
+  return {
+    ok: true,
+    data: {
+      markingEnabled,
+      markingMode,
+      markingStatus,
+      markingSettings,
+    },
+  };
+}
+
+function productMarkingSnapshot(value: {
+  markingEnabled: boolean;
+  markingMode: string;
+  markingStatus: string;
+  markingSettings: unknown;
+}) {
+  const mode = normalizeProductMarkingMode(value.markingMode);
+  return {
+    markingEnabled: Boolean(value.markingEnabled),
+    markingMode: mode,
+    markingStatus: value.markingStatus,
+    markingSettings: mode === "BULK_OIL_FROM_MARKED_BARREL"
+      ? normalizeProductMarkingSettings(value.markingSettings)
+      : null,
+  };
+}
+
+function productMarkingSnapshotChanged(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+async function writeProductMarkingAudit(input: {
+  productId: string;
+  oldValue: unknown;
+  newValue: unknown;
+  actor?: ActingUser | null;
+}) {
+  if (!productMarkingSnapshotChanged(input.oldValue, input.newValue)) return;
+  await prisma.productMarkingAuditLog.create({
+    data: {
+      productId: input.productId,
+      oldValue: toJson(input.oldValue),
+      newValue: toJson(input.newValue),
+      performedByLogin: input.actor?.login ?? null,
+      performedByName: input.actor?.name ?? null,
+    },
+  });
 }
 
 function compactCounterpartyVehicleLabel(input: {
@@ -295,6 +505,34 @@ function cleanText(value: unknown): string | null {
   if (value == null) return null;
   const text = String(value).trim();
   return text || null;
+}
+
+function normalizeAdjustmentType(value: unknown): LocalAdjustmentType {
+  return value === "technical" ? "technical" : "expense";
+}
+
+function normalizeAdjustmentMethod(value: unknown): "WRITE_OFF_QUANTITY" | "SET_ACTUAL_QUANTITY" | "ZERO_BALANCE" {
+  if (value === "SET_ACTUAL_QUANTITY" || value === "ZERO_BALANCE") return value;
+  return "WRITE_OFF_QUANTITY";
+}
+
+function validateWriteoffReason(type: LocalAdjustmentType, reason: string | null, applicable: boolean): string | null {
+  if (!applicable && !reason) return null;
+  if (!reason) return "Выберите причину списания";
+  if (type === "technical") {
+    if (EXPENSE_WRITE_OFF_REASONS.has(reason)) {
+      return "Причина фактического расхода не может быть технической корректировкой";
+    }
+    if (!TECHNICAL_ADJUSTMENT_REASONS.has(reason)) {
+      return "Выберите техническую причину корректировки";
+    }
+    return null;
+  }
+  if (TECHNICAL_ADJUSTMENT_REASONS.has(reason)) {
+    return "Техническая причина не может быть обычным списанием";
+  }
+  if (!EXPENSE_WRITE_OFF_REASONS.has(reason)) return "Выберите причину обычного списания";
+  return null;
 }
 
 function normalizeSearchText(value: unknown): string {
@@ -483,39 +721,7 @@ function buildProductSearchText(input: {
   currencyName?: string | null;
   rosskoMin?: string | null;
 }): string {
-  return buildSearchText([
-    input.name,
-    input.article,
-    input.code,
-    input.externalCode,
-    input.groupPath,
-    input.barcodeEan13,
-    input.barcodeEan8,
-    input.barcodeCode128,
-    input.description,
-    input.supplierName,
-    input.tnvedCode,
-    input.sae,
-    input.oem,
-    input.acea,
-    input.apiSpec,
-    input.packageVolume,
-    input.brand,
-    input.atf,
-    input.ilsac,
-    input.aceaExtra,
-    input.oemAtf,
-    input.mannName,
-    input.rosskoPartNumber,
-    input.rosskoBrand,
-    input.rosskoMin,
-    input.supplierAttribute,
-    input.oemParts,
-    input.cell,
-    input.mannCharacteristicName,
-    input.entityType,
-    input.currencyName,
-  ]);
+  return buildCatalogSearchText(input);
 }
 
 function buildCounterpartySearchText(input: {
@@ -648,6 +854,15 @@ function mapProduct(product: ProductWithStock) {
     oemParts: product.oemParts ?? "",
     cell: product.cell ?? "",
     mannCharacteristicName: product.mannCharacteristicName ?? "",
+    markingEnabled: product.markingEnabled,
+    markingMode: normalizeProductMarkingMode(product.markingMode),
+    markingStatus: product.markingStatus,
+    markingSettings: product.markingMode === "BULK_OIL_FROM_MARKED_BARREL"
+      ? normalizeProductMarkingSettings(product.markingSettings)
+      : null,
+    markingConfiguredManually: product.markingConfiguredManually,
+    markingConfiguredAt: product.markingConfiguredAt?.toISOString() ?? null,
+    markingConfiguredByLogin: product.markingConfiguredByLogin ?? null,
     imageHref: product.imageHref ?? "",
     photos: product.photos.map((photo) => ({
       id: photo.id,
@@ -710,6 +925,7 @@ function mapProductSearchRow(
     code: product.code ?? "",
     externalCode: product.externalCode ?? "",
     groupPath: product.groupPath ?? "",
+    uomName: product.uomName ?? "",
     entityType: product.entityType,
     salePrice: product.salePriceCents / 100,
     buyPrice: product.buyPriceCents == null ? null : product.buyPriceCents / 100,
@@ -736,6 +952,15 @@ function mapProductSearchRow(
     oemParts: product.oemParts ?? "",
     cell: product.cell ?? "",
     mannCharacteristicName: product.mannCharacteristicName ?? "",
+    markingEnabled: product.markingEnabled,
+    markingMode: normalizeProductMarkingMode(product.markingMode),
+    markingStatus: product.markingStatus,
+    markingSettings: product.markingMode === "BULK_OIL_FROM_MARKED_BARREL"
+      ? normalizeProductMarkingSettings(product.markingSettings)
+      : null,
+    markingConfiguredManually: product.markingConfiguredManually,
+    markingConfiguredAt: product.markingConfiguredAt?.toISOString() ?? null,
+    markingConfiguredByLogin: product.markingConfiguredByLogin ?? null,
     searchText: product.searchText || buildProductSearchText({
       name: product.name,
       article: product.article,
@@ -782,6 +1007,7 @@ type ProductSearchRow = Pick<ProductListRow,
   | "code"
   | "externalCode"
   | "groupPath"
+  | "uomName"
   | "entityType"
   | "salePrice"
   | "buyPrice"
@@ -808,6 +1034,13 @@ type ProductSearchRow = Pick<ProductListRow,
   | "oemParts"
   | "cell"
   | "mannCharacteristicName"
+  | "markingEnabled"
+  | "markingMode"
+  | "markingStatus"
+  | "markingSettings"
+  | "markingConfiguredManually"
+  | "markingConfiguredAt"
+  | "markingConfiguredByLogin"
   | "searchText"
   | "archived"
   | "updatedAt"
@@ -837,6 +1070,7 @@ type ProductFilterParams = {
   acea?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
+  markingProblems?: boolean;
 };
 type ProductFilterOptions = {
   brands: string[];
@@ -870,7 +1104,13 @@ type StockDocumentAdminList = {
     applicable: boolean;
     sum: number;
     description: string;
+    adjustmentType: string | null;
+    adjustmentMethod: string | null;
+    adjustmentReason: string;
+    affectsManagementProfit: boolean;
+    storeId: string;
     storeName: string;
+    counterpartyId: string;
     counterpartyName: string;
     positionsCount: number;
     totalQuantity: number;
@@ -1174,6 +1414,24 @@ export function invalidateWarehouseReadCaches() {
   invalidateLocalInventoryFinanceCache();
 }
 
+export async function listLocalProductGroups(options: { includeArchived?: boolean } = {}) {
+  const rows = await prisma.localProduct.findMany({
+    where: {
+      ...(options.includeArchived ? {} : { archived: false }),
+      AND: [
+        { groupPath: { not: null } },
+        { groupPath: { not: "" } },
+      ],
+    },
+    select: { groupPath: true },
+    distinct: ["groupPath"],
+  });
+  return rows
+    .map((row) => row.groupPath?.trim() ?? "")
+    .filter(Boolean)
+    .sort((a, b) => ruCollator.compare(a, b));
+}
+
 async function getProductRowsForAdmin(includeArchived?: boolean) {
   const key = includeArchived ? "all" : "active";
   const now = Date.now();
@@ -1313,6 +1571,16 @@ function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterPa
   if (!filterValuesInclude(cleanFilterValues(params.packageVolume), row.packageVolume)) return false;
   if (stock === "inStock" && row.totalAvailable <= 0) return false;
   if (stock === "outOfStock" && row.totalAvailable > 0) return false;
+  if (params.markingProblems && !productHasMarkingProblem({
+    markingEnabled: row.markingEnabled,
+    markingMode: row.markingMode,
+    markingStatus: row.markingStatus,
+    groupPath: row.groupPath,
+    uomName: row.uomName,
+    settings: row.markingSettings,
+  })) {
+    return false;
+  }
   return true;
 }
 
@@ -1999,6 +2267,7 @@ export async function listLocalAdminProducts(params: {
   acea?: MultiProductFilterValue;
   packageVolume?: MultiProductFilterValue;
   stock?: string;
+  markingProblems?: boolean;
 }) {
   const searchQuery = parseSearchQuery(params.search);
   const limit = Math.min(100, Math.max(1, params.limit ?? 30));
@@ -2015,6 +2284,7 @@ export async function listLocalAdminProducts(params: {
     acea: params.acea,
     packageVolume: params.packageVolume,
     stock: normalizeStockFilter(params.stock),
+    markingProblems: params.markingProblems === true,
   };
   const allRows = await getProductRowsForAdmin(params.includeArchived);
   const searchRows = allRows.filter((row) => rowMatchesSearch(row, searchQuery));
@@ -2066,6 +2336,7 @@ export async function listLocalAdminProducts(params: {
         acea: cleanFilterValues(params.acea),
         packageVolume: cleanFilterValues(params.packageVolume),
         stock: normalizeStockFilter(params.stock),
+        markingProblems: params.markingProblems === true,
       },
       filterOptions,
       facets,
@@ -2257,7 +2528,7 @@ export async function listLocalRestockNeeds(params: {
   return value;
 }
 
-export async function createLocalAdminProduct(body: ProductInput) {
+export async function createLocalAdminProduct(body: ProductInput, actor?: ActingUser | null) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите название товара" };
   const entityType = body.entityType?.trim() || "product";
@@ -2295,6 +2566,9 @@ export async function createLocalAdminProduct(body: ProductInput) {
   const oemParts = cleanText(body.oemParts);
   const cell = cleanText(body.cell);
   const mannCharacteristicName = cleanText(body.mannCharacteristicName);
+  const marking = normalizeProductMarkingData(body, undefined, uomName, groupPath);
+  if (!marking.ok) return { ok: false as const, error: marking.error };
+  const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
   const product = await prisma.localProduct.create({
     data: {
       name,
@@ -2340,6 +2614,13 @@ export async function createLocalAdminProduct(body: ProductInput) {
       oemParts,
       cell,
       mannCharacteristicName,
+      markingEnabled: marking.data.markingEnabled,
+      markingMode: marking.data.markingMode,
+      markingStatus: marking.data.markingStatus,
+      markingSettings: marking.data.markingSettings == null ? Prisma.JsonNull : toJson(marking.data.markingSettings),
+      markingConfiguredManually,
+      markingConfiguredAt: markingConfiguredManually ? new Date() : null,
+      markingConfiguredByLogin: markingConfiguredManually ? actor?.login ?? null : null,
       searchText: buildProductSearchText({
         name,
         article,
@@ -2378,13 +2659,26 @@ export async function createLocalAdminProduct(body: ProductInput) {
     },
     include: productWithStockInclude,
   });
+  if (productPayloadHasMarkingSettings(body)) {
+    await writeProductMarkingAudit({
+      productId: product.id,
+      oldValue: productMarkingSnapshot({
+        markingEnabled: false,
+        markingMode: "NOT_MARKED",
+        markingStatus: "NOT_MARKED",
+        markingSettings: null,
+      }),
+      newValue: productMarkingSnapshot(product),
+      actor,
+    });
+  }
   invalidateProductFilterOptions();
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();
   return { ok: true as const, product: mapProduct(product) };
 }
 
-export async function updateLocalAdminProduct(id: string, body: ProductInput) {
+export async function updateLocalAdminProduct(id: string, body: ProductInput, actor?: ActingUser | null) {
   const current = await prisma.localProduct.findFirst({ where: { OR: [{ id }, { moyskladId: id }] } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
@@ -2438,6 +2732,11 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput) {
   const cell = body.cell === undefined ? current.cell : cleanText(body.cell);
   const mannCharacteristicName =
     body.mannCharacteristicName === undefined ? current.mannCharacteristicName : cleanText(body.mannCharacteristicName);
+  const oldMarking = productMarkingSnapshot(current);
+  const marking = normalizeProductMarkingData(body, current, uomName, groupPath);
+  if (!marking.ok) return { ok: false as const, error: marking.error };
+  const markingConfiguredByUser = booleanFromInput(body.markingConfiguredManually) === true;
+  const markingConfiguredManually = current.markingConfiguredManually || markingConfiguredByUser;
   const product = await prisma.localProduct.update({
     where: { id: current.id },
     data: {
@@ -2484,6 +2783,13 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput) {
       oemParts,
       cell,
       mannCharacteristicName,
+      markingEnabled: marking.data.markingEnabled,
+      markingMode: marking.data.markingMode,
+      markingStatus: marking.data.markingStatus,
+      markingSettings: marking.data.markingSettings == null ? Prisma.JsonNull : toJson(marking.data.markingSettings),
+      markingConfiguredManually,
+      markingConfiguredAt: markingConfiguredByUser ? new Date() : current.markingConfiguredAt,
+      markingConfiguredByLogin: markingConfiguredByUser ? actor?.login ?? current.markingConfiguredByLogin : current.markingConfiguredByLogin,
       archived: body.archived === undefined ? current.archived : Boolean(body.archived),
       searchText: buildProductSearchText({
         name,
@@ -2523,10 +2829,63 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput) {
     },
     include: productWithStockInclude,
   });
+  if (productPayloadHasMarkingSettings(body)) {
+    await writeProductMarkingAudit({
+      productId: product.id,
+      oldValue: oldMarking,
+      newValue: productMarkingSnapshot(product),
+      actor,
+    });
+  }
   invalidateProductFilterOptions();
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();
   return { ok: true as const, product: mapProduct(product) };
+}
+
+export async function applyBulkOilSaleMovements(
+  movements: Array<{ productId: string; volumeLiters: number }>,
+  actor?: ActingUser | null
+) {
+  for (const movement of movements) {
+    if (!movement.productId || !Number.isFinite(movement.volumeLiters) || movement.volumeLiters <= 0) continue;
+    const current = await prisma.localProduct.findUnique({ where: { id: movement.productId } });
+    if (!current || current.markingMode !== "BULK_OIL_FROM_MARKED_BARREL" || !current.markingEnabled) continue;
+
+    const settings = normalizeProductMarkingSettings(current.markingSettings);
+    if (settings.currentVolumeLiters == null) continue;
+
+    const oldMarking = productMarkingSnapshot(current);
+    const nextSettings: ProductMarkingSettings = {
+      ...settings,
+      currentVolumeLiters: Math.max(0, settings.currentVolumeLiters - movement.volumeLiters),
+    };
+    const nextStatus = deriveProductMarkingStatus({
+      markingEnabled: true,
+      markingMode: "BULK_OIL_FROM_MARKED_BARREL",
+      uomName: current.uomName,
+      settings: nextSettings,
+    });
+    const updated = await prisma.localProduct.update({
+      where: { id: current.id },
+      data: {
+        markingStatus: nextStatus,
+        markingSettings: toJson(nextSettings),
+      },
+    });
+    await writeProductMarkingAudit({
+      productId: updated.id,
+      oldValue: oldMarking,
+      newValue: productMarkingSnapshot(updated),
+      actor,
+    });
+  }
+
+  if (movements.length > 0) {
+    invalidateProductFilterOptions();
+    invalidateRestockNeedsLists();
+    invalidateLocalInventoryFinanceCache();
+  }
 }
 
 export function invalidateCounterpartyRows() {
@@ -2984,10 +3343,18 @@ export async function listLocalStoresForAdmin(): Promise<StoreAdminList> {
   return value;
 }
 
-async function nextStockDocumentName(type: LocalStockDocumentType, documentDate: string) {
-  const prefix = type === "receipt" ? "ПР" : "СП";
+async function nextStockDocumentName(type: LocalStockDocumentType, documentDate: string, adjustmentType?: LocalAdjustmentType | null) {
+  const prefix = type === "receipt" ? "ПР" : adjustmentType === "technical" ? "ТК" : "СП";
+  const where: Prisma.LocalInventoryDocumentWhereInput = { type, documentDate };
+  if (type === "writeoff") {
+    if (adjustmentType === "technical") {
+      where.adjustmentType = "technical";
+    } else {
+      where.OR = [{ adjustmentType: "expense" }, { adjustmentType: null }];
+    }
+  }
   const count = await prisma.localInventoryDocument.count({
-    where: { type, documentDate },
+    where,
   });
   return `${prefix}-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
@@ -3428,6 +3795,14 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   if (!type) return { ok: false as const, error: "Неизвестный тип складского документа" };
   const storeId = body.storeId?.trim() ?? "";
   const applicable = body.applicable !== false;
+  const adjustmentType = type === "writeoff" ? normalizeAdjustmentType(body.adjustmentType) : null;
+  const adjustmentMethod = type === "writeoff" ? normalizeAdjustmentMethod(body.adjustmentMethod) : null;
+  const adjustmentReason = type === "writeoff" ? cleanText(body.adjustmentReason) ?? cleanText(body.description) : null;
+  const affectsManagementProfit = type !== "writeoff" || adjustmentType !== "technical";
+  if (type === "writeoff") {
+    const reasonError = validateWriteoffReason(adjustmentType ?? "expense", adjustmentReason, applicable);
+    if (reasonError) return { ok: false as const, error: reasonError };
+  }
   const store = storeId
     ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
     : null;
@@ -3466,6 +3841,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       quantity: new Prisma.Decimal(quantity),
       priceCents,
       slotName: position.slotName?.trim() || null,
+      makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
     };
   });
@@ -3483,7 +3859,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if ("error" in position) return sum;
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
-  const name = await nextStockDocumentName(type, documentDate);
+  const name = await nextStockDocumentName(type, documentDate, adjustmentType);
   const invoiceRequested = type === "receipt" && body.invoice?.create === true;
   const invoiceDate = invoiceRequested ? documentDateFromInput(body.invoice?.invoiceDate || documentDate) : null;
   const invoiceDueDate = invoiceRequested ? optionalDocumentDateFromInput(body.invoice?.dueDate) : null;
@@ -3492,8 +3868,18 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     ? body.invoice?.number?.trim() || await nextSupplierInvoiceNumber(invoiceDate!)
     : null;
 
-  const created = await prisma.$transaction(async (tx) => {
-    const document = await tx.localInventoryDocument.create({
+  let created: {
+    id: string;
+    name: string;
+    type: string;
+    adjustmentType: string | null;
+    adjustmentMethod: string | null;
+    adjustmentReason: string | null;
+    affectsManagementProfit: boolean;
+  };
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const document = await tx.localInventoryDocument.create({
       data: {
         type,
         name,
@@ -3502,6 +3888,10 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         applicable,
         sumCents,
         description: body.description?.trim() || null,
+        adjustmentType,
+        adjustmentMethod,
+        adjustmentReason,
+        affectsManagementProfit,
         counterpartyId: counterparty?.id ?? null,
         counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
         storeId: store?.id ?? null,
@@ -3547,15 +3937,36 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
 
     if (applicable) {
       if (!store) throw new Error("Выберите склад");
+      await assertNoActiveInventoryLocks(tx, {
+        organizationId: store.organizationId,
+        warehouseId: store.id,
+        productIds: positions.map((position) => "error" in position ? null : position.product.id),
+      });
       for (const position of positions) {
         if ("error" in position) throw new Error(position.error);
         const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
         const current = await tx.localStockBalance.findUnique({
           where: { productId_storeId: { productId: position.product.id, storeId: store.id } },
         });
+        const currentQuantity = current?.quantity.toNumber() ?? 0;
         const reserve = current?.reserve.toNumber() ?? 0;
-        const nextQuantity = (current?.quantity.toNumber() ?? 0) + delta;
+        const currentAvailable = current?.available.toNumber() ?? currentQuantity - reserve;
+        if (type === "writeoff") {
+          if (currentQuantity < 0) {
+            throw new Error(`Остаток товара «${position.product.name}» уже отрицательный. Используйте корректировку фактического остатка.`);
+          }
+          if (position.quantity.toNumber() > currentQuantity + 0.000001) {
+            throw new Error(`Нельзя списать ${position.quantity.toNumber()} шт. товара «${position.product.name}»: на складе ${currentQuantity} шт.`);
+          }
+          if (position.quantity.toNumber() > currentAvailable + 0.000001) {
+            throw new Error(`Из ${currentQuantity} шт. товара «${position.product.name}» ${reserve} шт. находятся в резерве. Сначала снимите резерв или выберите меньшее количество.`);
+          }
+        }
+        const nextQuantity = currentQuantity + delta;
         const nextAvailable = nextQuantity - reserve;
+        if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
+          throw new Error(`Операция создаёт отрицательный остаток по товару «${position.product.name}»`);
+        }
         if (current) {
           await tx.localStockBalance.update({
             where: { id: current.id },
@@ -3579,17 +3990,32 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
             },
           });
         }
-        if (type === "receipt" && position.priceCents > 0) {
-          await tx.localProduct.update({
-            where: { id: position.product.id },
-            data: { buyPriceCents: position.priceCents, syncedAt: new Date() },
-          });
+        if (type === "receipt") {
+          const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
+          let shouldUpdateProduct = false;
+          if (position.priceCents > 0) {
+            productUpdate.buyPriceCents = position.priceCents;
+            shouldUpdateProduct = true;
+          }
+          if (position.makeDefaultCell && position.slotName) {
+            productUpdate.cell = position.slotName;
+            shouldUpdateProduct = true;
+          }
+          if (shouldUpdateProduct) {
+            await tx.localProduct.update({
+              where: { id: position.product.id },
+              data: productUpdate,
+            });
+          }
         }
       }
     }
 
-    return document;
-  });
+      return document;
+    });
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести складской документ" };
+  }
 
   invalidateWarehouseReadCaches();
 
@@ -3599,6 +4025,10 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       id: created.id,
       name: created.name,
       type: created.type,
+      adjustmentType: created.adjustmentType,
+      adjustmentMethod: created.adjustmentMethod,
+      adjustmentReason: created.adjustmentReason,
+      affectsManagementProfit: created.affectsManagementProfit,
       invoice: invoiceRequested
         ? {
             number: invoiceNumber,
@@ -3634,6 +4064,16 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   const type = current.type as LocalStockDocumentType;
   const storeId = body.storeId?.trim() ?? "";
   const applicable = body.applicable === true;
+  const adjustmentType = type === "writeoff" ? normalizeAdjustmentType(body.adjustmentType ?? current.adjustmentType) : null;
+  const adjustmentMethod = type === "writeoff" ? normalizeAdjustmentMethod(body.adjustmentMethod ?? current.adjustmentMethod) : null;
+  const adjustmentReason = type === "writeoff"
+    ? cleanText(body.adjustmentReason) ?? cleanText(current.adjustmentReason) ?? cleanText(body.description) ?? cleanText(current.description)
+    : null;
+  const affectsManagementProfit = type !== "writeoff" || adjustmentType !== "technical";
+  if (type === "writeoff") {
+    const reasonError = validateWriteoffReason(adjustmentType ?? "expense", adjustmentReason, applicable);
+    if (reasonError) return { ok: false as const, error: reasonError };
+  }
   const store = storeId
     ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
     : null;
@@ -3673,6 +4113,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       quantity: new Prisma.Decimal(quantity),
       priceCents,
       slotName: position.slotName?.trim() || null,
+      makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
     };
   });
@@ -3697,16 +4138,36 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   const invoiceNumber = invoiceRequested
     ? body.invoice?.number?.trim() || current.supplierInvoice?.number || await nextSupplierInvoiceNumber(invoiceDate!)
     : null;
+  const shouldRefreshWriteoffName = type === "writeoff" && (current.adjustmentType ?? "expense") !== adjustmentType;
+  const nextName = shouldRefreshWriteoffName
+    ? await nextStockDocumentName(type, documentDate, adjustmentType)
+    : current.name;
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const document = await tx.localInventoryDocument.update({
+  let updated: {
+    id: string;
+    name: string;
+    type: string;
+    applicable: boolean;
+    adjustmentType: string | null;
+    adjustmentMethod: string | null;
+    adjustmentReason: string | null;
+    affectsManagementProfit: boolean;
+  };
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const document = await tx.localInventoryDocument.update({
       where: { id: current.id },
       data: {
+        name: nextName,
         momentAt,
         documentDate,
         applicable,
         sumCents,
         description: body.description?.trim() || null,
+        adjustmentType,
+        adjustmentMethod,
+        adjustmentReason,
+        affectsManagementProfit,
         counterpartyId: counterparty?.id ?? null,
         counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
         storeId: store?.id ?? null,
@@ -3766,15 +4227,36 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
 
     if (applicable) {
       if (!store) throw new Error("Выберите склад");
+      await assertNoActiveInventoryLocks(tx, {
+        organizationId: store.organizationId,
+        warehouseId: store.id,
+        productIds: positions.map((position) => "error" in position ? null : position.product.id),
+      });
       for (const position of positions) {
         if ("error" in position) throw new Error(position.error);
         const delta = position.quantity.toNumber() * (type === "receipt" ? 1 : -1);
         const currentBalance = await tx.localStockBalance.findUnique({
           where: { productId_storeId: { productId: position.product.id, storeId: store.id } },
         });
+        const currentQuantity = currentBalance?.quantity.toNumber() ?? 0;
         const reserve = currentBalance?.reserve.toNumber() ?? 0;
-        const nextQuantity = (currentBalance?.quantity.toNumber() ?? 0) + delta;
+        const currentAvailable = currentBalance?.available.toNumber() ?? currentQuantity - reserve;
+        if (type === "writeoff") {
+          if (currentQuantity < 0) {
+            throw new Error(`Остаток товара «${position.product.name}» уже отрицательный. Используйте корректировку фактического остатка.`);
+          }
+          if (position.quantity.toNumber() > currentQuantity + 0.000001) {
+            throw new Error(`Нельзя списать ${position.quantity.toNumber()} шт. товара «${position.product.name}»: на складе ${currentQuantity} шт.`);
+          }
+          if (position.quantity.toNumber() > currentAvailable + 0.000001) {
+            throw new Error(`Из ${currentQuantity} шт. товара «${position.product.name}» ${reserve} шт. находятся в резерве. Сначала снимите резерв или выберите меньшее количество.`);
+          }
+        }
+        const nextQuantity = currentQuantity + delta;
         const nextAvailable = nextQuantity - reserve;
+        if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
+          throw new Error(`Операция создаёт отрицательный остаток по товару «${position.product.name}»`);
+        }
         if (currentBalance) {
           await tx.localStockBalance.update({
             where: { id: currentBalance.id },
@@ -3798,17 +4280,32 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
             },
           });
         }
-        if (type === "receipt" && position.priceCents > 0) {
-          await tx.localProduct.update({
-            where: { id: position.product.id },
-            data: { buyPriceCents: position.priceCents, syncedAt: new Date() },
-          });
+        if (type === "receipt") {
+          const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
+          let shouldUpdateProduct = false;
+          if (position.priceCents > 0) {
+            productUpdate.buyPriceCents = position.priceCents;
+            shouldUpdateProduct = true;
+          }
+          if (position.makeDefaultCell && position.slotName) {
+            productUpdate.cell = position.slotName;
+            shouldUpdateProduct = true;
+          }
+          if (shouldUpdateProduct) {
+            await tx.localProduct.update({
+              where: { id: position.product.id },
+              data: productUpdate,
+            });
+          }
         }
       }
     }
 
-    return document;
-  });
+      return document;
+    });
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести складской документ" };
+  }
 
   invalidateWarehouseReadCaches();
 
@@ -3819,6 +4316,10 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       name: updated.name,
       type: updated.type,
       applicable: updated.applicable,
+      adjustmentType: updated.adjustmentType,
+      adjustmentMethod: updated.adjustmentMethod,
+      adjustmentReason: updated.adjustmentReason,
+      affectsManagementProfit: updated.affectsManagementProfit,
       invoice: invoiceRequested
         ? {
             number: invoiceNumber,
@@ -3856,6 +4357,7 @@ export async function listLocalStockDocuments(params: {
             { counterpartyNameSnapshot: { contains: search, mode: "insensitive" } },
             { storeNameSnapshot: { contains: search, mode: "insensitive" } },
             { description: { contains: search, mode: "insensitive" } },
+            { adjustmentReason: { contains: search, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -3867,7 +4369,16 @@ export async function listLocalStockDocuments(params: {
       include: {
         store: true,
         counterparty: true,
-        positions: { include: { product: true }, orderBy: { id: "asc" } },
+        positions: {
+          include: {
+            product: {
+              include: {
+                stockBalances: { include: { store: true }, orderBy: { store: { name: "asc" } } },
+              },
+            },
+          },
+          orderBy: { id: "asc" },
+        },
         supplierInvoice: true,
       },
       orderBy: [{ momentAt: "desc" }],
@@ -3886,6 +4397,10 @@ export async function listLocalStockDocuments(params: {
       applicable: document.applicable,
       sum: document.sumCents / 100,
       description: document.description ?? "",
+      adjustmentType: document.adjustmentType,
+      adjustmentMethod: document.adjustmentMethod,
+      adjustmentReason: document.adjustmentReason ?? "",
+      affectsManagementProfit: document.affectsManagementProfit,
       storeId: document.storeId ?? "",
       storeName: document.store?.name ?? document.storeNameSnapshot ?? "",
       counterpartyId: document.counterpartyId ?? "",
@@ -3902,17 +4417,37 @@ export async function listLocalStockDocuments(params: {
             sum: document.supplierInvoice.sumCents / 100,
           }
         : null,
-      positions: document.positions.map((position) => ({
-        id: position.id,
-        productId: position.productId,
-        name: position.productName,
-        article: position.product?.article ?? "",
-        code: position.product?.code ?? "",
-        brand: position.product?.brand ?? "",
-        quantity: position.quantity.toNumber(),
-        price: position.priceCentsPerUnit / 100,
-        slotName: position.slotName ?? "",
-      })),
+      positions: document.positions.map((position) => {
+        const raw = jsonRecord(position.raw);
+        const knownCells = position.product?.stockBalances
+          .map((balance) => ({
+            storeId: balance.storeId,
+            storeName: balance.store?.name ?? "",
+            available: balance.available.toNumber(),
+            slotName: balance.slotName ?? "",
+          }))
+          .filter((balance) => balance.slotName) ?? [];
+        const slotStoreId = position.slotName && document.storeId && knownCells.some(
+          (cell) => cell.storeId === document.storeId && cell.slotName === position.slotName
+        )
+          ? document.storeId
+          : "";
+        return {
+          id: position.id,
+          productId: position.productId,
+          name: position.productName,
+          article: position.product?.article ?? "",
+          code: position.product?.code ?? "",
+          brand: position.product?.brand ?? "",
+          quantity: position.quantity.toNumber(),
+          price: position.priceCentsPerUnit / 100,
+          slotName: position.slotName ?? "",
+          defaultCell: position.product?.cell ?? "",
+          slotStoreId,
+          knownCells,
+          makeDefaultCell: raw.makeDefaultCell === true,
+        };
+      }),
     })),
   };
   inventoryListsCache.stockDocuments.set(cacheKey, {

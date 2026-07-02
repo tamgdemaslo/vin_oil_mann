@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getLocalAdminProduct, updateLocalAdminProduct } from "@/lib/local-inventory-admin";
+import {
+  canManageWarehouseMarking,
+  getLocalAdminProduct,
+  productPayloadHasMarkingSettings,
+  updateLocalAdminProduct,
+} from "@/lib/local-inventory-admin";
 
 export async function GET(
   _request: NextRequest,
@@ -34,7 +39,11 @@ export async function PUT(
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const result = await updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1]);
+  if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(session.user)) {
+    return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
+  }
+
+  const result = await updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], session.user);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }
@@ -51,7 +60,7 @@ export async function DELETE(
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const result = await updateLocalAdminProduct(id, { archived: true });
+  const result = await updateLocalAdminProduct(id, { archived: true }, session.user);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }

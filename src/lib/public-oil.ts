@@ -123,11 +123,62 @@ function looksLikeMotorOil(row: LocalOilRow): boolean {
   return !hasNonMotorSignal || hasMotorSignal;
 }
 
+function motorOilCandidateWhere(): Prisma.LocalProductWhereInput {
+  const textMode = "insensitive" as const;
+
+  return {
+    AND: [
+      {
+        OR: [
+          { sae: { not: null } },
+          { acea: { not: null } },
+          { apiSpec: { not: null } },
+          { ilsac: { not: null } },
+          { name: { contains: "мотор", mode: textMode } },
+          { name: { contains: "engine", mode: textMode } },
+          { groupPath: { contains: "мотор", mode: textMode } },
+          { groupPath: { contains: "engine", mode: textMode } },
+          { searchText: { contains: "мотор", mode: textMode } },
+          { searchText: { contains: "engine", mode: textMode } },
+        ],
+      },
+      {
+        NOT: {
+          OR: [
+            { name: { contains: "фильтр", mode: textMode } },
+            { name: { contains: "filter", mode: textMode } },
+            { name: { contains: "кольц", mode: textMode } },
+            { name: { contains: "пробк", mode: textMode } },
+            { name: { contains: "клипс", mode: textMode } },
+            { name: { contains: "герметик", mode: textMode } },
+            { name: { contains: "колод", mode: textMode } },
+            { name: { contains: "датчик", mode: textMode } },
+            { name: { contains: "ламп", mode: textMode } },
+            { name: { contains: "шайб", mode: textMode } },
+            { name: { contains: "проклад", mode: textMode } },
+            { name: { contains: "трансмис", mode: textMode } },
+            { name: { contains: "акпп", mode: textMode } },
+            { name: { contains: "atf", mode: textMode } },
+            { name: { contains: "gear", mode: textMode } },
+            { name: { contains: "гур", mode: textMode } },
+            { name: { contains: "psf", mode: textMode } },
+            { name: { contains: "тормозн", mode: textMode } },
+            { name: { contains: "brake", mode: textMode } },
+            { name: { contains: "антифриз", mode: textMode } },
+            { name: { contains: "coolant", mode: textMode } },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 function totalAvailable(row: LocalOilRow): number {
   return row.stockBalances.reduce((sum, balance) => sum + decimalToNumber(balance.available), 0);
 }
 
 function toPublicOilCard(row: LocalOilRow): PublicOilCard {
+  const hasLocalPhoto = row.photos.length > 0;
   return {
     id: row.id,
     name: row.name,
@@ -140,7 +191,7 @@ function toPublicOilCard(row: LocalOilRow): PublicOilCard {
     price: row.salePriceCents / 100,
     currency: row.currencyName ?? "руб.",
     available: totalAvailable(row),
-    imageHref: row.imageHref ?? undefined,
+    imageHref: hasLocalPhoto || row.imageHref ? `/api/moysklad/image?productId=${encodeURIComponent(row.id)}` : undefined,
   };
 }
 
@@ -178,6 +229,8 @@ async function loadLocalOilRows(params: PublicOilQuery = {}, scanLimit = 1000) {
   const api = compact(params.api);
   const and: Prisma.LocalProductWhereInput[] = [];
 
+  and.push(motorOilCandidateWhere());
+
   if (search) {
     and.push({
       OR: [
@@ -199,7 +252,10 @@ async function loadLocalOilRows(params: PublicOilQuery = {}, scanLimit = 1000) {
       entityType: { not: "service" },
       ...(and.length > 0 ? { AND: and } : {}),
     },
-    include: { stockBalances: true },
+    include: {
+      stockBalances: true,
+      photos: { select: { id: true }, take: 1, orderBy: { createdAt: "desc" } },
+    },
     orderBy: [{ name: "asc" }],
     take: scanLimit,
   });

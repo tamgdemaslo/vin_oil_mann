@@ -7,6 +7,8 @@ import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
+import { assertNoActiveInventoryLocks } from "@/lib/warehouse-inventory";
+import type { User } from "@/lib/auth";
 import type {
   DemandDetailAttribute,
   DemandDetailPayload,
@@ -38,6 +40,15 @@ type UpdateDemandBody = {
   }[];
 };
 
+type ShipmentActor = Pick<User, "login" | "name" | "role">;
+
+export type ReopenDemandBody = {
+  reasonCode?: string;
+  comment?: string;
+  idempotencyKey?: string;
+  expectedUpdatedAt?: string;
+};
+
 export type CreateDemandFromRecordBody = {
   recordId?: string | number | null;
   recordDateTime?: string | null;
@@ -57,6 +68,24 @@ export type CreateDemandFromRecordBody = {
   comment?: string | null;
   internalComment?: string | null;
   services?: string[];
+};
+
+export type LinkDemandToAppointmentBody = {
+  appointmentId?: string | number | null;
+  recordDateTime?: string | null;
+  recordSource?: string | null;
+  sourceLabel?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  vehicle?: {
+    model?: string | null;
+    plate?: string | null;
+    vin?: string | null;
+    year?: string | null;
+  } | null;
+  linkSource?: "manual" | "auto_on_shipment_post" | "matched_by_client" | "matched_by_phone" | "matched_by_vehicle" | "matched_by_phone_and_vehicle";
+  confidence?: "high" | "medium" | "low";
+  comment?: string | null;
 };
 
 type ResolvedPosition = {
@@ -80,6 +109,19 @@ type StockMovementPosition = {
   productId: string | null;
   assortmentType: string;
   quantity: Prisma.Decimal | number;
+  buyPriceCentsPerUnit?: number | null;
+  name?: string;
+};
+
+type StockMovementContext = {
+  sourceType: "SHIPMENT";
+  sourceId: string;
+  organizationId?: string | null;
+  movementType: "SHIPMENT_POST" | "SHIPMENT_REOPEN_REVERSAL" | "SHIPMENT_REPOST" | "SHIPMENT_UPDATE";
+  revision: number;
+  createdById?: string | null;
+  createdByName?: string | null;
+  raw?: Record<string, unknown>;
 };
 
 export function isLocalInventoryWritesEnabled(): boolean {
@@ -89,6 +131,37 @@ export function isLocalInventoryWritesEnabled(): boolean {
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   if (value == null) return Prisma.JsonNull;
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function demandStatus(applicable: boolean): "DRAFT" | "POSTED" {
+  return applicable ? "POSTED" : "DRAFT";
+}
+
+const REOPEN_REASON_LABELS: Record<string, string> = {
+  product_error: "Ошибка в товаре",
+  service_error: "Ошибка в услуге",
+  quantity_error: "Неверное количество",
+  price_error: "Неверная цена",
+  client_error: "Неверный клиент",
+  vehicle_error: "Неверный автомобиль",
+  add_position: "Нужно добавить позицию",
+  remove_position: "Нужно удалить позицию",
+  discount_error: "Нужно изменить скидку",
+  other: "Другое",
+};
+
+function normalizeReopenReason(body: ReopenDemandBody): { ok: true; reasonCode: string; reason: string } | { ok: false; error: string } {
+  const reasonCode = (body.reasonCode ?? "").trim() || "other";
+  const comment = (body.comment ?? "").trim();
+  const label = REOPEN_REASON_LABELS[reasonCode] ?? reasonCode;
+  if (reasonCode === "other" && !comment) {
+    return { ok: false, error: "Укажите комментарий для причины «Другое»" };
+  }
+  return {
+    ok: true,
+    reasonCode,
+    reason: comment ? `${label}: ${comment}` : label,
+  };
 }
 
 function entityIdFromMeta(meta?: { href?: string } | null): string | null {
@@ -129,18 +202,45 @@ function parseMoment(value?: string): { documentDate: string; momentAt: Date } {
   };
 }
 
-async function nextLocalDemandName(documentDate: string): Promise<string> {
-  const count = await prisma.localDemand.count({ where: { documentDate } });
-  return `ЭКО-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
-}
+const LOCAL_DEMAND_NUMBER_SCHEME = "compact-v1";
 
-async function nextLocalDemandNameInTx(tx: Prisma.TransactionClient, documentDate: string): Promise<string> {
-  const count = await tx.localDemand.count({ where: { documentDate } });
-  return `ЭКО-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
+async function nextLocalDemandNameInTx(tx: Prisma.TransactionClient): Promise<{ name: string; sequence: number }> {
+  const rows = await tx.localDemand.findMany({
+    where: {
+      raw: {
+        path: ["documentNumberScheme"],
+        equals: LOCAL_DEMAND_NUMBER_SCHEME,
+      },
+    },
+    select: { name: true },
+    take: 20_000,
+  });
+  const maxSequence = rows.reduce((max, row) => {
+    const match = row.name.trim().match(/^\d+$/);
+    const value = match ? Number(match[0]) : 0;
+    return Number.isFinite(value) && value > max ? value : max;
+  }, 0);
+  const sequence = maxSequence + 1;
+  return {
+    name: String(sequence).padStart(4, "0"),
+    sequence,
+  };
 }
 
 function decimalToNumber(value: Prisma.Decimal | number): number {
   return typeof value === "number" ? value : value.toNumber();
+}
+
+function formatStockQuantity(value: number): string {
+  return value.toLocaleString("ru-RU", {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 3,
+    maximumFractionDigits: 3,
+  });
+}
+
+function demandWriteErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  return fallback;
 }
 
 function lineTotalCents(position: Pick<ResolvedPosition, "quantity" | "priceCentsPerUnit" | "discount">): number {
@@ -151,6 +251,127 @@ function lineTotalCents(position: Pick<ResolvedPosition, "quantity" | "priceCent
 
 function sumPositionsCents(positions: Pick<ResolvedPosition, "quantity" | "priceCentsPerUnit" | "discount">[]): number {
   return positions.reduce((sum, position) => sum + lineTotalCents(position), 0);
+}
+
+function jsonValue(value: unknown): unknown {
+  if (value == null) return null;
+  if (value instanceof Prisma.Decimal) return value.toNumber();
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(jsonValue);
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, next] of Object.entries(value as Record<string, unknown>)) out[key] = jsonValue(next);
+    return out;
+  }
+  return value;
+}
+
+function shipmentSnapshot(
+  demand: {
+    id: string;
+    name: string;
+    applicable: boolean;
+    sumCents: number;
+    description: string | null;
+    momentAt: Date;
+    documentDate: string;
+    counterpartyId: string | null;
+    agentNameSnapshot: string | null;
+    storeId: string | null;
+    storeNameSnapshot: string | null;
+    organizationId: string | null;
+    organizationName: string | null;
+    attributes: unknown;
+    raw: unknown;
+    updatedAt?: Date;
+  },
+  positions: Array<{
+    id?: string | null;
+    productId: string | null;
+    assortmentMoyskladId: string | null;
+    assortmentType: string;
+    name: string;
+    quantity: Prisma.Decimal | number;
+    priceCentsPerUnit: number;
+    discount: Prisma.Decimal | number;
+    buyPriceCentsPerUnit?: number | null;
+    slotName?: string | null;
+    raw?: unknown;
+  }>
+) {
+  return {
+    id: demand.id,
+    name: demand.name,
+    status: demandStatus(demand.applicable),
+    applicable: demand.applicable,
+    sumCents: demand.sumCents,
+    description: demand.description,
+    momentAt: demand.momentAt.toISOString(),
+    documentDate: demand.documentDate,
+    counterpartyId: demand.counterpartyId,
+    agentNameSnapshot: demand.agentNameSnapshot,
+    storeId: demand.storeId,
+    storeNameSnapshot: demand.storeNameSnapshot,
+    organizationId: demand.organizationId,
+    organizationName: demand.organizationName,
+    attributes: jsonValue(demand.attributes),
+    raw: jsonValue(demand.raw),
+    updatedAt: demand.updatedAt?.toISOString() ?? null,
+    positions: positions.map((position) => ({
+      id: position.id ?? null,
+      productId: position.productId,
+      assortmentMoyskladId: position.assortmentMoyskladId,
+      assortmentType: position.assortmentType,
+      name: position.name,
+      quantity: decimalToNumber(position.quantity),
+      priceCentsPerUnit: position.priceCentsPerUnit,
+      discount: decimalToNumber(position.discount),
+      buyPriceCentsPerUnit: position.buyPriceCentsPerUnit ?? null,
+      slotName: position.slotName ?? null,
+      raw: jsonValue(position.raw),
+    })),
+  };
+}
+
+async function nextShipmentRevisionNumber(tx: Prisma.TransactionClient, shipmentId: string): Promise<number> {
+  const latest = await tx.shipmentRevision.findFirst({
+    where: { shipmentId },
+    select: { revisionNumber: true },
+    orderBy: { revisionNumber: "desc" },
+  });
+  return (latest?.revisionNumber ?? 0) + 1;
+}
+
+async function createShipmentRevision(
+  tx: Prisma.TransactionClient,
+  params: {
+    shipmentId: string;
+    revisionNumber: number;
+    eventType: "CREATED" | "UPDATED" | "POSTED" | "REOPENED" | "REPOSTED" | "CANCELLED" | "APPOINTMENT_LINKED";
+    statusBefore?: string | null;
+    statusAfter?: string | null;
+    snapshotBefore?: unknown;
+    snapshotAfter?: unknown;
+    reasonCode?: string | null;
+    reason?: string | null;
+    actor?: ShipmentActor | null;
+  }
+) {
+  await tx.shipmentRevision.create({
+    data: {
+      shipmentId: params.shipmentId,
+      revisionNumber: params.revisionNumber,
+      eventType: params.eventType,
+      statusBefore: params.statusBefore ?? null,
+      statusAfter: params.statusAfter ?? null,
+      snapshotBeforeJson: toJson(params.snapshotBefore),
+      snapshotAfterJson: toJson(params.snapshotAfter),
+      reasonCode: params.reasonCode ?? null,
+      reason: params.reason ?? null,
+      createdById: params.actor?.login ?? null,
+      createdByName: params.actor?.name ?? null,
+    },
+  });
 }
 
 function isStockTrackedType(type: string): boolean {
@@ -345,18 +566,34 @@ async function applyStockMovements(
   oldPositions: StockMovementPosition[],
   oldApplicable: boolean,
   newPositions: StockMovementPosition[],
-  newApplicable: boolean
+  newApplicable: boolean,
+  context?: StockMovementContext
 ) {
   if (!storeId) return;
   const oldByProduct = appliedQuantityByProduct(oldPositions, oldApplicable);
   const newByProduct = appliedQuantityByProduct(newPositions, newApplicable);
   const productIds = [...new Set([...oldByProduct.keys(), ...newByProduct.keys()])];
+  const changedProductIds = productIds.filter((productId) => {
+    const oldQty = oldByProduct.get(productId) ?? 0;
+    const newQty = newByProduct.get(productId) ?? 0;
+    return Math.abs(newQty - oldQty) >= 0.0001;
+  });
+  if (changedProductIds.length > 0) {
+    await assertNoActiveInventoryLocks(tx, {
+      organizationId: context?.organizationId,
+      warehouseId: storeId,
+      productIds: changedProductIds,
+    });
+  }
 
   for (const productId of productIds) {
     const oldQty = oldByProduct.get(productId) ?? 0;
     const newQty = newByProduct.get(productId) ?? 0;
     const deltaApplied = newQty - oldQty;
     if (Math.abs(deltaApplied) < 0.0001) continue;
+    const sourcePosition =
+      newPositions.find((position) => position.productId === productId) ??
+      oldPositions.find((position) => position.productId === productId);
 
     const current = await tx.localStockBalance.findUnique({
       where: { productId_storeId: { productId, storeId } },
@@ -365,7 +602,17 @@ async function applyStockMovements(
     const reserve = current?.reserve.toNumber() ?? 0;
     const currentAvailable = currentQuantity - reserve;
     if (deltaApplied > currentAvailable + 0.0001) {
-      throw new Error("Недостаточно остатков для проведения отгрузки");
+      const store = await tx.localStore.findUnique({ where: { id: storeId }, select: { name: true } });
+      const productName = sourcePosition?.name?.trim() || productId;
+      throw new Error(
+        [
+          `Недостаточно остатков для проведения отгрузки: «${productName}».`,
+          `Склад: ${store?.name ?? storeId}.`,
+          `Нужно списать ${formatStockQuantity(deltaApplied)} шт., доступно ${formatStockQuantity(Math.max(0, currentAvailable))} шт.`,
+          `Остаток: ${formatStockQuantity(currentQuantity)} шт., резерв: ${formatStockQuantity(reserve)} шт.`,
+          "Уменьшите количество, выберите другой склад или пополните остаток.",
+        ].join(" ")
+      );
     }
     const nextQuantity = currentQuantity - deltaApplied;
     const nextAvailable = nextQuantity - reserve;
@@ -391,6 +638,41 @@ async function applyStockMovements(
         },
       });
     }
+
+    if (context) {
+      await tx.inventoryLedgerEntry.create({
+        data: {
+          sourceType: context.sourceType,
+          sourceId: context.sourceId,
+          organizationId: context.organizationId ?? null,
+          shipmentId: context.sourceType === "SHIPMENT" ? context.sourceId : null,
+          productId,
+          storeId,
+          movementType: context.movementType,
+          quantityDelta: new Prisma.Decimal(-deltaApplied),
+          unitCostSnapshot: sourcePosition?.buyPriceCentsPerUnit ?? current?.buyPriceCents ?? null,
+          revision: context.revision,
+          createdById: context.createdById ?? null,
+          createdByName: context.createdByName ?? null,
+          raw: toJson({
+            ...context.raw,
+            productName: sourcePosition?.name ?? null,
+            oldAppliedQuantity: oldQty,
+            newAppliedQuantity: newQty,
+            balanceBefore: {
+              quantity: currentQuantity,
+              reserve,
+              available: currentAvailable,
+            },
+            balanceAfter: {
+              quantity: nextQuantity,
+              reserve,
+              available: nextAvailable,
+            },
+          }),
+        },
+      });
+    }
   }
 }
 
@@ -402,16 +684,17 @@ async function findLocalDemand(id: string) {
 }
 
 async function findDefaultRecordShipmentContext(tx: Prisma.TransactionClient) {
-  const [organization, store] = await Promise.all([
-    tx.localOrganization.findFirst({
-      where: { isActive: true },
-      orderBy: [{ createdAt: "asc" }],
-    }),
-    tx.localStore.findFirst({
-      where: { archived: false },
-      orderBy: [{ isMain: "desc" }, { name: "asc" }],
-    }),
-  ]);
+  const organization = await tx.localOrganization.findFirst({
+    where: { isActive: true },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+  });
+  const store = await tx.localStore.findFirst({
+    where: {
+      archived: false,
+      ...(organization ? { OR: [{ organizationId: organization.id }, { organizationId: null }] } : {}),
+    },
+    orderBy: [{ isMain: "desc" }, { name: "asc" }],
+  });
   return { organization, store };
 }
 
@@ -647,9 +930,12 @@ export async function createLocalDemandFromRecord(
       if (!store) throw new Error("Склад не найден в локальной БД. Запустите импорт складского зеркала.");
 
       const resolved = await resolveRecordCounterparty(tx, input);
-      const name = await nextLocalDemandNameInTx(tx, moment.documentDate);
+      const generatedNumber = await nextLocalDemandNameInTx(tx);
+      const name = generatedNumber.name;
       const raw = {
         source: "records",
+        documentNumberScheme: LOCAL_DEMAND_NUMBER_SCHEME,
+        documentNumberSequence: generatedNumber.sequence,
         sourceRecord: {
           id: cleanRecordText(input.recordId) || null,
           datetime: cleanRecordText(input.recordDateTime) || null,
@@ -683,6 +969,15 @@ export async function createLocalDemandFromRecord(
           syncedAt: new Date(),
         },
       });
+      await createShipmentRevision(tx, {
+        shipmentId: demand.id,
+        revisionNumber: 1,
+        eventType: "CREATED",
+        statusBefore: null,
+        statusAfter: demandStatus(demand.applicable),
+        snapshotAfter: shipmentSnapshot(demand, []),
+        actor: options?.ecoUserName ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" } : null,
+      });
 
       return {
         demand,
@@ -707,6 +1002,111 @@ export async function createLocalDemandFromRecord(
   }
 }
 
+export async function linkLocalDemandToAppointment(
+  id: string,
+  input: LinkDemandToAppointmentBody,
+  actor: ShipmentActor
+): Promise<{ ok: true; id: string; name: string; appointmentId: string } | { ok: false; error: string; notFound?: boolean }> {
+  const appointmentId = cleanRecordText(input.appointmentId);
+  if (!appointmentId) return { ok: false, error: "Укажите запись для связи" };
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const current = await tx.localDemand.findFirst({
+        where: { OR: [{ id }, { moyskladId: id }] },
+        include: { positions: true, counterparty: true, store: true, organization: true },
+      });
+      if (!current) throw new Error("NOT_FOUND");
+
+      const currentRaw = jsonRecord(current.raw);
+      const currentSourceRecord = jsonRecord(currentRaw.sourceRecord);
+      const currentHistory = Array.isArray(currentRaw.appointmentShipmentLinkHistory)
+        ? currentRaw.appointmentShipmentLinkHistory
+        : [];
+      const linkedAt = new Date().toISOString();
+      const linkSource = input.linkSource ?? "manual";
+      const confidence = input.confidence ?? "high";
+      const vehicle = input.vehicle ?? {};
+      const sourceRecord = {
+        ...currentSourceRecord,
+        id: appointmentId,
+        datetime: cleanRecordText(input.recordDateTime) || currentSourceRecord.datetime || null,
+        source: cleanRecordText(input.recordSource) || currentSourceRecord.source || null,
+        sourceLabel: cleanRecordText(input.sourceLabel) || currentSourceRecord.sourceLabel || null,
+        clientName: cleanRecordText(input.clientName) || currentSourceRecord.clientName || null,
+        clientPhone: cleanRecordText(input.clientPhone) || currentSourceRecord.clientPhone || null,
+        vehicle: {
+          ...jsonRecord(currentSourceRecord.vehicle),
+          model: cleanRecordText(vehicle.model) || jsonRecord(currentSourceRecord.vehicle).model || null,
+          plate: cleanRecordText(vehicle.plate) || jsonRecord(currentSourceRecord.vehicle).plate || null,
+          vin: cleanRecordText(vehicle.vin) || jsonRecord(currentSourceRecord.vehicle).vin || null,
+          year: cleanRecordText(vehicle.year) || jsonRecord(currentSourceRecord.vehicle).year || null,
+        },
+      };
+      const nextRaw = {
+        ...currentRaw,
+        sourceRecord,
+        appointmentShipmentLink: {
+          appointmentId,
+          shipmentId: current.id,
+          linkSource,
+          confidence,
+          linkedAt,
+          linkedBy: actor.login,
+          linkedByName: actor.name,
+          comment: cleanRecordText(input.comment) || null,
+        },
+        appointmentShipmentLinkHistory: [
+          ...currentHistory,
+          {
+            appointmentId,
+            shipmentId: current.id,
+            linkSource,
+            confidence,
+            linkedAt,
+            linkedBy: actor.login,
+            comment: cleanRecordText(input.comment) || null,
+          },
+        ],
+        lastLocalUpdate: linkedAt,
+      };
+      const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
+      const beforeSnapshot = shipmentSnapshot(current, current.positions);
+      const updated = await tx.localDemand.update({
+        where: { id: current.id },
+        data: {
+          raw: toJson(nextRaw),
+          syncedAt: new Date(),
+        },
+        include: { positions: true, counterparty: true, store: true, organization: true },
+      });
+      await createShipmentRevision(tx, {
+        shipmentId: current.id,
+        revisionNumber,
+        eventType: "APPOINTMENT_LINKED",
+        statusBefore: demandStatus(current.applicable),
+        statusAfter: demandStatus(updated.applicable),
+        snapshotBefore: beforeSnapshot,
+        snapshotAfter: shipmentSnapshot(updated, updated.positions),
+        reasonCode: linkSource,
+        reason:
+          cleanRecordText(input.comment) ||
+          `Запись ${appointmentId} связана с отгрузкой ${current.name}`,
+        actor,
+      });
+      return updated;
+    });
+
+    invalidateWarehouseReadCaches();
+    invalidateDemandListCache();
+    invalidateCounterpartyRows();
+    return { ok: true, id: result.id, name: result.name, appointmentId };
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось связать запись с отгрузкой" };
+  }
+}
+
 export async function createLocalDemand(
   body: CreateDemandBody,
   options?: { ecoUserName?: string }
@@ -722,71 +1122,108 @@ export async function createLocalDemand(
       ? prisma.localCounterparty.findFirst({ where: { OR: [{ id: agentMoyskladId }, { moyskladId: agentMoyskladId }] } })
       : null,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
       : null,
   ]);
 
   if (!organization) return { ok: false, error: "Организация не найдена в локальной БД. Запустите импорт или seed." };
   if (!store) return { ok: false, error: "Склад не найден в локальной БД. Запустите импорт складского зеркала." };
+  if (store.organizationId && store.organizationId !== organization.id) return { ok: false, error: "Выбранный склад не относится к выбранной организации" };
   if (!counterparty) {
     return { ok: false, error: "Контрагент не найден в локальной БД. Запустите импорт или выберите импортированного контрагента." };
   }
 
   const { documentDate, momentAt } = parseMoment(body.moment);
   const positions = await resolveCreatePositions(body.positions, store.id);
-  const name = body.name?.trim() || (await nextLocalDemandName(documentDate));
-  const raw = { ...body, ecoUserName: options?.ecoUserName ?? null };
   const applicable = body.applicable ?? false;
   const localAttributes = await buildLocalDemandAttributes(body.attributes, options?.ecoUserName);
 
   let demand: Awaited<ReturnType<typeof prisma.localDemand.create>>;
   try {
     demand = await prisma.$transaction(async (tx) => {
-    const created = await tx.localDemand.create({
-      data: {
-        name,
-        moyskladHref: null,
-        momentAt,
-        documentDate,
-        applicable,
-        sumCents: sumPositionsCents(positions),
-        description: body.description?.trim() || null,
-        counterpartyId: counterparty.id,
-        agentMoyskladId,
-        agentNameSnapshot: counterparty.name,
-        storeId: store.id,
-        storeMoyskladId,
-        storeNameSnapshot: store.name,
-        organizationId: organization.id,
-        organizationName: organization.name,
-        attributes: toJson(localAttributes),
-        raw: toJson(raw),
-        syncedAt: new Date(),
-      },
-    });
-
-    if (positions.length > 0) {
-      await tx.localDemandPosition.createMany({
-        data: positions.map((position) => ({
-          demandId: created.id,
-          productId: position.productId,
-          assortmentMoyskladId: position.assortmentMoyskladId,
-          assortmentType: position.assortmentType,
-          name: position.name,
-          quantity: position.quantity,
-          priceCentsPerUnit: position.priceCentsPerUnit,
-          discount: position.discount,
-          vat: position.vat,
-          vatEnabled: position.vatEnabled,
-          buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
-          slotName: position.slotName,
-          raw: position.raw,
-        })),
+      const generatedNumber = body.name?.trim() ? null : await nextLocalDemandNameInTx(tx);
+      const name = body.name?.trim() || generatedNumber?.name || "0001";
+      const raw = {
+        ...body,
+        ecoUserName: options?.ecoUserName ?? null,
+        ...(generatedNumber
+          ? {
+              documentNumberScheme: LOCAL_DEMAND_NUMBER_SCHEME,
+              documentNumberSequence: generatedNumber.sequence,
+            }
+          : {}),
+      };
+      const created = await tx.localDemand.create({
+        data: {
+          name,
+          moyskladHref: null,
+          momentAt,
+          documentDate,
+          applicable,
+          sumCents: sumPositionsCents(positions),
+          description: body.description?.trim() || null,
+          counterpartyId: counterparty.id,
+          agentMoyskladId,
+          agentNameSnapshot: counterparty.name,
+          storeId: store.id,
+          storeMoyskladId,
+          storeNameSnapshot: store.name,
+          organizationId: organization.id,
+          organizationName: organization.name,
+          attributes: toJson(localAttributes),
+          raw: toJson(raw),
+          syncedAt: new Date(),
+        },
       });
-    }
 
-    await applyStockMovements(tx, store.id, [], false, positions, applicable);
-    return created;
+      if (positions.length > 0) {
+        await tx.localDemandPosition.createMany({
+          data: positions.map((position) => ({
+            demandId: created.id,
+            productId: position.productId,
+            assortmentMoyskladId: position.assortmentMoyskladId,
+            assortmentType: position.assortmentType,
+            name: position.name,
+            quantity: position.quantity,
+            priceCentsPerUnit: position.priceCentsPerUnit,
+            discount: position.discount,
+            vat: position.vat,
+            vatEnabled: position.vatEnabled,
+            buyPriceCentsPerUnit: position.buyPriceCentsPerUnit,
+            slotName: position.slotName,
+            raw: position.raw,
+          })),
+        });
+      }
+
+      await applyStockMovements(
+        tx,
+        store.id,
+        [],
+        false,
+        positions,
+        applicable,
+        applicable
+          ? {
+              sourceType: "SHIPMENT",
+              sourceId: created.id,
+              organizationId: organization.id,
+              movementType: "SHIPMENT_POST",
+              revision: 1,
+              createdByName: options?.ecoUserName ?? null,
+            }
+          : undefined
+      );
+      await createShipmentRevision(tx, {
+        shipmentId: created.id,
+        revisionNumber: 1,
+        eventType: "CREATED",
+        statusBefore: null,
+        statusAfter: demandStatus(created.applicable),
+        snapshotAfter: shipmentSnapshot(created, positions),
+        actor: options?.ecoUserName ? { login: options.ecoUserName, name: options.ecoUserName, role: "admin" } : null,
+      });
+      return created;
     });
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось создать локальную отгрузку" };
@@ -799,10 +1236,17 @@ export async function createLocalDemand(
 
 export async function updateLocalDemand(
   id: string,
-  body: UpdateDemandBody
+  body: UpdateDemandBody,
+  actor?: ShipmentActor | null
 ): Promise<{ ok: true; id: string; name: string; applicable: boolean; description: string } | { ok: false; error: string; notFound?: boolean }> {
   const current = await findLocalDemand(id);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+  if (current.applicable) {
+    return {
+      ok: false,
+      error: "Проведённую отгрузку нельзя редактировать напрямую. Сначала верните документ в черновик.",
+    };
+  }
 
   const storeLookupId = entityIdFromMeta(body.store?.meta);
   const agentLookupId = entityIdFromMeta(body.agent?.meta);
@@ -815,13 +1259,16 @@ export async function updateLocalDemand(
       ? prisma.localCounterparty.findFirst({ where: { OR: [{ id: agentLookupId }, { moyskladId: agentLookupId }] } })
       : current.counterparty,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
       : current.organization,
   ]);
 
   if (body.store?.meta && !nextStore) return { ok: false, error: "Склад не найден в локальной БД" };
   if (body.agent?.meta && !nextCounterparty) return { ok: false, error: "Контрагент не найден в локальной БД" };
   if (body.organization?.meta && !nextOrganization) return { ok: false, error: "Организация не найдена в локальной БД" };
+  if (nextStore?.organizationId && nextOrganization?.id && nextStore.organizationId !== nextOrganization.id) {
+    return { ok: false, error: "Выбранный склад не относится к выбранной организации" };
+  }
 
   const existingById = new Map(
     current.positions.map((position) => [
@@ -861,11 +1308,41 @@ export async function updateLocalDemand(
   const storeChanged = Boolean(nextStoreId && nextStoreId !== current.storeId);
   const importedDraftBeingPosted = Boolean(current.moyskladId) && !current.applicable && nextApplicable;
 
-  const updated = await prisma.$transaction(async (tx) => {
+  let updated: Awaited<ReturnType<typeof prisma.localDemand.update>>;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+    const hasReopenHistory = nextApplicable
+      ? Boolean(await tx.shipmentRevision.findFirst({
+          where: { shipmentId: current.id, eventType: "REOPENED" },
+          select: { id: true },
+        }))
+      : false;
+    const eventType = nextApplicable ? hasReopenHistory ? "REPOSTED" : "POSTED" : "UPDATED";
+    const postMovementType = eventType === "REPOSTED" ? "SHIPMENT_REPOST" : "SHIPMENT_POST";
+    const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
+    const beforeSnapshot = shipmentSnapshot(current, current.positions);
     if (!importedDraftBeingPosted) {
       if (storeChanged) {
-        await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
-        await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable);
+        await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false, {
+          sourceType: "SHIPMENT",
+          sourceId: current.id,
+          organizationId: current.organizationId,
+          movementType: "SHIPMENT_UPDATE",
+          revision: revisionNumber,
+          createdById: actor?.login ?? null,
+          createdByName: actor?.name ?? null,
+        });
+        await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable, nextApplicable
+          ? {
+              sourceType: "SHIPMENT",
+              sourceId: current.id,
+              organizationId: current.organizationId,
+              movementType: nextApplicable ? postMovementType : "SHIPMENT_UPDATE",
+              revision: revisionNumber,
+              createdById: actor?.login ?? null,
+              createdByName: actor?.name ?? null,
+            }
+          : undefined);
       } else {
         await applyStockMovements(
           tx,
@@ -873,7 +1350,18 @@ export async function updateLocalDemand(
           current.positions,
           current.applicable,
           nextPositions,
+          nextApplicable,
           nextApplicable
+            ? {
+                sourceType: "SHIPMENT",
+                sourceId: current.id,
+                organizationId: current.organizationId,
+                movementType: nextApplicable ? postMovementType : "SHIPMENT_UPDATE",
+                revision: revisionNumber,
+                createdById: actor?.login ?? null,
+                createdByName: actor?.name ?? null,
+              }
+            : undefined
         );
       }
     }
@@ -901,7 +1389,8 @@ export async function updateLocalDemand(
       }
     }
 
-    return tx.localDemand.update({
+    const nextRawBase = typeof current.raw === "object" && current.raw ? current.raw : {};
+    const updated = await tx.localDemand.update({
       where: { id: current.id },
       data: {
         name: nextName,
@@ -919,11 +1408,29 @@ export async function updateLocalDemand(
         organizationName: nextOrganization?.name ?? current.organizationName,
         attributes: Array.isArray(body.attributes) ? toJson(body.attributes) : current.attributes ?? Prisma.JsonNull,
         sumCents: sumPositionsCents(nextPositions),
-        raw: toJson({ ...(typeof current.raw === "object" && current.raw ? current.raw : {}), lastLocalUpdate: new Date().toISOString() }),
+        raw: toJson({
+          ...nextRawBase,
+          lastLocalUpdate: new Date().toISOString(),
+          ...(nextApplicable ? { lastPostedAt: new Date().toISOString(), lastPostedBy: actor?.login ?? null } : {}),
+        }),
         syncedAt: new Date(),
       },
     });
-  });
+    await createShipmentRevision(tx, {
+      shipmentId: current.id,
+      revisionNumber,
+      eventType,
+      statusBefore: demandStatus(current.applicable),
+      statusAfter: demandStatus(updated.applicable),
+      snapshotBefore: beforeSnapshot,
+      snapshotAfter: shipmentSnapshot(updated, nextPositions),
+      actor,
+    });
+    return updated;
+    });
+  } catch (error) {
+    return { ok: false, error: demandWriteErrorMessage(error, "Не удалось сохранить отгрузку") };
+  }
 
   invalidateWarehouseReadCaches();
   invalidateDemandListCache();
@@ -936,11 +1443,264 @@ export async function updateLocalDemand(
   };
 }
 
+function canReopenShipment(actor?: ShipmentActor | null): boolean {
+  return actor?.role === "owner" || actor?.role === "admin";
+}
+
+async function loadReopenRelations(shipmentId: string) {
+  const [closingDocuments, diagnostics] = await Promise.all([
+    prisma.closingDocument.findMany({
+      where: { shipmentId },
+      select: { id: true, type: true, number: true, status: true, revision: true, issuedAt: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.diagnosticMapSession.findMany({
+      where: { demandId: shipmentId },
+      select: { id: true, status: true, totalCount: true, completedAt: true, publicToken: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  return { closingDocuments, diagnostics };
+}
+
+function isBlockingClosingStatus(status: string | null | undefined): boolean {
+  const normalized = (status ?? "").trim().toLowerCase();
+  return Boolean(normalized && !["draft", "cancelled", "canceled", "void", "annulled"].includes(normalized));
+}
+
+export async function getLocalDemandReopenCheck(
+  id: string,
+  actor?: ShipmentActor | null
+): Promise<
+  | {
+      ok: true;
+      shipment: { id: string; name: string; status: "DRAFT" | "POSTED"; updatedAt: string; sumCents: number };
+      canReopen: boolean;
+      blockers: string[];
+      warnings: string[];
+      consequences: string[];
+      related: {
+        positionsCount: number;
+        trackedPositionsCount: number;
+        quantityToRestore: number;
+        closingDocuments: { id: string; type: string; number: string; status: string; revision: number }[];
+        diagnostics: { id: string; status: string; totalCount: number; completedAt: string | null }[];
+      };
+    }
+  | { ok: false; error: string; notFound?: boolean }
+> {
+  const current = await findLocalDemand(id);
+  if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  if (!current.applicable) blockers.push("Отгрузка уже находится в черновике");
+  if (!canReopenShipment(actor)) blockers.push("Недостаточно прав для возврата проведённой отгрузки в черновик");
+
+  const { closingDocuments, diagnostics } = await loadReopenRelations(current.id);
+  for (const doc of closingDocuments) {
+    if (isBlockingClosingStatus(doc.status)) {
+      blockers.push(`По отгрузке выпущен закрывающий документ ${doc.type.toUpperCase()}-${doc.number}. Сначала аннулируйте документ или создайте корректировку.`);
+    }
+  }
+  if (diagnostics.length > 0) warnings.push("Связанная диагностика сохранится, но отчёт может потребовать пересчёта после изменений");
+
+  const trackedPositions = current.positions.filter((position) => position.productId && isStockTrackedType(position.assortmentType));
+  const quantityToRestore = trackedPositions.reduce((sum, position) => sum + decimalToNumber(position.quantity), 0);
+
+  return {
+    ok: true,
+    shipment: {
+      id: current.id,
+      name: current.name,
+      status: demandStatus(current.applicable),
+      updatedAt: current.updatedAt.toISOString(),
+      sumCents: current.sumCents,
+    },
+    canReopen: blockers.length === 0,
+    blockers,
+    warnings,
+    consequences: [
+      `Будет возвращено на склад позиций: ${trackedPositions.length}`,
+      "Документ временно исключится из выручки, себестоимости и прибыли",
+      "Печатные формы и предчек нужно будет сформировать заново после повторного проведения",
+      "Номер отгрузки сохранится",
+    ],
+    related: {
+      positionsCount: current.positions.length,
+      trackedPositionsCount: trackedPositions.length,
+      quantityToRestore,
+      closingDocuments: closingDocuments.map((doc) => ({
+        id: doc.id,
+        type: doc.type,
+        number: doc.number,
+        status: doc.status,
+        revision: doc.revision,
+      })),
+      diagnostics: diagnostics.map((diagnostic) => ({
+        id: diagnostic.id,
+        status: diagnostic.status,
+        totalCount: diagnostic.totalCount,
+        completedAt: diagnostic.completedAt?.toISOString() ?? null,
+      })),
+    },
+  };
+}
+
+export async function reopenLocalDemand(
+  id: string,
+  body: ReopenDemandBody,
+  actor: ShipmentActor
+): Promise<{ ok: true; id: string; name: string; applicable: boolean; updatedAt: string } | { ok: false; error: string; notFound?: boolean; conflict?: boolean }> {
+  if (!canReopenShipment(actor)) {
+    return { ok: false, error: "Недостаточно прав для возврата проведённой отгрузки в черновик" };
+  }
+  const reason = normalizeReopenReason(body);
+  if (!reason.ok) return { ok: false, error: reason.error };
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const current = await tx.localDemand.findFirst({
+        where: { OR: [{ id }, { moyskladId: id }] },
+        include: { positions: true, counterparty: true, store: true, organization: true },
+      });
+      if (!current) throw new Error("NOT_FOUND");
+
+      const currentRaw = typeof current.raw === "object" && current.raw ? current.raw as Record<string, unknown> : {};
+      if (!current.applicable) {
+        if (body.idempotencyKey && currentRaw.lastReopenIdempotencyKey === body.idempotencyKey) return current;
+        throw new Error("ALREADY_DRAFT");
+      }
+      if (body.expectedUpdatedAt && current.updatedAt.toISOString() !== body.expectedUpdatedAt) {
+        throw new Error("CONFLICT");
+      }
+
+      const blockingClosing = await tx.closingDocument.findFirst({
+        where: {
+          shipmentId: current.id,
+          NOT: { status: { in: ["draft", "cancelled", "canceled", "void", "annulled"] } },
+        },
+        select: { type: true, number: true },
+      });
+      if (blockingClosing) {
+        throw new Error(`CLOSING:${blockingClosing.type.toUpperCase()}-${blockingClosing.number}`);
+      }
+
+      const revisionNumber = await nextShipmentRevisionNumber(tx, current.id);
+      const beforeSnapshot = shipmentSnapshot(current, current.positions);
+      await applyStockMovements(
+        tx,
+        current.storeId,
+        current.positions,
+        true,
+        [],
+        false,
+        {
+          sourceType: "SHIPMENT",
+          sourceId: current.id,
+          organizationId: current.organizationId,
+          movementType: "SHIPMENT_REOPEN_REVERSAL",
+          revision: revisionNumber,
+          createdById: actor.login,
+          createdByName: actor.name,
+          raw: {
+            reasonCode: reason.reasonCode,
+            reason: reason.reason,
+          },
+        }
+      );
+
+      const next = await tx.localDemand.update({
+        where: { id: current.id },
+        data: {
+          applicable: false,
+          raw: toJson({
+            ...currentRaw,
+            reopenState: "draft_after_reopen",
+            lastReopenedAt: new Date().toISOString(),
+            lastReopenedBy: actor.login,
+            lastReopenedByName: actor.name,
+            lastReopenReasonCode: reason.reasonCode,
+            lastReopenReason: reason.reason,
+            lastReopenIdempotencyKey: body.idempotencyKey ?? null,
+          }),
+          syncedAt: new Date(),
+        },
+      });
+      await createShipmentRevision(tx, {
+        shipmentId: current.id,
+        revisionNumber,
+        eventType: "REOPENED",
+        statusBefore: "POSTED",
+        statusAfter: "DRAFT",
+        snapshotBefore: beforeSnapshot,
+        snapshotAfter: shipmentSnapshot(next, current.positions),
+        reasonCode: reason.reasonCode,
+        reason: reason.reason,
+        actor,
+      });
+      return next;
+    });
+
+    invalidateWarehouseReadCaches();
+    invalidateDemandListCache();
+    return {
+      ok: true,
+      id: updated.id,
+      name: updated.name,
+      applicable: updated.applicable,
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "NOT_FOUND") return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+    if (message === "ALREADY_DRAFT") return { ok: false, error: "Отгрузка уже находится в черновике" };
+    if (message === "CONFLICT") return { ok: false, error: "Отгрузка уже была изменена другим пользователем. Обновите страницу и повторите действие.", conflict: true };
+    if (message.startsWith("CLOSING:")) {
+      return { ok: false, error: `По отгрузке выпущен закрывающий документ ${message.slice("CLOSING:".length)}. Сначала аннулируйте документ или создайте корректировку.` };
+    }
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось вернуть отгрузку в черновик" };
+  }
+}
+
+export async function listLocalDemandRevisions(id: string): Promise<
+  | { ok: true; rows: { id: string; revisionNumber: number; eventType: string; statusBefore: string | null; statusAfter: string | null; reason: string | null; reasonCode: string | null; createdByName: string | null; createdAt: string }[] }
+  | { ok: false; error: string; notFound?: boolean }
+> {
+  const current = await findLocalDemand(id);
+  if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+  const rows = await prisma.shipmentRevision.findMany({
+    where: { shipmentId: current.id },
+    orderBy: [{ revisionNumber: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      revisionNumber: true,
+      eventType: true,
+      statusBefore: true,
+      statusAfter: true,
+      reason: true,
+      reasonCode: true,
+      createdByName: true,
+      createdAt: true,
+    },
+  });
+  return {
+    ok: true,
+    rows: rows.map((row) => ({
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+    })),
+  };
+}
+
 export async function deleteLocalDemand(
   id: string
 ): Promise<{ ok: true } | { ok: false; error: string; notFound?: boolean }> {
   const current = await findLocalDemand(id);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
+  if (current.applicable) {
+    return { ok: false, error: "Проведённую отгрузку нельзя удалить напрямую. Сначала верните документ в черновик или используйте сценарий отмены." };
+  }
 
   await prisma.$transaction(async (tx) => {
     await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false);
@@ -985,6 +1745,21 @@ export async function loadLocalDemandDetailPayload(
         cost: position.buyPriceCentsPerUnit ?? undefined,
       },
       assortmentMeta,
+      product: position.product
+        ? {
+            id: position.product.id,
+            name: position.product.name,
+            uomName: position.product.uomName,
+            groupPath: position.product.groupPath,
+            packageVolume: position.product.packageVolume,
+            volume: position.product.volume == null ? null : String(position.product.volume),
+            barcodeEan13: position.product.barcodeEan13,
+            markingEnabled: position.product.markingEnabled,
+            markingMode: position.product.markingMode,
+            markingStatus: position.product.markingStatus,
+            markingSettings: position.product.markingSettings,
+          }
+        : undefined,
       copyMeta,
     };
   });
@@ -1083,6 +1858,11 @@ export async function loadLocalDemandDetailPayload(
             id: demand.counterparty.moyskladId ?? demand.counterparty.id,
             name: demand.counterparty.name,
             phone: demand.counterparty.phone ?? undefined,
+            companyType: demand.counterparty.companyType ?? undefined,
+            counterpartyTypeName: demand.counterparty.counterpartyTypeName ?? undefined,
+            legalTitle: demand.counterparty.legalTitle ?? undefined,
+            inn: demand.counterparty.inn ?? undefined,
+            kpp: demand.counterparty.kpp ?? undefined,
             phones: Array.isArray(demand.counterparty.phonesRaw)
               ? (demand.counterparty.phonesRaw as unknown[]).map((phone) => ({ phone: String(phone ?? "") }))
               : undefined,
@@ -1104,6 +1884,7 @@ export async function loadLocalDemandDetailPayload(
       price: position.price,
       discount: position.discount,
       assortment: { name: position.name, meta: position.assortmentMeta },
+      product: position.product,
     })),
   };
 

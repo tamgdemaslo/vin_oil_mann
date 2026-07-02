@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { reconcileAppointmentShipments } from "@/lib/appointment-shipment-reconcile";
 import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
 import { listClientAppointments } from "@/lib/client-site-api";
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +68,17 @@ type YclientsStaff = {
   id?: string | number;
   name?: string;
   bookable?: boolean;
+};
+
+type MessengerSummary = {
+  total: number;
+  needsReply: number;
+  unread: number;
+  oldest: {
+    client: string;
+    hours: number;
+    href: string;
+  } | null;
 };
 
 const LONG_OPEN_SHIFT_HOURS = 10;
@@ -398,6 +411,66 @@ async function getCashState() {
   };
 }
 
+async function getMessengerSummary(): Promise<MessengerSummary> {
+  const empty = { total: 0, needsReply: 0, unread: 0, oldest: null };
+  try {
+    const organizationId = getMessengerOrganizationId();
+    const rows = await prisma.$queryRaw<
+      Array<{
+        total: number | null;
+        needsReply: number | null;
+        unread: number | null;
+        oldestClient: string | null;
+        oldestHours: number | null;
+      }>
+    >`
+      WITH visible AS (
+        SELECT title, participant_name, last_message_at, unread_count, status
+        FROM messenger_conversations
+        WHERE organization_id = ${organizationId}
+          AND status <> 'archived'
+      ),
+      needs_reply AS (
+        SELECT *
+        FROM visible
+        WHERE status = 'needs_reply' OR unread_count > 0
+      )
+      SELECT
+        COALESCE((SELECT COUNT(*)::int FROM visible), 0) AS "total",
+        COALESCE((SELECT COUNT(*)::int FROM needs_reply), 0) AS "needsReply",
+        COALESCE((SELECT SUM(unread_count)::int FROM visible), 0) AS "unread",
+        (
+          SELECT COALESCE(NULLIF(participant_name, ''), NULLIF(title, ''), 'Клиент')
+          FROM needs_reply
+          ORDER BY last_message_at ASC
+          LIMIT 1
+        ) AS "oldestClient",
+        (
+          SELECT GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - last_message_at)) / 3600)::int)
+          FROM needs_reply
+          ORDER BY last_message_at ASC
+          LIMIT 1
+        ) AS "oldestHours"
+    `;
+    const row = rows[0];
+    if (!row) return empty;
+    return {
+      total: row.total ?? 0,
+      needsReply: row.needsReply ?? 0,
+      unread: row.unread ?? 0,
+      oldest: row.oldestClient
+        ? {
+            client: row.oldestClient,
+            hours: row.oldestHours ?? 0,
+            href: "/messages",
+          }
+        : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
@@ -417,6 +490,7 @@ export async function GET() {
     supplierInvoices,
     diagnosticStats,
     latestDocuments,
+    messengerSummary,
   ] = await Promise.all([
     getCashState(),
     prisma.localDemand.findMany({
@@ -464,6 +538,7 @@ export async function GET() {
       orderBy: [{ momentAt: "desc" }],
       take: 5,
     }),
+    getMessengerSummary(),
   ]);
 
   const notifications: DashboardNotification[] = [];
@@ -507,27 +582,26 @@ export async function GET() {
     const value = appointmentDateTime(item);
     return value ? value.getTime() >= now.getTime() : false;
   }) ?? todayAppointments[0] ?? null;
-  const appointmentDemandKeys = new Set(
-    todayDemands.flatMap((demand) => {
-      const raw = asRecord(demand.raw);
-      return [
-        stringValue(raw.recordId),
-        stringValue(raw.yclientsRecordId),
-        stringValue(raw.record?.["id" as keyof typeof raw.record]),
-        stringValue(demand.description),
-      ].filter(Boolean);
-    })
-  );
+  const appointmentShipmentStatuses = reconcileAppointmentShipments(todayAppointments, todayDemands);
+  const appointmentShipmentStatusById = new Map(appointmentShipmentStatuses.map((status) => [status.appointmentId, status]));
   const appointmentsWithoutShipment = todayAppointments.filter((item) => {
     const id = stringValue(item.id);
-    return id && !appointmentDemandKeys.has(id);
+    return Boolean(id && appointmentShipmentStatusById.get(id)?.countsAsWithoutShipment);
   });
+  const appointmentsRequiringManualLink = appointmentShipmentStatuses.filter((status) => status.requiresManualLink);
+  const appointmentsMatchedByRules = appointmentShipmentStatuses.filter(
+    (status) => status.hasShipment && status.linkSource && status.linkSource !== "created_from_appointment" && status.linkSource !== "manual"
+  );
   const freeWindows = ["09:00", "10:30", "12:00", "13:30", "16:00", "17:00", "18:30"].filter(
     (time) => !todayAppointments.some((item) => appointmentTime(item) === time)
   );
 
   const crmToday = crmDeals.filter((deal) => deal.nextContactAt && deal.nextContactAt >= todayStart && deal.nextContactAt < tomorrowStart);
   const crmOverdue = crmDeals.filter((deal) => deal.nextContactAt && deal.nextContactAt < now);
+  const oldestOverdueHours = crmOverdue.reduce((max, deal) => {
+    if (!deal.nextContactAt) return max;
+    return Math.max(max, Math.floor((now.getTime() - deal.nextContactAt.getTime()) / 3_600_000));
+  }, 0);
   const crmNoResponsible = crmDeals.filter((deal) => !deal.responsibleLogin);
   const crmQuote = crmDeals.filter((deal) => crmStageKind(deal.stage.name, deal.nextAction, deal.suppliesNote) === "quote");
   const crmSupplies = crmDeals.filter((deal) => crmStageKind(deal.stage.name, deal.nextAction, deal.suppliesNote) === "supplies");
@@ -550,14 +624,30 @@ export async function GET() {
     notifications.push({
       id: `appointment-no-shipment-${item.id}`,
       urgency: "today",
-      title: `Запись в ${appointmentTime(item) || "—"} без созданной отгрузки`,
+      title: `Запись в ${appointmentTime(item) || "—"} без найденной отгрузки`,
       description:
         [appointmentClientName(item), appointmentVehicle(item), appointmentService(item)].filter(Boolean).join(" · ") ||
-        "Нужно подготовить отгрузку из записи.",
+        "Нужно подготовить отгрузку или связать существующую.",
       deadline: dueLabel(appointmentDateTime(item)),
       entityLabel: "Запись",
       entityHref: "/records",
       actionLabel: "Создать отгрузку",
+    });
+  }
+
+  for (const status of appointmentsRequiringManualLink.slice(0, 5)) {
+    const item = todayAppointments.find((appointment) => stringValue(appointment.id) === status.appointmentId);
+    notifications.push({
+      id: `appointment-link-shipment-${status.appointmentId}`,
+      urgency: "today",
+      title: `Запись в ${item ? appointmentTime(item) || "—" : "—"} нужно связать с отгрузкой`,
+      description:
+        status.candidates.slice(0, 3).map((candidate) => `${candidate.shipmentName} · ${candidate.client}`).join(" · ") ||
+        "Найдено несколько возможных отгрузок.",
+      deadline: dueLabel(item ? appointmentDateTime(item) : null),
+      entityLabel: "Запись",
+      entityHref: `/records?recordId=${encodeURIComponent(status.appointmentId)}`,
+      actionLabel: "Связать",
     });
   }
 
@@ -688,6 +778,8 @@ export async function GET() {
       totalToday: todayAppointments.length,
       confirmedToday: todayAppointments.filter(appointmentIsConfirmed).length,
       withoutShipment: appointmentsWithoutShipment.length,
+      requiresManualLink: appointmentsRequiringManualLink.length,
+      matchedByRules: appointmentsMatchedByRules.length,
       freeWindows,
       next: nextAppointment
         ? {
@@ -697,7 +789,9 @@ export async function GET() {
             vehicle: appointmentVehicle(nextAppointment),
             service: appointmentService(nextAppointment),
             status: appointmentStatus(nextAppointment),
-            shipmentId: null,
+            shipmentId: appointmentShipmentStatusById.get(stringValue(nextAppointment.id))?.matchedShipment?.shipmentId ?? null,
+            hasShipment: appointmentShipmentStatusById.get(stringValue(nextAppointment.id))?.hasShipment ?? false,
+            shipmentStatus: appointmentShipmentStatusById.get(stringValue(nextAppointment.id))?.label ?? "Отгрузка не найдена",
           }
         : null,
       rows: todayAppointments.slice(0, 5).map((item) => ({
@@ -708,12 +802,26 @@ export async function GET() {
         vehicle: appointmentVehicle(item),
         service: appointmentService(item),
         status: appointmentStatus(item),
-        shipmentId: null,
-        hasShipment: !appointmentsWithoutShipment.some((missed) => missed.id === item.id),
+        shipmentId: appointmentShipmentStatusById.get(stringValue(item.id))?.matchedShipment?.shipmentId ?? null,
+        hasShipment: appointmentShipmentStatusById.get(stringValue(item.id))?.hasShipment ?? false,
+        shipmentStatus: appointmentShipmentStatusById.get(stringValue(item.id))?.label ?? "Отгрузка не найдена",
+      })),
+      shipmentStatuses: appointmentShipmentStatuses.map((status) => ({
+        appointmentId: status.appointmentId,
+        kind: status.kind,
+        label: status.label,
+        hasShipment: status.hasShipment,
+        countsAsWithoutShipment: status.countsAsWithoutShipment,
+        requiresManualLink: status.requiresManualLink,
+        linkSource: status.linkSource,
+        confidence: status.confidence,
+        matchedShipment: status.matchedShipment,
+        candidates: status.candidates.slice(0, 5),
       })),
     },
     crm: {
       overdue: crmOverdue.length,
+      oldestOverdueHours,
       today: crmToday.length,
       quote: crmQuote.length,
       supplies: crmSupplies.length,
@@ -778,10 +886,12 @@ export async function GET() {
       active: activeDiagnosticMapCount + legacyDiagnosticOpenCount,
       withoutPhoto: diagnosticWithoutPhotoCount,
     },
+    messages: messengerSummary,
     alerts: [
       ...(cashState.shift ? [{ id: "cash-open", label: "Нужно закрыть кассу", href: "/cash#cash-state", count: cashState.openedHours >= LONG_OPEN_SHIFT_HOURS ? 1 : 0, tone: "warning" }] : [{ id: "cash-closed", label: "Касса закрыта", href: "/cash#cash-state", count: 1, tone: "danger" }]),
       { id: "crm-overdue", label: "Есть просроченные дела", href: "/crm?filter=overdue", count: crmOverdue.length, tone: "danger" },
-      { id: "appointments-no-shipment", label: "Есть записи без отгрузки", href: "/records?filter=no-shipment", count: appointmentsWithoutShipment.length, tone: "warning" },
+      { id: "appointments-no-shipment", label: "Есть записи без найденной отгрузки", href: "/records?filter=no-shipment", count: appointmentsWithoutShipment.length, tone: "warning" },
+      { id: "appointments-link-manual", label: "Есть записи для ручной связи", href: "/records?filter=shipment-link", count: appointmentsRequiringManualLink.length, tone: "warning" },
       { id: "unpaid-docs", label: "Есть неоплаченные документы", href: "/shipment?filter=unpaid", count: unpaidToday.length + unpaidInvoices.length, tone: "warning" },
       { id: "low-stock", label: "Есть товары ниже минимума", href: "/inventory/restock?mode=below_min", count: lowStock.length, tone: "warning" },
       { id: "diagnostics", label: "Есть диагностики без отчёта", href: "/shipment?filter=diagnostics", count: diagnosticWithoutPhotoCount, tone: "info" },

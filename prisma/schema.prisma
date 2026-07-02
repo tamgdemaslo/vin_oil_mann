@@ -62,6 +62,66 @@ model BonusPenalty {
   @@map("bonus_penalties")
 }
 
+model PayrollAdjustment {
+  id              String    @id @default(cuid())
+  organizationId  String    @default("default") @map("organization_id")
+  employeeId      String    @map("employee_id")
+  payrollPeriodId String?   @map("payroll_period_id")
+  periodFrom      String    @map("period_from")
+  periodTo        String    @map("period_to")
+  operationDate   String    @map("operation_date")
+  type            String
+  amountCents     Int       @map("amount_cents")
+  reasonCode      String?   @map("reason_code")
+  comment         String?   @db.Text
+  sourceType      String?   @map("source_type")
+  sourceId        String?   @map("source_id")
+  status          String    @default("ACTIVE")
+  createdById     String    @map("created_by_id")
+  reversedById    String?   @map("reversed_by_id")
+  reversalOfId    String?   @map("reversal_of_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  reversedAt      DateTime? @map("reversed_at")
+
+  @@index([organizationId, employeeId])
+  @@index([organizationId, periodFrom, periodTo])
+  @@index([status])
+  @@index([sourceType, sourceId])
+  @@index([reversalOfId])
+  @@map("payroll_adjustments")
+}
+
+model PayrollPayment {
+  id              String    @id @default(cuid())
+  organizationId  String    @default("default") @map("organization_id")
+  employeeId      String    @map("employee_id")
+  payrollPeriodId String?   @map("payroll_period_id")
+  periodFrom      String    @map("period_from")
+  periodTo        String    @map("period_to")
+  operationDate   String    @map("operation_date")
+  operationType   String    @default("SALARY") @map("operation_type")
+  amountCents     Int       @map("amount_cents")
+  paymentMethod   String    @map("payment_method")
+  cashOrderId     String?   @map("cash_order_id")
+  bankOperationId String?   @map("bank_operation_id")
+  status          String    @default("ACTIVE")
+  comment         String?   @db.Text
+  createdById     String    @map("created_by_id")
+  reversedById    String?   @map("reversed_by_id")
+  reversalOfId    String?   @map("reversal_of_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  reversedAt      DateTime? @map("reversed_at")
+
+  @@index([organizationId, employeeId])
+  @@index([organizationId, periodFrom, periodTo])
+  @@index([cashOrderId])
+  @@index([status])
+  @@index([reversalOfId])
+  @@map("payroll_payments")
+}
+
 model ChangeLog {
   id               String   @id @default(cuid())
   entityType       String   @map("entity_type")
@@ -85,6 +145,184 @@ model ScheduledWorkingDay {
 
   @@unique([userLogin, date])
   @@map("scheduled_working_days")
+}
+
+model PayrollGoal {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  employeeLogin  String?  @map("employee_id")
+  role           String?
+  teamKey        String?  @map("team_key")
+  periodType     String   @map("period_type") // SHIFT | WEEK | MONTH
+  metric         String // ACCRUAL_AMOUNT | VEHICLES | SERVICES | PRODUCTS | SHIPMENTS | QUALITY | DIAGNOSTICS | APPROVED_RECOMMENDATIONS
+  targetValue    Int      @map("target_value")
+  baselineValue  Int?     @map("baseline_value")
+  stretchValue   Int?     @map("stretch_value")
+  startsAt       String   @map("starts_at")
+  endsAt         String   @map("ends_at")
+  status         String   @default("active")
+  createdByLogin String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, employeeLogin])
+  @@index([organizationId, role])
+  @@index([organizationId, startsAt, endsAt])
+  @@map("payroll_goals")
+}
+
+model PayrollAchievementDefinition {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  key            String
+  title          String
+  description    String   @db.Text
+  icon           String?
+  metric         String
+  threshold      Int
+  periodType     String   @map("period_type")
+  enabled        Boolean  @default(true)
+  repeatable     Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, key])
+  @@map("payroll_achievement_definitions")
+}
+
+model PayrollAchievementAward {
+  id             String    @id @default(cuid())
+  organizationId String    @default("default") @map("organization_id")
+  definitionId   String    @map("definition_id")
+  employeeLogin  String    @map("employee_id")
+  sourceId       String?   @map("source_id")
+  awardedAt      DateTime  @default(now()) @map("awarded_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId, employeeLogin])
+  @@index([definitionId])
+  @@map("payroll_achievement_awards")
+}
+
+model EmployeeRecognition {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  employeeLogin  String   @map("employee_id")
+  authorLogin    String   @map("author_id")
+  title          String
+  message        String   @db.Text
+  reason         String
+  visibility     String   @default("PRIVATE") // PRIVATE | TEAM
+  sourceType     String?  @map("source_type")
+  sourceId       String?  @map("source_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, employeeLogin])
+  @@index([organizationId, createdAt])
+  @@map("employee_recognitions")
+}
+
+model PayrollTeamGoal {
+  id              String   @id @default(cuid())
+  organizationId  String   @default("default") @map("organization_id")
+  teamKey         String   @map("team_key")
+  employeeIdsJson Json     @map("employee_ids_json")
+  metric          String
+  targetValue     Int      @map("target_value")
+  startsAt        String   @map("starts_at")
+  endsAt          String   @map("ends_at")
+  status          String   @default("active")
+  createdByLogin  String   @map("created_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, teamKey])
+  @@index([organizationId, startsAt, endsAt])
+  @@map("payroll_team_goals")
+}
+
+model EmployeeMotivationSettings {
+  id                String   @id @default(cuid())
+  organizationId    String   @default("default") @map("organization_id")
+  employeeLogin     String?  @map("employee_id")
+  showForecast      Boolean  @default(true) @map("show_forecast")
+  showGoals         Boolean  @default(true) @map("show_goals")
+  showAchievements  Boolean  @default(true) @map("show_achievements")
+  showTeamProgress  Boolean  @default(true) @map("show_team_progress")
+  showQuality       Boolean  @default(true) @map("show_quality")
+  showRecognition   Boolean  @default(true) @map("show_recognition")
+  notificationsJson Json     @default("{}") @map("notifications_json")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, employeeLogin])
+  @@map("employee_motivation_settings")
+}
+
+model PayrollPeriod {
+  id                  String   @id @default(cuid())
+  organizationId      String   @default("default") @map("organization_id")
+  dateFrom            String   @map("date_from")
+  dateTo              String   @map("date_to")
+  status              String   @default("closed")
+  closedByLogin       String   @map("closed_by_login")
+  closedAt            DateTime @default(now()) @map("closed_at")
+  totalAccruedCents   Int      @map("total_accrued_cents")
+  totalPaidCents      Int      @map("total_paid_cents")
+  totalRemainingCents Int      @map("total_remaining_cents")
+  employeesCount      Int      @map("employees_count")
+  snapshotJson        Json     @map("snapshot_json")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, dateFrom, dateTo])
+  @@index([organizationId, status])
+  @@index([closedAt])
+  @@map("payroll_periods")
+}
+
+model PayrollPeriodEmployee {
+  id               String   @id @default(cuid())
+  periodId         String   @map("period_id")
+  employeeLogin    String   @map("employee_login")
+  employeeName     String   @map("employee_name")
+  employeeRole     String   @map("employee_role")
+  shiftTotalCents  Int      @map("shift_total_cents")
+  pieceworkCents   Int      @map("piecework_cents")
+  adjustmentsCents Int      @map("adjustments_cents")
+  paidOutCents     Int      @map("paid_out_cents")
+  remainingCents   Int      @map("remaining_cents")
+  totalCents       Int      @map("total_cents")
+  shiftsCount      Int      @map("shifts_count")
+  status           String   @default("closed")
+  snapshotJson     Json     @map("snapshot_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([periodId, employeeLogin])
+  @@index([employeeLogin])
+  @@index([periodId])
+  @@map("payroll_period_employees")
+}
+
+model PayrollAccrualLine {
+  id               String   @id @default(cuid())
+  periodId         String   @map("period_id")
+  employeeLogin    String   @map("employee_login")
+  lineType         String   @map("line_type")
+  sourceType       String   @map("source_type")
+  sourceId         String?  @map("source_id")
+  reversalOfLineId String?  @map("reversal_of_line_id")
+  date             String?
+  title            String
+  quantity         Decimal? @db.Decimal(12, 3)
+  amountCents      Int      @map("amount_cents")
+  status           String   @default("CONFIRMED")
+  snapshotJson     Json?    @map("snapshot_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([periodId, employeeLogin])
+  @@index([sourceType, sourceId])
+  @@index([reversalOfLineId])
+  @@map("payroll_accrual_lines")
 }
 
 model AuthPassword {
@@ -266,6 +504,621 @@ model ClientCaseNotificationLog {
   @@index([caseId, userId, type, channel, sentAt], map: "client_case_notification_log_dedupe_idx")
   @@index([userId, acknowledgedAt, sentAt], map: "client_case_notification_log_user_feed_idx")
   @@map("client_case_notification_log")
+}
+
+// --- Messenger Gateway ---
+
+model MessengerConnection {
+  id               String    @id
+  organizationId   String    @default("default") @map("organization_id")
+  channel          String
+  type             String    @default("unknown")
+  clientId         String?   @map("client_id")
+  employeeId       String?   @map("employee_id")
+  supplierId       String?   @map("supplier_id")
+  externalUserId   String?   @map("external_user_id")
+  externalChatId   String    @map("external_chat_id")
+  externalUsername String?   @map("external_username")
+  displayName      String    @map("display_name")
+  phone            String?
+  avatarUrl        String?   @map("avatar_url") @db.Text
+  isActive         Boolean   @default(true) @map("is_active")
+  linkedAt         DateTime? @map("linked_at") @db.Timestamptz(6)
+  lastSeenAt       DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  blockedAt        DateTime? @map("blocked_at") @db.Timestamptz(6)
+  rawJson          Json?     @map("raw_json")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversations MessengerConversation[]
+  outbox        MessengerOutbox[]
+
+  @@unique([channel, externalChatId])
+  @@index([organizationId, channel])
+  @@index([channel, externalUserId])
+  @@index([channel])
+  @@index([type])
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([supplierId])
+  @@index([isActive])
+  @@map("messenger_connections")
+}
+
+model MessengerAccount {
+  id                String    @id
+  organizationId    String    @default("default") @map("organization_id")
+  channel           String
+  mode              String
+  externalAccountId String?   @map("external_account_id")
+  displayName       String    @default("") @map("display_name")
+  phone             String?
+  username          String?
+  avatarUrl         String?   @map("avatar_url") @db.Text
+  isActive          Boolean   @default(true) @map("is_active")
+  isDefault         Boolean   @default(false) @map("is_default")
+  enabled           Boolean   @default(true)
+  status            String    @default("disconnected")
+  connectedByUserId String?   @map("connected_by_user_id")
+  connectedAt       DateTime? @map("connected_at") @db.Timestamptz(6)
+  disconnectedAt    DateTime? @map("disconnected_at") @db.Timestamptz(6)
+  lastInboundAt     DateTime? @map("last_inbound_at") @db.Timestamptz(6)
+  lastOutboundAt    DateTime? @map("last_outbound_at") @db.Timestamptz(6)
+  lastSyncAt        DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  errorCode         String?   @map("error_code")
+  errorMessage      String?   @map("error_message") @db.Text
+  metadataJson      Json      @default("{}") @map("metadata_json")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  telegramUserSessions TelegramUserSession[]
+  conversations        MessengerConversation[]
+  messages             MessengerMessage[]
+  outbox               MessengerOutbox[]
+  credentials          IntegrationCredential[]
+  onboardingSessions   IntegrationOnboardingSession[]
+  webhookSubscriptions WebhookSubscription[]
+  syncCursors          MessengerSyncCursor[]
+
+  @@index([organizationId, channel, mode, status])
+  @@index([channel, mode])
+  @@index([status])
+  @@map("messenger_accounts")
+}
+
+model TelegramUserSession {
+  id                     String    @id
+  organizationId         String    @default("default") @map("organization_id")
+  messengerAccountId     String    @map("messenger_account_id")
+  phone                  String
+  apiIdEncrypted         Json?     @map("api_id_encrypted")
+  apiHashEncrypted       Json?     @map("api_hash_encrypted")
+  sessionEncrypted       Json?     @map("session_encrypted")
+  phoneCodeHashEncrypted Json?     @map("phone_code_hash_encrypted")
+  qrTokenEncrypted       Json?     @map("qr_token_encrypted")
+  qrExpiresAt            DateTime? @map("qr_expires_at") @db.Timestamptz(6)
+  authAttemptId          String?   @map("auth_attempt_id")
+  authDcId               String?   @map("auth_dc_id")
+  authDeliveryType       String?   @map("auth_delivery_type")
+  authNextType           String?   @map("auth_next_type")
+  authTimeout            Int?      @map("auth_timeout")
+  authExpiresAt          DateTime? @map("auth_expires_at") @db.Timestamptz(6)
+  status                 String    @default("disconnected")
+  lastAuthorizedAt       DateTime? @map("last_authorized_at") @db.Timestamptz(6)
+  lastSyncAt             DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  errorMessage           String?   @map("error_message") @db.Text
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messengerAccount MessengerAccount @relation(fields: [messengerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([messengerAccountId])
+  @@index([organizationId, messengerAccountId])
+  @@index([status])
+  @@map("telegram_user_sessions")
+}
+
+model MessengerConversation {
+  id                     String    @id
+  organizationId         String    @default("default") @map("organization_id")
+  messengerAccountId     String?   @map("messenger_account_id")
+  channel                String
+  externalConversationId String    @map("external_conversation_id")
+  externalChatId         String?   @map("external_chat_id")
+  externalUserId         String?   @map("external_user_id")
+  externalParticipantId  String?   @map("external_participant_id")
+  connectionId           String?   @map("connection_id")
+  clientId               String?   @map("client_id")
+  employeeId             String?   @map("employee_id")
+  supplierId             String?   @map("supplier_id")
+  title                  String
+  participantName        String    @map("participant_name")
+  participantUsername    String?   @map("participant_username")
+  participantPhone       String?   @map("participant_phone")
+  participantAvatarUrl   String?   @map("participant_avatar_url") @db.Text
+  avatarStorageKey       String?   @map("avatar_storage_key") @db.Text
+  avatarThumbnailKey     String?   @map("avatar_thumbnail_key") @db.Text
+  avatarTelegramPhotoId  String?   @map("avatar_telegram_photo_id")
+  avatarStatus           String    @default("pending") @map("avatar_status")
+  avatarUpdatedAt        DateTime? @map("avatar_updated_at") @db.Timestamptz(6)
+  avatarError            String?   @map("avatar_error") @db.Text
+  status                 String    @default("open")
+  assignedToId           String?   @map("assigned_to_id")
+  unreadCount            Int       @default(0) @map("unread_count")
+  lastMessageText        String    @default("") @map("last_message_text") @db.Text
+  lastMessageAt          DateTime  @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  isImportant            Boolean   @default(false) @map("is_important")
+  isPinned               Boolean   @default(false) @map("is_pinned")
+  relatedCaseId          String?   @map("related_case_id")
+  relatedAppointmentId   String?   @map("related_appointment_id")
+  relatedShipmentId      String?   @map("related_shipment_id")
+  relatedDiagnosticId    String?   @map("related_diagnostic_id")
+  metadataJson           Json      @default("{}") @map("metadata_json")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  connection       MessengerConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  messengerAccount MessengerAccount?    @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  messages         MessengerMessage[]
+  outbox           MessengerOutbox[]
+
+  @@unique([channel, externalConversationId])
+  @@index([organizationId, messengerAccountId, lastMessageAt])
+  @@index([organizationId, channel, status])
+  @@index([messengerAccountId])
+  @@index([channel, externalChatId])
+  @@index([lastMessageAt])
+  @@index([channel])
+  @@index([status])
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([supplierId])
+  @@index([assignedToId])
+  @@index([relatedCaseId])
+  @@index([relatedAppointmentId])
+  @@index([relatedShipmentId])
+  @@index([relatedDiagnosticId])
+  @@map("messenger_conversations")
+}
+
+model MessengerMessage {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  conversationId     String    @map("conversation_id")
+  messengerAccountId String?   @map("messenger_account_id")
+  channel            String
+  externalMessageId  String?   @map("external_message_id")
+  externalReplyToId  String?   @map("external_reply_to_id")
+  direction          String
+  authorType         String    @map("author_type")
+  authorId           String?   @map("author_id")
+  messageType        String    @default("text") @map("message_type")
+  text               String    @default("") @db.Text
+  attachmentsJson    Json      @default("[]") @map("attachments_json")
+  status             String    @default("queued")
+  errorCode          String?   @map("error_code")
+  errorMessage       String?   @map("error_message") @db.Text
+  rawJson            Json?     @map("raw_json")
+  sentAt             DateTime? @map("sent_at") @db.Timestamptz(6)
+  deliveredAt        DateTime? @map("delivered_at") @db.Timestamptz(6)
+  readAt             DateTime? @map("read_at") @db.Timestamptz(6)
+  receivedAt         DateTime? @map("received_at") @db.Timestamptz(6)
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversation     MessengerConversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messengerAccount MessengerAccount?        @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  outbox           MessengerOutbox[]
+  attachments      MessengerAttachment[]
+  deliveryEvents   MessengerDeliveryEvent[]
+
+  @@unique([channel, externalMessageId])
+  @@index([organizationId, conversationId, createdAt])
+  @@index([organizationId, channel, externalMessageId])
+  @@index([conversationId, createdAt])
+  @@index([status])
+  @@index([channel])
+  @@index([authorType, authorId])
+  @@map("messenger_messages")
+}
+
+model MessengerOutbox {
+  id                      String    @id
+  organizationId          String    @default("default") @map("organization_id")
+  messengerAccountId      String?   @map("messenger_account_id")
+  channel                 String
+  conversationId          String?   @map("conversation_id")
+  messageId               String?   @map("message_id")
+  connectionId            String?   @map("connection_id")
+  recipientExternalChatId String    @map("recipient_external_chat_id")
+  messageType             String    @default("text") @map("message_type")
+  text                    String    @default("") @db.Text
+  attachmentsJson         Json      @default("[]") @map("attachments_json")
+  templateKey             String?   @map("template_key")
+  templateVarsJson        Json?     @map("template_vars_json")
+  idempotencyKey          String?   @map("idempotency_key")
+  status                  String    @default("queued")
+  attempts                Int       @default(0)
+  lastAttemptAt           DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt           DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  errorCode               String?   @map("error_code")
+  errorMessage            String?   @map("error_message") @db.Text
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversation     MessengerConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message          MessengerMessage?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  connection       MessengerConnection?   @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  messengerAccount MessengerAccount?      @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
+  @@index([messengerAccountId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([connectionId])
+  @@index([channel])
+  @@map("messenger_outbox")
+}
+
+model MessengerWebhookEvent {
+  id               String    @id
+  organizationId   String    @default("default") @map("organization_id")
+  channel          String
+  externalUpdateId String    @map("external_update_id")
+  rawJson          Json      @map("raw_json")
+  processedAt      DateTime? @map("processed_at") @db.Timestamptz(6)
+  error            String?   @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([channel, externalUpdateId])
+  @@index([organizationId, channel, createdAt])
+  @@index([channel, createdAt])
+  @@index([processedAt])
+  @@map("messenger_webhook_events")
+}
+
+model MessengerTemplate {
+  id             String   @id
+  organizationId String   @default("default") @map("organization_id")
+  key            String   @unique
+  title          String
+  channel        String?
+  text           String   @db.Text
+  variablesJson  Json     @default("[]") @map("variables_json")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([channel])
+  @@index([organizationId, channel, isActive])
+  @@index([isActive])
+  @@map("messenger_templates")
+}
+
+model MessengerLinkToken {
+  id             String    @id
+  organizationId String    @default("default") @map("organization_id")
+  token          String    @unique
+  channel        String
+  type           String
+  clientId       String?   @map("client_id")
+  employeeId     String?   @map("employee_id")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt         DateTime? @map("used_at") @db.Timestamptz(6)
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([channel])
+  @@index([organizationId, channel, type])
+  @@index([type])
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([expiresAt])
+  @@map("messenger_link_tokens")
+}
+
+model MessengerChannelSetting {
+  id             String   @id
+  organizationId String   @default("default") @map("organization_id")
+  channel        String   @unique
+  enabled        Boolean  @default(false)
+  configJson     Json     @default("{}") @map("config_json")
+  secretsJson    Json?    @map("secrets_json")
+  createdById    String?  @map("created_by_id")
+  updatedById    String?  @map("updated_by_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([enabled])
+  @@index([organizationId, channel])
+  @@map("messenger_channel_settings")
+}
+
+model IntegrationProvider {
+  id                 String   @id
+  channel            String
+  providerKey        String   @map("provider_key")
+  displayName        String   @map("display_name")
+  adapterStatus      String   @default("planned") @map("adapter_status")
+  capabilityStatus   String   @default("requires_audit") @map("capability_status")
+  capabilitiesJson   Json     @default("{}") @map("capabilities_json")
+  platformConfigJson Json     @default("{}") @map("platform_config_json")
+  enabled            Boolean  @default(false)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  credentials          IntegrationCredential[]
+  webhookSubscriptions WebhookSubscription[]
+
+  @@unique([channel, providerKey])
+  @@index([channel, adapterStatus])
+  @@map("integration_providers")
+}
+
+model IntegrationCredential {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  providerId         String?   @map("provider_id")
+  messengerAccountId String?   @map("messenger_account_id")
+  channel            String
+  key                String
+  encryptedValue     Json      @map("encrypted_value")
+  metadataJson       Json      @default("{}") @map("metadata_json")
+  createdById        String?   @map("created_by_id")
+  rotatedAt          DateTime? @map("rotated_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  provider         IntegrationProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  messengerAccount MessengerAccount?    @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, channel, messengerAccountId])
+  @@index([providerId])
+  @@map("integration_credentials")
+}
+
+model IntegrationOnboardingSession {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  channel            String
+  providerKey        String?   @map("provider_key")
+  messengerAccountId String?   @map("messenger_account_id")
+  status             String    @default("draft")
+  currentStep        String    @default("capability_audit") @map("current_step")
+  dataJson           Json      @default("{}") @map("data_json")
+  errorMessage       String?   @map("error_message") @db.Text
+  createdById        String?   @map("created_by_id")
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(6)
+  completedAt        DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messengerAccount MessengerAccount? @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, channel, status])
+  @@index([messengerAccountId])
+  @@map("integration_onboarding_sessions")
+}
+
+model WebhookSubscription {
+  id                     String    @id
+  organizationId         String    @default("default") @map("organization_id")
+  providerId             String?   @map("provider_id")
+  messengerAccountId     String?   @map("messenger_account_id")
+  channel                String
+  url                    String    @db.Text
+  status                 String    @default("disabled")
+  secretRef              String?   @map("secret_ref")
+  externalSubscriptionId String?   @map("external_subscription_id")
+  lastEventAt            DateTime? @map("last_event_at") @db.Timestamptz(6)
+  lastError              String?   @map("last_error") @db.Text
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  provider         IntegrationProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  messengerAccount MessengerAccount?    @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, channel, status])
+  @@index([messengerAccountId])
+  @@map("webhook_subscriptions")
+}
+
+model MessengerAttachment {
+  id                   String    @id
+  organizationId       String    @default("default") @map("organization_id")
+  messageId            String    @map("message_id")
+  messengerAccountId   String?   @map("messenger_account_id")
+  conversationId       String?   @map("conversation_id")
+  channel              String
+  direction            String?
+  externalAttachmentId String?   @map("external_attachment_id")
+  externalFileId       String?   @map("external_file_id")
+  externalDocumentId   String?   @map("external_document_id")
+  externalMessageId    String?   @map("external_message_id")
+  externalPeerId       String?   @map("external_peer_id")
+  telegramDcId         Int?      @map("telegram_dc_id")
+  type                 String
+  url                  String?   @db.Text
+  name                 String?
+  size                 Int?
+  mimeType             String?   @map("mime_type")
+  previewUrl           String?   @map("preview_url") @db.Text
+  originalStorageKey   String?   @map("original_storage_key") @db.Text
+  thumbnailStorageKey  String?   @map("thumbnail_storage_key") @db.Text
+  status               String    @default("pending")
+  progress             Int       @default(0)
+  attempts             Int       @default(0)
+  lastAttemptAt        DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt        DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  errorCode            String?   @map("error_code")
+  errorMessage         String?   @map("error_message") @db.Text
+  caption              String?   @db.Text
+  width                Int?
+  height               Int?
+  duration             Int?
+  metadataJson         Json      @default("{}") @map("metadata_json")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  message   MessengerMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  mediaJobs MessengerMediaJob[]
+
+  @@index([messageId])
+  @@index([organizationId, channel])
+  @@index([organizationId, messengerAccountId, status])
+  @@index([organizationId, channel, externalMessageId])
+  @@map("messenger_attachments")
+}
+
+model MessengerMediaJob {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  messengerAccountId String?   @map("messenger_account_id")
+  attachmentId       String    @map("attachment_id")
+  operation          String
+  status             String    @default("queued")
+  attempts           Int       @default(0)
+  lockedAt           DateTime? @map("locked_at") @db.Timestamptz(6)
+  lockedBy           String?   @map("locked_by")
+  lastAttemptAt      DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt      DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  errorCode          String?   @map("error_code")
+  errorMessage       String?   @map("error_message") @db.Text
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  attachment MessengerAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status, nextAttemptAt, createdAt])
+  @@index([attachmentId, operation, status])
+  @@map("messenger_media_jobs")
+}
+
+model MessengerDeliveryEvent {
+  id              String   @id
+  organizationId  String   @default("default") @map("organization_id")
+  messageId       String   @map("message_id")
+  channel         String
+  externalEventId String?  @map("external_event_id")
+  eventType       String   @map("event_type")
+  status          String
+  rawJson         Json     @default("{}") @map("raw_json")
+  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message MessengerMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([organizationId, channel, status])
+  @@map("messenger_delivery_events")
+}
+
+model MessengerSyncCursor {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  messengerAccountId String    @map("messenger_account_id")
+  channel            String
+  scope              String
+  cursorValue        String?   @map("cursor_value") @db.Text
+  cursorJson         Json      @default("{}") @map("cursor_json")
+  lastSyncedAt       DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  errorMessage       String?   @map("error_message") @db.Text
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messengerAccount MessengerAccount @relation(fields: [messengerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, messengerAccountId, scope])
+  @@index([channel])
+  @@map("messenger_sync_cursors")
+}
+
+model CommunicationConsent {
+  id             String    @id
+  organizationId String    @default("default") @map("organization_id")
+  channel        String
+  subjectType    String    @map("subject_type")
+  subjectId      String?   @map("subject_id")
+  externalUserId String?   @map("external_user_id")
+  externalChatId String?   @map("external_chat_id")
+  consentStatus  String    @default("unknown") @map("consent_status")
+  source         String?
+  grantedAt      DateTime? @map("granted_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  metadataJson   Json      @default("{}") @map("metadata_json")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, channel, subjectType, subjectId])
+  @@index([externalChatId])
+  @@map("communication_consents")
+}
+
+model CommunicationIdentity {
+  id                     String    @id
+  organizationId         String    @default("default") @map("organization_id")
+  channel                String
+  messengerAccountId     String    @map("messenger_account_id")
+  externalUserId         String    @map("external_user_id")
+  externalConversationId String?   @map("external_conversation_id")
+  username               String?
+  displayName            String?   @map("display_name")
+  phoneNormalized        String?   @map("phone_normalized")
+  entityType             String    @default("OTHER") @map("entity_type")
+  clientId               String?   @map("client_id")
+  supplierId             String?   @map("supplier_id")
+  employeeId             String?   @map("employee_id")
+  status                 String    @default("SUGGESTED")
+  matchSource            String    @default("MANUAL") @map("match_source")
+  linkedById             String?   @map("linked_by_id")
+  linkedAt               DateTime? @map("linked_at") @db.Timestamptz(6)
+  verifiedAt             DateTime? @map("verified_at") @db.Timestamptz(6)
+  metadataJson           Json      @default("{}") @map("metadata_json")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, messengerAccountId, externalUserId])
+  @@index([organizationId, channel, entityType, status])
+  @@index([organizationId, clientId])
+  @@index([phoneNormalized])
+  @@map("communication_identities")
+}
+
+model ConversationEntityLink {
+  id             String   @id
+  organizationId String   @default("default") @map("organization_id")
+  conversationId String   @map("conversation_id")
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  relationType   String   @default("RELATED") @map("relation_type")
+  createdById    String?  @map("created_by_id")
+  metadataJson   Json     @default("{}") @map("metadata_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, conversationId, entityType, entityId, relationType])
+  @@index([organizationId, conversationId, entityType])
+  @@index([organizationId, entityType, entityId])
+  @@map("conversation_entity_links")
+}
+
+model IntegrationAuditLog {
+  id                 String   @id
+  organizationId     String   @default("default") @map("organization_id")
+  channel            String?
+  messengerAccountId String?  @map("messenger_account_id")
+  actorId            String?  @map("actor_id")
+  action             String
+  status             String   @default("ok")
+  message            String?  @db.Text
+  metadataJson       Json     @default("{}") @map("metadata_json")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, createdAt])
+  @@index([channel, action])
+  @@map("integration_audit_logs")
 }
 
 // --- Диагностический лист при отгрузке ---
@@ -559,108 +1412,186 @@ model DiagnosticMapRecommendationAction {
 
 /// Локальный справочник организаций для документов.
 model LocalOrganization {
-  id           String   @id @default(cuid())
-  moyskladId   String?  @unique @map("moysklad_id")
-  moyskladHref String?  @map("moysklad_href") @db.Text
+  id           String  @id @default(cuid())
+  moyskladId   String? @unique @map("moysklad_id")
+  moyskladHref String? @map("moysklad_href") @db.Text
   name         String
-  isActive     Boolean  @default(true) @map("is_active")
-  raw          Json?
-  syncedAt     DateTime @default(now()) @map("synced_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  demands           LocalDemand[]
-  cashExpenseOrders CashExpenseOrder[]
+  entityType    String  @default("legal_entity") @map("entity_type")
+  fullLegalName String? @map("full_legal_name") @db.Text
+  inn           String?
+  kpp           String?
+  ogrn          String?
+  ogrnip        String?
+  legalAddress  String? @map("legal_address") @db.Text
+  actualAddress String? @map("actual_address") @db.Text
+  phone         String?
+  email         String?
+  website       String?
+
+  taxSystem      String? @map("tax_system")
+  vatEnabled     Boolean @default(false) @map("vat_enabled")
+  defaultVatRate Int?    @map("default_vat_rate")
+  currency       String  @default("RUB")
+
+  bankName             String? @map("bank_name")
+  bik                  String?
+  checkingAccount      String? @map("checking_account")
+  correspondentAccount String? @map("correspondent_account")
+
+  signatoryName      String? @map("signatory_name")
+  signatoryPosition  String? @map("signatory_position")
+  signatoryAuthority String? @map("signatory_authority")
+
+  shipmentPrefix  String? @map("shipment_prefix")
+  workOrderPrefix String? @map("work_order_prefix")
+  actPrefix       String? @map("act_prefix")
+  updPrefix       String? @map("upd_prefix")
+
+  isDefault  Boolean   @default(false) @map("is_default")
+  isActive   Boolean   @default(true) @map("is_active")
+  archivedAt DateTime? @map("archived_at")
+  raw        Json?
+  syncedAt   DateTime  @default(now()) @map("synced_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  stores                 LocalStore[]
+  demands                LocalDemand[]
+  inventoryLedgerEntries InventoryLedgerEntry[]
+  closingDocuments       ClosingDocument[]
+  cashExpenseOrders      CashExpenseOrder[]
+  members                OrganizationMember[]
+  inventorySessions      InventorySession[]
+  inventoryLocks         InventoryLock[]
 
   @@index([name])
+  @@index([inn])
+  @@index([isDefault])
   @@index([isActive])
   @@map("local_organizations")
 }
 
+/// Доступ пользователя к организациям. userId сейчас хранит логин из AUTH_USERS.
+model OrganizationMember {
+  id              String            @id @default(cuid())
+  organizationId  String            @map("organization_id")
+  organization    LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId          String            @map("user_id")
+  role            String            @default("member")
+  permissionsJson Json?             @map("permissions_json")
+  isDefault       Boolean           @default(false) @map("is_default")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([isDefault])
+  @@map("organization_members")
+}
+
 /// Справочник складов, импортированный из МойСклад и пригодный для дальнейшей локальной работы.
 model LocalStore {
-  id           String   @id @default(cuid())
-  moyskladId   String?  @unique @map("moysklad_id")
-  moyskladHref String?  @map("moysklad_href") @db.Text
-  name         String
-  isMain       Boolean  @default(false) @map("is_main")
-  archived     Boolean  @default(false)
-  raw          Json?
-  syncedAt     DateTime @default(now()) @map("synced_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id             String             @id @default(cuid())
+  moyskladId     String?            @unique @map("moysklad_id")
+  moyskladHref   String?            @map("moysklad_href") @db.Text
+  name           String
+  organizationId String?            @map("organization_id")
+  organization   LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  isMain         Boolean            @default(false) @map("is_main")
+  archived       Boolean            @default(false)
+  raw            Json?
+  syncedAt       DateTime           @default(now()) @map("synced_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
 
-  stockBalances      LocalStockBalance[]
-  demands            LocalDemand[]
-  inventoryDocuments LocalInventoryDocument[]
-  cashExpenseOrders  CashExpenseOrder[]
+  stockBalances          LocalStockBalance[]
+  inventoryLedgerEntries InventoryLedgerEntry[]
+  demands                LocalDemand[]
+  inventoryDocuments     LocalInventoryDocument[]
+  cashExpenseOrders      CashExpenseOrder[]
+  inventorySessions      InventorySession[]
+  inventoryLines         InventoryLine[]
+  inventoryLocks         InventoryLock[]
 
   @@index([name])
+  @@index([organizationId])
   @@map("local_stores")
 }
 
 /// Локальный справочник ассортимента: товары, услуги и модификации.
 model LocalProduct {
-  id                     String   @id @default(cuid())
-  moyskladId             String?  @unique @map("moysklad_id")
-  moyskladHref           String?  @map("moysklad_href") @db.Text
-  entityType             String   @default("product") @map("entity_type")
-  name                   String
-  article                String?
-  code                   String?
-  externalCode           String?  @map("external_code")
-  groupPath              String?  @map("group_path") @db.Text
-  uomName                String?  @map("uom_name")
-  salePriceCents         Int      @default(0) @map("sale_price_cents")
-  buyPriceCents          Int?     @map("buy_price_cents")
-  currencyName           String?  @map("currency_name")
-  minimumBalance         Decimal? @map("minimum_balance") @db.Decimal(14, 3)
-  barcodeEan13           String?  @map("barcode_ean13") @db.Text
-  barcodeEan8            String?  @map("barcode_ean8") @db.Text
-  barcodeCode128         String?  @map("barcode_code128") @db.Text
-  description            String?  @db.Text
-  minPriceCents          Int?     @map("min_price_cents")
-  minPriceCurrencyName   String?  @map("min_price_currency_name")
-  countryName            String?  @map("country_name")
-  vatLabel               String?  @map("vat_label")
-  supplierName           String?  @map("supplier_name")
-  weight                 Decimal? @db.Decimal(14, 3)
-  volume                 Decimal? @db.Decimal(14, 3)
-  modificationCode       String?  @map("modification_code")
-  tnvedCode              String?  @map("tnved_code")
-  sae                    String?
-  oem                    String?  @db.Text
-  acea                   String?
-  apiSpec                String?  @map("api_spec")
-  packageVolume          String?  @map("package_volume")
-  avito                  Boolean?
-  brand                  String?
-  atf                    String?
-  ilsac                  String?
-  aceaExtra              String?  @map("acea_extra")
-  oemAtf                 String?  @map("oem_atf") @db.Text
-  mannName               String?  @map("mann_name")
-  rosskoPartNumber       String?  @map("rossko_part_number")
-  rosskoBrand            String?  @map("rossko_brand")
-  rosskoMin              String?  @map("rossko_min")
-  supplierAttribute      String?  @map("supplier_attribute")
-  oemParts               String?  @map("oem_parts") @db.Text
-  cell                   String?
-  params                 String?  @db.Text
-  mannCharacteristicName String?  @map("mann_characteristic_name")
-  imageHref              String?  @map("image_href") @db.Text
-  attributes             Json?
-  searchText             String   @default("") @map("search_text") @db.Text
-  archived               Boolean  @default(false)
-  raw                    Json?
-  syncedAt               DateTime @default(now()) @map("synced_at")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  id                        String    @id @default(cuid())
+  moyskladId                String?   @unique @map("moysklad_id")
+  moyskladHref              String?   @map("moysklad_href") @db.Text
+  entityType                String    @default("product") @map("entity_type")
+  name                      String
+  article                   String?
+  code                      String?
+  externalCode              String?   @map("external_code")
+  groupPath                 String?   @map("group_path") @db.Text
+  uomName                   String?   @map("uom_name")
+  salePriceCents            Int       @default(0) @map("sale_price_cents")
+  buyPriceCents             Int?      @map("buy_price_cents")
+  currencyName              String?   @map("currency_name")
+  minimumBalance            Decimal?  @map("minimum_balance") @db.Decimal(14, 3)
+  barcodeEan13              String?   @map("barcode_ean13") @db.Text
+  barcodeEan8               String?   @map("barcode_ean8") @db.Text
+  barcodeCode128            String?   @map("barcode_code128") @db.Text
+  description               String?   @db.Text
+  minPriceCents             Int?      @map("min_price_cents")
+  minPriceCurrencyName      String?   @map("min_price_currency_name")
+  countryName               String?   @map("country_name")
+  vatLabel                  String?   @map("vat_label")
+  supplierName              String?   @map("supplier_name")
+  weight                    Decimal?  @db.Decimal(14, 3)
+  volume                    Decimal?  @db.Decimal(14, 3)
+  modificationCode          String?   @map("modification_code")
+  tnvedCode                 String?   @map("tnved_code")
+  sae                       String?
+  oem                       String?   @db.Text
+  acea                      String?
+  apiSpec                   String?   @map("api_spec")
+  packageVolume             String?   @map("package_volume")
+  avito                     Boolean?
+  brand                     String?
+  atf                       String?
+  ilsac                     String?
+  aceaExtra                 String?   @map("acea_extra")
+  oemAtf                    String?   @map("oem_atf") @db.Text
+  mannName                  String?   @map("mann_name")
+  rosskoPartNumber          String?   @map("rossko_part_number")
+  rosskoBrand               String?   @map("rossko_brand")
+  rosskoMin                 String?   @map("rossko_min")
+  supplierAttribute         String?   @map("supplier_attribute")
+  oemParts                  String?   @map("oem_parts") @db.Text
+  cell                      String?
+  params                    String?   @db.Text
+  mannCharacteristicName    String?   @map("mann_characteristic_name")
+  imageHref                 String?   @map("image_href") @db.Text
+  attributes                Json?
+  markingEnabled            Boolean   @default(false) @map("marking_enabled")
+  markingMode               String    @default("NOT_MARKED") @map("marking_mode")
+  markingStatus             String    @default("NOT_MARKED") @map("marking_status")
+  markingSettings           Json?     @map("marking_settings_json")
+  markingConfiguredManually Boolean   @default(false) @map("marking_configured_manually")
+  markingConfiguredAt       DateTime? @map("marking_configured_at")
+  markingConfiguredByLogin  String?   @map("marking_configured_by_login")
+  searchText                String    @default("") @map("search_text") @db.Text
+  archived                  Boolean   @default(false)
+  raw                       Json?
+  syncedAt                  DateTime  @default(now()) @map("synced_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
   stockBalances              LocalStockBalance[]
   demandPositions            LocalDemandPosition[]
   inventoryDocumentPositions LocalInventoryDocumentPosition[]
+  inventoryLedgerEntries     InventoryLedgerEntry[]
+  inventoryLines             InventoryLine[]
+  inventoryLocks             InventoryLock[]
   photos                     LocalProductPhoto[]
+  markingAuditLogs           ProductMarkingAuditLog[]
+  mannLinks                  ProductMannLink[]
 
   @@index([entityType])
   @@index([name])
@@ -674,10 +1605,207 @@ model LocalProduct {
   @@index([apiSpec])
   @@index([acea])
   @@index([packageVolume])
+  @@index([markingMode])
+  @@index([markingStatus])
+  @@index([markingConfiguredManually])
   @@index([salePriceCents])
   @@index([buyPriceCents])
   @@index([updatedAt])
   @@map("local_products")
+}
+
+model ProductMannLink {
+  id                    String       @id @default(cuid())
+  organizationId        String       @default("default") @map("organization_id")
+  productId             String       @map("product_id")
+  product               LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  mannArticle           String       @map("mann_article")
+  mannArticleNormalized String       @map("mann_article_normalized")
+  linkType              String       @default("manual") @map("link_type")
+  confidence            Int          @default(100)
+  createdById           String?      @map("created_by_id")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, productId, mannArticleNormalized])
+  @@index([organizationId, mannArticleNormalized])
+  @@index([productId])
+  @@index([linkType])
+  @@map("product_mann_links")
+}
+
+model MannPdfImportBatch {
+  id                     String    @id @default(cuid())
+  status                 String    @default("imported")
+  sourceFile             String?   @map("source_file") @db.Text
+  applicationsSourceFile String?   @map("applications_source_file") @db.Text
+  filtersSourceFile      String?   @map("filters_source_file") @db.Text
+  applicationsSourceHash String?   @map("applications_source_hash")
+  filtersSourceHash      String?   @map("filters_source_hash")
+  summaryJson            Json?     @map("summary_json")
+  statsJson              Json      @default("{}") @map("stats_json")
+  errorsJson             Json      @default("[]") @map("errors_json")
+  importedById           String?   @map("imported_by_id")
+  importedAt             DateTime  @default(now()) @map("imported_at")
+  completedAt            DateTime? @map("completed_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  rawApplications    MannPdfApplicationRaw[]
+  filterApplications MannFilterApplication[]
+
+  @@index([status])
+  @@index([importedAt])
+  @@map("mann_pdf_import_batches")
+}
+
+model MannPdfApplicationRaw {
+  id                   String              @id @default(cuid())
+  importBatchId        String?             @map("import_batch_id")
+  importBatch          MannPdfImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  sourcePdf            String?             @map("source_pdf") @db.Text
+  sourceFile           String?             @map("source_file") @db.Text
+  sourceHash           String?             @map("source_hash")
+  sourceRowHash        String              @unique @map("source_row_hash")
+  rowType              String?             @map("row_type")
+  make                 String?
+  model                String?
+  modelYears           String?             @map("model_years")
+  vehicleText          String?             @map("vehicle_text") @db.Text
+  effectiveVehicleText String?             @map("effective_vehicle_text") @db.Text
+  detail               String?             @db.Text
+  engineCode           String?             @map("engine_code")
+  kw                   String?
+  hp                   String?
+  vehicleYears         String?             @map("vehicle_years")
+  condition            String?             @db.Text
+  airFilter            String?             @map("air_filter")
+  airFilterNote        String?             @map("air_filter_note") @db.Text
+  oilFilter            String?             @map("oil_filter")
+  oilFilterNote        String?             @map("oil_filter_note") @db.Text
+  fuelFilter           String?             @map("fuel_filter")
+  fuelFilterNote       String?             @map("fuel_filter_note") @db.Text
+  cabinOrOtherFilter   String?             @map("cabin_or_other_filter")
+  cabinOrOtherType     String?             @map("cabin_or_other_type")
+  cabinFilter          String?             @map("cabin_filter")
+  otherFilter          String?             @map("other_filter")
+  otherFilterType      String?             @map("other_filter_type")
+  pdfPage              Int?                @map("pdf_page")
+  catalogPage          Int?                @map("catalog_page")
+  rawCellsJson         Json?               @map("raw_cells_json")
+  importedAt           DateTime            @default(now()) @map("imported_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  @@index([make])
+  @@index([model])
+  @@index([sourceHash])
+  @@index([importBatchId])
+  @@map("mann_pdf_application_raw")
+}
+
+model MannFilterApplication {
+  id                    String              @id @default(cuid())
+  importBatchId         String?             @map("import_batch_id")
+  importBatch           MannPdfImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  make                  String
+  makeNormalized        String              @map("make_normalized")
+  model                 String
+  modelNormalized       String              @map("model_normalized")
+  modelYears            String?             @map("model_years")
+  vehicleText           String?             @map("vehicle_text") @db.Text
+  effectiveVehicleText  String?             @map("effective_vehicle_text") @db.Text
+  vehicleVariantKey     String              @map("vehicle_variant_key")
+  detail                String?             @db.Text
+  engineCode            String?             @map("engine_code")
+  engineCodeNormalized  String?             @map("engine_code_normalized")
+  kw                    String?
+  hp                    String?
+  vehicleYears          String?             @map("vehicle_years")
+  vehicleYearFrom       Int?                @map("vehicle_year_from")
+  vehicleYearTo         Int?                @map("vehicle_year_to")
+  condition             String?             @db.Text
+  filterType            String              @map("filter_type")
+  filterSubtype         String?             @map("filter_subtype")
+  mannArticle           String              @map("mann_article")
+  mannArticleNormalized String              @map("mann_article_normalized")
+  filterNote            String?             @map("filter_note") @db.Text
+  pdfPage               Int?                @map("pdf_page")
+  catalogPage           Int?                @map("catalog_page")
+  sourceFile            String?             @map("source_file") @db.Text
+  sourceHash            String?             @map("source_hash")
+  sourceRowHash         String              @unique @map("source_row_hash")
+  importedAt            DateTime            @default(now()) @map("imported_at")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  @@index([makeNormalized])
+  @@index([modelNormalized])
+  @@index([makeNormalized, modelNormalized])
+  @@index([vehicleVariantKey])
+  @@index([mannArticleNormalized])
+  @@index([filterType])
+  @@index([engineCodeNormalized])
+  @@index([vehicleYearFrom, vehicleYearTo])
+  @@index([importBatchId])
+  @@map("mann_filter_applications")
+}
+
+model ProductMarkingAuditLog {
+  id               String       @id @default(cuid())
+  productId        String       @map("product_id")
+  product          LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldValue         Json?        @map("old_value")
+  newValue         Json?        @map("new_value")
+  performedByLogin String?      @map("performed_by_login")
+  performedByName  String?      @map("performed_by_name")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  @@index([productId, createdAt])
+  @@map("product_marking_audit_logs")
+}
+
+model ProductImportJob {
+  id             String    @id @default(cuid())
+  fileName       String    @map("file_name")
+  mode           String
+  status         String
+  totalRows      Int       @default(0) @map("total_rows")
+  createdRows    Int       @default(0) @map("created_rows")
+  updatedRows    Int       @default(0) @map("updated_rows")
+  skippedRows    Int       @default(0) @map("skipped_rows")
+  errorRows      Int       @default(0) @map("error_rows")
+  conflictRows   Int       @default(0) @map("conflict_rows")
+  optionsJson    Json?     @map("options_json")
+  createdByLogin String?   @map("created_by_login")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  completedAt    DateTime? @map("completed_at")
+  rollbackAt     DateTime? @map("rollback_at")
+
+  rows ProductImportRow[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("product_import_jobs")
+}
+
+model ProductImportRow {
+  id                String           @id @default(cuid())
+  jobId             String           @map("job_id")
+  job               ProductImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rowNumber         Int              @map("row_number")
+  matchedProductId  String?          @map("matched_product_id")
+  action            String
+  status            String
+  sourceJson        Json?            @map("source_json")
+  beforeJson        Json?            @map("before_json")
+  afterJson         Json?            @map("after_json")
+  changedFieldsJson Json?            @map("changed_fields_json")
+  errorMessage      String?          @map("error_message") @db.Text
+
+  @@index([jobId])
+  @@index([matchedProductId])
+  @@index([status])
+  @@map("product_import_rows")
 }
 
 model LocalProductPhoto {
@@ -886,6 +2014,12 @@ model CashExpenseOrder {
   cancelReason    String?   @map("cancel_reason") @db.Text
 
   source                   String    @default("local")
+  sourceType               String?   @map("source_type")
+  sourceId                 String?   @map("source_id")
+  employeeId               String?   @map("employee_id")
+  payrollPeriodId          String?   @map("payroll_period_id")
+  payrollPeriodFrom        String?   @map("payroll_period_from")
+  payrollPeriodTo          String?   @map("payroll_period_to")
   moyskladId               String?   @unique @map("moysklad_id")
   moyskladHref             String?   @map("moysklad_href") @db.Text
   moyskladMetaHref         String?   @map("moysklad_meta_href") @db.Text
@@ -906,6 +2040,9 @@ model CashExpenseOrder {
   @@index([counterpartyId])
   @@index([paymentType])
   @@index([source])
+  @@index([sourceType, sourceId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
   @@index([externalCode])
   @@index([syncedAt])
   @@index([syncStatus])
@@ -943,8 +2080,11 @@ model LocalDemand {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  positions             LocalDemandPosition[]
-  diagnosticMapSessions DiagnosticMapSession[]
+  positions              LocalDemandPosition[]
+  diagnosticMapSessions  DiagnosticMapSession[]
+  closingDocuments       ClosingDocument[]
+  revisions              ShipmentRevision[]
+  inventoryLedgerEntries InventoryLedgerEntry[]
 
   @@index([documentDate])
   @@index([momentAt])
@@ -954,6 +2094,387 @@ model LocalDemand {
   @@index([storeId])
   @@index([organizationId])
   @@map("local_demands")
+}
+
+/// Журнал редакций отгрузки: создание, проведение, возврат в черновик, повторное проведение и правки.
+model ShipmentRevision {
+  id                 String      @id @default(cuid())
+  shipmentId         String      @map("shipment_id")
+  shipment           LocalDemand @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  revisionNumber     Int         @map("revision_number")
+  eventType          String      @map("event_type")
+  statusBefore       String?     @map("status_before")
+  statusAfter        String?     @map("status_after")
+  snapshotBeforeJson Json?       @map("snapshot_before_json")
+  snapshotAfterJson  Json?       @map("snapshot_after_json")
+  reasonCode         String?     @map("reason_code")
+  reason             String?     @db.Text
+  createdById        String?     @map("created_by_id")
+  createdByName      String?     @map("created_by_name")
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  @@index([shipmentId, revisionNumber])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("shipment_revisions")
+}
+
+/// Неизменяемый журнал складских движений по отгрузкам.
+model InventoryLedgerEntry {
+  id                String                  @id @default(cuid())
+  sourceType        String                  @map("source_type")
+  sourceId          String                  @map("source_id")
+  organizationId    String?                 @map("organization_id")
+  organization      LocalOrganization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  shipmentId        String?                 @map("shipment_id")
+  shipment          LocalDemand?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  productId         String?                 @map("product_id")
+  product           LocalProduct?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  storeId           String?                 @map("store_id")
+  store             LocalStore?             @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  cellId            String?                 @map("cell_id")
+  batchId           String?                 @map("batch_id")
+  movementType      String                  @map("movement_type")
+  quantityDelta     Decimal                 @map("quantity_delta") @db.Decimal(14, 3)
+  unitCostSnapshot  Int?                    @map("unit_cost_snapshot")
+  totalCostSnapshot Int?                    @map("total_cost_snapshot")
+  analyticsImpact   Boolean                 @default(true) @map("analytics_impact")
+  originalEntryId   String?                 @map("original_entry_id")
+  originalEntry     InventoryLedgerEntry?   @relation("InventoryLedgerReversal", fields: [originalEntryId], references: [id], onDelete: SetNull)
+  reversalEntries   InventoryLedgerEntry[]  @relation("InventoryLedgerReversal")
+  inventoryLinks    InventoryMovementLink[]
+  revision          Int                     @default(1)
+  createdById       String?                 @map("created_by_id")
+  createdByName     String?                 @map("created_by_name")
+  raw               Json?
+  createdAt         DateTime                @default(now()) @map("created_at")
+
+  @@index([sourceType, sourceId])
+  @@index([organizationId])
+  @@index([shipmentId])
+  @@index([productId])
+  @@index([storeId])
+  @@index([cellId])
+  @@index([batchId])
+  @@index([movementType])
+  @@index([createdAt])
+  @@map("inventory_ledger_entries")
+}
+
+/// Документ инвентаризации: настройка, подсчёт, сверка и проведение.
+model InventorySession {
+  id                        String            @id @default(cuid())
+  organizationId            String            @map("organization_id")
+  organization              LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  warehouseId               String            @map("warehouse_id")
+  warehouse                 LocalStore        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  number                    String
+  status                    String            @default("DRAFT")
+  countMode                 String            @default("BLIND") @map("count_mode")
+  warehouseMode             String            @default("LOCKED") @map("warehouse_mode")
+  scopeType                 String            @default("WAREHOUSE") @map("scope_type")
+  scopeJson                 Json?             @map("scope_json")
+  optionsJson               Json?             @map("options_json")
+  snapshotAt                DateTime?         @map("snapshot_at")
+  startedAt                 DateTime?         @map("started_at")
+  countingCompletedAt       DateTime?         @map("counting_completed_at")
+  reviewedAt                DateTime?         @map("reviewed_at")
+  approvedAt                DateTime?         @map("approved_at")
+  postedAt                  DateTime?         @map("posted_at")
+  reversedAt                DateTime?         @map("reversed_at")
+  cancelledAt               DateTime?         @map("cancelled_at")
+  createdById               String?           @map("created_by_id")
+  createdByName             String?           @map("created_by_name")
+  responsibleId             String?           @map("responsible_id")
+  approvedById              String?           @map("approved_by_id")
+  comment                   String?           @db.Text
+  reverseReason             String?           @map("reverse_reason") @db.Text
+  cancelReason              String?           @map("cancel_reason") @db.Text
+  totalLines                Int               @default(0) @map("total_lines")
+  countedLines              Int               @default(0) @map("counted_lines")
+  matchingLines             Int               @default(0) @map("matching_lines")
+  shortageLines             Int               @default(0) @map("shortage_lines")
+  surplusLines              Int               @default(0) @map("surplus_lines")
+  recountRequiredLines      Int               @default(0) @map("recount_required_lines")
+  totalShortageCostCents    Int               @default(0) @map("total_shortage_cost_cents")
+  totalSurplusCostCents     Int               @default(0) @map("total_surplus_cost_cents")
+  managementExpenseCents    Int               @default(0) @map("management_expense_cents")
+  technicalAdjustmentCents  Int               @default(0) @map("technical_adjustment_cents")
+  lastPostIdempotencyKey    String?           @map("last_post_idempotency_key")
+  lastReverseIdempotencyKey String?           @map("last_reverse_idempotency_key")
+  version                   Int               @default(1)
+  createdAt                 DateTime          @default(now()) @map("created_at")
+  updatedAt                 DateTime          @updatedAt @map("updated_at")
+
+  lines         InventoryLine[]
+  assignments   InventoryAssignment[]
+  locks         InventoryLock[]
+  movementLinks InventoryMovementLink[]
+  auditLogs     InventoryAuditLog[]
+
+  @@unique([organizationId, number])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([scopeType])
+  @@index([snapshotAt])
+  @@index([startedAt])
+  @@index([postedAt])
+  @@map("inventory_sessions")
+}
+
+/// Строка инвентаризации по товару, складу, ячейке и партии.
+model InventoryLine {
+  id                        String           @id @default(cuid())
+  inventorySessionId        String           @map("inventory_session_id")
+  session                   InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  productId                 String?          @map("product_id")
+  product                   LocalProduct?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  warehouseId               String           @map("warehouse_id")
+  warehouse                 LocalStore       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  cellId                    String?          @map("cell_id")
+  batchId                   String?          @map("batch_id")
+  unitId                    String?          @map("unit_id")
+  snapshotQuantity          Decimal          @default(0) @map("snapshot_quantity") @db.Decimal(14, 3)
+  snapshotReservedQuantity  Decimal          @default(0) @map("snapshot_reserved_quantity") @db.Decimal(14, 3)
+  snapshotAvailableQuantity Decimal          @default(0) @map("snapshot_available_quantity") @db.Decimal(14, 3)
+  expectedQuantityAtCount   Decimal          @default(0) @map("expected_quantity_at_count") @db.Decimal(14, 3)
+  firstCountQuantity        Decimal?         @map("first_count_quantity") @db.Decimal(14, 3)
+  secondCountQuantity       Decimal?         @map("second_count_quantity") @db.Decimal(14, 3)
+  finalQuantity             Decimal?         @map("final_quantity") @db.Decimal(14, 3)
+  differenceQuantity        Decimal?         @map("difference_quantity") @db.Decimal(14, 3)
+  unitCostSnapshotCents     Int?             @map("unit_cost_snapshot_cents")
+  differenceCostCents       Int?             @map("difference_cost_cents")
+  countedAt                 DateTime?        @map("counted_at")
+  countedById               String?          @map("counted_by_id")
+  recountedAt               DateTime?        @map("recounted_at")
+  recountedById             String?          @map("recounted_by_id")
+  status                    String           @default("NOT_COUNTED")
+  proposedAction            String?          @map("proposed_action")
+  finalAction               String?          @map("final_action")
+  reasonCode                String?          @map("reason_code")
+  comment                   String?          @db.Text
+  requiresRecount           Boolean          @default(false) @map("requires_recount")
+  affectsManagementProfit   Boolean          @default(true) @map("affects_management_profit")
+  isUnexpected              Boolean          @default(false) @map("is_unexpected")
+  exclusionReason           String?          @map("exclusion_reason") @db.Text
+  stockVersion              Int              @default(1) @map("stock_version")
+  lockOwnerId               String?          @map("lock_owner_id")
+  lockExpiresAt             DateTime?        @map("lock_expires_at")
+  createdAt                 DateTime         @default(now()) @map("created_at")
+  updatedAt                 DateTime         @updatedAt @map("updated_at")
+
+  countEntries  InventoryCountEntry[]
+  attachments   InventoryAttachment[]
+  movementLinks InventoryMovementLink[]
+  auditLogs     InventoryAuditLog[]
+
+  @@index([inventorySessionId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([cellId])
+  @@index([batchId])
+  @@index([status])
+  @@index([requiresRecount])
+  @@map("inventory_lines")
+}
+
+/// Неизменяемая история вводов фактического количества.
+model InventoryCountEntry {
+  id              String        @id @default(cuid())
+  inventoryLineId String        @map("inventory_line_id")
+  line            InventoryLine @relation(fields: [inventoryLineId], references: [id], onDelete: Cascade)
+  sequence        Int
+  quantity        Decimal       @db.Decimal(14, 3)
+  counterId       String?       @map("counter_id")
+  countedAt       DateTime      @default(now()) @map("counted_at")
+  comment         String?       @db.Text
+  source          String        @default("MANUAL")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([inventoryLineId, sequence])
+  @@index([inventoryLineId])
+  @@index([counterId])
+  @@index([source])
+  @@map("inventory_count_entries")
+}
+
+/// Вложения к строкам инвентаризации. storageKey должен указывать на постоянное object storage.
+model InventoryAttachment {
+  id              String        @id @default(cuid())
+  inventoryLineId String        @map("inventory_line_id")
+  line            InventoryLine @relation(fields: [inventoryLineId], references: [id], onDelete: Cascade)
+  type            String
+  storageKey      String        @map("storage_key") @db.Text
+  fileName        String        @map("file_name")
+  mimeType        String        @map("mime_type")
+  size            Int
+  uploadedById    String?       @map("uploaded_by_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([inventoryLineId])
+  @@index([type])
+  @@map("inventory_attachments")
+}
+
+/// Связь строк инвентаризации с созданными складскими движениями и документами.
+model InventoryMovementLink {
+  id                 String                @id @default(cuid())
+  inventorySessionId String                @map("inventory_session_id")
+  session            InventorySession      @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  inventoryLineId    String?               @map("inventory_line_id")
+  line               InventoryLine?        @relation(fields: [inventoryLineId], references: [id], onDelete: SetNull)
+  ledgerEntryId      String?               @map("ledger_entry_id")
+  ledgerEntry        InventoryLedgerEntry? @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
+  documentType       String?               @map("document_type")
+  documentId         String?               @map("document_id")
+  createdAt          DateTime              @default(now()) @map("created_at")
+
+  @@index([inventorySessionId])
+  @@index([inventoryLineId])
+  @@index([ledgerEntryId])
+  @@index([documentType, documentId])
+  @@map("inventory_movement_links")
+}
+
+/// Назначения сотрудников на области подсчёта.
+model InventoryAssignment {
+  id                 String           @id @default(cuid())
+  inventorySessionId String           @map("inventory_session_id")
+  session            InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  employeeId         String           @map("employee_id")
+  scopeJson          Json?            @map("scope_json")
+  status             String           @default("ACTIVE")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  @@index([inventorySessionId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("inventory_assignments")
+}
+
+/// Блокировка пересекающейся области активной инвентаризации.
+model InventoryLock {
+  id                 String            @id @default(cuid())
+  organizationId     String            @map("organization_id")
+  organization       LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  warehouseId        String            @map("warehouse_id")
+  warehouse          LocalStore        @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  productId          String?           @map("product_id")
+  product            LocalProduct?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId         String?           @map("category_id")
+  cellId             String?           @map("cell_id")
+  batchId            String?           @map("batch_id")
+  inventorySessionId String            @map("inventory_session_id")
+  session            InventorySession  @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  lockedAt           DateTime          @default(now()) @map("locked_at")
+  releasedAt         DateTime?         @map("released_at")
+
+  @@index([organizationId, warehouseId])
+  @@index([productId])
+  @@index([categoryId])
+  @@index([cellId])
+  @@index([inventorySessionId])
+  @@index([releasedAt])
+  @@map("inventory_locks")
+}
+
+/// Будущие плановые инвентаризации: модель готова, автоматический планировщик добавляется отдельно.
+model InventorySchedule {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  warehouseId    String   @map("warehouse_id")
+  scopeType      String   @map("scope_type")
+  scopeJson      Json?    @map("scope_json")
+  frequency      String
+  responsibleId  String?  @map("responsible_id")
+  nextDate       DateTime @map("next_date")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, warehouseId])
+  @@index([nextDate])
+  @@index([active])
+  @@map("inventory_schedules")
+}
+
+/// Аудит действий по инвентаризации и изменениям строк.
+model InventoryAuditLog {
+  id                 String           @id @default(cuid())
+  inventorySessionId String           @map("inventory_session_id")
+  session            InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  inventoryLineId    String?          @map("inventory_line_id")
+  line               InventoryLine?   @relation(fields: [inventoryLineId], references: [id], onDelete: SetNull)
+  action             String
+  oldValueJson       Json?            @map("old_value_json")
+  newValueJson       Json?            @map("new_value_json")
+  userId             String?          @map("user_id")
+  userName           String?          @map("user_name")
+  source             String?          @default("UI")
+  createdAt          DateTime         @default(now()) @map("created_at")
+
+  @@index([inventorySessionId])
+  @@index([inventoryLineId])
+  @@index([action])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("inventory_audit_logs")
+}
+
+/// Snapshot закрывающего документа по отгрузке: печатные формы не меняются молча после выпуска.
+model ClosingDocument {
+  id                         String             @id @default(cuid())
+  organizationId             String?            @map("organization_id")
+  organization               LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  shipmentId                 String             @map("shipment_id")
+  shipment                   LocalDemand        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  type                       String
+  number                     String
+  revision                   Int                @default(1)
+  status                     String             @default("issued")
+  documentDate               String             @map("document_date")
+  completionDate             String             @map("completion_date")
+  sellerSnapshot             Json               @map("seller_snapshot")
+  buyerSnapshot              Json               @map("buyer_snapshot")
+  vehicleSnapshot            Json               @map("vehicle_snapshot")
+  positionsSnapshot          Json               @map("positions_snapshot")
+  totalsSnapshot             Json               @map("totals_snapshot")
+  vatSnapshot                Json               @map("vat_snapshot")
+  acceptanceText             String             @map("acceptance_text") @db.Text
+  customerRemarks            String?            @map("customer_remarks") @db.Text
+  transferSnapshot           Json?              @map("transfer_snapshot")
+  performerSignatorySnapshot Json?              @map("performer_signatory_snapshot")
+  customerSignatorySnapshot  Json?              @map("customer_signatory_snapshot")
+  sourceHash                 String             @map("source_hash")
+  createdById                String             @map("created_by_id")
+  createdByName              String?            @map("created_by_name")
+  createdAt                  DateTime           @default(now()) @map("created_at")
+  issuedAt                   DateTime?          @default(now()) @map("issued_at")
+  cancelledAt                DateTime?          @map("cancelled_at")
+  cancelledById              String?            @map("cancelled_by_id")
+  cancelledByName            String?            @map("cancelled_by_name")
+  cancelReason               String?            @map("cancel_reason") @db.Text
+
+  @@unique([organizationId, type, number])
+  @@index([shipmentId])
+  @@index([organizationId, type, documentDate])
+  @@index([status])
+  @@map("closing_documents")
+}
+
+/// Годовые последовательности номеров закрывающих документов по организации и типу.
+model ClosingDocumentNumberSequence {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  type           String
+  year           Int
+  lastNumber     Int      @default(0) @map("last_number")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([organizationId, type, year])
+  @@map("closing_document_number_sequences")
 }
 
 /// Позиции локальной отгрузки.
@@ -1000,14 +2521,18 @@ model DemandAttributeDefinition {
 
 /// Локальные складские документы: приёмка, списание и будущие корректировки.
 model LocalInventoryDocument {
-  id           String   @id @default(cuid())
-  type         String
-  name         String
-  momentAt     DateTime @map("moment_at")
-  documentDate String   @map("document_date")
-  applicable   Boolean  @default(true)
-  sumCents     Int      @default(0) @map("sum_cents")
-  description  String?  @db.Text
+  id                      String   @id @default(cuid())
+  type                    String
+  name                    String
+  momentAt                DateTime @map("moment_at")
+  documentDate            String   @map("document_date")
+  applicable              Boolean  @default(true)
+  sumCents                Int      @default(0) @map("sum_cents")
+  description             String?  @db.Text
+  adjustmentType          String?  @map("adjustment_type")
+  adjustmentMethod        String?  @map("adjustment_method")
+  adjustmentReason        String?  @map("adjustment_reason") @db.Text
+  affectsManagementProfit Boolean  @default(true) @map("affects_management_profit")
 
   counterpartyId           String?            @map("counterparty_id")
   counterparty             LocalCounterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
@@ -1038,6 +2563,8 @@ model LocalInventoryDocument {
   @@index([documentDate])
   @@index([momentAt])
   @@index([applicable])
+  @@index([adjustmentType])
+  @@index([affectsManagementProfit])
   @@index([counterpartyId])
   @@index([storeId])
   @@index([source])

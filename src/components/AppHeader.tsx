@@ -144,6 +144,12 @@ export default function AppHeader() {
               disabled: locked,
             },
             {
+              href: "/warehouse/inventory",
+              label: "Инвентаризация",
+              description: "Сверка фактических остатков с учётными.",
+              disabled: locked,
+            },
+            {
               href: "/inventory/receipts",
               label: "Приёмка",
               description: "Поступление товаров на локальный склад.",
@@ -151,8 +157,8 @@ export default function AppHeader() {
             },
             {
               href: "/inventory/writeoffs",
-              label: "Списание",
-              description: "Списание товаров и корректировка остатков.",
+              label: "Корректировки",
+              description: "Списания товаров и технические корректировки остатков.",
               disabled: locked,
             },
             {
@@ -190,12 +196,6 @@ export default function AppHeader() {
               href: "/salary",
               label: "Зарплата",
               description: "Выплаты, ставки и правила сдельной части.",
-              disabled: locked,
-            },
-            {
-              href: "/finance/shifts",
-              label: "Смены",
-              description: "Рабочие дни и фактические смены сотрудников.",
               disabled: locked,
             },
           ],

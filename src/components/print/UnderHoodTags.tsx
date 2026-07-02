@@ -10,6 +10,19 @@ const BG = "#fff";
 
 const TAG_W = "50mm";
 const TAG_H = "80mm";
+const SERVICE_PHONE = "8 (995) 054-58-59";
+
+function shipmentPassNumber(raw: string): string {
+  const clean = raw.trim();
+  if (!clean) return "—";
+
+  const numeric = clean.match(/^\d+$/)?.[0];
+  if (numeric) return numeric;
+
+  const parts = clean.match(/\d+/g) ?? [];
+  const lastNumber = parts[parts.length - 1];
+  return lastNumber ?? clean;
+}
 
 function fmtKm(n: number): string {
   return Math.round(n)
@@ -82,16 +95,7 @@ function Monogram({ size = 9, color = "currentColor" }: { size?: number; color?:
         alignItems: "center",
       }}
     >
-      TGM
-      <span
-        style={{
-          display: "inline-block",
-          width: size * 0.55,
-          height: size * 0.55,
-          background: "currentColor",
-          marginLeft: 1,
-        }}
-      />
+      ТГМ.
     </span>
   );
 }
@@ -118,7 +122,7 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
   const split = splitOilLine(rawOil);
   const oil = split.oil;
   const qty = o.oilTagVolume?.trim() || split.qty;
-  const servicePhone = o.ip.phone?.trim() || "—";
+  const passNumber = shipmentPassNumber(o.number);
 
   return (
     <div className="under-hood-tag-wrap" style={{ width: "100%", boxSizing: "border-box" }}>
@@ -137,7 +141,7 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
           }}
         >
           <Wordmark size={6.5} color={BG} />
-          <span className="under-hood-tag-head-text" style={{ fontSize: 7.5, fontWeight: 700, letterSpacing: "0.12em" }}>PASS №{o.number}</span>
+          <span className="under-hood-tag-head-text" style={{ fontSize: 7.5, fontWeight: 700, letterSpacing: "0.12em" }}>PASS № {passNumber}</span>
         </div>
 
         <div style={{ padding: "10px 8px 8px", textAlign: "center", borderBottom: `1px solid ${INK}` }}>
@@ -188,7 +192,6 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
           <Row k="При пробеге" v={`${fmtKm(o.car.mileage)} км`} />
           <Row k="Залито" v={oil} />
           <Row k="Объём" v={qty} />
-          <Row k="Телефон" v={servicePhone} />
         </div>
 
         <div
@@ -201,11 +204,25 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: 6,
             fontSize: 8,
           }}
         >
           <Monogram size={9} color={BG} />
-          <span className="under-hood-tag-phone" style={{ fontWeight: 600, letterSpacing: "0.02em" }}>{servicePhone}</span>
+          <span
+            className="under-hood-tag-phone"
+            style={{
+              maxWidth: "34mm",
+              overflow: "visible",
+              fontSize: 7.4,
+              fontWeight: 700,
+              letterSpacing: 0,
+              textAlign: "right",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {SERVICE_PHONE}
+          </span>
         </div>
       </div>
     </div>

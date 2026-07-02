@@ -69,18 +69,53 @@ type ClientAppointment = {
 
 const DATA = clientSiteData as ClientData;
 const DEMO_OILS = DATA.DEMO_OILS ?? [];
-const ECO_OIL_TIMEOUT_MS = 800;
-const PRIMARY_FALLBACK_BRANDS = new Set(["Bardahl", "Eurol"]);
+const ECO_OIL_TIMEOUT_MS = 25_000;
 const BRAND_COLORS: Record<string, string> = {
   bardahl: "#D08A2C",
+  bmw: "#1A4480",
+  cworks: "#3D3D3D",
   elf: "#003B7A",
   eurol: "#0E4FA0",
+  gm: "#1A4480",
+  idemitsu: "#B43A2B",
+  liqui: "#0E4FA0",
+  "liqui moly": "#0E4FA0",
   lukoil: "#CC0000",
+  mannol: "#7A2B2B",
   mobil: "#1A4480",
+  motul: "#B43A2B",
+  ngn: "#B43A2B",
+  rolf: "#3D3D3D",
   shell: "#C2410C",
   total: "#B43A2B",
+  vag: "#3D3D3D",
+  zerpo: "#D08A2C",
   zic: "#7A2B2B",
 };
+
+const KNOWN_OIL_BRANDS = [
+  { name: "Bardahl", aliases: ["bardahl"] },
+  { name: "BMW", aliases: ["bmw"] },
+  { name: "Cworks", aliases: ["cworks"] },
+  { name: "Elf", aliases: ["elf"] },
+  { name: "Eurol", aliases: ["eurol"] },
+  { name: "GM", aliases: ["gm"] },
+  { name: "Idemitsu", aliases: ["idemitsu"] },
+  { name: "Liqui Moly", aliases: ["liqui moly", "liqui"] },
+  { name: "Lukoil", aliases: ["lukoil", "лукойл"] },
+  { name: "Mannol", aliases: ["mannol"] },
+  { name: "Mobil", aliases: ["mobil"] },
+  { name: "Motul", aliases: ["motul"] },
+  { name: "NGN", aliases: ["ngn"] },
+  { name: "Rolf", aliases: ["rolf"] },
+  { name: "Shell", aliases: ["shell"] },
+  { name: "Total", aliases: ["total"] },
+  { name: "Vag", aliases: ["vag"] },
+  { name: "ZERPO", aliases: ["zerpo"] },
+  { name: "Zic", aliases: ["zic"] },
+];
+
+const GENERIC_BRANDS = new Set(["масло", "моторное", "oil", "engine"]);
 
 const globalAppointmentStore = globalThis as typeof globalThis & {
   __clientSiteAppointments?: ClientAppointment[];
@@ -91,7 +126,7 @@ export function getClientSiteData() {
 }
 
 export async function getClientOils(searchParams?: URLSearchParams) {
-  const oils = await loadClientOils();
+  const oils = await loadClientOils(clientOilLimit(searchParams));
   return filterClientOils(oils, searchParams);
 }
 
@@ -210,20 +245,22 @@ export class ClientApiError extends Error {
   }
 }
 
-async function loadClientOils() {
+async function loadClientOils(limit = 1000) {
   try {
-    const publicResult = await withTimeout(listPublicOils({ limit: 1000 }), ECO_OIL_TIMEOUT_MS);
+    const publicResult = await withTimeout(listPublicOils({ limit }), ECO_OIL_TIMEOUT_MS);
     if (publicResult.oils.length > 0) {
-      return uniqueById([
-        ...publicResult.oils.map(publicOilToClientOil),
-        ...DEMO_OILS.filter((oil) => PRIMARY_FALLBACK_BRANDS.has(oil.brand)),
-      ]).sort(compareClientOils);
+      return uniqueById(publicResult.oils.map(publicOilToClientOil)).sort(compareClientOils);
     }
   } catch (error) {
     console.warn("[client-site/oils]", error);
   }
 
   return DEMO_OILS;
+}
+
+function clientOilLimit(searchParams?: URLSearchParams) {
+  const parsed = Number.parseInt(searchParams?.get("limit") ?? "", 10);
+  return Number.isFinite(parsed) ? Math.min(1000, Math.max(1, parsed)) : 1000;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -263,9 +300,11 @@ function filterClientOils(oils: ClientOil[], searchParams?: URLSearchParams) {
 }
 
 function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
-  const brand = clean(card.brand) || firstWord(card.name) || "TGM";
+  const brand = normalizeOilBrand(card);
   const visc = extractSae(card.name) || clean(card.sae) || "5W-40";
-  const volume = clean(card.packageVolume) || extractVolume(card.name) || "4 л";
+  const nameVolume = extractVolume(card.name);
+  const packageVolume = clean(card.packageVolume);
+  const volume = (/розлив/i.test(card.name) && nameVolume ? nameVolume : packageVolume) || nameVolume || "4 л";
   const line = deriveOilLine(card.name, brand, visc, volume) || clean(card.name) || "Motor Oil";
   const stock = Math.max(0, Math.floor(Number(card.available) || 0));
 
@@ -402,6 +441,29 @@ function firstWord(value: string) {
   return clean(value).split(/\s+/)[0] ?? "";
 }
 
+function normalizeOilBrand(card: PublicOilCard) {
+  const rawBrand = clean(card.brand);
+  if (rawBrand && !GENERIC_BRANDS.has(rawBrand.toLowerCase())) {
+    return knownOilBrand(rawBrand) || rawBrand;
+  }
+  return knownOilBrand(card.name) || rawBrand || firstWord(card.name) || "TGM";
+}
+
+function knownOilBrand(value: unknown) {
+  const text = clean(value).toLowerCase();
+  if (!text) return "";
+
+  for (const brand of KNOWN_OIL_BRANDS) {
+    for (const alias of brand.aliases) {
+      const escaped = escapeRegExp(alias);
+      const pattern = new RegExp(`(^|[^a-zа-яё0-9])${escaped}([^a-zа-яё0-9]|$)`, "i");
+      if (pattern.test(text)) return brand.name;
+    }
+  }
+
+  return "";
+}
+
 function buildSpec(card: PublicOilCard) {
   return [
     clean(card.apiSpec) ? `API ${clean(card.apiSpec).replace(/^API\s+/i, "")}` : "",
@@ -422,7 +484,13 @@ function inferOilType(card: PublicOilCard) {
 function deriveOilLine(name: string, brand: string, visc: string, volume: string) {
   let line = clean(name);
   if (!line) return "";
-  if (brand) line = line.replace(new RegExp(`^${escapeRegExp(brand)}\\s+`, "i"), "");
+  line = line
+    .replace(/масло\s+моторное/gi, "")
+    .replace(/моторное\s+масло/gi, "")
+    .replace(/\bengine\s+oil\b/gi, "");
+  if (brand) {
+    line = line.replace(new RegExp(`(^|\\s|,|\\()${escapeRegExp(brand)}(?=\\s|,|\\)|$)`, "i"), " ");
+  }
   if (visc) line = line.replace(new RegExp(escapeRegExp(visc).replace("W\\-", "W[- ]?"), "i"), "");
   if (volume) {
     const numericVolume = volume.match(/\d+(?:[.,]\d+)?/)?.[0];
@@ -431,8 +499,9 @@ function deriveOilLine(name: string, brand: string, visc: string, volume: string
   return line
     .replace(/\b[0-9]{1,2}\s*W\s*[- ]?\s*[0-9]{2}\b/gi, "")
     .replace(/\d+(?:[.,]\d+)?\s*(?:л|l|мл|ml)/gi, "")
-    .replace(/масло\s+моторное/gi, "")
-    .replace(/моторное\s+масло/gi, "")
+    .replace(/(^|\s|,)на\s+розлив(?=\s|,|$)/gi, " ")
+    .replace(/,\s*\./g, "")
+    .replace(/\s+\./g, "")
     .replace(/\s*,\s*,/g, ",")
     .replace(/\s+,/g, ",")
     .replace(/\s+/g, " ")
@@ -453,8 +522,16 @@ function extractSae(value: string) {
 }
 
 function extractVolume(value: string) {
-  const match = String(value).match(/\b(\d+(?:[.,]\d+)?)\s*(л|l)\b/i);
-  return match ? `${match[1].replace(".", ",")} л` : "";
+  const text = String(value);
+  const literMatch = text.match(/(^|[^a-zа-яё0-9])(\d+(?:[.,]\d+)?)\s*(л|l)(?=$|[^a-zа-яё0-9])/i);
+  if (literMatch) return `${literMatch[2].replace(".", ",")} л`;
+
+  const milliliterMatch = text.match(/(^|[^a-zа-яё0-9])(\d+(?:[.,]\d+)?)\s*(мл|ml)(?=$|[^a-zа-яё0-9])/i);
+  if (!milliliterMatch) return "";
+
+  const milliliters = Number.parseFloat(milliliterMatch[2].replace(",", "."));
+  if (!Number.isFinite(milliliters) || milliliters <= 0) return "";
+  return `${String(milliliters / 1000).replace(".", ",")} л`;
 }
 
 function clean(value: unknown) {

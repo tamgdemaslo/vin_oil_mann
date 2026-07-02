@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 type MoySkladMeta = {
@@ -59,10 +60,12 @@ function buildTerms(params: Pick<LocalProductSearchParams, "search" | "oem" | "m
 
 function compactSearchText(value: unknown): string {
   return String(value ?? "")
+    .normalize("NFKD")
     .trim()
     .toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/ё/g, "е")
-    .replace(/\s/g, "");
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function textIncludesTerm(text: string, term?: string): boolean {
@@ -99,6 +102,36 @@ function searchTokenVariants(token: string): string[] {
   const compact = compactSearchText(token);
   const stem = stemSearchToken(token);
   return [...new Set([compact, stem].filter((item) => item.length >= 3))];
+}
+
+function normalizedLookupTerms(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const compact = compactSearchText(value);
+    if (compact.length >= 4 || (compact.length >= 3 && /\d/.test(compact))) seen.add(compact);
+    for (const token of splitSearchTokens(value)) {
+      const tokenCompact = compactSearchText(token);
+      if (tokenCompact.length >= 4 || (tokenCompact.length >= 3 && /\d/.test(tokenCompact))) seen.add(tokenCompact);
+    }
+  }
+  return [...seen].slice(0, 12);
+}
+
+async function findNormalizedProductIds(values: Array<string | undefined>): Promise<string[]> {
+  const terms = normalizedLookupTerms(values);
+  if (terms.length === 0) return [];
+  const predicates = terms.map((term) => Prisma.sql`
+    regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
+    OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
+  `);
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM local_products
+    WHERE archived = false
+      AND (${Prisma.join(predicates, " OR ")})
+    LIMIT 1000
+  `);
+  return rows.map((row) => row.id);
 }
 
 function textMatchesToken(haystack: string, token: string): boolean {
@@ -140,8 +173,8 @@ function attributeText(input: unknown, attrId: string, names: string[]): string 
   return chunks.join(" ");
 }
 
-function productIdentityText(product: { name?: string | null; article?: string | null; code?: string | null }): string {
-  return [product.name, product.article, product.code].join(" ");
+function productIdentityText(product: { name?: string | null; article?: string | null; code?: string | null; oemParts?: string | null }): string {
+  return [product.name, product.article, product.code, product.oemParts].join(" ");
 }
 
 function productMatchesSearchFields(
@@ -229,6 +262,10 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
   const searchTokens = splitSearchTokens(search).slice(0, 6);
   const storeName = params.storeName?.trim() ?? "";
   const storeMoyskladId = params.storeId?.trim() ?? "";
+  const [normalizedSearchIds, normalizedOemIds] = await Promise.all([
+    search ? findNormalizedProductIds([search]) : Promise.resolve([]),
+    oem ? findNormalizedProductIds([oem]) : Promise.resolve([]),
+  ]);
   const andFilters = [];
   const tokenSearchFilter = (token: string) => {
     const variants = searchTokenVariants(token);
@@ -254,7 +291,9 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
         { code: { contains: search, mode: "insensitive" as const } },
         { externalCode: { contains: search, mode: "insensitive" as const } },
         { brand: { contains: search, mode: "insensitive" as const } },
+        { oemParts: { contains: search, mode: "insensitive" as const } },
         { searchText: { contains: search.toLowerCase(), mode: "insensitive" as const } },
+        ...(normalizedSearchIds.length ? [{ id: { in: normalizedSearchIds } }] : []),
         ...(searchTokens.length > 1
           ? [
               {
@@ -272,6 +311,7 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
         { oem: { contains: oem, mode: "insensitive" as const } },
         { oemParts: { contains: oem, mode: "insensitive" as const } },
         { searchText: { contains: oem.toLowerCase(), mode: "insensitive" as const } },
+        ...(normalizedOemIds.length ? [{ id: { in: normalizedOemIds } }] : []),
       ],
     });
   }
@@ -539,8 +579,56 @@ function demandPlateText(attributes: unknown): string {
   return normalizePlate(parts.join(" "));
 }
 
-function demandDocText(row: { name: string; description: string | null }): string {
-  return [row.name, row.description ?? ""].join(" ").toLowerCase();
+function demandAttributesText(attributes: unknown): string {
+  return jsonArray(attributes)
+    .flatMap((attr) => [attr.name, attr.value])
+    .map((value) => attributeValueText(value))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function demandSearchText(row: {
+  name: string;
+  description: string | null;
+  agentNameSnapshot?: string | null;
+  counterparty?: {
+    name?: string | null;
+    phone?: string | null;
+    normalizedPhone?: string | null;
+    phonesRaw?: unknown;
+    searchText?: string | null;
+  } | null;
+  attributes?: unknown;
+}): string {
+  return [
+    row.name,
+    row.description ?? "",
+    row.agentNameSnapshot ?? "",
+    row.counterparty?.name ?? "",
+    row.counterparty?.phone ?? "",
+    row.counterparty?.normalizedPhone ?? "",
+    phonesRawArray(row.counterparty?.phonesRaw).join(" "),
+    row.counterparty?.searchText ?? "",
+    demandAttributesText(row.attributes),
+  ].join(" ").toLowerCase();
+}
+
+function demandMatchesSearch(row: Parameters<typeof demandSearchText>[0], search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  if (demandSearchText(row).includes(needle)) return true;
+  const normalizedNeedlePlate = normalizePlate(search);
+  if (normalizedNeedlePlate && demandPlateText(row.attributes).includes(normalizedNeedlePlate)) return true;
+  const digits = search.replace(/\D/g, "");
+  if (digits.length >= 4) {
+    const phoneValues = [
+      row.counterparty?.phone,
+      row.counterparty?.normalizedPhone,
+      ...phonesRawArray(row.counterparty?.phonesRaw),
+    ];
+    if (phoneValues.some((value) => rawTextMatchesPhone(value, search))) return true;
+  }
+  return false;
 }
 
 function phoneKeyVariants(phone: string): string[] {
@@ -584,28 +672,13 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   const dateTo = normalizeDateFilter(params.dateTo);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
-  const needsClientFilter = Boolean(plate || phone);
+  const needsPostFilter = Boolean(search || plate || phone);
 
   const and = [];
-  if (search) {
-    and.push({
-      OR: [
-        { name: { contains: search, mode: "insensitive" as const } },
-        { description: { contains: search, mode: "insensitive" as const } },
-      ],
-    });
-  }
   if (counterparty) {
     and.push({
       counterparty: {
         searchText: { contains: counterparty.toLowerCase(), mode: "insensitive" as const },
-      },
-    });
-  }
-  if (phone) {
-    and.push({
-      counterparty: {
-        searchText: { contains: phone.replace(/\D/g, "").slice(-10) || phone, mode: "insensitive" as const },
       },
     });
   }
@@ -619,7 +692,7 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   }
   const where = and.length > 0 ? { AND: and } : {};
 
-  if (!needsClientFilter) {
+  if (!needsPostFilter) {
     const [total, rows] = await Promise.all([
       prisma.localDemand.count({ where }),
       prisma.localDemand.findMany({
@@ -636,20 +709,23 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
     };
   }
 
-  const scanLimit = Math.max(200, parseInt(process.env.LOCAL_INVENTORY_DEMAND_SEARCH_SCAN_LIMIT ?? "2000", 10) || 2000);
   const rows = await prisma.localDemand.findMany({
     where,
     include: { counterparty: true, store: true },
     orderBy: [{ momentAt: "desc" }],
-    take: scanLimit,
   });
 
   const plateNorm = normalizePlate(plate);
   const filtered = rows.filter((row) => {
-    if (search && !demandDocText(row).includes(search.toLowerCase())) return false;
+    if (search && !demandMatchesSearch(row, search)) return false;
     if (plateNorm && !demandPlateText(row.attributes).includes(plateNorm)) return false;
     if (phone) {
-      const phoneValues = [row.counterparty?.phone, row.counterparty?.normalizedPhone, ...phonesRawArray(row.counterparty?.phonesRaw)];
+      const phoneValues = [
+        row.counterparty?.phone,
+        row.counterparty?.normalizedPhone,
+        row.counterparty?.searchText,
+        ...phonesRawArray(row.counterparty?.phonesRaw),
+      ];
       if (!phoneValues.some((value) => rawTextMatchesPhone(value, phone))) return false;
     }
     return true;
@@ -668,7 +744,9 @@ type LocalDemandWithRelations = Awaited<ReturnType<typeof prisma.localDemand.fin
     moyskladHref: string | null;
     name: string;
     phone: string | null;
+    normalizedPhone?: string | null;
     phonesRaw: unknown;
+    searchText?: string | null;
   } | null;
   store?: {
     moyskladId: string | null;

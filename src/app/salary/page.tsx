@@ -1,8 +1,19 @@
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import SalaryDashboard from "./SalaryDashboard";
 
-export default async function SalaryPage() {
-  const session = await requireActiveShiftAccess("/salary");
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function SalaryPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string | string[] }>;
+}) {
+  const params = searchParams ? await searchParams : undefined;
+  const tab = firstParam(params?.tab)?.trim();
+  const from = tab ? `/salary?tab=${encodeURIComponent(tab)}` : "/salary";
+  const session = await requireActiveShiftAccess(from);
 
   return (
     <SalaryDashboard

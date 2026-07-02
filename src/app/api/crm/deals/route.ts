@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder, getFirstCrmStage } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
+import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -171,6 +172,10 @@ function stripCaseFields(data: CrmDealCreateData): CrmDealCreateData {
   return legacyData as CrmDealCreateData;
 }
 
+function dealTaskTitle(deal: { title: string } & Record<string, unknown>) {
+  return typeof deal.nextAction === "string" && deal.nextAction.trim() ? deal.nextAction : deal.title;
+}
+
 async function loadStagesWithDeals() {
   return prisma.crmStage.findMany({
     orderBy: { sortOrder: "asc" },
@@ -331,6 +336,19 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       if (!isMissingCrmCaseColumns(error)) throw error;
       created = await prisma.crmDeal.create({ data: stripCaseFields(createData), select: LEGACY_DEAL_SELECT });
+    }
+
+    if (created.responsibleLogin) {
+      try {
+        await notifyClientCaseTaskAssigned({
+          caseId: created.id,
+          employeeId: created.responsibleLogin,
+          taskTitle: dealTaskTitle(created),
+          dueAt: created.nextContactAt,
+        });
+      } catch (error) {
+        console.warn("[crm/deals POST] telegram task notification failed", error);
+      }
     }
 
     return NextResponse.json(created, { status: 201 });

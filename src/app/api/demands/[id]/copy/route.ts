@@ -99,7 +99,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       ? null
       : await prisma.localOrganization.findFirst({
           where: { isActive: true },
-          orderBy: [{ createdAt: "asc" }],
+          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
         });
     const orgM = raw.organization?.meta ?? (fallbackOrganization
       ? {

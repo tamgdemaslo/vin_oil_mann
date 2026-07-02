@@ -3,6 +3,7 @@
 import {
   Bell,
   BriefcaseBusiness,
+  Building2,
   CalendarDays,
   ChevronDown,
   CircleDollarSign,
@@ -20,6 +21,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { MessengerTopbarButton } from "@/components/messenger/MessengerUi";
 import { formatServiceTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 import { EcoStatusDot } from "./EcoUI";
@@ -29,6 +31,10 @@ type PlatformUser = {
   name: string;
   role?: "owner" | "admin" | "master";
 } | null;
+
+type PlatformPermissions = {
+  canManageOrganizations?: boolean;
+};
 
 type CurrentShift = {
   id: string;
@@ -48,6 +54,12 @@ type NotificationCounts = {
   today: number;
   soon: number;
   info: number;
+};
+
+type ShellOrganization = {
+  id: string;
+  name: string;
+  isDefault?: boolean;
 };
 
 type DeadlineNotification = {
@@ -86,6 +98,8 @@ type PlatformNavSection = {
 };
 
 const SHIFT_EVENT = "eco-shift-changed";
+const ORGANIZATION_EVENT = "eco-organization-changed";
+const ORGANIZATION_STORAGE_KEY = "eco-current-organization-id";
 
 function isActivePath(pathname: string, href: string) {
   const cleanHref = href.split("#")[0] || "/";
@@ -130,7 +144,8 @@ function routeContext(pathname: string) {
   if (pathname === "/") return { label: "Текущий раздел:", value: "Главная" };
   if (pathname.startsWith("/shipment/new")) return { label: "Текущий раздел:", value: "Новая отгрузка" };
   if (pathname.startsWith("/shipment")) return { label: "Текущий раздел:", value: "Отгрузки" };
-  if (pathname.startsWith("/inventory")) return { label: "Текущий раздел:", value: "Склад" };
+  if (pathname.startsWith("/inventory") || pathname.startsWith("/warehouse")) return { label: "Текущий раздел:", value: "Склад" };
+  if (pathname.startsWith("/messages")) return { label: "Текущий раздел:", value: "Сообщения" };
   if (pathname.startsWith("/notifications")) return { label: "Текущий раздел:", value: "Уведомления" };
   if (pathname.startsWith("/cash") || pathname.startsWith("/finance") || pathname.startsWith("/salary")) {
     return { label: "Текущий раздел:", value: "Финансы" };
@@ -145,11 +160,15 @@ function routeContext(pathname: string) {
 export default function PlatformShell() {
   const pathname = usePathname();
   const [user, setUser] = useState<PlatformUser>(null);
+  const [permissions, setPermissions] = useState<PlatformPermissions>({});
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
+  const [organizations, setOrganizations] = useState<ShellOrganization[]>([]);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
   const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
   const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
+  const [deadlineExpanded, setDeadlineExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -170,23 +189,43 @@ export default function PlatformShell() {
           fetch("/api/cash", { cache: "no-store" }),
           fetch("/api/dashboard/operations", { cache: "no-store" }),
         ]);
-        const sessionData = await safeReadJson<{ user?: PlatformUser }>(sessionRes);
+        const sessionData = await safeReadJson<{ user?: PlatformUser; permissions?: PlatformPermissions }>(sessionRes);
+        const organizationsRes = sessionData?.user ? await fetch("/api/moysklad/organizations", { cache: "no-store" }) : null;
         const shiftData = shiftRes.ok ? (await safeReadJson<NonNullable<CurrentShift>>(shiftRes)) ?? null : null;
         const cashData = cashRes.ok ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null : null;
         const dashboardData = dashboardRes.ok
           ? (await safeReadJson<{ notificationCounts?: NotificationCounts }>(dashboardRes)) ?? null
           : null;
+        const organizationsData = organizationsRes?.ok
+          ? (await safeReadJson<{ organizations?: ShellOrganization[] }>(organizationsRes)) ?? null
+          : null;
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
+        setPermissions(sessionData?.permissions ?? {});
         setCurrentShift(shiftData);
         setCurrentCashShift(cashData?.shift ?? null);
         setNotificationCounts(dashboardData?.notificationCounts ?? null);
+        const nextOrganizations = organizationsData?.organizations ?? [];
+        setOrganizations(nextOrganizations);
+        if (nextOrganizations.length > 0) {
+          const stored = window.localStorage.getItem(ORGANIZATION_STORAGE_KEY);
+          const selected = nextOrganizations.find((organization) => organization.id === stored)
+            ?? nextOrganizations.find((organization) => organization.isDefault)
+            ?? nextOrganizations[0];
+          setSelectedOrganizationId(selected.id);
+          window.localStorage.setItem(ORGANIZATION_STORAGE_KEY, selected.id);
+        } else {
+          setSelectedOrganizationId("");
+        }
       } catch {
         if (cancelled) return;
         setUser(null);
+        setPermissions({});
         setCurrentShift(null);
         setCurrentCashShift(null);
         setNotificationCounts(null);
+        setOrganizations([]);
+        setSelectedOrganizationId("");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -257,10 +296,23 @@ export default function PlatformShell() {
   }, [loadDeadlineNotifications, pathname]);
 
   useEffect(() => {
+    setDeadlineExpanded(false);
+  }, [deadlineToast?.id]);
+
+  useEffect(() => {
     setOpenSectionId(null);
     setProfileOpen(false);
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    function handleOrganizationChanged(event: Event) {
+      const id = (event as CustomEvent<{ organizationId?: string }>).detail?.organizationId;
+      if (id) setSelectedOrganizationId(id);
+    }
+    window.addEventListener(ORGANIZATION_EVENT, handleOrganizationChanged);
+    return () => window.removeEventListener(ORGANIZATION_EVENT, handleOrganizationChanged);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -283,6 +335,7 @@ export default function PlatformShell() {
   const canAccessCash = user?.role === "owner" || user?.role === "admin";
   const canAccessCrm = user?.role === "owner" || user?.role === "admin";
   const canManageIntegrations = user?.role === "owner" || user?.role === "admin";
+  const canManageOrganizations = Boolean(permissions.canManageOrganizations);
 
   const navSections = useMemo<PlatformNavSection[]>(
     () => [
@@ -310,8 +363,9 @@ export default function PlatformShell() {
         icon: Warehouse,
         items: [
           { href: "/inventory/products", label: "Товары", description: "Карточки, остатки и фото.", disabled: locked },
+          { href: "/warehouse/inventory", label: "Инвентаризация", description: "Сверка фактических остатков.", disabled: locked },
           { href: "/inventory/receipts", label: "Приёмка", description: "Поступления на локальный склад.", disabled: locked },
-          { href: "/inventory/writeoffs", label: "Списание", description: "Списания и корректировки.", disabled: locked },
+          { href: "/inventory/writeoffs", label: "Корректировки", description: "Списания и технические корректировки.", disabled: locked },
           { href: "/inventory/restock", label: "Пополнение", description: "Дефицит и заказ поставщикам.", disabled: locked },
         ],
       },
@@ -325,7 +379,6 @@ export default function PlatformShell() {
           { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: locked },
           { href: "/finance/profit", label: "Прибыль", description: "Маржа и себестоимость.", disabled: locked },
           { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: locked },
-          { href: "/finance/shifts", label: "Смены", description: "Рабочие дни и фактические смены сотрудников.", disabled: locked },
         ],
       },
       {
@@ -335,6 +388,7 @@ export default function PlatformShell() {
         icon: CalendarDays,
         items: [
           { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: !canAccessCrm },
+          { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: !canAccessCrm },
           { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: locked || !canAccessCash },
           { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: locked },
         ],
@@ -346,6 +400,12 @@ export default function PlatformShell() {
         icon: Settings,
         items: [
           { href: "/cabinet", label: "Профиль", description: "Смена пароля и личный блок." },
+          {
+            href: "/cabinet/organizations",
+            label: "Организации",
+            description: "Реквизиты и основной контекст.",
+            disabled: !canManageOrganizations,
+          },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
           {
             href: "/cabinet/integrations",
@@ -353,16 +413,28 @@ export default function PlatformShell() {
             description: "Статусы и ручные запуски.",
             disabled: !canManageIntegrations,
           },
+          {
+            href: "/cabinet/integrations/messenger",
+            label: "Мессенджеры",
+            description: "Telegram webhook и каналы.",
+            disabled: !canManageIntegrations,
+          },
         ],
       },
     ],
-    [canAccessCash, canAccessCrm, canManageIntegrations, locked]
+    [canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, locked]
   );
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     window.location.href = "/login";
+  }
+
+  function handleOrganizationChange(id: string) {
+    setSelectedOrganizationId(id);
+    window.localStorage.setItem(ORGANIZATION_STORAGE_KEY, id);
+    window.dispatchEvent(new CustomEvent(ORGANIZATION_EVENT, { detail: { organizationId: id } }));
   }
 
   async function handleDeadlineAction(action: "acknowledge" | "snooze" | "close", minutes?: number) {
@@ -404,9 +476,9 @@ export default function PlatformShell() {
     <div ref={shellRef} className="platform-shell">
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">
-          <Link href="/" className="platform-shell__brand" aria-label="Там где масло. Эко-платформа">
+          <Link href="/" className="platform-shell__brand" aria-label="Там где масло. ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ">
             <Image src="/brand/logo-wordmark-black.svg" alt="Там где масло." width={150} height={24} priority />
-            <span>Эко-платформа</span>
+            <span>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</span>
           </Link>
 
           {user && (
@@ -475,6 +547,18 @@ export default function PlatformShell() {
             <span className="platform-shell__loading">Загрузка...</span>
           ) : user ? (
             <>
+              {organizations.length > 1 && (
+                <label className="platform-shell__org-switch" title="Текущая организация">
+                  <Building2 aria-hidden className="eco-icon" />
+                  <select value={selectedOrganizationId} onChange={(event) => handleOrganizationChange(event.target.value)}>
+                    {organizations.map((organization) => (
+                      <option key={organization.id} value={organization.id}>
+                        {organization.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="platform-shell__search" aria-hidden>
                 <Search className="eco-icon" />
                 <input readOnly tabIndex={-1} placeholder="Товар, VIN, № отгрузки, клиент…" />
@@ -486,6 +570,7 @@ export default function PlatformShell() {
                   <span>{(deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0) > 99 ? "99+" : (deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)}</span>
                 )}
               </Link>
+              <MessengerTopbarButton />
               <div className="platform-shell__profile">
                 <button
                   type="button"
@@ -561,6 +646,15 @@ export default function PlatformShell() {
             <span className="l-meta">{context.label}</span>
             <strong>{context.value}</strong>
           </div>
+          {organizations.length === 1 && (
+            <>
+              <span className="platform-shell__sub-sep" />
+              <div className="platform-shell__sub-context">
+                <span className="l-meta">Организация:</span>
+                <strong>{organizations[0].name}</strong>
+              </div>
+            </>
+          )}
           <div className="grow" />
           {locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после начала смены.</span>}
           <span className="platform-shell__version">internal · live data</span>
@@ -568,27 +662,40 @@ export default function PlatformShell() {
       )}
 
       {deadlineToast && (
-        <div className={`eco-crm-deadline-toast is-${deadlineToast.urgency}`} role="alert" aria-live="assertive">
-          <div>
+        <div className={`eco-crm-deadline-toast is-${deadlineToast.urgency} ${deadlineExpanded ? "is-expanded" : ""}`} role="alert" aria-live="assertive">
+          <button
+            type="button"
+            className="eco-crm-deadline-toast__summary"
+            onClick={() => setDeadlineExpanded(true)}
+            aria-expanded={deadlineExpanded}
+          >
             <strong>{deadlineToast.title}</strong>
             <span>{deadlineToast.body}</span>
-          </div>
+          </button>
           <div className="eco-crm-deadline-toast__actions">
             <Link href={deadlineToast.href} onClick={() => void handleDeadlineAction("acknowledge")}>
-              Открыть дело
+              <span className="eco-crm-deadline-toast__open-full">Открыть дело</span>
+              <span className="eco-crm-deadline-toast__open-short">Открыть</span>
             </Link>
-            <button type="button" onClick={() => void handleDeadlineAction("snooze", 15)}>
+            <button type="button" className="eco-crm-deadline-toast__mobile-later" onClick={() => void handleDeadlineAction("snooze", 60)}>
+              Позже
+            </button>
+            <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void handleDeadlineAction("snooze", 15)}>
               15 мин
             </button>
-            <button type="button" onClick={() => void handleDeadlineAction("snooze", 60)}>
+            <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void handleDeadlineAction("snooze", 60)}>
               1 час
             </button>
-            <button type="button" onClick={() => void handleDeadlineAction("close")}>
+            <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void handleDeadlineAction("close")}>
               Закрыть
             </button>
-            {deadlineToast.phone && <a href={`tel:${deadlineToast.phone}`}>Позвонить</a>}
+            {deadlineToast.phone && (
+              <a href={`tel:${deadlineToast.phone}`} className="eco-crm-deadline-toast__detail-action">
+                Позвонить
+              </a>
+            )}
             {typeof window !== "undefined" && "Notification" in window && Notification.permission !== "granted" && (
-              <button type="button" onClick={() => void enableBrowserPush()}>
+              <button type="button" className="eco-crm-deadline-toast__detail-action" onClick={() => void enableBrowserPush()}>
                 Browser push
               </button>
             )}

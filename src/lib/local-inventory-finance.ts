@@ -20,6 +20,7 @@ type FinanceRowStatus =
   | "negative_margin"
   | "receipt"
   | "writeoff"
+  | "technical_adjustment"
   | "writeoff_no_reason";
 
 type MoneyRow = {
@@ -52,6 +53,8 @@ type MoneyRow = {
   status: FinanceRowStatus;
   createdByName: string | null;
   writeoffReason: string | null;
+  adjustmentType: string | null;
+  affectsManagementProfit: boolean;
 };
 
 type FinanceIssue = {
@@ -113,6 +116,10 @@ export type LocalInventoryFinanceResult = {
     grossMarginPercent: number | null;
     receiptValue: number | null;
     writeoffLoss: number | null;
+    technicalAdjustmentValue: number | null;
+    technicalAdjustmentQuantity: number;
+    technicalAdjustmentsCount: number;
+    expenseWriteoffsCount: number;
     operationalProfit: number | null;
     missingCostRevenue: number | null;
     missingCostLines: number;
@@ -371,6 +378,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
   let missingCostLines = 0;
   let receiptValueCents = 0;
   let writeoffLossCents = 0;
+  let technicalAdjustmentValueCents = 0;
+  let technicalAdjustmentQuantity = 0;
   let processedLines = 0;
   const rows: MoneyRow[] = [];
   const issues: FinanceIssue[] = [];
@@ -479,6 +488,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
         status,
         createdByName: null,
         writeoffReason: null,
+        adjustmentType: null,
+        affectsManagementProfit: true,
       };
       rows.push(row);
 
@@ -594,19 +605,28 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
           status: "receipt",
           createdByName: document.createdByName,
           writeoffReason: null,
+          adjustmentType: null,
+          affectsManagementProfit: true,
         });
       } else if (document.type === "writeoff") {
         const costPerUnit = position.priceCentsPerUnit > 0 ? position.priceCentsPerUnit : position.product?.buyPriceCents ?? null;
         const lossCents = lineCostCents(quantity, costPerUnit) ?? 0;
-        writeoffLossCents += lossCents;
-        const topKey = product.productId ?? position.productName;
-        const topRow = topProducts.get(topKey);
-        if (topRow) {
-          topRow.writeoffLossCents += lossCents;
-          topProducts.set(topKey, topRow);
+        const isTechnicalAdjustment = document.affectsManagementProfit === false || document.adjustmentType === "technical";
+        if (isTechnicalAdjustment) {
+          technicalAdjustmentValueCents += lossCents;
+          technicalAdjustmentQuantity += quantity;
+        } else {
+          writeoffLossCents += lossCents;
+          const topKey = product.productId ?? position.productName;
+          const topRow = topProducts.get(topKey);
+          if (topRow) {
+            topRow.writeoffLossCents += lossCents;
+            topProducts.set(topKey, topRow);
+          }
+          addDaily(daily, document.documentDate, { writeoffLossCents: lossCents });
         }
-        addDaily(daily, document.documentDate, { writeoffLossCents: lossCents });
-        const noReason = !document.description?.trim();
+        const writeoffReason = document.adjustmentReason ?? document.description;
+        const noReason = !writeoffReason?.trim();
         rows.push({
           id: `writeoff:${position.id}`,
           documentId: document.id,
@@ -630,15 +650,19 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
           revenue: 0,
           cost: rub(lossCents),
           discountPercent: null,
-          profit: rub(-lossCents),
+          profit: isTechnicalAdjustment ? 0 : rub(-lossCents),
           marginPercent: null,
           currentBuyPrice: product.currentBuyPrice,
-          costSource: position.priceCentsPerUnit > 0 ? "цена учёта в списании" : "текущая закупочная цена товара",
-          status: noReason ? "writeoff_no_reason" : "writeoff",
+          costSource: isTechnicalAdjustment
+            ? "техническая корректировка без влияния на прибыль"
+            : position.priceCentsPerUnit > 0 ? "цена учёта в списании" : "текущая закупочная цена товара",
+          status: isTechnicalAdjustment ? "technical_adjustment" : noReason ? "writeoff_no_reason" : "writeoff",
           createdByName: document.createdByName,
-          writeoffReason: document.description,
+          writeoffReason,
+          adjustmentType: document.adjustmentType,
+          affectsManagementProfit: !isTechnicalAdjustment,
         });
-        if (noReason) {
+        if (!isTechnicalAdjustment && noReason) {
           addIssue(issues, {
             id: `writeoff-no-reason:${position.id}`,
             type: "writeoff_no_reason",
@@ -684,6 +708,12 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
   const operationalProfitCents = salesProfitCents - writeoffLossCents;
   const receiptDocuments = documents.filter((document) => document.type === "receipt");
   const writeoffDocuments = documents.filter((document) => document.type === "writeoff");
+  const technicalAdjustmentDocuments = writeoffDocuments.filter((document) => (
+    document.affectsManagementProfit === false || document.adjustmentType === "technical"
+  ));
+  const expenseWriteoffDocuments = writeoffDocuments.filter((document) => (
+    document.affectsManagementProfit !== false && document.adjustmentType !== "technical"
+  ));
 
   const result: LocalInventoryFinanceResult = {
     period: { dateFrom, dateTo },
@@ -692,7 +722,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       "Выручка = количество × цена продажи × (1 − скидка)",
       "Себестоимость = количество × закупочная цена",
       "Валовая прибыль = выручка с известной себестоимостью − себестоимость продаж",
-      "Прибыль после списаний = валовая прибыль − потери от списаний",
+      "Прибыль после списаний = валовая прибыль − обычные списания",
+      "Технические корректировки уменьшают складской остаток, но не включаются в расходы и управленческую прибыль",
       "Если себестоимость не сохранена в отгрузке, используется текущая закупочная цена товара; если её нет, строка помечается как проблемная.",
     ],
     summary: {
@@ -708,6 +739,10 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       grossMarginPercent: marginPercent(knownSalesRevenueCents, salesProfitCents),
       receiptValue: rub(receiptValueCents),
       writeoffLoss: rub(writeoffLossCents),
+      technicalAdjustmentValue: rub(technicalAdjustmentValueCents),
+      technicalAdjustmentQuantity,
+      technicalAdjustmentsCount: technicalAdjustmentDocuments.length,
+      expenseWriteoffsCount: expenseWriteoffDocuments.length,
       operationalProfit: rub(operationalProfitCents),
       missingCostRevenue: rub(missingCostRevenueCents),
       missingCostLines,

@@ -53,6 +53,19 @@ function posterFooterPilotTripLine(c: JobOrderPosterModel["client"]): string {
   return `${v}-й заезд с ${c.sinceVisit}`;
 }
 
+function posterOgrnLabel(value: string): string {
+  return value.replace(/\D/g, "").length === 15 ? "ОГРНИП" : "ОГРН";
+}
+
+function filledPosterValue(value: string): string {
+  const text = value.trim();
+  return text && text !== "—" ? text : "";
+}
+
+function compactPosterSellerName(value: string): string {
+  return /елисеенко\s+илья\s+сергеевич/i.test(value) ? "ИП Елисеенко Илья Сергеевич" : value;
+}
+
 function HexBg({ w, h, opacity = 0.06 }: { w: number; h: number; opacity?: number }) {
   const r = 22;
   const dx = r * Math.sqrt(3);
@@ -199,6 +212,12 @@ function splitPosterContent(o: JobOrderPosterModel) {
 export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) {
   const split = splitPosterContent(o);
   const hasTurnover = split.hasOverflow || shouldShowTurnoverNotice(o);
+  const requisitesLine = [
+    filledPosterValue(o.ip.inn) ? `ИНН: ${o.ip.inn}` : "",
+    filledPosterValue(o.ip.ogrn) ? `${posterOgrnLabel(o.ip.ogrn)}: ${o.ip.ogrn}` : "",
+  ].filter(Boolean).join(" · ");
+  const contactLine = [filledPosterValue(o.ip.phone), filledPosterValue(o.ip.site)].filter(Boolean).join(" · ");
+  const sellerName = compactPosterSellerName(o.ip.name);
   const signatures = (
     <>
       <div
@@ -317,14 +336,19 @@ export default function OrderPoster({ data: o }: { data: JobOrderPosterModel }) 
             <div className="poster-rust" style={{ color: Brust, fontWeight: 700, fontSize: 13, marginTop: 2 }}>№ {o.number}</div>
             <div style={{ marginTop: 6 }}>{o.date.replace(/\./g, " · ")}</div>
           </div>
-          <div className="poster-muted" style={{ textAlign: "right", fontSize: 9.5, color: Bmuted, lineHeight: 1.5 }}>
-            <div className="poster-ink" style={{ color: Bink, fontWeight: 600 }}>{o.ip.name}</div>
-            <div>
-              ИНН {o.ip.inn} · ОГРН {o.ip.ogrn}
-            </div>
-            <div>
-              {o.ip.phone} · {o.ip.site}
-            </div>
+          <div
+            className="poster-muted"
+            style={{
+              textAlign: "right",
+              fontSize: 8.8,
+              color: Bmuted,
+              lineHeight: 1.35,
+              maxWidth: 220,
+            }}
+          >
+            <div className="poster-ink" style={{ color: Bink, fontWeight: 600 }}>{sellerName}</div>
+            {requisitesLine ? <div>{requisitesLine}</div> : null}
+            {contactLine ? <div>{contactLine}</div> : null}
           </div>
         </div>
 

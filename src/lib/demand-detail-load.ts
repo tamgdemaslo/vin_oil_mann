@@ -38,6 +38,19 @@ export type DemandDetailPosition = {
     available?: number;
   };
   assortmentMeta?: MoySkladMeta;
+  product?: {
+    id: string;
+    name: string;
+    uomName?: string | null;
+    groupPath?: string | null;
+    packageVolume?: string | null;
+    volume?: string | null;
+    barcodeEan13?: string | null;
+    markingEnabled?: boolean;
+    markingMode?: string | null;
+    markingStatus?: string | null;
+    markingSettings?: unknown;
+  };
   copyMeta?: unknown;
 };
 

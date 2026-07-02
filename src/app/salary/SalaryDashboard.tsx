@@ -52,7 +52,15 @@ import {
 
 type UserRole = "owner" | "admin" | "master";
 type PayrollMode = "owner" | "employee";
-type SalaryTab = "calculation" | "workdays" | "rules" | "rates" | "history";
+type SalaryTab =
+  | "calculation"
+  | "workdays"
+  | "rates"
+  | "rules"
+  | "adjustments"
+  | "payments"
+  | "motivation"
+  | "history";
 type StatusKey =
   | "not_calculated"
   | "calculated"
@@ -82,8 +90,24 @@ type VehicleRecord = {
   earningsByLogin: Record<string, number>;
   pieceworkBreakdownByLogin: Record<
     string,
-    { category: "work" | "product"; label: string; quantity: number; amountCents: number }[]
+    {
+      category: "work" | "product";
+      label: string;
+      quantity: number;
+      amountCents: number;
+      ruleLabel?: string;
+      basisLabel?: string;
+      status?: "CONFIRMED" | "PRELIMINARY" | "NEEDS_DISTRIBUTION" | "MISSING_RULE" | "CONFLICT" | "REVERSED" | "PAID";
+    }[]
   >;
+  unallocatedPiecework?: {
+    category: "work" | "product";
+    label: string;
+    quantity: number;
+    baseCents: number;
+    reason: "missing_master" | "multiple_masters" | "missing_admin" | "multiple_admins" | "missing_rule";
+    logins?: string[];
+  }[];
 };
 
 type Payroll = {
@@ -100,6 +124,10 @@ type Payroll = {
     paymentPurpose: string;
     description: string;
     login: string;
+    sourceType?: "cash_expense_order" | "payroll_payment";
+    paymentMethod?: string;
+    operationType?: string;
+    cashOrderId?: string | null;
   }[];
 };
 
@@ -129,6 +157,24 @@ type PieceworkRuleItem = {
   isDefault: boolean;
 };
 
+type BonusPenaltyItem = {
+  id: string;
+  userLogin?: string;
+  employeeId?: string;
+  date?: string;
+  operationDate?: string;
+  amountCents: number;
+  type: string;
+  reasonCode?: string | null;
+  comment: string | null;
+  status?: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  createdByLogin?: string;
+  createdById?: string;
+  createdAt: string;
+};
+
 type DraftRule = {
   mode: "fixed" | "percent";
   value: string;
@@ -143,6 +189,145 @@ type HistoryItem = {
   newValue: unknown;
   performedByLogin: string;
   createdAt: string;
+};
+
+type PayrollPeriodItem = {
+  id: string;
+  organizationId: string;
+  dateFrom: string;
+  dateTo: string;
+  status: string;
+  closedByLogin: string;
+  closedAt: string;
+  totalAccruedCents: number;
+  totalPaidCents: number;
+  totalRemainingCents: number;
+  employeesCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type EmployeeAccrualStatus =
+  | "CONFIRMED"
+  | "PRELIMINARY"
+  | "NEEDS_DISTRIBUTION"
+  | "MISSING_RULE"
+  | "CONFLICT"
+  | "REVERSED"
+  | "PAID";
+
+type EmployeeShipmentCard = {
+  id: string;
+  name: string;
+  date: string;
+  clientName: string;
+  vehicleLabel: string;
+  roleInCalculation: "master" | "admin" | "employee";
+  positionsCount: number;
+  servicesCount: number;
+  productsCount: number;
+  earningsCents: number;
+  status: EmployeeAccrualStatus;
+  shipmentUrl: string;
+  items: {
+    category: "work" | "product";
+    label: string;
+    quantity: number;
+    amountCents: number;
+    ruleLabel?: string;
+    basisLabel?: string;
+    status?: EmployeeAccrualStatus;
+  }[];
+};
+
+type EmployeeDashboardPeriod = {
+  dateFrom: string;
+  dateTo: string;
+  totalCents: number;
+  pieceworkCents: number;
+  fixedCents: number;
+  adjustmentsCents: number;
+  paidCents: number;
+  payableCents: number;
+  workDays: number;
+  shipments: number;
+};
+
+type EmployeeDashboardData = {
+  employee: { login: string; name: string; role: string; preview?: boolean };
+  status: EmployeeAccrualStatus;
+  period: { dateFrom: string; dateTo: string };
+  lastUpdatedAt: string;
+  summary: EmployeeDashboardPeriod;
+  today: EmployeeDashboardPeriod;
+  shift: EmployeeDashboardPeriod;
+  week: EmployeeDashboardPeriod;
+  month: EmployeeDashboardPeriod;
+  paid: number;
+  payable: number;
+  confirmed: { amountCents: number; note: string };
+  preliminary: { amountCents: number; note: string };
+  goals: {
+    id: string;
+    title: string;
+    currentValue: number;
+    targetValue: number;
+    baselineValue?: number | null;
+    stretchValue?: number | null;
+    unit: "money" | "count" | "percent";
+    status: string;
+  }[];
+  forecast: { available: boolean; lowCents: number; highCents: number; note: string };
+  latestAccruals: EmployeeShipmentCard[];
+  recentShipments: EmployeeShipmentCard[];
+  teamProgress: {
+    label: string;
+    shipments: number;
+    services: number;
+    products: number;
+    ownEarningsCents: number;
+    goalLabel: string;
+  };
+  quality: { items: { label: string; value: string; tone: "neutral" | "success" | "warning" }[] };
+  achievements: { id: string; title: string; text: string; unlockedAt: string }[];
+  recognition: { id: string; title: string; message: string; authorName: string; createdAt: string }[];
+  opportunities: { title: string; text: string; href: string }[];
+};
+
+type MotivationGoalItem = {
+  id: string;
+  employeeLogin: string | null;
+  role: string | null;
+  periodType: "SHIFT" | "WEEK" | "MONTH";
+  metric: string;
+  targetValue: number;
+  baselineValue: number | null;
+  stretchValue: number | null;
+  startsAt: string;
+  endsAt: string;
+  status: string;
+};
+
+type MotivationRecognitionItem = {
+  id: string;
+  employeeLogin: string;
+  authorLogin: string;
+  title: string;
+  message: string;
+  reason: string;
+  visibility: "PRIVATE" | "TEAM";
+  createdAt: string;
+};
+
+type MotivationOverview = {
+  users: { login: string; name: string; role: string }[];
+  goals: MotivationGoalItem[];
+  recognition: MotivationRecognitionItem[];
+  metrics: {
+    employeesWithGoals: number;
+    activeGoals: number;
+    recognitionCount: number;
+  };
 };
 
 type PayrollRow = {
@@ -168,7 +353,6 @@ const EMPTY_PAYROLL_ROW: PayrollByLogin = {
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const PAYROLL_PAID_STORAGE_KEY = "eco-payroll-paid-overrides";
-const PAYROLL_CLOSED_STORAGE_KEY = "eco-payroll-closed-periods";
 
 const TAB_META: Record<
   SalaryTab,
@@ -189,18 +373,33 @@ const TAB_META: Record<
     icon: CalendarDays,
   },
   rules: {
-    label: "Правила сдельной части",
+    label: "Сдельные правила",
     description: "Проценты и фиксированные начисления",
     icon: Settings2,
   },
   rates: {
-    label: "Ставки",
+    label: "Ставки смен",
     description: "Базовые ставки сотрудников",
     icon: Banknote,
   },
+  adjustments: {
+    label: "Корректировки",
+    description: "Бонусы, штрафы, доплаты и удержания",
+    icon: FileText,
+  },
+  payments: {
+    label: "Выплаты",
+    description: "Фактические выплаты и авансы",
+    icon: Banknote,
+  },
+  motivation: {
+    label: "Мотивация",
+    description: "Цели, признание и видимость сотруднического экрана",
+    icon: UserRound,
+  },
   history: {
-    label: "История выплат",
-    description: "Закрытые периоды, выплаты и изменения",
+    label: "Периоды",
+    description: "Закрытые периоды и журнал изменений",
     icon: History,
   },
 };
@@ -212,6 +411,19 @@ const STATUS_META: Record<StatusKey, { label: string; tone: "neutral" | "success
   awaiting_payment: { label: "Ожидает выплаты", tone: "warning" },
   paid: { label: "Выплачено", tone: "success" },
   closed: { label: "Закрытый период", tone: "neutral" },
+};
+
+const ACCRUAL_STATUS_META: Record<
+  EmployeeAccrualStatus,
+  { label: string; className: string }
+> = {
+  CONFIRMED: { label: "Подтверждено", className: "is-confirmed" },
+  PRELIMINARY: { label: "Предварительно", className: "is-preliminary" },
+  NEEDS_DISTRIBUTION: { label: "Требует распределения", className: "is-action" },
+  MISSING_RULE: { label: "Требует правила", className: "is-action" },
+  CONFLICT: { label: "Конфликт", className: "is-error" },
+  REVERSED: { label: "Отменено", className: "is-muted" },
+  PAID: { label: "Выплачено", className: "is-confirmed" },
 };
 
 function normalizeLogin(value: string) {
@@ -233,6 +445,93 @@ function roleShortLabel(role: string) {
   if (role === "owner") return "Владелец";
   if (role === "admin") return "Админ";
   return "Мастер";
+}
+
+function adjustmentTypeLabel(type: string) {
+  const normalized = type.toUpperCase();
+  if (type === "bonus" || normalized === "BONUS") return "Бонус";
+  if (type === "penalty_late") return "Штраф за опоздание";
+  if (type === "penalty_unclosed") return "Штраф за незакрытую смену";
+  if (type === "penalty_manual" || normalized === "DEDUCTION") return "Удержание";
+  if (normalized === "PENALTY") return "Штраф";
+  if (normalized === "EXTRA_PAY") return "Доплата";
+  if (normalized === "COMPENSATION") return "Компенсация";
+  if (normalized === "ADVANCE_OFFSET") return "Зачёт аванса";
+  if (normalized === "REVERSAL") return "Отмена операции";
+  return type;
+}
+
+function adjustmentLogin(item: BonusPenaltyItem) {
+  return item.employeeId ?? item.userLogin ?? "";
+}
+
+function getAdjustmentDate(item: BonusPenaltyItem) {
+  return item.operationDate ?? item.date ?? "";
+}
+
+function adjustmentCreator(item: BonusPenaltyItem) {
+  return item.createdById ?? item.createdByLogin ?? "";
+}
+
+function paymentOperationLabel(value?: string) {
+  if (value === "ADVANCE") return "Аванс";
+  if (value === "COMPENSATION") return "Компенсация";
+  return "Зарплата";
+}
+
+function paymentOperationTitle(value: "SALARY" | "ADVANCE" | "COMPENSATION") {
+  if (value === "ADVANCE") return "Аванс сотруднику";
+  if (value === "COMPENSATION") return "Компенсация расходов";
+  return "Выплата сотруднику";
+}
+
+function adjustmentOperationTitle(value: "BONUS" | "PENALTY" | "DEDUCTION" | "EXTRA_PAY" | "COMPENSATION") {
+  if (value === "PENALTY") return "Штраф сотруднику";
+  if (value === "DEDUCTION") return "Удержание из зарплаты";
+  if (value === "EXTRA_PAY") return "Доплата сотруднику";
+  if (value === "COMPENSATION") return "Компенсация к зарплате";
+  return "Бонус сотруднику";
+}
+
+function paymentMethodLabel(value?: string) {
+  if (value === "CASH") return "Наличные";
+  if (value === "BANK_TRANSFER") return "Перевод";
+  return "Другое";
+}
+
+function motivationMetricLabel(metric: string) {
+  if (metric === "ACCRUAL_AMOUNT") return "Начисления";
+  if (metric === "VEHICLES") return "Автомобили";
+  if (metric === "SERVICES") return "Услуги";
+  if (metric === "PRODUCTS") return "Товары";
+  if (metric === "SHIPMENTS") return "Отгрузки";
+  if (metric === "QUALITY") return "Качество";
+  if (metric === "DIAGNOSTICS") return "Диагностики";
+  if (metric === "APPROVED_RECOMMENDATIONS") return "Согласованные рекомендации";
+  return metric;
+}
+
+function formatMotivationValue(metric: string, value: number) {
+  return metric === "ACCRUAL_AMOUNT" ? formatMoney(value) : String(value);
+}
+
+function parseSalaryTab(value: string | null): SalaryTab {
+  if (value === "workdays" || value === "shifts" || value === "working-days") return "workdays";
+  if (value === "shift-rates" || value === "rates") return "rates";
+  if (value === "piecework-rules" || value === "rules") return "rules";
+  if (value === "adjustments" || value === "corrections") return "adjustments";
+  if (value === "payments" || value === "payouts") return "payments";
+  if (value === "motivation" || value === "goals") return "motivation";
+  if (value === "history" || value === "periods") return "history";
+  return "calculation";
+}
+
+function salaryTabQuery(tab: SalaryTab) {
+  if (tab === "calculation") return "";
+  if (tab === "rates") return "shift-rates";
+  if (tab === "rules") return "piecework-rules";
+  if (tab === "history") return "periods";
+  return tab;
 }
 
 function formatMoney(amountCents: number) {
@@ -436,6 +735,295 @@ function FieldLabel({ label, children }: { label: string; children: ReactNode })
   );
 }
 
+function AccrualStatusPill({ status }: { status: EmployeeAccrualStatus }) {
+  const meta = ACCRUAL_STATUS_META[status] ?? ACCRUAL_STATUS_META.PRELIMINARY;
+  return <span className={`eco-payroll-accrual-status ${meta.className}`}>{meta.label}</span>;
+}
+
+function EmployeeShipmentCardView({ shipment }: { shipment: EmployeeShipmentCard }) {
+  const [open, setOpen] = useState(false);
+  const positionLabel =
+    shipment.servicesCount > 0
+      ? `${shipment.servicesCount} услуг`
+      : shipment.productsCount > 0
+        ? `${shipment.productsCount} товаров`
+        : `${shipment.positionsCount} поз.`;
+
+  return (
+    <article className={`eco-payroll-earning-card ${open ? "is-open" : ""}`}>
+      <button type="button" onClick={() => setOpen((value) => !value)} className="eco-payroll-earning-card__main">
+        <div>
+          <span>{formatDate(shipment.date)} · {shipment.clientName || "Клиент не указан"}</span>
+          <strong>{shipment.name}</strong>
+          <small>{shipment.vehicleLabel} · {positionLabel}</small>
+        </div>
+        <div>
+          <b>{formatMoney(shipment.earningsCents)}</b>
+          <AccrualStatusPill status={shipment.status} />
+        </div>
+      </button>
+
+      {open && (
+        <div className="eco-payroll-earning-card__details">
+          {shipment.items.length === 0 ? (
+            <p>Позиции пока не вошли в расчёт.</p>
+          ) : (
+            shipment.items.map((item, index) => (
+              <div key={`${shipment.id}-${item.label}-${index}`}>
+                <span>{item.category === "work" ? "Услуга" : "Товар"} · {item.ruleLabel ?? "Правило не указано"}</span>
+                <strong>{formatMoney(item.amountCents)}</strong>
+                <p>{item.label} × {item.quantity} · {item.basisLabel ?? "основа расчёта не указана"}</p>
+              </div>
+            ))
+          )}
+          <Link href={shipment.shipmentUrl}>Открыть отгрузку</Link>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function EmployeeDashboardView({
+  dashboard,
+  loading,
+  error,
+  onReload,
+}: {
+  dashboard: EmployeeDashboardData | null;
+  loading: boolean;
+  error: string | null;
+  onReload: () => void;
+}) {
+  const [shipmentFilter, setShipmentFilter] = useState<"all" | "today" | "week" | "month" | "preliminary">("all");
+
+  if (loading && !dashboard) return <SkeletonRows rows={8} />;
+
+  if (error && !dashboard) {
+    return (
+      <div className="eco-payroll-error">
+        <AlertTriangle size={18} />
+        <div>
+          <strong>Не удалось загрузить мой заработок</strong>
+          <span>{error}</span>
+        </div>
+        <EcoButton type="button" size="sm" onClick={onReload}>
+          Повторить
+        </EcoButton>
+      </div>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <EmptyState
+        title="Данные заработка пока не загружены"
+        text="Нажмите “Обновить”, чтобы получить личный расчёт по текущим данным платформы."
+        action={<EcoButton type="button" variant="primary" onClick={onReload}>Обновить</EcoButton>}
+      />
+    );
+  }
+
+  const filteredShipments = dashboard.recentShipments.filter((shipment) => {
+    if (shipmentFilter === "today") return shipment.date === dashboard.today.dateFrom;
+    if (shipmentFilter === "week") return shipment.date >= dashboard.week.dateFrom && shipment.date <= dashboard.week.dateTo;
+    if (shipmentFilter === "month") return shipment.date >= dashboard.month.dateFrom && shipment.date <= dashboard.month.dateTo;
+    if (shipmentFilter === "preliminary") return shipment.status === "PRELIMINARY";
+    return true;
+  });
+  const primaryGoal = dashboard.goals[0] ?? null;
+  const goalPercent = primaryGoal ? Math.min(100, Math.round((primaryGoal.currentValue / Math.max(1, primaryGoal.targetValue)) * 100)) : 0;
+
+  return (
+    <section className="eco-payroll-employee-dashboard">
+      <div className="eco-payroll-employee-hero">
+        <div>
+          <div className="eco-page-kicker">Мой заработок</div>
+          <h2>{dashboard.employee.name}</h2>
+          <p>
+            {roleLabel(dashboard.employee.role)} · {formatDate(dashboard.period.dateFrom)} - {formatDate(dashboard.period.dateTo)}
+          </p>
+          <div className="eco-payroll-employee-badges">
+            {dashboard.employee.preview && <EcoBadge tone="info">Режим предпросмотра</EcoBadge>}
+            <AccrualStatusPill status={dashboard.status} />
+            <span>Обновлено {formatDateTime(dashboard.lastUpdatedAt)}</span>
+          </div>
+        </div>
+        <EcoButton type="button" onClick={onReload} disabled={loading}>
+          {loading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
+          Обновить
+        </EcoButton>
+      </div>
+
+      <div className="eco-payroll-employee-kpis">
+        <EcoKpi label="Сегодня" value={formatMoney(dashboard.today.totalCents)} sub={`${dashboard.today.shipments} отгрузок`} tone="rust" />
+        <EcoKpi label="Текущая смена" value={formatMoney(dashboard.shift.totalCents)} sub="по данным дня" tone="info" />
+        <EcoKpi label="Эта неделя" value={formatMoney(dashboard.week.totalCents)} sub={`${formatDate(dashboard.week.dateFrom)} - ${formatDate(dashboard.week.dateTo)}`} tone="neutral" />
+        <EcoKpi label="Этот месяц" value={formatMoney(dashboard.month.totalCents)} sub={`${dashboard.month.shipments} отгрузок`} tone="rust" />
+        <EcoKpi label="Выплачено" value={formatMoney(dashboard.paid)} sub="по расходным ордерам" tone="success" />
+        <EcoKpi label="К выплате" value={formatMoney(dashboard.payable)} sub="остаток периода" tone={dashboard.payable > 0 ? "warning" : "success"} />
+      </div>
+
+      <div className="eco-payroll-employee-clarity">
+        <div>
+          <span>Начислено подтверждённо</span>
+          <strong>{formatMoney(dashboard.confirmed.amountCents)}</strong>
+          <p>{dashboard.confirmed.note}</p>
+        </div>
+        <div>
+          <span>Предварительно</span>
+          <strong>{formatMoney(dashboard.preliminary.amountCents)}</strong>
+          <p>{dashboard.preliminary.note}</p>
+        </div>
+      </div>
+
+      <div className="eco-payroll-employee-grid">
+        <div className="eco-payroll-employee-main">
+          <section className="eco-payroll-employee-panel">
+            <div className="eco-payroll-panel-head">
+              <div>
+                <strong>Последние начисления</strong>
+                <span>Группируются по отгрузкам, не по каждой мелкой позиции.</span>
+              </div>
+            </div>
+            {dashboard.latestAccruals.length === 0 ? (
+              <EmptyState title="Начислений пока нет" text="Проведённые отгрузки вашей рабочей команды появятся здесь." />
+            ) : (
+              <div className="eco-payroll-earnings-feed">
+                {dashboard.latestAccruals.map((shipment) => (
+                  <EmployeeShipmentCardView key={shipment.id} shipment={shipment} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <div className="eco-payroll-panel-head">
+              <div>
+                <strong>Мои отгрузки</strong>
+                <span>Только документы, где есть ваше начисление.</span>
+              </div>
+              <Link href="/salary?tab=calculation">Все мои отгрузки</Link>
+            </div>
+            <div className="eco-payroll-employee-filters">
+              {[
+                ["all", "Все"],
+                ["today", "Сегодня"],
+                ["week", "Неделя"],
+                ["month", "Месяц"],
+                ["preliminary", "Предварительные"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={shipmentFilter === value ? "is-active" : ""}
+                  onClick={() => setShipmentFilter(value as typeof shipmentFilter)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {filteredShipments.length === 0 ? (
+              <p className="eco-payroll-muted">По выбранному фильтру отгрузок нет.</p>
+            ) : (
+              <div className="eco-payroll-employee-shipments">
+                {filteredShipments.slice(0, 10).map((shipment) => (
+                  <EmployeeShipmentCardView key={`recent-${shipment.id}`} shipment={shipment} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="eco-payroll-employee-side">
+          <section className="eco-payroll-employee-panel">
+            <strong>Моя цель</strong>
+            {primaryGoal ? (
+              <div className="eco-payroll-goal">
+                <div>
+                  <span>{primaryGoal.title}</span>
+                  <strong>{primaryGoal.unit === "money" ? formatMoney(primaryGoal.targetValue) : primaryGoal.targetValue}</strong>
+                </div>
+                <div className="eco-payroll-goal-bar"><span style={{ width: `${goalPercent}%` }} /></div>
+                <p>Выполнено {goalPercent}%</p>
+              </div>
+            ) : (
+              <p className="eco-payroll-muted">Цель ещё не назначена владельцем. Деньги не меняются от визуальных уровней без отдельного правила.</p>
+            )}
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <strong>Прогноз на конец месяца</strong>
+            {dashboard.forecast.available ? (
+              <>
+                <h3>{formatMoney(dashboard.forecast.lowCents)} - {formatMoney(dashboard.forecast.highCents)}</h3>
+                <p>{dashboard.forecast.note}</p>
+              </>
+            ) : (
+              <p className="eco-payroll-muted">Недостаточно подтверждённой истории для прогноза.</p>
+            )}
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <strong>Команда смены</strong>
+            <dl className="eco-payroll-team-progress">
+              <div><dt>{dashboard.teamProgress.label}</dt><dd>{dashboard.teamProgress.goalLabel}</dd></div>
+              <div><dt>Отгрузки</dt><dd>{dashboard.teamProgress.shipments}</dd></div>
+              <div><dt>Услуги</dt><dd>{dashboard.teamProgress.services}</dd></div>
+              <div><dt>Товары</dt><dd>{dashboard.teamProgress.products}</dd></div>
+              <div><dt>Мой заработок</dt><dd>{formatMoney(dashboard.teamProgress.ownEarningsCents)}</dd></div>
+            </dl>
+            <p className="eco-payroll-muted">Точные выплаты напарников скрыты.</p>
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <strong>Качество работы</strong>
+            <div className="eco-payroll-quality-list">
+              {dashboard.quality.items.map((item) => (
+                <div key={item.label} className={`is-${item.tone}`}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <strong>Что поможет увеличить результат</strong>
+            {dashboard.opportunities.length === 0 ? (
+              <p className="eco-payroll-muted">Сейчас нет действий, которые требуют внимания.</p>
+            ) : (
+              <div className="eco-payroll-opportunity-list">
+                {dashboard.opportunities.map((item) => (
+                  <Link key={item.title} href={item.href}>
+                    <strong>{item.title}</strong>
+                    <span>{item.text}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="eco-payroll-employee-panel">
+            <strong>Достижения и признание</strong>
+            {dashboard.achievements.length === 0 && dashboard.recognition.length === 0 ? (
+              <p className="eco-payroll-muted">Здесь появятся достижения и похвала владельца. Они не меняют зарплату автоматически.</p>
+            ) : (
+              <div className="eco-payroll-opportunity-list">
+                {dashboard.achievements.map((item) => (
+                  <div key={item.id}><strong>{item.title}</strong><span>{item.text}</span></div>
+                ))}
+                {dashboard.recognition.map((item) => (
+                  <div key={item.id}><strong>{item.title}</strong><span>{item.authorName}: {item.message}</span></div>
+                ))}
+              </div>
+            )}
+          </section>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function getRowStatus(params: {
   closed: boolean;
   hasData: boolean;
@@ -486,11 +1074,17 @@ export default function SalaryDashboard({
 }) {
   const defaults = getCurrentMonthRange();
   const [mode, setMode] = useState<PayrollMode>(isOwner ? "owner" : "employee");
-  const [activeTab, setActiveTab] = useState<SalaryTab>("calculation");
+  const [activeTab, setActiveTab] = useState<SalaryTab>(() => {
+    if (typeof window === "undefined") return "calculation";
+    return parseSalaryTab(new URLSearchParams(window.location.search).get("tab"));
+  });
   const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
   const [dateTo, setDateTo] = useState(defaults.dateTo);
   const [userFilter, setUserFilter] = useState("");
   const [payroll, setPayroll] = useState<Payroll | null>(null);
+  const [employeeDashboard, setEmployeeDashboard] = useState<EmployeeDashboardData | null>(null);
+  const [employeeDashboardLoading, setEmployeeDashboardLoading] = useState(false);
+  const [employeeDashboardError, setEmployeeDashboardError] = useState<string | null>(null);
   const [payrollWorkingDays, setPayrollWorkingDays] = useState<WorkingDayItem[]>([]);
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [payrollError, setPayrollError] = useState<string | null>(null);
@@ -525,21 +1119,48 @@ export default function SalaryDashboard({
   const [selectedLogin, setSelectedLogin] = useState<string | null>(null);
   const [drawerComment, setDrawerComment] = useState("");
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
-  const [adjustmentType, setAdjustmentType] = useState<"bonus" | "penalty_manual">("bonus");
+  const [adjustmentType, setAdjustmentType] = useState<"BONUS" | "PENALTY" | "DEDUCTION" | "EXTRA_PAY" | "COMPENSATION">("BONUS");
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
   const [adjustmentComment, setAdjustmentComment] = useState("");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
   const [adjustmentDate, setAdjustmentDate] = useState(() => toLocalDateInputValue(new Date()));
   const [adjustmentSaving, setAdjustmentSaving] = useState(false);
+  const [adjustments, setAdjustments] = useState<BonusPenaltyItem[]>([]);
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentOperationType, setPaymentOperationType] = useState<"SALARY" | "ADVANCE" | "COMPENSATION">("SALARY");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(() => toLocalDateInputValue(new Date()));
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "OTHER">("CASH");
+  const [paymentComment, setPaymentComment] = useState("");
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [operationEmployeeLogin, setOperationEmployeeLogin] = useState("");
   const [paidOverrides, setPaidOverrides] = useState<Set<string>>(() => new Set());
   const [closedPeriods, setClosedPeriods] = useState<Set<string>>(() => new Set());
+  const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriodItem[]>([]);
+  const [periodsLoading, setPeriodsLoading] = useState(false);
+  const [periodClosing, setPeriodClosing] = useState(false);
   const [rateDrawerLogin, setRateDrawerLogin] = useState<string | null>(null);
   const [rateDraft, setRateDraft] = useState("");
   const [rateSaving, setRateSaving] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [motivationOverview, setMotivationOverview] = useState<MotivationOverview | null>(null);
+  const [motivationLoading, setMotivationLoading] = useState(false);
+  const [goalEmployeeLogin, setGoalEmployeeLogin] = useState("");
+  const [goalMetric, setGoalMetric] = useState("ACCRUAL_AMOUNT");
+  const [goalPeriodType, setGoalPeriodType] = useState<"WEEK" | "MONTH">("MONTH");
+  const [goalTargetValue, setGoalTargetValue] = useState("");
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [recognitionEmployeeLogin, setRecognitionEmployeeLogin] = useState("");
+  const [recognitionMessage, setRecognitionMessage] = useState("");
+  const [recognitionReason, setRecognitionReason] = useState("good_work");
+  const [recognitionVisibility, setRecognitionVisibility] = useState<"PRIVATE" | "TEAM">("PRIVATE");
+  const [recognitionSaving, setRecognitionSaving] = useState(false);
   const autoLoadedRef = useRef(false);
   const dragStartDateRef = useRef<string | null>(null);
   const suppressNextClickRef = useRef(false);
+  const operationFormRef = useRef<HTMLDivElement | null>(null);
 
   const viewingAsEmployee = mode === "employee";
   const canManagePayroll = isOwner && mode === "owner";
@@ -575,9 +1196,7 @@ export default function SalaryDashboard({
   useEffect(() => {
     try {
       const paid = window.localStorage.getItem(PAYROLL_PAID_STORAGE_KEY);
-      const closed = window.localStorage.getItem(PAYROLL_CLOSED_STORAGE_KEY);
       if (paid) setPaidOverrides(new Set(JSON.parse(paid) as string[]));
-      if (closed) setClosedPeriods(new Set(JSON.parse(closed) as string[]));
     } catch {
       // Local persistence is best-effort; payroll data still comes from the APIs.
     }
@@ -588,12 +1207,6 @@ export default function SalaryDashboard({
       window.localStorage.setItem(PAYROLL_PAID_STORAGE_KEY, JSON.stringify(Array.from(paidOverrides)));
     } catch {}
   }, [paidOverrides]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(PAYROLL_CLOSED_STORAGE_KEY, JSON.stringify(Array.from(closedPeriods)));
-    } catch {}
-  }, [closedPeriods]);
 
   const fetchWorkingDays = useCallback(async (from: string, to: string, targetLogin?: string) => {
     const params = new URLSearchParams({ dateFrom: from, dateTo: to });
@@ -653,6 +1266,71 @@ export default function SalaryDashboard({
     }
   }, []);
 
+  const loadPeriods = useCallback(async () => {
+    setPeriodsLoading(true);
+    try {
+      const response = await fetch("/api/payroll/periods?limit=80", { cache: "no-store" });
+      const payload = await readJson<{ periods?: PayrollPeriodItem[] }>(response, "Не удалось загрузить закрытые периоды");
+      const periods = Array.isArray(payload.periods) ? payload.periods : [];
+      setPayrollPeriods(periods);
+      setClosedPeriods(new Set(periods.map((item) => `${item.dateFrom}:${item.dateTo}`)));
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось загрузить закрытые периоды");
+      setPayrollPeriods([]);
+      setClosedPeriods(new Set());
+    } finally {
+      setPeriodsLoading(false);
+    }
+  }, []);
+
+  const loadEmployeeDashboard = useCallback(async () => {
+    setEmployeeDashboardLoading(true);
+    setEmployeeDashboardError(null);
+    try {
+      const response = await fetch("/api/payroll/self/dashboard", { cache: "no-store" });
+      const payload = await readJson<EmployeeDashboardData>(response, "Не удалось загрузить мой заработок");
+      setEmployeeDashboard(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось загрузить мой заработок";
+      setEmployeeDashboardError(message);
+      setToast(message);
+    } finally {
+      setEmployeeDashboardLoading(false);
+    }
+  }, []);
+
+  const loadMotivationOverview = useCallback(async () => {
+    if (!isOwner) return;
+    setMotivationLoading(true);
+    try {
+      const response = await fetch("/api/payroll/motivation/overview", { cache: "no-store" });
+      const payload = await readJson<MotivationOverview>(response, "Не удалось загрузить мотивацию");
+      setMotivationOverview(payload);
+      if (!goalEmployeeLogin && payload.users[0]) setGoalEmployeeLogin(payload.users[0].login);
+      if (!recognitionEmployeeLogin && payload.users[0]) setRecognitionEmployeeLogin(payload.users[0].login);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось загрузить мотивацию");
+    } finally {
+      setMotivationLoading(false);
+    }
+  }, [goalEmployeeLogin, isOwner, recognitionEmployeeLogin]);
+
+  const loadAdjustments = useCallback(async () => {
+    if (!dateFrom || !dateTo) return;
+    setAdjustmentsLoading(true);
+    try {
+      const params = new URLSearchParams({ dateFrom, dateTo });
+      if (isOwner && activeScopedLogin) params.set("user", activeScopedLogin);
+      const response = await fetch(`/api/payroll/adjustments?${params.toString()}`, { cache: "no-store" });
+      const payload = await readJson<BonusPenaltyItem[]>(response, "Не удалось загрузить корректировки");
+      setAdjustments(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось загрузить корректировки");
+    } finally {
+      setAdjustmentsLoading(false);
+    }
+  }, [activeScopedLogin, dateFrom, dateTo, isOwner]);
+
   const loadPayroll = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
     setPayrollLoading(true);
@@ -669,8 +1347,11 @@ export default function SalaryDashboard({
       const nextPayroll = await readJson<Payroll>(payrollResponse, "Не удалось рассчитать зарплату");
       setPayroll(nextPayroll);
       setPayrollWorkingDays(workingDaysResponse);
+      if (viewingAsEmployee) {
+        await loadEmployeeDashboard();
+      }
       setProgressText(null);
-      await Promise.all([loadRates(), loadHistory()]);
+      await Promise.all([loadRates(), loadAdjustments(), loadHistory(), loadPeriods()]);
     } catch (error) {
       setPayroll(null);
       setPayrollWorkingDays([]);
@@ -679,7 +1360,7 @@ export default function SalaryDashboard({
     } finally {
       setPayrollLoading(false);
     }
-  }, [activeScopedLogin, dateFrom, dateTo, fetchWorkingDays, isOwner, loadHistory, loadRates]);
+  }, [activeScopedLogin, dateFrom, dateTo, fetchWorkingDays, isOwner, loadAdjustments, loadEmployeeDashboard, loadHistory, loadPeriods, loadRates, viewingAsEmployee]);
 
   const loadCalendarDays = useCallback(async () => {
     const { dateFrom: monthFrom, dateTo: monthTo } = getMonthBounds(
@@ -712,6 +1393,14 @@ export default function SalaryDashboard({
   useEffect(() => {
     if (!isOwner) setMode("employee");
   }, [isOwner]);
+
+  useEffect(() => {
+    if (!viewingAsEmployee) return;
+    const timer = window.setInterval(() => {
+      void loadEmployeeDashboard();
+    }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [loadEmployeeDashboard, viewingAsEmployee]);
 
   useEffect(() => {
     if (!isOwner) setCalendarLogin(login);
@@ -761,7 +1450,7 @@ export default function SalaryDashboard({
   useEffect(() => {
     if (!selectedLogin) return;
     setDrawerComment("");
-    setAdjustmentOpen(false);
+    setOperationEmployeeLogin(selectedLogin);
     setAdjustmentAmount("");
     setAdjustmentComment("");
     setAdjustmentDate(dateTo || toLocalDateInputValue(new Date()));
@@ -867,6 +1556,22 @@ export default function SalaryDashboard({
       null
     : null;
 
+  const payrollOperationUsers = useMemo<OwnerUser[]>(() => {
+    const map = new Map<string, OwnerUser>();
+    const addUser = (user: OwnerUser) => {
+      const key = normalizeLogin(user.login);
+      if (!key || map.has(key)) return;
+      map.set(key, { ...user, role: normalizeRole(user.role ?? "master") });
+    };
+    for (const user of teamUsers) addUser(user);
+    for (const row of payrollRows) addUser({ login: row.login, name: row.name, role: row.role });
+    if (viewingAsEmployee) {
+      const own = map.get(normalizeLogin(login)) ?? currentUser;
+      return [own];
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [currentUser, login, payrollRows, teamUsers, viewingAsEmployee]);
+
   const totals = useMemo(() => {
     const totalAccrued = payrollRows.reduce((sum, row) => sum + row.payroll.totalCents, 0);
     const totalPaid = payrollRows.reduce((sum, row) => sum + row.payroll.paidOutCents, 0);
@@ -900,6 +1605,26 @@ export default function SalaryDashboard({
         });
       }
     }
+    const unallocatedByReason = new Map<string, number>();
+    for (const vehicle of payroll?.vehicleHistory ?? []) {
+      for (const item of vehicle.unallocatedPiecework ?? []) {
+        unallocatedByReason.set(item.reason, (unallocatedByReason.get(item.reason) ?? 0) + 1);
+      }
+    }
+    const unallocatedReasonLabels: Record<string, string> = {
+      missing_master: "нет мастера в рабочей команде",
+      multiple_masters: "несколько мастеров в рабочей команде",
+      missing_admin: "нет администратора в рабочей команде",
+      multiple_admins: "несколько администраторов в рабочей команде",
+      missing_rule: "нет правила сдельной части",
+    };
+    for (const [reason, count] of unallocatedByReason) {
+      next.push({
+        title: `${count} поз. требуют распределения`,
+        text: unallocatedReasonLabels[reason] ?? "Позиции не начислены автоматически.",
+        severity: reason === "missing_rule" ? "warning" : "danger",
+      });
+    }
     if (!rulesLoading && canManagePayroll && rules.length === 0) {
       next.push({
         title: "Правила сдельной части не настроены",
@@ -925,13 +1650,21 @@ export default function SalaryDashboard({
   }, [canManagePayroll, payroll, payrollError, payrollRows, payrollWorkingDays.length, rules.length, rulesLoading]);
 
   const availableTabs = useMemo<SalaryTab[]>(
-    () => (viewingAsEmployee ? ["calculation", "workdays", "history"] : ["calculation", "workdays", "rules", "rates", "history"]),
+    () =>
+      viewingAsEmployee
+        ? ["calculation", "workdays", "payments", "history"]
+        : ["calculation", "workdays", "rates", "rules", "adjustments", "payments", "motivation", "history"],
     [viewingAsEmployee]
   );
 
   useEffect(() => {
     if (!availableTabs.includes(activeTab)) setActiveTab("calculation");
   }, [activeTab, availableTabs]);
+
+  useEffect(() => {
+    if (activeTab !== "motivation" || !canManagePayroll) return;
+    void loadMotivationOverview();
+  }, [activeTab, canManagePayroll, loadMotivationOverview]);
 
   const vehicleHistory = payroll?.vehicleHistory ?? [];
   const cashoutHistory = payroll?.cashoutHistory ?? [];
@@ -942,12 +1675,93 @@ export default function SalaryDashboard({
     setDateTo(range.dateTo);
   }
 
+  async function saveMotivationGoal() {
+    if (!goalEmployeeLogin) {
+      setToast("Выберите сотрудника для цели");
+      return;
+    }
+    const targetValue =
+      goalMetric === "ACCRUAL_AMOUNT"
+        ? Math.round(parseMoneyInput(goalTargetValue) * 100)
+        : Math.round(Number(goalTargetValue));
+    if (!Number.isFinite(targetValue) || targetValue <= 0) {
+      setToast("Укажите положительное значение цели");
+      return;
+    }
+
+    setGoalSaving(true);
+    try {
+      const response = await fetch("/api/payroll/goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeLogin: goalEmployeeLogin,
+          periodType: goalPeriodType,
+          metric: goalMetric,
+          targetValue,
+          startsAt: dateFrom,
+          endsAt: dateTo,
+        }),
+      });
+      await readJson<{ id: string }>(response, "Не удалось сохранить цель");
+      setGoalTargetValue("");
+      setToast("Цель сотрудника сохранена");
+      await loadMotivationOverview();
+      if (viewingAsEmployee) await loadEmployeeDashboard();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось сохранить цель");
+    } finally {
+      setGoalSaving(false);
+    }
+  }
+
+  async function saveEmployeeRecognition() {
+    if (!recognitionEmployeeLogin) {
+      setToast("Выберите сотрудника");
+      return;
+    }
+    if (!recognitionMessage.trim()) {
+      setToast("Добавьте короткий комментарий");
+      return;
+    }
+
+    setRecognitionSaving(true);
+    try {
+      const response = await fetch("/api/payroll/recognition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeLogin: recognitionEmployeeLogin,
+          title: "Похвала от владельца",
+          message: recognitionMessage.trim(),
+          reason: recognitionReason,
+          visibility: recognitionVisibility,
+        }),
+      });
+      await readJson<{ id: string }>(response, "Не удалось отправить похвалу");
+      setRecognitionMessage("");
+      setToast("Похвала отправлена сотруднику");
+      await loadMotivationOverview();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось отправить похвалу");
+    } finally {
+      setRecognitionSaving(false);
+    }
+  }
+
   function changeTab(tab: SalaryTab) {
     if (activeTab === tab) return;
     if (hasUnsavedRuleChanges && !window.confirm("Есть несохранённые изменения правил. Перейти без сохранения?")) {
       return;
     }
     setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      const tabQuery = salaryTabQuery(tab);
+      if (tabQuery) url.searchParams.set("tab", tabQuery);
+      else url.searchParams.delete("tab");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
   }
 
   function changeMode(nextMode: PayrollMode) {
@@ -957,6 +1771,11 @@ export default function SalaryDashboard({
     }
     setMode(nextMode);
     setActiveTab("calculation");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tab");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
     setUserFilter("");
   }
 
@@ -1539,7 +2358,11 @@ export default function SalaryDashboard({
 
   async function submitAdjustment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedRow) return;
+    const employeeLogin = operationEmployeeLogin || selectedRow?.login || payrollOperationUsers[0]?.login || "";
+    if (!employeeLogin) {
+      setToast("Выберите сотрудника для корректировки");
+      return;
+    }
     const amount = parseMoneyInput(adjustmentAmount);
     if (!adjustmentDate || amount <= 0) {
       setToast("Укажите дату и сумму корректировки");
@@ -1548,14 +2371,17 @@ export default function SalaryDashboard({
 
     setAdjustmentSaving(true);
     try {
-      const response = await fetch("/api/bonus-penalties", {
+      const response = await fetch("/api/payroll/adjustments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userLogin: selectedRow.login,
-          date: adjustmentDate,
+          employeeLogin,
+          periodFrom: dateFrom,
+          periodTo: dateTo,
+          operationDate: adjustmentDate,
           amountCents: Math.round(amount * 100),
           type: adjustmentType,
+          reasonCode: adjustmentReason.trim() || null,
           comment: adjustmentComment.trim() || null,
         }),
       });
@@ -1563,8 +2389,9 @@ export default function SalaryDashboard({
       setToast("Корректировка добавлена");
       setAdjustmentOpen(false);
       setAdjustmentAmount("");
+      setAdjustmentReason("");
       setAdjustmentComment("");
-      await loadPayroll();
+      await Promise.all([loadPayroll(), loadAdjustments()]);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "Не удалось добавить корректировку");
     } finally {
@@ -1572,23 +2399,108 @@ export default function SalaryDashboard({
     }
   }
 
-  function markAsPaid(row: PayrollRow) {
-    setPaidOverrides((prev) => {
-      const next = new Set(prev);
-      next.add(`${periodKey}:${normalizeLogin(row.login)}`);
-      return next;
-    });
-    setToast(`${row.name}: отмечено как выплачено`);
+  function focusOperationForm() {
+    window.setTimeout(() => {
+      operationFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   }
 
-  function closePeriod() {
+  function openAdjustmentForm(type: typeof adjustmentType) {
+    const employeeLogin = operationEmployeeLogin || selectedRow?.login || payrollRows[0]?.login || payrollOperationUsers[0]?.login || login;
+    setPaymentOpen(false);
+    setOperationEmployeeLogin(employeeLogin);
+    setAdjustmentType(type);
+    setAdjustmentReason("");
+    setAdjustmentOpen(true);
+    setToast(`Открыта форма: ${adjustmentOperationTitle(type).toLowerCase()}`);
+    focusOperationForm();
+  }
+
+  function openPaymentForm(row: PayrollRow, operationType: typeof paymentOperationType) {
+    setSelectedLogin(row.login);
+    setOperationEmployeeLogin(row.login);
+    setAdjustmentOpen(false);
+    setPaymentOperationType(operationType);
+    setPaymentDate(toLocalDateInputValue(new Date()));
+    setPaymentMethod("CASH");
+    setPaymentAmount(operationType === "SALARY" ? formatFixedInput(Math.max(0, row.payroll.remainingCents)) : "");
+    setPaymentComment("");
+    setPaymentOpen(true);
+    setToast(`Открыта форма: ${paymentOperationTitle(operationType).toLowerCase()}`);
+    focusOperationForm();
+  }
+
+  async function submitPayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const employeeLogin = operationEmployeeLogin || selectedRow?.login || payrollOperationUsers[0]?.login || "";
+    if (!employeeLogin) {
+      setToast("Выберите сотрудника для выплаты");
+      return;
+    }
+    const amount = parseMoneyInput(paymentAmount);
+    if (!paymentDate || amount <= 0) {
+      setToast("Укажите дату и сумму выплаты");
+      return;
+    }
+    const paymentRow = payrollRows.find((row) => normalizeLogin(row.login) === normalizeLogin(employeeLogin));
+    if (paymentOperationType === "SALARY" && paymentRow && amount * 100 > Math.max(0, paymentRow.payroll.remainingCents)) {
+      setToast("Сумма выплаты больше суммы к выплате");
+      return;
+    }
+
+    setPaymentSaving(true);
+    try {
+      const response = await fetch("/api/payroll/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeLogin,
+          periodFrom: dateFrom,
+          periodTo: dateTo,
+          operationDate: paymentDate,
+          operationType: paymentOperationType,
+          amountCents: Math.round(amount * 100),
+          paymentMethod,
+          comment: paymentComment.trim() || null,
+        }),
+      });
+      const payload = await readJson<{ cashOrderNumber?: string | null } | null>(response, "Не удалось создать выплату");
+      setToast(payload?.cashOrderNumber ? `Выплата создана: РКО ${payload.cashOrderNumber}` : "Выплата создана");
+      setPaymentOpen(false);
+      setPaymentAmount("");
+      setPaymentComment("");
+      await loadPayroll();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось создать выплату");
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  async function closePeriod() {
     if (!window.confirm("После закрытия периода расчёт станет доступен только для просмотра.")) return;
-    setClosedPeriods((prev) => {
-      const next = new Set(prev);
-      next.add(periodKey);
-      return next;
-    });
-    setToast("Период закрыт для просмотра");
+    setPeriodClosing(true);
+    try {
+      const response = await fetch("/api/payroll/periods/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom, dateTo }),
+      });
+      const payload = await readJson<{ period: PayrollPeriodItem; created: boolean }>(
+        response,
+        "Не удалось закрыть период"
+      );
+      setToast(payload.created ? "Период закрыт и сохранён" : "Период уже был закрыт");
+      await Promise.all([
+        loadPeriods(),
+        loadHistory(),
+        viewingAsEmployee ? loadEmployeeDashboard() : Promise.resolve(),
+      ]);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось закрыть период");
+    } finally {
+      setPeriodClosing(false);
+    }
   }
 
   const changedRulesCount = rules.filter((rule) => getRuleStatus(rule) === "changed").length;
@@ -1633,18 +2545,30 @@ export default function SalaryDashboard({
     { working: 0, actual: 0, absence: 0 }
   );
 
-  const selectedBreakdown = selectedRow
+  const selectedShipmentBreakdown = selectedRow
     ? vehicleHistory
-        .filter((vehicle) => (vehicle.earningsByLogin[selectedRow.login] ?? 0) > 0)
-        .flatMap((vehicle) =>
-          (vehicle.pieceworkBreakdownByLogin[selectedRow.login] ?? []).map((item) => ({
+        .map((vehicle) => {
+          const normalizedSelectedLogin = normalizeLogin(selectedRow.login);
+          const earningsCents =
+            Object.entries(vehicle.earningsByLogin).find(
+              ([login]) => normalizeLogin(login) === normalizedSelectedLogin
+            )?.[1] ?? 0;
+          const items =
+            Object.entries(vehicle.pieceworkBreakdownByLogin).find(
+              ([login]) => normalizeLogin(login) === normalizedSelectedLogin
+            )?.[1] ?? [];
+          return { vehicle, earningsCents, items };
+        })
+        .filter((item) => item.earningsCents > 0 || item.items.length > 0)
+    : [];
+  const selectedBreakdown = selectedShipmentBreakdown.flatMap(({ vehicle, items }) =>
+    items.map((item) => ({
             ...item,
             date: vehicle.date,
             demandName: vehicle.demandName,
             agentName: vehicle.agentName,
           }))
-        )
-    : [];
+  );
   const selectedWorkPiecework = selectedBreakdown
     .filter((item) => item.category === "work")
     .reduce((sum, item) => sum + item.amountCents, 0);
@@ -1740,16 +2664,25 @@ export default function SalaryDashboard({
       <nav className="eco-tabs eco-salary-tabs eco-payroll-tabs" aria-label="Разделы зарплаты">
         {availableTabs.map((tab) => {
           const Icon = TAB_META[tab].icon;
+          const tabLabel = viewingAsEmployee && tab === "calculation" ? "Мой заработок" : TAB_META[tab].label;
           const count =
             tab === "calculation"
-              ? payrollRows.length
+              ? viewingAsEmployee
+                ? employeeDashboard?.latestAccruals.length ?? payrollRows.length
+                : payrollRows.length
               : tab === "workdays"
                 ? payrollWorkingDays.length || calendarDays.length
-                : tab === "rules"
-                  ? changedRulesCount || rules.length
-                  : tab === "rates"
-                    ? rates.length
-                    : history.length + cashoutHistory.length;
+                : tab === "rates"
+                  ? rates.length
+                  : tab === "rules"
+                    ? changedRulesCount || rules.length
+                    : tab === "adjustments"
+                      ? adjustments.length
+                      : tab === "payments"
+                        ? cashoutHistory.length
+                        : tab === "motivation"
+                          ? motivationOverview?.metrics.activeGoals ?? 0
+                          : history.length + payrollPeriods.length;
           return (
             <button
               key={tab}
@@ -1758,7 +2691,7 @@ export default function SalaryDashboard({
               onClick={() => changeTab(tab)}
             >
               <Icon size={15} />
-              <span>{TAB_META[tab].label}</span>
+              <span>{tabLabel}</span>
               <span className="eco-tab__count">{count}</span>
             </button>
           );
@@ -1772,7 +2705,18 @@ export default function SalaryDashboard({
         </div>
       )}
 
-      {activeTab === "calculation" && (
+      {activeTab === "calculation" && viewingAsEmployee && (
+        <section className="eco-payroll-workspace">
+          <EmployeeDashboardView
+            dashboard={employeeDashboard}
+            loading={employeeDashboardLoading || payrollLoading}
+            error={employeeDashboardError || payrollError}
+            onReload={() => void loadEmployeeDashboard()}
+          />
+        </section>
+      )}
+
+      {activeTab === "calculation" && !viewingAsEmployee && (
         <section className="eco-payroll-workspace">
           <div className="eco-payroll-toolbar">
             <div>
@@ -1950,9 +2894,13 @@ export default function SalaryDashboard({
                   После закрытия расчёт доступен только для просмотра, а новые правила не влияют задним числом.
                 </span>
               </div>
-              <EcoButton type="button" onClick={closePeriod} disabled={isClosedPeriod || payrollRows.some((row) => row.status === "has_errors")}>
-                <FileText size={15} />
-                Закрыть период
+              <EcoButton
+                type="button"
+                onClick={() => void closePeriod()}
+                disabled={periodClosing || isClosedPeriod || payrollRows.some((row) => row.status === "has_errors")}
+              >
+                {periodClosing ? <Loader2 size={15} className="eco-spin" /> : <FileText size={15} />}
+                {periodClosing ? "Закрываем..." : "Закрыть период"}
               </EcoButton>
             </div>
           )}
@@ -2466,7 +3414,7 @@ export default function SalaryDashboard({
         <section className="eco-payroll-workspace">
           <div className="eco-payroll-toolbar">
             <div>
-              <div className="eco-page-kicker">Ставки</div>
+              <div className="eco-page-kicker">Ставки смен</div>
               <p>Фиксированная ставка за смену, сдельная часть, активность и дата изменения.</p>
             </div>
             <EcoButton type="button" onClick={() => void loadRates()} disabled={ratesLoading}>
@@ -2526,16 +3474,313 @@ export default function SalaryDashboard({
         </section>
       )}
 
+      {activeTab === "adjustments" && canManagePayroll && (
+        <section className="eco-payroll-workspace">
+          <div className="eco-payroll-toolbar">
+            <div>
+              <div className="eco-page-kicker">Корректировки</div>
+              <p>Бонусы, штрафы, доплаты, компенсации и удержания без кассового движения.</p>
+            </div>
+            <div className="eco-payroll-controls">
+              <EcoButton type="button" onClick={() => void loadAdjustments()} disabled={adjustmentsLoading}>
+                {adjustmentsLoading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
+                Обновить
+              </EcoButton>
+              <EcoButton type="button" variant="primary" onClick={() => {
+                setSelectedLogin(payrollRows[0]?.login ?? teamUsers[0]?.login ?? login);
+                openAdjustmentForm("BONUS");
+              }}>
+                Добавить корректировку
+              </EcoButton>
+            </div>
+          </div>
+
+          {adjustmentsLoading && adjustments.length === 0 ? (
+            <SkeletonRows rows={5} />
+          ) : adjustments.length === 0 ? (
+            <EmptyState title="Корректировок за период нет" text="Бонусы, штрафы, удержания и авансы появятся здесь после создания." />
+          ) : (
+            <div className="eco-table-wrap eco-payroll-table-wrap">
+              <table className="eco-table eco-payroll-table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Сотрудник</th>
+                    <th>Тип</th>
+                    <th className="is-num">Сумма</th>
+                    <th>Комментарий</th>
+                    <th>Кто создал</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adjustments.map((item) => {
+                    const itemLogin = adjustmentLogin(item);
+                    const user = userByLogin.get(normalizeLogin(itemLogin));
+                    return (
+                      <tr key={item.id}>
+                        <td>{formatDate(getAdjustmentDate(item))}</td>
+                        <td>{user?.name ?? itemLogin}</td>
+                        <td>{adjustmentTypeLabel(item.type)}</td>
+                        <td className={`is-num ${item.amountCents < 0 ? "is-negative" : "is-positive"}`}>
+                          {formatMoney(item.amountCents)}
+                        </td>
+                        <td>{item.comment || "—"}</td>
+                        <td>@{adjustmentCreator(item) || "system"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "payments" && (
+        <section className="eco-payroll-workspace">
+          <div className="eco-payroll-toolbar">
+            <div>
+              <div className="eco-page-kicker">Выплаты</div>
+              <p>Фактические выплаты, авансы и связанные кассовые документы из зарплаты.</p>
+            </div>
+            <div className="eco-payroll-controls">
+              <EcoButton type="button" onClick={() => void loadPayroll()} disabled={payrollLoading}>
+                {payrollLoading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
+                Обновить
+              </EcoButton>
+              <EcoButton type="button" onClick={() => window.print()}>
+                <Download size={15} />
+                Экспорт
+              </EcoButton>
+            </div>
+          </div>
+
+          {payrollLoading ? (
+            <SkeletonRows rows={5} />
+          ) : cashoutHistory.length === 0 ? (
+            <EmptyState title="Выплат за период нет" text="Когда появятся РКО по зарплате или авансам, они отобразятся здесь." />
+          ) : (
+            <div className="eco-table-wrap eco-payroll-table-wrap">
+              <table className="eco-table eco-payroll-table">
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Сотрудник</th>
+                    <th>Документ</th>
+                    <th>Назначение</th>
+                    <th className="is-num">Сумма</th>
+                    <th>Способ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashoutHistory.map((item) => (
+                    <tr key={item.cashoutId}>
+                      <td>{formatDate(item.date)}</td>
+                      <td>{userByLogin.get(normalizeLogin(item.login))?.name ?? item.login}</td>
+                      <td>
+                        {item.cashOrderId ? <Link href="/cash">{item.name}</Link> : item.name}
+                      </td>
+                      <td>
+                        {item.sourceType === "payroll_payment" ? paymentOperationLabel(item.operationType) : item.paymentPurpose || item.description || "—"}
+                      </td>
+                      <td className="is-num is-strong">{formatMoney(item.sumCents)}</td>
+                      <td>{paymentMethodLabel(item.paymentMethod)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "motivation" && canManagePayroll && (
+        <section className="eco-payroll-workspace eco-payroll-motivation-view">
+          <div className="eco-payroll-toolbar">
+            <div>
+              <div className="eco-page-kicker">Мотивация</div>
+              <p>Личные цели, признание и видимость сотруднического экрана без изменения финансовых правил.</p>
+            </div>
+            <div className="eco-payroll-controls">
+              <EcoButton type="button" onClick={() => void loadMotivationOverview()} disabled={motivationLoading}>
+                {motivationLoading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
+                Обновить
+              </EcoButton>
+            </div>
+          </div>
+
+          <section className="eco-grid eco-grid--kpi eco-payroll-motivation-kpis">
+            <EcoKpi label="Активных целей" value={motivationOverview?.metrics.activeGoals ?? 0} sub="по сотрудникам и ролям" tone="info" />
+            <EcoKpi label="Сотрудников с целью" value={motivationOverview?.metrics.employeesWithGoals ?? 0} sub="личные цели" tone="rust" />
+            <EcoKpi label="Похвал" value={motivationOverview?.metrics.recognitionCount ?? 0} sub="не меняют зарплату" tone="success" />
+          </section>
+
+          <div className="eco-payroll-motivation-grid">
+            <section className="eco-payroll-employee-panel">
+              <div className="eco-payroll-panel-head">
+                <div>
+                  <strong>Установить цель</strong>
+                  <span>Визуальный ориентир. Деньги меняются только по финансовым правилам зарплаты.</span>
+                </div>
+              </div>
+              <div className="eco-payroll-motivation-form">
+                <FieldLabel label="Сотрудник">
+                  <EcoSelect value={goalEmployeeLogin} onChange={(event) => setGoalEmployeeLogin(event.target.value)}>
+                    {(motivationOverview?.users ?? teamUsers).map((user) => (
+                      <option key={user.login} value={user.login}>{user.name}</option>
+                    ))}
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Метрика">
+                  <EcoSelect value={goalMetric} onChange={(event) => setGoalMetric(event.target.value)}>
+                    <option value="ACCRUAL_AMOUNT">Начисления, ₽</option>
+                    <option value="SHIPMENTS">Отгрузки</option>
+                    <option value="VEHICLES">Автомобили</option>
+                    <option value="SERVICES">Услуги</option>
+                    <option value="PRODUCTS">Товары</option>
+                    <option value="DIAGNOSTICS">Диагностики</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Период">
+                  <EcoSelect value={goalPeriodType} onChange={(event) => setGoalPeriodType(event.target.value as "WEEK" | "MONTH")}>
+                    <option value="MONTH">Месяц</option>
+                    <option value="WEEK">Неделя</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label={goalMetric === "ACCRUAL_AMOUNT" ? "Цель, ₽" : "Цель, шт."}>
+                  <EcoInput
+                    value={goalTargetValue}
+                    onChange={(event) => setGoalTargetValue(event.target.value)}
+                    inputMode="decimal"
+                    placeholder={goalMetric === "ACCRUAL_AMOUNT" ? "40000" : "10"}
+                  />
+                </FieldLabel>
+                <EcoButton type="button" variant="primary" onClick={() => void saveMotivationGoal()} disabled={goalSaving}>
+                  {goalSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
+                  Сохранить цель
+                </EcoButton>
+              </div>
+            </section>
+
+            <section className="eco-payroll-employee-panel">
+              <div className="eco-payroll-panel-head">
+                <div>
+                  <strong>Похвалить сотрудника</strong>
+                  <span>Признание появится в ленте сотрудника и не станет денежной корректировкой.</span>
+                </div>
+              </div>
+              <div className="eco-payroll-motivation-form">
+                <FieldLabel label="Сотрудник">
+                  <EcoSelect value={recognitionEmployeeLogin} onChange={(event) => setRecognitionEmployeeLogin(event.target.value)}>
+                    {(motivationOverview?.users ?? teamUsers).map((user) => (
+                      <option key={user.login} value={user.login}>{user.name}</option>
+                    ))}
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Причина">
+                  <EcoSelect value={recognitionReason} onChange={(event) => setRecognitionReason(event.target.value)}>
+                    <option value="good_work">Хорошая работа</option>
+                    <option value="teamwork">Командная работа</option>
+                    <option value="no_errors">Отгрузка без ошибок</option>
+                    <option value="client_feedback">Положительный отзыв</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Видимость">
+                  <EcoSelect value={recognitionVisibility} onChange={(event) => setRecognitionVisibility(event.target.value as "PRIVATE" | "TEAM")}>
+                    <option value="PRIVATE">Только сотруднику</option>
+                    <option value="TEAM">Публично для команды</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <label className="eco-payroll-field is-wide">
+                  <span>Комментарий</span>
+                  <textarea
+                    className="eco-input eco-payroll-comment"
+                    value={recognitionMessage}
+                    onChange={(event) => setRecognitionMessage(event.target.value)}
+                    rows={3}
+                    placeholder="Например: Отличная работа с клиентом"
+                  />
+                </label>
+                <EcoButton type="button" variant="primary" onClick={() => void saveEmployeeRecognition()} disabled={recognitionSaving}>
+                  {recognitionSaving ? <Loader2 size={15} className="eco-spin" /> : <Check size={15} />}
+                  Отправить похвалу
+                </EcoButton>
+              </div>
+            </section>
+          </div>
+
+          <div className="eco-payroll-motivation-grid">
+            <section className="eco-payroll-employee-panel">
+              <div className="eco-payroll-panel-head">
+                <div>
+                  <strong>Цели</strong>
+                  <span>Последние настроенные ориентиры.</span>
+                </div>
+              </div>
+              {motivationLoading ? (
+                <SkeletonRows rows={4} />
+              ) : !motivationOverview?.goals.length ? (
+                <EmptyState title="Целей пока нет" text="Создайте первую цель для сотрудника или роли." />
+              ) : (
+                <div className="eco-payroll-motivation-list">
+                  {motivationOverview.goals.slice(0, 12).map((goal) => {
+                    const user = motivationOverview.users.find((item) => normalizeLogin(item.login) === normalizeLogin(goal.employeeLogin ?? ""));
+                    return (
+                      <div key={goal.id}>
+                        <span>{user?.name ?? goal.role ?? "Общая цель"} · {formatDate(goal.startsAt)} - {formatDate(goal.endsAt)}</span>
+                        <strong>{motivationMetricLabel(goal.metric)}: {formatMotivationValue(goal.metric, goal.targetValue)}</strong>
+                        <p>{goal.periodType === "MONTH" ? "Месячная" : goal.periodType === "WEEK" ? "Недельная" : "Сменная"} · {goal.status}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="eco-payroll-employee-panel">
+              <div className="eco-payroll-panel-head">
+                <div>
+                  <strong>Признание</strong>
+                  <span>Последние сообщения владельца сотрудникам.</span>
+                </div>
+              </div>
+              {motivationLoading ? (
+                <SkeletonRows rows={4} />
+              ) : !motivationOverview?.recognition.length ? (
+                <EmptyState title="Похвалы пока нет" text="Признание можно отправить сотруднику без денежной корректировки." />
+              ) : (
+                <div className="eco-payroll-motivation-list">
+                  {motivationOverview.recognition.slice(0, 12).map((item) => {
+                    const user = motivationOverview.users.find((candidate) => normalizeLogin(candidate.login) === normalizeLogin(item.employeeLogin));
+                    return (
+                      <div key={item.id}>
+                        <span>{formatDateTime(item.createdAt)} · {user?.name ?? item.employeeLogin}</span>
+                        <strong>{item.title}</strong>
+                        <p>{item.message}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        </section>
+      )}
+
       {activeTab === "history" && (
         <section className="eco-payroll-workspace">
           <div className="eco-payroll-toolbar">
             <div>
-              <div className="eco-page-kicker">История выплат и изменений</div>
-              <p>Кто, когда и что менял в ставках, правилах, рабочих днях и корректировках.</p>
+              <div className="eco-page-kicker">Периоды</div>
+              <p>Закрытые периоды и журнал изменений ставок, правил, рабочих дней и корректировок.</p>
             </div>
             <div className="eco-payroll-controls">
-              <EcoButton type="button" onClick={() => void loadHistory()} disabled={historyLoading}>
-                {historyLoading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
+              <EcoButton
+                type="button"
+                onClick={() => void Promise.all([loadHistory(), loadPeriods()])}
+                disabled={historyLoading || periodsLoading}
+              >
+                {historyLoading || periodsLoading ? <Loader2 size={15} className="eco-spin" /> : <RefreshCw size={15} />}
                 Обновить
               </EcoButton>
               <EcoButton type="button" onClick={() => window.print()}>
@@ -2548,18 +3793,22 @@ export default function SalaryDashboard({
           <div className="eco-payroll-history-grid">
             <div className="eco-payroll-history-block">
               <div className="eco-payroll-section-title">
-                <strong>Фактические выплаты</strong>
-                <span>{cashoutHistory.length}</span>
+                <strong>Периоды</strong>
+                <span>{payrollPeriods.length}</span>
               </div>
-              {cashoutHistory.length === 0 ? (
-                <EmptyState title="Выплат за период нет" text="Когда появятся РКО по зарплате или авансам, они отобразятся здесь." />
+              {periodsLoading ? (
+                <SkeletonRows rows={4} />
+              ) : payrollPeriods.length === 0 ? (
+                <EmptyState title="Закрытых периодов пока нет" text="После закрытия период станет read-only и появится здесь со snapshot расчёта." />
               ) : (
                 <div className="eco-payroll-history-list">
-                  {cashoutHistory.map((item) => (
-                    <div key={item.cashoutId}>
-                      <span>{formatDate(item.date)}</span>
-                      <strong>{formatMoney(item.sumCents)}</strong>
-                      <p>{userByLogin.get(normalizeLogin(item.login))?.name ?? item.login} · {item.paymentPurpose || item.name}</p>
+                  {payrollPeriods.map((item) => (
+                    <div key={item.id}>
+                      <span>{formatDate(item.dateFrom)} - {formatDate(item.dateTo)} · @{item.closedByLogin}</span>
+                      <strong>{formatMoney(item.totalAccruedCents)}</strong>
+                      <p>
+                        Закрыт {formatDateTime(item.closedAt)} · сотрудников {item.employeesCount} · к выплате {formatMoney(item.totalRemainingCents)}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -2648,17 +3897,66 @@ export default function SalaryDashboard({
               </div>
             </div>
 
+            {canManagePayroll && (
+              <div className="eco-payroll-drawer-section">
+                <strong>Операции с сотрудником</strong>
+                <div className="eco-payroll-operation-grid">
+                  <EcoButton type="button" variant="primary" onClick={() => openPaymentForm(selectedRow, "SALARY")} disabled={paymentSaving || adjustmentSaving}>
+                    <Banknote size={15} />
+                    Выплатить
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openPaymentForm(selectedRow, "ADVANCE")} disabled={paymentSaving || adjustmentSaving}>
+                    Выдать аванс
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openAdjustmentForm("BONUS")} disabled={paymentSaving || adjustmentSaving}>
+                    Добавить бонус
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openAdjustmentForm("PENALTY")} disabled={paymentSaving || adjustmentSaving}>
+                    Добавить штраф
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openAdjustmentForm("DEDUCTION")} disabled={paymentSaving || adjustmentSaving}>
+                    Добавить удержание
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openAdjustmentForm("EXTRA_PAY")} disabled={paymentSaving || adjustmentSaving}>
+                    Добавить доплату
+                  </EcoButton>
+                  <EcoButton type="button" onClick={() => openAdjustmentForm("COMPENSATION")} disabled={paymentSaving || adjustmentSaving}>
+                    Компенсация
+                  </EcoButton>
+                </div>
+              </div>
+            )}
+
             <div className="eco-payroll-drawer-section">
-              <strong>Сдельные начисления</strong>
-              {selectedBreakdown.length === 0 ? (
+              <strong>Сдельные начисления по отгрузкам</strong>
+              {selectedShipmentBreakdown.length === 0 ? (
                 <p>За выбранный период сдельных начислений нет.</p>
               ) : (
-                <div className="eco-payroll-breakdown-list">
-                  {selectedBreakdown.slice(0, 12).map((item, index) => (
-                    <div key={`${item.demandName}-${item.label}-${index}`}>
-                      <span>{formatDate(item.date)} · {item.category === "work" ? "Услуга" : "Товар"}</span>
-                      <strong>{formatMoney(item.amountCents)}</strong>
-                      <p>{item.label} × {item.quantity} · {item.demandName}</p>
+                <div className="eco-payroll-shipment-breakdown">
+                  {selectedShipmentBreakdown.slice(0, 12).map(({ vehicle, earningsCents, items }) => (
+                    <div key={vehicle.demandId} className="eco-payroll-shipment-card">
+                      <div className="eco-payroll-shipment-card__head">
+                        <div>
+                          <span>{formatDate(vehicle.date)} · {vehicle.agentName || "Клиент не указан"}</span>
+                          <strong>{vehicle.demandName}</strong>
+                        </div>
+                        <Link href={`/shipment/${encodeURIComponent(vehicle.demandId)}`}>
+                          Открыть
+                        </Link>
+                      </div>
+                      <div className="eco-payroll-shipment-card__summary">
+                        <span>Отгрузка {formatMoney(vehicle.sumCents)}</span>
+                        <span>Начислено {formatMoney(earningsCents)}</span>
+                      </div>
+                      <div className="eco-payroll-breakdown-list">
+                        {items.map((item, index) => (
+                          <div key={`${vehicle.demandId}-${item.label}-${index}`}>
+                            <span>{item.category === "work" ? "Услуга мастера" : "Товар администратора"}</span>
+                            <strong>{formatMoney(item.amountCents)}</strong>
+                            <p>{item.label} × {item.quantity}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2673,9 +3971,15 @@ export default function SalaryDashboard({
                 <div className="eco-payroll-breakdown-list">
                   {selectedCashouts.map((item) => (
                     <div key={item.cashoutId}>
-                      <span>{formatDate(item.date)} · {item.agentName || "Расходный ордер"}</span>
+                      <span>
+                        {formatDate(item.date)} · {item.sourceType === "payroll_payment" ? "из зарплаты" : item.agentName || "Расходный ордер"}
+                      </span>
                       <strong>{formatMoney(item.sumCents)}</strong>
-                      <p>{item.paymentPurpose || item.description || item.name}</p>
+                      <p>
+                        {item.cashOrderId ? <Link href="/cash">{item.name}</Link> : item.name}
+                        {" · "}
+                        {item.paymentPurpose || item.description || paymentMethodLabel(item.paymentMethod)}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -2693,15 +3997,99 @@ export default function SalaryDashboard({
               />
             </div>
 
-            {adjustmentOpen && canManagePayroll && (
-              <form className="eco-payroll-adjustment" onSubmit={submitAdjustment}>
+            {(paymentOpen || adjustmentOpen) && canManagePayroll && (
+              <div ref={operationFormRef} className="eco-payroll-operation-panel">
+                <div className="eco-payroll-operation-panel__head">
+                  <strong>{paymentOpen ? paymentOperationTitle(paymentOperationType) : adjustmentOperationTitle(adjustmentType)}</strong>
+                  <button
+                    type="button"
+                    className="eco-icon-btn"
+                    onClick={() => {
+                      setPaymentOpen(false);
+                      setAdjustmentOpen(false);
+                    }}
+                    title="Закрыть форму"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                {paymentOpen && (
+                  <form className="eco-payroll-adjustment" onSubmit={submitPayment}>
+                <FieldLabel label="Сотрудник">
+                  <EcoSelect
+                    value={operationEmployeeLogin || selectedRow.login}
+                    onChange={(event) => {
+                      const nextLogin = event.target.value;
+                      setOperationEmployeeLogin(nextLogin);
+                      const nextRow = payrollRows.find((row) => normalizeLogin(row.login) === normalizeLogin(nextLogin));
+                      if (paymentOperationType === "SALARY" && nextRow) {
+                        setPaymentAmount(formatFixedInput(Math.max(0, nextRow.payroll.remainingCents)));
+                      }
+                    }}
+                  >
+                    {payrollOperationUsers.map((user) => (
+                      <option key={user.login} value={user.login}>
+                        {user.name} · {roleShortLabel(normalizeRole(user.role ?? "master"))}
+                      </option>
+                    ))}
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Дата">
+                  <EcoInput type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
+                </FieldLabel>
+                <FieldLabel label="Операция">
+                  <EcoSelect value={paymentOperationType} onChange={(event) => setPaymentOperationType(event.target.value as typeof paymentOperationType)}>
+                    <option value="SALARY">Выплата зарплаты</option>
+                    <option value="ADVANCE">Аванс</option>
+                    <option value="COMPENSATION">Компенсация</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Сумма">
+                  <MoneyInput
+                    value={paymentAmount}
+                    onValueChange={(_, draft) => setPaymentAmount(draft)}
+                    className="eco-input"
+                    placeholder="0"
+                  />
+                </FieldLabel>
+                <FieldLabel label="Способ">
+                  <EcoSelect value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}>
+                    <option value="CASH">Наличные · создать РКО</option>
+                    <option value="BANK_TRANSFER">Перевод</option>
+                    <option value="OTHER">Другое</option>
+                  </EcoSelect>
+                </FieldLabel>
+                <FieldLabel label="Комментарий">
+                  <EcoInput value={paymentComment} onChange={(event) => setPaymentComment(event.target.value)} placeholder="Основание выплаты" />
+                </FieldLabel>
+                <EcoButton type="submit" variant="primary" disabled={paymentSaving}>
+                  {paymentSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
+                  Создать выплату
+                </EcoButton>
+                  </form>
+                )}
+
+                {adjustmentOpen && (
+                  <form className="eco-payroll-adjustment" onSubmit={submitAdjustment}>
+                <FieldLabel label="Сотрудник">
+                  <EcoSelect value={operationEmployeeLogin || selectedRow.login} onChange={(event) => setOperationEmployeeLogin(event.target.value)}>
+                    {payrollOperationUsers.map((user) => (
+                      <option key={user.login} value={user.login}>
+                        {user.name} · {roleShortLabel(normalizeRole(user.role ?? "master"))}
+                      </option>
+                    ))}
+                  </EcoSelect>
+                </FieldLabel>
                 <FieldLabel label="Дата">
                   <EcoInput type="date" value={adjustmentDate} onChange={(event) => setAdjustmentDate(event.target.value)} />
                 </FieldLabel>
                 <FieldLabel label="Тип">
                   <EcoSelect value={adjustmentType} onChange={(event) => setAdjustmentType(event.target.value as typeof adjustmentType)}>
-                    <option value="bonus">Бонус</option>
-                    <option value="penalty_manual">Удержание</option>
+                    <option value="BONUS">Бонус</option>
+                    <option value="PENALTY">Штраф</option>
+                    <option value="DEDUCTION">Удержание</option>
+                    <option value="EXTRA_PAY">Доплата</option>
+                    <option value="COMPENSATION">Компенсация</option>
                   </EcoSelect>
                 </FieldLabel>
                 <FieldLabel label="Сумма">
@@ -2712,6 +4100,17 @@ export default function SalaryDashboard({
                     placeholder="0"
                   />
                 </FieldLabel>
+                <FieldLabel label="Причина">
+                  <EcoSelect value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)}>
+                    <option value="">Не указана</option>
+                    <option value="cash_error">Ошибка в кассе</option>
+                    <option value="shipment_error">Ошибка в отгрузке</option>
+                    <option value="damage">Порча товара</option>
+                    <option value="late">Опоздание</option>
+                    <option value="advance">Аванс / долг</option>
+                    <option value="manual">Другое</option>
+                  </EcoSelect>
+                </FieldLabel>
                 <FieldLabel label="Комментарий">
                   <EcoInput value={adjustmentComment} onChange={(event) => setAdjustmentComment(event.target.value)} />
                 </FieldLabel>
@@ -2719,26 +4118,28 @@ export default function SalaryDashboard({
                   {adjustmentSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
                   Сохранить корректировку
                 </EcoButton>
-              </form>
+                  </form>
+                )}
+              </div>
             )}
 
             <div className="eco-payroll-drawer__footer">
-              <EcoButton type="button" onClick={() => setToast("Расчёт сохранён")}>
+              <EcoButton type="button" onClick={() => setToast("Расчёт уже сохранён в текущем расчёте")}>
                 <Save size={15} />
                 Сохранить расчёт
               </EcoButton>
               {canManagePayroll && (
-                <EcoButton type="button" onClick={() => markAsPaid(selectedRow)}>
+                <EcoButton type="button" onClick={() => openPaymentForm(selectedRow, "SALARY")} disabled={paymentSaving || adjustmentSaving}>
                   <Check size={15} />
-                  Отметить как выплачено
+                  Выплатить
                 </EcoButton>
               )}
               {canManagePayroll && (
-                <EcoButton type="button" onClick={() => setAdjustmentOpen((value) => !value)}>
+                <EcoButton type="button" onClick={() => openAdjustmentForm("BONUS")} disabled={paymentSaving || adjustmentSaving}>
                   Добавить корректировку
                 </EcoButton>
               )}
-              <EcoButton type="button" onClick={() => window.print()}>
+              <EcoButton type="button" onClick={() => window.print()} title="Открыть системную печать расчёта">
                 <Printer size={15} />
                 Печать расчёта
               </EcoButton>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { searchLocalProducts } from "@/lib/local-inventory-read";
+import { searchCatalog } from "@/lib/catalog-search";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -16,5 +16,15 @@ export async function GET(request: NextRequest) {
   const storeId = request.nextUrl.searchParams.get("storeId") ?? "";
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "15", 10) || 15);
 
-  return NextResponse.json(await searchLocalProducts({ search, oem, mannName, params, entityType, storeName, storeId, limit }));
+  return NextResponse.json(await searchCatalog({
+    q: search,
+    context: "shipment",
+    oem,
+    mannName,
+    params,
+    type: entityType === "product" || entityType === "service" ? entityType : "all",
+    storeName,
+    storeId,
+    limit,
+  }));
 }

@@ -7,6 +7,10 @@ const PAYROLL_ENTITY_TYPES = [
   "shift_rate",
   "scheduled_working_day",
   "bonus_penalty",
+  "payroll_period",
+  "payroll_goal",
+  "employee_recognition",
+  "employee_motivation_settings",
 ];
 
 function jsonHasLogin(value: unknown, login: string) {

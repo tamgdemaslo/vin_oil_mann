@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/db";
 import { getShiftRateCents } from "@/lib/shifts";
 import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
+import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import {
   calculatePieceworkAmountCents,
   extractMoyskladEntityId,
   getPieceworkRuleKey,
   getPieceworkRuleMap,
-  isPieceworkRole,
   resolveProductGroupTargetId,
   resolveServicePieceworkRule,
 } from "@/lib/piecework-rules";
@@ -24,10 +24,30 @@ function normalizePersonName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-const PAYROLL_CASHOUT_AGENT_TO_LOGIN: Record<string, string> = {
-  [normalizePersonName("Бигожин Вадим Андреевич")]: "vadim",
-  [normalizePersonName("Лобов Максим")]: "maksim",
-};
+const PAYROLL_CASHOUT_AGENT_ALIASES: { login: string; names: string[] }[] = [
+  {
+    login: "vadim",
+    names: [
+      "Бигожин Вадим",
+      "Бигожин Вадим Андреевич",
+      "Вадим Бигожин",
+      "Вадим Андреевич Бигожин",
+    ],
+  },
+  {
+    login: "maksim",
+    names: [
+      "Лобов Максим",
+      "Максим Лобов",
+    ],
+  },
+];
+
+const PAYROLL_CASHOUT_AGENT_TO_LOGIN = new Map(
+  PAYROLL_CASHOUT_AGENT_ALIASES.flatMap((item) =>
+    item.names.map((name) => [normalizePersonName(name), item.login] as const)
+  )
+);
 
 type PositionRow = {
   assortment: {
@@ -61,6 +81,30 @@ type CashoutRow = {
   expenseItem?: { name?: string };
 };
 
+type StaffingMember = { login: string; role: string };
+type PieceworkBreakdownEntry = {
+  category: "work" | "product";
+  label: string;
+  quantity: number;
+  amountCents: number;
+  ruleLabel: string;
+  basisLabel: string;
+  status: "PRELIMINARY";
+};
+
+function formatRuleAmountLabel(rule: {
+  mode: "fixed" | "percent";
+  fixedCents: number | null;
+  percentBasisPoints: number | null;
+}) {
+  if (rule.mode === "fixed") {
+    return `Фиксированно ${Math.round((rule.fixedCents ?? 0) / 100).toLocaleString("ru-RU")} ₽`;
+  }
+
+  const percent = (rule.percentBasisPoints ?? 0) / 100;
+  return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(2)}%`;
+}
+
 function isSalaryCashout(row: CashoutRow) {
   const expenseItemName = normalizePersonName(row.expenseItem?.name ?? "");
   const paymentPurpose = normalizePersonName(row.paymentPurpose ?? "");
@@ -70,6 +114,20 @@ function isSalaryCashout(row: CashoutRow) {
     paymentPurpose.includes("зарплата") ||
     paymentPurpose.includes("аванс")
   );
+}
+
+function resolvePayrollCashoutLogin(agentName: string) {
+  const normalized = normalizePersonName(agentName);
+  if (normalized.length < 3) return undefined;
+  const exact = PAYROLL_CASHOUT_AGENT_TO_LOGIN.get(normalized);
+  if (exact) return exact;
+
+  return PAYROLL_CASHOUT_AGENT_ALIASES.find((item) =>
+    item.names.some((name) => {
+      const alias = normalizePersonName(name);
+      return normalized.includes(alias) || alias.includes(normalized);
+    })
+  )?.login;
 }
 
 /** Получить отгрузки за период и позиции с расширенным assortment */
@@ -89,7 +147,10 @@ async function fetchLocalDemandsWithPositions(
   dateTo: string
 ): Promise<{ demand: DemandRow; positions: PositionRow[] }[]> {
   const demands = await prisma.localDemand.findMany({
-    where: { documentDate: { gte: dateFrom, lte: dateTo } },
+    where: {
+      documentDate: { gte: dateFrom, lte: dateTo },
+      applicable: true,
+    },
     include: {
       counterparty: true,
       positions: { include: { product: true }, orderBy: { id: "asc" } },
@@ -129,6 +190,62 @@ async function fetchLocalDemandsWithPositions(
 }
 
 async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Promise<CashoutRow[]> {
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{
+        id: string;
+        number: string;
+        expenseDate: string;
+        amountCents: number;
+        status: string;
+        paymentPurpose: string | null;
+        article: string | null;
+        comment: string | null;
+        counterpartyName: string;
+        counterpartyRelationName: string | null;
+        expenseItemName: string;
+        expenseItemRelationName: string | null;
+      }>
+    >`
+      SELECT
+        ceo.id,
+        ceo.number,
+        ceo.expense_date AS "expenseDate",
+        ceo.amount_cents AS "amountCents",
+        ceo.status,
+        ceo.payment_purpose AS "paymentPurpose",
+        ceo.article,
+        ceo.comment,
+        ceo.counterparty_name AS "counterpartyName",
+        cp.name AS "counterpartyRelationName",
+        ceo.expense_item_name AS "expenseItemName",
+        item.name AS "expenseItemRelationName"
+      FROM cash_expense_orders ceo
+      LEFT JOIN local_counterparties cp ON cp.id = ceo.counterparty_id
+      LEFT JOIN cash_expense_items item ON item.id = ceo.expense_item_id
+      WHERE ceo.expense_date >= ${dateFrom}
+        AND ceo.expense_date <= ${dateTo}
+        AND ceo.status = 'posted'
+        AND (ceo.source_type IS NULL OR ceo.source_type <> 'PAYROLL_PAYMENT')
+      ORDER BY ceo.expense_date ASC
+    `;
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.number,
+      moment: `${row.expenseDate} 00:00:00`,
+      sum: row.amountCents,
+      applicable: row.status === "posted",
+      paymentPurpose: row.paymentPurpose ?? row.article ?? row.comment ?? "",
+      description: row.comment ?? "",
+      agent: { name: row.counterpartyRelationName ?? row.counterpartyName ?? "" },
+      expenseItem: { name: row.expenseItemRelationName ?? row.expenseItemName ?? "" },
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (!message.includes("source_type") && !message.includes("undefined_column")) throw error;
+  }
+
   const rows = await prisma.cashExpenseOrder.findMany({
     where: {
       expenseDate: { gte: dateFrom, lte: dateTo },
@@ -154,43 +271,17 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
   }));
 }
 
-/** Кто фактически был на смене по дням (shiftDate -> login[]) */
-async function getShiftsByDate(dateFrom: string, dateTo: string): Promise<Map<string, { login: string; role: string }[]>> {
-  const shifts = await prisma.shift.findMany({
-    where: { shiftDate: { gte: dateFrom, lte: dateTo } },
-    orderBy: { shiftDate: "asc" },
-  });
-  const users = await getUsersFromEnv();
-  const roleByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.role]));
-  const canonicalLoginByLower = new Map(users.map((u) => [normalizeLogin(u.login), u.login]));
-  const byDate = new Map<string, { login: string; role: string }[]>();
-  for (const s of shifts) {
-    const normalized = normalizeLogin(s.userLogin);
-    const canonicalLogin = canonicalLoginByLower.get(normalized) ?? s.userLogin;
-    const role = roleByLogin.get(normalized) ?? "master";
-    const list = byDate.get(s.shiftDate) ?? [];
-    if (!list.some((x) => normalizeLogin(x.login) === normalized)) {
-      list.push({ login: canonicalLogin, role });
-      byDate.set(s.shiftDate, list);
-    }
-  }
-  return byDate;
-}
-
 function mergeStaffingByDate(params: {
-  actualByDate: Map<string, { login: string; role: string }[]>;
   scheduledDays: { userLogin: string; date: string }[];
   roleByLogin: Map<string, string>;
 }) {
-  const { actualByDate, scheduledDays, roleByLogin } = params;
-  const byDate = new Map(actualByDate);
+  const { scheduledDays, roleByLogin } = params;
+  const byDate = new Map<string, StaffingMember[]>();
 
   for (const day of scheduledDays) {
-    const actualForDate = actualByDate.get(day.date) ?? [];
-    if (actualForDate.length > 0) continue;
-
     const normalized = normalizeLogin(day.userLogin);
     const role = roleByLogin.get(normalized) ?? "master";
+    if (role !== "master" && role !== "admin") continue;
     const list = byDate.get(day.date) ?? [];
     if (!list.some((x) => normalizeLogin(x.login) === normalized)) {
       list.push({ login: day.userLogin, role });
@@ -214,13 +305,24 @@ export type VehicleRecord = {
   sumCents: number;
   works: { name: string; quantity: number; priceCents: number }[];
   products: { name: string; pathName?: string; quantity: number; priceCents: number }[];
-  /** Начисление по этой машине для каждого сотрудника, который был на смене в этот день */
+  /** Начисление по этой отгрузке для сотрудников рабочей команды дня */
   earningsByLogin: Record<string, number>;
-  /** Детальная расшифровка сдельной части по каждому сотруднику для этой машины */
-  pieceworkBreakdownByLogin: Record<
-    string,
-    { category: "work" | "product"; label: string; quantity: number; amountCents: number }[]
-  >;
+  /** Детальная расшифровка сдельной части по каждому сотруднику для этой отгрузки */
+  pieceworkBreakdownByLogin: Record<string, PieceworkBreakdownEntry[]>;
+  /** Позиции, которые не начислены автоматически из-за отсутствующей роли, конфликта или правила */
+  unallocatedPiecework: {
+    category: "work" | "product";
+    label: string;
+    quantity: number;
+    baseCents: number;
+    reason:
+      | "missing_master"
+      | "multiple_masters"
+      | "missing_admin"
+      | "multiple_admins"
+      | "missing_rule";
+    logins?: string[];
+  }[];
 };
 
 export type PayrollSummary = {
@@ -248,6 +350,10 @@ export type PayrollSummary = {
     paymentPurpose: string;
     description: string;
     login: string;
+    sourceType?: "cash_expense_order" | "payroll_payment";
+    paymentMethod?: string;
+    operationType?: string;
+    cashOrderId?: string | null;
   }[];
 };
 
@@ -262,9 +368,32 @@ export async function computePayroll(params: {
   const normalizedTargetLogin = targetLogin ? normalizeLogin(targetLogin) : undefined;
   const targetLoginVariants = targetLogin ? getLoginVariants(targetLogin) : undefined;
   const targetLoginWhere = targetLoginVariants ? { userLogin: { in: targetLoginVariants } } : {};
-  const [actualShiftsByDate, bonusPenalties, scheduledDays, users, pieceworkRuleMap] = await Promise.all([
-    getShiftsByDate(dateFrom, dateTo),
+  const [
+    bonusPenalties,
+    payrollAdjustments,
+    payrollPayments,
+    scheduledDaysForRates,
+    scheduledDaysForStaffing,
+    users,
+    pieceworkRuleMap,
+  ] = await Promise.all([
     prisma.bonusPenalty.findMany({
+      where: {
+        date: { gte: dateFrom, lte: dateTo },
+        ...targetLoginWhere,
+      },
+    }),
+    listPayrollAdjustments({
+      dateFrom,
+      dateTo,
+      employeeLogin: targetLogin,
+    }),
+    listPayrollPayments({
+      dateFrom,
+      dateTo,
+      employeeLogin: targetLogin,
+    }),
+    prisma.scheduledWorkingDay.findMany({
       where: {
         date: { gte: dateFrom, lte: dateTo },
         ...targetLoginWhere,
@@ -273,7 +402,6 @@ export async function computePayroll(params: {
     prisma.scheduledWorkingDay.findMany({
       where: {
         date: { gte: dateFrom, lte: dateTo },
-        ...targetLoginWhere,
       },
     }),
     getUsersFromEnv(),
@@ -285,10 +413,12 @@ export async function computePayroll(params: {
 
   const canonicalLoginByLower = new Map(users.map((u) => [normalizeLogin(u.login), u.login]));
   const roleByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.role]));
-  const activeLogins = new Set(users.map((u) => normalizeLogin(u.login)));
+  const nameByLogin = new Map(users.map((u) => [normalizeLogin(u.login), u.name]));
+  const activeLogins = new Set(
+    users.filter((u) => u.role === "master" || u.role === "admin").map((u) => normalizeLogin(u.login))
+  );
   const staffingByDate = mergeStaffingByDate({
-    actualByDate: actualShiftsByDate,
-    scheduledDays: scheduledDays.map((day) => ({
+    scheduledDays: scheduledDaysForStaffing.map((day) => ({
       ...day,
       userLogin: canonicalLoginByLower.get(normalizeLogin(day.userLogin)) ?? day.userLogin,
     })),
@@ -308,13 +438,22 @@ export async function computePayroll(params: {
     const products: VehicleRecord["products"] = [];
     const earningsByLogin: Record<string, number> = {};
     const pieceworkBreakdownByLogin: VehicleRecord["pieceworkBreakdownByLogin"] = {};
+    const unallocatedPiecework: VehicleRecord["unallocatedPiecework"] = [];
+    const masters = onShift.filter((member) => member.role === "master");
+    const admins = onShift.filter((member) => member.role === "admin");
+    const master = masters.length === 1 ? masters[0] : null;
+    const admin = admins.length === 1 ? admins[0] : null;
 
     function addPieceworkEntry(
       login: string,
-      entry: { category: "work" | "product"; label: string; quantity: number; amountCents: number }
+      entry: PieceworkBreakdownEntry
     ) {
       if (!pieceworkBreakdownByLogin[login]) pieceworkBreakdownByLogin[login] = [];
       pieceworkBreakdownByLogin[login].push(entry);
+    }
+
+    function addUnallocatedPiecework(entry: VehicleRecord["unallocatedPiecework"][number]) {
+      unallocatedPiecework.push(entry);
     }
 
     for (const p of positions) {
@@ -329,25 +468,55 @@ export async function computePayroll(params: {
       if (type === "service") {
         const serviceId = extractMoyskladEntityId(p.assortment?.meta?.href);
         works.push({ name, quantity: qty, priceCents: saleCents });
-        for (const { login, role } of onShift) {
-          if (!serviceId || !isPieceworkRole(role)) continue;
-          const rule = resolveServicePieceworkRule({
-            ruleMap: pieceworkRuleMap,
-            serviceId,
-            serviceName: name,
-            role,
-          });
-          if (!rule) continue;
-          const amountCents = calculatePieceworkAmountCents(rule, saleCents, qty);
-          if (amountCents <= 0) continue;
-          earningsByLogin[login] = (earningsByLogin[login] ?? 0) + amountCents;
-          addPieceworkEntry(login, {
+        if (!master) {
+          addUnallocatedPiecework({
             category: "work",
             label: name,
             quantity: qty,
-            amountCents,
+            baseCents: saleCents,
+            reason: masters.length > 1 ? "multiple_masters" : "missing_master",
+            logins: masters.length > 1 ? masters.map((member) => member.login) : undefined,
           });
+          continue;
         }
+        if (!serviceId) {
+          addUnallocatedPiecework({
+            category: "work",
+            label: name,
+            quantity: qty,
+            baseCents: saleCents,
+            reason: "missing_rule",
+          });
+          continue;
+        }
+        const rule = resolveServicePieceworkRule({
+          ruleMap: pieceworkRuleMap,
+          serviceId,
+          serviceName: name,
+          role: "master",
+        });
+        if (!rule) {
+          addUnallocatedPiecework({
+            category: "work",
+            label: name,
+            quantity: qty,
+            baseCents: saleCents,
+            reason: "missing_rule",
+          });
+          continue;
+        }
+        const amountCents = calculatePieceworkAmountCents(rule, saleCents, qty);
+        if (amountCents <= 0) continue;
+        earningsByLogin[master.login] = (earningsByLogin[master.login] ?? 0) + amountCents;
+        addPieceworkEntry(master.login, {
+          category: "work",
+          label: name,
+          quantity: qty,
+          amountCents,
+          ruleLabel: formatRuleAmountLabel(rule),
+          basisLabel: rule.mode === "percent" ? "от суммы услуги" : "за услугу",
+          status: "PRELIMINARY",
+        });
       } else {
         products.push({
           name,
@@ -357,25 +526,53 @@ export async function computePayroll(params: {
         });
 
         const productGroupTargetId = resolveProductGroupTargetId(pathName);
-        if (!productGroupTargetId) continue;
-
-        for (const { login, role } of onShift) {
-          if (!isPieceworkRole(role)) continue;
-          const rule = pieceworkRuleMap.get(
-            getPieceworkRuleKey("product_group", productGroupTargetId, role)
-          );
-          if (!rule) continue;
-          const profitCents = Math.max(0, saleCents - buyPriceCents);
-          const amountCents = calculatePieceworkAmountCents(rule, profitCents, qty);
-          if (amountCents <= 0) continue;
-          earningsByLogin[login] = (earningsByLogin[login] ?? 0) + amountCents;
-          addPieceworkEntry(login, {
+        const profitCents = Math.max(0, saleCents - buyPriceCents);
+        if (!admin) {
+          addUnallocatedPiecework({
             category: "product",
             label: name,
             quantity: qty,
-            amountCents,
+            baseCents: profitCents,
+            reason: admins.length > 1 ? "multiple_admins" : "missing_admin",
+            logins: admins.length > 1 ? admins.map((member) => member.login) : undefined,
           });
+          continue;
         }
+        if (!productGroupTargetId) {
+          addUnallocatedPiecework({
+            category: "product",
+            label: name,
+            quantity: qty,
+            baseCents: profitCents,
+            reason: "missing_rule",
+          });
+          continue;
+        }
+        const rule = pieceworkRuleMap.get(
+          getPieceworkRuleKey("product_group", productGroupTargetId, "admin")
+        );
+        if (!rule) {
+          addUnallocatedPiecework({
+            category: "product",
+            label: name,
+            quantity: qty,
+            baseCents: profitCents,
+            reason: "missing_rule",
+          });
+          continue;
+        }
+        const amountCents = calculatePieceworkAmountCents(rule, profitCents, qty);
+        if (amountCents <= 0) continue;
+        earningsByLogin[admin.login] = (earningsByLogin[admin.login] ?? 0) + amountCents;
+        addPieceworkEntry(admin.login, {
+          category: "product",
+          label: name,
+          quantity: qty,
+          amountCents,
+          ruleLabel: formatRuleAmountLabel(rule),
+          basisLabel: rule.mode === "percent" ? "от расчётной базы группы товара" : "за единицу",
+          status: "PRELIMINARY",
+        });
       }
     }
 
@@ -390,51 +587,16 @@ export async function computePayroll(params: {
       products,
       earningsByLogin,
       pieceworkBreakdownByLogin,
+      unallocatedPiecework,
     });
   }
 
-  // Собираем смены за период и ставки (фактические смены)
-  const shifts = await prisma.shift.findMany({
-    where: { shiftDate: { gte: dateFrom, lte: dateTo }, ...targetLoginWhere },
-  });
-
-  const actualShiftDatesByLogin = new Map<string, Set<string>>();
-  for (const s of shifts) {
-    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(s.userLogin)) ?? s.userLogin;
-    if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
-    if (!actualShiftDatesByLogin.has(canonicalLogin)) {
-      actualShiftDatesByLogin.set(canonicalLogin, new Set());
-    }
-    actualShiftDatesByLogin.get(canonicalLogin)!.add(s.shiftDate);
-  }
-
-  for (const s of shifts) {
-    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(s.userLogin)) ?? s.userLogin;
-    if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
-    if (!byLogin[canonicalLogin]) {
-      byLogin[canonicalLogin] = {
-        shiftTotalCents: 0,
-        pieceworkCents: 0,
-        bonusPenaltyCents: 0,
-        paidOutCents: 0,
-        remainingCents: 0,
-        totalCents: 0,
-        shiftsCount: 0,
-      };
-    }
-    const rate = await getShiftRateCents(canonicalLogin, s.shiftDate);
-    if (rate != null) {
-      byLogin[canonicalLogin].shiftTotalCents += rate;
-      byLogin[canonicalLogin].shiftsCount += 1;
-    }
-  }
-
-  // Назначенные рабочие дни без фактической смены: начисляем ставку за день (график)
-  for (const swd of scheduledDays) {
+  // Назначенные владельцем смены сотрудников: единственный источник фиксированной части зарплаты.
+  for (const swd of scheduledDaysForRates) {
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(swd.userLogin)) ?? swd.userLogin;
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
-    const hasActual = actualShiftDatesByLogin.get(canonicalLogin)?.has(swd.date);
-    if (hasActual) continue; // уже учтено по фактической смене
+    const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
+    if (roleValue !== "master" && roleValue !== "admin") continue;
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
         shiftTotalCents: 0,
@@ -473,7 +635,11 @@ export async function computePayroll(params: {
   }
 
   for (const bp of bonusPenalties) {
+    if (bp.type === "penalty_late") continue;
+
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(bp.userLogin)) ?? bp.userLogin;
+    const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
+    if (roleValue !== "master" && roleValue !== "admin") continue;
     if (!byLogin[canonicalLogin]) {
       byLogin[canonicalLogin] = {
         shiftTotalCents: 0,
@@ -488,9 +654,68 @@ export async function computePayroll(params: {
     byLogin[canonicalLogin].bonusPenaltyCents += bp.amountCents;
   }
 
+  for (const adjustment of payrollAdjustments) {
+    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(adjustment.employeeId)) ?? adjustment.employeeId;
+    const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
+    if (roleValue !== "master" && roleValue !== "admin") continue;
+    if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
+    if (!byLogin[canonicalLogin]) {
+      byLogin[canonicalLogin] = {
+        shiftTotalCents: 0,
+        pieceworkCents: 0,
+        bonusPenaltyCents: 0,
+        paidOutCents: 0,
+        remainingCents: 0,
+        totalCents: 0,
+        shiftsCount: 0,
+      };
+    }
+    byLogin[canonicalLogin].bonusPenaltyCents += adjustment.amountCents;
+  }
+
+  for (const payment of payrollPayments) {
+    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(payment.employeeId)) ?? payment.employeeId;
+    if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
+    const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
+    if (roleValue !== "master" && roleValue !== "admin") continue;
+
+    if (!byLogin[canonicalLogin]) {
+      byLogin[canonicalLogin] = {
+        shiftTotalCents: 0,
+        pieceworkCents: 0,
+        bonusPenaltyCents: 0,
+        paidOutCents: 0,
+        remainingCents: 0,
+        totalCents: 0,
+        shiftsCount: 0,
+      };
+    }
+
+    byLogin[canonicalLogin].paidOutCents += payment.amountCents;
+    cashoutHistory.push({
+      cashoutId: payment.cashOrderId ?? payment.id,
+      name: payment.cashOrderNumber ? `РКО ${payment.cashOrderNumber}` : `Выплата ${payment.id.slice(0, 8)}`,
+      date: payment.operationDate,
+      agentName: nameByLogin.get(normalizeLogin(canonicalLogin)) ?? canonicalLogin,
+      sumCents: payment.amountCents,
+      paymentPurpose:
+        payment.operationType === "ADVANCE"
+          ? "Аванс из раздела Зарплата"
+          : payment.operationType === "COMPENSATION"
+            ? "Компенсация из раздела Зарплата"
+            : "Выплата зарплаты из раздела Зарплата",
+      description: payment.comment ?? "",
+      login: canonicalLogin,
+      sourceType: "payroll_payment",
+      paymentMethod: payment.paymentMethod,
+      operationType: payment.operationType,
+      cashOrderId: payment.cashOrderId,
+    });
+  }
+
   for (const cashout of cashouts) {
     const agentName = cashout.agent?.name ?? "";
-    const mappedLogin = PAYROLL_CASHOUT_AGENT_TO_LOGIN[normalizePersonName(agentName)];
+    const mappedLogin = resolvePayrollCashoutLogin(agentName);
     if (!mappedLogin || !isSalaryCashout(cashout)) continue;
 
     const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(mappedLogin)) ?? mappedLogin;
@@ -518,6 +743,10 @@ export async function computePayroll(params: {
       paymentPurpose: cashout.paymentPurpose ?? "",
       description: cashout.description ?? "",
       login: canonicalLogin,
+      sourceType: "cash_expense_order",
+      paymentMethod: "CASH",
+      operationType: "SALARY",
+      cashOrderId: cashout.id,
     });
   }
 
@@ -553,7 +782,7 @@ export async function computePayroll(params: {
         );
         return { ...vehicle, earningsByLogin, pieceworkBreakdownByLogin };
       })
-      .filter((vehicle) => Object.keys(vehicle.earningsByLogin).length > 0);
+      .filter((vehicle) => Object.keys(vehicle.earningsByLogin).length > 0 || vehicle.unallocatedPiecework.length > 0);
     const activeCashoutHistory = filteredCashoutHistory.filter((item) =>
       activeLogins.has(normalizeLogin(item.login))
     );

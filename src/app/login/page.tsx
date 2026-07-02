@@ -227,7 +227,7 @@ function LoginForm() {
             <div className="border-b border-white/10 p-[24px] sm:p-[32px] lg:border-b-0 lg:border-r lg:p-[34px]">
               <div className="max-w-[560px]">
                 <p className="text-[13px] font-semibold uppercase tracking-[0.18em] text-amber-300">
-                  Эко-платформа
+                  ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ
                 </p>
                 <h1 className="mt-[18px] !text-[38px] font-semibold !leading-[44px] tracking-tight text-white sm:!text-[40px] sm:!leading-[46px] 2xl:!text-[44px] 2xl:!leading-[50px]">
                   Выберите профиль для входа

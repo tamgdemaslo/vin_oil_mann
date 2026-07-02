@@ -26,6 +26,7 @@ type FinanceRowStatus =
   | "negative_margin"
   | "receipt"
   | "writeoff"
+  | "technical_adjustment"
   | "writeoff_no_reason";
 
 type FinanceRow = {
@@ -58,6 +59,8 @@ type FinanceRow = {
   status: FinanceRowStatus;
   createdByName: string | null;
   writeoffReason: string | null;
+  adjustmentType: string | null;
+  affectsManagementProfit: boolean;
 };
 
 type TopProduct = {
@@ -116,6 +119,10 @@ type FinanceResponse = {
     grossMarginPercent: number | null;
     receiptValue: number | null;
     writeoffLoss: number | null;
+    technicalAdjustmentValue: number | null;
+    technicalAdjustmentQuantity: number;
+    technicalAdjustmentsCount: number;
+    expenseWriteoffsCount: number;
     operationalProfit: number | null;
     missingCostRevenue: number | null;
     missingCostLines: number;
@@ -233,6 +240,7 @@ function statusMeta(status: FinanceRowStatus) {
   if (status === "full_discount") return { label: "Скидка 100%", tone: "warning" };
   if (status === "negative_margin") return { label: "Минусовая маржа", tone: "danger" };
   if (status === "writeoff_no_reason") return { label: "Нет причины", tone: "warning" };
+  if (status === "technical_adjustment") return { label: "Техническая", tone: "info" };
   if (status === "receipt") return { label: "Поступление", tone: "neutral" };
   if (status === "writeoff") return { label: "Списание", tone: "warning" };
   return { label: "Ок", tone: "success" };
@@ -271,7 +279,7 @@ function downloadTextFile(filename: string, content: string, mime: string) {
 
 function buildExportRows(data: FinanceResponse) {
   return [
-    ["Документ", "Дата", "Тип", "Товар", "Кол-во", "Цена продажи", "Выручка", "Себестоимость", "Скидка", "Прибыль", "Маржа", "Статус"],
+    ["Документ", "Дата", "Тип", "Товар", "Кол-во", "Цена продажи", "Выручка", "Себестоимость", "Скидка", "Прибыль", "Маржа", "Статус", "Влияние на прибыль"],
     ...data.rows.map((row) => [
       row.documentName,
       row.documentDate,
@@ -285,6 +293,7 @@ function buildExportRows(data: FinanceResponse) {
       row.profit ?? "",
       row.marginPercent ?? "",
       statusMeta(row.status).label,
+      row.affectsManagementProfit ? "учтено" : "не учтено",
     ]),
   ];
 }
@@ -482,7 +491,7 @@ export default function ProfitClient() {
     {
       label: "Прибыль после списаний",
       value: formatMoney(data.summary.operationalProfit),
-      sub: `Минус списания ${formatMoney(data.summary.writeoffLoss)}`,
+      sub: `Минус обычные списания ${formatMoney(data.summary.writeoffLoss)}`,
       tone: Number(data.summary.operationalProfit ?? 0) >= 0 ? "success" : "danger",
       clickable: Number(data.summary.writeoffLoss ?? 0) > 0,
       onClick: () => setActiveTab("writeoffs"),
@@ -499,9 +508,17 @@ export default function ProfitClient() {
     {
       label: "Потери списаний",
       value: formatMoney(data.summary.writeoffLoss),
-      sub: `${data.summary.writeoffsCount} документов списания`,
+      sub: `${data.summary.expenseWriteoffsCount} документов как расход`,
       tone: Number(data.summary.writeoffLoss ?? 0) > 0 ? "warning" : "neutral",
       clickable: Number(data.summary.writeoffLoss ?? 0) > 0,
+      onClick: () => setActiveTab("writeoffs"),
+    },
+    {
+      label: "Технические корректировки",
+      value: formatMoney(data.summary.technicalAdjustmentValue),
+      sub: `${formatQty(data.summary.technicalAdjustmentQuantity)} шт. · ${data.summary.technicalAdjustmentsCount} документов справочно`,
+      tone: Number(data.summary.technicalAdjustmentValue ?? 0) > 0 ? "info" : "neutral",
+      clickable: Number(data.summary.technicalAdjustmentValue ?? 0) > 0,
       onClick: () => setActiveTab("writeoffs"),
     },
     {
@@ -1208,7 +1225,10 @@ function WriteoffsPanel({
   rows: FinanceRow[];
   reasons: Array<[string, { count: number; sum: number }]>;
 }) {
-  const total = rows.reduce((sum, row) => sum + Number(row.cost ?? 0), 0);
+  const technicalRows = rows.filter((row) => row.status === "technical_adjustment" || row.affectsManagementProfit === false);
+  const expenseRows = rows.filter((row) => row.status !== "technical_adjustment" && row.affectsManagementProfit !== false);
+  const total = expenseRows.reduce((sum, row) => sum + Number(row.cost ?? 0), 0);
+  const technicalTotal = technicalRows.reduce((sum, row) => sum + Number(row.cost ?? 0), 0);
   const quantity = rows.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0);
   const docs = new Set(rows.map((row) => row.documentId)).size;
 
@@ -1217,11 +1237,12 @@ function WriteoffsPanel({
       <div className="eco-finance-section-head">
         <div>
           <h2>Списания</h2>
-          <p>Потери от списаний, причины, товары, документы и авторы документов.</p>
+          <p>Обычные списания влияют на прибыль, технические корректировки показаны справочно.</p>
         </div>
       </div>
       <div className="eco-finance-writeoff-summary">
-        <article><span>Сумма списаний</span><strong>{formatMoney(total)}</strong></article>
+        <article><span>Обычные списания</span><strong>{formatMoney(total)}</strong></article>
+        <article><span>Технически скорректировано</span><strong>{formatMoney(technicalTotal)}</strong></article>
         <article><span>Списано позиций</span><strong>{formatQty(quantity)}</strong></article>
         <article><span>Документы списания</span><strong>{docs}</strong></article>
       </div>
@@ -1238,7 +1259,7 @@ function WriteoffsPanel({
 
       <RowsTable
         title="Документы и строки списаний"
-        subtitle="Из чего состоит сумма потерь от списаний."
+        subtitle="Из чего состоят обычные списания и технические корректировки."
         rows={rows}
       />
     </section>

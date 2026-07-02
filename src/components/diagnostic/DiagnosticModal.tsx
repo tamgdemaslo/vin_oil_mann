@@ -82,6 +82,18 @@ type DiagnosticRow = {
   offers: DiagnosticOffer[];
 };
 
+type TelegramReportState = {
+  ok?: boolean;
+  status?: string;
+  error?: string;
+  reportUrl?: string | null;
+  link?: {
+    linkUrl: string | null;
+    qrDataUrl: string | null;
+    expiresAt: string;
+  };
+};
+
 type DiagnosticPositionRow = DiagnosticPosition & { photos: DiagnosticPhoto[] };
 
 type DiagnosticHistory = {
@@ -409,6 +421,8 @@ export function DiagnosticModal({
   const [quickUiCommand, setQuickUiCommand] = useState<QuickUiCommand | null>(null);
   const [offerDecisions, setOfferDecisions] = useState<Record<string, OfferDecision>>({});
   const [reportUrl, setReportUrl] = useState<string | null>(null);
+  const [telegramReport, setTelegramReport] = useState<TelegramReportState | null>(null);
+  const [telegramReportSending, setTelegramReportSending] = useState(false);
   const [positionSaveErrors, setPositionSaveErrors] = useState<Record<string, DiagnosticPositionSaveError>>({});
   const [crmReminderPositionIds, setCrmReminderPositionIds] = useState<string[]>([]);
   const [crmReminderLoading, setCrmReminderLoading] = useState(false);
@@ -729,6 +743,39 @@ export function DiagnosticModal({
       setToast("Ссылка для клиента скопирована в буфер обмена");
     } catch {
       setToast(`Ссылка: ${url}`);
+    }
+  };
+
+  const copyTelegramText = async (value: string | null | undefined, success: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setToast(success);
+    } catch {
+      setToast(value);
+    }
+  };
+
+  const sendReportToTelegram = async () => {
+    if (!activeId) return;
+    setTelegramReportSending(true);
+    setTelegramReport(null);
+    try {
+      const res = await fetch(`/api/diagnostic/${activeId}/send-report`, { method: "POST" });
+      const json = await responseJson<TelegramReportState>(res);
+      setTelegramReport(json);
+      if (json.reportUrl) setReportUrl(json.reportUrl);
+      if (res.ok && json.ok) {
+        setToast(json.status === "skipped" ? "Отчёт поставлен в историю Telegram без отправки" : "Отчёт отправлен в Telegram");
+      } else {
+        setToast(json.error ?? "Отчёт не отправлен в Telegram");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отправить отчёт в Telegram";
+      setTelegramReport({ ok: false, status: "error", error: message, reportUrl });
+      setToast(message);
+    } finally {
+      setTelegramReportSending(false);
     }
   };
 
@@ -1246,6 +1293,15 @@ export function DiagnosticModal({
               onCopyReportLink={copyReportLink}
               onOpenReport={openClientReport}
               onPrintReport={printClientReport}
+              telegramReport={telegramReport}
+              telegramReportSending={telegramReportSending}
+              onSendReportTelegram={sendReportToTelegram}
+              onCopyTelegramReportUrl={() =>
+                void copyTelegramText(telegramReport?.reportUrl ?? reportUrl, "Ссылка отчёта скопирована")
+              }
+              onCopyTelegramLink={() =>
+                void copyTelegramText(telegramReport?.link?.linkUrl, "Ссылка привязки Telegram скопирована")
+              }
               onSendReportLater={() => setToast("Ссылку отчёта можно скопировать позже из сводки")}
               onComplete={completeDiagnostic}
             />
@@ -2991,6 +3047,11 @@ function SummaryScreen(props: {
   onCopyReportLink: () => void;
   onOpenReport: () => void;
   onPrintReport: () => void;
+  telegramReport: TelegramReportState | null;
+  telegramReportSending: boolean;
+  onSendReportTelegram: () => void;
+  onCopyTelegramReportUrl: () => void;
+  onCopyTelegramLink: () => void;
   onSendReportLater: () => void;
   onComplete: () => void;
 }) {
@@ -3236,7 +3297,29 @@ function SummaryScreen(props: {
             <FileText className="eco-icon" aria-hidden />
             Скопировать позже
           </EcoButton>
+          <EcoButton
+            type="button"
+            onClick={props.onSendReportTelegram}
+            disabled={props.reportActionsDisabled || props.telegramReportSending}
+            title={props.reportActionsDisabled ? "Завершите диагностику перед отправкой отчёта" : undefined}
+            size="sm"
+          >
+            <FileText className="eco-icon" aria-hidden />
+            {props.telegramReportSending ? "Отправляем..." : "Отправить отчёт в Telegram"}
+          </EcoButton>
         </div>
+        {props.telegramReport && (
+          <div className={`eco-diagnostic-telegram-status ${props.telegramReport.ok ? "is-ok" : "is-warn"}`}>
+            <strong>{props.telegramReport.ok ? "Отчёт отправлен в Telegram" : props.telegramReport.error ?? "Telegram клиента не привязан"}</strong>
+            {!props.telegramReport.ok && (
+              <div className="eco-diagnostic-telegram-actions">
+                <button type="button" onClick={props.onCopyTelegramReportUrl} disabled={!props.telegramReport.reportUrl}>
+                  Скопировать ссылку отчёта
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <div className="eco-diagnostic-actions">
@@ -3283,6 +3366,15 @@ function SummaryScreen(props: {
         >
           <FileText className="eco-icon" aria-hidden />
           Печать отчёта
+        </EcoButton>
+        <EcoButton
+          type="button"
+          onClick={props.onSendReportTelegram}
+          disabled={props.reportActionsDisabled || props.telegramReportSending}
+          title={props.reportActionsDisabled ? "Завершите диагностику перед отправкой отчёта" : undefined}
+        >
+          <FileText className="eco-icon" aria-hidden />
+          {props.telegramReportSending ? "Отправляем..." : "Отправить отчёт в Telegram"}
         </EcoButton>
         <EcoButton
           type="button"

@@ -5,7 +5,7 @@ import MoneyInput from "@/components/MoneyInput";
 import { formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
 type Meta = { href: string; type: string; mediaType: string };
-type RefOption = { id: string; name: string; meta: Meta };
+type RefOption = { id: string; name: string; meta: Meta; isDefault?: boolean; isMain?: boolean; organizationId?: string | null };
 type ProductOption = {
   id: string;
   name: string;
@@ -157,30 +157,32 @@ export default function SupplyClient() {
     setRefsLoading(true);
     setRefsError(null);
     try {
-      const [orgRes, storeRes, agentRes] = await Promise.all([
+      const [orgRes, agentRes] = await Promise.all([
         fetch("/api/moysklad/organizations", { cache: "no-store" }),
-        fetch("/api/moysklad/stores", { cache: "no-store" }),
         fetch("/api/moysklad/counterparties?limit=30", { cache: "no-store" }),
       ]);
-      const [orgData, storeData, agentData] = await Promise.all([
+      const [orgData, agentData] = await Promise.all([
         readJson<{ organizations?: RefOption[]; error?: string }>(orgRes),
-        readJson<{ stores?: RefOption[]; error?: string }>(storeRes),
         readJson<{ counterparties?: RefOption[]; error?: string }>(agentRes),
       ]);
       if (!orgRes.ok) throw new Error(orgData?.error ?? "Не удалось загрузить организации");
-      if (!storeRes.ok) throw new Error(storeData?.error ?? "Не удалось загрузить склады");
       if (!agentRes.ok) throw new Error(agentData?.error ?? "Не удалось загрузить поставщиков");
 
       const orgs = Array.isArray(orgData?.organizations) ? orgData.organizations : [];
+      const nextOrg = orgs.find((org) => org.isDefault) ?? orgs[0] ?? null;
+      const storeParams = nextOrg?.id ? `?organizationId=${encodeURIComponent(nextOrg.id)}` : "";
+      const storeRes = await fetch(`/api/moysklad/stores${storeParams}`, { cache: "no-store" });
+      const storeData = await readJson<{ stores?: RefOption[]; error?: string }>(storeRes);
+      if (!storeRes.ok) throw new Error(storeData?.error ?? "Не удалось загрузить склады");
       const loadedStores = Array.isArray(storeData?.stores) ? storeData.stores : [];
       const loadedAgents = Array.isArray(agentData?.counterparties) ? agentData.counterparties : [];
       setOrganizations(orgs);
       setStores(loadedStores);
       setAgentOptions(loadedAgents);
-      setSelectedOrg((prev) => prev ?? orgs[0] ?? null);
+      setSelectedOrg((prev) => prev ?? nextOrg);
       setSelectedStore((prev) => {
-        if (prev) return prev;
-        const main = loadedStores.find((store) => (store.name ?? "").toLowerCase().includes("основной"));
+        if (prev && loadedStores.some((store) => store.id === prev.id)) return prev;
+        const main = loadedStores.find((store) => store.isMain || (store.name ?? "").toLowerCase().includes("основной"));
         return main ?? loadedStores[0] ?? null;
       });
     } catch (error) {
@@ -194,6 +196,24 @@ export default function SupplyClient() {
     void loadRefs();
     void loadSupplies("");
   }, [loadRefs, loadSupplies]);
+
+  async function handleOrganizationChange(orgId: string) {
+    const org = organizations.find((item) => item.id === orgId) ?? null;
+    setSelectedOrg(org);
+    setSelectedStore(null);
+    const params = org?.id ? `?organizationId=${encodeURIComponent(org.id)}` : "";
+    const res = await fetch(`/api/moysklad/stores${params}`, { cache: "no-store" });
+    const data = await readJson<{ stores?: RefOption[]; error?: string }>(res);
+    if (!res.ok) {
+      setRefsError(data?.error ?? "Не удалось загрузить склады организации");
+      setStores([]);
+      return;
+    }
+    const nextStores = Array.isArray(data?.stores) ? data.stores : [];
+    setStores(nextStores);
+    const main = nextStores.find((store) => store.isMain || (store.name ?? "").toLowerCase().includes("основной"));
+    setSelectedStore(main ?? nextStores[0] ?? null);
+  }
 
   useEffect(() => {
     if (!agentSearch.trim()) return;
@@ -425,7 +445,7 @@ export default function SupplyClient() {
               <span className="text-xs font-medium text-zinc-500">Организация *</span>
               <select
                 value={selectedOrg?.id ?? ""}
-                onChange={(event) => setSelectedOrg(organizations.find((item) => item.id === event.target.value) ?? null)}
+                onChange={(event) => void handleOrganizationChange(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
               >
                 <option value="">Не выбрана</option>

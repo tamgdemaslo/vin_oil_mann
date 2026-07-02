@@ -1,0 +1,2370 @@
+import crypto from "crypto";
+import { prisma } from "@/lib/db";
+import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatus, MessengerConnection } from "../messenger-types";
+import { enqueueMessengerMediaJob, refreshMessageAttachmentsJson } from "../messenger-media";
+import { ensureMessengerIntegrationCoreSchema } from "../messenger-schema";
+import {
+  messengerObjectKey,
+  messengerStorageProxyUrl,
+  messengerStorageStatus,
+  putMessengerStorageObject,
+  getMessengerStorageObject,
+  safeStorageFileName,
+} from "../messenger-storage";
+import { getMessengerOrganizationId } from "../messenger-tenant";
+import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
+
+type SecretPayload = {
+  v?: unknown;
+  alg?: unknown;
+  iv?: unknown;
+  tag?: unknown;
+  data?: unknown;
+};
+
+type TelegramAccountRow = {
+  id: string;
+  organizationId: string;
+  channel: "telegram";
+  mode: "user_session";
+  displayName: string;
+  phone: string | null;
+  username: string | null;
+  isActive: boolean;
+  status: MessengerAccountStatus;
+  lastSyncAt: Date | null;
+  errorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  conversationCount?: number;
+};
+
+type TelegramSessionRow = {
+  id: string;
+  messengerAccountId: string;
+  phone: string;
+  apiIdEncrypted: SecretPayload | null;
+  apiHashEncrypted: SecretPayload | null;
+  sessionEncrypted: SecretPayload | null;
+  phoneCodeHashEncrypted: SecretPayload | null;
+  qrTokenEncrypted: SecretPayload | null;
+  qrExpiresAt: Date | null;
+  authAttemptId: string | null;
+  authDcId: string | null;
+  authDeliveryType: string | null;
+  authNextType: string | null;
+  authTimeout: number | null;
+  authExpiresAt: Date | null;
+  status: MessengerAccountStatus;
+  lastAuthorizedAt: Date | null;
+  lastSyncAt: Date | null;
+  errorMessage: string | null;
+};
+
+type TelegramCodeDelivery = {
+  type: string;
+  label: string;
+  nextType: string | null;
+  timeout: number | null;
+  codeLength: number | null;
+};
+
+type TelegramPeer = {
+  id?: unknown;
+  userId?: unknown;
+  channelId?: unknown;
+  chatId?: unknown;
+  className?: string;
+};
+
+type TelegramDialog = {
+  id?: unknown;
+  title?: string;
+  name?: string;
+  unreadCount?: number;
+  archived?: boolean;
+  folderId?: number | null;
+  isArchived?: boolean;
+  isChannel?: boolean;
+  isGroup?: boolean;
+  isUser?: boolean;
+  inputEntity?: unknown;
+  dialog?: {
+    peer?: TelegramPeer | unknown;
+    folderId?: number | null;
+  };
+  entity?: {
+    id?: unknown;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    title?: string;
+    photo?: unknown;
+    bot?: boolean;
+    broadcast?: boolean;
+    megagroup?: boolean;
+    gigagroup?: boolean;
+    className?: string;
+  };
+  message?: TelegramMessage;
+};
+
+type TelegramMessage = {
+  id?: unknown;
+  message?: string;
+  text?: string;
+  date?: number | Date;
+  out?: boolean;
+  senderId?: unknown;
+  peerId?: TelegramPeer | unknown;
+  media?: unknown;
+  groupedId?: unknown;
+};
+
+type TelegramRuntimeClient = {
+  connect(): Promise<void>;
+  disconnect?: () => Promise<void>;
+  invoke(input: unknown): Promise<unknown>;
+  addEventHandler?: (callback: (update: unknown) => void) => void;
+  getMe?: () => Promise<unknown>;
+  isUserAuthorized?: () => Promise<boolean>;
+  getDialogs(input: { limit: number }): Promise<unknown>;
+  getMessages(entity: unknown, input: { limit?: number; ids?: number | number[] }): Promise<unknown>;
+  sendMessage(entity: unknown, input: { message: string }): Promise<{ id?: unknown }>;
+  sendFile?(entity: unknown, input: { file: Buffer | string; caption?: string; forceDocument?: boolean; fileSize?: number; workers?: number }): Promise<{ id?: unknown }>;
+  downloadMedia?: (messageOrMedia: unknown, input?: Record<string, unknown>) => Promise<string | Buffer | undefined>;
+  downloadProfilePhoto?: (entity: unknown, input?: { isBig?: boolean }) => Promise<string | Buffer | undefined>;
+  session?: { save?: () => string };
+};
+
+type GramJsModule = {
+  TelegramClient: new (session: unknown, apiId: number, apiHash: string, options: Record<string, unknown>) => unknown;
+  StringSession: new (session: string) => unknown;
+  Api: {
+    auth: {
+      SendCode: new (input: Record<string, unknown>) => unknown;
+      ResendCode: new (input: Record<string, unknown>) => unknown;
+      SignIn: new (input: Record<string, unknown>) => unknown;
+      CheckPassword: new (input: Record<string, unknown>) => unknown;
+      ExportLoginToken: new (input: Record<string, unknown>) => unknown;
+      ImportLoginToken: new (input: Record<string, unknown>) => unknown;
+    };
+    account: {
+      GetPassword: new () => unknown;
+    };
+    CodeSettings: new (input: Record<string, unknown>) => unknown;
+  };
+  Password: {
+    computeCheck(request: unknown, password: string): Promise<unknown>;
+  };
+  version?: string;
+};
+
+const ENCRYPTION_VERSION = 1;
+let schemaEnsurePromise: Promise<void> | null = null;
+
+type TelegramQrRuntimeAttempt = {
+  accountId: string;
+  sessionId: string;
+  phone: string | null;
+  client: TelegramRuntimeClient;
+  apiId: number;
+  apiHash: string;
+  attemptId: string;
+  expiresAt: Date;
+  tokenBase64: string;
+  loginUrl: string;
+  qrImageDataUrl: string;
+  status: "pending" | "connected" | "waiting_password" | "error";
+  account?: MessengerAccount;
+  error?: string;
+  finalizing?: Promise<void>;
+};
+
+const qrRuntimeAttempts = new Map<string, TelegramQrRuntimeAttempt>();
+
+function encryptionKey() {
+  const source = [
+    process.env.TELEGRAM_SESSION_ENCRYPTION_KEY,
+    process.env.MESSENGER_SETTINGS_SECRET,
+    process.env.SESSION_SECRET,
+    process.env.AUTH_SALT,
+    "eco-telegram-user-session",
+  ]
+    .filter(Boolean)
+    .join(":");
+  return crypto.createHash("sha256").update(source).digest();
+}
+
+function encryptSecret(value: string) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    v: ENCRYPTION_VERSION,
+    alg: "aes-256-gcm",
+    iv: iv.toString("base64url"),
+    tag: tag.toString("base64url"),
+    data: encrypted.toString("base64url"),
+  };
+}
+
+function encryptedJson(value: string) {
+  return JSON.stringify(encryptSecret(value));
+}
+
+function decryptSecret(payload: SecretPayload | null | undefined) {
+  if (!payload || payload.v !== ENCRYPTION_VERSION || payload.alg !== "aes-256-gcm") return null;
+  if (typeof payload.iv !== "string" || typeof payload.tag !== "string" || typeof payload.data !== "string") return null;
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(payload.iv, "base64url"));
+    decipher.setAuthTag(Buffer.from(payload.tag, "base64url"));
+    return Buffer.concat([decipher.update(Buffer.from(payload.data, "base64url")), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function normalizePhone(phone: string) {
+  const compact = phone.replace(/[^\d+]/g, "").replace(/^00/, "+").trim();
+  if (/^8\d{10}$/.test(compact)) return `+7${compact.slice(1)}`;
+  if (/^7\d{10}$/.test(compact)) return `+${compact}`;
+  return compact;
+}
+
+function configuredApiId() {
+  const raw = process.env.TELEGRAM_API_ID?.trim() ?? "";
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function configuredApiHash() {
+  return process.env.TELEGRAM_API_HASH?.trim() || null;
+}
+
+function isEnabled() {
+  return process.env.TELEGRAM_USER_SESSION_ENABLED === "true";
+}
+
+function redact(value: string) {
+  const apiHash = configuredApiHash();
+  return apiHash ? value.split(apiHash).join("[TELEGRAM_API_HASH]") : value;
+}
+
+function maskPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length <= 4) return "***";
+  return `***${digits.slice(-4)}`;
+}
+
+function logCodeDelivery(action: "sendCode" | "resendCode", phone: string, delivery: TelegramCodeDelivery) {
+  console.info("[messenger.telegram_user.auth]", {
+    action,
+    phone: maskPhone(phone),
+    production: true,
+    testServers: false,
+    deliveryType: delivery.type,
+    deliveryLabel: delivery.label,
+    nextType: delivery.nextType,
+    timeout: delivery.timeout,
+    codeLength: delivery.codeLength,
+  });
+}
+
+function logAuthState(action: string, phone: string, accountId?: string | null) {
+  console.info("[messenger.telegram_user.auth]", {
+    action,
+    phone: maskPhone(phone),
+    accountId: accountId ?? null,
+  });
+}
+
+function logAuthAttempt(payload: Record<string, unknown>) {
+  console.info("[messenger.telegram_user.auth]", {
+    production: true,
+    testServers: false,
+    ...payload,
+  });
+}
+
+function logSyncState(action: string, payload: Record<string, unknown>) {
+  console.info("[messenger.telegram_user.sync]", {
+    action,
+    ...payload,
+  });
+}
+
+async function loadGramJs(): Promise<GramJsModule> {
+  try {
+    const telegram = await import("telegram");
+    const sessions = await import("telegram/sessions");
+    return {
+      TelegramClient: telegram.TelegramClient as GramJsModule["TelegramClient"],
+      Api: telegram.Api as GramJsModule["Api"],
+      StringSession: sessions.StringSession as GramJsModule["StringSession"],
+      Password: telegram.password as GramJsModule["Password"],
+      version: typeof telegram.version === "string" ? telegram.version : undefined,
+    };
+  } catch {
+    throw new Error("MTProto client не установлен. Добавьте dependency `telegram` (GramJS) и задеплойте backend.");
+  }
+}
+
+async function getClient(session = "") {
+  if (!isEnabled()) throw new Error("TELEGRAM_USER_SESSION_ENABLED=true не задан на backend.");
+  const apiId = configuredApiId();
+  const apiHash = configuredApiHash();
+  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  const { TelegramClient, StringSession } = await loadGramJs();
+  const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
+    connectionRetries: 3,
+    testServers: false,
+    useWSS: true,
+  }) as TelegramRuntimeClient;
+  await client.connect();
+  return client;
+}
+
+function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
+  const disconnect = client.disconnect;
+  if (!disconnect) return;
+  void disconnect.call(client).catch((error) => {
+    console.warn("[messenger.telegram_user.auth]", {
+      action: "disconnect_failed",
+      error: safeError(error, "Telegram disconnect failed"),
+    });
+  });
+}
+
+function statusToConnection(status?: MessengerAccountStatus): MessengerConnection["connectionStatus"] {
+  if (!isEnabled()) return "disabled";
+  if (status === "connected") return "connected";
+  if (status === "error" || status === "needs_auth") return "error";
+  return "not_connected";
+}
+
+function toPublicAccount(row: TelegramAccountRow): MessengerAccount {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    channel: "telegram",
+    mode: "user_session",
+    displayName: row.displayName,
+    phone: row.phone,
+    username: row.username,
+    isActive: row.isActive,
+    enabled: row.isActive,
+    status: row.status,
+    lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
+    errorMessage: row.errorMessage,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    conversationCount: Number(row.conversationCount ?? 0),
+  };
+}
+
+function safeError(error: unknown, fallback = "Telegram user session failed") {
+  return redact(error instanceof Error ? error.message : fallback);
+}
+
+async function ensureTelegramUserSchema() {
+  if (!schemaEnsurePromise) {
+    schemaEnsurePromise = (async () => {
+      await ensureMessengerIntegrationCoreSchema();
+      await prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS messenger_accounts (
+          id TEXT PRIMARY KEY,
+          organization_id TEXT NOT NULL DEFAULT 'default',
+          channel TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          display_name TEXT NOT NULL DEFAULT '',
+          phone TEXT,
+          username TEXT,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          status TEXT NOT NULL DEFAULT 'disconnected',
+          last_sync_at TIMESTAMPTZ,
+          error_message TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS telegram_user_sessions (
+          id TEXT PRIMARY KEY,
+          organization_id TEXT NOT NULL DEFAULT 'default',
+          messenger_account_id TEXT,
+          phone TEXT NOT NULL,
+          api_id_encrypted JSONB,
+          api_hash_encrypted JSONB,
+          session_encrypted JSONB,
+          phone_code_hash_encrypted JSONB,
+          qr_token_encrypted JSONB,
+          qr_expires_at TIMESTAMPTZ,
+          auth_attempt_id TEXT,
+          auth_dc_id TEXT,
+          auth_delivery_type TEXT,
+          auth_next_type TEXT,
+          auth_timeout INTEGER,
+          auth_expires_at TIMESTAMPTZ,
+          status TEXT NOT NULL DEFAULT 'disconnected',
+          last_authorized_at TIMESTAMPTZ,
+          last_sync_at TIMESTAMPTZ,
+          error_message TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
+      await prisma.$executeRaw`
+        ALTER TABLE telegram_user_sessions
+          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
+          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT,
+          ADD COLUMN IF NOT EXISTS api_id_encrypted JSONB,
+          ADD COLUMN IF NOT EXISTS api_hash_encrypted JSONB,
+          ADD COLUMN IF NOT EXISTS session_encrypted JSONB,
+          ADD COLUMN IF NOT EXISTS phone_code_hash_encrypted JSONB,
+          ADD COLUMN IF NOT EXISTS qr_token_encrypted JSONB,
+          ADD COLUMN IF NOT EXISTS qr_expires_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS auth_attempt_id TEXT,
+          ADD COLUMN IF NOT EXISTS auth_dc_id TEXT,
+          ADD COLUMN IF NOT EXISTS auth_delivery_type TEXT,
+          ADD COLUMN IF NOT EXISTS auth_next_type TEXT,
+          ADD COLUMN IF NOT EXISTS auth_timeout INTEGER,
+          ADD COLUMN IF NOT EXISTS auth_expires_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS last_authorized_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS error_message TEXT,
+          ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      `;
+      await prisma.$executeRaw`
+        ALTER TABLE messenger_conversations
+          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
+          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT,
+          ADD COLUMN IF NOT EXISTS external_chat_id TEXT,
+          ADD COLUMN IF NOT EXISTS external_user_id TEXT,
+          ADD COLUMN IF NOT EXISTS participant_username TEXT
+      `;
+      await prisma.$executeRaw`
+        ALTER TABLE messenger_outbox
+          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
+          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT
+      `;
+      await prisma.$executeRaw`
+        ALTER TABLE messenger_messages
+          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
+          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT
+      `;
+      await prisma.$executeRaw`
+        CREATE UNIQUE INDEX IF NOT EXISTS telegram_user_sessions_account_uidx
+          ON telegram_user_sessions(messenger_account_id)
+      `;
+      await prisma.$executeRaw`
+        CREATE INDEX IF NOT EXISTS messenger_conversations_account_idx
+          ON messenger_conversations(messenger_account_id)
+      `;
+      await prisma.$executeRaw`
+        CREATE INDEX IF NOT EXISTS messenger_conversations_external_chat_idx
+          ON messenger_conversations(channel, external_chat_id)
+      `;
+      await prisma.$executeRaw`
+        CREATE UNIQUE INDEX IF NOT EXISTS messenger_conversations_channel_external_uidx
+          ON messenger_conversations(channel, external_conversation_id)
+      `;
+      await prisma.$executeRaw`
+        CREATE UNIQUE INDEX IF NOT EXISTS messenger_messages_channel_external_uidx
+          ON messenger_messages(channel, external_message_id)
+          WHERE external_message_id IS NOT NULL
+      `;
+      await prisma.$executeRaw`
+        CREATE INDEX IF NOT EXISTS messenger_outbox_account_idx
+          ON messenger_outbox(messenger_account_id)
+      `;
+    })().catch((error) => {
+      schemaEnsurePromise = null;
+      throw error;
+    });
+  }
+  await schemaEnsurePromise;
+}
+
+export async function listTelegramUserAccounts(): Promise<MessengerAccount[]> {
+  try {
+    await ensureTelegramUserSchema();
+    const organizationId = getMessengerOrganizationId();
+    const rows = await prisma.$queryRaw<TelegramAccountRow[]>`
+      SELECT
+        ma.id,
+        ma.organization_id AS "organizationId",
+        ma.channel,
+        ma.mode,
+        ma.display_name AS "displayName",
+        ma.phone,
+        ma.username,
+        ma.is_active AS "isActive",
+        ma.status,
+        ma.last_sync_at AS "lastSyncAt",
+        ma.error_message AS "errorMessage",
+        ma.created_at AS "createdAt",
+        ma.updated_at AS "updatedAt",
+        COUNT(mc.id)::int AS "conversationCount"
+      FROM messenger_accounts ma
+      LEFT JOIN messenger_conversations mc ON mc.messenger_account_id = ma.id AND mc.organization_id = ma.organization_id
+      WHERE ma.organization_id = ${organizationId}
+        AND ma.channel = 'telegram'
+        AND ma.mode = 'user_session'
+      GROUP BY ma.id
+      ORDER BY ma.updated_at DESC
+    `;
+    return rows.map(toPublicAccount);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("messenger_accounts")) return [];
+    throw error;
+  }
+}
+
+export async function getActiveTelegramUserAccount() {
+  const accounts = await listTelegramUserAccounts();
+  return accounts.find((account) => account.isActive && account.status === "connected") ?? accounts[0] ?? null;
+}
+
+async function getSessionByAccount(accountId: string) {
+  await ensureTelegramUserSchema();
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<TelegramSessionRow[]>`
+    SELECT
+      id,
+      messenger_account_id AS "messengerAccountId",
+      phone,
+      api_id_encrypted AS "apiIdEncrypted",
+      api_hash_encrypted AS "apiHashEncrypted",
+      session_encrypted AS "sessionEncrypted",
+      phone_code_hash_encrypted AS "phoneCodeHashEncrypted",
+      qr_token_encrypted AS "qrTokenEncrypted",
+      qr_expires_at AS "qrExpiresAt",
+      auth_attempt_id AS "authAttemptId",
+      auth_dc_id AS "authDcId",
+      auth_delivery_type AS "authDeliveryType",
+      auth_next_type AS "authNextType",
+      auth_timeout AS "authTimeout",
+      auth_expires_at AS "authExpiresAt",
+      status,
+      last_authorized_at AS "lastAuthorizedAt",
+      last_sync_at AS "lastSyncAt",
+      error_message AS "errorMessage"
+    FROM telegram_user_sessions
+    WHERE messenger_account_id = ${accountId}
+      AND organization_id = ${organizationId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function updateAccountStatus(accountId: string, status: MessengerAccountStatus, errorMessage?: string | null) {
+  await ensureTelegramUserSchema();
+  const organizationId = getMessengerOrganizationId();
+  await prisma.$executeRaw`
+    UPDATE messenger_accounts
+    SET status = ${status},
+        is_active = ${status !== "disconnected"},
+        enabled = ${status !== "disconnected"},
+        error_message = ${errorMessage ?? null},
+        disconnected_at = CASE WHEN ${status} = 'disconnected' THEN now() ELSE disconnected_at END,
+        updated_at = now()
+    WHERE id = ${accountId}
+      AND organization_id = ${organizationId}
+  `;
+  await prisma.$executeRaw`
+    UPDATE telegram_user_sessions
+    SET status = ${status},
+        error_message = ${errorMessage ?? null},
+        updated_at = now()
+    WHERE messenger_account_id = ${accountId}
+      AND organization_id = ${organizationId}
+  `;
+}
+
+export async function startTelegramUserAuth(phoneInput: string) {
+  const phone = normalizePhone(phoneInput);
+  if (!phone || phone.length < 8) throw new Error("Укажите рабочий Telegram-номер в международном формате.");
+  const apiId = configuredApiId();
+  const apiHash = configuredApiHash();
+  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  await ensureTelegramUserSchema();
+  const organizationId = getMessengerOrganizationId();
+  const attemptId = crypto.randomUUID();
+  const accountId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  const client = await getClient("");
+  try {
+    const { Api, version } = await loadGramJs();
+    logAuthAttempt({
+      action: "send_code_start",
+      attemptId,
+      phone: maskPhone(phone),
+      gramJsVersion: version ?? "unknown",
+    });
+    const result = await client.invoke(
+      new Api.auth.SendCode({
+        phoneNumber: phone,
+        apiId,
+        apiHash,
+        settings: new Api.CodeSettings({}),
+      })
+    );
+    const sessionString = client.session?.save?.() ? String(client.session.save()) : "";
+    const phoneCodeHash = String(objectField(result, "phoneCodeHash") ?? "");
+    const codeDelivery = sentCodeDelivery(result);
+    const authExpiresAt = codeDelivery.timeout ? new Date(Date.now() + codeDelivery.timeout * 1000) : null;
+    logCodeDelivery("sendCode", phone, codeDelivery);
+    let rows = await prisma.$queryRaw<TelegramAccountRow[]>`
+      SELECT
+        id,
+        organization_id AS "organizationId",
+        channel,
+        mode,
+        display_name AS "displayName",
+        phone,
+        username,
+        is_active AS "isActive",
+        status,
+        last_sync_at AS "lastSyncAt",
+        error_message AS "errorMessage",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM messenger_accounts
+      WHERE organization_id = ${organizationId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    rows = rows[0]
+      ? await prisma.$queryRaw<TelegramAccountRow[]>`
+          UPDATE messenger_accounts
+          SET display_name = ${phone},
+              is_active = true,
+              enabled = true,
+              status = 'waiting_code',
+              error_message = NULL,
+              updated_at = now()
+          WHERE id = ${rows[0].id}
+          RETURNING
+            id,
+            organization_id AS "organizationId",
+            channel,
+            mode,
+            display_name AS "displayName",
+            phone,
+            username,
+            is_active AS "isActive",
+            status,
+            last_sync_at AS "lastSyncAt",
+            error_message AS "errorMessage",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `
+      : await prisma.$queryRaw<TelegramAccountRow[]>`
+          INSERT INTO messenger_accounts
+            (id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
+          VALUES
+            (${accountId}, ${organizationId}, 'telegram', 'user_session', ${phone}, ${phone}, true, true, 'waiting_code',
+             ${JSON.stringify({ mode: "user_session", source: "telegram_user_auth" })}::jsonb, now(), now())
+          RETURNING
+            id,
+            organization_id AS "organizationId",
+            channel,
+            mode,
+            display_name AS "displayName",
+            phone,
+            username,
+            is_active AS "isActive",
+            status,
+            last_sync_at AS "lastSyncAt",
+            error_message AS "errorMessage",
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+        `;
+    if (!rows[0]) throw new Error("Не удалось сохранить Telegram account.");
+    const actualAccountId = rows[0].id;
+    await prisma.$executeRaw`
+      DELETE FROM telegram_user_sessions
+      WHERE messenger_account_id IN (
+        SELECT id
+        FROM messenger_accounts
+        WHERE organization_id = ${organizationId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone} AND id <> ${actualAccountId}
+      )
+    `;
+    await prisma.$executeRaw`
+      UPDATE messenger_accounts
+      SET is_active = false,
+          status = 'disconnected',
+          error_message = 'Duplicate Telegram account record archived',
+          updated_at = now()
+      WHERE channel = 'telegram' AND mode = 'user_session' AND phone = ${phone} AND id <> ${actualAccountId}
+        AND organization_id = ${organizationId}
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO telegram_user_sessions
+        (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, phone_code_hash_encrypted,
+         auth_attempt_id, auth_dc_id, auth_delivery_type, auth_next_type, auth_timeout, auth_expires_at,
+         status, created_at, updated_at)
+      VALUES
+        (${sessionId}, ${organizationId}, ${actualAccountId}, ${phone}, ${encryptedJson(String(apiId))}::jsonb, ${encryptedJson(apiHash)}::jsonb,
+         ${encryptedJson(sessionString)}::jsonb, ${encryptedJson(phoneCodeHash)}::jsonb,
+         ${attemptId}, ${sessionDcId(client.session)}, ${codeDelivery.type}, ${codeDelivery.nextType}, ${codeDelivery.timeout}, ${authExpiresAt},
+         'waiting_code', now(), now())
+      ON CONFLICT (messenger_account_id)
+      DO UPDATE SET
+        phone = EXCLUDED.phone,
+        api_id_encrypted = EXCLUDED.api_id_encrypted,
+        api_hash_encrypted = EXCLUDED.api_hash_encrypted,
+        session_encrypted = EXCLUDED.session_encrypted,
+        phone_code_hash_encrypted = EXCLUDED.phone_code_hash_encrypted,
+        auth_attempt_id = EXCLUDED.auth_attempt_id,
+        auth_dc_id = EXCLUDED.auth_dc_id,
+        auth_delivery_type = EXCLUDED.auth_delivery_type,
+        auth_next_type = EXCLUDED.auth_next_type,
+        auth_timeout = EXCLUDED.auth_timeout,
+        auth_expires_at = EXCLUDED.auth_expires_at,
+        status = 'waiting_code',
+        error_message = NULL,
+        updated_at = now()
+    `;
+    logAuthState("waiting_code_saved", phone, actualAccountId);
+    return { ok: true as const, account: toPublicAccount(rows[0]), codeDelivery };
+  } catch (error) {
+    throw new Error(safeError(error, "Не удалось отправить код Telegram"));
+  } finally {
+    safeDisconnectTelegramClient(client);
+  }
+}
+
+export async function resendTelegramUserCode(accountId: string) {
+  const session = await getSessionByAccount(accountId);
+  if (!session) throw new Error("Telegram session не найдена. Запросите код заново.");
+  const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
+  const phoneCodeHash = decryptSecret(session.phoneCodeHashEncrypted);
+  if (!phoneCodeHash) throw new Error("Кодовая сессия Telegram потеряна. Запросите код заново.");
+  const client = await getClient(sessionString);
+  try {
+    const { Api } = await loadGramJs();
+    const result = await client.invoke(
+      new Api.auth.ResendCode({
+        phoneNumber: session.phone,
+        phoneCodeHash,
+      })
+    );
+    const nextSessionString = client.session?.save?.() ? String(client.session.save()) : sessionString;
+    const nextPhoneCodeHash = String(objectField(result, "phoneCodeHash") ?? phoneCodeHash);
+    const codeDelivery = sentCodeDelivery(result);
+    logCodeDelivery("resendCode", session.phone, codeDelivery);
+    await prisma.$executeRaw`
+      UPDATE telegram_user_sessions
+      SET session_encrypted = ${encryptedJson(nextSessionString)}::jsonb,
+          phone_code_hash_encrypted = ${encryptedJson(nextPhoneCodeHash)}::jsonb,
+          status = 'waiting_code',
+          error_message = NULL,
+          updated_at = now()
+      WHERE messenger_account_id = ${accountId}
+    `;
+    await prisma.$executeRaw`
+      UPDATE messenger_accounts
+      SET status = 'waiting_code',
+          is_active = true,
+          error_message = NULL,
+          updated_at = now()
+      WHERE id = ${accountId}
+    `;
+    return { ok: true as const, accountId, codeDelivery };
+  } catch (error) {
+    throw new Error(safeError(error, "Не удалось повторно запросить код Telegram"));
+  } finally {
+    safeDisconnectTelegramClient(client);
+  }
+}
+
+export async function startTelegramUserQrAuth(phoneInput = "") {
+  const phone = phoneInput.trim() ? normalizePhone(phoneInput) : null;
+  const apiId = configuredApiId();
+  const apiHash = configuredApiHash();
+  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  await ensureTelegramUserSchema();
+  cleanupQrRuntimeAttempts();
+  const attemptId = crypto.randomUUID();
+  const accountId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  const client = await getClient("");
+  try {
+    const { Api, version } = await loadGramJs();
+    logAuthAttempt({
+      action: "qr_start",
+      attemptId,
+      phone: phone ? maskPhone(phone) : null,
+      gramJsVersion: version ?? "unknown",
+    });
+    const result = await client.invoke(
+      new Api.auth.ExportLoginToken({
+        apiId,
+        apiHash,
+        exceptIds: [],
+      })
+    );
+    const { className, token, expiresAt } = loginTokenPayload(result);
+    if (className.includes("LoginTokenSuccess")) {
+      const sessionString = client.session?.save?.() ? String(client.session.save()) : "";
+      const account = await createQrAccountAndSaveAuthorizedSession(accountId, sessionId, phone, sessionString, authorizationUser(result));
+      safeDisconnectTelegramClient(client);
+      return { ok: true as const, connected: true, account };
+    }
+    if (!className.includes("LoginToken")) throw new Error(`Telegram QR вернул неожиданный ответ: ${className || "unknown"}.`);
+    const sessionString = client.session?.save?.() ? String(client.session.save()) : "";
+    const login = loginTokenUrl(token);
+    await createOrUpdateQrSession({
+      accountId,
+      sessionId,
+      phone,
+      sessionString,
+      tokenBase64: login.tokenBase64,
+      expiresAt,
+      attemptId,
+    });
+    const qrDataUrl = await qrImageDataUrl(login.url);
+    const runtimeAttempt: TelegramQrRuntimeAttempt = {
+      accountId,
+      sessionId,
+      phone,
+      client,
+      apiId,
+      apiHash,
+      attemptId,
+      expiresAt,
+      tokenBase64: login.tokenBase64,
+      loginUrl: login.url,
+      qrImageDataUrl: qrDataUrl,
+      status: "pending",
+    };
+    attachQrRuntimeHandler(runtimeAttempt);
+    qrRuntimeAttempts.set(accountId, runtimeAttempt);
+    return {
+      ok: true as const,
+      connected: false,
+      accountId,
+      qrLoginUrl: login.url,
+      qrImageDataUrl: qrDataUrl,
+      expiresAt: expiresAt.toISOString(),
+    };
+  } catch (error) {
+    safeDisconnectTelegramClient(client);
+    throw new Error(safeError(error, "Не удалось создать QR Telegram"));
+  }
+}
+
+type QrSessionInput = {
+  accountId: string;
+  sessionId: string;
+  phone: string | null;
+  sessionString: string;
+  tokenBase64: string;
+  expiresAt: Date;
+  attemptId: string;
+};
+
+async function createOrUpdateQrSession(input: QrSessionInput) {
+  const display = input.phone ?? "Telegram QR";
+  const organizationId = getMessengerOrganizationId();
+  await prisma.$executeRaw`
+    INSERT INTO messenger_accounts
+      (id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
+    VALUES
+      (${input.accountId}, ${organizationId}, 'telegram', 'user_session', ${display}, ${input.phone}, true, true, 'waiting_qr',
+       ${JSON.stringify({ mode: "user_session", auth: "qr" })}::jsonb, now(), now())
+    ON CONFLICT (id)
+    DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      display_name = EXCLUDED.display_name,
+      phone = EXCLUDED.phone,
+      is_active = true,
+      enabled = true,
+      status = 'waiting_qr',
+      error_message = NULL,
+      updated_at = now()
+  `;
+  await prisma.$executeRaw`
+    INSERT INTO telegram_user_sessions
+      (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, qr_token_encrypted, qr_expires_at,
+       auth_attempt_id, auth_dc_id, status, created_at, updated_at)
+    VALUES
+      (${input.sessionId}, ${organizationId}, ${input.accountId}, ${input.phone ?? "qr"}, ${encryptedJson(String(configuredApiId()))}::jsonb,
+       ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(input.sessionString)}::jsonb,
+       ${encryptedJson(input.tokenBase64)}::jsonb, ${input.expiresAt}, ${input.attemptId}, NULL, 'waiting_qr', now(), now())
+    ON CONFLICT (messenger_account_id)
+    DO UPDATE SET
+      phone = EXCLUDED.phone,
+      api_id_encrypted = EXCLUDED.api_id_encrypted,
+      api_hash_encrypted = EXCLUDED.api_hash_encrypted,
+      session_encrypted = EXCLUDED.session_encrypted,
+      qr_token_encrypted = EXCLUDED.qr_token_encrypted,
+      qr_expires_at = EXCLUDED.qr_expires_at,
+      auth_attempt_id = EXCLUDED.auth_attempt_id,
+      status = 'waiting_qr',
+      error_message = NULL,
+      updated_at = now()
+  `;
+}
+
+async function createQrAccountAndSaveAuthorizedSession(accountId: string, sessionId: string, phone: string | null, sessionString: string, user: unknown) {
+  await createOrUpdateQrSession({
+    accountId,
+    sessionId,
+    phone,
+    sessionString,
+    tokenBase64: "connected",
+    expiresAt: new Date(),
+    attemptId: crypto.randomUUID(),
+  });
+  return saveAuthorizedTelegramSession(accountId, sessionString, phone ?? "qr", user);
+}
+
+function cleanupQrRuntimeAttempts() {
+  const now = Date.now();
+  for (const [accountId, attempt] of qrRuntimeAttempts.entries()) {
+    const expired = attempt.expiresAt.getTime() + 60_000 < now;
+    const done = attempt.status === "connected" || attempt.status === "waiting_password" || attempt.status === "error";
+    if (!expired && !done) continue;
+    qrRuntimeAttempts.delete(accountId);
+    safeDisconnectTelegramClient(attempt.client);
+  }
+}
+
+function attachQrRuntimeHandler(attempt: TelegramQrRuntimeAttempt) {
+  if (typeof attempt.client.addEventHandler !== "function") {
+    attempt.status = "error";
+    attempt.error = "MTProto client не поддерживает ожидание QR update.";
+    return;
+  }
+  attempt.client.addEventHandler((update: unknown) => {
+    if (!telegramClassName(update).includes("UpdateLoginToken")) return;
+    attempt.finalizing = finalizeQrRuntimeAttempt(attempt).catch((error) => {
+      attempt.status = "error";
+      attempt.error = safeError(error, "QR Telegram не подтверждён");
+    });
+  });
+}
+
+async function finalizeQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
+  if (attempt.status !== "pending") return;
+  const { Api } = await loadGramJs();
+  try {
+    let result = await attempt.client.invoke(
+      new Api.auth.ExportLoginToken({
+        apiId: attempt.apiId,
+        apiHash: attempt.apiHash,
+        exceptIds: [],
+      })
+    );
+    let className = telegramClassName(result);
+    if (className.includes("LoginTokenMigrateTo")) {
+      const dcId = objectField(result, "dcId");
+      const token = objectField(result, "token");
+      const switcher = attempt.client as TelegramRuntimeClient & { _switchDC?: (dcId: number) => Promise<void> };
+      if (typeof switcher._switchDC === "function" && typeof dcId === "number") await switcher._switchDC(dcId);
+      result = await attempt.client.invoke(new Api.auth.ImportLoginToken({ token }));
+      className = telegramClassName(result);
+    }
+    if (!className.includes("LoginTokenSuccess")) {
+      throw new Error(`Telegram QR вернул неожиданный ответ после сканирования: ${className || "unknown"}.`);
+    }
+    const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
+    const account = await saveAuthorizedTelegramSession(attempt.accountId, nextSession, attempt.phone ?? "qr", authorizationUser(result));
+    attempt.account = account;
+    attempt.status = "connected";
+    safeDisconnectTelegramClient(attempt.client);
+  } catch (error) {
+    if (isPasswordNeeded(error)) {
+      const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
+      await prisma.$executeRaw`
+        UPDATE telegram_user_sessions
+        SET session_encrypted = ${encryptedJson(nextSession)}::jsonb,
+            status = 'waiting_password',
+            error_message = NULL,
+            updated_at = now()
+        WHERE messenger_account_id = ${attempt.accountId}
+      `;
+      await updateAccountStatus(attempt.accountId, "waiting_password", null);
+      attempt.status = "waiting_password";
+      safeDisconnectTelegramClient(attempt.client);
+      return;
+    }
+    attempt.status = "error";
+    attempt.error = safeError(error, "QR Telegram не подтверждён");
+    await updateAccountStatus(attempt.accountId, "error", attempt.error);
+    safeDisconnectTelegramClient(attempt.client);
+  }
+}
+
+async function saveIfQrClientAuthorized(attempt: TelegramQrRuntimeAttempt) {
+  try {
+    let user: unknown = null;
+    if (typeof attempt.client.getMe === "function") {
+      user = await attempt.client.getMe().catch(() => null);
+    }
+    if (!user && typeof attempt.client.isUserAuthorized === "function") {
+      const isAuthorized = await attempt.client.isUserAuthorized().catch(() => false);
+      if (isAuthorized && typeof attempt.client.getMe === "function") user = await attempt.client.getMe().catch(() => null);
+    }
+    if (!user) return false;
+    const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
+    attempt.account = await saveAuthorizedTelegramSession(attempt.accountId, nextSession, attempt.phone ?? "qr", user);
+    attempt.status = "connected";
+    safeDisconnectTelegramClient(attempt.client);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function refreshQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
+  const { Api } = await loadGramJs();
+  const result = await attempt.client.invoke(
+    new Api.auth.ExportLoginToken({
+      apiId: attempt.apiId,
+      apiHash: attempt.apiHash,
+      exceptIds: [],
+    })
+  );
+  const { className, token, expiresAt } = loginTokenPayload(result);
+  if (className.includes("LoginTokenSuccess")) {
+    const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
+    attempt.account = await saveAuthorizedTelegramSession(attempt.accountId, nextSession, attempt.phone ?? "qr", authorizationUser(result));
+    attempt.status = "connected";
+    safeDisconnectTelegramClient(attempt.client);
+    return;
+  }
+  if (!className.includes("LoginToken")) throw new Error(`Telegram QR вернул неожиданный ответ: ${className || "unknown"}.`);
+  const login = loginTokenUrl(token);
+  const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
+  await createOrUpdateQrSession({
+    accountId: attempt.accountId,
+    sessionId: attempt.sessionId,
+    phone: attempt.phone,
+    sessionString: nextSession,
+    tokenBase64: login.tokenBase64,
+    expiresAt,
+    attemptId: attempt.attemptId,
+  });
+  attempt.tokenBase64 = login.tokenBase64;
+  attempt.loginUrl = login.url;
+  attempt.qrImageDataUrl = await qrImageDataUrl(login.url);
+  attempt.expiresAt = expiresAt;
+}
+
+export async function checkTelegramUserQrAuth(accountId: string) {
+  cleanupQrRuntimeAttempts();
+  const runtimeAttempt = qrRuntimeAttempts.get(accountId);
+  if (runtimeAttempt) {
+    if (runtimeAttempt.finalizing) await runtimeAttempt.finalizing;
+    if (runtimeAttempt.status === "pending") await saveIfQrClientAuthorized(runtimeAttempt);
+    if (runtimeAttempt.status === "connected" && runtimeAttempt.account) {
+      qrRuntimeAttempts.delete(accountId);
+      return { ok: true as const, connected: true, account: runtimeAttempt.account };
+    }
+    if (runtimeAttempt.status === "waiting_password") {
+      qrRuntimeAttempts.delete(accountId);
+      return { ok: true as const, connected: false, needsPassword: true, accountId };
+    }
+    if (runtimeAttempt.status === "error") throw new Error(runtimeAttempt.error ?? "QR Telegram не подтверждён");
+    if (runtimeAttempt.expiresAt.getTime() < Date.now() + 4000) await refreshQrRuntimeAttempt(runtimeAttempt);
+    return {
+      ok: true as const,
+      connected: false,
+      accountId,
+      qrLoginUrl: runtimeAttempt.loginUrl,
+      qrImageDataUrl: runtimeAttempt.qrImageDataUrl,
+      expiresAt: runtimeAttempt.expiresAt.toISOString(),
+    };
+  }
+  const session = await getSessionByAccount(accountId);
+  if (!session) throw new Error("QR session не найдена. Создайте QR заново.");
+  const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
+  const apiId = configuredApiId();
+  const apiHash = configuredApiHash();
+  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  if (!sessionString) throw new Error("QR session потеряна. Создайте QR заново.");
+  const client = await getClient(sessionString);
+  const adoptedAttempt: TelegramQrRuntimeAttempt = {
+    accountId,
+    sessionId: session.id,
+    phone: session.phone === "qr" ? null : session.phone,
+    client,
+    apiId,
+    apiHash,
+    attemptId: session.authAttemptId ?? crypto.randomUUID(),
+    expiresAt: session.qrExpiresAt ?? new Date(Date.now() + 25_000),
+    tokenBase64: decryptSecret(session.qrTokenEncrypted) ?? "",
+    loginUrl: "",
+    qrImageDataUrl: "",
+    status: "pending",
+  };
+  try {
+    if (await saveIfQrClientAuthorized(adoptedAttempt)) {
+      qrRuntimeAttempts.delete(accountId);
+      return { ok: true as const, connected: true, account: adoptedAttempt.account };
+    }
+    const { Api } = await loadGramJs();
+    const result = await client.invoke(new Api.auth.ExportLoginToken({ apiId, apiHash, exceptIds: [] }));
+    const className = telegramClassName(result);
+    if (className.includes("LoginTokenMigrateTo")) {
+      const dcId = objectField(result, "dcId");
+      const token = objectField(result, "token");
+      const switcher = client as TelegramRuntimeClient & { _switchDC?: (dcId: number) => Promise<void> };
+      if (typeof switcher._switchDC === "function" && typeof dcId === "number") await switcher._switchDC(dcId);
+      const migratedResult = await client.invoke(new Api.auth.ImportLoginToken({ token }));
+      if (telegramClassName(migratedResult).includes("LoginTokenSuccess")) {
+        const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+        const account = await saveAuthorizedTelegramSession(accountId, nextSession, session.phone, authorizationUser(migratedResult));
+        safeDisconnectTelegramClient(client);
+        return { ok: true as const, connected: true, account };
+      }
+      throw new Error(`Telegram QR вернул неожиданный ответ после миграции: ${telegramClassName(migratedResult) || "unknown"}.`);
+    }
+    if (className.includes("LoginTokenSuccess")) {
+      const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+      const account = await saveAuthorizedTelegramSession(accountId, nextSession, session.phone, authorizationUser(result));
+      safeDisconnectTelegramClient(client);
+      return { ok: true as const, connected: true, account };
+    }
+    if (className.includes("LoginToken")) {
+      const { token, expiresAt } = loginTokenPayload(result);
+      const login = loginTokenUrl(token);
+      const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+      const phone = session.phone === "qr" ? null : session.phone;
+      await createOrUpdateQrSession({
+        accountId,
+        sessionId: session.id,
+        phone,
+        sessionString: nextSession,
+        tokenBase64: login.tokenBase64,
+        expiresAt,
+        attemptId: session.authAttemptId ?? crypto.randomUUID(),
+      });
+      const qrDataUrl = await qrImageDataUrl(login.url);
+      const attempt: TelegramQrRuntimeAttempt = {
+        accountId,
+        sessionId: session.id,
+        phone,
+        client,
+        apiId,
+        apiHash,
+        attemptId: session.authAttemptId ?? crypto.randomUUID(),
+        expiresAt,
+        tokenBase64: login.tokenBase64,
+        loginUrl: login.url,
+        qrImageDataUrl: qrDataUrl,
+        status: "pending",
+      };
+      attachQrRuntimeHandler(attempt);
+      qrRuntimeAttempts.set(accountId, attempt);
+      return {
+        ok: true as const,
+        connected: false,
+        accountId,
+        qrLoginUrl: login.url,
+        qrImageDataUrl: qrDataUrl,
+        expiresAt: expiresAt.toISOString(),
+      };
+    }
+    throw new Error(`Telegram QR вернул неожиданный ответ: ${className || "unknown"}.`);
+  } catch (error) {
+    const message = safeError(error, "QR Telegram не подтверждён");
+    if (isPasswordNeeded(error)) {
+      const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+      await prisma.$executeRaw`
+        UPDATE telegram_user_sessions
+        SET session_encrypted = ${encryptedJson(nextSession)}::jsonb,
+            status = 'waiting_password',
+            error_message = NULL,
+            updated_at = now()
+        WHERE messenger_account_id = ${accountId}
+      `;
+      await updateAccountStatus(accountId, "waiting_password", null);
+      safeDisconnectTelegramClient(client);
+      return { ok: true as const, connected: false, needsPassword: true, accountId };
+    }
+    await updateAccountStatus(accountId, "error", message);
+    safeDisconnectTelegramClient(client);
+    throw new Error(message);
+  }
+}
+
+function isPasswordNeeded(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /SESSION_PASSWORD_NEEDED|PASSWORD/i.test(message);
+}
+
+function userField(user: unknown, key: "firstName" | "lastName" | "username" | "phone") {
+  if (!user || typeof user !== "object") return null;
+  const value = (user as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function objectField(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return undefined;
+  return (value as Record<string, unknown>)[key];
+}
+
+function sessionDcId(session: unknown) {
+  const value = objectField(session, "dcId") ?? objectField(session, "_dcId") ?? objectField(session, "dc");
+  return value === undefined || value === null ? null : String(value);
+}
+
+function telegramClassName(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const direct = record.className;
+  if (typeof direct === "string") return direct;
+  const constructorName = (value as { constructor?: { name?: unknown } }).constructor?.name;
+  return typeof constructorName === "string" ? constructorName : "";
+}
+
+function booleanField(value: unknown, key: string) {
+  const raw = objectField(value, key);
+  return typeof raw === "boolean" ? raw : false;
+}
+
+function numericField(value: unknown, key: string) {
+  const raw = objectField(value, key);
+  return typeof raw === "number" ? raw : null;
+}
+
+function isMainInboxDialog(dialog: TelegramDialog) {
+  const folderId = dialog.folderId ?? dialog.dialog?.folderId ?? numericField(dialog, "folderId");
+  return !dialog.archived && !dialog.isArchived && (folderId === null || folderId === undefined || folderId === 0);
+}
+
+function isConversationDialog(dialog: TelegramDialog) {
+  if (!isMainInboxDialog(dialog)) return false;
+  const entity = dialog.entity ?? {};
+  const entityClass = telegramClassName(entity).toLowerCase();
+  const dialogClass = telegramClassName(dialog).toLowerCase();
+  const inputClass = telegramClassName(dialog.inputEntity).toLowerCase();
+  const classText = `${entityClass} ${dialogClass} ${inputClass}`;
+  const isUser = dialog.isUser || entityClass.includes("user") || inputClass.includes("user");
+  const isChat = dialog.isGroup || entityClass === "chat" || entityClass.includes("chat") || inputClass.includes("chat");
+  const isChannel = dialog.isChannel || entityClass.includes("channel") || inputClass.includes("channel");
+  const isBroadcast = Boolean(entity.broadcast) || booleanField(entity, "broadcast") || classText.includes("broadcast");
+  const isMegaGroup = Boolean(entity.megagroup || entity.gigagroup) || booleanField(entity, "megagroup") || booleanField(entity, "gigagroup");
+  const isBot = Boolean(entity.bot) || booleanField(entity, "bot");
+  if (isBot) return false;
+  if (isUser) return true;
+  if (isChat && !isBroadcast) return true;
+  return isChannel && isMegaGroup && !isBroadcast;
+}
+
+function telegramExternalConversationId(accountId: string, chatId: string) {
+  return `telegram:user:${accountId}:${chatId}`;
+}
+
+function telegramExternalMessageId(conversationId: string, messageId: string) {
+  return `telegram:message:${conversationId}:${messageId}`;
+}
+
+function deliveryLabel(className: string) {
+  const normalized = className.toLowerCase();
+  if (normalized.includes("sentcodetypeapp")) return "Код отправлен в приложение Telegram на рабочем аккаунте.";
+  if (normalized.includes("sentcodetypesms")) return "Код отправлен по SMS.";
+  if (normalized.includes("sentcodetypecall")) return "Код будет продиктован в звонке.";
+  if (normalized.includes("sentcodetypeflashcall")) return "Telegram ожидает flash-call подтверждение.";
+  if (normalized.includes("sentcodetypemissedcall")) return "Telegram ожидает подтверждение пропущенным звонком.";
+  if (normalized.includes("sentcodetypeemail")) return "Код отправлен на email, привязанный к Telegram.";
+  if (normalized.includes("sentcodetypefragment")) return "Код отправлен через Fragment.";
+  return "Telegram принял запрос на код авторизации.";
+}
+
+function sentCodeDelivery(result: unknown): TelegramCodeDelivery {
+  const type = objectField(result, "type");
+  const nextType = objectField(result, "nextType");
+  const timeout = objectField(result, "timeout");
+  const length = objectField(type, "length");
+  const className = telegramClassName(type);
+  return {
+    type: className || "unknown",
+    label: deliveryLabel(className),
+    nextType: telegramClassName(nextType) || null,
+    timeout: typeof timeout === "number" ? timeout : null,
+    codeLength: typeof length === "number" ? length : null,
+  };
+}
+
+function bytesToBuffer(value: unknown) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (Array.isArray(value)) return Buffer.from(value);
+  if (typeof value === "string") return Buffer.from(value, "base64");
+  return Buffer.alloc(0);
+}
+
+function loginTokenUrl(token: unknown) {
+  const buffer = bytesToBuffer(token);
+  if (!buffer.length) throw new Error("Telegram не вернул QR login token.");
+  return {
+    tokenBase64: buffer.toString("base64url"),
+    url: `tg://login?token=${buffer.toString("base64url")}`,
+  };
+}
+
+async function qrImageDataUrl(value: string) {
+  const QRCode = await import("qrcode");
+  return QRCode.toDataURL(value, {
+    margin: 1,
+    scale: 6,
+    errorCorrectionLevel: "M",
+  });
+}
+
+function loginTokenPayload(result: unknown) {
+  const className = telegramClassName(result);
+  const token = objectField(result, "token");
+  const expires = objectField(result, "expires");
+  const expiresAt = typeof expires === "number" ? new Date(expires * 1000) : new Date(Date.now() + 25_000);
+  return { className, token, expiresAt };
+}
+
+function authUser(value: unknown) {
+  return objectField(value, "user") ?? value;
+}
+
+function authorizationUser(value: unknown) {
+  return authUser(objectField(value, "authorization") ?? value);
+}
+
+function userDisplayName(user: unknown, fallback: string) {
+  const parts = [userField(user, "firstName"), userField(user, "lastName")].filter(Boolean);
+  if (parts.length) return parts.join(" ");
+  const username = userField(user, "username");
+  if (username) return `@${username}`;
+  return fallback;
+}
+
+async function saveAuthorizedTelegramSession(accountId: string, sessionString: string, fallbackPhone: string, user: unknown) {
+  const phone = userField(user, "phone") ? `+${userField(user, "phone")?.replace(/^\+/, "")}` : fallbackPhone;
+  const organizationId = getMessengerOrganizationId();
+  await prisma.$executeRaw`
+    UPDATE telegram_user_sessions
+    SET phone = ${phone},
+        session_encrypted = ${encryptedJson(sessionString)}::jsonb,
+        qr_token_encrypted = NULL,
+        qr_expires_at = NULL,
+        status = 'connected',
+        last_authorized_at = now(),
+        error_message = NULL,
+        updated_at = now()
+    WHERE messenger_account_id = ${accountId}
+      AND organization_id = ${organizationId}
+  `;
+  const accountRows = await prisma.$queryRaw<TelegramAccountRow[]>`
+    UPDATE messenger_accounts
+    SET display_name = ${userDisplayName(user, phone)},
+        phone = ${phone},
+        username = ${userField(user, "username")},
+        status = 'connected',
+        is_active = true,
+        enabled = true,
+        connected_at = COALESCE(connected_at, now()),
+        disconnected_at = NULL,
+        error_message = NULL,
+        metadata_json = jsonb_build_object('mode', 'user_session', 'source', 'telegram_user_session'),
+        updated_at = now()
+    WHERE id = ${accountId}
+      AND organization_id = ${organizationId}
+    RETURNING
+      id, organization_id AS "organizationId", channel, mode, display_name AS "displayName", phone, username, is_active AS "isActive", status,
+      last_sync_at AS "lastSyncAt", error_message AS "errorMessage", created_at AS "createdAt", updated_at AS "updatedAt"
+  `;
+  await prisma.$executeRaw`
+    UPDATE messenger_accounts
+    SET is_active = false,
+        enabled = false,
+        disconnected_at = now(),
+        updated_at = now()
+    WHERE organization_id = ${organizationId}
+      AND channel = 'telegram'
+      AND mode = 'user_session'
+      AND id <> ${accountId}
+  `;
+  const account = toPublicAccount(accountRows[0]);
+  void syncTelegramUserAccount(account.id, 30).catch((error) => {
+    console.warn("[messenger.telegram_user.sync]", {
+      action: "post_auth_sync_failed",
+      accountId: account.id,
+      error: safeError(error, "Telegram post-auth sync failed"),
+    });
+  });
+  return account;
+}
+
+export async function confirmTelegramUserCode(accountId: string, codeInput: string) {
+  const code = codeInput.trim().replace(/\s+/g, "");
+  if (!code) throw new Error("Введите код Telegram.");
+  const session = await getSessionByAccount(accountId);
+  if (!session) throw new Error("Telegram session не найдена. Запросите код заново.");
+  const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
+  const phoneCodeHash = decryptSecret(session.phoneCodeHashEncrypted);
+  if (!phoneCodeHash) throw new Error("Кодовая сессия Telegram потеряна. Запросите код заново.");
+  const client = await getClient(sessionString);
+  try {
+    const { Api } = await loadGramJs();
+    const user = await client.invoke(
+      new Api.auth.SignIn({
+        phoneNumber: session.phone,
+        phoneCodeHash,
+        phoneCode: code,
+      })
+    );
+    const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+    const account = await saveAuthorizedTelegramSession(accountId, nextSession, session.phone, authUser(user));
+    return { ok: true as const, needsPassword: false, account };
+  } catch (error) {
+    const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+    await prisma.$executeRaw`
+      UPDATE telegram_user_sessions
+      SET session_encrypted = ${encryptedJson(nextSession)}::jsonb,
+          status = ${isPasswordNeeded(error) ? "waiting_password" : "error"},
+          error_message = ${isPasswordNeeded(error) ? null : safeError(error, "Код Telegram не принят")},
+          updated_at = now()
+      WHERE messenger_account_id = ${accountId}
+    `;
+    await updateAccountStatus(accountId, isPasswordNeeded(error) ? "waiting_password" : "error", isPasswordNeeded(error) ? null : safeError(error));
+    if (isPasswordNeeded(error)) return { ok: true as const, needsPassword: true, accountId };
+    throw new Error(safeError(error, "Код Telegram не принят"));
+  } finally {
+    safeDisconnectTelegramClient(client);
+  }
+}
+
+export async function confirmTelegramUserPassword(accountId: string, password: string) {
+  if (!password) throw new Error("Введите пароль 2FA Telegram.");
+  const session = await getSessionByAccount(accountId);
+  if (!session) throw new Error("Telegram session не найдена. Запросите код заново.");
+  const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
+  const client = await getClient(sessionString);
+  try {
+    const { Api, Password } = await loadGramJs();
+    const passwordInfo = await client.invoke(new Api.account.GetPassword());
+    const passwordCheck = await Password.computeCheck(passwordInfo, password);
+    const authorization = await client.invoke(new Api.auth.CheckPassword({ password: passwordCheck }));
+    const user = authUser(authorization);
+    const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
+    const account = await saveAuthorizedTelegramSession(accountId, nextSession, session.phone, user);
+    return { ok: true as const, account };
+  } catch (error) {
+    await updateAccountStatus(accountId, "error", safeError(error, "Пароль 2FA Telegram не принят"));
+    throw new Error(safeError(error, "Пароль 2FA Telegram не принят"));
+  } finally {
+    safeDisconnectTelegramClient(client);
+  }
+}
+
+function peerId(value: TelegramDialog | TelegramMessage | unknown) {
+  const dialog = value as TelegramDialog;
+  const raw = dialog?.id ?? dialog?.inputEntity ?? dialog?.entity?.id ?? dialog?.dialog?.peer ?? (value as TelegramMessage)?.peerId ?? (value as TelegramMessage)?.senderId;
+  if (raw && typeof raw === "object") {
+    const peer = raw as TelegramPeer;
+    const nestedId = peer.userId ?? peer.channelId ?? peer.chatId ?? peer.id;
+    if (nestedId !== undefined && nestedId !== null) return String(nestedId);
+    if (typeof (raw as { toString?: unknown }).toString === "function") {
+      const text = String((raw as { toString(): string }).toString());
+      return text === "[object Object]" ? "" : text;
+    }
+    return "";
+  }
+  return raw === undefined || raw === null ? "" : String(raw);
+}
+
+function messageDate(value?: number | Date) {
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return new Date(value * 1000);
+  return new Date();
+}
+
+function stringValue(value: unknown) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  return null;
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function telegramAttributeValue(attributes: unknown, key: string) {
+  if (!Array.isArray(attributes)) return undefined;
+  for (const attribute of attributes) {
+    const value = objectField(attribute, key);
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+function telegramDocumentFileName(document: unknown) {
+  const attributes = objectField(document, "attributes");
+  const fileName = telegramAttributeValue(attributes, "fileName");
+  return stringValue(fileName);
+}
+
+function telegramMediaDcId(media: unknown, document: unknown, photo: unknown) {
+  return numberValue(objectField(document, "dcId") ?? objectField(photo, "dcId") ?? objectField(media, "dcId"));
+}
+
+function telegramMediaAccessHash(source: unknown) {
+  return stringValue(objectField(source, "accessHash"));
+}
+
+function telegramMediaReference(source: unknown) {
+  const raw = objectField(source, "fileReference");
+  if (Buffer.isBuffer(raw)) return raw.toString("base64url");
+  if (raw instanceof Uint8Array) return Buffer.from(raw).toString("base64url");
+  return stringValue(raw);
+}
+
+function telegramFileExtension(mimeType: string | null | undefined, type: Attachment["type"]) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "video/mp4") return "mp4";
+  if (mimeType === "audio/mpeg") return "mp3";
+  if (mimeType === "audio/ogg") return "ogg";
+  if (type === "image") return "jpg";
+  if (type === "video") return "mp4";
+  return "bin";
+}
+
+function telegramAttachmentType(media: unknown, document: unknown): Attachment["type"] {
+  const classText = `${telegramClassName(media)} ${telegramClassName(document)} ${stringValue(objectField(document, "mimeType")) ?? ""}`.toLowerCase();
+  const mimeType = stringValue(objectField(document, "mimeType"))?.toLowerCase() ?? "";
+  if (classText.includes("photo") || mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/") || classText.includes("video")) return "video";
+  if (classText.includes("voice")) return "voice";
+  if (mimeType.startsWith("audio/") || classText.includes("audio")) return "audio";
+  if (classText.includes("webpage")) return "link";
+  if (classText.includes("contact")) return "contact";
+  if (classText.includes("geo") || classText.includes("venue")) return "location";
+  if (document) return "document";
+  return "unsupported";
+}
+
+function normalizeTelegramAttachments(message: TelegramMessage, externalMessageId: string): Attachment[] {
+  const media = message.media;
+  if (!media) return [];
+  const document = objectField(media, "document") ?? (telegramClassName(media).toLowerCase().includes("document") ? media : null);
+  const photo = objectField(media, "photo") ?? (telegramClassName(media).toLowerCase().includes("photo") ? media : null);
+  const webPage = objectField(media, "webpage") ?? objectField(media, "webPage");
+  const source = document || photo || webPage || media;
+  const type = telegramAttachmentType(media, document ?? photo ?? webPage);
+  const mimeType = stringValue(objectField(document, "mimeType"));
+  const sourceId = stringValue(objectField(source, "id"));
+  const externalAttachmentId =
+    sourceId ??
+    stringValue(objectField(source, "url")) ??
+    stringValue(objectField(message, "groupedId")) ??
+    externalMessageId;
+  const extension = telegramFileExtension(mimeType, type);
+  const name =
+    telegramDocumentFileName(document) ??
+    stringValue(objectField(webPage, "title")) ??
+    (type === "image" ? `photo-${externalAttachmentId}.${extension}` : type === "video" ? `video-${externalAttachmentId}.${extension}` : type === "link" ? "Ссылка" : `attachment-${externalAttachmentId}.${extension}`);
+  const size = numberValue(objectField(document, "size"));
+  const width = numberValue(telegramAttributeValue(objectField(document, "attributes"), "w") ?? objectField(photo, "w"));
+  const height = numberValue(telegramAttributeValue(objectField(document, "attributes"), "h") ?? objectField(photo, "h"));
+  const duration = numberValue(telegramAttributeValue(objectField(document, "attributes"), "duration"));
+  const metadata = {
+    source: "telegram_user_session",
+    status: type === "unsupported" ? "unsupported" : "queued",
+    telegram: {
+      messageId: stringValue(message.id),
+      externalMessageId,
+      groupedId: stringValue(message.groupedId),
+      mediaClass: telegramClassName(media),
+      documentId: document ? sourceId : null,
+      photoId: photo ? sourceId : null,
+      accessHash: telegramMediaAccessHash(source),
+      fileReference: telegramMediaReference(source),
+      dcId: telegramMediaDcId(media, document, photo),
+    },
+  };
+  return [
+    {
+      id: `tg-${externalMessageId}-${externalAttachmentId}`,
+      type,
+      url: "",
+      previewUrl: "",
+      name,
+      size,
+      mimeType: mimeType ?? undefined,
+      status: type === "unsupported" ? "unsupported" : "queued",
+      caption: stringValue(message.message ?? message.text) ?? undefined,
+      width,
+      height,
+      duration,
+      metadataJson: metadata,
+    },
+  ];
+}
+
+function messageText(message?: TelegramMessage) {
+  const text = message?.message ?? message?.text ?? "";
+  if (text.trim()) return text;
+  return "";
+}
+
+function attachmentPreviewLabel(attachment: Attachment) {
+  if (attachment.type === "image") return "Фото";
+  if (attachment.type === "video") return "Видео";
+  if (attachment.type === "voice") return "Голосовое";
+  if (attachment.type === "audio") return "Аудио";
+  if (attachment.type === "link") return "Ссылка";
+  if (attachment.type === "contact") return "Контакт";
+  if (attachment.type === "location") return "Геопозиция";
+  if (attachment.type === "document") return "Документ";
+  return "Вложение";
+}
+
+function messagePreviewText(message?: TelegramMessage) {
+  if (!message) return "";
+  const text = messageText(message);
+  if (text) return text;
+  const attachments = normalizeTelegramAttachments(message, stringValue(message.id) ?? "preview");
+  if (!attachments.length) return "";
+  return attachments.length === 1 ? attachmentPreviewLabel(attachments[0]) : `${attachmentPreviewLabel(attachments[0])} и ещё ${attachments.length - 1}`;
+}
+
+async function upsertAttachmentRows(input: {
+  organizationId: string;
+  messengerAccountId: string | null;
+  conversationId: string;
+  messageId: string;
+  channel: "telegram";
+  direction: "inbound" | "outbound" | "system";
+  externalMessageId: string;
+  externalPeerId: string | null;
+  attachments: Attachment[];
+}) {
+  for (const attachment of input.attachments) {
+    const metadata = attachment.metadataJson ?? { source: "telegram_user_session", status: attachment.status ?? "queued" };
+    const telegram = typeof metadata.telegram === "object" && metadata.telegram ? (metadata.telegram as Record<string, unknown>) : {};
+    const externalDocumentId = typeof telegram.documentId === "string" ? telegram.documentId : null;
+    const externalFileId = typeof telegram.photoId === "string" ? telegram.photoId : externalDocumentId;
+    const telegramDcId = typeof telegram.dcId === "number" ? telegram.dcId : null;
+    await prisma.$executeRaw`
+      INSERT INTO messenger_attachments
+        (id, organization_id, messenger_account_id, conversation_id, message_id, channel, direction, external_attachment_id,
+         external_file_id, external_document_id, external_message_id, external_peer_id, telegram_dc_id,
+         type, url, name, size, mime_type, preview_url, metadata_json, status, original_storage_key, thumbnail_storage_key,
+         caption, width, height, duration, updated_at)
+      VALUES
+        (${attachment.id}, ${input.organizationId}, ${input.messengerAccountId}, ${input.conversationId}, ${input.messageId}, ${input.channel}, ${input.direction}, ${attachment.id},
+         ${externalFileId}, ${externalDocumentId}, ${input.externalMessageId}, ${input.externalPeerId}, ${telegramDcId},
+         ${attachment.type},
+         ${attachment.url ?? null}, ${attachment.name ?? null}, ${attachment.size ?? null}, ${attachment.mimeType ?? null}, ${attachment.previewUrl ?? null},
+         ${JSON.stringify(metadata)}::jsonb,
+         ${attachment.status ?? "queued"}, NULL, NULL, ${attachment.caption ?? null}, ${attachment.width ?? null}, ${attachment.height ?? null}, ${attachment.duration ?? null}, now())
+      ON CONFLICT (id) DO UPDATE SET
+        messenger_account_id = COALESCE(EXCLUDED.messenger_account_id, messenger_attachments.messenger_account_id),
+        conversation_id = COALESCE(EXCLUDED.conversation_id, messenger_attachments.conversation_id),
+        direction = COALESCE(EXCLUDED.direction, messenger_attachments.direction),
+        external_message_id = COALESCE(EXCLUDED.external_message_id, messenger_attachments.external_message_id),
+        external_peer_id = COALESCE(EXCLUDED.external_peer_id, messenger_attachments.external_peer_id),
+        external_file_id = COALESCE(EXCLUDED.external_file_id, messenger_attachments.external_file_id),
+        external_document_id = COALESCE(EXCLUDED.external_document_id, messenger_attachments.external_document_id),
+        telegram_dc_id = COALESCE(EXCLUDED.telegram_dc_id, messenger_attachments.telegram_dc_id),
+        type = EXCLUDED.type,
+        name = COALESCE(EXCLUDED.name, messenger_attachments.name),
+        size = COALESCE(EXCLUDED.size, messenger_attachments.size),
+        mime_type = COALESCE(EXCLUDED.mime_type, messenger_attachments.mime_type),
+        metadata_json = messenger_attachments.metadata_json || EXCLUDED.metadata_json,
+        status = CASE WHEN messenger_attachments.status = 'ready' THEN messenger_attachments.status ELSE EXCLUDED.status END,
+        updated_at = now()
+    `;
+    if (attachment.status !== "unsupported") {
+      await enqueueMessengerMediaJob({
+        organizationId: input.organizationId,
+        messengerAccountId: input.messengerAccountId,
+        attachmentId: attachment.id,
+        operation: "download",
+      });
+    }
+  }
+}
+
+async function refreshTelegramDialogAvatar(conversationId: string, entity: unknown, client?: TelegramRuntimeClient) {
+  if (!client?.downloadProfilePhoto || !entity) return;
+  const rows = await prisma.$queryRaw<Array<{ avatarUrl: string | null; avatarUpdatedAt: Date | null; avatarStatus: string | null }>>`
+    SELECT participant_avatar_url AS "avatarUrl",
+           avatar_updated_at AS "avatarUpdatedAt",
+           avatar_status AS "avatarStatus"
+    FROM messenger_conversations
+    WHERE id = ${conversationId}
+    LIMIT 1
+  `;
+  const current = rows[0];
+  if (current?.avatarUrl && current.avatarStatus === "available") return;
+  if (current?.avatarUpdatedAt && Date.now() - current.avatarUpdatedAt.getTime() < 6 * 60 * 60 * 1000) return;
+  try {
+    const avatar = await client.downloadProfilePhoto(entity, { isBig: false });
+    const buffer = Buffer.isBuffer(avatar) ? avatar : undefined;
+    if (!buffer?.length) {
+      await prisma.$executeRaw`
+        UPDATE messenger_conversations
+        SET avatar_status = 'unavailable',
+            avatar_updated_at = now(),
+            updated_at = now()
+        WHERE id = ${conversationId}
+      `;
+      return;
+    }
+    if (!messengerStorageStatus().configured) {
+      await prisma.$executeRaw`
+        UPDATE messenger_conversations
+        SET avatar_status = 'failed',
+            avatar_error = 'Messenger storage не настроен',
+            avatar_updated_at = now(),
+            updated_at = now()
+        WHERE id = ${conversationId}
+      `;
+      return;
+    }
+    const conversationRows = await prisma.$queryRaw<Array<{ organizationId: string; messengerAccountId: string | null }>>`
+      SELECT organization_id AS "organizationId", messenger_account_id AS "messengerAccountId"
+      FROM messenger_conversations
+      WHERE id = ${conversationId}
+      LIMIT 1
+    `;
+    const organizationId = conversationRows[0]?.organizationId ?? getMessengerOrganizationId();
+    const accountId = conversationRows[0]?.messengerAccountId ?? "unknown";
+    const key = messengerObjectKey(
+      ["messenger", organizationId, "telegram", "accounts", accountId, "avatars", conversationId],
+      "avatar.jpg"
+    );
+    await putMessengerStorageObject({
+      key,
+      body: buffer,
+      contentType: "image/jpeg",
+      cacheControl: "private, max-age=86400",
+      contentDisposition: `inline; filename="avatar.jpg"`,
+    });
+    await prisma.$executeRaw`
+      UPDATE messenger_conversations
+      SET participant_avatar_url = ${messengerStorageProxyUrl("avatar", conversationId)},
+          avatar_storage_key = ${key},
+          avatar_thumbnail_key = ${key},
+          avatar_status = 'available',
+          avatar_updated_at = now(),
+          avatar_error = NULL,
+          updated_at = now()
+      WHERE id = ${conversationId}
+    `;
+  } catch (error) {
+    await prisma.$executeRaw`
+      UPDATE messenger_conversations
+      SET avatar_status = 'failed',
+          avatar_error = ${safeError(error, "Telegram avatar download failed")},
+          avatar_updated_at = now(),
+          updated_at = now()
+      WHERE id = ${conversationId}
+    `;
+  }
+}
+
+async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramDialog, client?: TelegramRuntimeClient) {
+  await ensureTelegramUserSchema();
+  const organizationId = account.organizationId ?? getMessengerOrganizationId();
+  const chatId = peerId(dialog);
+  if (!chatId) return null;
+  const entity = dialog.entity ?? {};
+  const externalUserId = entity.id === undefined || entity.id === null ? chatId : String(entity.id);
+  const title =
+    dialog.title ||
+    dialog.name ||
+    entity.title ||
+    [entity.firstName, entity.lastName].filter(Boolean).join(" ") ||
+    (entity.username ? `@${entity.username}` : `Telegram ${chatId}`);
+  const lastText = messagePreviewText(dialog.message);
+  const lastAt = messageDate(dialog.message?.date);
+  const conversationId = crypto.randomUUID();
+  const externalConversationId = telegramExternalConversationId(account.id, chatId);
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO messenger_conversations
+      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id, external_participant_id, title,
+       participant_name, participant_username, participant_phone, unread_count, last_message_text, last_message_at, status,
+       metadata_json, created_at, updated_at)
+    VALUES
+      (${conversationId}, ${organizationId}, ${account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId}, ${externalUserId},
+       ${title}, ${title}, ${entity.username ?? null}, ${entity.phone ?? null}, ${Number(dialog.unreadCount ?? 0)},
+       ${lastText}, ${lastAt}, 'open', ${JSON.stringify({ source: "telegram_user_session" })}::jsonb, now(), now())
+    ON CONFLICT (channel, external_conversation_id)
+    DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      messenger_account_id = EXCLUDED.messenger_account_id,
+      external_chat_id = EXCLUDED.external_chat_id,
+      external_user_id = EXCLUDED.external_user_id,
+      external_participant_id = EXCLUDED.external_participant_id,
+      title = EXCLUDED.title,
+      participant_name = EXCLUDED.participant_name,
+      participant_username = EXCLUDED.participant_username,
+      participant_phone = EXCLUDED.participant_phone,
+      unread_count = EXCLUDED.unread_count,
+      status = 'open',
+      last_message_text = CASE WHEN EXCLUDED.last_message_text <> '' THEN EXCLUDED.last_message_text ELSE messenger_conversations.last_message_text END,
+      last_message_at = GREATEST(messenger_conversations.last_message_at, EXCLUDED.last_message_at),
+      updated_at = now()
+    RETURNING id
+  `;
+  if (rows[0]?.id) {
+    await refreshTelegramDialogAvatar(rows[0].id, dialog.entity ?? dialog.inputEntity, client);
+  }
+  return { id: rows[0]?.id, chatId, externalConversationId };
+}
+
+async function archiveSkippedTelegramConversations(accountId: string, externalConversationIds: string[]) {
+  const uniqueIds = [...new Set(externalConversationIds)].filter(Boolean);
+  if (!uniqueIds.length) return 0;
+  const payload = JSON.stringify(uniqueIds);
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE messenger_conversations
+    SET status = 'archived',
+        updated_at = now()
+    WHERE organization_id = ${organizationId}
+      AND messenger_account_id = ${accountId}
+      AND channel = 'telegram'
+      AND status <> 'archived'
+      AND external_conversation_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(${payload}::jsonb) AS skipped(external_conversation_id)
+        WHERE skipped.external_conversation_id = messenger_conversations.external_conversation_id
+      )
+    RETURNING id
+  `;
+  return rows.length;
+}
+
+async function upsertTelegramMessage(conversationId: string, message: TelegramMessage) {
+  await ensureTelegramUserSchema();
+  const conversationRows = await prisma.$queryRaw<Array<{ organizationId: string; messengerAccountId: string | null; externalChatId: string | null }>>`
+    SELECT organization_id AS "organizationId", messenger_account_id AS "messengerAccountId", external_chat_id AS "externalChatId"
+    FROM messenger_conversations
+    WHERE id = ${conversationId}
+    LIMIT 1
+  `;
+  const organizationId = conversationRows[0]?.organizationId ?? getMessengerOrganizationId();
+  const messengerAccountId = conversationRows[0]?.messengerAccountId ?? null;
+  const externalChatId = conversationRows[0]?.externalChatId ?? null;
+  const rawExternalMessageId = message.id === undefined || message.id === null ? null : String(message.id);
+  if (!rawExternalMessageId) return null;
+  const externalMessageId = telegramExternalMessageId(conversationId, rawExternalMessageId);
+  const text = messageText(message);
+  const attachments = normalizeTelegramAttachments(message, externalMessageId);
+  const createdAt = messageDate(message.date);
+  const direction = message.out ? "outbound" : "inbound";
+  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO messenger_messages
+      (id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, message_type, text, attachments_json, status, raw_json,
+       sent_at, received_at, created_at, updated_at)
+    VALUES
+      (${crypto.randomUUID()}, ${organizationId}, ${conversationId}, ${messengerAccountId}, 'telegram', ${externalMessageId}, ${direction},
+       ${message.out ? "employee" : "client"}, ${attachments.length ? attachments[0].type : "text"}, ${text}, ${JSON.stringify(attachments)}::jsonb,
+       ${message.out ? "sent" : "received"}, ${JSON.stringify({ id: rawExternalMessageId, dedupeId: externalMessageId, hasMedia: Boolean(message.media) })}::jsonb,
+       ${message.out ? createdAt : null}, ${message.out ? null : createdAt}, ${createdAt}, now())
+    ON CONFLICT (channel, external_message_id)
+    WHERE external_message_id IS NOT NULL
+    DO NOTHING
+    RETURNING id
+  `;
+  const messageId =
+    inserted[0]?.id ??
+    (
+      await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM messenger_messages
+        WHERE channel = 'telegram'
+          AND external_message_id = ${externalMessageId}
+          AND organization_id = ${organizationId}
+        LIMIT 1
+      `
+    )[0]?.id;
+  if (messageId && attachments.length) {
+    await upsertAttachmentRows({
+      organizationId,
+      messengerAccountId,
+      conversationId,
+      messageId,
+      channel: "telegram",
+      direction,
+      externalMessageId,
+      externalPeerId: externalChatId,
+      attachments,
+    });
+    await refreshMessageAttachmentsJson(messageId);
+  }
+}
+
+export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
+  const accounts = accountId
+    ? (await listTelegramUserAccounts()).filter((account) => account.id === accountId)
+    : (await listTelegramUserAccounts()).filter((account) => account.status === "connected" && account.isActive);
+  const processed = [];
+  for (const account of accounts) {
+    const session = await getSessionByAccount(account.id);
+    const sessionString = decryptSecret(session?.sessionEncrypted);
+    if (!sessionString) {
+      await updateAccountStatus(account.id, "needs_auth", "Telegram session отсутствует. Подключите аккаунт заново.");
+      processed.push({ accountId: account.id, ok: false, error: "session missing" });
+      continue;
+    }
+    const client = await getClient(sessionString);
+    try {
+      const dialogs = (await client.getDialogs({ limit })) as TelegramDialog[];
+      logSyncState("dialogs_fetched", { accountId: account.id, count: dialogs.length, limit });
+      let conversationCount = 0;
+      let messageCount = 0;
+      let skippedCount = 0;
+      const skippedExternalConversationIds: string[] = [];
+      for (const dialog of dialogs) {
+        if (!isConversationDialog(dialog)) {
+          const chatId = peerId(dialog);
+          if (chatId) skippedExternalConversationIds.push(telegramExternalConversationId(account.id, chatId));
+          skippedCount += 1;
+          continue;
+        }
+        const conversation = await upsertTelegramDialog(account, dialog, client);
+        if (!conversation?.id) {
+          skippedCount += 1;
+          continue;
+        }
+        conversationCount += 1;
+        const messages = (await client.getMessages(dialog.inputEntity ?? dialog.entity ?? conversation.chatId, { limit: 30 })) as TelegramMessage[];
+        for (const message of messages.reverse()) {
+          await upsertTelegramMessage(conversation.id, message);
+          messageCount += 1;
+        }
+      }
+      const archivedCount = await archiveSkippedTelegramConversations(account.id, skippedExternalConversationIds);
+      const organizationId = account.organizationId ?? getMessengerOrganizationId();
+      await prisma.$executeRaw`
+        UPDATE messenger_accounts
+        SET status = 'connected', last_sync_at = now(), error_message = NULL, updated_at = now()
+        WHERE id = ${account.id}
+          AND organization_id = ${organizationId}
+      `;
+      await prisma.$executeRaw`
+        UPDATE telegram_user_sessions
+        SET status = 'connected', last_sync_at = now(), error_message = NULL, updated_at = now()
+        WHERE messenger_account_id = ${account.id}
+          AND organization_id = ${organizationId}
+      `;
+      logSyncState("dialogs_saved", { accountId: account.id, dialogsFetched: dialogs.length, conversationCount, messageCount, skippedCount, archivedCount });
+      processed.push({ accountId: account.id, ok: true, conversationCount, messageCount, skippedCount, archivedCount });
+    } catch (error) {
+      const message = safeError(error, "Telegram sync failed");
+      await updateAccountStatus(account.id, /AUTH|SESSION|PASSWORD/i.test(message) ? "needs_auth" : "error", message);
+      processed.push({ accountId: account.id, ok: false, error: message });
+    } finally {
+      await client.disconnect?.().catch?.(() => {});
+    }
+  }
+  return { ok: true as const, processed };
+}
+
+export async function sendTelegramUserText(outbox: MessageOutbox): Promise<ChannelSendResult> {
+  const accountId = await accountIdForOutbox(outbox);
+  if (!accountId) return { ok: false, error: "Telegram user account is not connected" };
+  const session = await getSessionByAccount(accountId);
+  const sessionString = decryptSecret(session?.sessionEncrypted);
+  if (!sessionString) return { ok: false, error: "Telegram user session is missing" };
+  const chatId = outbox.recipientExternalChatId.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "");
+  const client = await getClient(sessionString);
+  try {
+    const result = await client.sendMessage(chatId, { message: outbox.text });
+    return { ok: true, status: "sent", channelMessageId: result?.id ? String(result.id) : undefined };
+  } catch (error) {
+    return { ok: false, error: safeError(error, "Telegram sendMessage failed") };
+  } finally {
+    await client.disconnect?.().catch?.(() => {});
+  }
+}
+
+async function accountIdForOutbox(outbox: MessageOutbox) {
+  if ("messengerAccountId" in outbox && typeof (outbox as MessageOutbox & { messengerAccountId?: unknown }).messengerAccountId === "string") {
+    return (outbox as MessageOutbox & { messengerAccountId: string }).messengerAccountId;
+  }
+  if (outbox.conversationId) {
+    const organizationId = outbox.organizationId ?? getMessengerOrganizationId();
+    const rows = await prisma.$queryRaw<Array<{ messengerAccountId: string | null }>>`
+      SELECT messenger_account_id AS "messengerAccountId"
+      FROM messenger_conversations
+      WHERE id = ${outbox.conversationId}
+        AND organization_id = ${organizationId}
+      LIMIT 1
+    `;
+    if (rows[0]?.messengerAccountId) return rows[0].messengerAccountId;
+  }
+  const account = await getActiveTelegramUserAccount();
+  return account?.id ?? null;
+}
+
+function rawTelegramMessageId(value: string | null | undefined) {
+  if (!value) return null;
+  const last = value.split(":").at(-1);
+  const parsed = Number(last);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extensionFromName(name: string | null | undefined) {
+  const match = name?.match(/\.([a-zA-Z0-9]{1,12})$/);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function mimeFromBytes(buffer: Buffer, fallback?: string | null) {
+  if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image/jpeg";
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buffer.subarray(0, 4).toString("ascii") === "%PDF") return "application/pdf";
+  if (buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return fallback || "application/octet-stream";
+}
+
+function mediaLimitBytes(type: string, direction: "download" | "upload") {
+  const envName =
+    direction === "upload"
+      ? "MESSENGER_UPLOAD_MAX_MB"
+      : type === "image"
+        ? "MESSENGER_AUTO_DOWNLOAD_IMAGE_MAX_MB"
+        : "MESSENGER_AUTO_DOWNLOAD_FILE_MAX_MB";
+  const fallbackMb = direction === "upload" ? 20 : type === "image" ? 15 : 25;
+  const mb = Number(process.env[envName] ?? fallbackMb);
+  return Math.max(1, Number.isFinite(mb) ? mb : fallbackMb) * 1024 * 1024;
+}
+
+function telegramChatIdForConversation(value: string | null | undefined) {
+  return value?.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "") ?? "";
+}
+
+async function setAttachmentTerminalStatus(input: {
+  attachmentId: string;
+  organizationId: string;
+  status: "failed" | "too_large" | "unsupported";
+  message: string;
+  code?: string;
+}) {
+  await prisma.$executeRaw`
+    UPDATE messenger_attachments
+    SET status = ${input.status},
+        error_code = ${input.code ?? input.status},
+        error_message = ${input.message},
+        progress = 100,
+        updated_at = now()
+    WHERE id = ${input.attachmentId}
+      AND organization_id = ${input.organizationId}
+  `;
+  const rows = await prisma.$queryRaw<Array<{ messageId: string }>>`
+    SELECT message_id AS "messageId"
+    FROM messenger_attachments
+    WHERE id = ${input.attachmentId}
+      AND organization_id = ${input.organizationId}
+    LIMIT 1
+  `;
+  if (rows[0]?.messageId) await refreshMessageAttachmentsJson(rows[0].messageId);
+}
+
+export async function downloadTelegramAttachmentMedia(attachmentId: string) {
+  await ensureTelegramUserSchema();
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      messageId: string;
+      conversationId: string | null;
+      messengerAccountId: string | null;
+      type: string;
+      name: string | null;
+      size: number | null;
+      mimeType: string | null;
+      externalMessageId: string | null;
+      externalPeerId: string | null;
+      metadataJson: Record<string, unknown> | null;
+      conversationExternalChatId: string | null;
+      conversationExternalConversationId: string | null;
+      messageExternalMessageId: string | null;
+    }>
+  >`
+    SELECT
+      a.id,
+      a.message_id AS "messageId",
+      a.conversation_id AS "conversationId",
+      a.messenger_account_id AS "messengerAccountId",
+      a.type,
+      a.name,
+      a.size,
+      a.mime_type AS "mimeType",
+      a.external_message_id AS "externalMessageId",
+      a.external_peer_id AS "externalPeerId",
+      a.metadata_json AS "metadataJson",
+      c.external_chat_id AS "conversationExternalChatId",
+      c.external_conversation_id AS "conversationExternalConversationId",
+      m.external_message_id AS "messageExternalMessageId"
+    FROM messenger_attachments a
+    JOIN messenger_messages m ON m.id = a.message_id
+    JOIN messenger_conversations c ON c.id = m.conversation_id
+    WHERE a.id = ${attachmentId}
+      AND a.organization_id = ${organizationId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Telegram attachment не найден.");
+  if (!messengerStorageStatus().configured) {
+    await setAttachmentTerminalStatus({
+      attachmentId,
+      organizationId,
+      status: "failed",
+      code: "storage_not_configured",
+      message: "Object storage для Messenger не настроен.",
+    });
+    throw new Error("Object storage для Messenger не настроен.");
+  }
+  const accountId = row.messengerAccountId;
+  if (!accountId) throw new Error("Telegram attachment не привязан к messenger account.");
+  const session = await getSessionByAccount(accountId);
+  const sessionString = decryptSecret(session?.sessionEncrypted);
+  if (!sessionString) throw new Error("Telegram user session отсутствует.");
+  const telegramMessageId = rawTelegramMessageId(row.externalMessageId ?? row.messageExternalMessageId);
+  if (!telegramMessageId) throw new Error("Telegram message id для вложения не найден.");
+  const chatId = row.externalPeerId || row.conversationExternalChatId || telegramChatIdForConversation(row.conversationExternalConversationId);
+  if (!chatId) throw new Error("Telegram chat id для вложения не найден.");
+
+  await prisma.$executeRaw`
+    UPDATE messenger_attachments
+    SET status = 'downloading',
+        progress = 10,
+        attempts = attempts + 1,
+        last_attempt_at = now(),
+        error_code = NULL,
+        error_message = NULL,
+        updated_at = now()
+    WHERE id = ${attachmentId}
+      AND organization_id = ${organizationId}
+  `;
+
+  const client = await getClient(sessionString);
+  try {
+    const messages = (await client.getMessages(chatId, { ids: telegramMessageId })) as unknown;
+    const list = Array.isArray(messages) ? messages : Object.values(messages as Record<string, unknown>);
+    const message = list[0];
+    if (!message) throw new Error("Telegram message для скачивания не найден.");
+    if (!client.downloadMedia) throw new Error("GramJS downloadMedia недоступен.");
+    const media = await client.downloadMedia(message, {});
+    if (!Buffer.isBuffer(media)) throw new Error("Telegram вернул неподдерживаемый тип media.");
+    if (!media.length) throw new Error("Telegram вернул пустой файл.");
+    const limit = mediaLimitBytes(row.type, "download");
+    if (media.length > limit) {
+      await setAttachmentTerminalStatus({
+        attachmentId,
+        organizationId,
+        status: "too_large",
+        code: "file_too_large",
+        message: `Файл больше лимита автозагрузки (${Math.round(limit / 1024 / 1024)} МБ).`,
+      });
+      return { ok: false as const, status: "too_large" };
+    }
+    const mimeType = mimeFromBytes(media, row.mimeType);
+    const extension = extensionFromName(row.name) ?? telegramFileExtension(mimeType, row.type as Attachment["type"]);
+    const fileName = safeStorageFileName(row.name || `${row.type}-${attachmentId}.${extension}`);
+    const key = messengerObjectKey(
+      ["messenger", organizationId, "telegram", "accounts", accountId, "conversations", row.conversationId, "attachments", attachmentId],
+      fileName
+    );
+    await putMessengerStorageObject({
+      key,
+      body: media,
+      contentType: mimeType,
+      cacheControl: "private, max-age=31536000, immutable",
+      contentDisposition: `inline; filename="${encodeURIComponent(fileName)}"`,
+    });
+    const thumbnailKey = row.type === "image" ? key : null;
+    await prisma.$executeRaw`
+      UPDATE messenger_attachments
+      SET status = 'ready',
+          progress = 100,
+          size = ${media.length},
+          mime_type = ${mimeType},
+          name = COALESCE(name, ${fileName}),
+          original_storage_key = ${key},
+          thumbnail_storage_key = ${thumbnailKey},
+          url = ${messengerStorageProxyUrl("attachment", attachmentId)},
+          preview_url = ${thumbnailKey ? messengerStorageProxyUrl("thumbnail", attachmentId) : null},
+          error_code = NULL,
+          error_message = NULL,
+          metadata_json = metadata_json || ${JSON.stringify({ storage: { key, thumbnailKey, mimeType, size: media.length } })}::jsonb,
+          updated_at = now()
+      WHERE id = ${attachmentId}
+        AND organization_id = ${organizationId}
+    `;
+    await refreshMessageAttachmentsJson(row.messageId);
+    return { ok: true as const, key, size: media.length };
+  } finally {
+    await client.disconnect?.().catch?.(() => {});
+  }
+}
+
+export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<ChannelSendResult> {
+  const accountId = await accountIdForOutbox(outbox);
+  if (!accountId) return { ok: false, error: "Telegram user account is not connected" };
+  const session = await getSessionByAccount(accountId);
+  const sessionString = decryptSecret(session?.sessionEncrypted);
+  if (!sessionString) return { ok: false, error: "Telegram user session is missing" };
+  const attachment = outbox.attachmentsJson?.[0];
+  if (!attachment?.id) return { ok: false, error: "Attachment is missing" };
+  const rows = await prisma.$queryRaw<
+    Array<{ originalStorageKey: string | null; type: string; name: string | null; size: number | null; mimeType: string | null }>
+  >`
+    SELECT original_storage_key AS "originalStorageKey", type, name, size, mime_type AS "mimeType"
+    FROM messenger_attachments
+    WHERE id = ${attachment.id}
+      AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+    LIMIT 1
+  `;
+  const stored = rows[0];
+  if (!stored?.originalStorageKey) return { ok: false, error: "Attachment file is not stored yet" };
+  const object = await getMessengerStorageObject(stored.originalStorageKey);
+  const limit = mediaLimitBytes(stored.type, "upload");
+  if (object.body.length > limit) return { ok: false, error: `Файл больше лимита отправки (${Math.round(limit / 1024 / 1024)} МБ)` };
+  const chatId = outbox.recipientExternalChatId.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "");
+  const client = await getClient(sessionString);
+  try {
+    if (!client.sendFile) throw new Error("GramJS sendFile недоступен.");
+    const result = await client.sendFile(chatId, {
+      file: object.body,
+      caption: outbox.text || attachment.caption || "",
+      forceDocument: stored.type !== "image",
+      fileSize: object.body.length,
+      workers: 1,
+    });
+    return { ok: true, status: "sent", channelMessageId: result?.id ? String(result.id) : undefined };
+  } catch (error) {
+    return { ok: false, error: safeError(error, "Telegram sendFile failed") };
+  } finally {
+    await client.disconnect?.().catch?.(() => {});
+  }
+}
+
+export async function disconnectTelegramUserAccount(accountId: string) {
+  const organizationId = getMessengerOrganizationId();
+  await updateAccountStatus(accountId, "disconnected", null);
+  await prisma.$executeRaw`
+    UPDATE telegram_user_sessions
+    SET session_encrypted = NULL,
+        phone_code_hash_encrypted = NULL,
+        updated_at = now()
+    WHERE messenger_account_id = ${accountId}
+      AND organization_id = ${organizationId}
+  `;
+  return { ok: true as const };
+}
+
+export async function getTelegramUserRuntimeConfig() {
+  const account = await getActiveTelegramUserAccount();
+  return {
+    mode: "user_session",
+    enabled: isEnabled(),
+    configured: Boolean(configuredApiId() && configuredApiHash()),
+    connectionStatus: statusToConnection(account?.status),
+    account,
+  };
+}
+
+async function validateTelegramUserSessionConfig() {
+  const config = await getTelegramUserRuntimeConfig();
+  if (!config.enabled) return { ok: false as const, status: "disabled" as const, error: "TELEGRAM_USER_SESSION_ENABLED=true не задан", details: config };
+  if (!config.configured) return { ok: false as const, status: "not_connected" as const, error: "TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы", details: config };
+  if (config.account?.status !== "connected") return { ok: false as const, status: config.connectionStatus, error: "Рабочий Telegram-аккаунт не подключён", details: config };
+  return { ok: true as const, status: "connected" as const, details: config };
+}
+
+export const telegramUserSessionAdapter: MessengerChannelAdapter = {
+  channel: "telegram",
+  getConnection(): MessengerConnection {
+    return {
+      id: "conn-telegram-user-session",
+      channel: "telegram",
+      type: "unknown",
+      externalChatId: "telegram:user-session",
+      displayName: "Рабочий Telegram-аккаунт",
+      isActive: isEnabled(),
+      connectionStatus: isEnabled() ? "not_connected" : "disabled",
+      label: "Telegram",
+      config: {
+        mode: "user_session",
+        enabled: isEnabled(),
+        configured: Boolean(configuredApiId() && configuredApiHash()),
+      },
+    };
+  },
+  async sendMessage(outbox) {
+    if (outbox.messageType === "image" || outbox.messageType === "file" || outbox.attachmentsJson?.length) {
+      return sendTelegramUserFile(outbox);
+    }
+    return sendTelegramUserText(outbox);
+  },
+  async validateConfig() {
+    return validateTelegramUserSessionConfig();
+  },
+  validatePlatformConfig() {
+    return validateTelegramUserSessionConfig();
+  },
+  async startOnboarding() {
+    const config = await getTelegramUserRuntimeConfig();
+    return { ok: true, status: "ready", nextStep: "telegram_user_session", details: config };
+  },
+  async completeOnboarding() {
+    return { ok: false, status: "use_telegram_user_session_routes", error: "Используйте start-auth/confirm-code/confirm-password или QR flow." };
+  },
+  async disconnect(input) {
+    if (!input?.accountId) return { ok: false, error: "accountId required" };
+    return disconnectTelegramUserAccount(input.accountId);
+  },
+  async reconnect(input) {
+    return { ok: true, status: "reconnect_required", details: { accountId: input?.accountId ?? null } };
+  },
+  async testConnection() {
+    return validateTelegramUserSessionConfig();
+  },
+  async syncConversations(input) {
+    const result = await syncTelegramUserAccount(input?.accountId, input?.limit ?? 40);
+    const first = result.processed[0];
+    if (first?.ok === false) return { ok: false, accountId: first.accountId, error: first.error ?? "Telegram sync failed" };
+    return {
+      ok: true,
+      accountId: first?.accountId,
+      conversationCount: first?.conversationCount ?? 0,
+      messageCount: first?.messageCount ?? 0,
+    };
+  },
+  async syncMessages(input) {
+    const result = await syncTelegramUserAccount(input?.accountId, input?.limit ?? 40);
+    const first = result.processed[0];
+    if (first?.ok === false) return { ok: false, accountId: first.accountId, error: first.error ?? "Telegram sync failed" };
+    return { ok: true, accountId: first?.accountId, conversationCount: first?.conversationCount ?? 0, messageCount: first?.messageCount ?? 0 };
+  },
+  getCapabilities() {
+    return {
+      channel: "telegram",
+      allowedMode: "Рабочий Telegram-аккаунт / User Session / MTProto",
+      inbound: "Supported",
+      outbound: "Supported",
+      realtime: "Partially supported",
+      access: "Supported",
+      summary: "Клиент пишет в обычный рабочий Telegram, оператор отвечает из Эко-платформы.",
+    };
+  },
+};

@@ -18,6 +18,7 @@ import {
   Loader2,
   Phone,
   Plus,
+  Send,
   Search,
   SlidersHorizontal,
   Truck,
@@ -127,6 +128,30 @@ type CounterpartyResponse = {
   stats?: CounterpartyStats;
   counterparties?: CounterpartyRow[];
   error?: string;
+};
+
+type TelegramClientStatus = {
+  connected: boolean;
+  connectionId?: string;
+  externalUsername?: string | null;
+  displayName?: string;
+  linkedAt?: string | null;
+  lastSeenAt?: string | null;
+  blockedAt?: string | null;
+};
+
+type TelegramLinkState = {
+  loading: boolean;
+  creating: boolean;
+  error: string | null;
+  status: TelegramClientStatus | null;
+  link: {
+    token: string;
+    linkUrl: string;
+    qrDataUrl: string;
+    expiresAt: string;
+  } | null;
+  copied: boolean;
 };
 
 type PresenceFilter = "all" | "with" | "without";
@@ -1209,6 +1234,37 @@ function ClientDrawer({
   const statusInfo = getRowStatus(row);
   const vehicle = vehicleLabel(row);
   const recentDemands = row.recentDemands ?? [];
+  const [telegram, setTelegram] = useState<TelegramLinkState>({
+    loading: true,
+    creating: false,
+    error: null,
+    status: null,
+    link: null,
+    copied: false,
+  });
+
+  const loadTelegramStatus = useCallback(async () => {
+    if (!canPersistCounterparty(row)) {
+      setTelegram((state) => ({ ...state, loading: false, status: { connected: false } }));
+      return;
+    }
+    setTelegram((state) => ({ ...state, loading: true, error: null }));
+    try {
+      const res = await fetch(`/api/local-inventory/counterparties/${encodeURIComponent(row.id)}/telegram-link`, {
+        cache: "no-store",
+      });
+      const data = await readJson<{ telegram?: TelegramClientStatus; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить Telegram");
+      setTelegram((state) => ({ ...state, loading: false, status: data?.telegram ?? { connected: false } }));
+    } catch (e) {
+      setTelegram((state) => ({ ...state, loading: false, error: e instanceof Error ? e.message : "Не удалось загрузить Telegram" }));
+    }
+  }, [row]);
+
+  useEffect(() => {
+    void loadTelegramStatus();
+  }, [loadTelegramStatus]);
+
   return (
     <div className="eco-client-drawer-backdrop" role="presentation" onMouseDown={onClose}>
       <aside className="eco-client-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -1246,6 +1302,29 @@ function ClientDrawer({
             <InfoLine label="Основной телефон" value={row.phone ? formatPhone(row.phone) : "не указан"} muted={!row.phone} />
             <InfoLine label="Доп. телефон" value={row.additionalPhone ? formatPhone(row.additionalPhone) : "не указан"} muted={!row.additionalPhone} />
             <InfoLine label="Email" value={row.email || "не указан"} muted={!row.email} />
+          </InfoBlock>
+
+          <InfoBlock title="Telegram" icon={<Send aria-hidden className="eco-icon" />} className="eco-client-telegram-block">
+            {telegram.loading ? (
+              <p className="eco-muted-value">Проверяем привязку...</p>
+            ) : telegram.status?.connected ? (
+              <>
+                <InfoLine label="Статус" value="Telegram connected" />
+                <InfoLine label="Аккаунт" value={telegram.status.externalUsername ? `@${telegram.status.externalUsername}` : telegram.status.displayName ?? "Telegram клиент"} />
+                <InfoLine label="Привязан" value={telegram.status.linkedAt ? formatDate(telegram.status.linkedAt) : "нет данных"} />
+              </>
+            ) : (
+              <>
+                <p className="eco-muted-value">
+                  Клиент ничего не привязывает. Диалоги подтягиваются из рабочего Telegram-аккаунта сервиса в разделе «Сообщения».
+                </p>
+                <Link href="/messages" className="eco-btn eco-btn--sm eco-btn--secondary">
+                  <Send aria-hidden className="eco-icon" />
+                  Открыть сообщения
+                </Link>
+              </>
+            )}
+            {telegram.error && <p className="eco-client-telegram-error">{telegram.error}</p>}
           </InfoBlock>
 
           <InfoBlock title="Автомобили" icon={<Car aria-hidden className="eco-icon" />}>

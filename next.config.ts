@@ -5,6 +5,7 @@ import type { NextConfig } from "next";
 const projectRoot = path.resolve(__dirname);
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["telegram"],
   turbopack: {
     root: projectRoot,
     resolveAlias: {

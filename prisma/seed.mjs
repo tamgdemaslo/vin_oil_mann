@@ -32,18 +32,38 @@ async function upsertByName(model, name, create, update = create) {
 async function main() {
   await upsertAttributeDefinitions();
 
-  const organization = await upsertByName(prisma.localOrganization, "Эко Платформа", {
-    name: "Эко Платформа",
+  const defaultOrganizationData = {
+    name: "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
+    entityType: "ip",
+    fullLegalName: "Индивидуальный предприниматель Елисеенко Илья Сергеевич",
+    kpp: null,
     isActive: true,
+    isDefault: true,
     raw: { seed: true },
+  };
+  const existingOrganization = await prisma.localOrganization.findFirst({
+    where: { OR: [{ name: "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ" }, { name: "Эко Платформа" }] },
+    orderBy: [{ createdAt: "asc" }],
   });
+  await prisma.localOrganization.updateMany({
+    where: existingOrganization ? { id: { not: existingOrganization.id } } : {},
+    data: { isDefault: false },
+  });
+  const organization = existingOrganization
+    ? await prisma.localOrganization.update({
+        where: { id: existingOrganization.id },
+        data: defaultOrganizationData,
+      })
+    : await prisma.localOrganization.create({ data: defaultOrganizationData });
 
   const store = await upsertByName(prisma.localStore, "Основной склад", {
     name: "Основной склад",
+    organizationId: organization.id,
     isMain: true,
     archived: false,
     raw: { seed: true },
   }, {
+    organizationId: organization.id,
     isMain: true,
     archived: false,
   });

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { MessengerProvider } from "@/components/messenger/MessengerProvider";
+import { MessengerWidget } from "@/components/messenger/MessengerUi";
 import PlatformShell from "@/components/platform/PlatformShell";
 import RouteTitle from "@/components/platform/RouteTitle";
 
 export const metadata: Metadata = {
-  title: "Главная | Эко-платформа",
-  description: "Эко-платформа автосервиса: отгрузки, касса, выплаты и личный кабинет",
+  title: "Главная | ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
+  description: "Личный кабинет ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ: отгрузки, касса, выплаты и организации",
 };
 
 export default function RootLayout({
@@ -16,9 +18,12 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="antialiased">
-        <RouteTitle />
-        <PlatformShell />
-        {children}
+        <MessengerProvider>
+          <RouteTitle />
+          <PlatformShell />
+          {children}
+          <MessengerWidget />
+        </MessengerProvider>
       </body>
     </html>
   );

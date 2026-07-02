@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalizeLogin, getLoginVariants, getSession } from "@/lib/auth";
+import { canonicalizeLogin, getLoginVariants, getSession, getUsersFromEnv } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logChange } from "@/lib/change-log";
 
@@ -10,7 +10,7 @@ function dateOnlyKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/** GET: список рабочих дней. Возвращает плановые дни и фактические смены. */
+/** GET: список смен сотрудников для зарплаты. Legacy URL: /api/working-days. */
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
@@ -30,75 +30,37 @@ export async function GET(request: NextRequest) {
   if (dateFrom) where.date = { ...where.date, gte: dateFrom };
   if (dateTo) where.date = { ...where.date, lte: dateTo };
 
-  const shiftWhere: { userLogin?: string | { in: string[] }; shiftDate?: { gte?: string; lte?: string } } = {};
-  if (userLogin) shiftWhere.userLogin = { in: getLoginVariants(userLogin) };
-  if (dateFrom) shiftWhere.shiftDate = { ...shiftWhere.shiftDate, gte: dateFrom };
-  if (dateTo) shiftWhere.shiftDate = { ...shiftWhere.shiftDate, lte: dateTo };
-
-  const [scheduledDays, shifts] = await Promise.all([
+  const [scheduledDays, users] = await Promise.all([
     prisma.scheduledWorkingDay.findMany({
       where,
       orderBy: [{ date: "desc" }],
     }),
-    prisma.shift.findMany({
-      where: shiftWhere,
-      select: { id: true, userLogin: true, shiftDate: true },
-      orderBy: [{ shiftDate: "desc" }],
-    }),
+    getUsersFromEnv(),
   ]);
+  const payrollLogins = new Set(
+    users.filter((user) => user.role === "master" || user.role === "admin").map((user) => canonicalizeLogin(user.login).toLowerCase())
+  );
 
-  const merged = new Map<
-    string,
-    {
-      id: string;
-      userLogin: string;
-      date: string;
-      createdByLogin: string;
-      source: "scheduled" | "actual" | "both";
-      removable: boolean;
-    }
-  >();
-
-  for (const row of scheduledDays) {
-    const rowUserLogin = canonicalizeLogin(row.userLogin);
-    merged.set(`${rowUserLogin}:${row.date}`, {
+  const list = scheduledDays
+    .map((row) => ({
       id: row.id,
-      userLogin: rowUserLogin,
+      userLogin: canonicalizeLogin(row.userLogin),
       date: row.date,
       createdByLogin: canonicalizeLogin(row.createdByLogin),
-      source: "scheduled",
+      source: "scheduled" as const,
       removable: true,
-    });
-  }
-
-  for (const shift of shifts) {
-    const shiftUserLogin = canonicalizeLogin(shift.userLogin);
-    const key = `${shiftUserLogin}:${shift.shiftDate}`;
-    const existing = merged.get(key);
-    if (existing) {
-      merged.set(key, { ...existing, source: "both" });
-      continue;
-    }
-    merged.set(key, {
-      id: `actual:${shift.id}`,
-      userLogin: shiftUserLogin,
-      date: shift.shiftDate,
-      createdByLogin: "system",
-      source: "actual",
-      removable: false,
-    });
-  }
-
-  const list = Array.from(merged.values()).sort((a, b) => b.date.localeCompare(a.date));
+    }))
+    .filter((row) => payrollLogins.has(row.userLogin.toLowerCase()))
+    .sort((a, b) => b.date.localeCompare(a.date));
   return NextResponse.json(list);
 }
 
-/** POST: владелец назначает рабочий день (или диапазон). Body: { userLogin, date } или { userLogin, dateFrom, dateTo } */
+/** POST: владелец ставит смену сотрудника (или диапазон). Body: { userLogin, date } или { userLogin, dateFrom, dateTo } */
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
   if (session.user.role !== "owner") {
-    return NextResponse.json({ error: "Только владелец может назначать рабочие дни" }, { status: 403 });
+    return NextResponse.json({ error: "Только владелец может ставить смены сотрудников" }, { status: 403 });
   }
 
   const body = await request.json();
@@ -109,6 +71,11 @@ export async function POST(request: NextRequest) {
 
   if (!userLogin) {
     return NextResponse.json({ error: "Укажите userLogin" }, { status: 400 });
+  }
+  const users = await getUsersFromEnv();
+  const user = users.find((item) => canonicalizeLogin(item.login).toLowerCase() === userLogin.toLowerCase());
+  if (!user || (user.role !== "master" && user.role !== "admin")) {
+    return NextResponse.json({ error: "Смены зарплаты назначаются только мастерам и администраторам" }, { status: 400 });
   }
 
   const toAdd: string[] = [];
@@ -140,7 +107,7 @@ export async function POST(request: NextRequest) {
         }));
       created.push({ id: row.id, userLogin: canonicalizeLogin(row.userLogin), date: row.date });
       await logChange({
-        entityType: "scheduled_working_day",
+        entityType: "employee_shift",
         entityId: row.id,
         action: "create",
         newValue: { userLogin: canonicalizeLogin(row.userLogin), date: row.date },

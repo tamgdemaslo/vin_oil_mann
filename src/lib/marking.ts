@@ -5,6 +5,12 @@ export const AQSI_UNIT_CODE_PIECE = 0;
 export const AQSI_UNIT_CODE_LITER = 41;
 export const GS = "\u001d";
 
+export type MarkingProductContext = {
+  productName?: string | null;
+  groupPath?: string | null;
+  uomName?: string | null;
+};
+
 function normalizeName(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -32,8 +38,31 @@ export function isLikelyMeasuredMotorOilPourProductName(name: string): boolean {
   return /розлив|разлив|бочк|налив|bulk/i.test(lower);
 }
 
-export function isMeasuredMotorOilQuantity(name: string, quantity: number): boolean {
+export function isLiterUnitName(value?: string | null): boolean {
+  const lower = normalizeName(value ?? "");
+  return /^(л|л\.|литр|литра|литров|l|liter|litre)$/i.test(lower);
+}
+
+export function isLikelyBulkMotorOilProductCandidate(context?: MarkingProductContext): boolean {
+  if (!context) return false;
+  const productName = context.productName ?? "";
+  const groupPath = context.groupPath ?? "";
+  const text = `${productName} ${groupPath}`;
+  if (!isLikelyMarkedMotorOilProductName(text)) return false;
+  return /розлив|разлив|бочк|налив|bulk/i.test(text);
+}
+
+export function isLikelyBulkMotorOilProductContext(context?: MarkingProductContext): boolean {
+  return isLikelyBulkMotorOilProductCandidate(context) && isLiterUnitName(context?.uomName);
+}
+
+export function isMeasuredMotorOilQuantity(
+  name: string,
+  quantity: number,
+  context?: MarkingProductContext
+): boolean {
   if (!isLikelyMarkedMotorOilProductName(name)) return false;
+  if (isLikelyBulkMotorOilProductContext(context)) return true;
   if (isLikelyMeasuredMotorOilPourProductName(name)) return true;
   return Number.isFinite(quantity) && quantity > 0 && !Number.isInteger(quantity);
 }

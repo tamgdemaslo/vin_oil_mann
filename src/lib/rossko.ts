@@ -278,10 +278,10 @@ export function suggestRosskoDefaults(details: Record<string, unknown>): {
   payment_id?: string;
   requisite_id?: string;
 } {
-  const deliveries = findCollection(details, ["TypeDelivery", "typeDelivery", "Delivery", "delivery"]);
-  const addresses = findCollection(details, ["AddressDelivery", "addressDelivery", "Address", "address"]);
-  const payments = findCollection(details, ["TypePayment", "typePayment", "Payment", "payment"]);
-  const companies = findCollection(details, ["CompanyList", "companyList", "Company", "company"]);
+  const deliveries = findCollection(details, ["TypeDelivery", "typeDelivery", "DeliveryType", "deliveryType"], ["delivery"]);
+  const addresses = findCollection(details, ["AddressDelivery", "addressDelivery", "DeliveryAddress", "deliveryAddress"], ["address"]);
+  const payments = findCollection(details, ["TypePayment", "typePayment", "PaymentType", "paymentType"], ["payment"]);
+  const companies = findCollection(details, ["CompanyList", "companyList"], ["company"]);
 
   const delivery = pickByName(deliveries, ["курьер"]) ?? deliveries[0];
   const address = addresses[0];
@@ -289,17 +289,18 @@ export function suggestRosskoDefaults(details: Record<string, unknown>): {
   const company =
     pickByName(companies, ["елисеенко"]) ??
     pickByName(companies, ["ип"]) ??
+    companies.find((row) => !/частн/i.test(displayName(row))) ??
     companies[0];
 
   return {
     delivery_id: idValue(delivery, ["ID", "id"]),
     address_id: idValue(address, ["ID", "id"]),
     payment_id: idValue(payment, ["ID", "id"]),
-    requisite_id: idValue(company, ["ID", "id", "RequisiteID", "requisite_id"]),
+    requisite_id: idValue(company, ["ID", "id", "RequisiteID", "requisite_id", "requisite"]),
   };
 }
 
-function findCollection(root: unknown, keys: string[]): Record<string, unknown>[] {
+function findCollection(root: unknown, keys: string[], itemKeys: string[] = ["Item", "item"]): Record<string, unknown>[] {
   const wanted = new Set(keys.map((x) => x.toLowerCase()));
   const seen = new Set<unknown>();
   const queue: unknown[] = [root];
@@ -319,7 +320,7 @@ function findCollection(root: unknown, keys: string[]): Record<string, unknown>[
     if (!isRecord(cur)) continue;
     for (const [key, value] of Object.entries(cur)) {
       if (wanted.has(key.toLowerCase())) {
-        const arr = asArray(value);
+        const arr = asArray(value, itemKeys);
         if (arr.length) return arr;
       }
       if (value && typeof value === "object") queue.push(value);
@@ -329,9 +330,14 @@ function findCollection(root: unknown, keys: string[]): Record<string, unknown>[
   return [];
 }
 
-function asArray(v: unknown): Record<string, unknown>[] {
+function asArray(v: unknown, itemKeys: string[] = ["Item", "item"]): Record<string, unknown>[] {
   if (Array.isArray(v)) return v.filter(isRecord);
   if (isRecord(v)) {
+    for (const key of itemKeys) {
+      const nested = v[key];
+      if (Array.isArray(nested)) return nested.filter(isRecord);
+      if (isRecord(nested)) return [nested];
+    }
     if (Array.isArray(v.Item)) return v.Item.filter(isRecord);
     if (Array.isArray(v.item)) return v.item.filter(isRecord);
     return [v];
@@ -341,9 +347,13 @@ function asArray(v: unknown): Record<string, unknown>[] {
 
 function pickByName(rows: Record<string, unknown>[], tokens: string[]): Record<string, unknown> | undefined {
   return rows.find((row) => {
-    const name = String(row.Name ?? row.name ?? "").toLowerCase();
+    const name = displayName(row).toLowerCase();
     return tokens.some((token) => name.includes(token));
   });
+}
+
+function displayName(row: Record<string, unknown>): string {
+  return String(row.Name ?? row.name ?? row.requisite ?? row.Requisite ?? "");
 }
 
 function idValue(row: Record<string, unknown> | undefined, keys: string[]): string | undefined {

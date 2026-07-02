@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes } from "react";
-import { ChevronLeft, ChevronRight, Copy, Printer, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Copy, Printer, X } from "lucide-react";
 import {
   DIAGNOSTIC_MAP_BLOCKS,
   DIAGNOSTIC_MAP_STATUSES,
@@ -65,6 +65,18 @@ type DiagnosticMapPayload = {
   blocks: DiagnosticMapBlock[];
 };
 
+type TelegramReportState = {
+  ok?: boolean;
+  status?: string;
+  error?: string;
+  reportUrl?: string | null;
+  link?: {
+    linkUrl: string | null;
+    qrDataUrl: string | null;
+    expiresAt: string;
+  };
+};
+
 type PhotoUploadState = {
   id: string;
   file: File;
@@ -73,6 +85,11 @@ type PhotoUploadState = {
   progress: number;
   status: "uploading" | "error";
   error?: string;
+};
+
+type CaptionEditorState = {
+  itemCode: string;
+  photoId: string;
 };
 
 type DiagnosticMapModalProps = {
@@ -100,6 +117,15 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type SaveOptions = {
   debounce?: boolean;
 };
+type DiagnosticViewMode = "quick" | "detail";
+type QuickFilterMode = "all" | "problem" | "no-photo" | "unchecked";
+type QuickUndoSnapshot = Array<{
+  code: string;
+  patch: Pick<
+    DiagnosticMapItem,
+    "status" | "value" | "comment" | "recommendation" | "selectedNotes" | "selectedRecommendations" | "nextVisit" | "showInReport"
+  >;
+}>;
 
 type FieldContext = {
   label: string;
@@ -120,7 +146,8 @@ type AutoMeasurementKind =
   | "brake-pads"
   | "brake-discs"
   | "tires"
-  | "suspension";
+  | "suspension"
+  | "lights";
 
 type MeasurementEvaluation = {
   value: string;
@@ -159,14 +186,6 @@ async function responseJson<T>(response: Response, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
-}
-
-function countLabel(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${count} пункт`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} пункта`;
-  return `${count} пунктов`;
 }
 
 function appendText(current: string, value: string): string {
@@ -441,7 +460,7 @@ const LEAK_CONDITION_CHOICES: Array<DiagnosticChoice & { recommendation: string;
   {
     id: "leak",
     label: "Есть явная утечка",
-    status: "crit",
+    status: "warn",
     comment: "Обнаружена утечка, требуется диагностика источника",
     recommendation: "Диагностика источника утечки",
     nextVisit: false,
@@ -470,13 +489,20 @@ const LEAK_CONDITION_CHOICES: Array<DiagnosticChoice & { recommendation: string;
 const LEAK_LOCATION_CHOICES = [
   "двигатель",
   "поддон",
+  "клапанная крышка",
+  "масляный фильтр",
   "коробка",
-  "редуктор",
-  "раздатка",
+  "АКПП",
+  "МКПП",
+  "передний редуктор",
+  "задний редуктор",
+  "раздаточная коробка",
   "рулевая рейка",
   "антифриз / система охлаждения",
   "тормозная система",
-  "неизвестно",
+  "ГУР",
+  "патрубки",
+  "сальники",
   "другое",
 ];
 
@@ -751,6 +777,33 @@ const SUSPENSION_CONDITION_CHOICES: Array<DiagnosticChoice & { recommendation: s
     photoRecommended: "required",
   },
   {
+    id: "corrosion",
+    label: "Коррозия крепежа",
+    status: "warn",
+    comment: "Обнаружена коррозия крепежа элементов подвески",
+    recommendation: "Диагностика подвески",
+    nextVisit: true,
+    photoRecommended: "recommended",
+  },
+  {
+    id: "arm-damage",
+    label: "Повреждение рычага",
+    status: "crit",
+    comment: "Обнаружено повреждение рычага подвески",
+    recommendation: "Замена рычага",
+    nextVisit: false,
+    photoRecommended: "required",
+  },
+  {
+    id: "knock",
+    label: "Посторонний стук",
+    status: "warn",
+    comment: "Есть посторонний стук в подвеске, требуется дополнительная проверка",
+    recommendation: "Диагностика подвески",
+    nextVisit: false,
+    photoRecommended: "recommended",
+  },
+  {
     id: "no-access",
     label: "Не удалось проверить",
     status: "no-access",
@@ -759,6 +812,27 @@ const SUSPENSION_CONDITION_CHOICES: Array<DiagnosticChoice & { recommendation: s
     nextVisit: true,
     photoRecommended: "none",
   },
+  {
+    id: "other",
+    label: "Другое",
+    status: "warn",
+    comment: "Обнаружен дополнительный признак неисправности подвески",
+    recommendation: "Диагностика подвески",
+    nextVisit: false,
+    photoRecommended: "recommended",
+  },
+];
+
+const LIGHT_CONDITION_CHOICES: Array<DiagnosticChoice & { recommendation: string; nextVisit: boolean }> = [
+  { id: "ok", label: "Все исправны", status: "good", comment: "Освещение и сигналы исправны", recommendation: "", nextVisit: false },
+  { id: "low", label: "Ближний свет", status: "warn", comment: "Есть неисправность ближнего света", recommendation: "Замена ламп", nextVisit: false },
+  { id: "high", label: "Дальний свет", status: "warn", comment: "Есть неисправность дальнего света", recommendation: "Замена ламп", nextVisit: false },
+  { id: "stop", label: "Стоп-сигнал", status: "crit", comment: "Неисправен стоп-сигнал", recommendation: "Замена ламп", nextVisit: false },
+  { id: "turn", label: "Поворотник", status: "crit", comment: "Неисправен указатель поворота", recommendation: "Замена ламп", nextVisit: false },
+  { id: "plate", label: "Подсветка номера", status: "warn", comment: "Неисправна подсветка номера", recommendation: "Замена ламп", nextVisit: false },
+  { id: "fog", label: "ПТФ", status: "warn", comment: "Есть неисправность противотуманных фар", recommendation: "Замена ламп", nextVisit: false },
+  { id: "dim", label: "Помутнели фары", status: "warn", comment: "Фары помутнели, световой поток может быть снижен", recommendation: "Полировка фар", nextVisit: true },
+  { id: "no-access", label: "Не удалось проверить", status: "no-access", comment: "Освещение и сигналы не удалось проверить", recommendation: "Контроль на следующем визите", nextVisit: true },
 ];
 
 function brakePadStatus(value: number): DiagnosticMapStatusCode {
@@ -780,18 +854,23 @@ function brakeDiscAxisComment(axis: "Передние" | "Задние", choice:
 }
 
 function tireDepthStatus(depth: number): DiagnosticMapStatusCode {
-  if (depth >= 5) return "good";
-  if (depth >= 3) return "warn";
+  const rounded = clampTireDepth(depth);
+  if (rounded >= 5) return "good";
+  if (rounded >= 3) return "warn";
   return "crit";
 }
 
 function formatTireDepth(depth: number): string {
-  return Number.isInteger(depth) ? String(depth) : depth.toFixed(1);
+  return String(clampTireDepth(depth));
+}
+
+function formatRuNumber(value: string | number): string {
+  return String(value).replace(".", ",");
 }
 
 function clampTireDepth(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(10, Math.round(value * 10) / 10));
+  return Math.max(0, Math.min(10, Math.round(value)));
 }
 
 function parseTireWheelValue(value?: string): { depth: number | null; damage: string } {
@@ -804,20 +883,23 @@ function parseTireWheelValue(value?: string): { depth: number | null; damage: st
 }
 
 function formatTireWheelValue(depth: number | null, damage: string): string {
-  return [depth !== null ? `${formatTireDepth(depth)} мм` : "", damage].filter(Boolean).join(" / ");
+  return [depth !== null ? `${formatRuNumber(formatTireDepth(depth))} мм` : "", damage].filter(Boolean).join(" / ");
 }
 
-function tireWheelStatus(depth: number | null, damage?: DiagnosticChoice | null): DiagnosticMapStatusCode | undefined {
-  if (depth === null && !damage) return undefined;
-  return worstStatus([depth !== null ? tireDepthStatus(depth) : undefined, damage?.status]);
+function tireWheelStatusFromDamages(depth: number | null, damages: DiagnosticChoice[]): DiagnosticMapStatusCode | undefined {
+  if (depth === null && damages.length === 0) return undefined;
+  return worstStatus([depth !== null ? tireDepthStatus(depth) : undefined, ...damages.map((damage) => damage.status)]);
 }
 
-function tireWheelComment(wheel: (typeof TIRE_WHEELS)[number], depth: number | null, damage?: DiagnosticChoice | null): string | null {
-  const depthText = depth !== null ? `${formatTireDepth(depth)} мм` : "";
+function tireWheelCommentFromDamages(wheel: (typeof TIRE_WHEELS)[number], depth: number | null, damages: DiagnosticChoice[]): string | null {
+  const depthText = depth !== null ? `${formatRuNumber(formatTireDepth(depth))} мм` : "";
   const depthStatus = depth !== null ? tireDepthStatus(depth) : undefined;
-  const damageOk = !damage || damage.id === "none";
+  const problemDamages = damages.filter((damage) => damage.id !== "none");
+  const damageOk = problemDamages.length === 0;
   if (depth === null && damageOk) return null;
-  if (damage && damage.id !== "none") return `${wheel.label} колесо: ${damage.comment}${depthText ? `, глубина ${depthText}` : ""}`;
+  if (problemDamages.length > 0) {
+    return `${wheel.label} колесо: ${problemDamages.map((damage) => damage.comment).join(", ")}${depthText ? `, глубина ${depthText}` : ""}`;
+  }
   if (depthStatus === "good") return `${wheel.label} колесо: шина в норме, глубина протектора ${depthText}`;
   if (depthStatus === "warn") return `${wheel.label} колесо: глубина протектора ${depthText}, ниже рекомендуемой`;
   return `${wheel.label} колесо: глубина протектора ${depthText}, требуется замена шины`;
@@ -835,6 +917,7 @@ function autoMeasurementKind(code: string): AutoMeasurementKind | null {
   if (code === "brake-discs") return "brake-discs";
   if (code === "tires") return "tires";
   if (code === "suspension") return "suspension";
+  if (code === "lights") return "lights";
   return null;
 }
 
@@ -870,6 +953,45 @@ function valueParts(value: string): Record<string, string> {
 
 function formatValueParts(parts: Record<string, string>, order: string[]): string {
   return order.map((key) => (parts[key] ? `${key}: ${parts[key]}` : "")).filter(Boolean).join(" · ");
+}
+
+function splitMultiValue(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function formatMultiValue(values: string[]): string {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).join(", ");
+}
+
+function toggleMultiValue(values: string[], value: string): string[] {
+  return values.includes(value) ? values.filter((candidate) => candidate !== value) : [...values, value];
+}
+
+function humanList(values: string[]): string {
+  const clean = values.map((value) => value.trim()).filter(Boolean);
+  if (clean.length === 0) return "";
+  if (clean.length === 1) return clean[0] ?? "";
+  if (clean.length === 2) return `${clean[0]} и ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")} и ${clean[clean.length - 1]}`;
+}
+
+function compactMultiSummary(values: string[]): string {
+  const clean = values.map((value) => value.trim()).filter(Boolean);
+  if (clean.length <= 2) return clean.join(" + ");
+  return `${clean[0]} + ещё ${clean.length - 1}`;
+}
+
+function choiceListByLabels<T extends DiagnosticChoice>(choices: readonly T[], labels: string[]): T[] {
+  return labels.map((label) => choiceByLabel(choices, label)).filter((choice): choice is T => Boolean(choice));
+}
+
+function mergeRecommendations(choices: Array<{ recommendation: string }>, fallback = ""): string {
+  const recommendations = Array.from(new Set(choices.map((choice) => choice.recommendation).filter(Boolean)));
+  return recommendations[0] ?? fallback;
 }
 
 function statusRank(status: DiagnosticMapStatusCode | undefined): number {
@@ -921,6 +1043,8 @@ function autoStatusFromItem(item: DiagnosticMapItem): DiagnosticMapStatusCode | 
     return checkedAutoStatus(worstStatus([color?.status, level?.status]));
   }
   if (kind === "belt") {
+    const labels = splitMultiValue(valueParts(item.value)["Признаки"]);
+    if (labels.length > 0) return checkedAutoStatus(worstStatus(choiceListByLabels(BELT_CONDITION_CHOICES, labels).map((choice) => choice.status)));
     return checkedAutoStatus(
       BELT_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)?.status ?? "unchecked"
     );
@@ -939,23 +1063,29 @@ function autoStatusFromItem(item: DiagnosticMapItem): DiagnosticMapStatusCode | 
   }
   if (kind === "brake-discs") {
     const parts = valueParts(item.value);
-    const front = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Передние"]);
-    const rear = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Задние"]);
-    return checkedAutoStatus(worstStatus([front?.status, rear?.status]));
+    const front = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, splitMultiValue(parts["Передние"]));
+    const rear = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, splitMultiValue(parts["Задние"]));
+    return checkedAutoStatus(worstStatus([...front.map((choice) => choice.status), ...rear.map((choice) => choice.status)]));
   }
   if (kind === "tires") {
     const parts = valueParts(item.value);
     const statuses = TIRE_WHEELS.map((wheel) => {
       const parsed = parseTireWheelValue(parts[wheel.key]);
-      const damage = choiceByLabel(TIRE_DAMAGE_CHOICES, parsed.damage);
-      return tireWheelStatus(parsed.depth, damage);
+      const damages = choiceListByLabels(TIRE_DAMAGE_CHOICES, splitMultiValue(parsed.damage));
+      return tireWheelStatusFromDamages(parsed.depth, damages);
     });
     return checkedAutoStatus(worstStatus(statuses));
   }
   if (kind === "suspension") {
+    const labels = splitMultiValue(valueParts(item.value)["Признаки"]);
+    if (labels.length > 0) return checkedAutoStatus(worstStatus(choiceListByLabels(SUSPENSION_CONDITION_CHOICES, labels).map((choice) => choice.status)));
     return checkedAutoStatus(
       SUSPENSION_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)?.status ?? "unchecked"
     );
+  }
+  if (kind === "lights") {
+    const labels = splitMultiValue(valueParts(item.value)["Неисправности"]);
+    return checkedAutoStatus(worstStatus(choiceListByLabels(LIGHT_CONDITION_CHOICES, labels).map((choice) => choice.status)));
   }
 
   return null;
@@ -964,6 +1094,25 @@ function autoStatusFromItem(item: DiagnosticMapItem): DiagnosticMapStatusCode | 
 function choiceByLabel<T extends DiagnosticChoice>(choices: readonly T[], label?: string): T | null {
   if (!label) return null;
   return choices.find((choice) => choice.label === label) ?? null;
+}
+
+function toggleChoiceLabels<T extends DiagnosticChoice>(
+  currentLabels: string[],
+  choice: T,
+  exclusiveIds: string[] = [],
+  okId = "ok"
+): string[] {
+  const current = choiceListByLabels(
+    [...BELT_CONDITION_CHOICES, ...SUSPENSION_CONDITION_CHOICES, ...TIRE_DAMAGE_CHOICES, ...BRAKE_DISC_CONDITION_CHOICES, ...LIGHT_CONDITION_CHOICES],
+    currentLabels
+  );
+  const choiceIsExclusive = choice.id === okId || exclusiveIds.includes(choice.id);
+  if (choiceIsExclusive) return currentLabels.includes(choice.label) ? [] : [choice.label];
+  const withoutExclusive = currentLabels.filter((label) => {
+    const existing = current.find((candidate) => candidate.label === label);
+    return existing && existing.id !== okId && !exclusiveIds.includes(existing.id);
+  });
+  return toggleMultiValue(withoutExclusive, choice.label);
 }
 
 function atfBaseByLabel(label?: string): AtfBaseColor | null {
@@ -1056,35 +1205,54 @@ function buildGearPatch(item: DiagnosticMapItem, parts: Record<string, string>):
   });
 }
 
-function buildBeltPatch(item: DiagnosticMapItem, choice: (typeof BELT_CONDITION_CHOICES)[number]): Partial<DiagnosticMapItem> {
+function buildBeltPatch(item: DiagnosticMapItem, choiceOrLabels: (typeof BELT_CONDITION_CHOICES)[number] | string[]): Partial<DiagnosticMapItem> {
+  const labels = Array.isArray(choiceOrLabels) ? choiceOrLabels : [choiceOrLabels.label];
+  const choices = choiceListByLabels(BELT_CONDITION_CHOICES, labels);
+  if (choices.length === 0) return measurementPatch(item, { value: "", status: "unchecked", comment: "", recommendation: "", nextVisit: false });
+  const status = worstStatus(choices.map((choice) => choice.status));
+  const ok = choices.some((choice) => choice.id === "ok");
+  const comments = ok && choices.length === 1 ? [choices[0].comment] : choices.filter((choice) => choice.id !== "ok").map((choice) => choice.comment);
   return measurementPatch(item, {
-    value: `Состояние: ${choice.label}`,
-    status: choice.status,
-    comment: choice.comment,
-    recommendation: choice.recommendation,
-    nextVisit: choice.nextVisit,
+    value: formatValueParts({ Признаки: formatMultiValue(choices.map((choice) => choice.label)) }, ["Признаки"]),
+    status,
+    comment: comments.join(". "),
+    recommendation: mergeRecommendations(choices),
+    nextVisit: choices.some((choice) => choice.nextVisit),
   });
 }
 
 function buildLeakPatch(
   item: DiagnosticMapItem,
   choice: (typeof LEAK_CONDITION_CHOICES)[number],
-  location?: string
+  locations?: string[] | string,
+  otherLocation = ""
 ): Partial<DiagnosticMapItem> {
   const needsLocation = choice.status === "warn" || choice.status === "crit";
-  const leakLocation = needsLocation ? (location?.trim() ?? "") : "";
+  const leakLocations = needsLocation
+    ? Array.isArray(locations)
+      ? locations
+      : splitMultiValue(locations)
+    : [];
+  const cleanOther = otherLocation.trim();
+  const locationTextValues = leakLocations.map((location) => (location === "другое" && cleanOther ? cleanOther : location));
+  const locationsText = humanList(locationTextValues);
+  const locationPhrase = locationsText ? ` в зоне ${locationsText}` : "";
   const comment =
-    choice.status === "good"
-      ? choice.comment
-      : choice.status === "no-access"
+    choice.id === "dry"
+      ? "Следов утечек не обнаружено"
+      : choice.id === "no-access"
         ? choice.comment
-        : `${choice.comment}${leakLocation ? ` (${leakLocation})` : ""}`;
+        : choice.id === "sweating"
+          ? `Обнаружены следы запотевания${locationPhrase}. Рекомендуется контроль и повторный осмотр.`
+          : choice.id === "active"
+            ? `Обнаружена активная течь${locationPhrase}. Требуется диагностика источника и устранение.`
+            : `Обнаружена утечка${locationPhrase}. Требуется диагностика источника.`;
 
   return {
     ...measurementPatch(item, {
       value: formatValueParts(
-        { Утечка: choice.label, Где: leakLocation },
-        leakLocation ? ["Утечка", "Где"] : ["Утечка"]
+        { Утечка: choice.label, Где: formatMultiValue(leakLocations), Другое: cleanOther },
+        cleanOther ? ["Утечка", "Где", "Другое"] : leakLocations.length ? ["Утечка", "Где"] : ["Утечка"]
       ),
       status: choice.status,
       comment,
@@ -1130,19 +1298,20 @@ function buildBrakePadsPatch(item: DiagnosticMapItem, parts: Record<string, stri
 }
 
 function buildBrakeDiscsPatch(item: DiagnosticMapItem, parts: Record<string, string>): Partial<DiagnosticMapItem> {
-  const front = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Передние"]);
-  const rear = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Задние"]);
-  const status = worstStatus([front?.status, rear?.status]);
+  const frontChoices = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, splitMultiValue(parts["Передние"]));
+  const rearChoices = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, splitMultiValue(parts["Задние"]));
+  const status = worstStatus([...frontChoices.map((choice) => choice.status), ...rearChoices.map((choice) => choice.status)]);
   const comments = [
-    front ? brakeDiscAxisComment("Передние", front) : null,
-    rear ? brakeDiscAxisComment("Задние", rear) : null,
-  ].filter(Boolean) as string[];
-  const criticalFront = front?.status === "crit";
-  const criticalRear = rear?.status === "crit";
-  const needsFrontReplacement = criticalFront && front?.id === "cracks";
-  const needsRearReplacement = criticalRear && rear?.id === "cracks";
-  const needsBrakeDiagnostic = [front?.id, rear?.id].some((id) => id === "overheat" || id === "blue-overheat" || id === "vibration");
-  const needsThicknessMeasure = [front?.id, rear?.id].some((id) => id === "edge" || id === "grooves");
+    ...frontChoices.map((choice) => brakeDiscAxisComment("Передние", choice)),
+    ...rearChoices.map((choice) => brakeDiscAxisComment("Задние", choice)),
+  ];
+  const criticalFront = frontChoices.some((choice) => choice.status === "crit");
+  const criticalRear = rearChoices.some((choice) => choice.status === "crit");
+  const needsFrontReplacement = frontChoices.some((choice) => choice.id === "cracks");
+  const needsRearReplacement = rearChoices.some((choice) => choice.id === "cracks");
+  const allIds = [...frontChoices, ...rearChoices].map((choice) => choice.id);
+  const needsBrakeDiagnostic = allIds.some((id) => id === "overheat" || id === "blue-overheat" || id === "vibration");
+  const needsThicknessMeasure = allIds.some((id) => id === "edge" || id === "grooves");
   const recommendation =
     needsFrontReplacement && needsRearReplacement
       ? "Замена дисков и колодок комплектом"
@@ -1165,7 +1334,7 @@ function buildBrakeDiscsPatch(item: DiagnosticMapItem, parts: Record<string, str
                       : "";
 
   return measurementPatch(item, {
-    value: formatValueParts(parts, ["Передние", "Задние"]),
+    value: formatValueParts({ Передние: formatMultiValue(splitMultiValue(parts["Передние"])), Задние: formatMultiValue(splitMultiValue(parts["Задние"])) }, ["Передние", "Задние"]),
     status,
     comment: comments.join(". "),
     recommendation,
@@ -1176,19 +1345,20 @@ function buildBrakeDiscsPatch(item: DiagnosticMapItem, parts: Record<string, str
 function buildTiresPatch(item: DiagnosticMapItem, parts: Record<TireWheelKey, string>): Partial<DiagnosticMapItem> {
   const wheelStates = TIRE_WHEELS.map((wheel) => {
     const parsed = parseTireWheelValue(parts[wheel.key]);
-    const damage = choiceByLabel(TIRE_DAMAGE_CHOICES, parsed.damage);
-    const status = tireWheelStatus(parsed.depth, damage);
-    return { wheel, depth: parsed.depth, damage, status };
+    const damages = choiceListByLabels(TIRE_DAMAGE_CHOICES, splitMultiValue(parsed.damage));
+    const status = tireWheelStatusFromDamages(parsed.depth, damages);
+    return { wheel, depth: parsed.depth, damages, status };
   });
   const status = worstStatus(wheelStates.map((state) => state.status));
   const comments = wheelStates
-    .map((state) => tireWheelComment(state.wheel, state.depth, state.damage))
+    .map((state) => tireWheelCommentFromDamages(state.wheel, state.depth, state.damages))
     .filter(Boolean) as string[];
   const frontProblem = wheelStates.some((state) => state.wheel.axle === "front" && state.status === "crit");
   const rearProblem = wheelStates.some((state) => state.wheel.axle === "rear" && state.status === "crit");
-  const alignmentNeeded = wheelStates.some((state) => ["uneven", "inner", "outer"].includes(state.damage?.id ?? ""));
-  const puncture = wheelStates.some((state) => state.damage?.id === "puncture");
-  const suspensionNeeded = wheelStates.some((state) => state.damage?.id === "uneven");
+  const damageIds = wheelStates.flatMap((state) => state.damages.map((damage) => damage.id));
+  const alignmentNeeded = damageIds.some((id) => ["uneven", "inner", "outer"].includes(id));
+  const puncture = damageIds.includes("puncture");
+  const suspensionNeeded = damageIds.includes("uneven");
   const recommendation =
     frontProblem && rearProblem
       ? "Замена комплекта шин"
@@ -1215,13 +1385,51 @@ function buildTiresPatch(item: DiagnosticMapItem, parts: Record<TireWheelKey, st
   });
 }
 
-function buildSuspensionPatch(item: DiagnosticMapItem, choice: (typeof SUSPENSION_CONDITION_CHOICES)[number]): Partial<DiagnosticMapItem> {
+function buildSuspensionPatch(item: DiagnosticMapItem, choiceOrLabels: (typeof SUSPENSION_CONDITION_CHOICES)[number] | string[], otherText = ""): Partial<DiagnosticMapItem> {
+  const labels = Array.isArray(choiceOrLabels) ? choiceOrLabels : [choiceOrLabels.label];
+  const choices = choiceListByLabels(SUSPENSION_CONDITION_CHOICES, labels);
+  if (choices.length === 0) return measurementPatch(item, { value: "", status: "unchecked", comment: "", recommendation: "", nextVisit: false });
+  const status = worstStatus(choices.map((choice) => choice.status));
+  const ok = choices.some((choice) => choice.id === "ok");
+  const noAccess = choices.some((choice) => choice.id === "no-access");
+  const problemChoices = choices.filter((choice) => choice.id !== "ok" && choice.id !== "no-access");
+  const findingText = humanList(problemChoices.map((choice) => choice.label.toLowerCase()).concat(otherText.trim() ? [otherText.trim()] : []));
+  const comment =
+    ok && choices.length === 1
+      ? "Видимых повреждений подвески не обнаружено"
+      : noAccess
+        ? "Осмотр подвески затруднён без дополнительного доступа"
+        : status === "crit"
+          ? `Обнаружены ${findingText}. Требуется ремонт подвески.`
+          : `Обнаружены ${findingText}. Рекомендуется контроль и плановый ремонт.`;
   return measurementPatch(item, {
-    value: `Состояние: ${choice.label}`,
-    status: choice.status,
-    comment: choice.comment,
-    recommendation: choice.recommendation,
-    nextVisit: choice.nextVisit,
+    value: formatValueParts({ Признаки: formatMultiValue(choices.map((choice) => choice.label)), Другое: otherText.trim() }, otherText.trim() ? ["Признаки", "Другое"] : ["Признаки"]),
+    status,
+    comment,
+    recommendation: mergeRecommendations(choices),
+    nextVisit: choices.some((choice) => choice.nextVisit),
+  });
+}
+
+function buildLightsPatch(item: DiagnosticMapItem, labels: string[]): Partial<DiagnosticMapItem> {
+  const choices = choiceListByLabels(LIGHT_CONDITION_CHOICES, labels);
+  if (choices.length === 0) return measurementPatch(item, { value: "", status: "unchecked", comment: "", recommendation: "", nextVisit: false });
+  const status = worstStatus(choices.map((choice) => choice.status));
+  const ok = choices.some((choice) => choice.id === "ok");
+  const noAccess = choices.some((choice) => choice.id === "no-access");
+  const problemChoices = choices.filter((choice) => choice.id !== "ok" && choice.id !== "no-access");
+  const comment =
+    ok && choices.length === 1
+      ? "Освещение и сигналы исправны"
+      : noAccess
+        ? "Освещение и сигналы не удалось проверить"
+        : `Обнаружены неисправности: ${humanList(problemChoices.map((choice) => choice.label.toLowerCase()))}.`;
+  return measurementPatch(item, {
+    value: formatValueParts({ Неисправности: formatMultiValue(choices.map((choice) => choice.label)) }, ["Неисправности"]),
+    status,
+    comment,
+    recommendation: mergeRecommendations(choices),
+    nextVisit: choices.some((choice) => choice.nextVisit),
   });
 }
 
@@ -1254,29 +1462,30 @@ function evaluateCoolant(value: number): MeasurementEvaluation {
 }
 
 function evaluateBrakeFluid(value: number): MeasurementEvaluation {
-  const formatted = Number.isInteger(value) ? String(value) : value.toFixed(1);
-  if (value <= 1) {
+  const rounded = Math.max(0, Math.min(5, Math.round(value * 10) / 10));
+  const formatted = rounded.toFixed(1);
+  if (rounded < 2) {
     return {
-      value: `${formatted} %`,
+      value: `${formatted}%`,
       status: "good",
-      comment: "Влажность в пределах нормы",
+      comment: "Влажность тормозной жидкости в пределах нормы",
       recommendation: "",
       nextVisit: false,
     };
   }
-  if (value <= 3) {
+  if (rounded < 4) {
     return {
-      value: `${formatted} %`,
+      value: `${formatted}%`,
       status: "warn",
-      comment: "Показатель повышен, рекомендуется контроль",
+      comment: "Влажность повышена, рекомендуется замена тормозной жидкости",
       recommendation: "Замена тормозной жидкости DOT 4 с прокачкой · ~2 200 ₽",
       nextVisit: true,
     };
   }
   return {
-    value: `${formatted} %`,
+    value: `${formatted}%`,
     status: "crit",
-    comment: "Влажность критическая, рекомендуется замена тормозной жидкости",
+    comment: "Критическая влажность, требуется замена тормозной жидкости",
     recommendation: "Замена тормозной жидкости DOT 4 с прокачкой · ~2 200 ₽",
     nextVisit: false,
   };
@@ -1349,6 +1558,180 @@ function computeCounts(blocks: DiagnosticMapBlock[]) {
     withPhoto: items.filter((item) => item.photos.length > 0).length,
     recommendations: items.filter((item) => item.recommendation.trim() || itemNeedsRecommendation(item)).length,
   };
+}
+
+function isProblemStatus(status: DiagnosticMapStatusCode): boolean {
+  return status === "warn" || status === "crit";
+}
+
+function isActionStatus(status: DiagnosticMapStatusCode): boolean {
+  return status !== "good";
+}
+
+function itemNeedsPhoto(item: DiagnosticMapItem): boolean {
+  return isProblemStatus(item.status) && item.photos.length === 0;
+}
+
+function itemIsNotApplicable(item: DiagnosticMapItem): boolean {
+  return item.value.startsWith("Не применимо") || item.comment.toLowerCase().includes("агрегат отсутствует");
+}
+
+function itemNeedsAction(item: DiagnosticMapItem): boolean {
+  if (item.applicability !== "applicable") return false;
+  if (item.status === "unchecked") return true;
+  if (itemNeedsPhoto(item)) return true;
+  if (itemNeedsRecommendation(item) && !item.recommendation.trim()) return true;
+  return false;
+}
+
+function itemQuickSummary(item: DiagnosticMapItem): string {
+  if (itemIsNotApplicable(item)) return "Агрегат отсутствует · не применимо";
+  const parts = valueParts(item.value);
+  if (item.code === "leaks") {
+    const condition = parts["Утечка"];
+    const locations = splitMultiValue(parts["Где"]).map((location) => (location === "другое" && parts["Другое"] ? parts["Другое"] : location));
+    return [condition, compactMultiSummary(locations)].filter(Boolean).join(" · ") || "нужно заполнить";
+  }
+  if (item.code === "suspension") {
+    const labels = splitMultiValue(parts["Признаки"]);
+    return compactMultiSummary(labels) || "нужно заполнить";
+  }
+  if (item.code === "belts") {
+    const labels = splitMultiValue(parts["Признаки"]);
+    return compactMultiSummary(labels) || "нужно заполнить";
+  }
+  if (item.code === "lights") {
+    const labels = splitMultiValue(parts["Неисправности"]);
+    return compactMultiSummary(labels) || "нужно заполнить";
+  }
+  const value = item.value.trim();
+  if (value) return formatDisplayValue(value);
+  if (item.status === "unchecked") return "нужно заполнить";
+  return item.comment.trim() || DIAGNOSTIC_MAP_STATUSES[item.status].clientText;
+}
+
+function formatDisplayValue(value: string): string {
+  return value.replace(/(\d)\.(\d)/g, "$1,$2");
+}
+
+function blockVisualStatus(block: DiagnosticMapBlock): DiagnosticMapStatusCode {
+  const counts = computeCounts([block]);
+  if (counts.crit > 0) return "crit";
+  if (counts.warn > 0) return "warn";
+  if (counts.indirect > 0) return "by-mileage";
+  if (counts.unchecked > 0) return "unchecked";
+  return "good";
+}
+
+function blockStatusLine(block: DiagnosticMapBlock): string {
+  const counts = computeCounts([block]);
+  const checked = Math.max(0, counts.total - counts.unchecked);
+  const parts = [`${checked} / ${counts.total}`];
+  if (counts.crit) parts.push(`${counts.crit} критично`);
+  if (counts.warn) parts.push(`${counts.warn} внимание`);
+  if (counts.indirect) parts.push(`${counts.indirect} косвенно`);
+  const notApplicable = block.items.filter(itemIsNotApplicable).length;
+  if (notApplicable) parts.push(`${notApplicable} не применимо`);
+  return parts.join(" · ");
+}
+
+function defaultGoodPatch(item: DiagnosticMapItem): Partial<DiagnosticMapItem> {
+  const kind = autoMeasurementKind(item.code);
+  if (kind === "oil") return measurementPatch(item, OIL_LEVEL_ZONES.find((zone) => zone.id === "normal") ?? OIL_LEVEL_ZONES[2]);
+  if (kind === "coolant") return measurementPatch(item, evaluateCoolant(-40));
+  if (kind === "brake-fluid") return measurementPatch(item, evaluateBrakeFluid(1));
+  if (kind === "atf") {
+    return buildAtfPatch(item, {
+      База: "неизвестно",
+      Цвет: "визуально чистая",
+      Запах: "Без запаха гари",
+    });
+  }
+  if (kind === "gear-oil") {
+    if (itemIsNotApplicable(item)) return {};
+    return buildGearPatch(item, {
+      Агрегат: "есть",
+      Доступ: "есть",
+      Цвет: "янтарное",
+      Уровень: "На уровне кромки",
+    });
+  }
+  if (kind === "belt") {
+    const choice = BELT_CONDITION_CHOICES.find((candidate) => candidate.id === "ok") ?? BELT_CONDITION_CHOICES[0];
+    return buildBeltPatch(item, choice);
+  }
+  if (kind === "leak") {
+    const choice = LEAK_CONDITION_CHOICES.find((candidate) => candidate.id === "dry") ?? LEAK_CONDITION_CHOICES[0];
+    return buildLeakPatch(item, choice);
+  }
+  if (kind === "brake-pads") return buildBrakePadsPatch(item, { Передние: "75%", Задние: "75%" });
+  if (kind === "brake-discs") {
+    const choice = BRAKE_DISC_CONDITION_CHOICES.find((candidate) => candidate.id === "ok") ?? BRAKE_DISC_CONDITION_CHOICES[0];
+    return buildBrakeDiscsPatch(item, { Передние: choice.label, Задние: choice.label });
+  }
+  if (kind === "tires") {
+    return buildTiresPatch(item, {
+      ПЛ: "6 мм / нет повреждений",
+      ПП: "6 мм / нет повреждений",
+      ЗЛ: "6 мм / нет повреждений",
+      ЗП: "6 мм / нет повреждений",
+    });
+  }
+  if (kind === "suspension") {
+    const choice = SUSPENSION_CONDITION_CHOICES.find((candidate) => candidate.id === "ok") ?? SUSPENSION_CONDITION_CHOICES[0];
+    return buildSuspensionPatch(item, choice);
+  }
+  if (kind === "lights") {
+    const choice = LIGHT_CONDITION_CHOICES.find((candidate) => candidate.id === "ok") ?? LIGHT_CONDITION_CHOICES[0];
+    return buildLightsPatch(item, [choice.label]);
+  }
+
+  if (item.code === "battery") {
+    return measurementPatch(item, {
+      value: "12.6 В",
+      status: "good",
+      comment: item.notes[0] ?? "Напряжение АКБ в норме",
+      recommendation: "",
+      nextVisit: false,
+    });
+  }
+
+  return measurementPatch(item, {
+    value: item.notes[0] ?? item.norm ?? "Проверено, отклонений не выявлено",
+    status: "good",
+    comment: item.notes[0] ?? "Пункт проверен, отклонений не выявлено",
+    recommendation: "",
+    nextVisit: false,
+  });
+}
+
+function photoCaptionPresetsForItem(item: DiagnosticMapItem): string[] {
+  const parts = valueParts(item.value);
+  if (item.code === "leaks") {
+    const locations = splitMultiValue(parts["Где"]);
+    return [
+      ...locations.map((location) => `Течь в зоне ${location === "другое" && parts["Другое"] ? parts["Другое"] : location}`),
+      "Следы запотевания",
+      "Активная течь",
+      "Общий вид снизу",
+    ];
+  }
+  if (item.code === "suspension") {
+    return ["Разрыв сайлентблока", "Люфт рычага", "Повреждение пыльника", "Течь амортизатора", "Деформация элемента подвески"];
+  }
+  if (item.code === "tires") {
+    return ["Износ протектора", "Повреждение боковины", "Грыжа", "Порез", "Неравномерный износ"];
+  }
+  if (item.code === "pads") {
+    return ["Передние колодки", "Задние колодки", "Остаток колодок"];
+  }
+  if (item.code === "brake-discs") {
+    return ["Бурт диска", "Борозды", "Следы перегрева", "Трещины"];
+  }
+  if (item.code === "belts") {
+    return ["Микротрещины ремня", "Следы масла на ремне", "Износ дорожек", "Общий вид ремня"];
+  }
+  return [item.title, "Общий вид", "Крупный план"];
 }
 
 function CompletionRing({ pct }: { pct: number }) {
@@ -1469,7 +1852,7 @@ function MeasurementPrimaryControl({
   }
 
   if (kind === "brake-fluid") {
-    const value = numericValue(item.value) ?? 1;
+    const value = Math.max(0, Math.min(5, Math.round((numericValue(item.value) ?? 1) * 10) / 10));
     const evaluation = evaluateBrakeFluid(value);
     const previewStatus = DIAGNOSTIC_MAP_STATUSES[evaluation.status];
     return (
@@ -1480,14 +1863,14 @@ function MeasurementPrimaryControl({
         </div>
         <div className="diag-measure-slider" style={{ "--diag-measure-color": previewStatus.color, "--diag-measure-fill": `${sliderPercent(value, 0, 5)}%` } as CSSProperties}>
           <div className="diag-measure-readout">
-            <strong>{Number.isInteger(value) ? value : value.toFixed(1)}%</strong>
+            <strong>{value.toFixed(1)}%</strong>
             <span>{previewStatus.label}</span>
           </div>
           <input
             type="range"
             min="0"
             max="5"
-            step="0.5"
+            step="0.1"
             value={value}
             onChange={(event) => {
               const next = Number(event.target.value);
@@ -1496,8 +1879,9 @@ function MeasurementPrimaryControl({
           />
           <div className="diag-measure-scale">
             <span>0%</span>
-            <span>1% норма</span>
-            <span>3% внимание</span>
+            <span>1.9% норма</span>
+            <span>2.0% внимание</span>
+            <span>4.0% критично</span>
             <span>5%</span>
           </div>
         </div>
@@ -1560,12 +1944,17 @@ function MeasurementPrimaryControl({
 
   if (kind === "brake-discs") {
     const parts = valueParts(item.value);
-    const front = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Передние"]);
-    const rear = choiceByLabel(BRAKE_DISC_CONDITION_CHOICES, parts["Задние"]);
+    const frontLabels = splitMultiValue(parts["Передние"]);
+    const rearLabels = splitMultiValue(parts["Задние"]);
+    const front = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, frontLabels);
+    const rear = choiceListByLabels(BRAKE_DISC_CONDITION_CHOICES, rearLabels);
     const statusLabel = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
-    const applyDiscs = (axis: "Передние" | "Задние", choice: (typeof BRAKE_DISC_CONDITION_CHOICES)[number]) =>
-      onApply(buildBrakeDiscsPatch(item, { ...parts, [axis]: choice.label }));
-    const photoHint = Boolean([front, rear].some((choice) => choice && choice.photoRecommended && choice.status !== "good") && item.photos.length === 0);
+    const applyDiscs = (axis: "Передние" | "Задние", choice: (typeof BRAKE_DISC_CONDITION_CHOICES)[number]) => {
+      const current = axis === "Передние" ? frontLabels : rearLabels;
+      const next = toggleChoiceLabels(current, choice, ["no-access"]);
+      onApply(buildBrakeDiscsPatch(item, { ...parts, [axis]: formatMultiValue(next) }));
+    };
+    const photoHint = Boolean([...front, ...rear].some((choice) => choice.photoRecommended && choice.status !== "good") && item.photos.length === 0);
 
     return (
       <div className="diag-measure-card">
@@ -1574,7 +1963,7 @@ function MeasurementPrimaryControl({
           <span>Выберите состояние передних и задних дисков. Общий результат считается по худшей оси.</span>
         </div>
         {(["Передние", "Задние"] as const).map((axis) => {
-          const selected = axis === "Передние" ? front : rear;
+          const selected = axis === "Передние" ? frontLabels : rearLabels;
           return (
             <div className="diag-measure-subpanel" key={axis}>
               <b>{axis} диски</b>
@@ -1585,7 +1974,7 @@ function MeasurementPrimaryControl({
                     <button
                       type="button"
                       key={choice.id}
-                      className={`diag-choice-btn ${selected?.id === choice.id ? "is-active" : ""}`}
+                      className={`diag-choice-btn ${selected.includes(choice.label) ? "is-active" : ""}`}
                       style={{ "--diag-status-color": choiceStatus.color } as CSSProperties}
                       onClick={() => applyDiscs(axis, choice)}
                     >
@@ -1625,11 +2014,12 @@ function MeasurementPrimaryControl({
       onApply(buildTiresPatch(item, { ...parts, [key]: formatTireWheelValue(depth, damage) }));
     const wheelStates = TIRE_WHEELS.map((wheel) => {
       const parsed = parseTireWheelValue(parts[wheel.key]);
-      const damage = choiceByLabel(TIRE_DAMAGE_CHOICES, parsed.damage);
-      return { wheel, depth: parsed.depth, damage };
+      const damageLabels = splitMultiValue(parsed.damage);
+      const damages = choiceListByLabels(TIRE_DAMAGE_CHOICES, damageLabels);
+      return { wheel, depth: parsed.depth, damageLabels, damages };
     });
     const photoHint = Boolean(
-      wheelStates.some((state) => state.damage && state.damage.photoRecommended && state.damage.status !== "good") && item.photos.length === 0
+      wheelStates.some((state) => state.damages.some((damage) => damage.photoRecommended && damage.status !== "good")) && item.photos.length === 0
     );
 
     return (
@@ -1638,10 +2028,10 @@ function MeasurementPrimaryControl({
           <strong>Глубина и повреждения шин</strong>
           <span>Заполните каждое колесо отдельно. Итог считается по худшему колесу.</span>
         </div>
-        {wheelStates.map(({ wheel, depth, damage }) => {
-          const depthForControl = depth ?? 5;
-          const depthStatus = depth !== null ? DIAGNOSTIC_MAP_STATUSES[tireDepthStatus(depth)] : DIAGNOSTIC_MAP_STATUSES.unchecked;
-          const selectedDamage = damage?.label ?? "";
+        {wheelStates.map(({ wheel, depth, damageLabels }) => {
+          const depthForControl = depth !== null ? clampTireDepth(depth) : 5;
+          const depthStatus = depth !== null ? DIAGNOSTIC_MAP_STATUSES[tireDepthStatus(depthForControl)] : DIAGNOSTIC_MAP_STATUSES.unchecked;
+          const selectedDamage = formatMultiValue(damageLabels);
           return (
             <div className="diag-measure-subpanel" key={wheel.key}>
               <b>{wheel.label}</b>
@@ -1653,14 +2043,14 @@ function MeasurementPrimaryControl({
                 } as CSSProperties}
               >
                 <div className="diag-measure-readout">
-                  <strong>{depth !== null ? `${formatTireDepth(depth)} мм` : "не указан"}</strong>
+                  <strong>{depth !== null ? `${formatRuNumber(formatTireDepth(depth))} мм` : "не указан"}</strong>
                   <span>{depth !== null ? depthStatus.label : "Нужен замер"}</span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="10"
-                  step="0.1"
+                  step="1"
                   value={depthForControl}
                   onChange={(event) => applyWheel(wheel.key, clampTireDepth(Number(event.target.value)), selectedDamage)}
                 />
@@ -1668,8 +2058,8 @@ function MeasurementPrimaryControl({
                   type="number"
                   min="0"
                   max="10"
-                  step="0.1"
-                  value={depth ?? ""}
+                  step="1"
+                  value={depth !== null ? clampTireDepth(depth) : ""}
                   placeholder="мм"
                   onChange={(event) => {
                     const next = event.target.value === "" ? null : clampTireDepth(Number(event.target.value));
@@ -1684,9 +2074,12 @@ function MeasurementPrimaryControl({
                     <button
                       type="button"
                       key={choice.id}
-                      className={`diag-choice-btn ${damage?.id === choice.id ? "is-active" : ""}`}
+                      className={`diag-choice-btn ${damageLabels.includes(choice.label) ? "is-active" : ""}`}
                       style={{ "--diag-status-color": choiceStatus.color } as CSSProperties}
-                      onClick={() => applyWheel(wheel.key, depth, choice.label)}
+                      onClick={() => {
+                        const nextLabels = toggleChoiceLabels(damageLabels, choice, [], "none");
+                        applyWheel(wheel.key, depth, formatMultiValue(nextLabels));
+                      }}
                     >
                       <strong>{choice.label}</strong>
                       <small>{choiceStatus.label}</small>
@@ -1712,11 +2105,18 @@ function MeasurementPrimaryControl({
   }
 
   if (kind === "suspension") {
-    const selectedChoice =
-      SUSPENSION_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment) ?? null;
+    const parts = valueParts(item.value);
+    const selectedLabels =
+      splitMultiValue(parts["Признаки"]).length > 0
+        ? splitMultiValue(parts["Признаки"])
+        : SUSPENSION_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)
+          ? [SUSPENSION_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)?.label ?? ""].filter(Boolean)
+          : [];
+    const selectedChoices = choiceListByLabels(SUSPENSION_CONDITION_CHOICES, selectedLabels);
+    const otherText = parts["Другое"] ?? "";
     const statusLabel = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
-    const needsPhoto = selectedChoice?.photoRecommended === "required" && item.photos.length === 0;
-    const recommendsPhoto = selectedChoice?.photoRecommended === "recommended" && item.photos.length === 0;
+    const needsPhoto = selectedChoices.some((choice) => choice.photoRecommended === "required") && item.photos.length === 0;
+    const recommendsPhoto = selectedChoices.some((choice) => choice.photoRecommended === "recommended") && item.photos.length === 0;
 
     return (
       <div className="diag-measure-card">
@@ -1733,9 +2133,12 @@ function MeasurementPrimaryControl({
                 <button
                   type="button"
                   key={choice.id}
-                  className={`diag-choice-btn ${selectedChoice?.id === choice.id ? "is-active" : ""}`}
+                  className={`diag-choice-btn ${selectedLabels.includes(choice.label) ? "is-active" : ""}`}
                   style={{ "--diag-status-color": choiceStatus.color } as CSSProperties}
-                  onClick={() => onApply(buildSuspensionPatch(item, choice))}
+                  onClick={() => {
+                    const nextLabels = toggleChoiceLabels(selectedLabels, choice, ["no-access"]);
+                    onApply(buildSuspensionPatch(item, nextLabels, otherText));
+                  }}
                 >
                   <strong>{choice.label}</strong>
                   <small>{choiceStatus.label}</small>
@@ -1743,6 +2146,16 @@ function MeasurementPrimaryControl({
               );
             })}
           </div>
+          {selectedLabels.includes("Другое") && (
+            <label className="diag-inline-text-field">
+              <span>Уточнить</span>
+              <input
+                value={otherText}
+                placeholder="Например: трещина крепления рычага"
+                onChange={(event) => onApply(buildSuspensionPatch(item, selectedLabels, event.target.value))}
+              />
+            </label>
+          )}
           {needsPhoto && <small>Для критичного повреждения фото обязательно: добавьте снимок узла ниже и подпишите место.</small>}
           {recommendsPhoto && <small>Для признаков износа фото желательно: так клиенту будет понятнее, что именно обнаружено.</small>}
         </div>
@@ -1948,8 +2361,13 @@ function MeasurementPrimaryControl({
   }
 
   if (kind === "belt") {
-    const selectedChoice =
-      BELT_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment) ?? null;
+    const parts = valueParts(item.value);
+    const selectedLabels =
+      splitMultiValue(parts["Признаки"]).length > 0
+        ? splitMultiValue(parts["Признаки"])
+        : BELT_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)
+          ? [BELT_CONDITION_CHOICES.find((choice) => item.value === `Состояние: ${choice.label}` || item.comment === choice.comment)?.label ?? ""].filter(Boolean)
+          : [];
     const statusLabel = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
 
     return (
@@ -1967,9 +2385,12 @@ function MeasurementPrimaryControl({
                 <button
                   type="button"
                   key={choice.id}
-                  className={`diag-choice-btn ${selectedChoice?.id === choice.id ? "is-active" : ""}`}
+                  className={`diag-choice-btn ${selectedLabels.includes(choice.label) ? "is-active" : ""}`}
                   style={{ "--diag-status-color": status.color } as CSSProperties}
-                  onClick={() => onApply(buildBeltPatch(item, choice))}
+                  onClick={() => {
+                    const nextLabels = toggleChoiceLabels(selectedLabels, choice, ["no-access"]);
+                    onApply(buildBeltPatch(item, nextLabels));
+                  }}
                 >
                   <strong>{choice.label}</strong>
                   <small>{status.label}</small>
@@ -1991,7 +2412,8 @@ function MeasurementPrimaryControl({
     const parts = valueParts(item.value);
     const selectedCondition =
       LEAK_CONDITION_CHOICES.find((choice) => parts["Утечка"] === choice.label || item.comment.startsWith(choice.comment)) ?? null;
-    const selectedLocation = parts["Где"] ?? "";
+    const selectedLocations = splitMultiValue(parts["Где"]);
+    const otherLocation = parts["Другое"] ?? "";
     const statusLabel = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
     const showLocation = selectedCondition?.status === "warn" || selectedCondition?.status === "crit";
     const locationCondition = showLocation ? selectedCondition : null;
@@ -2014,7 +2436,7 @@ function MeasurementPrimaryControl({
                   key={choice.id}
                   className={`diag-choice-btn ${selectedCondition?.id === choice.id ? "is-active" : ""}`}
                   style={{ "--diag-status-color": status.color } as CSSProperties}
-                  onClick={() => onApply(buildLeakPatch(item, choice, selectedLocation))}
+                  onClick={() => onApply(buildLeakPatch(item, choice, selectedLocations, otherLocation))}
                 >
                   <strong>{choice.label}</strong>
                   <small>{status.label}</small>
@@ -2031,14 +2453,27 @@ function MeasurementPrimaryControl({
                 <button
                   type="button"
                   key={location}
-                  className={`diag-choice-btn ${selectedLocation === location ? "is-active" : ""}`}
+                  className={`diag-choice-btn ${selectedLocations.includes(location) ? "is-active" : ""}`}
                   style={{ "--diag-status-color": statusLabel.color } as CSSProperties}
-                  onClick={() => onApply(buildLeakPatch(item, locationCondition, location))}
+                  onClick={() => {
+                    const nextLocations = toggleMultiValue(selectedLocations, location);
+                    onApply(buildLeakPatch(item, locationCondition, nextLocations, otherLocation));
+                  }}
                 >
                   <strong>{location}</strong>
                 </button>
               ))}
             </div>
+            {selectedLocations.includes("другое") && (
+              <label className="diag-inline-text-field">
+                <span>Уточнить место</span>
+                <input
+                  value={otherLocation}
+                  placeholder="Например: стык теплообменника"
+                  onChange={(event) => onApply(buildLeakPatch(item, locationCondition, selectedLocations, event.target.value))}
+                />
+              </label>
+            )}
             {photoHint && <small>Фото места утечки желательно: оно попадёт в клиентский отчёт с подписью.</small>}
           </div>
         )}
@@ -2046,6 +2481,50 @@ function MeasurementPrimaryControl({
           <b>{statusLabel.icon}</b>
           <strong>{statusLabel.label}</strong>
           <span>{item.comment || "Выберите состояние утечек, чтобы получить автоматический вывод."}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "lights") {
+    const parts = valueParts(item.value);
+    const selectedLabels = splitMultiValue(parts["Неисправности"]);
+    const selectedChoices = choiceListByLabels(LIGHT_CONDITION_CHOICES, selectedLabels);
+    const statusLabel = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+
+    return (
+      <div className="diag-measure-card">
+        <div className="diag-measure-head">
+          <strong>Освещение и сигналы</strong>
+          <span>Можно отметить несколько неисправностей. «Все исправны» и «Не удалось проверить» работают как отдельные режимы.</span>
+        </div>
+        <div className="diag-measure-subpanel">
+          <b>Что обнаружено</b>
+          <div className="diag-choice-grid">
+            {LIGHT_CONDITION_CHOICES.map((choice) => {
+              const status = DIAGNOSTIC_MAP_STATUSES[choice.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+              return (
+                <button
+                  type="button"
+                  key={choice.id}
+                  className={`diag-choice-btn ${selectedLabels.includes(choice.label) ? "is-active" : ""}`}
+                  style={{ "--diag-status-color": status.color } as CSSProperties}
+                  onClick={() => {
+                    const nextLabels = toggleChoiceLabels(selectedLabels, choice, ["no-access"]);
+                    onApply(buildLightsPatch(item, nextLabels));
+                  }}
+                >
+                  <strong>{choice.label}</strong>
+                  <small>{status.label}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="diag-measure-auto-result" style={{ "--diag-status-color": statusLabel.color } as CSSProperties}>
+          <b>{statusLabel.icon}</b>
+          <strong>{statusLabel.label}</strong>
+          <span>{item.comment || (selectedChoices.length ? "Проверьте выбранные неисправности." : "Отметьте исправность или конкретные неисправности света.")}</span>
         </div>
       </div>
     );
@@ -2072,11 +2551,23 @@ export function DiagnosticMapModal({
   const [loading, setLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [telegramReport, setTelegramReport] = useState<TelegramReportState | null>(null);
+  const [telegramReportSending, setTelegramReportSending] = useState(false);
   const [photoCaptions, setPhotoCaptions] = useState<Record<string, string>>({});
   const [photoUploads, setPhotoUploads] = useState<Record<string, PhotoUploadState[]>>({});
   const [mobileStructureOpen, setMobileStructureOpen] = useState(false);
+  const [mobileSummaryOpen, setMobileSummaryOpen] = useState(false);
   const [isEditingText, setIsEditingText] = useState(false);
   const [lightbox, setLightbox] = useState<{ title: string; photo: DiagnosticMapPhoto } | null>(null);
+  const [captionEditor, setCaptionEditor] = useState<CaptionEditorState | null>(null);
+  const [captionDraft, setCaptionDraft] = useState("");
+  const [captionSaving, setCaptionSaving] = useState(false);
+  const [viewMode, setViewMode] = useState<DiagnosticViewMode>("quick");
+  const [quickFilter, setQuickFilter] = useState<QuickFilterMode>("all");
+  const [quickOpenBlocks, setQuickOpenBlocks] = useState<Set<string>>(new Set());
+  const [quickExpandedItems, setQuickExpandedItems] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
+  const [quickUndoSnapshot, setQuickUndoSnapshot] = useState<QuickUndoSnapshot | null>(null);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pendingSavesRef = useRef(new Set<Promise<unknown>>());
   const pendingUploadsRef = useRef(new Set<Promise<unknown>>());
@@ -2089,12 +2580,13 @@ export function DiagnosticMapModal({
   useEffect(() => {
     if (!open) {
       setMobileStructureOpen(false);
+      setMobileSummaryOpen(false);
       setIsEditingText(false);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open || !mobileStructureOpen) return undefined;
+    if (!open || (!mobileStructureOpen && !mobileSummaryOpen)) return undefined;
     const previousOverflow = document.body.style.overflow;
     const previousOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = "hidden";
@@ -2103,7 +2595,7 @@ export function DiagnosticMapModal({
       document.body.style.overflow = previousOverflow;
       document.body.style.overscrollBehavior = previousOverscroll;
     };
-  }, [mobileStructureOpen, open]);
+  }, [mobileStructureOpen, mobileSummaryOpen, open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -2124,6 +2616,18 @@ export function DiagnosticMapModal({
       document.removeEventListener("focusout", onBlur);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (event.target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(event.target.tagName)) return;
+      event.preventDefault();
+      gotoNextSmart();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   const load = useCallback(async (id: string) => {
     setLoading(true);
@@ -2197,6 +2701,7 @@ export function DiagnosticMapModal({
     () => data?.blocks.flatMap((block) => block.items.map((item) => ({ ...item, blockCode: block.code }))) ?? [],
     [data?.blocks]
   );
+  const applicableFlatItems = useMemo(() => flatItems.filter((candidate) => candidate.applicability === "applicable"), [flatItems]);
   const block = data?.blocks.find((candidate) => candidate.code === activeBlock) ?? data?.blocks[0] ?? null;
   const item = flatItems.find((candidate) => candidate.code === activeItem) ?? block?.items[0] ?? null;
   const itemStatus = item ? DIAGNOSTIC_MAP_STATUSES[item.status] : DIAGNOSTIC_MAP_STATUSES.unchecked;
@@ -2207,6 +2712,56 @@ export function DiagnosticMapModal({
   const autoStatus = autoStatusCode ? DIAGNOSTIC_MAP_STATUSES[autoStatusCode] : null;
   const manualStatusOverride = Boolean(hasAutoMeasurement && item && autoStatusCode && item.status !== "unchecked" && item.status !== autoStatusCode);
   const activeUploads = item ? photoUploads[item.code] ?? [] : [];
+  const remainingGoodTargets = useMemo(
+    () => applicableFlatItems.filter((candidate) => candidate.status === "unchecked" && !itemIsNotApplicable(candidate)),
+    [applicableFlatItems]
+  );
+  const remainingGoodLabel =
+    remainingGoodTargets.length > 0 ? `Отметить ${remainingGoodTargets.length} непроверенных как хорошие` : "Все пункты уже отмечены";
+  const mobileProgressLabel =
+    counts.unchecked === 0
+      ? "Все пункты проверены"
+      : `${counts.total - counts.unchecked} из ${counts.total || DIAGNOSTIC_MAP_CATALOG_TOTAL} пунктов`;
+  const blockers = useMemo(() => {
+    return applicableFlatItems.flatMap((candidate) => {
+      const issues: string[] = [];
+      if (candidate.status === "unchecked") issues.push("не заполнен");
+      if (itemNeedsPhoto(candidate)) issues.push("нет фото");
+      if (itemNeedsRecommendation(candidate) && !candidate.recommendation.trim()) issues.push("нет рекомендации");
+      return issues.length > 0 ? [{ item: candidate, text: issues.join(" · ") }] : [];
+    });
+  }, [applicableFlatItems]);
+  const reportReady = blockers.length === 0;
+
+  useEffect(() => {
+    if (!data?.blocks.length || quickOpenBlocks.size > 0) return;
+    setQuickOpenBlocks(new Set(data.blocks.map((candidate) => candidate.code)));
+  }, [data?.blocks, quickOpenBlocks.size]);
+
+  const nextActionItem = useMemo(() => {
+    const priorities = [
+      (candidate: DiagnosticMapItem) => candidate.status === "crit" && itemNeedsPhoto(candidate),
+      (candidate: DiagnosticMapItem) => candidate.status === "warn" && itemNeedsPhoto(candidate),
+      (candidate: DiagnosticMapItem) => candidate.status === "unchecked",
+      (candidate: DiagnosticMapItem) => itemNeedsRecommendation(candidate) && !candidate.recommendation.trim(),
+    ];
+    for (const predicate of priorities) {
+      const found = applicableFlatItems.find(predicate);
+      if (found) return found;
+    }
+    if (!item) return applicableFlatItems[0] ?? null;
+    const currentIndex = applicableFlatItems.findIndex((candidate) => candidate.code === item.code);
+    return applicableFlatItems[currentIndex + 1] ?? null;
+  }, [applicableFlatItems, item]);
+  const quickPrimaryItem = nextActionItem ?? item ?? applicableFlatItems[0] ?? null;
+  const quickPrimaryStatus = quickPrimaryItem ? DIAGNOSTIC_MAP_STATUSES[quickPrimaryItem.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked : null;
+  const quickPrimaryBlock = quickPrimaryItem ? data?.blocks.find((candidate) => candidate.items.some((candidateItem) => candidateItem.code === quickPrimaryItem.code)) ?? null : null;
+  const captionEditorItem = captionEditor ? flatItems.find((candidate) => candidate.code === captionEditor.itemCode) ?? null : null;
+  const captionEditorPhoto = captionEditorItem?.photos.find((photo) => photo.id === captionEditor?.photoId) ?? null;
+  const photosWithoutCaptions = useMemo(
+    () => applicableFlatItems.flatMap((candidate) => candidate.photos.filter((photo) => !photo.caption.trim()).map((photo) => ({ item: candidate, photo }))),
+    [applicableFlatItems]
+  );
 
   const mutateItem = useCallback((itemCode: string, patch: Partial<DiagnosticMapItem>) => {
     setData((current) => {
@@ -2342,7 +2897,25 @@ export function DiagnosticMapModal({
     }
   }
 
-  function gotoNext() {
+  function focusItem(target: DiagnosticMapItem & { blockCode?: string }, mode: DiagnosticViewMode = viewMode) {
+    const blockCode = target.blockCode ?? data?.blocks.find((candidate) => candidate.items.some((entry) => entry.code === target.code))?.code ?? null;
+    if (blockCode) setActiveBlock(blockCode);
+    setActiveItem(target.code);
+    setShowSummary(false);
+    setMobileSummaryOpen(false);
+    setMobileStructureOpen(false);
+    setViewMode(mode);
+    setQuickOpenBlocks((current) => {
+      if (!blockCode) return current;
+      const next = new Set(current);
+      next.add(blockCode);
+      return next;
+    });
+    setQuickExpandedItems((current) => new Set([...current, target.code]));
+    window.requestAnimationFrame(() => document.getElementById(`diag-quick-${target.code}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
+
+  function gotoNextSequential() {
     if (!item) return;
     const index = flatItems.findIndex((candidate) => candidate.code === item.code);
     const next = flatItems[index + 1];
@@ -2353,6 +2926,86 @@ export function DiagnosticMapModal({
     } else {
       setShowSummary(true);
     }
+  }
+
+  function gotoNextSmart() {
+    if (nextActionItem) {
+      focusItem(nextActionItem, viewMode);
+      return;
+    }
+    if (viewMode === "detail") {
+      gotoNextSequential();
+      return;
+    }
+    setShowSummary(true);
+    setMobileSummaryOpen(true);
+  }
+
+  function toggleQuickBlock(blockCode: string) {
+    setQuickOpenBlocks((current) => {
+      const next = new Set(current);
+      if (next.has(blockCode)) next.delete(blockCode);
+      else next.add(blockCode);
+      return next;
+    });
+  }
+
+  function toggleQuickItem(itemCode: string) {
+    setQuickExpandedItems((current) => {
+      const next = new Set(current);
+      if (next.has(itemCode)) next.delete(itemCode);
+      else next.add(itemCode);
+      return next;
+    });
+  }
+
+  function expandProblemItems() {
+    setQuickExpandedItems(new Set(applicableFlatItems.filter((candidate) => isActionStatus(candidate.status)).map((candidate) => candidate.code)));
+    setQuickOpenBlocks(new Set(data?.blocks.map((candidate) => candidate.code) ?? []));
+  }
+
+  function collapseQuickItems() {
+    setQuickExpandedItems(new Set());
+  }
+
+  function markRemainingGood() {
+    const targets = remainingGoodTargets;
+    if (targets.length === 0) {
+      setNotice("Все пункты уже проверены");
+      setQuickUndoSnapshot(null);
+      window.setTimeout(() => setNotice(null), 2200);
+      return;
+    }
+    setQuickUndoSnapshot(
+      targets.map((target) => ({
+        code: target.code,
+        patch: {
+          status: target.status,
+          value: target.value,
+          comment: target.comment,
+          recommendation: target.recommendation,
+          selectedNotes: target.selectedNotes,
+          selectedRecommendations: target.selectedRecommendations,
+          nextVisit: target.nextVisit,
+          showInReport: target.showInReport,
+        },
+      }))
+    );
+    for (const target of targets) {
+      const patch = defaultGoodPatch(target);
+      if (Object.keys(patch).length > 0) void saveItem(target.code, patch);
+    }
+    setNotice(`${targets.length} пунктов отмечены как хорошие`);
+  }
+
+  function undoMarkRemainingGood() {
+    if (!quickUndoSnapshot) return;
+    for (const entry of quickUndoSnapshot) {
+      void saveItem(entry.code, entry.patch);
+    }
+    setQuickUndoSnapshot(null);
+    setNotice("Массовое действие отменено");
+    window.setTimeout(() => setNotice(null), 2200);
   }
 
   function uploadPhotoXhr(target: DiagnosticMapItem, upload: PhotoUploadState): Promise<DiagnosticMapPhoto> {
@@ -2466,13 +3119,37 @@ export function DiagnosticMapModal({
     });
   }
 
+  function openCaptionEditor(target: DiagnosticMapItem, photo: DiagnosticMapPhoto) {
+    setCaptionEditor({ itemCode: target.code, photoId: photo.id });
+    setCaptionDraft(photo.caption ?? "");
+  }
+
+  async function saveCaptionEditor() {
+    if (!captionEditorItem || !captionEditorPhoto) return;
+    setCaptionSaving(true);
+    try {
+      await updatePhotoCaption(captionEditorItem, captionEditorPhoto, captionDraft.trim());
+      setCaptionEditor(null);
+      setCaptionDraft("");
+    } finally {
+      setCaptionSaving(false);
+    }
+  }
+
   async function deletePhoto(target: DiagnosticMapItem, photoId: string) {
     if (!activeId) return;
     mutateItem(target.code, { photos: target.photos.filter((photo) => photo.id !== photoId) });
     await fetch(`/api/diagnostics/${activeId}/photos/${photoId}`, { method: "DELETE" });
   }
 
-  async function complete() {
+  async function deleteCaptionEditorPhoto() {
+    if (!captionEditorItem || !captionEditorPhoto) return;
+    await deletePhoto(captionEditorItem, captionEditorPhoto.id);
+    setCaptionEditor(null);
+    setCaptionDraft("");
+  }
+
+  async function complete(options?: { force?: boolean }) {
     if (!activeId) return;
     setSaveState("saving");
     await waitForPendingWork();
@@ -2485,6 +3162,13 @@ export function DiagnosticMapModal({
     if (failedUploads.length > 0) {
       setSaveState("error");
       setError("Есть фото с ошибкой загрузки. Повторите загрузку или уберите карточку перед завершением.");
+      return;
+    }
+    if (!options?.force && blockers.length > 0) {
+      setSaveState("idle");
+      setShowSummary(true);
+      setMobileSummaryOpen(true);
+      setError(`Перед завершением нужно проверить: ${blockers.slice(0, 3).map((entry) => entry.item.title).join(", ")}${blockers.length > 3 ? "…" : ""}`);
       return;
     }
     const response = await fetch(`/api/diagnostics/${activeId}/complete`, { method: "POST" });
@@ -2505,6 +3189,40 @@ export function DiagnosticMapModal({
     setSaveState("saved");
   }
 
+  async function copyTelegramText(value: string | null | undefined, success: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard?.writeText(value);
+      setSaveState("saved");
+    } catch {
+      setError(value);
+    }
+    if (success) setError(null);
+  }
+
+  async function sendReportToTelegram() {
+    if (!activeId) return;
+    setTelegramReportSending(true);
+    setTelegramReport(null);
+    try {
+      const response = await fetch(`/api/diagnostics/${activeId}/send-report`, { method: "POST" });
+      const json = (await response.json().catch(() => ({}))) as TelegramReportState;
+      setTelegramReport(json);
+      if (json.reportUrl && data) setData({ ...data, reportUrl: json.reportUrl });
+      if (!response.ok || !json.ok) setError(json.error ?? "Отчёт не отправлен в Telegram");
+      else {
+        setError(null);
+        setSaveState("saved");
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Не удалось отправить отчёт в Telegram";
+      setTelegramReport({ ok: false, status: "error", error: message, reportUrl: data?.reportUrl });
+      setError(message);
+    } finally {
+      setTelegramReportSending(false);
+    }
+  }
+
   async function addRecommendationToShipment(target: DiagnosticMapItem) {
     if (!activeId) return;
     await fetch(`/api/diagnostics/${activeId}/recommendations/add-to-shipment`, {
@@ -2513,6 +3231,169 @@ export function DiagnosticMapModal({
       body: JSON.stringify({ itemCode: target.code }),
     });
     onAddedToShipment?.();
+  }
+
+  function quickFilteredItems(source: DiagnosticMapItem[]) {
+    return source.filter((candidate) => {
+      if (candidate.applicability !== "applicable") return false;
+      if (quickFilter === "problem") return isActionStatus(candidate.status) && candidate.status !== "unchecked";
+      if (quickFilter === "no-photo") return itemNeedsPhoto(candidate);
+      if (quickFilter === "unchecked") return candidate.status === "unchecked";
+      return true;
+    });
+  }
+
+  function renderInlinePhotos(target: DiagnosticMapItem, compact = false) {
+    const uploads = photoUploads[target.code] ?? [];
+    return (
+      <div className={`diag-quick-photos ${compact ? "is-compact" : ""}`}>
+        {uploads.map((upload) => (
+          <figure key={upload.id} className={`diag-quick-photo is-${upload.status}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- local preview */}
+            <img src={upload.previewUrl} alt="Фото загружается" />
+            <figcaption>{upload.status === "error" ? "Ошибка" : `${upload.progress}%`}</figcaption>
+            <i style={{ width: `${upload.progress}%` }} />
+            {upload.status === "error" && (
+              <button type="button" onClick={() => void runPhotoUpload(target, upload)}>Повторить</button>
+            )}
+          </figure>
+        ))}
+        {target.photos.map((photo) => (
+          <figure key={photo.id} className="diag-quick-photo" onClick={() => openCaptionEditor(target, photo)}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- local diagnostic photo */}
+            <img src={photo.thumbnailUrl} alt={photo.caption || target.title} />
+            <figcaption>{photo.caption || "без подписи"}</figcaption>
+            <button
+              type="button"
+              className="diag-quick-photo-delete"
+              aria-label="Удалить фото"
+              onClick={(event) => {
+                event.stopPropagation();
+                void deletePhoto(target, photo.id);
+              }}
+            >
+              ×
+            </button>
+          </figure>
+        ))}
+        <label className="diag-quick-photo-add">
+          <input
+            ref={(node) => {
+              fileInputs.current[target.code] = node;
+            }}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              event.target.value = "";
+              void uploadPhoto(target, file);
+            }}
+          />
+          <Camera size={16} />
+          <span>{target.photos.length || uploads.length ? "Ещё фото" : "Добавить фото"}</span>
+        </label>
+      </div>
+    );
+  }
+
+  function renderQuickExpanded(target: DiagnosticMapItem) {
+    const status = DIAGNOSTIC_MAP_STATUSES[target.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+    return (
+      <div className="diag-quick-expanded">
+        {autoMeasurementKind(target.code) ? (
+          <MeasurementPrimaryControl item={target} onApply={(patch, options) => void saveItem(target.code, patch, options)} />
+        ) : (
+          <label className="diag-quick-value">
+            <span>{target.measure || "Оценка / замер"}</span>
+            <input
+              value={target.value}
+              inputMode={fieldContext(target).inputMode}
+              onChange={(event) => void saveItem(target.code, { value: event.target.value }, { debounce: true })}
+              placeholder={fieldContext(target).placeholder || "Опишите состояние"}
+            />
+          </label>
+        )}
+        <div className="diag-quick-inline-actions">
+          {renderInlinePhotos(target, true)}
+          <button type="button" className="diag-archive-btn" onClick={() => focusItem(target, "detail")}>
+            Открыть карту пункта
+          </button>
+          {itemNeedsPhoto(target) && <span className="diag-quick-hint is-warning">Фото желательно для отчёта</span>}
+        </div>
+        <label className="diag-quick-textarea">
+          <span>Комментарий мастера</span>
+          <textarea
+            value={target.comment}
+            onChange={(event) => void saveItem(target.code, { comment: event.target.value }, { debounce: true })}
+            placeholder="Комментарий подставится автоматически, но его можно уточнить"
+          />
+        </label>
+        {itemNeedsRecommendation(target) && (
+          <div className={`diag-quick-rec is-${status.tone}`}>
+            <strong>{target.recommendation || "Рекомендация ещё не выбрана"}</strong>
+            <div>
+              {Array.from(new Set([...target.recs, ...REC_PRESETS_COMMON])).slice(0, 5).map((rec) => (
+                <button
+                  type="button"
+                  key={rec}
+                  className={`preset-chip light ${target.selectedRecommendations.includes(rec) ? "is-active" : ""}`}
+                  onClick={() => void saveItem(target.code, { recommendation: rec, selectedRecommendations: [rec] })}
+                >
+                  {rec}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => void addRecommendationToShipment(target)}>Добавить в отгрузку</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderQuickItem(target: DiagnosticMapItem & { blockCode?: string }) {
+    const status = DIAGNOSTIC_MAP_STATUSES[target.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+    const autoExpanded = isProblemStatus(target.status);
+    const expanded = autoExpanded || quickExpandedItems.has(target.code);
+    const action = itemNeedsAction(target);
+    const tireParts = target.code === "tires" ? valueParts(target.value) : {};
+    const photoState = target.photos.length > 0 ? `фото добавлено: ${target.photos.length}` : "фото нет";
+    return (
+      <article
+        id={`diag-quick-${target.code}`}
+        key={target.code}
+        className={`diag-quick-item is-${status.tone} ${expanded ? "is-expanded" : ""} ${action ? "needs-action" : ""}`}
+        style={{ "--diag-status-color": status.color } as CSSProperties}
+      >
+        <button
+          type="button"
+          className="diag-quick-row"
+          onClick={() => {
+            setActiveBlock(target.blockCode ?? null);
+            setActiveItem(target.code);
+            toggleQuickItem(target.code);
+          }}
+        >
+          <b>{status.icon}</b>
+          <span>
+            <strong>{target.title}</strong>
+            {target.code === "tires" && target.value.trim() ? (
+              <span className="diag-quick-tire-mini">
+                {TIRE_WHEELS.map((wheel) => {
+                  const parsed = parseTireWheelValue(tireParts[wheel.key]);
+                  const depth = parsed.depth !== null ? `${formatRuNumber(formatTireDepth(parsed.depth))} мм` : "—";
+                  return <em key={wheel.key}>{wheel.key}: {depth}</em>;
+                })}
+              </span>
+            ) : (
+              <small>{itemQuickSummary(target)}</small>
+            )}
+          </span>
+          <em className="diag-quick-row-state">{status.label} · {photoState}</em>
+        </button>
+        {expanded && renderQuickExpanded(target)}
+      </article>
+    );
   }
 
   if (!open) return null;
@@ -2532,6 +3413,10 @@ export function DiagnosticMapModal({
           <small>{data?.clientName || headerDraft?.clientName || "Клиент не указан"}</small>
         </div>
         <div className="diag-archive-actions">
+          <div className="diag-archive-mode-toggle" role="group" aria-label="Режим диагностики">
+            <button type="button" className={viewMode === "quick" ? "is-active" : ""} onClick={() => setViewMode("quick")}>Быстро</button>
+            <button type="button" className={viewMode === "detail" ? "is-active" : ""} onClick={() => setViewMode("detail")}>Карта пункта</button>
+          </div>
           <CompletionRing pct={completion} />
           <div className="diag-archive-progress">
             <span>Прогресс</span>
@@ -2562,11 +3447,11 @@ export function DiagnosticMapModal({
         {!showSummary && (
           <div className="diag-archive-mobilebar">
             <button type="button" className="diag-archive-mobilebar-structure" onClick={() => setMobileStructureOpen(true)}>
-              <span>{block.title}</span>
-              <strong>Пункт {Math.max(activeIndex + 1, 1)} из {flatItems.length || DIAGNOSTIC_MAP_CATALOG_TOTAL}</strong>
+              <span>{viewMode === "quick" ? "Быстрая диагностика" : block.title}</span>
+              <strong>{viewMode === "quick" ? mobileProgressLabel : item.title}</strong>
             </button>
-            <button type="button" className="diag-archive-mobilebar-summary" onClick={() => setShowSummary(true)}>
-              Итог
+            <button type="button" className="diag-archive-mobilebar-summary" onClick={() => setViewMode(viewMode === "quick" ? "detail" : "quick")}>
+              {viewMode === "quick" ? "Карта пункта" : "Быстро"}
             </button>
           </div>
         )}
@@ -2596,11 +3481,12 @@ export function DiagnosticMapModal({
                       setActiveBlock(candidate.code);
                       setActiveItem(candidate.items[0]?.code ?? null);
                       setShowSummary(false);
+                      if (viewMode === "quick") toggleQuickBlock(candidate.code);
                     }}
                   >
                     <span>
                       <strong>{candidate.title}</strong>
-                      <small>{countLabel(candidate.items.length)}</small>
+                      <small>{blockStatusLine(candidate)}</small>
                     </span>
                     <i className="is-crit">{blockCounts.crit || ""}</i>
                     <i className="is-warn">{blockCounts.warn || ""}</i>
@@ -2621,10 +3507,18 @@ export function DiagnosticMapModal({
                               setActiveItem(candidateItem.code);
                               setShowSummary(false);
                               setMobileStructureOpen(false);
+                              if (viewMode === "quick") {
+                                setQuickOpenBlocks((current) => new Set([...current, candidate.code]));
+                                setQuickExpandedItems((current) => new Set([...current, candidateItem.code]));
+                                window.requestAnimationFrame(() =>
+                                  document.getElementById(`diag-quick-${candidateItem.code}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+                                );
+                              }
                             }}
                           >
                             <b style={{ background: status.color }}>{status.icon}</b>
                             <span>{candidateItem.title}</span>
+                            {candidateItem.photos.length > 0 && <em>{candidateItem.photos.length}</em>}
                           </button>
                         );
                       })}
@@ -2678,8 +3572,156 @@ export function DiagnosticMapModal({
                   {data.reportUrl && <a href={`${data.reportUrl}/print`} target="_blank" rel="noreferrer" className="diag-archive-btn"><Printer size={16} /> Печать карты</a>}
                   {data.reportUrl && <a href={data.reportUrl} target="_blank" rel="noreferrer" className="diag-archive-btn">Превью отчёта</a>}
                   <button type="button" className="diag-archive-btn" onClick={() => void copyReportLink()}><Copy size={16} /> Скопировать ссылку</button>
-                  <button type="button" className="diag-archive-btn is-primary" onClick={() => void complete()}>Завершить и отправить →</button>
+                  <button
+                    type="button"
+                    className="diag-archive-btn"
+                    onClick={() => void sendReportToTelegram()}
+                    disabled={telegramReportSending || !data.reportUrl}
+                  >
+                    {telegramReportSending ? "Отправляем..." : "Отправить отчёт в Telegram"}
+                  </button>
+                  <button type="button" className="diag-archive-btn is-primary" onClick={() => void complete()}>
+                    {blockers.length > 0 ? "Проверить блокеры" : "Завершить и отправить →"}
+                  </button>
+                  {blockers.length > 0 && (
+                    <button type="button" className="diag-archive-btn" onClick={() => void complete({ force: true })}>
+                      Завершить всё равно
+                    </button>
+                  )}
                 </div>
+                {telegramReport && (
+                  <div className={`eco-diagnostic-telegram-status ${telegramReport.ok ? "is-ok" : "is-warn"}`}>
+                    <strong>{telegramReport.ok ? "Отчёт отправлен в Telegram" : telegramReport.error ?? "Telegram клиента не привязан"}</strong>
+                    {!telegramReport.ok && (
+                      <div className="eco-diagnostic-telegram-actions">
+                        <button
+                          type="button"
+                          onClick={() => void copyTelegramText(telegramReport.reportUrl ?? data.reportUrl, "Ссылка отчёта скопирована")}
+                          disabled={!telegramReport.reportUrl && !data.reportUrl}
+                        >
+                          Скопировать ссылку отчёта
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            ) : viewMode === "quick" ? (
+              <section className="diag-quick-shell">
+                <div className="diag-quick-board">
+                  <div className="diag-quick-hero">
+                    <div>
+                      <span>Быстрая диагностика · {mobileProgressLabel}</span>
+                      <h1>{quickPrimaryItem ? "Следующий пункт" : "Все пункты проверены"}</h1>
+                      {quickPrimaryItem ? (
+                        <p>
+                          <b>{quickPrimaryItem.title}</b>
+                          {quickPrimaryBlock ? ` · ${quickPrimaryBlock.short || quickPrimaryBlock.title}` : ""}
+                          {quickPrimaryStatus ? ` · ${quickPrimaryStatus.label.toLowerCase()}` : ""}
+                          {" · "}
+                          {quickPrimaryItem.photos.length > 0 ? `фото добавлено: ${quickPrimaryItem.photos.length}` : "фото нет"}
+                        </p>
+                      ) : (
+                        <p>Откройте сводку и завершите диагностику.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="diag-archive-btn is-primary"
+                      onClick={() => (quickPrimaryItem ? focusItem(quickPrimaryItem, "quick") : setShowSummary(true))}
+                    >
+                      {quickPrimaryItem?.status === "unchecked" ? "Начать проверку" : quickPrimaryItem ? "Открыть пункт" : "К сводке"}
+                    </button>
+                  </div>
+                  <div className="diag-quick-tools">
+                    <div className="diag-quick-filters" role="group" aria-label="Фильтр пунктов диагностики">
+                      {([
+                        ["all", "Все"],
+                        ["problem", "Проблемы"],
+                        ["no-photo", "Без фото"],
+                        ["unchecked", "Не проверено"],
+                      ] as Array<[QuickFilterMode, string]>).map(([mode, label]) => (
+                        <button key={mode} type="button" className={quickFilter === mode ? "is-active" : ""} onClick={() => setQuickFilter(mode)}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <details className="diag-quick-actions-menu">
+                      <summary>Действия</summary>
+                      <div className="diag-quick-actions">
+                        <button type="button" className="diag-archive-btn" onClick={markRemainingGood} disabled={remainingGoodTargets.length === 0}>
+                          {remainingGoodLabel}
+                        </button>
+                        <button type="button" className="diag-archive-btn" onClick={expandProblemItems}>Развернуть проблемные</button>
+                        <button type="button" className="diag-archive-btn" onClick={collapseQuickItems}>Свернуть всё</button>
+                        <button type="button" className="diag-archive-btn" onClick={gotoNextSmart}>
+                          {nextActionItem ? "Следующий требующий действия" : "К завершению"}
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                  <div className="diag-quick-blocks">
+                    {data.blocks.map((candidate) => {
+                      const open = quickOpenBlocks.has(candidate.code);
+                      const status = DIAGNOSTIC_MAP_STATUSES[blockVisualStatus(candidate)] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+                      const items = quickFilteredItems(candidate.items).map((candidateItem) => ({ ...candidateItem, blockCode: candidate.code }));
+                      if (items.length === 0 && quickFilter !== "all") return null;
+                      return (
+                        <section key={candidate.code} className="diag-quick-block">
+                          <button
+                            type="button"
+                            className="diag-quick-block-head"
+                            style={{ "--diag-status-color": status.color } as CSSProperties}
+                            onClick={() => toggleQuickBlock(candidate.code)}
+                          >
+                            <span>
+                              <strong>{candidate.title}</strong>
+                              <small>{blockStatusLine(candidate)}</small>
+                            </span>
+                            <i>{open ? "−" : "+"}</i>
+                          </button>
+                          {open && <div className="diag-quick-items">{items.map(renderQuickItem)}</div>}
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+                <aside className="diag-quick-summary">
+                  <span>Сводка</span>
+                  <strong>{reportReady ? "Отчёт готов" : "Есть что исправить"}</strong>
+                  <div className="diag-quick-kpis">
+                    <p><b>{counts.total - counts.unchecked}</b><span>проверено</span></p>
+                    <p><b>{counts.good}</b><span>хорошо</span></p>
+                    <p><b>{counts.warn}</b><span>внимание</span></p>
+                    <p><b>{counts.crit}</b><span>критично</span></p>
+                    <p><b>{counts.indirect}</b><span>косвенно</span></p>
+                    <p><b>{counts.unchecked}</b><span>не проверено</span></p>
+                  </div>
+                  <div className="diag-quick-blockers">
+                    <b>Проблемы перед завершением</b>
+                    {blockers.length === 0 ? (
+                      <p>Блокеров нет. Можно завершать диагностику.</p>
+                    ) : (
+                      blockers.slice(0, 8).map(({ item: blockerItem, text }) => (
+                        <button type="button" key={blockerItem.code} onClick={() => focusItem(blockerItem, "quick")}>
+                          <span>{blockerItem.title}</span>
+                          <small>{text}</small>
+                        </button>
+                      ))
+                    )}
+                    {photosWithoutCaptions.length > 0 && (
+                      <p className="diag-quick-caption-warning">Фото без подписи: {photosWithoutCaptions.length}. Это предупреждение, не блокер.</p>
+                    )}
+                  </div>
+                  <div className="diag-quick-summary-actions">
+                    <button type="button" className="diag-archive-btn" onClick={markRemainingGood} disabled={remainingGoodTargets.length === 0}>
+                      {remainingGoodLabel}
+                    </button>
+                    <button type="button" className="diag-archive-btn" onClick={() => setShowSummary(true)}>К завершению</button>
+                    {data.reportUrl && <a href={data.reportUrl} target="_blank" rel="noreferrer" className="diag-archive-btn">К отчёту</a>}
+                    {data.reportUrl && <button type="button" className="diag-archive-btn" onClick={() => void copyReportLink()}>Скопировать ссылку</button>}
+                  </div>
+                </aside>
               </section>
             ) : (
               <>
@@ -2801,6 +3843,7 @@ export function DiagnosticMapModal({
                         }}
                         type="file"
                         accept="image/*"
+                        capture="environment"
                         onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
                           event.target.value = "";
@@ -2883,8 +3926,8 @@ export function DiagnosticMapModal({
                     <button type="button" className="diag-archive-btn" onClick={gotoPrevious} disabled={activeIndex <= 0}>
                       <ChevronLeft size={16} /> Назад
                     </button>
-                    <button type="button" className="diag-archive-btn is-primary" onClick={gotoNext}>
-                      {activeIndex >= flatItems.length - 1 ? "К сводке" : "Дальше"} <ChevronRight size={16} />
+                    <button type="button" className="diag-archive-btn is-primary" onClick={gotoNextSmart}>
+                      {nextActionItem ? "Следующий" : activeIndex >= flatItems.length - 1 ? "К сводке" : "Дальше"} <ChevronRight size={16} />
                     </button>
                   </nav>
                 </div>
@@ -2893,6 +3936,100 @@ export function DiagnosticMapModal({
           </main>
         </div>
         </>
+      )}
+
+      {!loading && data && viewMode === "quick" && !showSummary && (
+        <div className="diag-quick-mobile-actions">
+          <button type="button" onClick={() => setMobileSummaryOpen(true)}>Сводка</button>
+          <button type="button" className="is-primary" onClick={gotoNextSmart}>{nextActionItem ? "Следующий пункт" : "К завершению"}</button>
+        </div>
+      )}
+
+      {mobileSummaryOpen && (
+        <div className="diag-quick-sheet-backdrop" onClick={() => setMobileSummaryOpen(false)}>
+          <section className="diag-quick-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <button type="button" className="diag-quick-sheet-close" onClick={() => setMobileSummaryOpen(false)}>×</button>
+            <span>Сводка диагностики</span>
+            <h2>{reportReady ? "Отчёт готов" : "Есть что исправить"}</h2>
+            <div className="diag-quick-kpis">
+              <p><b>{counts.total - counts.unchecked}</b><span>проверено</span></p>
+              <p><b>{counts.warn}</b><span>внимание</span></p>
+              <p><b>{counts.crit}</b><span>критично</span></p>
+              <p><b>{counts.indirect}</b><span>косвенно</span></p>
+            </div>
+            <div className="diag-quick-blockers">
+              {blockers.length === 0 ? (
+                <p>Блокеров нет. Можно завершать диагностику.</p>
+              ) : (
+                blockers.slice(0, 6).map(({ item: blockerItem, text }) => (
+                  <button type="button" key={blockerItem.code} onClick={() => focusItem(blockerItem, "quick")}>
+                    <span>{blockerItem.title}</span>
+                    <small>{text}</small>
+                  </button>
+                ))
+              )}
+              {photosWithoutCaptions.length > 0 && (
+                <p className="diag-quick-caption-warning">Фото без подписи: {photosWithoutCaptions.length}. Можно завершить, но лучше подписать.</p>
+              )}
+            </div>
+            <div className="diag-quick-summary-actions">
+              <button type="button" className="diag-archive-btn" onClick={markRemainingGood} disabled={remainingGoodTargets.length === 0}>
+                {remainingGoodLabel}
+              </button>
+              <button type="button" className="diag-archive-btn" onClick={() => setShowSummary(true)}>Завершить</button>
+              {blockers.length > 0 && (
+                <button type="button" className="diag-archive-btn" onClick={() => void complete({ force: true })}>Завершить всё равно</button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {notice && (
+        <div className="diag-archive-toast">
+          <span>{notice}</span>
+          {quickUndoSnapshot && <button type="button" onClick={undoMarkRemainingGood}>Отменить</button>}
+        </div>
+      )}
+
+      {captionEditorItem && captionEditorPhoto && (
+        <div className="diag-quick-sheet-backdrop diag-caption-backdrop" onClick={() => setCaptionEditor(null)}>
+          <section className="diag-quick-sheet diag-caption-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <button type="button" className="diag-quick-sheet-close" onClick={() => setCaptionEditor(null)}>×</button>
+            <span>Фото · {captionEditorItem.title}</span>
+            <h2>Подпись к фото</h2>
+            <div className="diag-caption-editor">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local diagnostic photo */}
+              <img src={captionEditorPhoto.thumbnailUrl || captionEditorPhoto.url} alt={captionEditorPhoto.caption || captionEditorItem.title} />
+              <label>
+                <span>Подпись</span>
+                <textarea
+                  value={captionDraft}
+                  placeholder="Например: течь в зоне поддона"
+                  onChange={(event) => setCaptionDraft(event.target.value)}
+                />
+              </label>
+              <div className="diag-caption-presets">
+                {photoCaptionPresetsForItem(captionEditorItem).map((preset) => (
+                  <button type="button" key={preset} className="preset-chip light" onClick={() => setCaptionDraft(preset)}>
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <div className="diag-caption-actions">
+                <button type="button" className="diag-archive-btn is-primary" onClick={() => void saveCaptionEditor()} disabled={captionSaving}>
+                  {captionSaving ? "Сохраняем..." : "Сохранить"}
+                </button>
+                <button type="button" className="diag-archive-btn" onClick={() => void deleteCaptionEditorPhoto()}>
+                  Удалить фото
+                </button>
+                <button type="button" className="diag-archive-btn" onClick={() => setCaptionEditor(null)}>
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
 
       <div className={`diag-archive-save is-${saveState}`}>

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import {
+  canManageWarehouseMarking,
   createLocalAdminProduct,
   listLocalAdminProducts,
+  productPayloadHasMarkingSettings,
 } from "@/lib/local-inventory-admin";
 
 function readFilterValues(request: NextRequest, key: string) {
@@ -32,6 +34,9 @@ export async function GET(request: NextRequest) {
   const acea = readFilterValues(request, "acea");
   const packageVolume = readFilterValues(request, "packageVolume");
   const stock = request.nextUrl.searchParams.get("stock") ?? "";
+  const markingProblems =
+    request.nextUrl.searchParams.get("markingProblems") === "1" ||
+    request.nextUrl.searchParams.get("markingProblems") === "true";
 
   return NextResponse.json(await listLocalAdminProducts({
     search,
@@ -49,6 +54,7 @@ export async function GET(request: NextRequest) {
     acea,
     packageVolume,
     stock,
+    markingProblems,
   }));
 }
 
@@ -63,7 +69,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const result = await createLocalAdminProduct(body as Parameters<typeof createLocalAdminProduct>[0]);
+  if (productPayloadHasMarkingSettings(body) && !canManageWarehouseMarking(session.user)) {
+    return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
+  }
+
+  const result = await createLocalAdminProduct(body as Parameters<typeof createLocalAdminProduct>[0], session.user);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result.product);
 }

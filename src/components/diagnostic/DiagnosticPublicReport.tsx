@@ -588,13 +588,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                               {(item.reportText?.shortText || item.value || item.statusLabel) && (
                                 <div className="measurement"><span>Итог</span><b>{itemShortResult(item)}</b></div>
                               )}
-                              {item.photos.length > 0 && (
-                                <div className="rec-photos">
-                                  {item.photos.slice(0, 3).map((photo) => (
-                                    <img src={photo.url} alt={photo.caption || item.title} key={photo.id} />
-                                  ))}
-                                </div>
-                              )}
                               {(item.comment || item.reportText?.sourceText) && <div className="quote">«{item.comment || item.reportText?.sourceText}»<br />— {masterName.split(" ")[0]}, мастер-диагност</div>}
                             </>
                           );
@@ -770,13 +763,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                       {result}
                       {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
                     </div>
-                    {item.photos.length > 0 && (
-                      <div className="rep-rec-photos">
-                        {item.photos.slice(0, 2).map((photo) => (
-                          <img src={photo.url} alt={photo.caption || item.title} key={photo.id} />
-                        ))}
-                      </div>
-                    )}
                     {(item.comment || item.reportText?.sourceText) && (
                       <div className="rep-rec-quote">«{item.comment || item.reportText?.sourceText}»<br /><span>— {masterName.split(" ")[0]}, мастер-диагност</span></div>
                     )}

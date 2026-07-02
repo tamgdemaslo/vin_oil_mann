@@ -25,6 +25,12 @@ type ShipmentListRowProps = {
   sumLabel: string;
 };
 
+function shipmentNumberLabel(name: string): string {
+  const clean = name.trim();
+  const numeric = clean.match(/^\d+$/)?.[0] ?? clean.match(/-(\d+)$/)?.[1] ?? "";
+  return numeric ? numeric.padStart(4, "0") : clean;
+}
+
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return Boolean(
@@ -47,6 +53,7 @@ export function ShipmentListRow({
 }: ShipmentListRowProps) {
   const router = useRouter();
   const href = `/shipment/${row.id}`;
+  const numberLabel = shipmentNumberLabel(row.name);
 
   function openRow(event: MouseEvent<HTMLTableRowElement>) {
     if (isInteractiveTarget(event.target)) return;
@@ -74,7 +81,7 @@ export function ShipmentListRow({
       </td>
       <td>
         <Link href={href} className="l-mono eco-shipment-list-number-link">
-          {row.name}
+          {numberLabel}
         </Link>
         <div className="l-mono eco-shipment-list-subtext">
           {moment.date} · {moment.time}

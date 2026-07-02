@@ -28,6 +28,34 @@ type Header = {
   ecoUserName?: string;
 };
 
+type ReopenCheck = {
+  shipment: { id: string; name: string; status: "DRAFT" | "POSTED"; updatedAt: string; sumCents: number };
+  canReopen: boolean;
+  blockers: string[];
+  warnings: string[];
+  consequences: string[];
+  related: {
+    positionsCount: number;
+    trackedPositionsCount: number;
+    quantityToRestore: number;
+    closingDocuments: { id: string; type: string; number: string; status: string; revision: number }[];
+    diagnostics: { id: string; status: string; totalCount: number; completedAt: string | null }[];
+  };
+};
+
+const REOPEN_REASON_OPTIONS = [
+  { value: "product_error", label: "Ошибка в товаре" },
+  { value: "service_error", label: "Ошибка в услуге" },
+  { value: "quantity_error", label: "Неверное количество" },
+  { value: "price_error", label: "Неверная цена" },
+  { value: "client_error", label: "Неверный клиент" },
+  { value: "vehicle_error", label: "Неверный автомобиль" },
+  { value: "add_position", label: "Нужно добавить позицию" },
+  { value: "remove_position", label: "Нужно удалить позицию" },
+  { value: "discount_error", label: "Нужно изменить скидку" },
+  { value: "other", label: "Другое" },
+];
+
 type Position = {
   id?: string;
   name: string;
@@ -686,6 +714,11 @@ export default function ShipmentDetailPage() {
   const [duplicating, setDuplicating] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenLoading, setReopenLoading] = useState(false);
+  const [reopenCheck, setReopenCheck] = useState<ReopenCheck | null>(null);
+  const [reopenReasonCode, setReopenReasonCode] = useState("quantity_error");
+  const [reopenComment, setReopenComment] = useState("");
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
   const [attributes, setAttributes] = useState<DemandAttribute[]>([]);
@@ -1114,6 +1147,10 @@ export default function ShipmentDetailPage() {
   }, []);
 
   async function saveShipment(): Promise<boolean> {
+    if (applicable) {
+      setError("Проведённую отгрузку нельзя редактировать напрямую. Сначала верните документ в черновик.");
+      return false;
+    }
     setSaving(true);
     setError(null);
     setPaymentInfo(null);
@@ -1218,6 +1255,76 @@ export default function ShipmentDetailPage() {
     }
   }
 
+  async function openReopenDialog() {
+    if (!id) return;
+    setReopenLoading(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/shipments/${encodeURIComponent(id)}/reopen-check`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Не удалось проверить возврат в черновик";
+        setError(message);
+        return;
+      }
+      setReopenCheck(json as ReopenCheck);
+      setReopenDialogOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка проверки возврата в черновик");
+    } finally {
+      setReopenLoading(false);
+    }
+  }
+
+  async function confirmReopenShipment() {
+    if (!id || !reopenCheck) return;
+    if (reopenReasonCode === "other" && !reopenComment.trim()) {
+      setError("Укажите комментарий для причины «Другое»");
+      return;
+    }
+    setReopenLoading(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/shipments/${encodeURIComponent(id)}/reopen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reasonCode: reopenReasonCode,
+          comment: reopenComment,
+          expectedUpdatedAt: reopenCheck.shipment.updatedAt,
+          idempotencyKey: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Не удалось вернуть отгрузку в черновик";
+        setError(message);
+        return;
+      }
+      setApplicable(false);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              header: {
+                ...prev.header,
+                applicable: false,
+              },
+            }
+          : prev
+      );
+      setReopenDialogOpen(false);
+      setPaymentInfo("Проведение отменено. Отгрузка снова доступна для редактирования.");
+      router.replace(`/shipment/${encodeURIComponent(id)}/edit?reopened=1`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка возврата в черновик");
+    } finally {
+      setReopenLoading(false);
+    }
+  }
+
   async function handlePayment() {
     const precheckWindow = window.open("about:blank", "_blank");
     precheckWindow?.document.write("<!doctype html><title>Предчек</title><body>Открываем предчек...</body>");
@@ -1225,10 +1332,12 @@ export default function ShipmentDetailPage() {
     setError(null);
     setPaymentInfo(null);
     try {
-      const saved = await saveShipment();
-      if (!saved) {
-        precheckWindow?.close();
-        return;
+      if (!applicable) {
+        const saved = await saveShipment();
+        if (!saved) {
+          precheckWindow?.close();
+          return;
+        }
       }
 
       const url = `/shipment/${encodeURIComponent(id)}/precheck`;
@@ -1401,22 +1510,134 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={() => void handleDuplicate()}
-            disabled={saving || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing || reopenLoading}
             className="eco-shipment-detail-link-action"
           >
             {duplicating ? "Копирование…" : "Копировать"}
           </button>
-          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} />
+          {applicable && (
+            <button
+              type="button"
+              onClick={() => void openReopenDialog()}
+              disabled={saving || paying || duplicating || removing || reopenLoading}
+              className="eco-shipment-detail-link-action"
+            >
+              {reopenLoading ? "Проверяем…" : "Вернуть в черновик"}
+            </button>
+          )}
+          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing || reopenLoading} />
           <button
             type="button"
             onClick={handlePayment}
-            disabled={saving || paying || duplicating || removing}
+            disabled={saving || paying || duplicating || removing || reopenLoading}
             className="eco-shipment-detail-action is-primary"
           >
             {paying ? "Открываем…" : "Открыть предчек"}
           </button>
         </div>
       </div>
+
+      {reopenDialogOpen && reopenCheck && (
+        <div className="eco-shipment-reopen-backdrop" role="dialog" aria-modal="true">
+          <div className="eco-shipment-reopen-dialog">
+            <div className="eco-shipment-reopen-head">
+              <div>
+                <span className="eco-shipment-detail-kicker">Отмена проведения</span>
+                <h2>Вернуть отгрузку № {reopenCheck.shipment.name} в черновик?</h2>
+              </div>
+              <button type="button" onClick={() => setReopenDialogOpen(false)} disabled={reopenLoading}>
+                ×
+              </button>
+            </div>
+
+            <div className="eco-shipment-reopen-body">
+              <section>
+                <h3>Будет выполнено</h3>
+                <ul>
+                  {reopenCheck.consequences.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              {reopenCheck.related.closingDocuments.length > 0 || reopenCheck.related.diagnostics.length > 0 ? (
+                <section>
+                  <h3>Связанные данные</h3>
+                  <ul>
+                    {reopenCheck.related.closingDocuments.map((doc) => (
+                      <li key={doc.id}>
+                        {doc.type.toUpperCase()}-{doc.number}: {doc.status}
+                      </li>
+                    ))}
+                    {reopenCheck.related.diagnostics.map((diagnostic) => (
+                      <li key={diagnostic.id}>
+                        Диагностика: {diagnostic.status}, пунктов {diagnostic.totalCount}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {reopenCheck.blockers.length > 0 && (
+                <section className="is-danger">
+                  <h3>Нельзя вернуть сейчас</h3>
+                  <ul>
+                    {reopenCheck.blockers.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {reopenCheck.warnings.length > 0 && (
+                <section className="is-warning">
+                  <h3>Важно</h3>
+                  <ul>
+                    {reopenCheck.warnings.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <label className="eco-shipment-reopen-field">
+                <span>Причина возврата в черновик</span>
+                <select value={reopenReasonCode} onChange={(e) => setReopenReasonCode(e.target.value)} disabled={!reopenCheck.canReopen || reopenLoading}>
+                  {REOPEN_REASON_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="eco-shipment-reopen-field">
+                <span>Комментарий{reopenReasonCode === "other" ? " *" : ""}</span>
+                <textarea
+                  rows={3}
+                  value={reopenComment}
+                  onChange={(e) => setReopenComment(e.target.value)}
+                  placeholder="Например: клиент попросил изменить количество фильтра"
+                  disabled={!reopenCheck.canReopen || reopenLoading}
+                />
+              </label>
+            </div>
+
+            <div className="eco-shipment-reopen-actions">
+              <button type="button" onClick={() => setReopenDialogOpen(false)} disabled={reopenLoading}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="is-primary"
+                onClick={() => void confirmReopenShipment()}
+                disabled={!reopenCheck.canReopen || reopenLoading || (reopenReasonCode === "other" && !reopenComment.trim())}
+              >
+                {reopenLoading ? "Возвращаем…" : "Вернуть в черновик"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showVehicleOverrideDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -1505,9 +1726,10 @@ export default function ShipmentDetailPage() {
 	                <button
 	                  type="button"
 	                  className="eco-shipment-detail-icon-btn"
-	                  onClick={() => setVehicleEditing((value) => !value)}
+	                  onClick={() => !applicable && setVehicleEditing((value) => !value)}
+                  disabled={applicable}
                   aria-label={vehicleEditing ? "Закрыть редактирование автомобиля" : "Редактировать автомобиль"}
-                  title={vehicleEditing ? "Закрыть" : "Редактировать"}
+                  title={applicable ? "Сначала верните отгрузку в черновик" : vehicleEditing ? "Закрыть" : "Редактировать"}
                 >
 	                  <Pencil aria-hidden />
 	                </button>
@@ -2058,21 +2280,22 @@ export default function ShipmentDetailPage() {
                 <div className="eco-shipment-detail-precheck">
                   <label className="is-wide">
                     <span>Комментарий</span>
-                    <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+                    <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} disabled={applicable} />
                   </label>
                   <label className="eco-shipment-detail-checkbox">
                     <input
                       id="applicable-detail"
                       type="checkbox"
                       checked={applicable}
+                      disabled={applicable}
                       onChange={(e) => setApplicable(e.target.checked)}
                     />
-                    <span>Проведён</span>
+                    <span>{applicable ? "Проведён — для редактирования верните в черновик" : "Провести отгрузку"}</span>
                   </label>
                   {error ? <p className="is-error">{error}</p> : null}
                   {paymentInfo ? <p className="is-success">{paymentInfo}</p> : null}
                   <div className="eco-shipment-detail-precheck-actions">
-                    <button type="button" onClick={handleSave} disabled={saving || paying || duplicating || removing}>
+                    <button type="button" onClick={handleSave} disabled={applicable || saving || paying || duplicating || removing} title={applicable ? "Сначала верните отгрузку в черновик" : undefined}>
                       {saving ? "Сохранение..." : "Сохранить"}
                     </button>
                     <button type="button" onClick={handlePayment} disabled={saving || paying || duplicating || removing}>
@@ -3247,6 +3470,7 @@ export default function ShipmentDetailPage() {
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={applicable}
             className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
           />
         </div>
@@ -3255,11 +3479,12 @@ export default function ShipmentDetailPage() {
             id="applicable"
             type="checkbox"
             checked={applicable}
+            disabled={applicable}
             onChange={(e) => setApplicable(e.target.checked)}
             className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
           />
           <label htmlFor="applicable" className="text-sm text-zinc-700 dark:text-zinc-300">
-            Проведён (applicable)
+            {applicable ? "Проведён — для редактирования верните в черновик" : "Провести отгрузку"}
           </label>
         </div>
         {error && (
@@ -3276,7 +3501,8 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || paying || duplicating || removing}
+            disabled={applicable || saving || paying || duplicating || removing}
+            title={applicable ? "Сначала верните отгрузку в черновик" : undefined}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
           >
             {saving ? "Сохранение…" : "Сохранить"}

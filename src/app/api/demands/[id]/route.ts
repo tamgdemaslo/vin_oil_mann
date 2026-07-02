@@ -58,12 +58,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const updated = await updateLocalDemand(id, body);
-  if (!updated.ok) {
-    return NextResponse.json({ error: updated.error }, { status: updated.notFound ? 404 : 400 });
-  }
+  try {
+    const updated = await updateLocalDemand(id, body, session.user);
+    if (!updated.ok) {
+      return NextResponse.json({ error: updated.error }, { status: updated.notFound ? 404 : 400 });
+    }
 
-  return NextResponse.json(updated);
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error("[api/demands/:id] update failed", error);
+    return NextResponse.json(
+      { error: error instanceof Error && error.message.trim() ? error.message : "Не удалось сохранить отгрузку" },
+      { status: 400 }
+    );
+  }
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

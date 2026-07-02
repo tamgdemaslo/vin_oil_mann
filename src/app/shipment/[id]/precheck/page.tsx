@@ -16,13 +16,19 @@ import {
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import {
+  isLikelyBulkMotorOilProductCandidate,
   isRecognizedMotorOilMarkingCode,
-  isLikelyMarkedMotorOilProductName,
-  isMeasuredMotorOilQuantity,
-  normalizeMarkingCodeInput,
   parseMarkingCodesInput,
   requiredMarkingCodeCount,
 } from "@/lib/marking";
+import {
+  isBulkOilMarkingMode,
+  isLiterSaleUnit,
+  isPackagedMarkedGoodMode,
+  normalizeProductMarkingMode,
+  normalizeProductMarkingSettings,
+  productMarkingProblemReasons,
+} from "@/lib/product-marking";
 
 type Meta = {
   href: string;
@@ -58,6 +64,19 @@ type Position = {
   discount?: number;
   slotName?: string;
   assortmentMeta?: Meta;
+  product?: {
+    id: string;
+    name: string;
+    uomName?: string | null;
+    groupPath?: string | null;
+    packageVolume?: string | null;
+    volume?: string | null;
+    barcodeEan13?: string | null;
+    markingEnabled?: boolean;
+    markingMode?: string | null;
+    markingStatus?: string | null;
+    markingSettings?: unknown;
+  };
 };
 
 type DetailResponse = {
@@ -154,6 +173,86 @@ function getAssortmentSource(position: Position): { label: string; code: string 
   })();
   const code = rawCode.length > 14 ? `${rawCode.slice(0, 6)}…${rawCode.slice(-4)}` : rawCode;
   return { label: source, code };
+}
+
+function positionMarkingContext(position: Position) {
+  return {
+    productName: position.product?.name ?? position.name,
+    groupPath: position.product?.groupPath,
+    uomName: position.product?.uomName,
+  };
+}
+
+function positionNeedsMarking(position: Position): boolean {
+  return Boolean(position.product?.markingEnabled) && normalizeProductMarkingMode(position.product?.markingMode) !== "NOT_MARKED";
+}
+
+function positionBulkCandidate(position: Position): boolean {
+  return isLikelyBulkMotorOilProductCandidate(positionMarkingContext(position));
+}
+
+function positionMarkingMode(position: Position) {
+  return normalizeProductMarkingMode(position.product?.markingMode);
+}
+
+function positionIsBulkOil(position: Position): boolean {
+  return positionNeedsMarking(position) && isBulkOilMarkingMode(positionMarkingMode(position));
+}
+
+function positionIsPackagedMarkedGood(position: Position): boolean {
+  return positionNeedsMarking(position) && isPackagedMarkedGoodMode(positionMarkingMode(position));
+}
+
+function positionMeasuredPour(position: Position): boolean {
+  return positionIsBulkOil(position);
+}
+
+function positionRequiredCodeCount(position: Position): number {
+  if (positionIsBulkOil(position)) return 1;
+  return requiredMarkingCodeCount(position.quantity, { measuredPour: false });
+}
+
+function positionMarkingBlockingReason(position: Position): string | null {
+  if (!positionNeedsMarking(position)) return null;
+  const mode = positionMarkingMode(position);
+  const settings = normalizeProductMarkingSettings(position.product?.markingSettings);
+  if (mode === "REQUIRES_CHECK") {
+    return "Товар требует проверки маркировки. Откройте карточку товара и выберите сценарий.";
+  }
+  if (!positionIsBulkOil(position)) {
+    const problemReasons = productMarkingProblemReasons({
+      markingEnabled: true,
+      markingMode: mode,
+      markingStatus: position.product?.markingStatus,
+      groupPath: position.product?.groupPath,
+      uomName: position.product?.uomName,
+      settings: position.product?.markingSettings,
+    });
+    if (problemReasons.length) return problemReasons.join(" ");
+  }
+  if (!positionIsBulkOil(position)) return null;
+  if (!isLiterSaleUnit(position.product?.uomName)) return "Для масла на разлив единица продажи должна быть «л».";
+  if (!settings.partialWithdrawalEnabled) return "Для активной бочки не включено частичное выбытие.";
+  if (!settings.activeBarrelMarkingCode) return "Для товара на разлив не выбрана активная бочка с кодом маркировки.";
+  if (settings.currentVolumeLiters != null && position.quantity > settings.currentVolumeLiters) {
+    return `Недостаточно остатка в активной бочке. Остаток: ${settings.currentVolumeLiters} л, требуется: ${position.quantity} л.`;
+  }
+  return null;
+}
+
+function positionMarkingNote(position: Position): string {
+  if (!positionNeedsMarking(position)) {
+    return positionBulkCandidate(position)
+      ? "Похоже, это масло на разлив. Проверьте настройки маркировки в карточке товара."
+      : "Маркировка не требуется";
+  }
+  if (positionIsBulkOil(position)) {
+    const settings = normalizeProductMarkingSettings(position.product?.markingSettings);
+    const rest = settings.currentVolumeLiters == null ? "остаток не указан" : `остаток ${settings.currentVolumeLiters} л`;
+    return `Маркировка: разлив · Litre · ${settings.activeBarrelMarkingCode ? "активная бочка" : "нет активной бочки"} · ${rest}`;
+  }
+  if (positionIsPackagedMarkedGood(position)) return "Маркировка: упаковка · код списывается целиком";
+  return "Маркировка требует настройки";
 }
 
 function PrecheckSkeleton() {
@@ -280,16 +379,21 @@ export default function ShipmentPrecheckPage() {
   }, [loadData]);
 
   const requiredPositions = useMemo(
-    () => (data?.positions ?? []).filter((position) => isLikelyMarkedMotorOilProductName(position.name)),
+    () => (data?.positions ?? []).filter(positionNeedsMarking),
     [data?.positions]
+  );
+
+  const invalidBulkPositions = useMemo(
+    () => requiredPositions.filter((position) => Boolean(positionMarkingBlockingReason(position))),
+    [requiredPositions]
   );
 
   const missingPositions = useMemo(
     () =>
       requiredPositions.filter((position) => {
-        const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
+        if (positionIsBulkOil(position) || positionMarkingBlockingReason(position)) return false;
         const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
-        const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
+        const needed = positionRequiredCodeCount(position);
         const hasEnoughCodes = codes.length >= needed;
         const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
         return !bypassed[position.id] && (!hasEnoughCodes || !codesRecognized);
@@ -314,9 +418,10 @@ export default function ShipmentPrecheckPage() {
     if (sendState === "sent") return { label: "Отправлен на кассу", tone: "success" as const };
     if (sendState === "error") return { label: "Ошибка отправки", tone: "danger" as const };
     if (!data || data.positions.length === 0) return { label: "Черновик", tone: "neutral" as const };
+    if (invalidBulkPositions.length > 0) return { label: "Блокировка", tone: "danger" as const };
     if (missingPositions.length > 0) return { label: "Не отправлен", tone: "warning" as const };
     return { label: "Готов к отправке", tone: "rust" as const };
-  }, [data, missingPositions.length, sendState]);
+  }, [data, invalidBulkPositions.length, missingPositions.length, sendState]);
 
   const clientName = data?.header.agentName?.trim() || "не указан";
   const phone = getAgentPhone(data?.raw);
@@ -326,7 +431,7 @@ export default function ShipmentPrecheckPage() {
   const documentVin = getAttributeValue(data?.attributes, /vin/i);
   const vehicleTitle = [vehicleModel, vehicleYear].filter(Boolean).join(" · ");
   const createdAt = formatDateTime(data?.header.moment);
-  const canSend = Boolean(data && data.positions.length > 0 && missingPositions.length === 0);
+  const canSend = Boolean(data && data.positions.length > 0 && missingPositions.length === 0 && invalidBulkPositions.length === 0);
 
   async function handleBypass(position: Position) {
     const password = window.prompt(`Пароль для пропуска маркировки: ${position.name}`);
@@ -529,16 +634,17 @@ export default function ShipmentPrecheckPage() {
                 <div className="eco-precheck-position-cards">
                   {data.positions.map((position, index) => {
                     const source = getAssortmentSource(position);
-                    const needsMarking = isLikelyMarkedMotorOilProductName(position.name);
-                    const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
-                    const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
+                    const needsMarking = positionNeedsMarking(position);
+                    const bulkOil = positionIsBulkOil(position);
+                    const blockingReason = positionMarkingBlockingReason(position);
+                    const needed = positionRequiredCodeCount(position);
                     const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
                     const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
                     const isMissing =
-                      needsMarking && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
+                      needsMarking && !bulkOil && !blockingReason && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
 
                     return (
-                      <article key={position.id} className={cx("eco-precheck-position-card", isMissing && "is-warning")}>
+                      <article key={position.id} className={cx("eco-precheck-position-card", (isMissing || blockingReason) && "is-warning")}>
                         <div className="eco-precheck-position-card-head">
                           <span>{String(index + 1).padStart(2, "0")}</span>
                           <div>
@@ -555,44 +661,65 @@ export default function ShipmentPrecheckPage() {
                           <span>Скидка <strong>{position.discount ? `${position.discount}%` : "0"}</strong></span>
                           <span>Сумма <strong>{formatMoney(positionTotal(position))}</strong></span>
                         </div>
+                        {blockingReason && (
+                          <div className="eco-precheck-message is-error" role="alert">
+                            <AlertTriangle className="eco-icon" aria-hidden />
+                            {blockingReason}
+                          </div>
+                        )}
                         {needsMarking ? (
                           <div className="eco-precheck-marking-box">
-                            <EcoBadge tone={isMissing ? "warning" : "success"} dot>
-                              {bypassed[position.id] ? "Пропуск разрешён" : isMissing ? "Нужна маркировка" : "Маркировка готова"}
+                            <EcoBadge tone={blockingReason || isMissing ? "warning" : "success"} dot>
+                              {blockingReason
+                                ? "Маркировка требует проверки"
+                                : bulkOil
+                                  ? "Разлив · Litre"
+                                  : bypassed[position.id]
+                                    ? "Пропуск разрешён"
+                                    : isMissing
+                                      ? "Нужна маркировка"
+                                      : "Маркировка готова"}
                             </EcoBadge>
-                            <textarea
-                              value={markingInputs[position.id] ?? ""}
-                              onChange={(event) => {
-                                const value = event.target.value;
-                                setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
-                                if (parseMarkingCodesInput(value).length >= needed) {
-                                  setBypassed((prev) => ({ ...prev, [position.id]: false }));
-                                }
-                                if (sendState === "error") setSendState("idle");
-                              }}
-                              rows={needed > 1 ? Math.min(needed, 4) : 2}
-                              placeholder="Код маркировки"
-                              wrap="off"
-                              spellCheck={false}
-                              autoCapitalize="off"
-                              autoCorrect="off"
-                              className="eco-precheck-marking-input"
-                            />
-                            <div className="eco-precheck-marking-actions">
-                              <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
-                              {bypassed[position.id] ? (
-                                <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
-                                  Отменить пропуск
-                                </button>
-                              ) : (
-                                <button type="button" onClick={() => void handleBypass(position)}>
-                                  Пропустить без маркировки
-                                </button>
-                              )}
-                            </div>
+                            <span className="eco-precheck-marking-note">{positionMarkingNote(position)}</span>
+                            {!bulkOil && !blockingReason ? (
+                              <>
+                                <textarea
+                                  value={markingInputs[position.id] ?? ""}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
+                                    if (parseMarkingCodesInput(value).length >= needed) {
+                                      setBypassed((prev) => ({ ...prev, [position.id]: false }));
+                                    }
+                                    if (sendState === "error") setSendState("idle");
+                                  }}
+                                  rows={needed > 1 ? Math.min(needed, 4) : 2}
+                                  placeholder="Код маркировки"
+                                  wrap="off"
+                                  spellCheck={false}
+                                  autoCapitalize="off"
+                                  autoCorrect="off"
+                                  className="eco-precheck-marking-input"
+                                />
+                                <div className="eco-precheck-marking-actions">
+                                  <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
+                                  {bypassed[position.id] ? (
+                                    <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
+                                      Отменить пропуск
+                                    </button>
+                                  ) : (
+                                    <button type="button" onClick={() => void handleBypass(position)}>
+                                      Пропустить без маркировки
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            ) : null}
                           </div>
                         ) : (
-                          <EcoBadge tone="neutral">Маркировка не требуется</EcoBadge>
+                          <EcoBadge tone={positionBulkCandidate(position) ? "warning" : "neutral"}>
+                            {positionMarkingNote(position)}
+                          </EcoBadge>
                         )}
                       </article>
                     );
@@ -616,16 +743,18 @@ export default function ShipmentPrecheckPage() {
                     <tbody>
                       {data.positions.map((position, index) => {
                         const source = getAssortmentSource(position);
-                        const needsMarking = isLikelyMarkedMotorOilProductName(position.name);
-                        const measuredPour = isMeasuredMotorOilQuantity(position.name, position.quantity);
-                        const needed = requiredMarkingCodeCount(position.quantity, { measuredPour });
+                        const needsMarking = positionNeedsMarking(position);
+                        const measuredPour = positionMeasuredPour(position);
+                        const bulkOil = positionIsBulkOil(position);
+                        const blockingReason = positionMarkingBlockingReason(position);
+                        const needed = positionRequiredCodeCount(position);
                         const codes = parseMarkingCodesInput(markingInputs[position.id] ?? "");
                         const codesRecognized = codes.slice(0, needed).every(isRecognizedMotorOilMarkingCode);
                         const isMissing =
-                          needsMarking && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
+                          needsMarking && !bulkOil && !blockingReason && !bypassed[position.id] && (codes.length < needed || !codesRecognized);
 
                         return (
-                          <tr key={position.id} className={isMissing ? "is-warning" : undefined}>
+                          <tr key={position.id} className={isMissing || blockingReason ? "is-warning" : undefined}>
                             <td className="eco-precheck-table-index">{index + 1}</td>
                             <td>
                               <strong className="eco-precheck-position-name">{position.name}</strong>
@@ -647,53 +776,60 @@ export default function ShipmentPrecheckPage() {
                             <td className="eco-precheck-marking-cell">
                               {needsMarking ? (
                                 <div className="eco-precheck-marking-box">
-                                  <EcoBadge tone={isMissing ? "warning" : "success"} dot>
-                                    {bypassed[position.id] ? "Пропуск" : isMissing ? "Нужна маркировка" : "Готово"}
+                                  <EcoBadge tone={blockingReason || isMissing ? "warning" : "success"} dot>
+                                    {blockingReason
+                                      ? "Проверить"
+                                      : bulkOil
+                                        ? "Разлив · Litre"
+                                        : bypassed[position.id]
+                                          ? "Пропуск"
+                                          : isMissing
+                                            ? "Нужна маркировка"
+                                            : "Готово"}
                                   </EcoBadge>
-                                  <span className="eco-precheck-marking-note">
-                                    {measuredPour
-                                      ? `розлив · один код на ${position.quantity} л`
-                                      : `нужно кодов: ${needed}`}
-                                  </span>
-                                  <textarea
-                                    value={markingInputs[position.id] ?? ""}
-                                    onChange={(event) => {
-                                      const value = event.target.value;
-                                      setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
-                                      if (parseMarkingCodesInput(value).length >= needed) {
-                                        setBypassed((prev) => ({ ...prev, [position.id]: false }));
-                                      }
-                                      if (sendState === "error") setSendState("idle");
-                                    }}
-                                    rows={needed > 1 ? Math.min(needed, 4) : 2}
-                                    placeholder="Код маркировки"
-                                    wrap="off"
-                                    spellCheck={false}
-                                    autoCapitalize="off"
-                                    autoCorrect="off"
-                                    className="eco-precheck-marking-input"
-                                  />
-                                  <div className="eco-precheck-marking-actions">
-                                    <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
-                                    {codes.length > 0 && !codes.every(isRecognizedMotorOilMarkingCode) && (
-                                      <span className="is-danger">формат не распознан</span>
-                                    )}
-                                    {codes.some((code) => code !== normalizeMarkingCodeInput(code)) && (
-                                      <span>GS-разделители будут восстановлены</span>
-                                    )}
-                                    {bypassed[position.id] ? (
-                                      <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
-                                        Отменить
-                                      </button>
-                                    ) : (
-                                      <button type="button" onClick={() => void handleBypass(position)}>
-                                        Пропустить
-                                      </button>
-                                    )}
-                                  </div>
+                                  <span className="eco-precheck-marking-note">{blockingReason ?? positionMarkingNote(position)}</span>
+                                  {!bulkOil && !blockingReason ? (
+                                    <>
+                                      <textarea
+                                        value={markingInputs[position.id] ?? ""}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setMarkingInputs((prev) => ({ ...prev, [position.id]: value }));
+                                          if (parseMarkingCodesInput(value).length >= needed) {
+                                            setBypassed((prev) => ({ ...prev, [position.id]: false }));
+                                          }
+                                          if (sendState === "error") setSendState("idle");
+                                        }}
+                                        rows={needed > 1 ? Math.min(needed, 4) : 2}
+                                        placeholder="Код маркировки"
+                                        wrap="off"
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                        className="eco-precheck-marking-input"
+                                      />
+                                      <div className="eco-precheck-marking-actions">
+                                        <span>{bypassed[position.id] ? "пропуск" : `${Math.min(codes.length, needed)} из ${needed}`}</span>
+                                        {codes.length > 0 && !codes.every(isRecognizedMotorOilMarkingCode) && (
+                                          <span className="is-danger">формат не распознан</span>
+                                        )}
+                                        {bypassed[position.id] ? (
+                                          <button type="button" onClick={() => setBypassed((prev) => ({ ...prev, [position.id]: false }))}>
+                                            Отменить
+                                          </button>
+                                        ) : (
+                                          <button type="button" onClick={() => void handleBypass(position)}>
+                                            Пропустить
+                                          </button>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : null}
                                 </div>
                               ) : (
-                                <EcoBadge tone="neutral">Не требуется</EcoBadge>
+                                <EcoBadge tone={positionBulkCandidate(position) ? "warning" : "neutral"}>
+                                  {positionBulkCandidate(position) ? "Проверьте настройки" : "Не требуется"}
+                                </EcoBadge>
                               )}
                             </td>
                           </tr>
@@ -777,6 +913,13 @@ export default function ShipmentPrecheckPage() {
                 <span>Касса</span>
                 <strong>{sendState === "sent" ? "отправлен" : sendState === "error" ? "ошибка" : "не отправлен"}</strong>
               </div>
+              {invalidBulkPositions.length > 0 && (
+                <div className="eco-readiness-list">
+                  {invalidBulkPositions.map((position) => (
+                    <span key={position.id}>• {positionMarkingBlockingReason(position)} — {position.name}</span>
+                  ))}
+                </div>
+              )}
               {sentAt && (
                 <div className="eco-precheck-total-line is-muted">
                   <span>Отправлен</span>
@@ -794,7 +937,7 @@ export default function ShipmentPrecheckPage() {
                 type="button"
                 onClick={() => void handleSend()}
                 disabled={!canSend || sendState === "sending" || sendState === "sent"}
-                title={!canSend ? "Заполните позиции и маркировку" : undefined}
+                title={!canSend ? "Заполните позиции, маркировку и настройки разливного товара" : undefined}
                 variant="primary"
                 className="eco-precheck-submit"
               >

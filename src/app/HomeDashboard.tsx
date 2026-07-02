@@ -4,15 +4,20 @@ import {
   AlertTriangle,
   Bell,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
+  Gauge,
+  MessageCircle,
+  MoreHorizontal,
   PackagePlus,
   Phone,
   Play,
   Plus,
   Search,
+  Truck,
   WalletCards,
   XCircle,
 } from "lucide-react";
@@ -48,6 +53,7 @@ type AppointmentItem = {
   status: string;
   shipmentId: string | null;
   hasShipment?: boolean;
+  shipmentStatus?: string;
 };
 
 type CrmItem = {
@@ -118,12 +124,15 @@ type DashboardData = {
     totalToday: number;
     confirmedToday: number;
     withoutShipment: number;
+    requiresManualLink?: number;
+    matchedByRules?: number;
     freeWindows: string[];
     next: AppointmentItem | null;
     rows: AppointmentItem[];
   };
   crm: {
     overdue: number;
+    oldestOverdueHours?: number;
     today: number;
     quote: number;
     supplies: number;
@@ -153,6 +162,16 @@ type DashboardData = {
     active: number;
     withoutPhoto: number;
   };
+  messages?: {
+    total: number;
+    needsReply: number;
+    unread: number;
+    oldest: {
+      client: string;
+      hours: number;
+      href: string;
+    } | null;
+  };
   alerts: Array<{ id: string; label: string; href: string; count: number; tone: EcoBadgeTone }>;
   notifications: DashboardNotification[];
   notificationCounts: Record<NotificationUrgency | "total", number>;
@@ -167,6 +186,11 @@ function formatMoneyCents(amountCents: number) {
 
 function formatCount(value: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(value));
+}
+
+function formatHours(value?: number | null) {
+  if (!value || value <= 0) return "—";
+  return `${formatCount(value)} ч`;
 }
 
 function todayShortPhrase() {
@@ -340,6 +364,122 @@ function urgencyDot(urgency: NotificationUrgency) {
   return "idle";
 }
 
+type MobileProblemTone = "danger" | "warning" | "info" | "neutral" | "success";
+
+type MobileProblem = {
+  id: string;
+  tone: MobileProblemTone;
+  title: string;
+  meta: string;
+  href: string;
+  action: string;
+};
+
+function buildRevenueForecast(dashboard: DashboardData | null, cashClosed: boolean) {
+  if (!dashboard) {
+    return {
+      tone: "neutral" as const,
+      short: "Загрузка",
+      value: "Загрузка",
+      details: ["Получаем кассу, записи и отгрузки."],
+    };
+  }
+
+  if (cashClosed) {
+    return {
+      tone: "warning" as const,
+      short: "нет данных",
+      value: "Прогноз: нет данных",
+      details: ["Касса закрыта.", "Потенциальная выручка появится после расчётов / отгрузок."],
+    };
+  }
+
+  const currentRevenue = dashboard.finance.revenueCents;
+  const shipmentCount = dashboard.finance.shipmentsCount;
+  const averageCheck = dashboard.finance.averageCheckCents;
+  const recordsWithoutShipment = dashboard.appointments.withoutShipment;
+
+  if (shipmentCount >= 2 && averageCheck > 0 && recordsWithoutShipment > 0) {
+    const low = currentRevenue + averageCheck * recordsWithoutShipment * 0.45;
+    const high = currentRevenue + averageCheck * recordsWithoutShipment * 1.15;
+    return {
+      tone: "success" as const,
+      short: `${formatMoneyCents(low)} – ${formatMoneyCents(high)}`,
+      value: `${formatMoneyCents(low)} – ${formatMoneyCents(high)}`,
+      details: [
+        `${formatCount(shipmentCount)} отгрузок уже есть.`,
+        `${formatCount(recordsWithoutShipment)} записей без найденной отгрузки.`,
+      ],
+    };
+  }
+
+  if (shipmentCount >= 2) {
+    return {
+      tone: "info" as const,
+      short: `около ${formatMoneyCents(currentRevenue)}`,
+      value: `Около ${formatMoneyCents(currentRevenue)}`,
+      details: ["Данных по чекам достаточно.", "Записей без найденной отгрузки сейчас нет."],
+    };
+  }
+
+  return {
+    tone: "warning" as const,
+    short: "низкая точность",
+    value: "Прогноз: низкая точность",
+    details: [
+      `${formatCount(dashboard.appointments.totalToday)} записей сегодня, у ${formatCount(recordsWithoutShipment)} нет найденной отгрузки.`,
+      "Потенциальная выручка появится после расчётов / отгрузок.",
+    ],
+  };
+}
+
+function MobileReportMetric({
+  label,
+  value,
+  hint,
+  tone = "neutral",
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: MobileProblemTone;
+}) {
+  return (
+    <div className={`eco-mobile-metric is-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {hint && <small>{hint}</small>}
+    </div>
+  );
+}
+
+function MobileActionRow({
+  title,
+  value,
+  detail,
+  href,
+  action,
+  tone = "neutral",
+}: {
+  title: string;
+  value: ReactNode;
+  detail: ReactNode;
+  href: string;
+  action: string;
+  tone?: MobileProblemTone;
+}) {
+  return (
+    <Link href={href} className={`eco-mobile-action-row is-${tone}`}>
+      <span>
+        <b>{title}</b>
+        <small>{detail}</small>
+      </span>
+      <strong>{value}</strong>
+      <em>{action}</em>
+    </Link>
+  );
+}
+
 export default function HomeDashboard({
   role,
   userName,
@@ -397,9 +537,285 @@ export default function HomeDashboard({
   const pageGreeting = sectionsLocked ? `Привет, ${userName}.` : `${isOwner ? "Добрый день" : "Привет"}, ${userName}.`;
   const notifications = dashboard?.notifications ?? [];
   const feedItems = notifications.slice(0, 5);
+  const messages = dashboard?.messages ?? { total: 0, needsReply: 0, unread: 0, oldest: null };
+  const forecast = buildRevenueForecast(dashboard, cashClosed);
+  const criticalProblems =
+    (cashClosed ? 1 : 0) + (dashboard?.crm.overdue ? 1 : 0) + (messages.needsReply ? 1 : 0);
+  const shiftStatusLine = sectionsLocked
+    ? "Смена не начата · касса закрыта"
+    : dashboard?.cash.status === "open"
+      ? `Касса открыта${formatTime(dashboard.cash.openedAt) !== "—" ? ` с ${formatTime(dashboard.cash.openedAt)}` : ""}`
+      : currentShift
+        ? "Смена активна · касса закрыта"
+        : "Смена не начата · касса закрыта";
+  const mobilePrimaryAction = sectionsLocked
+    ? { href: role === "admin" ? "/cash#open" : "#shift-control", label: "Открыть смену" }
+    : cashClosed
+      ? { href: "/cash#open", label: "Открыть кассу" }
+      : { href: "/shipment/new", label: "Новая отгрузка" };
+  const mobileProblems = useMemo<MobileProblem[]>(() => {
+    const items: MobileProblem[] = [];
+    if (cashClosed) {
+      items.push({
+        id: "cash-closed",
+        tone: "danger",
+        title: "Касса закрыта",
+        meta: "Перед продажами нужно открыть смену.",
+        href: "/cash#open",
+        action: "Открыть",
+      });
+    } else if (cashOpenLong) {
+      items.push({
+        id: "cash-open-long",
+        tone: "warning",
+        title: "Касса открыта давно",
+        meta: `${formatHours(Math.floor(dashboard?.cash.openedHours ?? 0))} без закрытия.`,
+        href: "/cash#cash-state",
+        action: "Проверить",
+      });
+    }
+    if (messages.needsReply > 0) {
+      items.push({
+        id: "messages",
+        tone: "danger",
+        title: `${formatCount(messages.needsReply)} сообщений требуют ответа`,
+        meta: messages.oldest ? `Самое старое: ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : "Есть непрочитанные диалоги.",
+        href: "/messages",
+        action: "Открыть",
+      });
+    }
+    if ((dashboard?.crm.overdue ?? 0) > 0) {
+      items.push({
+        id: "crm-overdue",
+        tone: "danger",
+        title: `${formatCount(dashboard?.crm.overdue ?? 0)} просроченных дел`,
+        meta: (dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `Старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "Нужен контроль дедлайнов.",
+        href: "/crm?filter=overdue",
+        action: "Смотреть",
+      });
+    }
+    if ((dashboard?.appointments.withoutShipment ?? 0) > 0) {
+      items.push({
+        id: "appointments-without-shipment",
+        tone: "warning",
+        title: `${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной отгрузки`,
+        meta: "Проверьте журнал или создайте документ.",
+        href: "/records?filter=no-shipment",
+        action: "Создать",
+      });
+    }
+    if ((dashboard?.appointments.requiresManualLink ?? 0) > 0) {
+      items.push({
+        id: "appointments-manual-link",
+        tone: "warning",
+        title: `${formatCount(dashboard?.appointments.requiresManualLink ?? 0)} требуют связи`,
+        meta: "Найдены возможные отгрузки, нужно выбрать правильную.",
+        href: "/records?filter=shipment-link",
+        action: "Связать",
+      });
+    }
+    if ((dashboard?.stock.belowMin ?? 0) > 0) {
+      items.push({
+        id: "stock-below-min",
+        tone: "warning",
+        title: `${formatCount(dashboard?.stock.belowMin ?? 0)} товаров ниже минимума`,
+        meta: "Нужно проверить пополнение.",
+        href: "/inventory/restock?mode=below_min",
+        action: "Проверить",
+      });
+    }
+    if ((dashboard?.diagnostics.withoutPhoto ?? 0) > 0) {
+      items.push({
+        id: "diagnostics-without-photo",
+        tone: "info",
+        title: `${formatCount(dashboard?.diagnostics.withoutPhoto ?? 0)} диагностик без фото / отчёта`,
+        meta: "Закройте незавершённые отчёты.",
+        href: "/shipment?filter=diagnostics",
+        action: "Проверить",
+      });
+    }
+    return items.slice(0, 5);
+  }, [
+    cashClosed,
+    cashOpenLong,
+    dashboard?.appointments.withoutShipment,
+    dashboard?.appointments.requiresManualLink,
+    dashboard?.cash.openedHours,
+    dashboard?.crm.oldestOverdueHours,
+    dashboard?.crm.overdue,
+    dashboard?.diagnostics.withoutPhoto,
+    dashboard?.stock.belowMin,
+    messages.needsReply,
+    messages.oldest,
+  ]);
 
   return (
     <main className="eco-ops-dashboard">
+      <section className="eco-mobile-control" aria-label="Мобильный контроль дня">
+        <header className="eco-mobile-top">
+          <div>
+            <strong>Там где масло</strong>
+            <span>{todayShortPhrase()}</span>
+            <small>{shiftStatusLine}</small>
+          </div>
+          <Link href={mobilePrimaryAction.href} className="eco-mobile-primary">
+            {mobilePrimaryAction.label}
+          </Link>
+        </header>
+
+        {needShiftNotice && (
+          <div className="eco-mobile-inline-alert is-warning">
+            Для администратора и мастера разделы открываются после начала смены.
+          </div>
+        )}
+
+        <section className="eco-mobile-card eco-mobile-report">
+          <div className="eco-mobile-card-head">
+            <h2>Мини-отчёт</h2>
+            <span className={`eco-mobile-status is-${cashClosed ? "danger" : "success"}`}>
+              {cashClosed ? "касса закрыта" : "касса открыта"}
+            </span>
+          </div>
+
+          <div className="eco-mobile-revenue">
+            <span>Выручка сейчас</span>
+            <strong>{loading ? "..." : formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
+            <small>
+              {dashboard?.cash.status === "open" ? "Касса открыта" : "Касса закрыта"} · {formatCount(dashboard?.finance.shipmentsCount ?? 0)} отгрузок · оплачено{" "}
+              {formatMoneyCents(dashboard?.finance.paidCents ?? 0)}
+            </small>
+          </div>
+
+          <div className="eco-mobile-metric-grid">
+            <MobileReportMetric label="Прогноз" value={forecast.short} hint={forecast.value} tone={forecast.tone} />
+            <MobileReportMetric
+              label="Касса / смена"
+              value={dashboard?.cash.status === "open" ? "Открыта" : "Закрыта"}
+              hint={dashboard?.cash.status === "open" ? `с ${formatTime(dashboard.cash.openedAt)}` : "смена не начата"}
+              tone={cashClosed ? "danger" : "success"}
+            />
+            <MobileReportMetric
+              label="Записи сегодня"
+              value={formatCount(dashboard?.appointments.totalToday ?? 0)}
+              hint={`${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной · ${formatCount(dashboard?.appointments.requiresManualLink ?? 0)} связать`}
+            />
+            <MobileReportMetric
+              label="Ближайшая"
+              value={dashboard?.appointments.next ? dashboard.appointments.next.time : "—"}
+              hint={dashboard?.appointments.next ? dashboard.appointments.next.client : "записей нет"}
+            />
+            <MobileReportMetric label="Отгрузки сегодня" value={formatCount(dashboard?.shipments.today ?? 0)} hint={`черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)}`} />
+            <MobileReportMetric label="Сообщения" value={formatCount(messages.total)} hint={`${formatCount(messages.needsReply)} требуют ответа`} tone={messages.needsReply ? "danger" : "neutral"} />
+            <MobileReportMetric label="Просрочено" value={formatCount(dashboard?.crm.overdue ?? 0)} hint={(dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "дел нет"} tone={dashboard?.crm.overdue ? "danger" : "neutral"} />
+            <MobileReportMetric label="Критичные проблемы" value={formatCount(criticalProblems)} hint={criticalProblems ? "нужны действия" : "критичных нет"} tone={criticalProblems ? "danger" : "success"} />
+          </div>
+        </section>
+
+        <section className={`eco-mobile-card eco-mobile-forecast is-${forecast.tone}`}>
+          <div className="eco-mobile-card-head">
+            <h2>Прогноз до конца дня</h2>
+            <span>{forecast.tone === "success" ? "диапазон" : forecast.tone === "warning" ? "низкая точность" : "статус"}</span>
+          </div>
+          <strong>{forecast.value}</strong>
+          <ul>
+            {forecast.details.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="eco-mobile-card eco-mobile-attention">
+          <div className="eco-mobile-card-head">
+            <h2>Требует внимания</h2>
+            <span>{mobileProblems.length ? `${mobileProblems.length} из главных` : "чисто"}</span>
+          </div>
+          {mobileProblems.length ? (
+            <div className="eco-mobile-problems">
+              {mobileProblems.map((item) => (
+                <Link key={item.id} href={item.href} className={`eco-mobile-problem is-${item.tone}`}>
+                  <span className="eco-mobile-problem-dot" />
+                  <span>
+                    <b>{item.title}</b>
+                    <small>{item.meta}</small>
+                  </span>
+                  <em>{item.action}</em>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="eco-mobile-inline-alert is-success">Критичных проблем сейчас нет.</div>
+          )}
+        </section>
+
+        <section className="eco-mobile-card eco-mobile-quick">
+          <div className="eco-mobile-card-head">
+            <h2>Быстрый доступ</h2>
+            <span>3 раздела</span>
+          </div>
+          <div className="eco-mobile-action-list">
+            <MobileActionRow
+              title="Сообщения"
+              value={formatCount(messages.total)}
+              detail={messages.oldest ? `${formatCount(messages.needsReply)} требуют ответа · ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : `${formatCount(messages.needsReply)} требуют ответа`}
+              href="/messages"
+              action="Открыть"
+              tone={messages.needsReply ? "danger" : "neutral"}
+            />
+            <MobileActionRow
+              title="Записи"
+              value={formatCount(dashboard?.appointments.totalToday ?? 0)}
+              detail={dashboard?.appointments.next ? `Ближайшая: ${dashboard.appointments.next.time} · ${dashboard.appointments.next.client}` : `${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной`}
+              href="/records"
+              action="Журнал"
+              tone={dashboard?.appointments.withoutShipment || dashboard?.appointments.requiresManualLink ? "warning" : "neutral"}
+            />
+            <MobileActionRow
+              title="Отгрузки"
+              value={formatCount(dashboard?.shipments.today ?? 0)}
+              detail={`Черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)} · ${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной`}
+              href="/shipment/new"
+              action="Новая"
+              tone={dashboard?.appointments.withoutShipment || dashboard?.appointments.requiresManualLink || dashboard?.shipments.drafts ? "warning" : "neutral"}
+            />
+          </div>
+        </section>
+
+        {sectionsLocked && role !== "admin" && (
+          <section className="eco-mobile-card eco-mobile-shift" id="shift-control">
+            <div>
+              <h2>Смена не начата</h2>
+              <p>Откройте рабочую смену, чтобы продолжить операции.</p>
+            </div>
+            <ShiftButton />
+          </section>
+        )}
+      </section>
+
+      <nav className="eco-mobile-bottom-nav" aria-label="Быстрый доступ">
+        <Link href="/" className="is-active">
+          <Gauge aria-hidden className="eco-icon" />
+          <span>Контроль</span>
+        </Link>
+        <Link href="/messages">
+          <MessageCircle aria-hidden className="eco-icon" />
+          <span>Сообщения</span>
+          {!!messages.needsReply && <b>{messages.needsReply > 99 ? "99+" : messages.needsReply}</b>}
+        </Link>
+        <Link href="/records">
+          <CalendarDays aria-hidden className="eco-icon" />
+          <span>Записи</span>
+        </Link>
+        <Link href="/shipment">
+          <Truck aria-hidden className="eco-icon" />
+          <span>Отгрузки</span>
+        </Link>
+        <Link href="/cabinet">
+          <MoreHorizontal aria-hidden className="eco-icon" />
+          <span>Ещё</span>
+        </Link>
+      </nav>
+
+      <div className="eco-ops-desktop">
       <section className="eco-ops-anchor">
         <div className="eco-ops-anchor-inner">
           <div className="eco-ops-eyebrow">Операционный центр дня</div>
@@ -718,9 +1134,14 @@ export default function HomeDashboard({
                   items={[
                     { label: "Подтверждено", value: dashboard?.appointments.confirmedToday ?? 0 },
                     {
-                      label: "Без отгрузки",
+                      label: "Без найденной",
                       value: dashboard?.appointments.withoutShipment ?? 0,
                       tone: dashboard?.appointments.withoutShipment ? "warning" : "muted",
+                    },
+                    {
+                      label: "Связать",
+                      value: dashboard?.appointments.requiresManualLink ?? 0,
+                      tone: dashboard?.appointments.requiresManualLink ? "warning" : "muted",
                     },
                   ]}
                   dense
@@ -741,8 +1162,8 @@ export default function HomeDashboard({
                           <b>{item.client}</b>
                           <small>{item.vehicle || "авто не указано"} · {item.service}</small>
                         </span>
-                        <Badge tone={item.hasShipment ? "success" : "warning"}>{item.hasShipment ? "есть отгрузка" : "без отгрузки"}</Badge>
-                        <em>{item.hasShipment ? "Открыть" : "Создать отгрузку"}</em>
+                        <Badge tone={item.hasShipment ? "success" : "warning"}>{item.shipmentStatus || (item.hasShipment ? "есть отгрузка" : "без найденной")}</Badge>
+                        <em>{item.hasShipment ? "Открыть" : "Создать"}</em>
                       </Link>
                     ))}
                   </div>
@@ -891,6 +1312,7 @@ export default function HomeDashboard({
           </section>
         </>
       )}
+      </div>
     </main>
   );
 }

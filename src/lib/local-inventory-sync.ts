@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
@@ -289,22 +290,6 @@ function normalizeForSearch(value: unknown): string {
     .toLowerCase();
 }
 
-function attributeSearchText(attributes?: ProductRow["attributes"]): string {
-  if (!Array.isArray(attributes)) return "";
-  const chunks: string[] = [];
-  for (const attr of attributes) {
-    chunks.push(attr.name ?? "");
-    if (Array.isArray(attr.value)) chunks.push(attr.value.map((v) => String(v ?? "")).join(" "));
-    else if (attr.value && typeof attr.value === "object") {
-      const record = attr.value as Record<string, unknown>;
-      chunks.push(String(record.name ?? record.value ?? ""));
-    } else {
-      chunks.push(String(attr.value ?? ""));
-    }
-  }
-  return chunks.join(" ");
-}
-
 function textOrNull(value: unknown): string | null {
   if (value == null) return null;
   const text = String(value).trim();
@@ -523,39 +508,41 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
       const oemParts = attributeValueByName(row.attributes, ["OEM PARTS"]);
       const cell = attributeValueByName(row.attributes, ["Ячейка"]);
       const mannCharacteristicName = attributeValueByName(row.attributes, ["Характеристика:Нименование по Mann", "Характеристика:Наименование по Mann"]);
-      const searchText = normalizeForSearch(
-        [
-          row.name,
-          row.article,
-          row.code,
-          row.externalCode,
-          row.pathName,
-          barcodesByType(row, "ean13"),
-          barcodesByType(row, "ean8"),
-          barcodesByType(row, "code128"),
-          row.description,
-          row.supplier?.name,
-          row.tnved,
-          sae,
-          oem,
-          acea,
-          apiSpec,
-          packageVolume,
-          brand,
-          atf,
-          ilsac,
-          aceaExtra,
-          oemAtf,
-          mannName,
-          rosskoPartNumber,
-          rosskoBrand,
-          supplierAttribute,
-          oemParts,
-          cell,
-          mannCharacteristicName,
-          attributeSearchText(row.attributes),
-        ].join(" ")
-      );
+      const searchText = buildCatalogSearchText({
+        name: row.name,
+        article: row.article,
+        code: row.code,
+        externalCode: row.externalCode,
+        groupPath: row.pathName,
+        uomName: row.uom?.name,
+        barcodeEan13: barcodesByType(row, "ean13"),
+        barcodeEan8: barcodesByType(row, "ean8"),
+        barcodeCode128: barcodesByType(row, "code128"),
+        description: row.description,
+        supplierName: row.supplier?.name,
+        tnvedCode: row.tnved,
+        sae,
+        oem,
+        acea,
+        apiSpec,
+        packageVolume,
+        brand,
+        atf,
+        ilsac,
+        aceaExtra,
+        oemAtf,
+        mannName,
+        rosskoPartNumber,
+        rosskoBrand,
+        rosskoMin,
+        supplierAttribute,
+        oemParts,
+        cell,
+        mannCharacteristicName,
+        entityType,
+        currencyName: salePrice?.currency?.name,
+        attributes: row.attributes,
+      });
       const payload = {
         moyskladHref: row.meta?.href ?? null,
         entityType,
