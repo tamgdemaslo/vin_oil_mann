@@ -1747,12 +1747,22 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         return;
       }
       const params = new URLSearchParams();
+      const strictQuickProductSearch = productSearchMode !== "service"
+        && Boolean(productSearch.trim())
+        && !productOem.trim()
+        && !productMannName.trim()
+        && !productParams.trim();
       if (productSearch.trim()) params.set("q", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
       if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
       params.set("context", "shipment");
-      if (productSearchMode !== "all") params.set("type", productSearchMode);
+      if (strictQuickProductSearch) {
+        params.set("strictNameOem", "1");
+        params.set("type", "product");
+      } else if (productSearchMode !== "all") {
+        params.set("type", productSearchMode);
+      }
       if (selectedStore?.id) params.set("storeId", selectedStore.id);
       if (selectedStore?.name) params.set("storeName", selectedStore.name);
       params.set("limit", "50");
@@ -3065,13 +3075,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const hasProductSearchQuery = manualMannFilter
     ? Boolean((productSearch.trim() || manualMannFilter.mannArticle).trim())
     : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+  const quickStrictProductSearch = !manualMannFilter
+    && productSearchMode !== "service"
+    && Boolean(productSearch.trim())
+    && !productOem.trim()
+    && !productMannName.trim()
+    && !productParams.trim();
   const showProductResults = productResultsOpen && hasProductSearchQuery;
   const addProductFromSearch = manualMannFilter ? addManualMannProductToPosition : addPosition;
   const productSearchEntityLabel =
-    manualMannFilter ? "Товар для MANN" : productSearchMode === "service" ? "Услуга" : productSearchMode === "product" ? "Товар" : "Позиция";
+    manualMannFilter ? "Товар для MANN" : quickStrictProductSearch || productSearchMode === "product" ? "Товар" : productSearchMode === "service" ? "Услуга" : "Позиция";
   const productSearchLoadingLabel =
     manualMannFilter
       ? "Ищем строго по названию и OEM PARTS…"
+      : quickStrictProductSearch
+        ? "Ищем по названию и OEM PARTS…"
       : productSearchMode === "service"
       ? "Ищем услуги в каталоге…"
       : productSearchMode === "product"
@@ -3088,6 +3106,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const productSearchEmptyHint =
     manualMannFilter
       ? "В названии и OEM PARTS нет точного нормализованного совпадения для этого MANN-артикула."
+      : quickStrictProductSearch
+        ? "В названии и OEM PARTS нет нормализованного совпадения. Для широкого поиска используйте расширенные поля."
       : productSearchMode === "service"
       ? "Попробуйте изменить запрос или найти услугу по другому названию."
       : productSearchMode === "product"
@@ -3825,8 +3845,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   productSearchMode === "service"
                     ? "Поиск услуги по названию..."
                     : productSearchMode === "product"
-                      ? "Поиск товара, артикула, MANN, OEM, штрихкода..."
-                      : "Поиск товара, артикула, MANN, OEM, штрихкода..."
+                      ? "Поиск по названию или OEM PARTS..."
+                      : "Поиск по названию или OEM PARTS..."
                 }
 	              className="eco-input"
 	            />

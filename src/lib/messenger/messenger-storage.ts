@@ -73,6 +73,18 @@ export function messengerStorageStatus() {
   };
 }
 
+type StorageProbeResult = {
+  ok: boolean;
+  configured: boolean;
+  checkedAt: string;
+  durationMs: number;
+  key?: string;
+  contentLength?: number;
+  cleanupError?: string | null;
+  error?: string;
+  storage: ReturnType<typeof messengerStorageStatus>;
+};
+
 function assertStorageConfigured() {
   const config = getMessengerStorageConfig();
   const status = messengerStorageStatus();
@@ -119,7 +131,7 @@ function storageUrl(config: MessengerStorageConfig, key: string) {
 }
 
 function signedHeaders(input: {
-  method: "GET" | "PUT" | "HEAD";
+  method: "GET" | "PUT" | "HEAD" | "DELETE";
   url: URL;
   bodyHash: string;
   contentType?: string | null;
@@ -217,6 +229,83 @@ export async function getMessengerStorageObject(key: string): Promise<GetObjectR
     contentLength: Number(response.headers.get("content-length")) || body.length || null,
     etag: response.headers.get("etag"),
   };
+}
+
+export async function deleteMessengerStorageObject(key: string) {
+  const config = assertStorageConfigured();
+  const url = storageUrl(config, key);
+  const headers = signedHeaders({ method: "DELETE", url, bodyHash: EMPTY_SHA256 });
+  const response = await fetch(url, { method: "DELETE", headers });
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Messenger storage DELETE failed: ${response.status} ${text.slice(0, 180)}`);
+  }
+  return { key, deleted: true };
+}
+
+export async function probeMessengerStorageConnection(): Promise<StorageProbeResult> {
+  const startedAt = Date.now();
+  const storage = messengerStorageStatus();
+  const checkedAt = new Date().toISOString();
+  if (!storage.configured) {
+    return {
+      ok: false,
+      configured: false,
+      checkedAt,
+      durationMs: Date.now() - startedAt,
+      error: storage.enabled
+        ? `Messenger storage не настроен: ${storage.missing.join(", ")}`
+        : "MESSENGER_STORAGE_ENABLED=true не задан",
+      storage,
+    };
+  }
+
+  const body = Buffer.from(`eco messenger storage probe ${checkedAt}\n`, "utf8");
+  const key = messengerObjectKey(["messenger", "_health", checkedAt.slice(0, 10)], `probe-${crypto.randomUUID()}.txt`);
+  let cleanupError: string | null = null;
+  try {
+    await putMessengerStorageObject({
+      key,
+      body,
+      contentType: "text/plain; charset=utf-8",
+      cacheControl: "no-store",
+      contentDisposition: `inline; filename="storage-probe.txt"`,
+    });
+    const object = await getMessengerStorageObject(key);
+    if (!object.body.equals(body)) {
+      throw new Error("Storage probe read-back mismatch");
+    }
+    try {
+      await deleteMessengerStorageObject(key);
+    } catch (error) {
+      cleanupError = error instanceof Error ? error.message : "Storage probe cleanup failed";
+    }
+    return {
+      ok: true,
+      configured: true,
+      checkedAt,
+      durationMs: Date.now() - startedAt,
+      key,
+      contentLength: object.body.length,
+      cleanupError,
+      storage,
+    };
+  } catch (error) {
+    try {
+      await deleteMessengerStorageObject(key);
+    } catch {
+      // Best-effort cleanup after a failed probe.
+    }
+    return {
+      ok: false,
+      configured: true,
+      checkedAt,
+      durationMs: Date.now() - startedAt,
+      key,
+      error: error instanceof Error ? error.message : "Messenger storage probe failed",
+      storage,
+    };
+  }
 }
 
 export function safeStorageFileName(name: string, fallback = "file") {

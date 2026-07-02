@@ -54,6 +54,22 @@ type MediaHealthPayload = {
   error?: string;
 };
 
+type StorageProbePayload = {
+  ok?: boolean;
+  configured?: boolean;
+  checkedAt?: string;
+  durationMs?: number;
+  contentLength?: number;
+  cleanupError?: string | null;
+  error?: string;
+};
+
+type MediaBackfillPayload = {
+  ok?: boolean;
+  enqueued?: number;
+  error?: string;
+};
+
 type ActionPayload = {
   ok?: boolean;
   account?: MessengerAccount;
@@ -148,12 +164,15 @@ export default function MessengerIntegrationsClient() {
   const [password, setPassword] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [action, setAction] = useState<"start" | "resend" | "code" | "password" | "qrStart" | "qrCheck" | "sync" | "disconnect" | "refresh" | "channel" | null>(null);
+  const [action, setAction] = useState<
+    "start" | "resend" | "code" | "password" | "qrStart" | "qrCheck" | "sync" | "disconnect" | "refresh" | "channel" | "storageProbe" | "backfill" | null
+  >(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [lastCodeDelivery, setLastCodeDelivery] = useState<CodeDeliveryState>(null);
   const [qrLogin, setQrLogin] = useState<QrLoginState>(null);
   const [mediaHealth, setMediaHealth] = useState<MediaHealthPayload | null>(null);
+  const [storageProbe, setStorageProbe] = useState<StorageProbePayload | null>(null);
 
   const activeAccount = useMemo(
     () =>
@@ -206,6 +225,12 @@ export default function MessengerIntegrationsClient() {
     }
   }
 
+  async function reloadMediaHealth() {
+    const response = await fetch("/api/messenger/telegram/media-health", { cache: "no-store" });
+    const data = await safeReadJson<MediaHealthPayload>(response);
+    setMediaHealth(response.ok ? data ?? null : null);
+  }
+
   useEffect(() => {
     void loadStatus();
   }, []);
@@ -237,6 +262,65 @@ export default function MessengerIntegrationsClient() {
     } catch (error) {
       setResult({ tone: "danger", title: "Telegram", message: error instanceof Error ? error.message : fallback });
       return null;
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function probeStorage() {
+    setAction("storageProbe");
+    setResult(null);
+    try {
+      const response = await fetch("/api/messenger/storage/probe", { method: "POST" });
+      const data = await safeReadJson<StorageProbePayload>(response);
+      setStorageProbe(data ?? null);
+      if (!response.ok || !data?.ok) {
+        throw new Error(actionError(response, data?.error, "Storage probe не прошёл"));
+      }
+      setResult({
+        tone: data.cleanupError ? "warning" : "success",
+        title: "Storage",
+        message: data.cleanupError
+          ? `PUT/GET прошли, но cleanup вернул ошибку: ${shortText(data.cleanupError)}`
+          : `PUT/GET/DELETE прошли за ${data.durationMs ?? 0} мс.`,
+      });
+      await reloadMediaHealth();
+    } catch (error) {
+      setResult({
+        tone: "danger",
+        title: "Storage",
+        message: error instanceof Error ? error.message : "Storage probe не прошёл.",
+      });
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function runMediaBackfill() {
+    setAction("backfill");
+    setResult(null);
+    try {
+      const response = await fetch("/api/messenger/media/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 50 }),
+      });
+      const data = await safeReadJson<MediaBackfillPayload>(response);
+      if (!response.ok || !data?.ok) {
+        throw new Error(actionError(response, data?.error, "Backfill не запущен"));
+      }
+      setResult({
+        tone: "success",
+        title: "Backfill",
+        message: `Поставлено в очередь: ${data.enqueued ?? 0}.`,
+      });
+      await reloadMediaHealth();
+    } catch (error) {
+      setResult({
+        tone: "danger",
+        title: "Backfill",
+        message: error instanceof Error ? error.message : "Backfill не запущен.",
+      });
     } finally {
       setAction(null);
     }
@@ -481,6 +565,7 @@ export default function MessengerIntegrationsClient() {
     ["В очереди", String(mediaHealth?.pendingJobs ?? 0)],
     ["Обрабатываются", String(mediaHealth?.processingJobs ?? 0)],
     ["Ошибки", String(mediaHealth?.failedJobs ?? 0)],
+    ["Проверка storage", storageProbe?.checkedAt ? (storageProbe.ok ? `ok, ${storageProbe.durationMs ?? 0} мс` : shortText(storageProbe.error, "ошибка")) : "—"],
     ["Последняя загрузка", mediaHealth?.lastCompletedAt ? formatServiceDateTime(mediaHealth.lastCompletedAt) : "—"],
   ];
   const mediaProblem =
@@ -791,6 +876,16 @@ export default function MessengerIntegrationsClient() {
               <span>Не заданы env: {mediaHealth.storage.missing.join(", ")}</span>
             </div>
           ) : null}
+          <div className="eco-messenger-settings-actions">
+            <EcoButton type="button" variant="secondary" onClick={() => void probeStorage()} disabled={action !== null || loading}>
+              <CheckCircle2 size={16} />
+              {action === "storageProbe" ? "Проверяем..." : "Проверить storage"}
+            </EcoButton>
+            <EcoButton type="button" variant="ghost" onClick={() => void runMediaBackfill()} disabled={action !== null || loading}>
+              <RefreshCw size={16} />
+              {action === "backfill" ? "Ставим в очередь..." : "Запустить backfill"}
+            </EcoButton>
+          </div>
         </EcoCard>
 
         <EcoCard>

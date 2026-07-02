@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
     oem: sp.get("oem") ?? undefined,
     mannName: sp.get("mannName") ?? undefined,
     params: sp.get("params") ?? undefined,
+    strictNameOem: sp.get("strictNameOem") === "1" || sp.get("strictNameOem") === "true",
   };
 
   return NextResponse.json(await searchCatalog(params));

@@ -48,6 +48,7 @@ export type CatalogSearchParams = {
   oem?: string;
   mannName?: string;
   params?: string;
+  strictNameOem?: boolean;
 };
 
 type CatalogProduct = Prisma.LocalProductGetPayload<{
@@ -670,6 +671,40 @@ async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], p
   return rows.map((row) => row.id);
 }
 
+function strictNameOemTerm(value: unknown): string {
+  const compact = compactIdentifier(value);
+  if (compact.length < 3) return "";
+  return compact;
+}
+
+async function findStrictNameOemCandidateIds(value: unknown): Promise<string[]> {
+  const term = strictNameOemTerm(value);
+  if (!term) return [];
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM local_products
+    WHERE (
+      regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
+      OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
+    )
+    LIMIT 1000
+  `);
+  return rows.map((row) => row.id);
+}
+
+function strictNameOemMatchedFields(product: CatalogProduct, value: unknown): CatalogMatchedField[] {
+  const term = strictNameOemTerm(value);
+  if (!term) return [];
+  const matched: CatalogMatchedField[] = [];
+  if (compactIdentifier(product.name).includes(term)) {
+    matched.push({ field: "name", label: "Название", value: product.name, token: String(value ?? ""), match: "compact" });
+  }
+  if (compactIdentifier(product.oemParts).includes(term)) {
+    matched.push({ field: "oemParts", label: "OEM PARTS", value: product.oemParts ?? "", token: String(value ?? ""), match: "compact" });
+  }
+  return matched;
+}
+
 function mergeSearchCandidateWhere(
   base: Prisma.LocalProductWhereInput,
   normalizedCandidateIds: string[]
@@ -974,6 +1009,72 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     markingProblems: params.markingProblems === true,
   };
   const storeId = await resolveStoreId(params);
+  const strictNameOem = params.strictNameOem === true && Boolean(params.q?.trim());
+  if (strictNameOem) {
+    const strictCandidateIds = await findStrictNameOemCandidateIds(params.q);
+    const products = strictCandidateIds.length > 0
+      ? await prisma.localProduct.findMany({
+          where: {
+            ...(params.includeArchived ? {} : { archived: false }),
+            ...(type !== "all" ? { entityType: type } : {}),
+            id: { in: strictCandidateIds },
+          },
+          include: {
+            stockBalances: {
+              where: storeId ? { storeId } : undefined,
+              include: { store: true },
+              orderBy: { store: { name: "asc" } },
+              take: storeId ? 1 : 20,
+            },
+            photos: {
+              select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: [{ name: "asc" }],
+          take: Math.min(1000, Math.max(limit * 30, 100)),
+        })
+      : [];
+    const scored = products.flatMap((product) => {
+      const matchedFields = strictNameOemMatchedFields(product, params.q);
+      if (matchedFields.length === 0) return [];
+      const score = matchedFields.reduce((sum, field) => sum + (field.field === "oemParts" ? 100 : 90), 0);
+      return [mapProduct(product, score, matchedFields)];
+    });
+    const facets = buildFacets(scored, filters);
+    const filtered = scored.filter((item) => rowMatchesFilters(item, filters));
+    const sorted = filtered.sort((a, b) => compareItems(a, b, sort, direction, context));
+    const items = sorted.slice(offset, offset + limit);
+    return {
+      items,
+      products: items,
+      total: filtered.length,
+      normalizedQuery,
+      tokens,
+      matchedOutsideFilters: Math.max(0, scored.length - filtered.length),
+      suggestions: !items.length && normalizedQuery ? [`Нет совпадений в названии или OEM PARTS: ${normalizedQuery}`] : [],
+      meta: {
+        total: filtered.length,
+        hasMore: offset + limit < filtered.length,
+        limit,
+        offset,
+        sort,
+        direction,
+        filters,
+        filterOptions: {
+          brands: facets.brands.map((item) => item.value),
+          sae: facets.sae.map((item) => item.value),
+          suppliers: facets.suppliers.map((item) => item.value),
+          groups: facets.groups.map((item) => item.value),
+          entityTypes: facets.entityTypes.map((item) => item.value),
+          apiSpecs: facets.apiSpecs.map((item) => item.value),
+          acea: facets.acea.map((item) => item.value),
+          packageVolumes: facets.packageVolumes.map((item) => item.value),
+        },
+        facets,
+      },
+    };
+  }
   const normalizedCandidateIds = await findNormalizedCatalogCandidateIds(tokens, params);
   const where: Prisma.LocalProductWhereInput = {
     ...(params.includeArchived ? {} : { archived: false }),
