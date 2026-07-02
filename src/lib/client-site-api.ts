@@ -21,6 +21,7 @@ type ClientOil = {
   note?: string;
   color: string;
   stock: number;
+  imageHref?: string;
 };
 
 type ClientData = {
@@ -322,6 +323,7 @@ function publicOilToClientOil(card: PublicOilCard, index = 0): ClientOil {
     note: card.article ? `Артикул ${card.article}. Данные из эко-платформы.` : "Данные из эко-платформы.",
     color: BRAND_COLORS[brand.toLowerCase()] ?? paletteColor(index),
     stock,
+    imageHref: card.imageHref,
   };
 }
 

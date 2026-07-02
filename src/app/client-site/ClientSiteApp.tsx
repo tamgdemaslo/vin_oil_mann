@@ -668,6 +668,86 @@ function FreeChangeBadge({ size = 'md', style = {} }) {
   );
 }
 
+function OilCanFallback({ oil, variant = 'shop' }) {
+  const product = variant === 'product';
+  const gradientId = `oil-sh-${String(oil.id || oil.brand).replace(/[^a-z0-9_-]/gi, '')}-${variant}`;
+
+  if (product) {
+    return (
+      <svg viewBox="0 0 280 360" style={{width: '62%', height: '82%'}}>
+        <rect x="112" y="8" width="56" height="28" fill="#0a0a0a" />
+        <path d="M 60 36 L 220 36 L 232 64 L 232 348 L 48 348 L 48 64 Z" fill={oil.color} />
+        <path d="M 60 36 L 220 36 L 232 64 L 232 348 L 48 348 L 48 64 Z" fill={`url(#${gradientId})`} />
+        <rect x="64" y="120" width="156" height="160" fill="#F5F2ED" />
+        <text x="142" y="166" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="38" fill="#0a0a0a">{oil.brand}</text>
+        <text x="142" y="200" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="20" fill="#0a0a0a">{oil.line}</text>
+        <line x1="68" y1="218" x2="216" y2="218" stroke="#0a0a0a" />
+        <text x="142" y="246" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="36" fill="#C2410C">{oil.visc}</text>
+        <text x="142" y="266" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="11" fill="#0a0a0a" letterSpacing="2">{oil.spec.split('/')[0].trim()}</text>
+        <text x="142" y="294" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="22" fill="#0a0a0a">{oil.volume}</text>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#000" stopOpacity="0.25" /><stop offset="0.5" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.3" />
+          </linearGradient>
+        </defs>
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 120 150" width={variant === 'paper' ? 100 : 110} height={variant === 'paper' ? 130 : 150}>
+      <rect x="48" y="2" width="24" height={variant === 'paper' ? 12 : 14} fill="#0a0a0a" />
+      <path d="M 28 16 L 92 16 L 96 28 L 96 144 L 24 144 L 24 28 Z" fill={oil.color} />
+      <path d="M 28 16 L 92 16 L 96 28 L 96 144 L 24 144 L 24 28 Z" fill={`url(#${gradientId})`} />
+      <rect x="30" y="58" width="60" height="48" fill="#F5F2ED" />
+      <text x="60" y="76" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="14" fill="#0a0a0a">{oil.brand}</text>
+      <text x="60" y="90" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700" fontSize="11" fill="#0a0a0a">{oil.visc}</text>
+      <text x="60" y="100" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="7" fill="#6B6B6B">{oil.volume}</text>
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#000" stopOpacity="0.2" /><stop offset="0.5" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.25" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function OilProductVisual({ oil, variant = 'shop' }) {
+  const product = variant === 'product';
+  const inner = (
+    <div style={{position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+      <div style={{position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+        <OilCanFallback oil={oil} variant={variant} />
+      </div>
+      {oil.imageHref && (
+        <img
+          src={oil.imageHref}
+          alt={`${oil.brand} ${oil.line} ${oil.visc}`}
+          loading={product ? 'eager' : 'lazy'}
+          decoding="async"
+          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            maxWidth: product ? '78%' : '88%',
+            maxHeight: product ? '86%' : '100%',
+            objectFit: 'contain',
+            filter: product
+              ? 'drop-shadow(0 26px 38px rgba(10,10,10,0.28))'
+              : 'drop-shadow(0 14px 18px rgba(10,10,10,0.18))',
+          }}
+        />
+      )}
+    </div>
+  );
+
+  if (product) {
+    return <div style={{position: 'absolute', inset: '74px 32px 42px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>{inner}</div>;
+  }
+
+  return inner;
+}
+
 /* ---------- Tape (mono ticker) ---------- */
 function Tape({ items, kind = 'paper' }) {
   return (
@@ -1203,23 +1283,8 @@ function OilCardPaper({ oil, idx }) {
         </div>
         <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.16em', color: '#6B6B6B', textTransform: 'uppercase'}}>{(idx+1).toString().padStart(2,'0')} / {oil.brand.toUpperCase()}</div>
 
-        {/* canister silhouette */}
         <div style={{height: 130, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-          <svg viewBox="0 0 120 130" width="100" height="130">
-            <rect x="48" y="2" width="24" height="12" fill="#0a0a0a" />
-            <path d="M 28 14 L 92 14 L 96 26 L 96 124 L 24 124 L 24 26 Z" fill={oil.color} />
-            <path d="M 28 14 L 92 14 L 96 26 L 96 124 L 24 124 L 24 26 Z" fill="url(#sh)" />
-            <rect x="30" y="50" width="60" height="40" fill="#F5F2ED" />
-            <text x="60" y="68" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="14" fill="#0a0a0a">{oil.brand}</text>
-            <text x="60" y="82" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700" fontSize="11" fill="#0a0a0a">{oil.visc}</text>
-            <defs>
-              <linearGradient id="sh" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#000" stopOpacity="0.2" />
-                <stop offset="0.5" stopColor="#000" stopOpacity="0" />
-                <stop offset="1" stopColor="#000" stopOpacity="0.25" />
-              </linearGradient>
-            </defs>
-          </svg>
+          <OilProductVisual oil={oil} variant="paper" />
         </div>
 
         <div>
@@ -2376,20 +2441,7 @@ function ShopCard({ oil, idx }) {
         </div>
 
         <div style={{height: 150, position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-          <svg viewBox="0 0 120 150" width="110" height="150">
-            <rect x="48" y="2" width="24" height="14" fill="#0a0a0a" />
-            <path d="M 28 16 L 92 16 L 96 28 L 96 144 L 24 144 L 24 28 Z" fill={oil.color} />
-            <path d="M 28 16 L 92 16 L 96 28 L 96 144 L 24 144 L 24 28 Z" fill="url(#shp)" />
-            <rect x="30" y="58" width="60" height="48" fill="#F5F2ED" />
-            <text x="60" y="76" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="14" fill="#0a0a0a">{oil.brand}</text>
-            <text x="60" y="90" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontWeight="700" fontSize="11" fill="#0a0a0a">{oil.visc}</text>
-            <text x="60" y="100" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="7" fill="#6B6B6B">{oil.volume}</text>
-            <defs>
-              <linearGradient id="shp" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#000" stopOpacity="0.2" /><stop offset="0.5" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.25" />
-              </linearGradient>
-            </defs>
-          </svg>
+          <OilProductVisual oil={oil} variant="shop" />
         </div>
 
         <div>
@@ -2456,25 +2508,7 @@ function ProductPage() {
                 {oil.visc.split('-')[0]}<span style={{color: '#C2410C'}}>.</span>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textAlign: 'right', marginTop: -8}}>{oil.visc}</div>
               </div>
-              {/* canister */}
-              <svg viewBox="0 0 280 360" style={{position: 'absolute', inset: 0, margin: 'auto', width: '60%', height: '80%'}}>
-                <rect x="112" y="8" width="56" height="28" fill="#0a0a0a" />
-                <path d="M 60 36 L 220 36 L 232 64 L 232 348 L 48 348 L 48 64 Z" fill={oil.color} />
-                <path d="M 60 36 L 220 36 L 232 64 L 232 348 L 48 348 L 48 64 Z" fill="url(#prod-sh)" />
-                <rect x="64" y="120" width="156" height="160" fill="#F5F2ED" />
-                <text x="142" y="166" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="38" fill="#0a0a0a">{oil.brand}</text>
-                <text x="142" y="200" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="20" fill="#0a0a0a">{oil.line}</text>
-                <line x1="68" y1="218" x2="216" y2="218" stroke="#0a0a0a" />
-                <text x="142" y="246" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="36" fill="#C2410C">{oil.visc}</text>
-                <text x="142" y="266" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="11" fill="#0a0a0a" letterSpacing="2">{oil.spec.split('/')[0].trim()}</text>
-                <text x="142" y="272" />
-                <text x="142" y="294" textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="700" fontSize="22" fill="#0a0a0a">{oil.volume}</text>
-                <defs>
-                  <linearGradient id="prod-sh" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0" stopColor="#000" stopOpacity="0.25" /><stop offset="0.5" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity="0.3" />
-                  </linearGradient>
-                </defs>
-              </svg>
+              <OilProductVisual oil={oil} variant="product" />
               {/* corner stamps */}
               <div style={{position: 'absolute', bottom: 18, left: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.16em'}}>
                 ART. {oil.id.toUpperCase().slice(0, 10)}

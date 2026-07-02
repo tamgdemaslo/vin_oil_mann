@@ -636,6 +636,29 @@ function describeMannAvailability(match: MannLocalMatch): { label: string; outOf
   };
 }
 
+function describeMannChoiceAvailability(match: MannLocalMatch): { label: string; outOfStock: boolean } {
+  const stock = Number.isFinite(match.stock) ? Math.max(0, match.stock) : 0;
+  const available = Number.isFinite(match.available) ? Math.max(0, match.available) : 0;
+  const parts = [formatShipmentMoney(match.price)];
+  if (available > 0) {
+    parts.push(`доступно ${formatQuantityInput(available)}`);
+  } else if (stock > 0) {
+    parts.push("доступно 0");
+  } else {
+    parts.push("нет остатка");
+  }
+  if (match.cell) parts.push(`ячейка ${match.cell}`);
+  return { label: parts.join(" · "), outOfStock: available <= 0 };
+}
+
+function formatMannMatchCount(count: number): string {
+  const abs = Math.abs(count);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? "совпадение" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "совпадения" : "совпадений";
+  return `${count} ${word}`;
+}
+
 function formatMannPositionCount(count: number): string {
   const abs = Math.abs(count);
   const mod10 = abs % 10;
@@ -1102,6 +1125,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [mannError, setMannError] = useState<string | null>(null);
   const [manualMannFilter, setManualMannFilter] = useState<MannFilter | null>(null);
   const [mannPickerExpanded, setMannPickerExpanded] = useState(true);
+  const [mannSelectedMatches, setMannSelectedMatches] = useState<Record<string, MannLocalMatch>>({});
+  const [mannExpandedChoiceArticle, setMannExpandedChoiceArticle] = useState<string | null>(null);
+  const [mannChoiceHighlightedIndex, setMannChoiceHighlightedIndex] = useState(0);
+  const [mannRecentlySelectedArticle, setMannRecentlySelectedArticle] = useState<string | null>(null);
 
   const [demandIdLocal, setDemandIdLocal] = useState<string | null>(null);
   const [existingDemandName, setExistingDemandName] = useState<string | null>(null);
@@ -1116,6 +1143,33 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const markDraftDirty = useCallback(() => {
     if (isExistingDraft) setSaveState("dirty");
   }, [isExistingDraft]);
+
+  useEffect(() => {
+    setMannSelectedMatches({});
+    setMannExpandedChoiceArticle(null);
+    setMannChoiceHighlightedIndex(0);
+    setMannRecentlySelectedArticle(null);
+  }, [selectedMannVariantId]);
+
+  useEffect(() => {
+    if (!mannExpandedChoiceArticle) return;
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const shell = target.closest("[data-mann-choice-shell]");
+      if (shell?.getAttribute("data-mann-choice-shell") === mannExpandedChoiceArticle) return;
+      setMannExpandedChoiceArticle(null);
+      setMannChoiceHighlightedIndex(0);
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [mannExpandedChoiceArticle]);
+
+  useEffect(() => {
+    if (!mannRecentlySelectedArticle) return;
+    const timer = window.setTimeout(() => setMannRecentlySelectedArticle(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [mannRecentlySelectedArticle]);
 
   useEffect(() => {
     if (prefillApplied) return;
@@ -1979,6 +2033,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   };
 
   const startMannManualSearch = (filter: MannFilter) => {
+    setMannExpandedChoiceArticle(null);
+    setMannChoiceHighlightedIndex(0);
     setManualMannFilter(filter);
     setProductSearchMode("product");
     setProductOem("");
@@ -1990,6 +2046,47 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setHighlightedProductIndex(0);
     window.requestAnimationFrame(() => document.getElementById("shipment-product-search")?.focus());
   };
+
+  const toggleMannChoice = useCallback((filter: MannFilter) => {
+    setMannExpandedChoiceArticle((current) => current === filter.mannArticleNormalized ? null : filter.mannArticleNormalized);
+    setMannChoiceHighlightedIndex(0);
+  }, []);
+
+  const selectMannLocalMatch = useCallback((filter: MannFilter, match: MannLocalMatch) => {
+    setMannSelectedMatches((prev) => ({
+      ...prev,
+      [filter.mannArticleNormalized]: match,
+    }));
+    setMannExpandedChoiceArticle(null);
+    setMannChoiceHighlightedIndex(0);
+    setMannRecentlySelectedArticle(filter.mannArticleNormalized);
+    setProductAddNotice(`Товар выбран для MANN ${filter.mannArticle}`);
+  }, []);
+
+  const handleMannChoiceKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>, filter: MannFilter, matches: MannLocalMatch[]) => {
+    if (matches.length === 0) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMannExpandedChoiceArticle(null);
+      setMannChoiceHighlightedIndex(0);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setMannChoiceHighlightedIndex((index) => Math.min(matches.length - 1, index + 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setMannChoiceHighlightedIndex((index) => Math.max(0, index - 1));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const index = Math.min(matches.length - 1, Math.max(0, mannChoiceHighlightedIndex));
+      selectMannLocalMatch(filter, matches[index]);
+    }
+  }, [mannChoiceHighlightedIndex, selectMannLocalMatch]);
 
   const addManualMannProductToPosition = (product: Product) => {
     const filter = manualMannFilter;
@@ -2954,11 +3051,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     .slice()
     .sort((left, right) => mannFilterGroupOrder(left.filterType) - mannFilterGroupOrder(right.filterType) || left.mannArticle.localeCompare(right.mannArticle, "ru"));
   const mannFoundKitItems = mannSortedFilters.flatMap((filter) => {
+    const selectedMatch = mannSelectedMatches[filter.mannArticleNormalized];
     const articleMatch = mannMatches[filter.mannArticleNormalized];
-    const match = articleMatch?.status === "found" ? articleMatch.bestMatch : null;
+    const match = selectedMatch ?? (articleMatch?.status === "found" ? articleMatch.bestMatch : null);
     return filter && match ? [{ filter, match }] : [];
   });
   const mannChoiceItems = mannSortedFilters.flatMap((filter) => {
+    if (mannSelectedMatches[filter.mannArticleNormalized]) return [];
     const match = mannMatches[filter.mannArticleNormalized];
     return match?.status === "multiple_matches" ? [{ filter, status: match.status }] : [];
   });
@@ -3962,13 +4061,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               <div className="eco-shipment-mann-filter-list">
                 {mannSortedFilters.map((filter) => {
                   const match = mannMatches[filter.mannArticleNormalized];
+                  const selectedMatch = mannSelectedMatches[filter.mannArticleNormalized] ?? null;
                   const bestMatch = match?.bestMatch ?? null;
-                  const previewMatch = bestMatch ?? match?.localMatches[0] ?? null;
+                  const previewMatch = selectedMatch ?? bestMatch ?? match?.localMatches[0] ?? null;
                   const status = match?.status ?? "not_found";
-                  const canAddBest = Boolean(bestMatch && (status === "found" || status === "needs_review"));
+                  const addableMatch = selectedMatch ?? bestMatch;
+                  const canAddBest = Boolean(addableMatch && (selectedMatch || status === "found" || status === "needs_review"));
                   const availability = previewMatch ? describeMannAvailability(previewMatch) : null;
-                  const bestAvailability = bestMatch ? describeMannAvailability(bestMatch) : null;
-                  const rowStatusLabel = availability?.outOfStock && (status === "found" || status === "needs_review")
+                  const bestAvailability = addableMatch ? describeMannAvailability(addableMatch) : null;
+                  const rowStatusLabel = selectedMatch
+                    ? "Выбран"
+                    : availability?.outOfStock && (status === "found" || status === "needs_review")
                     ? "Нет остатка"
                     : mannMatchStatusLabel(status);
                   const filterMeta = [
@@ -3978,75 +4081,133 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     filter.hp ? `${filter.hp} hp` : "",
                   ].filter(Boolean).join(" · ");
                   const stockLine = availability?.label ?? `MANN ${filter.mannArticle} не найден в локальном каталоге`;
+                  const choiceMatches = match?.localMatches ?? [];
+                  const choiceOpen = mannExpandedChoiceArticle === filter.mannArticleNormalized && status === "multiple_matches" && choiceMatches.length > 0;
                   return (
-                    <article
+                    <div
                       key={`${filter.filterType}-${filter.filterSubtype ?? ""}-${filter.mannArticleNormalized}`}
-                      className={`eco-shipment-mann-filter is-${status} ${availability?.outOfStock ? "is-out-of-stock" : ""}`}
+                      className="eco-shipment-mann-filter-shell"
+                      data-mann-choice-shell={filter.mannArticleNormalized}
+                      onKeyDown={choiceOpen ? (event) => handleMannChoiceKeyDown(event, filter, choiceMatches) : undefined}
                     >
-                      <span className="eco-shipment-vin-kind">{getMannFilterTypeShortLabel(filter.filterType)}</span>
-                      <div className="eco-shipment-mann-filter-main">
-                        <div>
-                          <strong>MANN {filter.mannArticle}</strong>
-                          {filter.filterSubtype || filter.filterNote ? (
-                            <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span>
-                          ) : null}
-                          {filterMeta ? <em>{filterMeta}</em> : null}
-                          {filter.condition ? <em>Условие MANN: {filter.condition}</em> : null}
+                      <article
+                        className={`eco-shipment-mann-filter is-${status} ${selectedMatch ? "is-selected" : ""} ${mannRecentlySelectedArticle === filter.mannArticleNormalized ? "is-choice-selected" : ""} ${availability?.outOfStock ? "is-out-of-stock" : ""}`}
+                      >
+                        <span className="eco-shipment-vin-kind">{getMannFilterTypeShortLabel(filter.filterType)}</span>
+                        <div className="eco-shipment-mann-filter-main">
+                          <div>
+                            <strong>MANN {filter.mannArticle}</strong>
+                            {filter.filterSubtype || filter.filterNote ? (
+                              <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span>
+                            ) : null}
+                            {filterMeta ? <em>{filterMeta}</em> : null}
+                            {filter.condition ? <em>Условие MANN: {filter.condition}</em> : null}
+                          </div>
                         </div>
-                      </div>
-                      <div className="eco-shipment-mann-local">
-                        <b>{rowStatusLabel}</b>
-                        {previewMatch ? (
-                          <>
-                            <strong title={previewMatch.name}>{previewMatch.name}</strong>
+                        <div className="eco-shipment-mann-local">
+                          <b>{rowStatusLabel}</b>
+                          {previewMatch ? (
+                            <>
+                              <strong title={previewMatch.name}>{previewMatch.name}</strong>
+                              <span title={stockLine}>{stockLine}</span>
+                            </>
+                          ) : (
                             <span title={stockLine}>{stockLine}</span>
-                          </>
-                        ) : (
-                          <span title={stockLine}>{stockLine}</span>
-                        )}
-                      </div>
-                      <div className="eco-shipment-mann-actions">
-                        {canAddBest && bestMatch ? (
-                          <button
-                            type="button"
-                            className={`eco-shipment-mann-row-action ${bestAvailability?.outOfStock ? "is-negative" : ""}`}
-                            title={bestAvailability?.outOfStock ? "Нет доступного остатка: позиция уйдёт в минус" : "Добавить в отгрузку"}
-                            onClick={() => addMannMatchesToPositions([{ filter, match: bestMatch }])}
-                          >
-                            {bestAvailability?.outOfStock ? "Добавить в минус" : "Добавить"}
-                          </button>
-                        ) : status === "multiple_matches" && match?.localMatches.length ? (
-                          <details className="eco-shipment-mann-choice">
-                            <summary>Выбрать товар</summary>
-                            <div>
-                              {match.localMatches.map((local) => (
-                                <button key={local.id} type="button" title={local.name} onClick={() => addMannMatchesToPositions([{ filter, match: local }])}>
-                                  {local.name} · {formatShipmentMoney(local.price)} · доступно {formatQuantityInput(Math.max(0, local.available))}
+                          )}
+                        </div>
+                        <div className="eco-shipment-mann-actions">
+                          {canAddBest && addableMatch ? (
+                            <>
+                              <button
+                                type="button"
+                                className={`eco-shipment-mann-row-action ${bestAvailability?.outOfStock ? "is-negative" : ""}`}
+                                title={bestAvailability?.outOfStock ? "Нет доступного остатка: позиция уйдёт в минус" : "Добавить в отгрузку"}
+                                onClick={() => addMannMatchesToPositions([{ filter, match: addableMatch }])}
+                              >
+                                {bestAvailability?.outOfStock ? "Добавить в минус" : "Добавить"}
+                              </button>
+                              {selectedMatch && choiceMatches.length > 1 ? (
+                                <button type="button" className="eco-shipment-mann-change" onClick={() => toggleMannChoice(filter)}>
+                                  Изменить товар
                                 </button>
-                              ))}
+                              ) : null}
+                            </>
+                          ) : status === "multiple_matches" && choiceMatches.length ? (
+                            <button type="button" className="eco-shipment-mann-change" onClick={() => toggleMannChoice(filter)} aria-expanded={choiceOpen}>
+                              Выбрать товар
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => startMannManualSearch(filter)}>
+                              Найти вручную
+                            </button>
+                          )}
+                          <details className="eco-shipment-mann-more">
+                            <summary>Ещё</summary>
+                            <div>
+                              <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
+                                Создать товар
+                              </Link>
+                              <Link href={mannRestockHref(filter)} target="_blank" rel="noreferrer">
+                                В закупку
+                              </Link>
+                              <Link href={mannRosskoHref(filter)} target="_blank" rel="noreferrer">
+                                ROSSKO
+                              </Link>
                             </div>
                           </details>
-                        ) : (
-                          <button type="button" onClick={() => startMannManualSearch(filter)}>
-                            Найти вручную
-                          </button>
-                        )}
-                        <details className="eco-shipment-mann-more">
-                          <summary>Ещё</summary>
-                          <div>
+                        </div>
+                      </article>
+                      {choiceOpen ? (
+                        <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Выбор товара для MANN ${filter.mannArticle}`}>
+                          <div className="eco-shipment-mann-choice-head">
+                            <div>
+                              <strong>Выберите товар для MANN {filter.mannArticle}</strong>
+                              <span>Найдено {formatMannMatchCount(choiceMatches.length)} в локальном каталоге</span>
+                            </div>
+                            <button type="button" onClick={() => setMannExpandedChoiceArticle(null)}>
+                              Свернуть
+                            </button>
+                          </div>
+                          <div className="eco-shipment-mann-choice-list" role="listbox" aria-label={`Локальные товары для MANN ${filter.mannArticle}`}>
+                            {choiceMatches.map((local, index) => {
+                              const localAvailability = describeMannChoiceAvailability(local);
+                              const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
+                              const isActive = index === mannChoiceHighlightedIndex;
+                              const isSelected = selectedMatch?.id === local.id;
+                              return (
+                                <div
+                                  key={local.id}
+                                  role="option"
+                                  aria-selected={isSelected}
+                                  className={`eco-shipment-mann-choice-option ${isActive ? "is-active" : ""} ${isSelected ? "is-selected" : ""}`}
+                                  onMouseEnter={() => setMannChoiceHighlightedIndex(index)}
+                                >
+                                  <div>
+                                    <strong title={local.name}>{local.name}</strong>
+                                    {localMeta ? <span>{localMeta}</span> : null}
+                                    <em>{localAvailability.label}</em>
+                                  </div>
+                                  <button type="button" onClick={() => selectMannLocalMatch(filter, local)}>
+                                    {localAvailability.outOfStock ? "Выбрать в минус" : "Выбрать"}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="eco-shipment-mann-choice-footer">
+                            <button type="button" onClick={() => startMannManualSearch(filter)}>
+                              Найти вручную
+                            </button>
                             <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
                               Создать товар
                             </Link>
-                            <Link href={mannRestockHref(filter)} target="_blank" rel="noreferrer">
-                              В закупку
-                            </Link>
-                            <Link href={mannRosskoHref(filter)} target="_blank" rel="noreferrer">
-                              ROSSKO
-                            </Link>
+                            <button type="button" onClick={() => setMannExpandedChoiceArticle(null)}>
+                              Свернуть
+                            </button>
                           </div>
-                        </details>
-                      </div>
-                    </article>
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
