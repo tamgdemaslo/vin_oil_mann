@@ -155,14 +155,18 @@ type MannFilter = {
 type MannLocalMatch = {
   id: string;
   name: string;
+  meta?: Meta;
   article?: string | null;
   code?: string | null;
   brand?: string | null;
   price: number;
   currency: string;
   stock: number;
+  reserve?: number;
   available: number;
   cell?: string | null;
+  buyPriceCents?: number | null;
+  cost?: number;
   matchConfidence: number;
   matchReason: string;
 };
@@ -1663,7 +1667,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   };
 
   useEffect(() => {
-    const hasQuery = productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+    const manualMannArticle = manualMannFilter ? productSearch.trim() || manualMannFilter.mannArticle : "";
+    const hasQuery = manualMannFilter
+      ? Boolean(manualMannArticle.trim())
+      : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
       setProductSearchError(null);
@@ -1677,6 +1684,68 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setProductSearchLoading(true);
     setProductSearchError(null);
     const t = setTimeout(() => {
+      if (manualMannFilter) {
+        fetch("/api/mann-catalog/match-local-products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            warehouseId: selectedStore?.id,
+            mannArticles: [{
+              mannArticle: manualMannArticle,
+              filterType: manualMannFilter.filterType,
+              filterSubtype: manualMannFilter.filterSubtype,
+            }],
+          }),
+        })
+          .then(async (r) => {
+            const data = await safeJson<MannMatchJson>(r, {});
+            if (!r.ok) throw new Error(data.error ?? "Не удалось выполнить строгий поиск MANN");
+            return data;
+          })
+          .then((data) => {
+            if (cancelled) return;
+            const match = data.matches?.[0] ?? null;
+            const products = (match?.localMatches ?? []).map((local): Product => {
+              const reason = local.matchReason.includes("OEM Parts") && local.matchReason.includes("Name")
+                ? "Название + OEM PARTS"
+                : local.matchReason.includes("OEM Parts")
+                  ? "OEM PARTS"
+                  : "Название";
+              return {
+                id: local.id,
+                name: local.name,
+                article: local.article ?? undefined,
+                code: local.code ?? undefined,
+                brand: local.brand ?? undefined,
+                price: local.price,
+                currency: local.currency,
+                meta: local.meta ?? { href: `local://product/${local.id}`, type: "product", mediaType: "application/json" },
+                cell: local.cell ?? undefined,
+                slotName: local.cell ?? undefined,
+                stockQuantity: local.stock,
+                reserveQuantity: local.reserve ?? 0,
+                availableQuantity: local.available,
+                buyPriceCents: local.buyPriceCents ?? undefined,
+                cost: local.cost,
+                matchSummary: `Совпадение: ${reason} · строгая нормализация`,
+              };
+            });
+            setProductOptions(products);
+            setHighlightedProductIndex(0);
+            setProductResultsOpen(!productResultsDismissedRef.current);
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            setProductOptions([]);
+            setHighlightedProductIndex(0);
+            setProductResultsOpen(!productResultsDismissedRef.current);
+            setProductSearchError(error instanceof Error ? error.message : "Не удалось выполнить строгий поиск MANN");
+          })
+          .finally(() => {
+            if (!cancelled) setProductSearchLoading(false);
+          });
+        return;
+      }
       const params = new URLSearchParams();
       if (productSearch.trim()) params.set("q", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
@@ -1731,7 +1800,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [productSearch, productOem, productMannName, productParams, productSearchMode, productSearchRetrySeed, selectedStore?.id, selectedStore?.name]);
+  }, [manualMannFilter, productSearch, productOem, productMannName, productParams, productSearchMode, productSearchRetrySeed, selectedStore?.id, selectedStore?.name]);
 
   useEffect(() => {
     if (!authChecked || positionAddMode === "vin" || mannMakes.length > 0) return;
@@ -2038,7 +2107,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setManualMannFilter(filter);
     setProductSearchMode("product");
     setProductOem("");
-    setProductMannName("MANN");
+    setProductMannName("");
     setProductParams("");
     setProductSearch(filter.mannArticle);
     productResultsDismissedRef.current = false;
@@ -2095,14 +2164,18 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const localMatch: MannLocalMatch = {
       id: product.id,
       name: product.name,
+      meta: product.meta,
       article: product.article ?? null,
       code: product.code ?? null,
       brand: product.brand ?? null,
       price: product.price,
       currency: product.currency,
       stock: product.stockQuantity ?? 0,
+      reserve: product.reserveQuantity ?? 0,
       available: product.availableQuantity ?? product.stockQuantity ?? 0,
       cell: product.cell ?? product.slotName ?? null,
+      buyPriceCents: product.buyPriceCents ?? null,
+      cost: product.cost,
       matchConfidence: 100,
       matchReason: "manual_link",
     };
@@ -2989,25 +3062,33 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       window.setTimeout(() => document.getElementById("shipment-product-search")?.focus(), 250);
     }
   };
-  const hasProductSearchQuery = productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+  const hasProductSearchQuery = manualMannFilter
+    ? Boolean((productSearch.trim() || manualMannFilter.mannArticle).trim())
+    : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
   const showProductResults = productResultsOpen && hasProductSearchQuery;
   const addProductFromSearch = manualMannFilter ? addManualMannProductToPosition : addPosition;
   const productSearchEntityLabel =
-    productSearchMode === "service" ? "Услуга" : productSearchMode === "product" ? "Товар" : "Позиция";
+    manualMannFilter ? "Товар для MANN" : productSearchMode === "service" ? "Услуга" : productSearchMode === "product" ? "Товар" : "Позиция";
   const productSearchLoadingLabel =
-    productSearchMode === "service"
+    manualMannFilter
+      ? "Ищем строго по названию и OEM PARTS…"
+      : productSearchMode === "service"
       ? "Ищем услуги в каталоге…"
       : productSearchMode === "product"
         ? "Ищем товары в каталоге…"
         : "Ищем товары и услуги в каталоге…";
   const productSearchErrorLabel =
-    productSearchMode === "service"
+    manualMannFilter
+      ? "Не удалось выполнить поиск MANN"
+      : productSearchMode === "service"
       ? "Не удалось загрузить услуги"
       : productSearchMode === "product"
         ? "Не удалось загрузить товары"
         : "Не удалось загрузить позиции";
   const productSearchEmptyHint =
-    productSearchMode === "service"
+    manualMannFilter
+      ? "В названии и OEM PARTS нет точного нормализованного совпадения для этого MANN-артикула."
+      : productSearchMode === "service"
       ? "Попробуйте изменить запрос или найти услугу по другому названию."
       : productSearchMode === "product"
         ? "Попробуйте изменить запрос или воспользуйтесь расширенным поиском."
@@ -3938,12 +4019,27 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <strong>Ничего не найдено</strong>
                   <span>{productSearchEmptyHint}</span>
                   <div className="eco-product-results-actions">
-                    <button type="button" onClick={openAdvancedProductSearch}>
-                      Расширенный поиск
-                    </button>
-                    <button type="button" onClick={openServiceSearch}>
-                      Добавить услугу
-                    </button>
+                    {manualMannFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualMannFilter(null);
+                          setProductOptions([]);
+                          setProductResultsOpen(false);
+                        }}
+                      >
+                        Сбросить ручной выбор
+                      </button>
+                    ) : (
+                      <>
+                        <button type="button" onClick={openAdvancedProductSearch}>
+                          Расширенный поиск
+                        </button>
+                        <button type="button" onClick={openServiceSearch}>
+                          Добавить услугу
+                        </button>
+                      </>
+                    )}
                     <Link href="/inventory/products">Создать локальную позицию</Link>
                   </div>
                 </div>

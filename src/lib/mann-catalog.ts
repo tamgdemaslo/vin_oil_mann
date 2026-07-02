@@ -52,14 +52,18 @@ type MatchInputArticle = {
 export type MannLocalProductMatch = {
   id: string;
   name: string;
+  meta: { href: string; type: string; mediaType: string };
   article?: string | null;
   code?: string | null;
   brand?: string | null;
   price: number;
   currency: string;
   stock: number;
+  reserve: number;
   available: number;
   cell?: string | null;
+  buyPriceCents?: number | null;
+  cost?: number;
   matchConfidence: number;
   matchReason: string;
 };
@@ -670,7 +674,7 @@ function productHasMannArticle(
   product: { name?: string | null; oemParts?: string | null },
   articleOemNormalized: string
 ): { confidence: number; reason: string } | null {
-  if (!articleOemNormalized) return null;
+  if (articleOemNormalized.length < 3) return null;
   const hasOemPartsMatch = normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized);
   const hasNameMatch = normalizeOemPartsToken(product.name).includes(articleOemNormalized);
   if (hasOemPartsMatch && hasNameMatch) return { confidence: 96, reason: "OEM Parts + Name normalized" };
@@ -679,22 +683,36 @@ function productHasMannArticle(
   return null;
 }
 
+function localProductMeta(product: { id: string; entityType?: string | null; moyskladHref?: string | null }) {
+  const type = product.entityType || "product";
+  return {
+    href: product.moyskladHref || `local://${type}/${product.id}`,
+    type,
+    mediaType: "application/json",
+  };
+}
+
 function localMatchFromProduct(
   product: Prisma.LocalProductGetPayload<{ include: { stockBalances: true } }>,
   match: { confidence: number; reason: string }
 ): MannLocalProductMatch {
   const stock = product.stockBalances[0];
+  const buyPriceCents = stock?.buyPriceCents ?? product.buyPriceCents ?? null;
   return {
     id: product.id,
     name: product.name,
+    meta: localProductMeta(product),
     article: product.article,
     code: product.code,
     brand: product.brand,
     price: product.salePriceCents / 100,
     currency: product.currencyName ?? "руб.",
     stock: stock?.quantity.toNumber() ?? 0,
+    reserve: stock?.reserve.toNumber() ?? 0,
     available: stock?.available.toNumber() ?? 0,
     cell: stock?.slotName ?? product.cell,
+    buyPriceCents,
+    cost: buyPriceCents != null ? buyPriceCents / 100 : undefined,
     matchConfidence: match.confidence,
     matchReason: match.reason,
   };
@@ -725,7 +743,7 @@ export async function matchMannArticlesToLocalProducts(params: {
   for (const articleNormalized of normalizedArticles) {
     const item = articleByNormalized.get(articleNormalized)!;
     const articleOemNormalized = normalizeOemPartsToken(item.mannArticle);
-    const candidateIds = articleOemNormalized
+    const candidateIds = articleOemNormalized.length >= 3
       ? await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id
           FROM local_products
