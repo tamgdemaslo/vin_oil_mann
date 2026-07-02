@@ -666,14 +666,17 @@ function normalizedOemPartsTokens(value?: string | null): Set<string> {
   return tokens;
 }
 
-function productHasOemPartsArticle(
-  product: { oemParts?: string | null },
+function productHasMannArticle(
+  product: { name?: string | null; oemParts?: string | null },
   articleOemNormalized: string
 ): { confidence: number; reason: string } | null {
   if (!articleOemNormalized) return null;
-  return normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized)
-    ? { confidence: 95, reason: "OEM Parts normalized" }
-    : null;
+  const hasOemPartsMatch = normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized);
+  const hasNameMatch = normalizeOemPartsToken(product.name).includes(articleOemNormalized);
+  if (hasOemPartsMatch && hasNameMatch) return { confidence: 96, reason: "OEM Parts + Name normalized" };
+  if (hasOemPartsMatch) return { confidence: 95, reason: "OEM Parts normalized" };
+  if (hasNameMatch) return { confidence: 86, reason: "Name normalized" };
+  return null;
 }
 
 function localMatchFromProduct(
@@ -728,8 +731,10 @@ export async function matchMannArticlesToLocalProducts(params: {
           FROM local_products
           WHERE archived = false
             AND entity_type <> 'service'
-            AND oem_parts IS NOT NULL
-            AND regexp_replace(upper(oem_parts), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
+            AND (
+              regexp_replace(upper(COALESCE(oem_parts, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
+              OR regexp_replace(upper(COALESCE(name, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
+            )
           LIMIT 200
         `)
       : [];
@@ -741,7 +746,7 @@ export async function matchMannArticlesToLocalProducts(params: {
     });
     const byProduct = new Map<string, MannLocalProductMatch>();
     for (const product of candidates) {
-      const match = productHasOemPartsArticle(product, articleOemNormalized);
+      const match = productHasMannArticle(product, articleOemNormalized);
       if (!match) continue;
       const current = byProduct.get(product.id);
       const next = localMatchFromProduct(product, match);
