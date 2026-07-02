@@ -1347,9 +1347,56 @@ function userDisplayName(user: unknown, fallback: string) {
 async function saveAuthorizedTelegramSession(accountId: string, sessionString: string, fallbackPhone: string, user: unknown) {
   const phone = userField(user, "phone") ? `+${userField(user, "phone")?.replace(/^\+/, "")}` : fallbackPhone;
   const organizationId = getMessengerOrganizationId();
+  const existingAccounts = phone
+    ? await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM messenger_accounts
+        WHERE organization_id = ${organizationId}
+          AND channel = 'telegram'
+          AND mode = 'user_session'
+          AND phone = ${phone}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+    : [];
+  const targetAccountId = existingAccounts[0]?.id ?? accountId;
+  if (targetAccountId !== accountId) {
+    await prisma.$executeRaw`
+      DELETE FROM telegram_user_sessions
+      WHERE messenger_account_id = ${targetAccountId}
+        AND organization_id = ${organizationId}
+    `;
+    await prisma.$executeRaw`
+      DELETE FROM telegram_user_sessions
+      WHERE messenger_account_id = ${accountId}
+        AND organization_id = ${organizationId}
+    `;
+    await prisma.$executeRaw`
+      UPDATE messenger_accounts
+      SET phone = NULL,
+          is_active = false,
+          enabled = false,
+          status = 'disconnected',
+          disconnected_at = now(),
+          error_message = 'Superseded by existing Telegram account',
+          updated_at = now()
+      WHERE id = ${accountId}
+        AND organization_id = ${organizationId}
+    `;
+  }
   await prisma.$executeRaw`
-    UPDATE telegram_user_sessions
-    SET phone = ${phone},
+    INSERT INTO telegram_user_sessions
+      (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted,
+       qr_token_encrypted, qr_expires_at, status, last_authorized_at, error_message, created_at, updated_at)
+    VALUES
+      (${crypto.randomUUID()}, ${organizationId}, ${targetAccountId}, ${phone}, ${encryptedJson(String(configuredApiId()))}::jsonb,
+       ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(sessionString)}::jsonb,
+       NULL, NULL, 'connected', now(), NULL, now(), now())
+    ON CONFLICT (messenger_account_id)
+    DO UPDATE SET
+        phone = EXCLUDED.phone,
+        api_id_encrypted = EXCLUDED.api_id_encrypted,
+        api_hash_encrypted = EXCLUDED.api_hash_encrypted,
         session_encrypted = ${encryptedJson(sessionString)}::jsonb,
         qr_token_encrypted = NULL,
         qr_expires_at = NULL,
@@ -1357,8 +1404,6 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
         last_authorized_at = now(),
         error_message = NULL,
         updated_at = now()
-    WHERE messenger_account_id = ${accountId}
-      AND organization_id = ${organizationId}
   `;
   const accountRows = await prisma.$queryRaw<TelegramAccountRow[]>`
     UPDATE messenger_accounts
@@ -1373,7 +1418,7 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
         error_message = NULL,
         metadata_json = jsonb_build_object('mode', 'user_session', 'source', 'telegram_user_session'),
         updated_at = now()
-    WHERE id = ${accountId}
+    WHERE id = ${targetAccountId}
       AND organization_id = ${organizationId}
     RETURNING
       id, organization_id AS "organizationId", channel, mode, display_name AS "displayName", phone, username, is_active AS "isActive", status,
@@ -1388,8 +1433,9 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
     WHERE organization_id = ${organizationId}
       AND channel = 'telegram'
       AND mode = 'user_session'
-      AND id <> ${accountId}
+      AND id <> ${targetAccountId}
   `;
+  if (!accountRows[0]) throw new Error("Не удалось сохранить Telegram account.");
   const account = toPublicAccount(accountRows[0]);
   void syncTelegramUserAccount(account.id, 30).catch((error) => {
     console.warn("[messenger.telegram_user.sync]", {
