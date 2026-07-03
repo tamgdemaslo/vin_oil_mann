@@ -602,15 +602,25 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         item.id === messageId ? { ...item, status: "sending" } : item
       ),
     }));
-    window.setTimeout(() => {
-      setMessagesByConversation((map) => ({
-        ...map,
-        [conversationId]: (map[conversationId] ?? []).map((item) =>
-          item.id === messageId ? { ...item, status: "sent" } : item
-        ),
-      }));
-    }, 600);
-  }, []);
+    void fetch(`/api/messenger/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/retry`, {
+      method: "POST",
+    })
+      .then(async (res) => {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (!res.ok) throw new Error(data?.error || "Не удалось повторить отправку");
+        window.setTimeout(() => refreshConversation(conversationId), 400);
+        window.setTimeout(() => refreshConversation(conversationId), 1800);
+      })
+      .catch((error) => {
+        setMessagesByConversation((map) => ({
+          ...map,
+          [conversationId]: (map[conversationId] ?? []).map((item) =>
+            item.id === messageId ? { ...item, status: "failed" } : item
+          ),
+        }));
+        showToast({ id: `retry-failed-${Date.now()}`, text: error instanceof Error ? error.message : "Не удалось повторить отправку" });
+      });
+  }, [refreshConversation, showToast]);
 
   const retryAttachment = useCallback((conversationId: string, attachmentId: string) => {
     setMessagesByConversation((map) => ({

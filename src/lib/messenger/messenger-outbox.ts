@@ -238,6 +238,58 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
   return toOutbox(rows[0]);
 }
 
+export async function retryMessageOutbox(input: { conversationId: string; messageId: string }): Promise<MessageOutbox> {
+  await ensureMessengerIntegrationCoreSchema();
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<OutboxRow[]>`
+    UPDATE messenger_outbox
+    SET status = 'queued',
+        error_code = NULL,
+        error_message = NULL,
+        next_attempt_at = NULL,
+        updated_at = now()
+    WHERE message_id = ${input.messageId}
+      AND conversation_id = ${input.conversationId}
+      AND organization_id = ${organizationId}
+    RETURNING
+      id,
+      organization_id AS "organizationId",
+      messenger_account_id AS "messengerAccountId",
+      channel,
+      conversation_id AS "conversationId",
+      message_id AS "messageId",
+      connection_id AS "connectionId",
+      recipient_external_chat_id AS "recipientExternalChatId",
+      message_type AS "messageType",
+      text,
+      attachments_json AS "attachmentsJson",
+      template_key AS "templateKey",
+      template_vars_json AS "templateVarsJson",
+      status,
+      attempts,
+      last_attempt_at AS "lastAttemptAt",
+      next_attempt_at AS "nextAttemptAt",
+      error_code AS "errorCode",
+      error_message AS "errorMessage",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+  `;
+  if (!rows[0]) {
+    throw new Error("Не найдена очередь отправки для этого сообщения");
+  }
+  await prisma.$executeRaw`
+    UPDATE messenger_messages
+    SET status = 'queued',
+        error_code = NULL,
+        error_message = NULL,
+        updated_at = now()
+    WHERE id = ${input.messageId}
+      AND conversation_id = ${input.conversationId}
+      AND organization_id = ${organizationId}
+  `;
+  return processOutboxItem(toOutbox(rows[0]));
+}
+
 export async function processPendingOutbox(limit = 20) {
   await ensureMessengerIntegrationCoreSchema();
   const rows = await prisma.$queryRaw<OutboxRow[]>`
