@@ -502,11 +502,6 @@ function isBulkOil(product: Pick<ProductWithStock, "name" | "groupPath" | "uomNa
   return /(масл|oil)/i.test(text) && /(разлив|литр|л\b|l\b)/i.test(text);
 }
 
-function productMatchesTextFilter(value: string | null | undefined, selected: string): boolean {
-  if (!selected) return true;
-  return cleanText(value).toLowerCase().includes(selected.toLowerCase());
-}
-
 function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMetric {
   let currentStock = 0;
   let available = 0;
