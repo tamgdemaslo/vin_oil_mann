@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type HTMLAttributes } from "react";
-import { Camera, ChevronLeft, ChevronRight, Copy, ImagePlus, Printer, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Copy, Printer, X } from "lucide-react";
 import {
   DIAGNOSTIC_MAP_BLOCKS,
   DIAGNOSTIC_MAP_STATUSES,
@@ -90,10 +90,6 @@ type PhotoUploadState = {
 type CaptionEditorState = {
   itemCode: string;
   photoId: string;
-};
-
-type PhotoSourcePickerState = {
-  itemCode: string;
 };
 
 type DiagnosticMapModalProps = {
@@ -2568,15 +2564,13 @@ export function DiagnosticMapModal({
   const [captionEditor, setCaptionEditor] = useState<CaptionEditorState | null>(null);
   const [captionDraft, setCaptionDraft] = useState("");
   const [captionSaving, setCaptionSaving] = useState(false);
-  const [photoSourcePicker, setPhotoSourcePicker] = useState<PhotoSourcePickerState | null>(null);
   const [viewMode, setViewMode] = useState<DiagnosticViewMode>("quick");
   const [quickFilter, setQuickFilter] = useState<QuickFilterMode>("all");
   const [quickOpenBlocks, setQuickOpenBlocks] = useState<Set<string>>(new Set());
   const [quickExpandedItems, setQuickExpandedItems] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
   const [quickUndoSnapshot, setQuickUndoSnapshot] = useState<QuickUndoSnapshot | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const pendingPhotoTargetRef = useRef<string | null>(null);
   const pendingSavesRef = useRef(new Set<Promise<unknown>>());
   const pendingUploadsRef = useRef(new Set<Promise<unknown>>());
@@ -2591,13 +2585,12 @@ export function DiagnosticMapModal({
       setMobileStructureOpen(false);
       setMobileSummaryOpen(false);
       setIsEditingText(false);
-      setPhotoSourcePicker(null);
       setCaptionEditor(null);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open || (!mobileStructureOpen && !mobileSummaryOpen && !captionEditor && !photoSourcePicker)) return undefined;
+    if (!open || (!mobileStructureOpen && !mobileSummaryOpen && !captionEditor)) return undefined;
     const previousOverflow = document.body.style.overflow;
     const previousOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = "hidden";
@@ -2606,7 +2599,7 @@ export function DiagnosticMapModal({
       document.body.style.overflow = previousOverflow;
       document.body.style.overscrollBehavior = previousOverscroll;
     };
-  }, [captionEditor, mobileStructureOpen, mobileSummaryOpen, open, photoSourcePicker]);
+  }, [captionEditor, mobileStructureOpen, mobileSummaryOpen, open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -2769,7 +2762,6 @@ export function DiagnosticMapModal({
   const quickPrimaryBlock = quickPrimaryItem ? data?.blocks.find((candidate) => candidate.items.some((candidateItem) => candidateItem.code === quickPrimaryItem.code)) ?? null : null;
   const captionEditorItem = captionEditor ? flatItems.find((candidate) => candidate.code === captionEditor.itemCode) ?? null : null;
   const captionEditorPhoto = captionEditorItem?.photos.find((photo) => photo.id === captionEditor?.photoId) ?? null;
-  const photoSourceTarget = photoSourcePicker ? flatItems.find((candidate) => candidate.code === photoSourcePicker.itemCode) ?? null : null;
   const photosWithoutCaptions = useMemo(
     () => applicableFlatItems.flatMap((candidate) => candidate.photos.filter((photo) => !photo.caption.trim()).map((photo) => ({ item: candidate, photo }))),
     [applicableFlatItems]
@@ -3126,26 +3118,20 @@ export function DiagnosticMapModal({
     });
   }
 
-  function openPhotoSourcePicker(target: DiagnosticMapItem) {
-    setPhotoSourcePicker({ itemCode: target.code });
-  }
-
-  function triggerPhotoSource(source: "camera" | "gallery") {
-    if (!photoSourceTarget) return;
-    pendingPhotoTargetRef.current = photoSourceTarget.code;
-    setPhotoSourcePicker(null);
-    const input = source === "camera" ? cameraInputRef.current : galleryInputRef.current;
+  function openPhotoPicker(target: DiagnosticMapItem) {
+    pendingPhotoTargetRef.current = target.code;
+    const input = photoInputRef.current;
     if (!input) {
-      setError(source === "camera" ? "Нет доступа к камере. Разрешите доступ в настройках телефона или выберите фото из галереи." : "Не удалось открыть выбор фото.");
+      pendingPhotoTargetRef.current = null;
+      setError("Не удалось открыть выбор фото. Обновите страницу и попробуйте ещё раз.");
       return;
     }
-    window.setTimeout(() => {
-      try {
-        input.click();
-      } catch {
-        setError(source === "camera" ? "Нет доступа к камере. Разрешите доступ в настройках телефона или выберите фото из галереи." : "Не удалось открыть галерею.");
-      }
-    }, 0);
+    try {
+      input.click();
+    } catch {
+      pendingPhotoTargetRef.current = null;
+      setError("Не удалось открыть выбор фото. Разрешите доступ к фото/камере в настройках телефона.");
+    }
   }
 
   function handlePhotoInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -3341,7 +3327,7 @@ export function DiagnosticMapModal({
             </button>
           </figure>
         ))}
-        <button type="button" className="diag-quick-photo-add" onClick={() => openPhotoSourcePicker(target)}>
+        <button type="button" className="diag-quick-photo-add" onClick={() => openPhotoPicker(target)}>
           <Camera size={16} />
           <span>{target.photos.length || uploads.length ? "Ещё фото" : "Добавить фото"}</span>
         </button>
@@ -3894,7 +3880,7 @@ export function DiagnosticMapModal({
                         onChange={(event) => setPhotoCaptions((current) => ({ ...current, [item.code]: event.target.value }))}
                         placeholder="Подпись необязательна"
                       />
-                      <button type="button" onClick={() => openPhotoSourcePicker(item)}>+ Загрузить фото</button>
+                      <button type="button" onClick={() => openPhotoPicker(item)}>+ Загрузить фото</button>
                     </div>
                   </div>
                 </section>
@@ -4032,46 +4018,14 @@ export function DiagnosticMapModal({
       )}
 
       <input
-        ref={cameraInputRef}
-        className="diag-photo-hidden-input"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handlePhotoInputChange}
-      />
-      <input
-        ref={galleryInputRef}
+        ref={photoInputRef}
         className="diag-photo-hidden-input"
         type="file"
         accept="image/*"
         multiple
+        aria-hidden="true"
         onChange={handlePhotoInputChange}
       />
-
-      {photoSourceTarget && (
-        <div className="diag-quick-sheet-backdrop diag-photo-source-backdrop" onClick={() => setPhotoSourcePicker(null)}>
-          <section className="diag-quick-sheet diag-photo-source-sheet" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-            <button type="button" className="diag-quick-sheet-close" onClick={() => setPhotoSourcePicker(null)}>×</button>
-            <span>Фото · {photoSourceTarget.title}</span>
-            <h2>{photoSourceTarget.photos.length > 0 ? "Добавить ещё фото" : "Добавить фото"}</h2>
-            <div className="diag-photo-source-actions">
-              <button type="button" onClick={() => triggerPhotoSource("camera")}>
-                <Camera size={22} />
-                <strong>Сделать фото</strong>
-                <small>Откроется камера телефона</small>
-              </button>
-              <button type="button" onClick={() => triggerPhotoSource("gallery")}>
-                <ImagePlus size={22} />
-                <strong>Выбрать из галереи</strong>
-                <small>Можно выбрать несколько снимков</small>
-              </button>
-              <button type="button" className="is-cancel" onClick={() => setPhotoSourcePicker(null)}>
-                Отмена
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
 
       {captionEditorItem && captionEditorPhoto && (
         <div className="diag-quick-sheet-backdrop diag-caption-backdrop" onClick={() => setCaptionEditor(null)}>
