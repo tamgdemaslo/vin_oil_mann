@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
-import { sendDiagnosticReportToTelegram } from "@/lib/messenger/messenger-diagnostics";
+import {
+  handleDiagnosticReportSent,
+  markDiagnosticReportSent,
+} from "@/lib/client-notifications/client-notifications";
 
 function actionError(error: unknown) {
   const message = error instanceof Error ? error.message : "Не удалось отправить отчёт в Telegram";
@@ -18,13 +21,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
   try {
-    const result = await sendDiagnosticReportToTelegram({
+    const result = await handleDiagnosticReportSent({
       source: "map",
       diagnosticId: id,
       request,
-      createdById: gate.session.user.login,
+      initiatedById: gate.session.user.login,
     });
     if (!result) return NextResponse.json({ error: "Диагностика не найдена" }, { status: 404 });
+    if (result.ok) await markDiagnosticReportSent("map", id);
     return NextResponse.json(result, { status: result.ok ? 201 : 409 });
   } catch (error) {
     return actionError(error);

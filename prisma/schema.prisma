@@ -1057,6 +1057,122 @@ model CommunicationConsent {
   @@map("communication_consents")
 }
 
+model NotificationTemplate {
+  id             String   @id
+  organizationId String   @default("default") @map("organization_id")
+  name           String
+  eventType      String   @map("event_type")
+  channel        String
+  body           String   @db.Text
+  isActive       Boolean  @default(true) @map("is_active")
+  branchId       String?  @map("branch_id")
+  status         String   @default("active")
+  metadataJson   Json     @default("{}") @map("metadata_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, eventType, channel, isActive])
+  @@index([organizationId, branchId])
+  @@map("notification_templates")
+}
+
+model NotificationRule {
+  id             String   @id
+  organizationId String   @default("default") @map("organization_id")
+  eventType      String   @map("event_type")
+  enabled        Boolean  @default(true)
+  channel        String
+  templateId     String   @map("template_id")
+  timingType     String   @default("immediate") @map("timing_type")
+  offsetMinutes  Int?     @map("offset_minutes")
+  conditionsJson Json     @default("{}") @map("conditions_json")
+  branchId       String?  @map("branch_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, eventType, enabled])
+  @@index([organizationId, branchId])
+  @@index([templateId])
+  @@map("notification_rules")
+}
+
+model NotificationJob {
+  id                 String    @id
+  organizationId     String    @default("default") @map("organization_id")
+  eventType          String    @map("event_type")
+  channel            String
+  clientId           String?   @map("client_id")
+  appointmentId      String?   @map("appointment_id")
+  diagnosticReportId String?   @map("diagnostic_report_id")
+  templateId         String    @map("template_id")
+  scheduledAt        DateTime  @map("scheduled_at") @db.Timestamptz(6)
+  status             String    @default("scheduled")
+  idempotencyKey     String    @map("idempotency_key")
+  payloadJson        Json      @default("{}") @map("payload_json")
+  errorMessage       String?   @map("error_message") @db.Text
+  attempts           Int       @default(0)
+  nextAttemptAt      DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  sentAt             DateTime? @map("sent_at") @db.Timestamptz(6)
+  providerMessageId  String?   @map("provider_message_id")
+  messengerMessageId String?   @map("messenger_message_id")
+  messengerOutboxId  String?   @map("messenger_outbox_id")
+  conversationId     String?   @map("conversation_id")
+  branchId           String?   @map("branch_id")
+  initiatedById      String?   @map("initiated_by_id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status, scheduledAt])
+  @@index([organizationId, eventType])
+  @@index([clientId])
+  @@index([appointmentId])
+  @@index([diagnosticReportId])
+  @@map("notification_jobs")
+}
+
+model NotificationLog {
+  id                 String   @id
+  organizationId     String   @default("default") @map("organization_id")
+  notificationJobId  String?  @map("notification_job_id")
+  eventType          String   @map("event_type")
+  channel            String
+  clientId           String?  @map("client_id")
+  appointmentId      String?  @map("appointment_id")
+  diagnosticReportId String?  @map("diagnostic_report_id")
+  templateId         String?  @map("template_id")
+  status             String
+  renderedMessage    String?  @map("rendered_message") @db.Text
+  errorMessage       String?  @map("error_message") @db.Text
+  providerMessageId  String?  @map("provider_message_id")
+  initiatedById      String?  @map("initiated_by_id")
+  metadataJson       Json     @default("{}") @map("metadata_json")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, eventType])
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([appointmentId])
+  @@index([diagnosticReportId])
+  @@map("notification_logs")
+}
+
+model ClientNotificationPreference {
+  clientId       String    @id @map("client_id")
+  organizationId String    @default("default") @map("organization_id")
+  telegramEnabled Boolean  @default(true) @map("telegram_enabled")
+  consentStatus  String    @default("unknown") @map("consent_status")
+  consentSource  String?   @map("consent_source")
+  consentAt      DateTime? @map("consent_at") @db.Timestamptz(6)
+  unsubscribedAt DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, telegramEnabled, consentStatus])
+  @@map("client_notification_preferences")
+}
+
 model CommunicationIdentity {
   id                     String    @id
   organizationId         String    @default("default") @map("organization_id")

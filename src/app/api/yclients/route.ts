@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  handleAppointmentCancelled,
+  handleAppointmentCreated,
+  handleAppointmentUpdated,
+} from "@/lib/client-notifications/client-notifications";
 
 const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
 const YCLIENTS_COMPANY_ID = process.env.YCLIENTS_COMPANY_ID ?? "9354";
@@ -129,6 +134,45 @@ function normalizeCreateRecordPayload(rawPayload: unknown) {
     email_remain_hours: numberValue(rawPayload.email_remain_hours),
     attendance: numberValue(rawPayload.attendance),
     api_id: stringValue(rawPayload.api_id) ?? stringValue(rawPayload.apiId),
+  };
+}
+
+function responseRecordId(data: unknown) {
+  if (!isRecord(data)) return null;
+  const nested = isRecord(data.data) ? data.data : data;
+  const id =
+    stringValue(nested.id) ??
+    stringValue(nested.record_id) ??
+    stringValue(nested.recordId) ??
+    (numberValue(nested.id) ? String(numberValue(nested.id)) : undefined) ??
+    (numberValue(nested.record_id) ? String(numberValue(nested.record_id)) : undefined);
+  return id ?? null;
+}
+
+function appointmentContextFromPayload(payload: unknown, fallbackId?: string | null) {
+  const record = isRecord(payload) ? payload : {};
+  const client = isRecord(record.client) ? record.client : {};
+  const services = Array.isArray(record.services) ? record.services : [];
+  const serviceList = services
+    .map((service) => (isRecord(service) ? stringValue(service.title) ?? stringValue(service.name) ?? stringValue(service.id) : stringValue(service)))
+    .filter(Boolean)
+    .join(", ");
+  const datetime = stringValue(record.datetime) ?? stringValue(record.date);
+  const comment = stringValue(record.comment) ?? "";
+  const vehicleMatch = comment.match(/(?:VIN|vin|ВИН|госномер|авто)[:\s]+([A-Za-zА-Яа-я0-9 ._-]{3,40})/);
+  return {
+    appointmentId: fallbackId ?? stringValue(record.id) ?? stringValue(record.record_id) ?? null,
+    appointmentAt: datetime ?? null,
+    clientName: stringValue(client.name) ?? stringValue(record.name) ?? stringValue(record.fullname) ?? null,
+    clientPhone: stringValue(client.phone) ?? stringValue(record.phone) ?? null,
+    clientEmail: stringValue(client.email) ?? stringValue(record.email) ?? null,
+    serviceList: serviceList || null,
+    car: vehicleMatch?.[1]?.trim() || null,
+    status:
+      record.attendance === 1
+        ? "arrived"
+        : stringValue(record.status) ?? stringValue(record.state) ?? null,
+    payload: { yclientsPayload: record },
   };
 }
 
@@ -405,10 +449,22 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "create-record") {
-    return yclientsRequest(`/record/${companyId}`, {
+    const normalizedPayload = normalizeCreateRecordPayload(body.payload);
+    const response = await yclientsRequest(`/record/${companyId}`, {
       method: "POST",
-      body: JSON.stringify(normalizeCreateRecordPayload(body.payload)),
+      body: JSON.stringify(normalizedPayload),
     });
+    if (response.ok) {
+      const data = await response.clone().json().catch(() => null);
+      await handleAppointmentCreated({
+        source: "admin",
+        ...appointmentContextFromPayload(normalizedPayload, responseRecordId(data)),
+        initiatedById: "yclients",
+      }).catch((error) => {
+        console.warn("[client-notifications/yclients-create]", error);
+      });
+    }
+    return response;
   }
 
   return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
@@ -430,10 +486,19 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  return yclientsRequest(`/record/${companyId}/${recordId}`, {
+  const response = await yclientsRequest(`/record/${companyId}/${recordId}`, {
     method: "PUT",
     body: JSON.stringify(body.payload ?? {}),
   });
+  if (response.ok) {
+    await handleAppointmentUpdated({
+      ...appointmentContextFromPayload(body.payload, recordId),
+      initiatedById: "yclients",
+    }).catch((error) => {
+      console.warn("[client-notifications/yclients-update]", error);
+    });
+  }
+  return response;
 }
 
 export async function DELETE(request: NextRequest) {
@@ -452,7 +517,13 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  return yclientsRequest(`/record/${companyId}/${recordId}`, {
+  const response = await yclientsRequest(`/record/${companyId}/${recordId}`, {
     method: "DELETE",
   });
+  if (response.ok) {
+    await handleAppointmentCancelled(recordId).catch((error) => {
+      console.warn("[client-notifications/yclients-delete]", error);
+    });
+  }
+  return response;
 }

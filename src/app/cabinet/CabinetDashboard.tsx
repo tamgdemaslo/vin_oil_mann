@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
+import { BellRing, Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
 import EmployeeTelegramCard from "./EmployeeTelegramCard";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
@@ -44,6 +44,12 @@ export default function CabinetDashboard({ role, canManageOrganizations = false 
             label: "Мессенджеры",
             description: "Telegram webhook и будущие каналы.",
             icon: Plug,
+          },
+          {
+            href: "/cabinet/notifications",
+            label: "Уведомления клиентам",
+            description: "Автоматические Telegram-сообщения, шаблоны и журнал.",
+            icon: BellRing,
           },
         ]
       : []),

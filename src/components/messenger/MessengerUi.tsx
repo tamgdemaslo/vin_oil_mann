@@ -285,14 +285,14 @@ function isAudioAttachment(attachment: Attachment) {
 }
 
 function isTechnicalAttachmentName(value?: string) {
-  return /^(attachment|photo|video|voice|audio|document)-telegram:message:/i.test(value ?? "");
+  return /^(attachment|photo|video|voice|audio|document)-telegram:message:/i.test(value ?? "") || /^voice[-_]\d/i.test(value ?? "");
 }
 
 function displayAttachmentName(attachment: Attachment) {
+  if (attachment.type === "voice") return "Голосовое сообщение";
   if (attachment.name && !isTechnicalAttachmentName(attachment.name)) return attachment.name;
   if (attachment.type === "photo" || attachment.type === "image") return "Фото Telegram";
   if (attachment.type === "video") return "Видео Telegram";
-  if (attachment.type === "voice") return "Голосовое сообщение";
   if (attachment.type === "audio") return "Аудио Telegram";
   if (attachment.type === "sticker") return "Стикер Telegram";
   if (attachment.type === "animation") return "GIF Telegram";
@@ -305,6 +305,10 @@ function attachmentMetaLine(attachment: Attachment) {
   return [formatAttachmentSize(attachment.size), formatDuration(attachment.duration), attachment.mimeType]
     .filter(Boolean)
     .join(" · ");
+}
+
+function audioMetaLine(attachment: Attachment) {
+  return formatAttachmentSize(attachment.size) || (attachment.type === "voice" ? "Telegram voice" : "Аудио");
 }
 
 function pendingAttachmentText(attachment: Attachment) {
@@ -427,7 +431,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         <div className="eco-messenger-head-actions">
           {!!unreadTotal && <span className="eco-messenger-unread">{unreadTotal}</span>}
           {compact && (
-            <Link href="/messages" className="eco-messenger-icon-btn" aria-label="Открыть полный экран">
+            <Link href="/messages" className="eco-messenger-icon-btn" aria-label="Развернуть чат" title="Развернуть чат">
               <Expand aria-hidden className="eco-icon" />
             </Link>
           )}
@@ -627,11 +631,17 @@ export function ChatHeader({
       <div className="eco-messenger-chat-head__copy">
         <strong>{conversation.participantName}</strong>
         <span>
-          <Icon aria-hidden className="eco-icon" />
-          {channel.label} · {statusLabel}
-          {!conversation.clientId && <em>без клиента</em>}
+          <span className="eco-messenger-chat-head__channel">
+            <Icon aria-hidden className="eco-icon" />
+            {channel.label} · {statusLabel}
+          </span>
         </span>
       </div>
+      {!conversation.clientId && (
+        <button type="button" className="eco-messenger-client-status" title="Привязать клиента">
+          Клиент не привязан
+        </button>
+      )}
       <div className="eco-messenger-chat-head__actions">{rightAction}</div>
     </div>
   );
@@ -693,7 +703,7 @@ function MessageBubble({
         {!!message.attachments.length && <MessageAttachments attachments={message.attachments} onRetry={onAttachmentRetry} />}
         <span className="eco-messenger-message__meta">
           {formatMessengerTime(message.createdAt)}
-          <span className={message.status === "failed" ? "is-danger" : ""}>{statusLabels[message.status]}</span>
+          <span className={message.status === "failed" ? "is-danger" : ""}>{message.status === "failed" ? "не отправлено" : statusLabels[message.status]}</span>
         </span>
       </div>
       {message.status === "failed" && (
@@ -891,7 +901,7 @@ function AudioAttachment({ attachment, onRetry }: { attachment: Attachment; onRe
           aria-label="Позиция аудио"
         />
         <div className="eco-messenger-audio__meta">
-          <span>{attachmentMetaLine(attachment) || (attachment.type === "voice" ? "Голосовое сообщение" : "Аудио")}</span>
+          <span>{audioMetaLine(attachment)}</span>
           <button type="button" onClick={cycleRate}>{rate}x</button>
           <AttachmentDownload attachment={attachment} label="Скачать" />
         </div>
