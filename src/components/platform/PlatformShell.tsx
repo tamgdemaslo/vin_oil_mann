@@ -34,6 +34,7 @@ type PlatformUser = {
 
 type PlatformPermissions = {
   canManageOrganizations?: boolean;
+  canViewWarehouseAnalytics?: boolean;
 };
 
 type CurrentShift = {
@@ -336,6 +337,7 @@ export default function PlatformShell() {
   const canAccessCrm = user?.role === "owner" || user?.role === "admin";
   const canManageIntegrations = user?.role === "owner" || user?.role === "admin";
   const canManageOrganizations = Boolean(permissions.canManageOrganizations);
+  const canViewWarehouseAnalytics = Boolean(permissions.canViewWarehouseAnalytics);
 
   const navSections = useMemo<PlatformNavSection[]>(
     () => [
@@ -363,6 +365,7 @@ export default function PlatformShell() {
         icon: Warehouse,
         items: [
           { href: "/inventory/products", label: "Товары", description: "Карточки, остатки и фото.", disabled: locked },
+          { href: "/warehouse/product-analytics", label: "Аналитика товаров", description: "Продажи, маржа и неликвид.", disabled: locked || !canViewWarehouseAnalytics },
           { href: "/warehouse/inventory", label: "Инвентаризация", description: "Сверка фактических остатков.", disabled: locked },
           { href: "/inventory/receipts", label: "Приёмка", description: "Поступления на локальный склад.", disabled: locked },
           { href: "/inventory/writeoffs", label: "Корректировки", description: "Списания и технические корректировки.", disabled: locked },
@@ -422,7 +425,7 @@ export default function PlatformShell() {
         ],
       },
     ],
-    [canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, locked]
+    [canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, locked]
   );
 
   async function handleLogout() {

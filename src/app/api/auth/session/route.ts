@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { canManageOrganizations } from "@/lib/organizations";
+import { canViewWarehouseAnalytics } from "@/lib/warehouse-analytics-access";
 
 export async function GET() {
   const session = await getSession();
@@ -11,6 +12,7 @@ export async function GET() {
     user: session.user,
     permissions: {
       canManageOrganizations: await canManageOrganizations(session.user),
+      canViewWarehouseAnalytics: await canViewWarehouseAnalytics(session.user),
     },
   });
 }

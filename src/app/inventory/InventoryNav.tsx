@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const items = [
   { href: "/inventory/products", label: "Товары" },
+  { href: "/warehouse/product-analytics", label: "Аналитика" },
   { href: "/inventory/receipts", label: "Приёмка" },
   { href: "/inventory/writeoffs", label: "Корректировки" },
   { href: "/inventory/restock", label: "Пополнение" },
