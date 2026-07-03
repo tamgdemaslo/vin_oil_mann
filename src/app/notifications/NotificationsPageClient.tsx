@@ -3,6 +3,7 @@
 import { Bell, CalendarClock, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoCard, EcoStatusDot, type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { tryResponseJson } from "@/lib/response-json";
@@ -168,6 +169,19 @@ export default function NotificationsPageClient() {
                         <button type="button" onClick={() => void runAction(item, "close")} className="eco-btn eco-btn--ghost eco-btn--sm">
                           Закрыть
                         </button>
+                        <ContactActionButton
+                          size="sm"
+                          entityType="crm_case"
+                          entityId={item.caseId}
+                          phone={item.phone}
+                          displayName={item.client}
+                          context={{
+                            entityType: "crm_case",
+                            entityId: item.caseId,
+                            crmCaseId: item.caseId,
+                            date: item.deadline ?? null,
+                          }}
+                        />
                         {item.phone && (
                           <a href={`tel:${item.phone}`} className="eco-btn eco-btn--ghost eco-btn--sm">
                             Позвонить

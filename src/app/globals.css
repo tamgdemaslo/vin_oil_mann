@@ -85,6 +85,266 @@
   font-weight: 750;
 }
 
+.eco-contact-action-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(29, 78, 216, 0.22);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eco-contact-action-button:hover {
+  background: #dbeafe;
+  border-color: rgba(29, 78, 216, 0.34);
+}
+
+.eco-contact-action-button.is-sm {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.eco-contact-action-button.is-icon {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.eco-contact-action-button.is-link {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.eco-contact-action-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 18px;
+}
+
+.eco-contact-action-panel {
+  width: min(520px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  border: 1px solid var(--eco-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--eco-surface, #fff);
+  box-shadow: 0 26px 76px rgba(15, 23, 42, 0.25);
+}
+
+.eco-contact-action-panel header,
+.eco-contact-action-panel footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.eco-contact-action-panel header {
+  border-bottom: 1px solid var(--eco-border, #e2e8f0);
+}
+
+.eco-contact-action-panel header p,
+.eco-contact-action-panel header h3,
+.eco-contact-action-panel header span {
+  margin: 0;
+}
+
+.eco-contact-action-panel header p {
+  color: var(--eco-muted-ink, #64748b);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.eco-contact-action-panel header h3 {
+  margin-top: 3px;
+  color: var(--eco-ink, #0f172a);
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.18;
+}
+
+.eco-contact-action-panel header span {
+  display: block;
+  margin-top: 5px;
+  color: var(--eco-muted-ink, #64748b);
+  font-size: 13px;
+}
+
+.eco-contact-action-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--eco-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.eco-contact-action-status,
+.eco-contact-action-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 16px 0;
+  border-radius: 8px;
+  padding: 10px 11px;
+  font-size: 13px;
+}
+
+.eco-contact-action-status {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.eco-contact-action-alert.is-error {
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.eco-contact-action-alert.is-success {
+  border: 1px solid rgba(22, 163, 74, 0.26);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.eco-contact-action-grid,
+.eco-contact-action-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.eco-contact-action-grid button,
+.eco-contact-action-grid a,
+.eco-contact-action-wide,
+.eco-contact-action-panel footer button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--eco-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.eco-contact-action-grid button:disabled,
+.eco-contact-action-grid a[aria-disabled="true"],
+.eco-contact-action-panel footer button:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.eco-contact-action-wide {
+  margin: 14px 16px 0;
+  width: calc(100% - 32px);
+  border-color: rgba(29, 78, 216, 0.24);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.eco-contact-action-templates button {
+  border: 1px solid var(--eco-border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.eco-contact-action-templates button.is-active {
+  border-color: rgba(29, 78, 216, 0.34);
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.eco-contact-action-message {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px 0;
+}
+
+.eco-contact-action-message span {
+  color: var(--eco-muted-ink, #64748b);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eco-contact-action-message textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--eco-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: #0f172a;
+  font: inherit;
+}
+
+.eco-contact-action-panel footer {
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+.eco-contact-action-panel footer .is-primary {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+}
+
+.eco-contact-action-panel footer .is-secondary {
+  background: #f8fafc;
+}
+
+.eco-contact-action-panel .is-spin {
+  animation: eco-contact-spin 0.9s linear infinite;
+}
+
+.eco-client-contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@keyframes eco-contact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .eco-product-import-grid {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);

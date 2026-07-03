@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { formatServiceDateTime } from "@/lib/date-time";
@@ -287,6 +288,11 @@ function counterpartyHrefFromDemand(raw: unknown, fallbackName: string): string 
   return name && name !== "Клиент не выбран"
     ? `/clients/counterparties?search=${encodeURIComponent(name)}`
     : "/clients/counterparties";
+}
+
+function counterpartyIdFromDemand(raw: unknown): string | null {
+  const agent = rawAgentFromDemand(raw);
+  return agent?.id?.trim() || localEntityIdFromMeta(agent?.meta) || null;
 }
 
 function diagnosticApiErrorMessage(status: number, body: { error?: string; needShift?: boolean } = {}): string {
@@ -1446,6 +1452,7 @@ export default function ShipmentDetailPage() {
     .map((a, index) => ({ a, index }))
     .filter(({ a }) => !isVehicleAttribute(a.name));
   const agentHref = counterpartyHrefFromDemand(data.raw, agentName);
+  const agentCounterpartyId = counterpartyIdFromDemand(data.raw);
   const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
   const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
   const positionsDiscount = positions.reduce((sum, p) => {
@@ -1715,6 +1722,20 @@ export default function ShipmentDetailPage() {
                       <ExternalLink aria-hidden />
                     </Link>
                   </h2>
+                  <ContactActionButton
+                    size="sm"
+                    entityType="shipment"
+                    entityId={data.header.id}
+                    counterpartyId={agentCounterpartyId}
+                    displayName={agentName}
+                    context={{
+                      entityType: "shipment",
+                      entityId: data.header.id,
+                      shipmentId: data.header.id,
+                      car: clientVehicleSummary,
+                      plate: vehiclePlate,
+                    }}
+                  />
 	                  <p>{clientVehicleSummary}</p>
 	                  <p>Создана {formatServiceDateTime(data.header.moment)}</p>
                 </div>

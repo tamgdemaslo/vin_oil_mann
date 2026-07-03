@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
@@ -1373,6 +1374,21 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       <button type="button" onClick={() => setNewSupplierOpen((value) => !value)}>
                         <Plus size={14} /> Новый поставщик
                       </button>
+                      {selectedCounterparty && (
+                        <ContactActionButton
+                          size="sm"
+                          entityType="supplier"
+                          counterpartyId={selectedCounterparty.id}
+                          supplierId={selectedCounterparty.id}
+                          phone={selectedCounterparty.phone}
+                          displayName={selectedCounterparty.name}
+                          context={{
+                            entityType: "supplier",
+                            entityId: selectedCounterparty.id,
+                            amount: formatMoney(total),
+                          }}
+                        />
+                      )}
                     </div>
                   )}
 

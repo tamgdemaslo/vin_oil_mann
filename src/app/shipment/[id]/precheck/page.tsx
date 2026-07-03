@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Send,
 } from "lucide-react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import {
@@ -154,6 +155,22 @@ function getAgentPhone(raw: unknown): string {
     }
   }
   return "";
+}
+
+function entityIdFromMetaHref(href: unknown): string {
+  if (typeof href !== "string" || !href.trim()) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/counterparty\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
+}
+
+function getAgentId(raw: unknown): string | null {
+  const agent = getRawAgent(raw);
+  if (!agent) return null;
+  if (typeof agent.id === "string" && agent.id.trim()) return agent.id.trim();
+  const meta = agent.meta && typeof agent.meta === "object" ? (agent.meta as Record<string, unknown>) : null;
+  return entityIdFromMetaHref(meta?.href) || null;
 }
 
 function getAssortmentSource(position: Position): { label: string; code: string } {
@@ -425,6 +442,7 @@ export default function ShipmentPrecheckPage() {
 
   const clientName = data?.header.agentName?.trim() || "не указан";
   const phone = getAgentPhone(data?.raw);
+  const counterpartyId = getAgentId(data?.raw);
   const vehicleModel = getAttributeValue(data?.attributes, /^модель авто$/i);
   const vehicleYear = getAttributeValue(data?.attributes, /^год$/i);
   const vehiclePlate = getAttributeValue(data?.attributes, /гос.*номер|номер/i);
@@ -955,6 +973,23 @@ export default function ShipmentPrecheckPage() {
                     : "Отправить заказ на кассу"}
               </EcoButton>
               <div className="eco-precheck-side-actions">
+                <ContactActionButton
+                  size="sm"
+                  entityType="precheck"
+                  entityId={id}
+                  counterpartyId={counterpartyId}
+                  phone={phone}
+                  displayName={clientName}
+                  context={{
+                    entityType: "precheck",
+                    entityId: id,
+                    precheckId: id,
+                    shipmentId: id,
+                    car: vehicleTitle,
+                    plate: vehiclePlate,
+                    amount: formatMoney(totals.total),
+                  }}
+                />
                 <Link href={`/shipment/${id}`} className="eco-btn">
                   <ArrowLeft className="eco-icon" aria-hidden />
                   Вернуться к отгрузке

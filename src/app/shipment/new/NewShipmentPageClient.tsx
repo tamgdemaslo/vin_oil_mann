@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
@@ -3744,6 +3745,19 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   <small>{[clientTypeLabel, clientVehicleLabel ? `Авто: ${clientVehicleLabel}` : "Автомобиль не указан"].filter(Boolean).join(" · ")}</small>
                 </div>
                 <div className="eco-shipment-client-card-actions">
+                  <ContactActionButton
+                    size="sm"
+                    entityType="shipment"
+                    counterpartyId={selectedAgent.id}
+                    phone={clientPhone}
+                    displayName={clientDisplayName}
+                    context={{
+                      entityType: "shipment",
+                      entityId: "draft",
+                      car: clientVehicleLabel,
+                      plate: selectedAgent.vehiclePlate,
+                    }}
+                  />
                   <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-shipment-link-btn" title="Открыть контрагента">
                     <ExternalLink className="eco-icon" aria-hidden />
                     Открыть

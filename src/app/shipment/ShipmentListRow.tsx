@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type KeyboardEvent, type MouseEvent } from "react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge } from "@/components/platform/EcoUI";
 import { ShipmentRowActions } from "./ShipmentRowActions";
 
@@ -18,6 +19,7 @@ type ShipmentListRowProps = {
   moment: { date: string; time: string };
   counterpartyName: string;
   counterpartyHref: string | null;
+  counterpartyId: string | null;
   vehiclePrimary: string;
   vehicleSecondary: string;
   vehicleTitle: string;
@@ -45,6 +47,7 @@ export function ShipmentListRow({
   moment,
   counterpartyName,
   counterpartyHref,
+  counterpartyId,
   vehiclePrimary,
   vehicleSecondary,
   vehicleTitle,
@@ -123,6 +126,20 @@ export function ShipmentListRow({
       <td className="l-money eco-shipment-list-sum">{sumLabel}</td>
       <td className="eco-shipment-list-actions" data-row-action>
         <div className="eco-row-actions">
+          <ContactActionButton
+            variant="icon"
+            size="sm"
+            entityType="shipment"
+            entityId={row.id}
+            counterpartyId={counterpartyId}
+            displayName={counterpartyName}
+            context={{
+              entityType: "shipment",
+              entityId: row.id,
+              shipmentId: row.id,
+              car: vehicleTitle || vehiclePrimary,
+            }}
+          />
           <ShipmentRowActions shipmentId={row.id} />
         </div>
       </td>

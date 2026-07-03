@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
 import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
@@ -136,6 +137,10 @@ function counterpartyCatalogHref(row: DemandRow): string | null {
   return `/clients/counterparties?search=${encodeURIComponent(name)}`;
 }
 
+function counterpartyIdFromDemand(row: DemandRow): string | null {
+  return row.agent?.id?.trim() || localCounterpartyIdFromMeta(row.agent?.meta) || null;
+}
+
 async function loadShipmentList(opts: {
   search: string;
   counterparty: string;
@@ -206,6 +211,7 @@ function ShipmentMobileCard({
   moment,
   counterpartyName,
   counterpartyHref,
+  counterpartyId,
   vehiclePrimary,
   vehicleSecondary,
   vehicleTitle,
@@ -216,6 +222,7 @@ function ShipmentMobileCard({
   moment: { date: string; time: string };
   counterpartyName: string;
   counterpartyHref: string | null;
+  counterpartyId: string | null;
   vehiclePrimary: string;
   vehicleSecondary: string;
   vehicleTitle: string;
@@ -279,6 +286,20 @@ function ShipmentMobileCard({
           </EcoBadge>
         </div>
         <div className="eco-shipment-mobile-card__actions" data-row-action>
+          <ContactActionButton
+            variant="icon"
+            size="sm"
+            entityType="shipment"
+            entityId={row.id}
+            counterpartyId={counterpartyId}
+            displayName={counterpartyName}
+            context={{
+              entityType: "shipment",
+              entityId: row.id,
+              shipmentId: row.id,
+              car: vehicleTitle || vehiclePrimary,
+            }}
+          />
           <ShipmentRowActions shipmentId={row.id} />
         </div>
       </div>
@@ -441,6 +462,7 @@ export default async function ShipmentListPage({
                 const moment = formatMoment(r.moment);
                 const counterpartyName = getCounterpartyDisplay(r);
                 const counterpartyHref = counterpartyCatalogHref(r);
+                const counterpartyId = counterpartyIdFromDemand(r);
                 const vehicle = getVehicleDisplay(r);
                 return (
                   <ShipmentMobileCard
@@ -449,6 +471,7 @@ export default async function ShipmentListPage({
                     moment={moment}
                     counterpartyName={counterpartyName}
                     counterpartyHref={counterpartyHref}
+                    counterpartyId={counterpartyId}
                     vehiclePrimary={vehicle.primary}
                     vehicleSecondary={vehicle.secondary}
                     vehicleTitle={vehicle.title}
@@ -483,6 +506,7 @@ export default async function ShipmentListPage({
                   const moment = formatMoment(r.moment);
                   const counterpartyName = getCounterpartyDisplay(r);
                   const counterpartyHref = counterpartyCatalogHref(r);
+                  const counterpartyId = counterpartyIdFromDemand(r);
                   const vehicle = getVehicleDisplay(r);
                   return (
                     <ShipmentListRow
@@ -491,6 +515,7 @@ export default async function ShipmentListPage({
                       moment={moment}
                       counterpartyName={counterpartyName}
                       counterpartyHref={counterpartyHref}
+                      counterpartyId={counterpartyId}
                       vehiclePrimary={vehicle.primary}
                       vehicleSecondary={vehicle.secondary}
                       vehicleTitle={vehicle.title}

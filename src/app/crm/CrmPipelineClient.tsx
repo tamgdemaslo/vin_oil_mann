@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoKpi, type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { formatServiceDateTime, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
@@ -1196,6 +1197,21 @@ function DealCard({
           {deal.notes && <p className="eco-deal-card__notes">{deal.notes}</p>}
           <div className="eco-deal-card__actions">
             <button type="button" onClick={onOpen}>Открыть</button>
+            <ContactActionButton
+              size="sm"
+              entityType="crm_case"
+              entityId={deal.id}
+              counterpartyId={deal.moyskladCounterpartyId}
+              phone={deal.phoneNormalized}
+              displayName={displayCustomerName(deal)}
+              context={{
+                entityType: "crm_case",
+                entityId: deal.id,
+                crmCaseId: deal.id,
+                car: deal.vehicle,
+                amount: deal.amountCents ? formatMoney(deal.amountCents) : null,
+              }}
+            />
             {deal.phoneNormalized && <a href={`tel:${deal.phoneNormalized}`}>Позвонить</a>}
             {quoteSentStage && <button type="button" onClick={() => onMove(quoteSentStage)}>Отправить расчёт</button>}
             <Link href={recordsHrefFromDeal(deal)}>{hasRecord ? "Открыть запись" : "Записать клиента"}</Link>
@@ -1526,6 +1542,21 @@ function CaseDrawer({
         </header>
 
         <div className="eco-crm-drawer__actions">
+          <ContactActionButton
+            size="sm"
+            entityType="crm_case"
+            entityId={deal.id}
+            counterpartyId={deal.moyskladCounterpartyId}
+            phone={deal.phoneNormalized}
+            displayName={displayCustomerName(deal)}
+            context={{
+              entityType: "crm_case",
+              entityId: deal.id,
+              crmCaseId: deal.id,
+              car: deal.vehicle,
+              amount: deal.amountCents ? formatMoney(deal.amountCents) : null,
+            }}
+          />
           {deal.phoneNormalized && (
             <a className="eco-btn eco-btn--secondary eco-btn--sm" href={`tel:${deal.phoneNormalized}`}>
               <Phone size={14} />

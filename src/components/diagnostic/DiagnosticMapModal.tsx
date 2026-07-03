@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type HTMLAttributes } from "react";
 import { Camera, ChevronLeft, ChevronRight, Copy, Printer, X } from "lucide-react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import {
   DIAGNOSTIC_MAP_BLOCKS,
   DIAGNOSTIC_MAP_STATUSES,
@@ -3610,6 +3611,23 @@ export function DiagnosticMapModal({
                   {data.reportUrl && <a href={`${data.reportUrl}/print`} target="_blank" rel="noreferrer" className="diag-archive-btn"><Printer size={16} /> Печать карты</a>}
                   {data.reportUrl && <a href={data.reportUrl} target="_blank" rel="noreferrer" className="diag-archive-btn">Превью отчёта</a>}
                   <button type="button" className="diag-archive-btn" onClick={() => void copyReportLink()}><Copy size={16} /> Скопировать ссылку</button>
+                  <ContactActionButton
+                    size="sm"
+                    entityType="diagnostic"
+                    entityId={data.id}
+                    phone={headerDraft?.clientPhone}
+                    displayName={data.clientName || headerDraft?.clientName}
+                    context={{
+                      entityType: "diagnostic",
+                      entityId: data.id,
+                      diagnosticId: data.id,
+                      shipmentId: data.shipmentId,
+                      reportToken: data.publicToken,
+                      car: data.vehicle.title,
+                      plate: data.vehicle.licensePlate,
+                      link: data.reportUrl,
+                    }}
+                  />
                   <button
                     type="button"
                     className="diag-archive-btn"

@@ -26,6 +26,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi, EcoSelect } from "@/components/platform/EcoUI";
 import { formatServiceDate } from "@/lib/date-time";
 
@@ -1041,6 +1042,20 @@ export default function CounterpartiesClient() {
                               <EcoBadge tone={statusInfo.tone} dot>{statusInfo.label}</EcoBadge>
                             </td>
                             <td className="eco-clients-row-actions" onClick={(event) => event.stopPropagation()}>
+                              <ContactActionButton
+                                variant="icon"
+                                size="sm"
+                                entityType="counterparty"
+                                counterpartyId={row.id}
+                                phone={phone}
+                                displayName={name}
+                                context={{
+                                  entityType: "counterparty",
+                                  entityId: row.id,
+                                  car: row.vehicleLabel || row.vehicleModel,
+                                  plate: row.vehiclePlate,
+                                }}
+                              />
                               <button type="button" className="eco-icon-btn" title="Открыть клиента" onClick={() => setDetailRow(row)}>
                                 <Eye aria-hidden className="eco-icon" />
                               </button>
@@ -1302,6 +1317,20 @@ function ClientDrawer({
             <InfoLine label="Основной телефон" value={row.phone ? formatPhone(row.phone) : "не указан"} muted={!row.phone} />
             <InfoLine label="Доп. телефон" value={row.additionalPhone ? formatPhone(row.additionalPhone) : "не указан"} muted={!row.additionalPhone} />
             <InfoLine label="Email" value={row.email || "не указан"} muted={!row.email} />
+            <div className="eco-client-contact-actions">
+              <ContactActionButton
+                entityType="counterparty"
+                counterpartyId={row.id}
+                phone={row.phone || row.additionalPhone}
+                displayName={displayName(row)}
+                context={{
+                  entityType: "counterparty",
+                  entityId: row.id,
+                  car: row.vehicleLabel || row.vehicleModel,
+                  plate: row.vehiclePlate,
+                }}
+              />
+            </div>
           </InfoBlock>
 
           <InfoBlock title="Telegram" icon={<Send aria-hidden className="eco-icon" />} className="eco-client-telegram-block">

@@ -129,6 +129,7 @@ type TelegramRuntimeClient = {
   invoke(input: unknown): Promise<unknown>;
   addEventHandler?: (callback: (update: unknown) => void) => void;
   getMe?: () => Promise<unknown>;
+  getInputEntity?: (entity: unknown) => Promise<unknown>;
   isUserAuthorized?: () => Promise<boolean>;
   getDialogs(input: { limit: number }): Promise<unknown>;
   getMessages(entity: unknown, input: { limit?: number; ids?: number | number[] }): Promise<unknown>;
@@ -154,6 +155,11 @@ type GramJsModule = {
     account: {
       GetPassword: new () => unknown;
     };
+    contacts: {
+      ResolvePhone: new (input: Record<string, unknown>) => unknown;
+      ImportContacts: new (input: Record<string, unknown>) => unknown;
+    };
+    InputPhoneContact: new (input: Record<string, unknown>) => unknown;
     CodeSettings: new (input: Record<string, unknown>) => unknown;
   };
   Password: {
@@ -181,6 +187,19 @@ type TelegramQrRuntimeAttempt = {
   account?: MessengerAccount;
   error?: string;
   finalizing?: Promise<void>;
+};
+
+type TelegramResolvedPeer = {
+  accountId: string;
+  organizationId: string;
+  externalUserId: string;
+  externalConversationId: string;
+  chatId: string;
+  username: string | null;
+  displayName: string;
+  phone: string | null;
+  source: "phone_lookup" | "imported_contact";
+  conversationId: string;
 };
 
 const qrRuntimeAttempts = new Map<string, TelegramQrRuntimeAttempt>();
@@ -303,7 +322,7 @@ async function loadGramJs(): Promise<GramJsModule> {
     const sessions = await import("telegram/sessions");
     return {
       TelegramClient: telegram.TelegramClient as GramJsModule["TelegramClient"],
-      Api: telegram.Api as GramJsModule["Api"],
+      Api: telegram.Api as unknown as GramJsModule["Api"],
       StringSession: sessions.StringSession as GramJsModule["StringSession"],
       Password: telegram.password as GramJsModule["Password"],
       version: typeof telegram.version === "string" ? telegram.version : undefined,
@@ -1911,6 +1930,183 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
     await refreshTelegramDialogAvatar(rows[0].id, dialog.entity ?? dialog.inputEntity, client);
   }
   return { id: rows[0]?.id, chatId, externalConversationId };
+}
+
+function telegramUserFromResult(result: unknown) {
+  const users = objectField(result, "users");
+  if (!Array.isArray(users)) return null;
+  return users.find((user) => {
+    if (!user || typeof user !== "object") return false;
+    const id = objectField(user, "id");
+    const deleted = objectField(user, "deleted");
+    return id !== undefined && id !== null && deleted !== true;
+  }) ?? null;
+}
+
+function telegramUserId(user: unknown) {
+  return stringValue(objectField(user, "id"));
+}
+
+function telegramUserName(user: unknown) {
+  const firstName = stringValue(objectField(user, "firstName"));
+  const lastName = stringValue(objectField(user, "lastName"));
+  const username = stringValue(objectField(user, "username"));
+  return [firstName, lastName].filter(Boolean).join(" ") || (username ? `@${username}` : null);
+}
+
+function telegramUserMetadata(user: unknown) {
+  return {
+    id: stringValue(objectField(user, "id")),
+    username: stringValue(objectField(user, "username")),
+    firstName: stringValue(objectField(user, "firstName")),
+    lastName: stringValue(objectField(user, "lastName")),
+    phone: stringValue(objectField(user, "phone")),
+    className: stringValue(objectField(user, "className")),
+  };
+}
+
+async function upsertTelegramConversationFromUser(input: {
+  account: MessengerAccount;
+  user: unknown;
+  phone: string;
+  source: TelegramResolvedPeer["source"];
+}) {
+  const organizationId = input.account.organizationId ?? getMessengerOrganizationId();
+  const chatId = telegramUserId(input.user);
+  if (!chatId) throw new Error("Telegram вернул контакт без user id.");
+  const externalUserId = chatId;
+  const username = stringValue(objectField(input.user, "username"));
+  const displayName = telegramUserName(input.user) ?? `Telegram ${chatId}`;
+  const externalConversationId = telegramExternalConversationId(input.account.id, chatId);
+  const connectionId = crypto.randomUUID();
+  const connectionRows = await prisma.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO messenger_connections
+      (id, organization_id, channel, type, external_user_id, external_chat_id, external_username, display_name, phone, is_active, last_seen_at, raw_json, updated_at)
+    VALUES
+      (${connectionId}, ${organizationId}, 'telegram', 'unknown', ${externalUserId}, ${chatId}, ${username}, ${displayName},
+       ${input.phone}, true, now(), ${JSON.stringify({ source: input.source, user: telegramUserMetadata(input.user) })}::jsonb, now())
+    ON CONFLICT (channel, external_chat_id)
+    DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      external_user_id = COALESCE(EXCLUDED.external_user_id, messenger_connections.external_user_id),
+      external_username = COALESCE(EXCLUDED.external_username, messenger_connections.external_username),
+      display_name = EXCLUDED.display_name,
+      phone = COALESCE(EXCLUDED.phone, messenger_connections.phone),
+      is_active = true,
+      last_seen_at = now(),
+      raw_json = EXCLUDED.raw_json,
+      updated_at = now()
+    RETURNING id
+  `;
+  const conversationId = crypto.randomUUID();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO messenger_conversations
+      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id,
+       external_participant_id, connection_id, title, participant_name, participant_username, participant_phone,
+       unread_count, last_message_text, last_message_at, status, metadata_json, created_at, updated_at)
+    VALUES
+      (${conversationId}, ${organizationId}, ${input.account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId},
+       ${externalUserId}, ${connectionRows[0]?.id ?? null}, ${displayName}, ${displayName}, ${username}, ${input.phone},
+       0, '', now(), 'open', ${JSON.stringify({ source: input.source, firstContact: true })}::jsonb, now(), now())
+    ON CONFLICT (channel, external_conversation_id)
+    DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      messenger_account_id = EXCLUDED.messenger_account_id,
+      external_chat_id = EXCLUDED.external_chat_id,
+      external_user_id = EXCLUDED.external_user_id,
+      external_participant_id = EXCLUDED.external_participant_id,
+      connection_id = COALESCE(EXCLUDED.connection_id, messenger_conversations.connection_id),
+      title = EXCLUDED.title,
+      participant_name = EXCLUDED.participant_name,
+      participant_username = COALESCE(EXCLUDED.participant_username, messenger_conversations.participant_username),
+      participant_phone = COALESCE(EXCLUDED.participant_phone, messenger_conversations.participant_phone),
+      status = 'open',
+      updated_at = now()
+    RETURNING id
+  `;
+  return {
+    accountId: input.account.id,
+    organizationId,
+    externalUserId,
+    externalConversationId,
+    chatId,
+    username,
+    displayName,
+    phone: input.phone,
+    source: input.source,
+    conversationId: rows[0]?.id ?? conversationId,
+  } satisfies TelegramResolvedPeer;
+}
+
+export async function resolveTelegramUserPeerByPhone(phoneInput: string): Promise<TelegramResolvedPeer | { ok: false; reason: string; message: string }> {
+  const account = await getActiveTelegramUserAccount();
+  if (!account || !account.isActive || account.status !== "connected") {
+    return {
+      ok: false,
+      reason: "telegram_not_connected",
+      message: "Telegram-аккаунт не подключён. Подключите его в Интеграциях.",
+    };
+  }
+  const phone = normalizePhone(phoneInput);
+  if (!phone || phone.replace(/\D/g, "").length < 10) {
+    return { ok: false, reason: "phone_missing", message: "У клиента нет корректного телефона для поиска Telegram." };
+  }
+  const session = await getSessionByAccount(account.id);
+  const sessionString = decryptSecret(session?.sessionEncrypted);
+  if (!sessionString) {
+    return { ok: false, reason: "telegram_session_missing", message: "Telegram user session не найдена. Подключите аккаунт заново." };
+  }
+  const client = await getClient(sessionString);
+  try {
+    const { Api } = await loadGramJs();
+    const resolved = await client.invoke(new Api.contacts.ResolvePhone({ phone })).catch(() => null);
+    const resolvedUser = telegramUserFromResult(resolved);
+    if (resolvedUser) {
+      return upsertTelegramConversationFromUser({ account, user: resolvedUser, phone, source: "phone_lookup" });
+    }
+
+    const imported = await client.invoke(
+      new Api.contacts.ImportContacts({
+        contacts: [
+          new Api.InputPhoneContact({
+            clientId: BigInt(Date.now()),
+            phone,
+            firstName: "Eco",
+            lastName: "Contact",
+          }),
+        ],
+      })
+    );
+    const importedUser = telegramUserFromResult(imported);
+    if (!importedUser) {
+      return {
+        ok: false,
+        reason: "telegram_not_found",
+        message: "Не удалось найти Telegram по этому номеру.",
+      };
+    }
+    return upsertTelegramConversationFromUser({ account, user: importedUser, phone, source: "imported_contact" });
+  } catch (error) {
+    const message = safeError(error, "Telegram не разрешил найти или импортировать контакт");
+    const lower = message.toLowerCase();
+    if (lower.includes("flood")) {
+      return { ok: false, reason: "flood_wait", message: "Telegram временно ограничил поиск контактов. Попробуйте позже." };
+    }
+    if (lower.includes("privacy") || lower.includes("private")) {
+      return {
+        ok: false,
+        reason: "privacy_restricted",
+        message: "Telegram не разрешил написать этому пользователю. Возможны настройки приватности или ограничения Telegram.",
+      };
+    }
+    return {
+      ok: false,
+      reason: "telegram_lookup_failed",
+      message,
+    };
+  } finally {
+    await client.disconnect?.().catch?.(() => {});
+  }
 }
 
 async function archiveSkippedTelegramConversations(accountId: string, externalConversationIds: string[]) {

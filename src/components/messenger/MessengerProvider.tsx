@@ -415,6 +415,13 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     [loadContext, loadMessages, markAsRead]
   );
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const conversationId = new URLSearchParams(window.location.search).get("conversationId");
+    if (!conversationId || selectedConversationIdRef.current === conversationId) return;
+    selectConversation(conversationId, true);
+  }, [conversations, selectConversation]);
+
   const openInbox = useCallback(() => {
     setWidgetView((view) => (view === "collapsed" ? "inbox" : "collapsed"));
   }, []);

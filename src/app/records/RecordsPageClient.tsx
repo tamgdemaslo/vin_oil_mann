@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { SERVICE_TIME_ZONE, formatServiceDate, toServiceDateInput } from "@/lib/date-time";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoStatusDot } from "@/components/platform/EcoUI";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
@@ -2781,6 +2782,22 @@ export default function RecordsPageClient() {
                                 )}
                               </td>
                               <td>
+                                <ContactActionButton
+                                  size="sm"
+                                  entityType="appointment"
+                                  entityId={String(record.id)}
+                                  phone={record.phone}
+                                  displayName={record.clientName}
+                                  context={{
+                                    entityType: "appointment",
+                                    entityId: String(record.id),
+                                    appointmentId: String(record.id),
+                                    car: vehicleLabel(record.vehicle),
+                                    plate: record.vehicle.plate,
+                                    date: scheduleDate,
+                                    time: record.startedAtText,
+                                  }}
+                                />
                                 <button type="button" onClick={() => setSelectedRecordId(record.id)}>Открыть</button>
                                 {linkedDeal ? (
                                   <Link href={`/crm?dealId=${encodeURIComponent(linkedDeal.id)}`}>Дело</Link>
@@ -2835,6 +2852,22 @@ export default function RecordsPageClient() {
                       <Copy size={14} />
                       Скопировать телефон
                     </button>
+                    <ContactActionButton
+                      size="sm"
+                      entityType="appointment"
+                      entityId={String(selectedTimelineRecord.id)}
+                      phone={selectedTimelineRecord.phone}
+                      displayName={selectedTimelineRecord.clientName}
+                      context={{
+                        entityType: "appointment",
+                        entityId: String(selectedTimelineRecord.id),
+                        appointmentId: String(selectedTimelineRecord.id),
+                        car: vehicleLabel(selectedTimelineRecord.vehicle),
+                        plate: selectedTimelineRecord.vehicle.plate,
+                        date: scheduleDate,
+                        time: selectedTimelineRecord.startedAtText,
+                      }}
+                    />
                   </section>
 
                   <section className="eco-records-detail-block">
