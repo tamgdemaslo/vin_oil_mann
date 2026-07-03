@@ -434,12 +434,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
   const pdfUrl = `${publicReportUrl}/pdf`;
   const reportShareLabel = `tgm.report/${reportCode}`;
-  const nextVisitDate = (() => {
-    const date = new Date(reportDate);
-    if (Number.isNaN(date.getTime())) return "следующему визиту";
-    date.setMonth(date.getMonth() + 6);
-    return formatNumericDate(date.toISOString());
-  })();
   const blocksForReport = payload.blocks.map((block, index) => ({
     ...block,
     num: String(index + 1).padStart(2, "0"),
@@ -455,15 +449,18 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     return (
       <main className="diag-client-report-page is-public">
         <article className="tgm-client-report tgm-public-report grain">
-          <header className="tgm-public-top">
+          <header className="tgm-public-top report-mobile-container">
             <img src="/brand/logo-wordmark-light.svg" alt="Там где масло" />
-            <span>Отчёт диагностики</span>
+            <div>
+              <span>Отчёт диагностики</span>
+              <small>service report</small>
+            </div>
           </header>
 
-          <section className="tgm-public-hero">
+          <section className="tgm-public-hero report-mobile-container">
             <div className="tgm-public-hero-copy">
               <span className="tgm-public-eyebrow">Привет, {clientFirstName}</span>
-              <h1>Автомобиль проверен</h1>
+              <h1>Автомобиль<br />проверен</h1>
               <p>{checkedClientText}. {recommendationsText}.</p>
               <div className="tgm-public-vehicle">{payload.vehicle.title || "Ваш автомобиль"}</div>
             </div>
@@ -488,7 +485,9 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </dl>
           </section>
 
-          <section className="tgm-public-summary" aria-label="Сводка диагностики">
+          <div className="tgm-public-checker report-mobile-container" aria-hidden="true" />
+
+          <section className="tgm-public-summary report-mobile-container" aria-label="Сводка диагностики">
             <div className="tgm-public-kpi is-good">
               <span>{good}</span>
               <strong>Хорошо</strong>
@@ -507,15 +506,15 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
           </section>
 
-          <section className="tgm-public-result">
+          <section className="tgm-public-result report-mobile-container">
             <span>Итог</span>
             <h2>{attentionPointsText}</h2>
             <p>{percentGood}% пунктов без замечаний. Состояние отражает результат осмотра на {formatNumericDate(reportDate)}.</p>
           </section>
 
-          <section className="tgm-public-section">
+          <section className="tgm-public-section report-mobile-container">
             <div className="tgm-public-section-head">
-              <span>Точки внимания</span>
+              <span>01 / что предлагаем</span>
               <h2>{recommendationsText}</h2>
             </div>
             {recommendations.length > 0 ? (
@@ -530,13 +529,16 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                         <h3>{item.title}</h3>
                         <span>{statusLabel(normalized)}</span>
                       </div>
-                      <p>
-                        {result}
-                        {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
-                      </p>
+                      <p className="tgm-public-rec-desc">{result}</p>
+                      {shouldShowRecommendation(result, recommendation) && (
+                        <div className="tgm-public-rec-note">
+                          <span>Рекомендация</span>
+                          <strong>{recommendation}</strong>
+                        </div>
+                      )}
                       {(item.reportText?.shortText || item.value || item.statusLabel) && (
                         <div className="tgm-public-measure">
-                          <span>Итог</span>
+                          <span>Признаки</span>
                           <strong>{itemShortResult(item)}</strong>
                         </div>
                       )}
@@ -549,10 +551,11 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             )}
           </section>
 
-          <section className="tgm-public-section">
+          <section className="tgm-public-section report-mobile-container">
             <div className="tgm-public-section-head">
-              <span>Фотоотчёт</span>
+              <span>02 / фотоотчёт</span>
               <h2>Фото с диагностики</h2>
+              <p>Снимки сделаны мастером во время осмотра.</p>
             </div>
             {photos.length > 0 ? (
               <div className="tgm-public-photos">
@@ -560,7 +563,10 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                   <a className="tgm-public-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.id}-${index}`}>
                     <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} />
                     <span className="tgm-public-photo-status" style={{ background: statusColor(photo.status) }} />
-                    <span>{photo.caption || photo.itemTitle || "Фото диагностики"}</span>
+                    <div className="tgm-public-photo-caption">
+                      <strong>{photo.itemTitle || "Фото диагностики"}</strong>
+                      <span>{photo.caption || "Снимок с осмотра"}</span>
+                    </div>
                   </a>
                 ))}
               </div>
@@ -569,9 +575,9 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             )}
           </section>
 
-          <section className="tgm-public-section">
+          <section className="tgm-public-section report-mobile-container">
             <div className="tgm-public-section-head">
-              <span>Полный список</span>
+              <span>03 / полный список</span>
               <h2>Что проверили</h2>
             </div>
             <div className="tgm-public-accordions">
@@ -581,7 +587,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                   <details className="tgm-public-accordion" open={hasAttention} key={block.code}>
                     <summary>
                       <span>{block.title}</span>
-                      <b>{block.items.length} {pluralRu(block.items.length, "пункт", "пункта", "пунктов")}</b>
+                      <b>{block.items.length} {pluralRu(block.items.length, "пункт", "пункта", "пунктов")} · {hasAttention ? "есть внимание" : "всё хорошо"}</b>
                     </summary>
                     <div className="tgm-public-checks">
                       {block.items.map((item) => {
@@ -604,11 +610,11 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
           </section>
 
-          <section className="tgm-public-next">
+          <section className="tgm-public-next report-mobile-container">
             <div>
               <span>Что дальше</span>
               <h2>Поможем с рекомендациями</h2>
-              <p>Напишите нам, позвоните или выберите удобное время. Подготовим материалы заранее и напомним о следующей проверке к {nextVisitDate}.</p>
+              <p>Напишите нам, позвоните или выберите удобное время. Подготовим материалы заранее и напомним о следующей проверке.</p>
             </div>
             <div className="tgm-public-actions">
               <a className="is-primary" href={WHATSAPP_HREF}>Написать</a>
@@ -617,9 +623,17 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
           </section>
 
-          <footer className="tgm-public-footer">
+          <footer className="tgm-public-footer report-mobile-container">
             <img src="/brand/monogram-light.svg" alt="" aria-hidden />
-            <p>Отчёт отражает состояние автомобиля на момент диагностики. Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
+            <div>
+              <strong>Там где масло</strong>
+              <p>Отчёт отражает состояние автомобиля на момент диагностики. Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
+              <div className="tgm-public-footer-meta">
+                <span>{REPORT_PHONE}</span>
+                <span>Telegram · @tamgdemaslo</span>
+                <span>Калининград</span>
+              </div>
+            </div>
           </footer>
 
           <nav className="tgm-public-sticky no-print" aria-label="Действия клиента">
