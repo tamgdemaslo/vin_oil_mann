@@ -561,17 +561,21 @@ export default function MessengerIntegrationsClient() {
   const mediaRows: Array<[string, string]> = [
     ["Storage", mediaHealth?.storageConnected ? "подключён" : "не настроен"],
     ["Bucket", mediaHealth?.storage?.bucket ?? "—"],
-    ["Worker", mediaHealth?.workerAlive ? "живой" : "нет heartbeat"],
+    ["Worker", mediaHealth?.workerAlive ? "активен" : "нет свежей активности"],
     ["В очереди", String(mediaHealth?.pendingJobs ?? 0)],
     ["Обрабатываются", String(mediaHealth?.processingJobs ?? 0)],
-    ["Ошибки", String(mediaHealth?.failedJobs ?? 0)],
+    ["Ошибки вложений", String(mediaHealth?.failedJobs ?? 0)],
     ["Проверка storage", storageProbe?.checkedAt ? (storageProbe.ok ? `ok, ${storageProbe.durationMs ?? 0} мс` : shortText(storageProbe.error, "ошибка")) : "—"],
     ["Последняя загрузка", mediaHealth?.lastCompletedAt ? formatServiceDateTime(mediaHealth.lastCompletedAt) : "—"],
   ];
+  const mediaHasQueue = (mediaHealth?.pendingJobs ?? 0) > 0 || (mediaHealth?.processingJobs ?? 0) > 0;
+  const mediaHasRecentSuccess = Boolean(mediaHealth?.lastCompletedAt);
   const mediaProblem =
     activeAccount?.status === "connected" &&
     mediaHealth &&
-    (!mediaHealth.storageConnected || (mediaHealth.failedJobs ?? 0) > 0 || ((mediaHealth.pendingJobs ?? 0) > 0 && !mediaHealth.workerAlive));
+    (!mediaHealth.storageConnected || (mediaHasQueue && !mediaHealth.workerAlive && !mediaHasRecentSuccess));
+  const mediaWarning =
+    activeAccount?.status === "connected" && mediaHealth && !mediaProblem && (mediaHasQueue || (mediaHealth.failedJobs ?? 0) > 0);
 
   return (
     <main className="eco-page eco-messenger-integrations-page">
@@ -837,6 +841,12 @@ export default function MessengerIntegrationsClient() {
               <span>Telegram подключён, но загрузка вложений не работает. Проверьте storage и media worker ниже.</span>
             </div>
           )}
+          {mediaWarning && (
+            <div className="eco-integration-note eco-integration-note--warning">
+              <AlertTriangle size={16} />
+              <span>Загрузка вложений работает, но ещё есть старый хвост в очереди или ошибках. Backfill можно запускать повторно.</span>
+            </div>
+          )}
         </EcoCard>
 
         <EcoCard>
@@ -865,8 +875,8 @@ export default function MessengerIntegrationsClient() {
               <h2>Фото и файлы</h2>
               <p>Вложения проходят через очередь, скачиваются из Telegram и сохраняются в persistent object storage.</p>
             </div>
-            <EcoBadge tone={mediaProblem ? "danger" : mediaHealth?.storageConnected ? "success" : "warning"} dot>
-              {mediaProblem ? "нужна проверка" : mediaHealth?.storageConnected ? "storage ok" : "storage не настроен"}
+            <EcoBadge tone={mediaProblem ? "danger" : mediaWarning ? "warning" : mediaHealth?.storageConnected ? "success" : "warning"} dot>
+              {mediaProblem ? "нужна проверка" : mediaWarning ? "есть хвост" : mediaHealth?.storageConnected ? "storage ok" : "storage не настроен"}
             </EcoBadge>
           </div>
           <StatusRows rows={mediaRows} />

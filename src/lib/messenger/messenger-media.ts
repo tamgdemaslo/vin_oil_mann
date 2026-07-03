@@ -50,6 +50,14 @@ let inProcessWorkerStarted = false;
 let inProcessWorkerBusy = false;
 let lastHeartbeatAt: Date | null = null;
 
+function mediaErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (/Object storage|storage.+not configured|storage_not_configured/i.test(message)) return "storage_not_configured";
+  if (/TIMEOUT|timeout|not connected|connection closed|reconnect/i.test(message)) return "telegram_timeout";
+  if (/too large|file size/i.test(message)) return "too_large";
+  return "media_download_failed";
+}
+
 function jobWorkerId() {
   return `next-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -232,6 +240,7 @@ async function completeJob(job: MediaJobRow) {
 
 async function failJob(job: MediaJobRow, error: unknown) {
   const message = error instanceof Error ? error.message : "Messenger media job failed";
+  const errorCode = mediaErrorCode(error);
   const nextAttemptAt = retryAt(job.attempts);
   await prisma.$executeRaw`
     UPDATE messenger_media_jobs
@@ -239,6 +248,7 @@ async function failJob(job: MediaJobRow, error: unknown) {
         locked_at = NULL,
         locked_by = NULL,
         next_attempt_at = ${job.attempts < 5 ? nextAttemptAt : null},
+        error_code = ${errorCode},
         error_message = ${message.slice(0, 1000)},
         updated_at = now()
     WHERE id = ${job.id}
@@ -249,6 +259,7 @@ async function failJob(job: MediaJobRow, error: unknown) {
         attempts = attempts + 1,
         last_attempt_at = now(),
         next_attempt_at = ${job.attempts < 5 ? nextAttemptAt : null},
+        error_code = ${errorCode},
         error_message = ${message.slice(0, 1000)},
         updated_at = now()
     WHERE id = ${job.attachmentId}
@@ -422,22 +433,45 @@ export async function getMessengerMediaHealth() {
       failedJobs: number;
       oldestPendingAt: Date | null;
       lastCompletedAt: Date | null;
+      lastActivityAt: Date | null;
     }>
   >`
+    WITH jobs AS (
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'queued')::int AS "pendingJobs",
+        COUNT(*) FILTER (WHERE status = 'processing')::int AS "processingJobs",
+        MIN(created_at) FILTER (WHERE status = 'queued') AS "oldestPendingAt",
+        MAX(updated_at) FILTER (WHERE status = 'completed') AS "lastCompletedAt",
+        MAX(updated_at) FILTER (WHERE status IN ('completed', 'processing')) AS "lastActivityAt"
+      FROM messenger_media_jobs
+      WHERE organization_id = ${organizationId}
+    ),
+    attachments AS (
+      SELECT COUNT(*) FILTER (WHERE status = 'failed')::int AS "failedJobs"
+      FROM messenger_attachments
+      WHERE organization_id = ${organizationId}
+        AND channel = 'telegram'
+    )
     SELECT
-      COUNT(*) FILTER (WHERE status = 'queued')::int AS "pendingJobs",
-      COUNT(*) FILTER (WHERE status = 'processing')::int AS "processingJobs",
-      COUNT(*) FILTER (WHERE status = 'failed')::int AS "failedJobs",
-      MIN(created_at) FILTER (WHERE status = 'queued') AS "oldestPendingAt",
-      MAX(updated_at) FILTER (WHERE status = 'completed') AS "lastCompletedAt"
-    FROM messenger_media_jobs
-    WHERE organization_id = ${organizationId}
+      jobs."pendingJobs",
+      jobs."processingJobs",
+      attachments."failedJobs",
+      jobs."oldestPendingAt",
+      jobs."lastCompletedAt",
+      jobs."lastActivityAt"
+    FROM jobs, attachments
   `;
+  const storage = messengerStorageStatus();
+  const lastActivityAt = rows[0]?.lastActivityAt ?? rows[0]?.lastCompletedAt ?? null;
+  const workerAlive = Boolean(
+    (lastHeartbeatAt && Date.now() - lastHeartbeatAt.getTime() < 90_000) ||
+      (lastActivityAt && Date.now() - lastActivityAt.getTime() < 5 * 60_000)
+  );
   return {
-    storage: messengerStorageStatus(),
-    storageConnected: messengerStorageStatus().configured,
-    workerAlive: Boolean(lastHeartbeatAt && Date.now() - lastHeartbeatAt.getTime() < 90_000),
-    workerHeartbeatAt: lastHeartbeatAt?.toISOString() ?? null,
+    storage,
+    storageConnected: storage.configured,
+    workerAlive,
+    workerHeartbeatAt: lastHeartbeatAt?.toISOString() ?? lastActivityAt?.toISOString() ?? null,
     pendingJobs: rows[0]?.pendingJobs ?? 0,
     processingJobs: rows[0]?.processingJobs ?? 0,
     failedJobs: rows[0]?.failedJobs ?? 0,
