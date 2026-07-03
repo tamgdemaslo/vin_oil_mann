@@ -696,10 +696,10 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
   const organizationId = conversation.organizationId ?? getMessengerOrganizationId();
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, author_id, text, attachments_json, status, raw_json, received_at, created_at)
+      (id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, author_id, text, attachments_json, status, raw_json, received_at, created_at, updated_at)
     VALUES
       (${id}, ${organizationId}, ${conversation.id}, ${conversation.messengerAccountId ?? null}, ${event.channel}, ${event.channelMessageId ?? null}, 'inbound',
-       'client', ${event.participantName}, ${event.text}, '[]'::jsonb, 'delivered', ${JSON.stringify(event.raw)}::jsonb, ${event.createdAt}, ${event.createdAt})
+       'client', ${event.participantName}, ${event.text}, '[]'::jsonb, 'delivered', ${JSON.stringify(event.raw)}::jsonb, ${event.createdAt}, ${event.createdAt}, ${event.createdAt})
     ON CONFLICT (channel, external_message_id)
     WHERE external_message_id IS NOT NULL
     DO NOTHING

@@ -86,10 +86,10 @@ export async function enqueueMessageOutbox(input: {
   const rows = await prisma.$queryRaw<OutboxRow[]>`
     INSERT INTO messenger_outbox
       (id, organization_id, messenger_account_id, channel, conversation_id, message_id, connection_id, recipient_external_chat_id, message_type, text, attachments_json,
-       template_key, template_vars_json, status)
+       template_key, template_vars_json, status, created_at, updated_at)
     VALUES
       (${id}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.channel}, ${input.conversationId}, ${input.messageId ?? null}, ${input.connectionId ?? null}, ${input.recipientExternalChatId},
-       ${input.messageType ?? "text"}, ${input.text}, ${JSON.stringify(input.attachmentsJson ?? [])}::jsonb, ${input.templateKey ?? null}, ${input.templateVarsJson ? JSON.stringify(input.templateVarsJson) : null}::jsonb, 'queued')
+       ${input.messageType ?? "text"}, ${input.text}, ${JSON.stringify(input.attachmentsJson ?? [])}::jsonb, ${input.templateKey ?? null}, ${input.templateVarsJson ? JSON.stringify(input.templateVarsJson) : null}::jsonb, 'queued', now(), now())
     RETURNING
       id,
       organization_id AS "organizationId",

@@ -331,10 +331,10 @@ async function insertAudit(
 async function insertSystemMessage(db: DbRunner, row: ConversationContextRow, text: string) {
   await db.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at)
+      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
       (${crypto.randomUUID()}, ${row.organizationId}, ${row.id}, ${row.messengerAccountId}, ${row.channel},
-       'system', 'system', ${text}, '[]'::jsonb, 'read', now())
+       'system', 'system', ${text}, '[]'::jsonb, 'read', now(), now())
   `;
 }
 

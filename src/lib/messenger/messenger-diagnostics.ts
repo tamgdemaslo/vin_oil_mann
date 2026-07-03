@@ -199,9 +199,9 @@ async function insertDiagnosticReportMessage(conversationId: string, text: strin
   const organizationId = getMessengerOrganizationId();
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at)
+      (id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${conversationId}, 'telegram', 'outbound', 'employee', ${text}, '[]'::jsonb, 'queued', now())
+      (${id}, ${organizationId}, ${conversationId}, 'telegram', 'outbound', 'employee', ${text}, '[]'::jsonb, 'queued', now(), now())
     RETURNING id
   `;
   return rows[0]?.id ?? id;
