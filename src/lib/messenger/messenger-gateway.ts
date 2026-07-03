@@ -513,10 +513,10 @@ export async function unlinkConversationClient(conversationId: string) {
   const messageId = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at)
+      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
       (${messageId}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
-       ${"Клиент отвязан от диалога. Переписка и связанные документы сохранены."}, '[]'::jsonb, 'read', now())
+       ${"Клиент отвязан от диалога. Переписка и связанные документы сохранены."}, '[]'::jsonb, 'read', now(), now())
   `;
   return getConversation(conversationId);
 }
@@ -539,10 +539,10 @@ export async function createCaseFromConversation(conversationId: string, input: 
   `;
   await prisma.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at)
+      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
       (${messageId}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
-       ${`Создано дело клиента: ${input.title || conversation.title}`}, '[]'::jsonb, 'read', now())
+       ${`Создано дело клиента: ${input.title || conversation.title}`}, '[]'::jsonb, 'read', now(), now())
   `;
   return { id: caseId, conversationId, title: input.title || conversation.title };
 }
@@ -576,10 +576,10 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     conversation.messengerAccountId ?? (conversation.channel === "telegram" ? await messengerAccountIdForConversation(conversation.id) : null);
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at)
+      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
       (${messageId}, ${organizationId}, ${conversation.id}, ${messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
-       ${text}, '[]'::jsonb, 'queued', now())
+       ${text}, '[]'::jsonb, 'queued', now(), now())
     RETURNING
       id,
       organization_id AS "organizationId",

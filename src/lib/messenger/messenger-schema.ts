@@ -233,6 +233,9 @@ export async function ensureMessengerIntegrationCoreSchema() {
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`;
+      await prisma.$executeRaw`ALTER TABLE messenger_messages ALTER COLUMN created_at SET DEFAULT now()`;
+      await prisma.$executeRaw`ALTER TABLE messenger_messages ALTER COLUMN updated_at SET DEFAULT now()`;
+      await prisma.$executeRaw`UPDATE messenger_messages SET updated_at = COALESCE(updated_at, created_at, now()) WHERE updated_at IS NULL`;
       await prisma.$executeRaw`ALTER TABLE messenger_outbox ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default'`;
       await prisma.$executeRaw`ALTER TABLE messenger_outbox ADD COLUMN IF NOT EXISTS idempotency_key TEXT`;
       await prisma.$executeRaw`ALTER TABLE messenger_webhook_events ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default'`;

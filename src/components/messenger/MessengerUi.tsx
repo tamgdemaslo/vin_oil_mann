@@ -311,6 +311,12 @@ function audioMetaLine(attachment: Attachment) {
   return formatAttachmentSize(attachment.size) || (attachment.type === "voice" ? "Telegram voice" : "Аудио");
 }
 
+function autoNotificationParts(text: string) {
+  const match = text.match(/^Автоуведомление\s*·\s*([^\n]+)\n+([\s\S]*)$/);
+  if (!match) return null;
+  return { event: match[1]?.trim() || "Событие", body: match[2]?.trim() || "" };
+}
+
 function pendingAttachmentText(attachment: Attachment) {
   if (attachment.status === "downloading" || attachment.status === "queued") {
     return attachment.progress && attachment.progress > 0 ? `Загружаем вложение · ${attachment.progress}%` : "Подготавливаем вложение...";
@@ -639,7 +645,8 @@ export function ChatHeader({
       </div>
       {!conversation.clientId && (
         <button type="button" className="eco-messenger-client-status" title="Привязать клиента">
-          Клиент не привязан
+          <span className="is-full">Клиент не привязан</span>
+          <span className="is-short">Без клиента</span>
         </button>
       )}
       <div className="eco-messenger-chat-head__actions">{rightAction}</div>
@@ -696,10 +703,21 @@ function MessageBubble({
     return <div className="eco-messenger-system-message">{message.text}</div>;
   }
   const text = safeMessageText(message.text);
+  const autoNotification = autoNotificationParts(text);
   return (
     <div className={cx("eco-messenger-message", message.direction === "outbound" ? "is-outbound" : "is-inbound", message.status === "failed" && "is-failed")}>
       <div className="eco-messenger-message__bubble">
-        {text && <p>{text}</p>}
+        {autoNotification ? (
+          <div className="eco-messenger-auto-note">
+            <span>
+              <b>Автоуведомление</b>
+              <em>{autoNotification.event}</em>
+            </span>
+            {autoNotification.body && <p>{autoNotification.body}</p>}
+          </div>
+        ) : (
+          text && <p>{text}</p>
+        )}
         {!!message.attachments.length && <MessageAttachments attachments={message.attachments} onRetry={onAttachmentRetry} />}
         <span className="eco-messenger-message__meta">
           {formatMessengerTime(message.createdAt)}
@@ -718,15 +736,20 @@ function MessageBubble({
 
 function MessageAttachments({ attachments, onRetry }: { attachments: Attachment[]; onRetry: (attachmentId: string) => void }) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const viewablePhotos = attachments.filter((attachment) => isPhotoAttachment(attachment) && isAttachmentReady(attachment) && (attachment.url || attachment.previewUrl));
-  const activeLightboxIndex = lightboxIndex !== null && lightboxIndex < viewablePhotos.length ? lightboxIndex : null;
+  const viewableMedia = attachments.filter(
+    (attachment) =>
+      (isPhotoAttachment(attachment) || isVideoAttachment(attachment)) &&
+      isAttachmentReady(attachment) &&
+      (attachment.url || attachment.previewUrl)
+  );
+  const activeLightboxIndex = lightboxIndex !== null && lightboxIndex < viewableMedia.length ? lightboxIndex : null;
 
   return (
     <>
       <div className="eco-messenger-attachments">
         {attachments.map((attachment) => {
           if (isPhotoAttachment(attachment)) {
-            const photoIndex = viewablePhotos.findIndex((item) => item.id === attachment.id);
+            const photoIndex = viewableMedia.findIndex((item) => item.id === attachment.id);
             return (
               <PhotoAttachment
                 key={attachment.id}
@@ -737,7 +760,15 @@ function MessageAttachments({ attachments, onRetry }: { attachments: Attachment[
             );
           }
           if (isVideoAttachment(attachment)) {
-            return <VideoAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
+            const videoIndex = viewableMedia.findIndex((item) => item.id === attachment.id);
+            return (
+              <VideoAttachment
+                key={attachment.id}
+                attachment={attachment}
+                onOpen={() => videoIndex >= 0 && setLightboxIndex(videoIndex)}
+                onRetry={() => onRetry(attachment.id)}
+              />
+            );
           }
           if (isAudioAttachment(attachment)) {
             return <AudioAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
@@ -745,9 +776,9 @@ function MessageAttachments({ attachments, onRetry }: { attachments: Attachment[
           return <FileAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
         })}
       </div>
-      {activeLightboxIndex !== null && viewablePhotos[activeLightboxIndex] && (
+      {activeLightboxIndex !== null && viewableMedia[activeLightboxIndex] && (
         <AttachmentLightbox
-          attachments={viewablePhotos}
+          attachments={viewableMedia}
           index={activeLightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onNavigate={(nextIndex) => setLightboxIndex(nextIndex)}
@@ -826,17 +857,22 @@ function PhotoAttachment({ attachment, onOpen, onRetry }: { attachment: Attachme
   );
 }
 
-function VideoAttachment({ attachment, onRetry }: { attachment: Attachment; onRetry: () => void }) {
+function VideoAttachment({ attachment, onOpen, onRetry }: { attachment: Attachment; onOpen: () => void; onRetry: () => void }) {
   if (!isAttachmentReady(attachment) || !attachment.url) {
     return <AttachmentStatus attachment={attachment} icon={<FileVideo aria-hidden className="eco-icon" />} onRetry={onRetry} />;
   }
   return (
     <div className={cx("eco-messenger-media", "is-video", attachment.type === "video_note" && "is-video-note")}>
-      <video src={attachment.url} poster={attachment.previewUrl} controls playsInline preload="metadata" />
+      <div className="eco-messenger-video-preview">
+        <video src={attachment.url} poster={attachment.previewUrl} controls playsInline preload="metadata" />
+        <button type="button" onClick={onOpen} aria-label="Открыть видео">
+          <Expand aria-hidden className="eco-icon" />
+        </button>
+      </div>
       <div className="eco-messenger-media__caption">
         <FileVideo aria-hidden className="eco-icon" />
         <span>
-          <strong>{displayAttachmentName(attachment)}</strong>
+          <strong title={attachment.name || displayAttachmentName(attachment)}>{displayAttachmentName(attachment)}</strong>
           <small>{attachmentMetaLine(attachment) || "Видео"}</small>
         </span>
         <AttachmentDownload attachment={attachment} label="Скачать" />
@@ -934,7 +970,7 @@ function FileAttachment({ attachment, onRetry }: { attachment: Attachment; onRet
     <div className="eco-messenger-attachment">
       <FileText aria-hidden className="eco-icon" />
       <span>
-        <strong>{displayAttachmentName(attachment)}</strong>
+        <strong title={attachment.name || displayAttachmentName(attachment)}>{displayAttachmentName(attachment)}</strong>
         <small>{attachmentMetaLine(attachment) || "Документ"}</small>
       </span>
       <AttachmentDownload attachment={attachment} />
@@ -999,14 +1035,25 @@ function AttachmentLightbox({
           </span>
         </div>
         {hasPrevious && (
-          <button type="button" className="eco-messenger-lightbox__nav is-prev" onClick={() => onNavigate(index - 1)} aria-label="Предыдущее фото">
+          <button type="button" className="eco-messenger-lightbox__nav is-prev" onClick={() => onNavigate(index - 1)} aria-label="Предыдущее медиа">
             <ChevronLeft aria-hidden className="eco-icon" />
           </button>
         )}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={displayAttachmentName(attachment)} />
+        {isVideoAttachment(attachment) && attachment.url ? (
+          <video
+            className={cx("eco-messenger-lightbox__video", attachment.type === "video_note" && "is-video-note")}
+            src={attachment.url}
+            poster={attachment.previewUrl}
+            controls
+            playsInline
+            autoPlay
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt={displayAttachmentName(attachment)} />
+        )}
         {hasNext && (
-          <button type="button" className="eco-messenger-lightbox__nav is-next" onClick={() => onNavigate(index + 1)} aria-label="Следующее фото">
+          <button type="button" className="eco-messenger-lightbox__nav is-next" onClick={() => onNavigate(index + 1)} aria-label="Следующее медиа">
             <ChevronRight aria-hidden className="eco-icon" />
           </button>
         )}
@@ -2165,7 +2212,11 @@ export function ChannelStatusStrip() {
         const Icon = channel.Icon;
         const label = connectionStatusLabel(channel.connectionStatus);
         return (
-          <span key={channel.id} style={{ "--channel": channel.color, "--channel-bg": channel.tint } as React.CSSProperties}>
+          <span
+            key={channel.id}
+            className={channel.connectionStatus === "connected" ? "is-connected" : "is-muted"}
+            style={{ "--channel": channel.color, "--channel-bg": channel.tint } as React.CSSProperties}
+          >
             <Icon aria-hidden className="eco-icon" />
             {channel.label} · {label}
           </span>

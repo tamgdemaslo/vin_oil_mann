@@ -1163,6 +1163,7 @@ export async function processDueClientNotificationJobs(limit = 20) {
       AND (
         (status IN ('scheduled', 'queued') AND scheduled_at <= now())
         OR (status = 'error' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 3)
+        OR (status = 'sending' AND updated_at <= now() - interval '1 minute' AND attempts < 3)
         OR status = 'template_error'
       )
     ORDER BY scheduled_at ASC, created_at ASC
@@ -1271,11 +1272,21 @@ async function processClientNotificationJob(job: NotificationJobRow) {
     });
   }
 
-  const result = await sendMessage({
-    conversationId: target.id,
-    text: `Автоуведомление · ${eventTitle(job.eventType)}\n\n${renderedMessage}`,
-    createdByLogin: job.initiatedById ?? undefined,
-  });
+  let result;
+  try {
+    result = await sendMessage({
+      conversationId: target.id,
+      text: `Автоуведомление · ${eventTitle(job.eventType)}\n\n${renderedMessage}`,
+      createdByLogin: job.initiatedById ?? undefined,
+    });
+  } catch (error) {
+    return finishJob(job, "error", {
+      renderedMessage,
+      errorMessage: error instanceof Error ? error.message : "Не удалось создать сообщение Telegram.",
+      conversationId: target.id,
+      retry: true,
+    });
+  }
   if (!result) {
     return finishJob(job, "error", {
       renderedMessage,
@@ -1744,7 +1755,7 @@ export async function retryNotificationJob(id: string) {
         updated_at = now()
     WHERE organization_id = ${organizationId}
       AND id = ${id}
-      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped')
+      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending')
   `;
   return processDueClientNotificationJobs(5);
 }
