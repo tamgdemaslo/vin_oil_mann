@@ -3137,9 +3137,9 @@ export function DiagnosticMapModal({
   function handlePhotoInputChange(event: ChangeEvent<HTMLInputElement>) {
     const targetCode = pendingPhotoTargetRef.current;
     pendingPhotoTargetRef.current = null;
-    const files = event.currentTarget.files;
+    const files = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
-    if (!targetCode || !files?.length) return;
+    if (!targetCode || files.length === 0) return;
     const target = flatItems.find((candidate) => candidate.code === targetCode);
     if (!target) return;
     uploadSelectedPhotos(target, files);
