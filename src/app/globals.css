@@ -2412,8 +2412,8 @@
 .diag-quick-photo,
 .diag-quick-photo-add {
   position: relative;
-  width: 86px;
-  min-height: 72px;
+  width: 92px;
+  min-height: 82px;
   margin: 0;
   overflow: hidden;
   background: #fff;
@@ -2423,7 +2423,7 @@
 
 .diag-quick-photo img {
   width: 100%;
-  height: 72px;
+  height: 82px;
   object-fit: cover;
   cursor: pointer;
 }
@@ -2476,22 +2476,91 @@
 }
 
 .diag-quick-photo-add {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  height: 82px;
+  padding: 9px 7px;
   color: var(--ink);
   border: 2px dashed var(--line-strong);
   cursor: pointer;
+  font: inherit;
+  text-align: center;
 }
 
-.diag-quick-photo-add input {
-  display: none;
+.diag-quick-photo-add:active {
+  transform: translateY(1px);
 }
 
 .diag-quick-photo-add span {
+  display: block;
+  max-width: 100%;
   font-size: 11px;
   font-weight: 900;
+  line-height: 1.12;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.diag-photo-hidden-input {
+  display: none;
+}
+
+.diag-photo-source-sheet {
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+}
+
+.diag-photo-source-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.diag-photo-source-actions button {
+  min-height: 58px;
+  padding: 12px 14px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diag-photo-source-actions button:not(.is-cancel) {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.diag-photo-source-actions button svg {
+  grid-row: span 2;
+  color: var(--rust);
+}
+
+.diag-photo-source-actions button strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.diag-photo-source-actions button small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.diag-photo-source-actions .is-cancel {
+  min-height: 48px;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 900;
+  text-align: center;
 }
 
 .diag-quick-value,
@@ -42389,6 +42458,44 @@ html.tgm-print-active .tgm-client-report .qr {
   font-size: 13px !important;
   font-weight: 800 !important;
   cursor: pointer;
+}
+
+.eco-shipment-new-page .eco-one-off-service-form {
+  display: grid !important;
+  grid-template-columns: minmax(220px, 1fr) 120px minmax(180px, 0.8fr) auto !important;
+  align-items: end !important;
+  gap: 12px !important;
+  padding: 14px !important;
+  border: 1px dashed rgba(180, 82, 43, 0.34) !important;
+  border-radius: 10px !important;
+  background: #fff8ef !important;
+}
+
+.eco-shipment-new-page .eco-one-off-service-form .eco-field input {
+  height: 40px !important;
+}
+
+.eco-shipment-new-page .eco-one-off-service-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .eco-shipment-new-page .eco-one-off-service-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .eco-shipment-new-page .eco-one-off-service-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .eco-shipment-new-page .eco-one-off-service-form {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 .eco-shipment-new-page .eco-product-results {

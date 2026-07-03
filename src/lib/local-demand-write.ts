@@ -33,6 +33,7 @@ type UpdateDemandBody = {
   positions?: {
     id?: string;
     name?: string;
+    comment?: string;
     quantity: number;
     price: number;
     discount?: number;

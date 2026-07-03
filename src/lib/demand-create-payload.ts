@@ -3,6 +3,7 @@ import type { MoySkladMeta } from "@/lib/moysklad";
 export type DemandPositionInput = {
   assortment?: { meta: MoySkladMeta };
   name?: string;
+  comment?: string;
   quantity: number;
   price: number; // рубли за единицу → в теле МойСклад в копейках
   discount?: number;

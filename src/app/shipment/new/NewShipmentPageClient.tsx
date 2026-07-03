@@ -87,6 +87,7 @@ type Position = {
   discount?: number;
   discountMode?: "percent" | "amount";
   discountAmount?: number;
+  comment?: string;
   copyMeta?: {
     status?: "linked" | "updated" | "unlinked" | "ambiguous" | "archived" | string;
     message?: string;
@@ -1104,6 +1105,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [productSearchRetrySeed, setProductSearchRetrySeed] = useState(0);
   const [recentlyAddedPositionIndex, setRecentlyAddedPositionIndex] = useState<number | null>(null);
   const productResultsDismissedRef = useRef(false);
+  const [oneOffServiceOpen, setOneOffServiceOpen] = useState(false);
+  const [oneOffServiceName, setOneOffServiceName] = useState("");
+  const [oneOffServicePrice, setOneOffServicePrice] = useState("");
+  const [oneOffServiceComment, setOneOffServiceComment] = useState("");
 
   const [submitLoading, setSubmitLoading] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -1747,20 +1752,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         return;
       }
       const params = new URLSearchParams();
-      const strictQuickProductSearch = productSearchMode !== "service"
-        && Boolean(productSearch.trim())
-        && !productOem.trim()
-        && !productMannName.trim()
-        && !productParams.trim();
       if (productSearch.trim()) params.set("q", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
       if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
       params.set("context", "shipment");
-      if (strictQuickProductSearch) {
-        params.set("strictNameOem", "1");
-        params.set("type", "product");
-      } else if (productSearchMode !== "all") {
+      if (productSearchMode !== "all") {
         params.set("type", productSearchMode);
       }
       if (selectedStore?.id) params.set("storeId", selectedStore.id);
@@ -2228,11 +2225,53 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
   const openServiceSearch = () => {
     setPositionAddMode("catalog");
-    setProductSearchMode("service");
+    setProductSearchMode("all");
     setProductOem("");
     setProductMannName("");
     setProductParams("");
+    setOneOffServiceOpen(true);
+    setOneOffServiceName((current) => current || productSearch.trim());
     productResultsDismissedRef.current = false;
+    setProductResultsOpen(false);
+    window.requestAnimationFrame(() => document.getElementById("shipment-one-off-service-name")?.focus());
+  };
+
+  const addOneOffServicePosition = () => {
+    const name = oneOffServiceName.trim();
+    if (!name) {
+      setProductAddNotice("Укажите название разовой услуги");
+      window.requestAnimationFrame(() => document.getElementById("shipment-one-off-service-name")?.focus());
+      return;
+    }
+    const price = parseDecimalInput(oneOffServicePrice);
+    const nextIndex = positions.length;
+    setPositions((prev) => [
+      ...prev,
+      {
+        name,
+        quantity: 1,
+        price,
+        discount: 0,
+        discountMode: "percent",
+        discountAmount: 0,
+        comment: oneOffServiceComment.trim() || undefined,
+        assortmentMeta: {
+          href: `local://manual-service/${Date.now()}`,
+          type: "service",
+          mediaType: "application/json",
+        },
+      },
+    ]);
+    setOneOffServiceOpen(false);
+    setOneOffServiceName("");
+    setOneOffServicePrice("");
+    setOneOffServiceComment("");
+    setProductSearch("");
+    setProductOptions([]);
+    setProductResultsOpen(false);
+    setProductAddNotice("Разовая услуга добавлена в отгрузку");
+    setRecentlyAddedPositionIndex(nextIndex);
+    markDraftDirty();
     focusProductSearch();
   };
 
@@ -2615,6 +2654,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           positions.length > 0
             ? positions.map((p) => ({
                 id: isExistingDraft ? p.id : undefined,
+                name: p.name,
+                comment: p.comment,
                 quantity: p.quantity,
                 price: isExistingDraft ? Math.round((Number(p.price) || 0) * 100) : Number(p.price) || 0,
                 discount: typeof p.discount === "number" ? p.discount : 0,
@@ -2703,6 +2744,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           attributes: atts,
           positions: positions.map((p) => ({
             id: p.id,
+            name: p.name,
+            comment: p.comment,
             quantity: p.quantity,
             price: Math.round((Number(p.price) || 0) * 100),
             discount: typeof p.discount === "number" ? p.discount : 0,
@@ -3075,21 +3118,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const hasProductSearchQuery = manualMannFilter
     ? Boolean((productSearch.trim() || manualMannFilter.mannArticle).trim())
     : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
-  const quickStrictProductSearch = !manualMannFilter
-    && productSearchMode !== "service"
-    && Boolean(productSearch.trim())
-    && !productOem.trim()
-    && !productMannName.trim()
-    && !productParams.trim();
   const showProductResults = productResultsOpen && hasProductSearchQuery;
   const addProductFromSearch = manualMannFilter ? addManualMannProductToPosition : addPosition;
   const productSearchEntityLabel =
-    manualMannFilter ? "Товар для MANN" : quickStrictProductSearch || productSearchMode === "product" ? "Товар" : productSearchMode === "service" ? "Услуга" : "Позиция";
+    manualMannFilter ? "Товар для MANN" : productSearchMode === "product" ? "Товар" : productSearchMode === "service" ? "Услуга" : "Товары и услуги";
   const productSearchLoadingLabel =
     manualMannFilter
       ? "Ищем строго по названию и OEM PARTS…"
-      : quickStrictProductSearch
-        ? "Ищем по названию и OEM PARTS…"
       : productSearchMode === "service"
       ? "Ищем услуги в каталоге…"
       : productSearchMode === "product"
@@ -3106,13 +3141,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const productSearchEmptyHint =
     manualMannFilter
       ? "В названии и OEM PARTS нет точного нормализованного совпадения для этого MANN-артикула."
-      : quickStrictProductSearch
-        ? "В названии и OEM PARTS нет нормализованного совпадения. Для широкого поиска используйте расширенные поля."
       : productSearchMode === "service"
-      ? "Попробуйте изменить запрос или найти услугу по другому названию."
+      ? "Мы искали среди услуг. Попробуйте изменить запрос или создайте разовую услугу."
       : productSearchMode === "product"
-        ? "Попробуйте изменить запрос или воспользуйтесь расширенным поиском."
-        : "Попробуйте изменить запрос или переключить поиск на услуги.";
+        ? "Мы искали среди товаров. Попробуйте изменить запрос или создайте локальную позицию."
+        : "Мы искали среди товаров и услуг. Попробуйте изменить запрос или создайте новую позицию.";
   const selectedMannVariant = mannVariants.find((variant) => variant.variantId === selectedMannVariantId) ?? null;
   const mannMakeOptions = mannMakes.map((item): MannComboboxOption => ({
     value: item.make,
@@ -3844,9 +3877,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	              placeholder={
                   productSearchMode === "service"
                     ? "Поиск услуги по названию..."
-                    : productSearchMode === "product"
-                      ? "Поиск по названию или OEM PARTS..."
-                      : "Поиск по названию или OEM PARTS..."
+                  : productSearchMode === "product"
+                      ? "Поиск товара, артикула, OEM..."
+                      : "Поиск товара, услуги, артикула, OEM..."
                 }
 	              className="eco-input"
 	            />
@@ -3859,9 +3892,61 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             )}
             <button type="button" className="eco-shipment-link-btn" onClick={openServiceSearch}>
               <Plus className="eco-icon" aria-hidden />
-              + Услуга
+              Разовая услуга
             </button>
           </div>
+          {oneOffServiceOpen && (
+            <div className="eco-one-off-service-form">
+              <label className="eco-field">
+                <span>Название услуги</span>
+                <input
+                  id="shipment-one-off-service-name"
+                  type="text"
+                  value={oneOffServiceName}
+                  onChange={(event) => setOneOffServiceName(event.target.value)}
+                  className="eco-input"
+                  placeholder="Например: Замена моторного масла"
+                />
+              </label>
+              <label className="eco-field">
+                <span>Цена</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={oneOffServicePrice}
+                  onChange={(event) => setOneOffServicePrice(event.target.value)}
+                  className="eco-input"
+                  placeholder="1490"
+                />
+              </label>
+              <label className="eco-field">
+                <span>Комментарий</span>
+                <input
+                  type="text"
+                  value={oneOffServiceComment}
+                  onChange={(event) => setOneOffServiceComment(event.target.value)}
+                  className="eco-input"
+                  placeholder="Необязательно"
+                />
+              </label>
+              <div className="eco-one-off-service-actions">
+                <EcoButton type="button" variant="primary" onClick={addOneOffServicePosition}>
+                  Добавить услугу
+                </EcoButton>
+                <EcoButton
+                  type="button"
+                  onClick={() => {
+                    setOneOffServiceOpen(false);
+                    setOneOffServiceName("");
+                    setOneOffServicePrice("");
+                    setOneOffServiceComment("");
+                  }}
+                >
+                  Отмена
+                </EcoButton>
+              </div>
+            </div>
+          )}
           {manualMannFilter ? (
             <div className="eco-shipment-mann-search-context">
               <span>Ручной выбор для MANN {manualMannFilter.mannArticle}</span>
@@ -3872,7 +3957,26 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           ) : null}
           <details className="eco-shipment-advanced-search">
             <summary>Расширенный поиск</summary>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div className="mt-2 grid gap-2 sm:grid-cols-4">
+            <div>
+              <label className="eco-field">
+                <span>Тип позиции</span>
+                <select
+                  value={productSearchMode}
+                  onChange={(event) => {
+                    setProductSearchMode(event.target.value as ProductSearchMode);
+                    productResultsDismissedRef.current = false;
+                    setProductResultsOpen(true);
+                    setHighlightedProductIndex(0);
+                  }}
+                  className="eco-input"
+                >
+                  <option value="all">Все</option>
+                  <option value="product">Товары</option>
+                  <option value="service">Услуги</option>
+                </select>
+              </label>
+            </div>
             <div>
               <label className="eco-field">
                 <span>OEM PARTS</span>
@@ -4052,15 +4156,15 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       </button>
                     ) : (
                       <>
+                        <button type="button" onClick={openServiceSearch}>
+                          Создать услугу
+                        </button>
+                        <Link href="/inventory/products?type=product">Создать товар</Link>
                         <button type="button" onClick={openAdvancedProductSearch}>
                           Расширенный поиск
                         </button>
-                        <button type="button" onClick={openServiceSearch}>
-                          Добавить услугу
-                        </button>
                       </>
                     )}
-                    <Link href="/inventory/products">Создать локальную позицию</Link>
                   </div>
                 </div>
               )}
