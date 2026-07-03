@@ -54,7 +54,9 @@ type DiagnosticMapPayload = {
   publicToken: string;
   reportUrl: string;
   printUrl: string;
+  clientId: string | null;
   clientName: string | null;
+  clientPhone: string | null;
   vehicle: {
     title: string;
     vin: string | null;
@@ -3615,7 +3617,8 @@ export function DiagnosticMapModal({
                     size="sm"
                     entityType="diagnostic"
                     entityId={data.id}
-                    phone={headerDraft?.clientPhone}
+                    clientId={data.clientId}
+                    phone={headerDraft?.clientPhone || data.clientPhone}
                     displayName={data.clientName || headerDraft?.clientName}
                     context={{
                       entityType: "diagnostic",

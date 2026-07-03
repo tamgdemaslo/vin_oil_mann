@@ -193,6 +193,21 @@ type ConversationTarget = {
   clientId: string | null;
 };
 
+type NotificationCounterpartyRow = {
+  id: string;
+  name: string;
+  phone: string | null;
+  normalizedPhone: string | null;
+};
+
+type TelegramConnectionTarget = {
+  id: string;
+  externalChatId: string;
+  displayName: string;
+  phone: string | null;
+  clientId: string | null;
+};
+
 const schemaState = globalThis as typeof globalThis & {
   __clientNotificationsSchemaPromise?: Promise<void> | null;
 };
@@ -784,28 +799,126 @@ export async function previewNotificationTemplate(templateIdOrBody: string, cont
   return renderNotificationTemplate(body, variables);
 }
 
+async function resolveLocalCounterparty(clientId: string | null, phone: string | null) {
+  if (clientId) {
+    const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
+      SELECT id, name, phone, normalized_phone AS "normalizedPhone"
+      FROM local_counterparties
+      WHERE id = ${clientId}
+         OR moysklad_id = ${clientId}
+      ORDER BY CASE WHEN id = ${clientId} THEN 0 ELSE 1 END, updated_at DESC
+      LIMIT 1
+    `;
+    if (rows[0]) return rows[0];
+  }
+  if (!phone) return null;
+  const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
+    SELECT id, name, phone, normalized_phone AS "normalizedPhone"
+    FROM local_counterparties
+    WHERE normalized_phone = ${phone}
+       OR regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone}
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
 async function resolveClientIdentity(input: NotificationEventContext) {
   const phone = normalizePhoneKey(input.clientPhone);
   let clientId = nullableString(input.clientId);
   let clientName = nullableString(input.clientName);
   let clientPhone = nullableString(input.clientPhone);
-  if (!clientId && phone) {
-    const rows = await prisma.$queryRaw<Array<{ id: string; name: string; phone: string | null; normalizedPhone: string | null }>>`
-      SELECT id, name, phone, normalized_phone AS "normalizedPhone"
-      FROM local_counterparties
-      WHERE normalized_phone = ${phone}
-         OR regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone}
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `;
-    const counterparty = rows[0];
-    if (counterparty) {
-      clientId = counterparty.id;
-      clientName = clientName ?? counterparty.name;
-      clientPhone = clientPhone ?? counterparty.phone ?? counterparty.normalizedPhone;
-    }
+  const counterparty = await resolveLocalCounterparty(clientId, phone);
+  if (counterparty) {
+    clientId = counterparty.id;
+    clientName = clientName ?? counterparty.name;
+    clientPhone = clientPhone ?? counterparty.phone ?? counterparty.normalizedPhone;
   }
   return { clientId, clientName, clientPhone };
+}
+
+function messengerAccountIdFromExternalChatId(externalChatId: string) {
+  return externalChatId.match(/^telegram:user:([^:]+):/)?.[1] ?? null;
+}
+
+async function findTelegramConnectionTarget(clientId: string | null, phone: string | null) {
+  if (!clientId && !phone) return null;
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<TelegramConnectionTarget[]>`
+    SELECT
+      id,
+      external_chat_id AS "externalChatId",
+      display_name AS "displayName",
+      phone,
+      client_id AS "clientId"
+    FROM messenger_connections
+    WHERE organization_id = ${organizationId}
+      AND channel = 'telegram'
+      AND type = 'client'
+      AND is_active = true
+      AND blocked_at IS NULL
+      AND (
+        (${clientId ?? null}::text IS NOT NULL AND client_id = ${clientId ?? null})
+        OR (${phone ?? null}::text IS NOT NULL AND ${phone ?? null}::text <> '' AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone ?? null})
+      )
+    ORDER BY
+      CASE WHEN ${clientId ?? null}::text IS NOT NULL AND client_id = ${clientId ?? null} THEN 0 ELSE 1 END,
+      linked_at DESC NULLS LAST,
+      updated_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function upsertTelegramConversationFromConnection(input: {
+  connection: TelegramConnectionTarget;
+  clientId: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
+  diagnosticReportId?: string | null;
+  appointmentId?: string | null;
+  payload?: JsonRecord | null;
+}) {
+  const id = crypto.randomUUID();
+  const organizationId = getMessengerOrganizationId();
+  const title = input.clientName || input.connection.displayName || "Telegram";
+  const messengerAccountId = messengerAccountIdFromExternalChatId(input.connection.externalChatId);
+  const rows = await prisma.$queryRaw<ConversationTarget[]>`
+    INSERT INTO messenger_conversations
+      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, connection_id, client_id,
+       title, participant_name, participant_phone, status, unread_count, last_message_text, last_message_at,
+       related_diagnostic_id, related_appointment_id, related_shipment_id, updated_at)
+    VALUES
+      (${id}, ${organizationId}, ${messengerAccountId}, 'telegram', ${input.connection.externalChatId}, ${input.connection.externalChatId},
+       ${input.connection.id}, ${input.clientId}, ${title}, ${title}, ${input.clientPhone ?? input.connection.phone}, 'open', 0, '', now(),
+       ${input.diagnosticReportId ?? null}, ${input.appointmentId ?? null}, ${stringValue(input.payload?.shipmentId) || null}, now())
+    ON CONFLICT (channel, external_conversation_id)
+    DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
+      messenger_account_id = COALESCE(EXCLUDED.messenger_account_id, messenger_conversations.messenger_account_id),
+      external_chat_id = COALESCE(EXCLUDED.external_chat_id, messenger_conversations.external_chat_id),
+      connection_id = EXCLUDED.connection_id,
+      client_id = COALESCE(EXCLUDED.client_id, messenger_conversations.client_id),
+      title = COALESCE(NULLIF(EXCLUDED.title, ''), messenger_conversations.title),
+      participant_name = COALESCE(NULLIF(EXCLUDED.participant_name, ''), messenger_conversations.participant_name),
+      participant_phone = COALESCE(EXCLUDED.participant_phone, messenger_conversations.participant_phone),
+      related_diagnostic_id = COALESCE(EXCLUDED.related_diagnostic_id, messenger_conversations.related_diagnostic_id),
+      related_appointment_id = COALESCE(EXCLUDED.related_appointment_id, messenger_conversations.related_appointment_id),
+      related_shipment_id = COALESCE(EXCLUDED.related_shipment_id, messenger_conversations.related_shipment_id),
+      status = 'open',
+      updated_at = now()
+    RETURNING
+      id,
+      external_conversation_id AS "externalConversationId",
+      messenger_account_id AS "messengerAccountId",
+      client_id AS "clientId"
+  `;
+  return rows[0] ?? {
+    id,
+    externalConversationId: input.connection.externalChatId,
+    messengerAccountId,
+    clientId: input.clientId,
+  };
 }
 
 async function findTelegramConversation(input: NotificationEventContext): Promise<ConversationTarget | null> {
@@ -859,7 +972,20 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
       mc.last_message_at DESC
     LIMIT 1
   `;
-  return rows[0] ?? null;
+  if (rows[0]) return rows[0];
+
+  const connection = await findTelegramConnectionTarget(clientId, phone);
+  return connection
+    ? upsertTelegramConversationFromConnection({
+        connection,
+        clientId,
+        clientName: resolved.clientName,
+        clientPhone: resolved.clientPhone,
+        diagnosticReportId: input.diagnosticReportId,
+        appointmentId: input.appointmentId,
+        payload: input.payload,
+      })
+    : null;
 }
 
 async function clientConsentBlocked(clientId: string | null) {
@@ -1435,11 +1561,12 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
   `;
     const map = mapRows[0];
     if (map) {
+      const counterparty = await resolveLocalCounterparty(map.clientId, normalizePhoneKey(map.clientPhone));
       return {
         diagnosticReportId: map.id,
-        clientId: map.clientId,
-        clientName: map.clientName,
-        clientPhone: map.clientPhone,
+        clientId: counterparty?.id ?? map.clientId,
+        clientName: counterparty?.name ?? map.clientName,
+        clientPhone: counterparty?.phone ?? counterparty?.normalizedPhone ?? map.clientPhone,
         diagnosticReportLink: map.publicToken ? buildDiagnosticReportUrl(request, map.publicToken) : null,
         car: [map.brand, map.model, map.licensePlate || map.vin].filter(Boolean).join(" · "),
         carMake: map.brand,
