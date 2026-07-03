@@ -29,7 +29,21 @@ export type ConversationStatus = "open" | "needs_reply" | "waiting" | "closed" |
 export type MessageDirection = "inbound" | "outbound" | "system";
 export type MessageAuthorType = "client" | "employee" | "bot" | "system";
 export type MessageStatus = "received" | "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
-export type AttachmentType = "image" | "video" | "file" | "voice" | "link" | "audio" | "document" | "location" | "contact" | "unsupported";
+export type AttachmentType =
+  | "photo"
+  | "image"
+  | "video"
+  | "voice"
+  | "audio"
+  | "document"
+  | "file"
+  | "sticker"
+  | "animation"
+  | "video_note"
+  | "link"
+  | "location"
+  | "contact"
+  | "unsupported";
 export type ConversationKind = "client" | "supplier" | "employee" | "unknown";
 export type MessengerParticipantType = "client" | "employee" | "supplier" | "unknown";
 export type OutboxStatus = "queued" | "processing" | "sent" | "failed" | "skipped";
@@ -148,6 +162,7 @@ export type Attachment = {
   previewUrl?: string;
   mimeType?: string;
   status?: "pending" | "queued" | "downloading" | "available" | "ready" | "failed" | "too_large" | "unsupported";
+  progress?: number;
   caption?: string;
   width?: number;
   height?: number;

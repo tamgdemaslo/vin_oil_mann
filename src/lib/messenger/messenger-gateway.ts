@@ -14,6 +14,7 @@ import { listMessageTemplates } from "./messenger-templates";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { assertMessengerOutboundTextSafe } from "./messenger-security";
 import { getMessengerOrganizationId } from "./messenger-tenant";
+import { normalizeAttachmentList } from "./messenger-attachment-normalization";
 import type {
   Conversation,
   IncomingMessageEvent,
@@ -132,6 +133,7 @@ function toConversation(row: ConversationRow): Conversation {
 }
 
 function toMessage(row: MessageRow): Message {
+  const attachments = normalizeAttachmentList(row.attachmentsJson ?? []);
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -142,7 +144,7 @@ function toMessage(row: MessageRow): Message {
     authorName: row.authorId ?? (row.authorType === "employee" ? "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ" : row.authorType === "system" ? "ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ" : "Клиент"),
     authorType: row.authorType,
     text: /^\s*\[Вложение Telegram\]\s*$/i.test(row.text) ? "" : row.text,
-    attachments: row.attachmentsJson ?? [],
+    attachments,
     createdAt: row.createdAt.toISOString(),
     status: row.status,
     channelMessageId: row.externalMessageId ?? undefined,

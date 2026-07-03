@@ -96,6 +96,7 @@ type MessengerContextValue = {
   sendAttachment: (conversationId: string, file: File, caption?: string) => Promise<void>;
   refreshConversation: (conversationId: string) => void;
   retryMessage: (conversationId: string, messageId: string) => void;
+  retryAttachment: (conversationId: string, attachmentId: string) => void;
   simulateIncoming: () => void;
   toggleImportant: (conversationId: string) => void;
   markAsRead: (conversationId: string) => void;
@@ -485,9 +486,15 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
 
   const sendAttachment = useCallback(async (conversationId: string, file: File, caption = "") => {
     const createdAt = new Date().toISOString();
-    const isImage = file.type.startsWith("image/");
+    const optimisticType = file.type.startsWith("image/")
+      ? "photo"
+      : file.type.startsWith("video/")
+        ? "video"
+        : file.type.startsWith("audio/")
+          ? "audio"
+          : "document";
     const optimisticId = `upload-${Date.now()}`;
-    const objectUrl = isImage ? URL.createObjectURL(file) : "";
+    const objectUrl = optimisticType === "photo" || optimisticType === "video" || optimisticType === "audio" ? URL.createObjectURL(file) : "";
     const optimistic: Message = {
       id: optimisticId,
       conversationId,
@@ -498,7 +505,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       attachments: [
         {
           id: `${optimisticId}-attachment`,
-          type: isImage ? "image" : "document",
+          type: optimisticType,
           name: file.name,
           size: file.size,
           mimeType: file.type || undefined,
@@ -580,6 +587,46 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       }));
     }, 600);
   }, []);
+
+  const retryAttachment = useCallback((conversationId: string, attachmentId: string) => {
+    setMessagesByConversation((map) => ({
+      ...map,
+      [conversationId]: (map[conversationId] ?? []).map((message) => ({
+        ...message,
+        attachments: message.attachments.map((attachment) =>
+          attachment.id === attachmentId
+            ? { ...attachment, status: "downloading", progress: 0, errorMessage: undefined }
+            : attachment
+        ),
+      })),
+    }));
+    void fetch(`/api/messenger/attachments/${encodeURIComponent(attachmentId)}/retry`, { method: "POST" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(data?.error || "Не удалось повторить загрузку вложения");
+        }
+        window.setTimeout(() => refreshConversation(conversationId), 500);
+        window.setTimeout(() => refreshConversation(conversationId), 2500);
+      })
+      .catch((error) => {
+        setMessagesByConversation((map) => ({
+          ...map,
+          [conversationId]: (map[conversationId] ?? []).map((message) => ({
+            ...message,
+            attachments: message.attachments.map((attachment) =>
+              attachment.id === attachmentId
+                ? {
+                    ...attachment,
+                    status: "failed",
+                    errorMessage: error instanceof Error ? error.message : "Не удалось повторить загрузку вложения",
+                  }
+                : attachment
+            ),
+          })),
+        }));
+      });
+  }, [refreshConversation]);
 
   const simulateIncoming = useCallback(() => {
     const targetId = selectedConversationId ?? conversations[0]?.id;
@@ -675,6 +722,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       sendAttachment,
       refreshConversation,
       retryMessage,
+      retryAttachment,
       simulateIncoming,
       toggleImportant,
       markAsRead,
@@ -709,6 +757,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       sendAttachment,
       refreshConversation,
       retryMessage,
+      retryAttachment,
       simulateIncoming,
       toggleImportant,
       markAsRead,

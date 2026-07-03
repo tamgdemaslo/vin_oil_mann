@@ -29,6 +29,7 @@ export type MessageDirection = "inbound" | "outbound" | "system";
 export type MessageAuthorType = "client" | "employee" | "bot" | "system";
 export type MessageStatus = "received" | "queued" | "sending" | "sent" | "delivered" | "read" | "failed" | "skipped";
 export type AttachmentType =
+  | "photo"
   | "image"
   | "video"
   | "file"
@@ -36,6 +37,9 @@ export type AttachmentType =
   | "link"
   | "audio"
   | "document"
+  | "sticker"
+  | "animation"
+  | "video_note"
   | "location"
   | "contact"
   | "unsupported";
@@ -50,6 +54,7 @@ export type Attachment = {
   previewUrl?: string;
   mimeType?: string;
   status?: "pending" | "queued" | "downloading" | "available" | "ready" | "failed" | "too_large" | "unsupported";
+  progress?: number;
   caption?: string;
   width?: number;
   height?: number;
@@ -461,10 +466,13 @@ export function isTelegramAttachmentPlaceholder(value?: string | null) {
 
 export function attachmentLabel(attachment?: Attachment) {
   if (!attachment) return "Вложение";
-  if (attachment.type === "image") return "Фото";
+  if (attachment.type === "photo" || attachment.type === "image") return "Фото";
   if (attachment.type === "video") return "Видео";
-  if (attachment.type === "voice") return "Голосовое";
+  if (attachment.type === "voice") return "Голосовое сообщение";
   if (attachment.type === "audio") return "Аудио";
+  if (attachment.type === "sticker") return "Стикер";
+  if (attachment.type === "animation") return "GIF";
+  if (attachment.type === "video_note") return "Видеосообщение";
   if (attachment.type === "link") return "Ссылка";
   if (attachment.type === "contact") return "Контакт";
   if (attachment.type === "location") return "Геопозиция";

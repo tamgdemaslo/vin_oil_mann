@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
-import { bufferToArrayBuffer, getMessengerStorageObject, publicMessengerStorageUrl } from "@/lib/messenger/messenger-storage";
+import { bufferToArrayBuffer, getMessengerStorageObject } from "@/lib/messenger/messenger-storage";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +38,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!key) {
     return NextResponse.json({ error: "Превью ещё не загружено", status: attachment.status }, { status: 404 });
   }
-  const publicUrl = publicMessengerStorageUrl(key);
-  if (publicUrl) return NextResponse.redirect(publicUrl, 302);
   const object = await getMessengerStorageObject(key);
   return new NextResponse(bufferToArrayBuffer(object.body), {
     headers: {
@@ -47,6 +45,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       "Content-Length": String(object.body.length),
       "Content-Disposition": `inline; filename="${encodeURIComponent(attachment.name || "thumbnail")}"`,
       "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

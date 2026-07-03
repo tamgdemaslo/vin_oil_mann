@@ -23,7 +23,9 @@ type GetObjectResult = {
   body: Buffer;
   contentType: string;
   contentLength: number | null;
+  contentRange: string | null;
   etag: string | null;
+  statusCode: number;
 };
 
 const EMPTY_SHA256 = crypto.createHash("sha256").update("").digest("hex");
@@ -138,6 +140,7 @@ function signedHeaders(input: {
   contentDisposition?: string | null;
   cacheControl?: string | null;
   contentLength?: number | null;
+  range?: string | null;
 }) {
   const config = assertStorageConfigured();
   const { amzDate, dateStamp } = amzDates();
@@ -150,6 +153,7 @@ function signedHeaders(input: {
   if (input.contentDisposition) headers["content-disposition"] = input.contentDisposition;
   if (input.cacheControl) headers["cache-control"] = input.cacheControl;
   if (typeof input.contentLength === "number") headers["content-length"] = String(input.contentLength);
+  if (input.range) headers.range = input.range;
 
   const sortedHeaderNames = Object.keys(headers).sort();
   const canonicalHeaders = sortedHeaderNames.map((name) => `${name}:${headers[name].trim()}\n`).join("");
@@ -213,10 +217,11 @@ export async function putMessengerStorageObject(input: PutObjectInput) {
   return { key: input.key, size: body.length, etag: response.headers.get("etag") };
 }
 
-export async function getMessengerStorageObject(key: string): Promise<GetObjectResult> {
+export async function getMessengerStorageObject(key: string, options?: { range?: string | null }): Promise<GetObjectResult> {
   const config = assertStorageConfigured();
   const url = storageUrl(config, key);
-  const headers = signedHeaders({ method: "GET", url, bodyHash: EMPTY_SHA256 });
+  const range = options?.range?.trim();
+  const headers = signedHeaders({ method: "GET", url, bodyHash: EMPTY_SHA256, range: range || null });
   const response = await fetch(url, { method: "GET", headers });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -227,7 +232,9 @@ export async function getMessengerStorageObject(key: string): Promise<GetObjectR
     body,
     contentType: response.headers.get("content-type") || "application/octet-stream",
     contentLength: Number(response.headers.get("content-length")) || body.length || null,
+    contentRange: response.headers.get("content-range"),
     etag: response.headers.get("etag"),
+    statusCode: response.status,
   };
 }
 

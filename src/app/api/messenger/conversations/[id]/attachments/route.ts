@@ -33,18 +33,18 @@ function uploadLimitBytes() {
 }
 
 function attachmentType(mimeType: string) {
-  if (mimeType.startsWith("image/")) return "image" as const;
+  if (mimeType.startsWith("image/")) return "photo" as const;
   if (mimeType.startsWith("video/")) return "video" as const;
   if (mimeType.startsWith("audio/")) return "audio" as const;
   return "document" as const;
 }
 
 function messageTypeForAttachment(type: Attachment["type"]) {
-  return type === "image" ? "image" : "file";
+  return type === "photo" || type === "image" ? "image" : "file";
 }
 
 function previewLabel(type: Attachment["type"], name: string) {
-  if (type === "image") return "Фото";
+  if (type === "photo" || type === "image") return "Фото";
   if (type === "video") return "Видео";
   if (type === "audio") return "Аудио";
   return name || "Документ";
@@ -99,6 +99,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const messageId = crypto.randomUUID();
     const attachmentId = crypto.randomUUID();
     const safeName = safeStorageFileName(file.name || `${type}-${attachmentId}`);
+    const displayName = file.name?.trim() || safeName;
     const key = messengerObjectKey(
       [
         "messenger",
@@ -124,12 +125,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const attachment: Attachment = {
       id: attachmentId,
       type,
-      name: safeName,
+      name: displayName,
       size: buffer.length,
       mimeType,
       status: "available",
       url: messengerStorageProxyUrl("attachment", attachmentId),
-      previewUrl: type === "image" ? messengerStorageProxyUrl("thumbnail", attachmentId) : undefined,
+      previewUrl: type === "photo" ? messengerStorageProxyUrl("thumbnail", attachmentId) : undefined,
       caption: caption || undefined,
     };
     const text = caption;
@@ -147,13 +148,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
          status, progress, caption, metadata_json, created_at, updated_at)
       VALUES
         (${attachmentId}, ${organizationId}, ${conversation.messengerAccountId}, ${conversation.id}, ${messageId}, ${conversation.channel}, 'outbound', ${attachmentId},
-         ${type}, ${attachment.url ?? null}, ${safeName}, ${buffer.length}, ${mimeType}, ${attachment.previewUrl ?? null}, ${key}, ${type === "image" ? key : null},
+         ${type}, ${attachment.url ?? null}, ${displayName}, ${buffer.length}, ${mimeType}, ${attachment.previewUrl ?? null}, ${key}, ${type === "photo" ? key : null},
          'ready', 100, ${caption || null}, ${JSON.stringify({ source: "eco_upload", storage: { key, mimeType, size: buffer.length } })}::jsonb, now(), now())
     `;
     await refreshMessageAttachmentsJson(messageId);
     await prisma.$executeRaw`
       UPDATE messenger_conversations
-      SET last_message_text = ${text || previewLabel(type, safeName)},
+      SET last_message_text = ${text || previewLabel(type, displayName)},
           last_message_at = now(),
           status = 'open',
           unread_count = 0,

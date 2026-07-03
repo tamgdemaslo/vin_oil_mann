@@ -2505,62 +2505,13 @@
 }
 
 .diag-photo-hidden-input {
-  display: none;
-}
-
-.diag-photo-source-sheet {
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
-}
-
-.diag-photo-source-actions {
-  display: grid;
-  gap: 10px;
-}
-
-.diag-photo-source-actions button {
-  min-height: 58px;
-  padding: 12px 14px;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.diag-photo-source-actions button:not(.is-cancel) {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 10px;
-}
-
-.diag-photo-source-actions button svg {
-  grid-row: span 2;
-  color: var(--rust);
-}
-
-.diag-photo-source-actions button strong {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1.15;
-}
-
-.diag-photo-source-actions button small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.diag-photo-source-actions .is-cancel {
-  min-height: 48px;
-  color: var(--muted);
-  background: transparent;
-  font-weight: 900;
-  text-align: center;
+  position: fixed;
+  top: -1px;
+  left: -1px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .diag-quick-value,
@@ -45028,7 +44979,7 @@ html.tgm-print-active .tgm-client-report .qr {
 
 .eco-messenger-attachment {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 9px;
   align-items: center;
   min-width: 0;
@@ -45039,6 +44990,10 @@ html.tgm-print-active .tgm-client-report .qr {
   border: 1px solid var(--eco-line);
   border-radius: 7px;
   text-decoration: none;
+}
+
+.eco-messenger-attachment > span {
+  min-width: 0;
 }
 
 .eco-messenger-attachment .eco-icon {
@@ -45111,6 +45066,314 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-messenger-attachment.is-failed .eco-icon,
 .eco-messenger-attachment.is-failed small {
   color: var(--eco-danger);
+}
+
+.eco-messenger-attachment__mini-btn,
+.eco-messenger-attachment__download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.eco-messenger-attachment__mini-btn {
+  color: var(--eco-danger);
+}
+
+.eco-messenger-attachment__mini-btn .eco-icon,
+.eco-messenger-attachment__download .eco-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.eco-messenger-media {
+  width: min(100%, 320px);
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+}
+
+.eco-messenger-thread:not(.is-compact) .eco-messenger-media {
+  width: min(100%, 500px);
+}
+
+.eco-messenger-media.is-photo {
+  background: var(--eco-surface-sunk);
+}
+
+.eco-messenger-media.is-sticker {
+  width: min(100%, 220px);
+  background: transparent;
+  border-color: transparent;
+}
+
+.eco-messenger-media > button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: zoom-in;
+}
+
+.eco-messenger-media img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  background: var(--eco-surface-sunk);
+}
+
+.eco-messenger-thread:not(.is-compact) .eco-messenger-media img {
+  max-height: 520px;
+}
+
+.eco-messenger-media figcaption {
+  padding: 7px 9px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.eco-messenger-media.is-video {
+  display: grid;
+  gap: 0;
+}
+
+.eco-messenger-media.is-video video {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  background: #111;
+  border-radius: 7px 7px 0 0;
+}
+
+.eco-messenger-thread:not(.is-compact) .eco-messenger-media.is-video video {
+  max-height: 460px;
+}
+
+.eco-messenger-media.is-video-note {
+  width: min(100%, 250px);
+  border-radius: 999px 999px 8px 8px;
+}
+
+.eco-messenger-media.is-video-note video {
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 999px;
+}
+
+.eco-messenger-media__caption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 9px;
+}
+
+.eco-messenger-media__caption span {
+  min-width: 0;
+}
+
+.eco-messenger-media__caption strong,
+.eco-messenger-media__caption small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-messenger-media__caption strong {
+  color: var(--eco-ink);
+  font-size: 12px;
+}
+
+.eco-messenger-media__caption small {
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-messenger-audio {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: min(100%, 360px);
+  min-width: 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+}
+
+.eco-messenger-audio__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: #fff;
+  background: var(--eco-rust);
+  border: 0;
+  border-radius: 999px;
+}
+
+.eco-messenger-audio__play .eco-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.eco-messenger-audio__body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.eco-messenger-audio__top,
+.eco-messenger-audio__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.eco-messenger-audio__top strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--eco-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-messenger-audio__top small,
+.eco-messenger-audio__meta {
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-messenger-audio input[type="range"] {
+  width: 100%;
+  accent-color: var(--eco-rust);
+}
+
+.eco-messenger-audio__meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-messenger-audio__meta button {
+  min-width: 38px;
+  min-height: 28px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.eco-messenger-audio audio {
+  display: none;
+}
+
+.eco-messenger-lightbox {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.eco-messenger-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.78);
+  border: 0;
+}
+
+.eco-messenger-lightbox__stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  width: min(96vw, 1040px);
+  max-height: 92vh;
+}
+
+.eco-messenger-lightbox__stage img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(92vh - 72px);
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.eco-messenger-lightbox__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+}
+
+.eco-messenger-lightbox__toolbar strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-messenger-lightbox__toolbar span {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.eco-messenger-lightbox__toolbar button,
+.eco-messenger-lightbox__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.eco-messenger-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.eco-messenger-lightbox__nav.is-prev {
+  left: -54px;
+}
+
+.eco-messenger-lightbox__nav.is-next {
+  right: -54px;
 }
 
 .eco-messenger-message__meta {
@@ -46699,6 +46962,45 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-messenger-system-message {
     max-width: none;
     width: 90%;
+  }
+
+  .eco-messenger-media,
+  .eco-messenger-thread:not(.is-compact) .eco-messenger-media,
+  .eco-messenger-audio {
+    width: 100%;
+  }
+
+  .eco-messenger-media__caption,
+  .eco-messenger-attachment {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .eco-messenger-attachment__download,
+  .eco-messenger-attachment__mini-btn,
+  .eco-messenger-media__caption .eco-messenger-attachment__download {
+    grid-column: 2;
+    justify-self: start;
+    min-height: 38px;
+  }
+
+  .eco-messenger-audio {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .eco-messenger-lightbox {
+    padding: 12px;
+  }
+
+  .eco-messenger-lightbox__stage {
+    width: 100%;
+  }
+
+  .eco-messenger-lightbox__nav.is-prev {
+    left: 8px;
+  }
+
+  .eco-messenger-lightbox__nav.is-next {
+    right: 8px;
   }
 }
 

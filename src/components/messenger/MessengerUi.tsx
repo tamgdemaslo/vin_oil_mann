@@ -9,19 +9,26 @@ import {
   CalendarClock,
   Car,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Download,
   ExternalLink,
   Expand,
+  FileAudio,
   FileText,
+  FileVideo,
   ImageIcon,
   Link2,
   MessageCircle,
   Mic,
   MoreVertical,
   Package,
+  Pause,
   Pin,
+  Play,
   Plus,
   RefreshCw,
   Search,
@@ -247,6 +254,64 @@ function formatAttachmentSize(size?: number) {
   if (size < 1024) return `${size} Б`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} КБ`;
   return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} МБ`;
+}
+
+function formatDuration(seconds?: number) {
+  if (!seconds || seconds <= 0 || !Number.isFinite(seconds)) return "";
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function isAttachmentReady(attachment: Attachment) {
+  return attachment.status === "available" || attachment.status === "ready" || Boolean(attachment.url || attachment.previewUrl);
+}
+
+function isAttachmentFailed(attachment: Attachment) {
+  return attachment.status === "failed" || attachment.status === "too_large" || attachment.status === "unsupported";
+}
+
+function isPhotoAttachment(attachment: Attachment) {
+  return ["photo", "image", "sticker", "animation"].includes(attachment.type);
+}
+
+function isVideoAttachment(attachment: Attachment) {
+  return attachment.type === "video" || attachment.type === "video_note";
+}
+
+function isAudioAttachment(attachment: Attachment) {
+  return attachment.type === "voice" || attachment.type === "audio";
+}
+
+function isTechnicalAttachmentName(value?: string) {
+  return /^(attachment|photo|video|voice|audio|document)-telegram:message:/i.test(value ?? "");
+}
+
+function displayAttachmentName(attachment: Attachment) {
+  if (attachment.name && !isTechnicalAttachmentName(attachment.name)) return attachment.name;
+  if (attachment.type === "photo" || attachment.type === "image") return "Фото Telegram";
+  if (attachment.type === "video") return "Видео Telegram";
+  if (attachment.type === "voice") return "Голосовое сообщение";
+  if (attachment.type === "audio") return "Аудио Telegram";
+  if (attachment.type === "sticker") return "Стикер Telegram";
+  if (attachment.type === "animation") return "GIF Telegram";
+  if (attachment.type === "video_note") return "Видеосообщение Telegram";
+  if (attachment.type === "document") return "Документ Telegram";
+  return "Файл Telegram";
+}
+
+function attachmentMetaLine(attachment: Attachment) {
+  return [formatAttachmentSize(attachment.size), formatDuration(attachment.duration), attachment.mimeType]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function pendingAttachmentText(attachment: Attachment) {
+  if (attachment.status === "downloading" || attachment.status === "queued") {
+    return attachment.progress && attachment.progress > 0 ? `Загружаем вложение · ${attachment.progress}%` : "Подготавливаем вложение...";
+  }
+  return `${attachmentLabel(attachment)} ожидает загрузки`;
 }
 
 function appointmentDateParts(value: string | undefined) {
@@ -573,7 +638,7 @@ export function ChatHeader({
 }
 
 export function ChatThread({ conversation, compact = false }: { conversation: Conversation; compact?: boolean }) {
-  const { messagesByConversation, retryMessage } = useMessenger();
+  const { messagesByConversation, retryMessage, retryAttachment } = useMessenger();
   const messages = messagesByConversation[conversation.id] ?? [];
   const threadRef = useRef<HTMLDivElement | null>(null);
   const rows = messages.map((message, index) => {
@@ -597,14 +662,26 @@ export function ChatThread({ conversation, compact = false }: { conversation: Co
       {rows.map(({ message, day, showDay }) => (
         <div key={message.id} className="eco-messenger-message-wrap">
           {showDay && <div className="eco-messenger-day">{day}</div>}
-          <MessageBubble message={message} onRetry={() => retryMessage(conversation.id, message.id)} />
+          <MessageBubble
+            message={message}
+            onRetry={() => retryMessage(conversation.id, message.id)}
+            onAttachmentRetry={(attachmentId) => retryAttachment(conversation.id, attachmentId)}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => void }) {
+function MessageBubble({
+  message,
+  onRetry,
+  onAttachmentRetry,
+}: {
+  message: Message;
+  onRetry: () => void;
+  onAttachmentRetry: (attachmentId: string) => void;
+}) {
   if (message.direction === "system") {
     return <div className="eco-messenger-system-message">{message.text}</div>;
   }
@@ -613,7 +690,7 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
     <div className={cx("eco-messenger-message", message.direction === "outbound" ? "is-outbound" : "is-inbound", message.status === "failed" && "is-failed")}>
       <div className="eco-messenger-message__bubble">
         {text && <p>{text}</p>}
-        {!!message.attachments.length && <MessageAttachments attachments={message.attachments} />}
+        {!!message.attachments.length && <MessageAttachments attachments={message.attachments} onRetry={onAttachmentRetry} />}
         <span className="eco-messenger-message__meta">
           {formatMessengerTime(message.createdAt)}
           <span className={message.status === "failed" ? "is-danger" : ""}>{statusLabels[message.status]}</span>
@@ -629,57 +706,301 @@ function MessageBubble({ message, onRetry }: { message: Message; onRetry: () => 
   );
 }
 
-function MessageAttachments({ attachments }: { attachments: Attachment[] }) {
-  return (
-    <div className="eco-messenger-attachments">
-      {attachments.map((attachment) => {
-        const available = attachment.status === "available" || attachment.status === "ready" || Boolean(attachment.url || attachment.previewUrl);
-        const mediaUrl = attachment.previewUrl || attachment.url || "";
-        const isFailed = attachment.status === "failed" || attachment.status === "too_large" || attachment.status === "unsupported";
-        if (attachment.type === "image") {
-          return (
-            <a
-              key={attachment.id}
-              className={cx("eco-messenger-attachment", "is-image", isFailed && "is-failed", !available && !isFailed && "is-pending")}
-              href={available ? attachment.url || mediaUrl : undefined}
-              target={available ? "_blank" : undefined}
-              rel="noreferrer"
-            >
-              {available ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={mediaUrl} alt={attachment.name || "Фото"} />
-              ) : (
-                <span>
-                  <ImageIcon aria-hidden className="eco-icon" />
-                  {isFailed ? attachment.errorMessage || "Фото не загрузилось" : "Фото загружается"}
-                </span>
-              )}
-            </a>
-          );
-        }
+function MessageAttachments({ attachments, onRetry }: { attachments: Attachment[]; onRetry: (attachmentId: string) => void }) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const viewablePhotos = attachments.filter((attachment) => isPhotoAttachment(attachment) && isAttachmentReady(attachment) && (attachment.url || attachment.previewUrl));
+  const activeLightboxIndex = lightboxIndex !== null && lightboxIndex < viewablePhotos.length ? lightboxIndex : null;
 
-        return (
-          <a
-            key={attachment.id}
-            className={cx("eco-messenger-attachment", isFailed && "is-failed", !available && !isFailed && "is-pending")}
-            href={available ? attachment.url : undefined}
-            target={available ? "_blank" : undefined}
-            rel="noreferrer"
-          >
-            <FileText aria-hidden className="eco-icon" />
-            <span>
-              <strong>{attachment.name || attachmentLabel(attachment)}</strong>
-              <small>
-                {isFailed
-                  ? attachment.errorMessage || "Не удалось загрузить вложение"
-                  : available
-                    ? formatAttachmentSize(attachment.size) || attachment.mimeType || "готово"
-                    : `${attachmentLabel(attachment)} ожидает загрузки`}
-              </small>
-            </span>
-          </a>
-        );
-      })}
+  return (
+    <>
+      <div className="eco-messenger-attachments">
+        {attachments.map((attachment) => {
+          if (isPhotoAttachment(attachment)) {
+            const photoIndex = viewablePhotos.findIndex((item) => item.id === attachment.id);
+            return (
+              <PhotoAttachment
+                key={attachment.id}
+                attachment={attachment}
+                onOpen={() => photoIndex >= 0 && setLightboxIndex(photoIndex)}
+                onRetry={() => onRetry(attachment.id)}
+              />
+            );
+          }
+          if (isVideoAttachment(attachment)) {
+            return <VideoAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
+          }
+          if (isAudioAttachment(attachment)) {
+            return <AudioAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
+          }
+          return <FileAttachment key={attachment.id} attachment={attachment} onRetry={() => onRetry(attachment.id)} />;
+        })}
+      </div>
+      {activeLightboxIndex !== null && viewablePhotos[activeLightboxIndex] && (
+        <AttachmentLightbox
+          attachments={viewablePhotos}
+          index={activeLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNavigate={(nextIndex) => setLightboxIndex(nextIndex)}
+        />
+      )}
+    </>
+  );
+}
+
+function AttachmentStatus({
+  attachment,
+  icon,
+  onRetry,
+}: {
+  attachment: Attachment;
+  icon: React.ReactNode;
+  onRetry: () => void;
+}) {
+  const failed = isAttachmentFailed(attachment);
+  const retryable = attachment.status === "failed";
+  const text =
+    attachment.status === "too_large"
+      ? "Файл слишком большой для автозагрузки"
+      : attachment.status === "unsupported"
+        ? "Этот тип вложения пока не поддерживается"
+        : failed
+          ? attachment.errorMessage || "Не удалось загрузить вложение"
+          : pendingAttachmentText(attachment);
+  return (
+    <div className={cx("eco-messenger-attachment", failed && "is-failed", !failed && "is-pending")}>
+      {icon}
+      <span>
+        <strong>{displayAttachmentName(attachment)}</strong>
+        <small>{text}</small>
+      </span>
+      {retryable && (
+        <button type="button" className="eco-messenger-attachment__mini-btn" onClick={onRetry}>
+          <RefreshCw aria-hidden className="eco-icon" />
+          Повторить
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AttachmentDownload({ attachment, label = "Скачать" }: { attachment: Attachment; label?: string }) {
+  if (!attachment.url) return null;
+  return (
+    <a className="eco-messenger-attachment__download" href={attachment.url} download={displayAttachmentName(attachment)}>
+      <Download aria-hidden className="eco-icon" />
+      <span>{label}</span>
+    </a>
+  );
+}
+
+function PhotoAttachment({ attachment, onOpen, onRetry }: { attachment: Attachment; onOpen: () => void; onRetry: () => void }) {
+  const [failed, setFailed] = useState(false);
+  const src = attachment.previewUrl || attachment.url || "";
+  if (!isAttachmentReady(attachment) || !src || failed) {
+    return (
+      <AttachmentStatus
+        attachment={{ ...attachment, errorMessage: failed ? "Не удалось загрузить фото" : attachment.errorMessage }}
+        icon={<ImageIcon aria-hidden className="eco-icon" />}
+        onRetry={onRetry}
+      />
+    );
+  }
+  return (
+    <figure className={cx("eco-messenger-media", "is-photo", attachment.type === "sticker" && "is-sticker", attachment.type === "animation" && "is-animation")}>
+      <button type="button" onClick={onOpen} aria-label="Открыть фото">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={displayAttachmentName(attachment)} loading="lazy" onError={() => setFailed(true)} />
+      </button>
+      {attachment.caption && <figcaption>{attachment.caption}</figcaption>}
+    </figure>
+  );
+}
+
+function VideoAttachment({ attachment, onRetry }: { attachment: Attachment; onRetry: () => void }) {
+  if (!isAttachmentReady(attachment) || !attachment.url) {
+    return <AttachmentStatus attachment={attachment} icon={<FileVideo aria-hidden className="eco-icon" />} onRetry={onRetry} />;
+  }
+  return (
+    <div className={cx("eco-messenger-media", "is-video", attachment.type === "video_note" && "is-video-note")}>
+      <video src={attachment.url} poster={attachment.previewUrl} controls playsInline preload="metadata" />
+      <div className="eco-messenger-media__caption">
+        <FileVideo aria-hidden className="eco-icon" />
+        <span>
+          <strong>{displayAttachmentName(attachment)}</strong>
+          <small>{attachmentMetaLine(attachment) || "Видео"}</small>
+        </span>
+        <AttachmentDownload attachment={attachment} label="Скачать" />
+      </div>
+    </div>
+  );
+}
+
+function AudioAttachment({ attachment, onRetry }: { attachment: Attachment; onRetry: () => void }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(attachment.duration ?? 0);
+  const [current, setCurrent] = useState(0);
+  const [rate, setRate] = useState(1);
+
+  if (!isAttachmentReady(attachment) || !attachment.url) {
+    return <AttachmentStatus attachment={attachment} icon={<FileAudio aria-hidden className="eco-icon" />} onRetry={onRetry} />;
+  }
+
+  function togglePlay() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      void audio.play();
+      return;
+    }
+    audio.pause();
+  }
+
+  function cycleRate() {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  }
+
+  function seek(value: number) {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(value)) return;
+    audio.currentTime = value;
+    setCurrent(value);
+  }
+
+  const rangeMax = duration || attachment.duration || 0;
+
+  return (
+    <div className={cx("eco-messenger-audio", attachment.type === "voice" && "is-voice")}>
+      <button type="button" className="eco-messenger-audio__play" onClick={togglePlay} aria-label={playing ? "Пауза" : "Воспроизвести"}>
+        {playing ? <Pause aria-hidden className="eco-icon" /> : <Play aria-hidden className="eco-icon" />}
+      </button>
+      <div className="eco-messenger-audio__body">
+        <div className="eco-messenger-audio__top">
+          <strong>{displayAttachmentName(attachment)}</strong>
+          <small>{formatDuration(current) || "0:00"} / {formatDuration(duration || attachment.duration) || "..."}</small>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={rangeMax}
+          step={0.1}
+          value={rangeMax ? Math.min(current, rangeMax) : 0}
+          onChange={(event) => seek(Number(event.target.value))}
+          aria-label="Позиция аудио"
+        />
+        <div className="eco-messenger-audio__meta">
+          <span>{attachmentMetaLine(attachment) || (attachment.type === "voice" ? "Голосовое сообщение" : "Аудио")}</span>
+          <button type="button" onClick={cycleRate}>{rate}x</button>
+          <AttachmentDownload attachment={attachment} label="Скачать" />
+        </div>
+      </div>
+      <audio
+        ref={audioRef}
+        src={attachment.url}
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const nextDuration = event.currentTarget.duration;
+          if (Number.isFinite(nextDuration)) setDuration(nextDuration);
+          event.currentTarget.playbackRate = rate;
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
+      />
+    </div>
+  );
+}
+
+function FileAttachment({ attachment, onRetry }: { attachment: Attachment; onRetry: () => void }) {
+  const failed = isAttachmentFailed(attachment);
+  const ready = isAttachmentReady(attachment);
+  if (!ready || failed) {
+    return <AttachmentStatus attachment={attachment} icon={<FileText aria-hidden className="eco-icon" />} onRetry={onRetry} />;
+  }
+  return (
+    <div className="eco-messenger-attachment">
+      <FileText aria-hidden className="eco-icon" />
+      <span>
+        <strong>{displayAttachmentName(attachment)}</strong>
+        <small>{attachmentMetaLine(attachment) || "Документ"}</small>
+      </span>
+      <AttachmentDownload attachment={attachment} />
+    </div>
+  );
+}
+
+function AttachmentLightbox({
+  attachments,
+  index,
+  onClose,
+  onNavigate,
+}: {
+  attachments: Attachment[];
+  index: number;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}) {
+  const touchStartRef = useRef<number | null>(null);
+  const attachment = attachments[index];
+  const src = attachment.url || attachment.previewUrl || "";
+  const hasPrevious = index > 0;
+  const hasNext = index < attachments.length - 1;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft" && hasPrevious) onNavigate(index - 1);
+      if (event.key === "ArrowRight" && hasNext) onNavigate(index + 1);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [hasNext, hasPrevious, index, onClose, onNavigate]);
+
+  return (
+    <div
+      className="eco-messenger-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={displayAttachmentName(attachment)}
+      onTouchStart={(event) => {
+        touchStartRef.current = event.touches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(event) => {
+        const start = touchStartRef.current;
+        const end = event.changedTouches[0]?.clientX;
+        touchStartRef.current = null;
+        if (start === null || end === undefined || Math.abs(start - end) < 42) return;
+        if (start < end && hasPrevious) onNavigate(index - 1);
+        if (start > end && hasNext) onNavigate(index + 1);
+      }}
+    >
+      <button type="button" className="eco-messenger-lightbox__backdrop" onClick={onClose} aria-label="Закрыть просмотр" />
+      <div className="eco-messenger-lightbox__stage">
+        <div className="eco-messenger-lightbox__toolbar">
+          <strong>{displayAttachmentName(attachment)}</strong>
+          <span>
+            <AttachmentDownload attachment={attachment} />
+            <button type="button" onClick={onClose} aria-label="Закрыть">
+              <X aria-hidden className="eco-icon" />
+            </button>
+          </span>
+        </div>
+        {hasPrevious && (
+          <button type="button" className="eco-messenger-lightbox__nav is-prev" onClick={() => onNavigate(index - 1)} aria-label="Предыдущее фото">
+            <ChevronLeft aria-hidden className="eco-icon" />
+          </button>
+        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={displayAttachmentName(attachment)} />
+        {hasNext && (
+          <button type="button" className="eco-messenger-lightbox__nav is-next" onClick={() => onNavigate(index + 1)} aria-label="Следующее фото">
+            <ChevronRight aria-hidden className="eco-icon" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1132,14 +1453,16 @@ function EmptyContextHint({ title, body }: { title: string; body: string }) {
 function ClientBindingPanel({ conversation, context }: { conversation: Conversation; context: MessengerConversationContext | null }) {
   const { refreshConversation } = useMessenger();
   const [dialogMode, setDialogMode] = useState<"search" | "create" | null>(null);
-  const [suggestions, setSuggestions] = useState<ClientSearchResult[]>([]);
+  const contextSuggestions = useMemo(
+    () => (context?.suggestions?.length ? context.suggestions.map(suggestionToClientSearchResult) : []),
+    [context]
+  );
+  const [fetchedSuggestions, setFetchedSuggestions] = useState<ClientSearchResult[]>([]);
   const [notice, setNotice] = useState("");
+  const suggestions = contextSuggestions.length ? contextSuggestions : fetchedSuggestions;
 
   useEffect(() => {
-    if (context?.suggestions?.length) {
-      setSuggestions(context.suggestions.map(suggestionToClientSearchResult));
-      return;
-    }
+    if (contextSuggestions.length) return;
     let alive = true;
     const controller = new AbortController();
     fetch(`/api/messenger/conversations/${encodeURIComponent(conversation.id)}/client-suggestions`, { cache: "no-store", signal: controller.signal })
@@ -1148,16 +1471,16 @@ function ClientBindingPanel({ conversation, context }: { conversation: Conversat
         return (await res.json()) as ClientSearchResponse;
       })
       .then((data) => {
-        if (alive) setSuggestions((data.clients ?? data.counterparties ?? []).map((item) => "score" in item ? suggestionToClientSearchResult(item) : item));
+        if (alive) setFetchedSuggestions((data.clients ?? data.counterparties ?? []).map((item) => "score" in item ? suggestionToClientSearchResult(item) : item));
       })
       .catch(() => {
-        if (alive) setSuggestions([]);
+        if (alive) setFetchedSuggestions([]);
       });
     return () => {
       alive = false;
       controller.abort();
     };
-  }, [context?.suggestions, conversation.id]);
+  }, [contextSuggestions.length, conversation.id]);
 
   return (
     <section className="eco-messenger-context__section is-unlinked">
@@ -1326,7 +1649,7 @@ function ClientLinkDialog({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [mode, query]);
+  }, [conversation.id, mode, query]);
 
   async function linkClient(client: ClientSearchResult) {
     setSaving(true);

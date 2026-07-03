@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatus, MessengerConnection } from "../messenger-types";
 import { enqueueMessengerMediaJob, refreshMessageAttachmentsJson } from "../messenger-media";
+import { isPhotoAttachmentType, messengerAttachmentDisplayName } from "../messenger-attachment-normalization";
 import { ensureMessengerIntegrationCoreSchema } from "../messenger-schema";
 import {
   messengerObjectKey,
@@ -1578,21 +1579,47 @@ function telegramFileExtension(mimeType: string | null | undefined, type: Attach
   if (mimeType === "image/jpeg") return "jpg";
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType === "video/mp4") return "mp4";
   if (mimeType === "audio/mpeg") return "mp3";
   if (mimeType === "audio/ogg") return "ogg";
-  if (type === "image") return "jpg";
+  if (type === "photo" || type === "image" || type === "sticker") return "jpg";
   if (type === "video") return "mp4";
+  if (type === "animation") return "gif";
   return "bin";
 }
 
+function telegramAttributesText(attributes: unknown) {
+  if (!Array.isArray(attributes)) return "";
+  return attributes
+    .map((attribute) =>
+      [
+        telegramClassName(attribute),
+        booleanField(attribute, "voice") ? "voice" : "",
+        booleanField(attribute, "roundMessage") ? "roundMessage" : "",
+        booleanField(attribute, "animated") ? "animated" : "",
+        booleanField(attribute, "sticker") ? "sticker" : "",
+        stringValue(objectField(attribute, "fileName")) ?? "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    )
+    .join(" ")
+    .toLowerCase();
+}
+
 function telegramAttachmentType(media: unknown, document: unknown): Attachment["type"] {
-  const classText = `${telegramClassName(media)} ${telegramClassName(document)} ${stringValue(objectField(document, "mimeType")) ?? ""}`.toLowerCase();
+  const attributes = objectField(document, "attributes");
+  const attributeText = telegramAttributesText(attributes);
+  const classText = `${telegramClassName(media)} ${telegramClassName(document)} ${attributeText} ${stringValue(objectField(document, "mimeType")) ?? ""}`.toLowerCase();
   const mimeType = stringValue(objectField(document, "mimeType"))?.toLowerCase() ?? "";
-  if (classText.includes("photo") || mimeType.startsWith("image/")) return "image";
-  if (mimeType.startsWith("video/") || classText.includes("video")) return "video";
   if (classText.includes("voice")) return "voice";
+  if (classText.includes("roundmessage")) return "video_note";
+  if (classText.includes("sticker") || mimeType === "application/x-tgsticker") return "sticker";
+  if (classText.includes("animation") || mimeType === "image/gif") return "animation";
+  if (classText.includes("photo") || mimeType.startsWith("image/")) return "photo";
+  if (mimeType.startsWith("video/") || classText.includes("video")) return "video";
   if (mimeType.startsWith("audio/") || classText.includes("audio")) return "audio";
   if (classText.includes("webpage")) return "link";
   if (classText.includes("contact")) return "contact";
@@ -1617,10 +1644,19 @@ function normalizeTelegramAttachments(message: TelegramMessage, externalMessageI
     stringValue(objectField(message, "groupedId")) ??
     externalMessageId;
   const extension = telegramFileExtension(mimeType, type);
-  const name =
+  const rawName =
     telegramDocumentFileName(document) ??
     stringValue(objectField(webPage, "title")) ??
-    (type === "image" ? `photo-${externalAttachmentId}.${extension}` : type === "video" ? `video-${externalAttachmentId}.${extension}` : type === "link" ? "Ссылка" : `attachment-${externalAttachmentId}.${extension}`);
+    (type === "photo" || type === "image"
+      ? `photo-${externalAttachmentId}.${extension}`
+      : type === "video"
+        ? `video-${externalAttachmentId}.${extension}`
+        : type === "voice"
+          ? `voice-${externalAttachmentId}.${extension}`
+          : type === "link"
+            ? "Ссылка"
+            : `attachment-${externalAttachmentId}.${extension}`);
+  const name = messengerAttachmentDisplayName({ type, name: rawName, mimeType, metadataJson: { source: "telegram_user_session" } });
   const size = numberValue(objectField(document, "size"));
   const width = numberValue(telegramAttributeValue(objectField(document, "attributes"), "w") ?? objectField(photo, "w"));
   const height = numberValue(telegramAttributeValue(objectField(document, "attributes"), "h") ?? objectField(photo, "h"));
@@ -1633,6 +1669,7 @@ function normalizeTelegramAttachments(message: TelegramMessage, externalMessageI
       externalMessageId,
       groupedId: stringValue(message.groupedId),
       mediaClass: telegramClassName(media),
+      attributeClass: telegramAttributesText(objectField(document, "attributes")),
       documentId: document ? sourceId : null,
       photoId: photo ? sourceId : null,
       accessHash: telegramMediaAccessHash(source),
@@ -1666,10 +1703,13 @@ function messageText(message?: TelegramMessage) {
 }
 
 function attachmentPreviewLabel(attachment: Attachment) {
-  if (attachment.type === "image") return "Фото";
+  if (attachment.type === "photo" || attachment.type === "image") return "Фото";
   if (attachment.type === "video") return "Видео";
   if (attachment.type === "voice") return "Голосовое";
   if (attachment.type === "audio") return "Аудио";
+  if (attachment.type === "sticker") return "Стикер";
+  if (attachment.type === "animation") return "GIF";
+  if (attachment.type === "video_note") return "Видеосообщение";
   if (attachment.type === "link") return "Ссылка";
   if (attachment.type === "contact") return "Контакт";
   if (attachment.type === "location") return "Геопозиция";
@@ -2082,13 +2122,14 @@ function mimeFromBytes(buffer: Buffer, fallback?: string | null) {
 }
 
 function mediaLimitBytes(type: string, direction: "download" | "upload") {
+  const isPhoto = isPhotoAttachmentType(type);
   const envName =
     direction === "upload"
       ? "MESSENGER_UPLOAD_MAX_MB"
-      : type === "image"
+      : isPhoto
         ? "MESSENGER_AUTO_DOWNLOAD_IMAGE_MAX_MB"
         : "MESSENGER_AUTO_DOWNLOAD_FILE_MAX_MB";
-  const fallbackMb = direction === "upload" ? 20 : type === "image" ? 15 : 25;
+  const fallbackMb = direction === "upload" ? 20 : isPhoto ? 15 : 25;
   const mb = Number(process.env[envName] ?? fallbackMb);
   return Math.max(1, Number.isFinite(mb) ? mb : fallbackMb) * 1024 * 1024;
 }
@@ -2225,7 +2266,8 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
     }
     const mimeType = mimeFromBytes(media, row.mimeType);
     const extension = extensionFromName(row.name) ?? telegramFileExtension(mimeType, row.type as Attachment["type"]);
-    const fileName = safeStorageFileName(row.name || `${row.type}-${attachmentId}.${extension}`);
+    const storageFileName = row.name && extensionFromName(row.name) ? row.name : `${row.type}-${attachmentId}.${extension}`;
+    const fileName = safeStorageFileName(storageFileName);
     const key = messengerObjectKey(
       ["messenger", organizationId, "telegram", "accounts", accountId, "conversations", row.conversationId, "attachments", attachmentId],
       fileName
@@ -2237,7 +2279,7 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
       cacheControl: "private, max-age=31536000, immutable",
       contentDisposition: `inline; filename="${encodeURIComponent(fileName)}"`,
     });
-    const thumbnailKey = row.type === "image" ? key : null;
+    const thumbnailKey = isPhotoAttachmentType(row.type) ? key : null;
     await prisma.$executeRaw`
       UPDATE messenger_attachments
       SET status = 'ready',
@@ -2292,7 +2334,7 @@ export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<Chann
     const result = await client.sendFile(chatId, {
       file: object.body,
       caption: outbox.text || attachment.caption || "",
-      forceDocument: stored.type !== "image",
+      forceDocument: !isPhotoAttachmentType(stored.type),
       fileSize: object.body.length,
       workers: 1,
     });

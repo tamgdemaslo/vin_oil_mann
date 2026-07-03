@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import { messengerStorageStatus } from "./messenger-storage";
+import { isPhotoAttachmentType, normalizeMessengerAttachment, normalizeMessengerAttachmentType } from "./messenger-attachment-normalization";
 import type { Attachment } from "./messenger-types";
 
 type MediaJobOperation = "download" | "upload" | "thumbnail" | "backfill";
@@ -27,7 +28,7 @@ type MediaJobRow = {
 
 type AttachmentProjectionRow = {
   id: string;
-  type: Attachment["type"];
+  type: string;
   url: string | null;
   name: string | null;
   size: number | null;
@@ -61,16 +62,18 @@ function retryAt(attempts: number) {
 function attachmentStatusForClient(status: string): Attachment["status"] {
   if (status === "ready") return "available";
   if (status === "queued" || status === "downloading") return "downloading";
-  if (status === "too_large" || status === "unsupported") return "unsupported";
+  if (status === "too_large") return "too_large";
+  if (status === "unsupported") return "unsupported";
   if (status === "failed") return "failed";
   return "pending";
 }
 
 function attachmentProxyUrls(row: AttachmentProjectionRow) {
+  const type = normalizeMessengerAttachmentType(row);
   const contentUrl =
     row.originalStorageKey || row.url ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/content` : row.url ?? undefined;
   const thumbnailUrl =
-    row.thumbnailStorageKey || row.originalStorageKey || row.previewUrl
+    row.thumbnailStorageKey || (isPhotoAttachmentType(type) && row.originalStorageKey) || row.previewUrl
       ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/thumbnail`
       : undefined;
   return { contentUrl, thumbnailUrl };
@@ -78,7 +81,7 @@ function attachmentProxyUrls(row: AttachmentProjectionRow) {
 
 function toAttachment(row: AttachmentProjectionRow): Attachment {
   const urls = attachmentProxyUrls(row);
-  return {
+  return normalizeMessengerAttachment({
     id: row.id,
     type: row.type,
     url: urls.contentUrl,
@@ -87,13 +90,14 @@ function toAttachment(row: AttachmentProjectionRow): Attachment {
     size: row.size ?? undefined,
     mimeType: row.mimeType ?? undefined,
     status: attachmentStatusForClient(row.status),
+    progress: row.progress,
     caption: row.caption ?? undefined,
     width: row.width ?? undefined,
     height: row.height ?? undefined,
     duration: row.duration ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
-  };
+  });
 }
 
 export async function listMessageAttachmentProjection(messageId: string): Promise<Attachment[]> {
@@ -322,15 +326,77 @@ export function kickMessengerMediaWorker() {
   void tick();
 }
 
+export async function repairMessengerAttachmentMetadata(limit = 500) {
+  await ensureMessengerIntegrationCoreSchema();
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      messageId: string;
+      type: string;
+      name: string | null;
+      mimeType: string | null;
+      metadataJson: Record<string, unknown> | null;
+    }>
+  >`
+    SELECT
+      id,
+      message_id AS "messageId",
+      type,
+      name,
+      mime_type AS "mimeType",
+      metadata_json AS "metadataJson"
+    FROM messenger_attachments
+    WHERE organization_id = ${organizationId}
+      AND (
+        type IN ('image', 'file', 'document', 'audio')
+        OR name IS NULL
+        OR name ~* '^(attachment|photo|video|voice|audio|document)-telegram:message:'
+        OR mime_type LIKE 'image/%'
+        OR mime_type LIKE 'video/%'
+        OR mime_type LIKE 'audio/%'
+      )
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `;
+  let repaired = 0;
+  const refreshed = new Set<string>();
+  for (const row of rows) {
+    const normalized = normalizeMessengerAttachment({
+      id: row.id,
+      type: row.type,
+      name: row.name ?? undefined,
+      mimeType: row.mimeType ?? undefined,
+      metadataJson: row.metadataJson ?? undefined,
+    });
+    if (normalized.type === row.type && (normalized.name ?? null) === row.name) continue;
+    await prisma.$executeRaw`
+      UPDATE messenger_attachments
+      SET type = ${normalized.type},
+          name = ${normalized.name ?? row.name},
+          updated_at = now()
+      WHERE id = ${row.id}
+        AND organization_id = ${organizationId}
+    `;
+    repaired += 1;
+    refreshed.add(row.messageId);
+  }
+  for (const messageId of refreshed) {
+    await refreshMessageAttachmentsJson(messageId).catch(() => {});
+  }
+  return { repaired, scanned: rows.length };
+}
+
 export async function backfillTelegramMedia(limit = 50) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
+  const repair = await repairMessengerAttachmentMetadata(Math.max(100, limit * 5));
   const rows = await prisma.$queryRaw<Array<{ id: string; messengerAccountId: string | null }>>`
     SELECT id, messenger_account_id AS "messengerAccountId"
     FROM messenger_attachments
     WHERE organization_id = ${organizationId}
       AND channel = 'telegram'
-      AND status IN ('pending', 'queued', 'failed')
+      AND status IN ('pending', 'queued', 'downloading', 'failed')
       AND (original_storage_key IS NULL OR original_storage_key = '')
     ORDER BY created_at ASC
     LIMIT ${limit}
@@ -343,7 +409,7 @@ export async function backfillTelegramMedia(limit = 50) {
       operation: "backfill",
     });
   }
-  return { ok: true as const, enqueued: rows.length };
+  return { ok: true as const, enqueued: rows.length, repaired: repair.repaired, scanned: repair.scanned };
 }
 
 export async function getMessengerMediaHealth() {
