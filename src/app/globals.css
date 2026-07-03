@@ -49856,8 +49856,10 @@ html.tgm-print-active .tgm-client-report .qr {
   .diag-client-report-page.is-public {
     --report-page-padding: clamp(24px, 4vw, 48px);
     --report-mobile-padding: clamp(16px, 5vw, 24px);
-    --report-section-gap: 56px;
-    --report-card-radius: 18px;
+    --report-section-gap: 40px;
+    --report-card-gap: 16px;
+    --report-card-radius: 20px;
+    --report-card-padding: 22px;
     --report-ink: #0d0c0b;
     --report-graphite: #171513;
     --report-graphite-2: #211f1c;
@@ -50448,5 +50450,357 @@ html.tgm-print-active .tgm-client-report .qr {
 
   .tgm-public-kpi {
     min-height: 104px;
+  }
+}
+
+/* Public diagnostic report: problem-first cards and mobile-safe actions. */
+@media screen {
+  .diag-client-report-page.is-public .tgm-public-report *,
+  .diag-client-report-page.is-public .tgm-public-report *::before,
+  .diag-client-report-page.is-public .tgm-public-report *::after {
+    max-width: 100%;
+    letter-spacing: 0;
+  }
+
+  .tgm-public-attention-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -4px 0 var(--report-card-gap);
+  }
+
+  .tgm-public-attention-summary span,
+  .tgm-public-rec-status,
+  .tgm-public-chip {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 850;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .tgm-public-attention-summary span {
+    min-height: 34px;
+    padding: 8px 12px;
+    color: rgba(245, 242, 237, 0.82);
+    background: rgba(245, 242, 237, 0.08);
+    border: 1px solid rgba(245, 242, 237, 0.12);
+  }
+
+  .tgm-public-attention-summary .crit {
+    color: #fecaca;
+    background: rgba(185, 28, 28, 0.2);
+    border-color: rgba(185, 28, 28, 0.28);
+  }
+
+  .tgm-public-attention-summary .warn {
+    color: #ffbd8f;
+    background: rgba(194, 65, 12, 0.18);
+    border-color: rgba(194, 65, 12, 0.28);
+  }
+
+  .tgm-public-rec {
+    display: grid;
+    gap: var(--report-card-gap);
+    padding: var(--report-card-padding);
+  }
+
+  .tgm-public-rec-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: start;
+    min-width: 0;
+  }
+
+  .tgm-public-rec-priority {
+    display: inline-flex;
+    width: 46px;
+    height: 46px;
+    align-items: center;
+    justify-content: center;
+    color: #0d0c0b;
+    background: #ff9a5b;
+    border-radius: 14px;
+    font-family: Oswald, Impact, "Arial Narrow", sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .tgm-public-rec-title {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .tgm-public-rec-title small {
+    color: rgba(245, 242, 237, 0.48);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+
+  .tgm-public-rec-status {
+    min-height: 34px;
+    padding: 8px 11px;
+    color: #ffbd8f;
+    background: rgba(194, 65, 12, 0.16);
+    border: 1px solid rgba(194, 65, 12, 0.24);
+    white-space: nowrap;
+  }
+
+  .tgm-public-rec-status.crit {
+    color: #fecaca;
+    background: rgba(185, 28, 28, 0.2);
+    border-color: rgba(185, 28, 28, 0.28);
+  }
+
+  .tgm-public-rec-status.no-access,
+  .tgm-public-rec-status.by-mileage,
+  .tgm-public-rec-status.by-client {
+    color: #bfdbfe;
+    background: rgba(37, 99, 235, 0.16);
+    border-color: rgba(37, 99, 235, 0.22);
+  }
+
+  .tgm-public-rec-body,
+  .tgm-public-rec-block {
+    min-width: 0;
+  }
+
+  .tgm-public-rec-block {
+    display: grid;
+    gap: 7px;
+  }
+
+  .tgm-public-rec-block > span {
+    color: #ff9a5b;
+    font-size: 12px;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  .tgm-public-rec-block p {
+    margin: 0;
+    color: rgba(245, 242, 237, 0.82);
+    font-size: 17px;
+    line-height: 1.46;
+    overflow-wrap: anywhere;
+  }
+
+  .tgm-public-rec-note {
+    margin-top: 0;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .tgm-public-rec-note strong {
+    font-size: 16px;
+  }
+
+  .tgm-public-rec-photos {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) repeat(2, minmax(120px, 0.5fr));
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .tgm-public-rec-photos.is-single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tgm-public-rec-photo {
+    position: relative;
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--report-paper);
+    background: #0d0c0b;
+    border: 1px solid rgba(245, 242, 237, 0.12);
+    border-radius: 16px;
+    text-decoration: none;
+  }
+
+  .tgm-public-rec-photo.is-main {
+    grid-row: span 2;
+  }
+
+  .tgm-public-rec-photo img {
+    display: block;
+    width: 100%;
+    min-height: 150px;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+
+  .tgm-public-rec-photo.is-main img,
+  .tgm-public-rec-photos.is-single .tgm-public-rec-photo img {
+    min-height: 260px;
+  }
+
+  .tgm-public-rec-photo-caption {
+    display: block;
+    padding: 12px 14px;
+    color: rgba(245, 242, 237, 0.74);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .tgm-public-detail-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tgm-public-chip {
+    min-height: 31px;
+    padding: 7px 10px;
+    color: rgba(245, 242, 237, 0.78);
+    background: rgba(245, 242, 237, 0.07);
+    border: 1px solid rgba(245, 242, 237, 0.1);
+  }
+
+  .tgm-public-accordion summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    transition: background-color 160ms ease, border-color 160ms ease;
+  }
+
+  .tgm-public-accordion[open] summary {
+    background: rgba(245, 242, 237, 0.045);
+  }
+
+  .tgm-public-accordion-title {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .tgm-public-accordion-action {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    color: #ffbd8f;
+    font-size: 12px;
+    font-weight: 850;
+    line-height: 1.2;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .tgm-public-accordion-action::after {
+    display: inline-flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    content: "+";
+    color: var(--report-paper);
+    background: rgba(245, 242, 237, 0.08);
+    border: 1px solid rgba(245, 242, 237, 0.12);
+    border-radius: 999px;
+    font-size: 17px;
+    line-height: 1;
+    transition: transform 160ms ease;
+  }
+
+  .tgm-public-accordion-action .is-hide {
+    display: none;
+  }
+
+  .tgm-public-accordion[open] .tgm-public-accordion-action .is-show {
+    display: none;
+  }
+
+  .tgm-public-accordion[open] .tgm-public-accordion-action .is-hide {
+    display: inline;
+  }
+
+  .tgm-public-accordion[open] .tgm-public-accordion-action::after {
+    content: "-";
+    transform: rotate(180deg);
+  }
+
+  .tgm-client-report.tgm-public-report .tgm-public-next {
+    margin-top: var(--report-section-gap);
+  }
+
+  .tgm-public-actions a,
+  .tgm-public-sticky a {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .diag-client-report-page.is-public {
+    padding-bottom: calc(136px + env(safe-area-inset-bottom));
+  }
+
+  .tgm-client-report.tgm-public-report .tgm-public-section {
+    padding-top: var(--report-section-gap);
+  }
+
+  .tgm-public-rec-top {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tgm-public-rec-status {
+    grid-column: 1 / -1;
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .tgm-public-rec-priority {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    font-size: 20px;
+  }
+
+  .tgm-public-rec-block p {
+    font-size: 17px;
+  }
+
+  .tgm-public-rec-photos,
+  .tgm-public-rec-photos.is-single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tgm-public-rec-photo.is-main {
+    grid-row: auto;
+  }
+
+  .tgm-public-rec-photo img,
+  .tgm-public-rec-photo.is-main img,
+  .tgm-public-rec-photos.is-single .tgm-public-rec-photo img {
+    min-height: 220px;
+  }
+
+  .tgm-public-accordion summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tgm-public-accordion-action {
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .tgm-public-sticky.no-telegram {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tgm-public-sticky.has-telegram {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
+import { getTelegramStoredSettings } from "@/lib/messenger/messenger-channel-settings";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import {
   DIAGNOSTIC_COMMON_RECOMMENDATIONS,
@@ -80,6 +81,16 @@ type DiagnosticMapItemFullRow = Prisma.DiagnosticMapItemGetPayload<{
     actions: true;
   };
 }>;
+
+type PublicReportContactSettings = {
+  publicTelegramUrl: string | null;
+  publicTelegramUsername: string | null;
+  publicReportPrimaryMessenger: string | null;
+  publicPhone: string | null;
+  publicBookingUrl: string | null;
+  publicSiteUrl: string | null;
+  publicAddress: string | null;
+};
 
 const STATUS_TO_DB: Record<DiagnosticMapStatusCode, string> = {
   unchecked: "UNCHECKED",
@@ -419,7 +430,7 @@ export async function getDiagnosticMapSession(id: string, origin = "") {
     },
   });
   if (!row) return null;
-  return serializeDiagnosticMap(row, origin);
+  return serializeDiagnosticMap(row, origin, await publicReportContactSettings());
 }
 
 export async function getDiagnosticMapByToken(token: string, origin = "") {
@@ -438,14 +449,78 @@ export async function getDiagnosticMapByToken(token: string, origin = "") {
     },
   });
   if (!row) return null;
-  return serializeDiagnosticMap(row, origin);
+  return serializeDiagnosticMap(row, origin, await publicReportContactSettings());
 }
 
 function itemMissingRecommendedPhoto(item: { status: string; photos: unknown[] }) {
   return ["ATTENTION", "REPLACE", "warn", "crit"].includes(item.status) && item.photos.length === 0;
 }
 
-function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "") {
+function publicString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function firstPublicString(...values: unknown[]) {
+  for (const value of values) {
+    const next = publicString(value);
+    if (next) return next;
+  }
+  return null;
+}
+
+function publicTelegramUsername(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const withoutUrl = trimmed
+    .replace(/^https?:\/\/(?:www\.)?(?:t\.me|telegram\.me)\//i, "")
+    .replace(/^tg:\/\/resolve\?domain=/i, "");
+  const username = withoutUrl.replace(/^@/, "").split(/[/?#&]/)[0]?.trim();
+  return username || null;
+}
+
+function publicTelegramUrl(value: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^@?[A-Za-z0-9_]{5,32}$/u.test(trimmed)) return null;
+  if (/^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)) return trimmed;
+  if (/^(?:www\.)?(?:t\.me|telegram\.me)\//i.test(trimmed)) return `https://${trimmed.replace(/^www\./i, "")}`;
+  return null;
+}
+
+async function publicReportContactSettings(): Promise<PublicReportContactSettings> {
+  const primaryMessenger = firstPublicString(process.env.PUBLIC_REPORT_PRIMARY_MESSENGER, process.env.NEXT_PUBLIC_REPORT_PRIMARY_MESSENGER);
+  const directTelegram = firstPublicString(
+    process.env.PUBLIC_TELEGRAM_URL,
+    process.env.NEXT_PUBLIC_TELEGRAM_URL,
+    process.env.NEXT_PUBLIC_PUBLIC_TELEGRAM_URL,
+    process.env.NEXT_PUBLIC_TELEGRAM_LINK,
+    process.env.TELEGRAM_LINK
+  );
+  const envTelegramUsername = publicTelegramUsername(
+    firstPublicString(
+      process.env.PUBLIC_TELEGRAM_USERNAME,
+      process.env.NEXT_PUBLIC_PUBLIC_TELEGRAM_USERNAME,
+      process.env.NEXT_PUBLIC_TELEGRAM_USERNAME,
+      process.env.TELEGRAM_USERNAME,
+      process.env.POSTER_TELEGRAM
+    )
+  );
+  const telegramSettings = await getTelegramStoredSettings().catch(() => null);
+  const publicUrl = publicTelegramUrl(directTelegram);
+  const publicUsername = publicTelegramUsername(directTelegram) ?? envTelegramUsername ?? publicTelegramUsername(telegramSettings?.botUsername ?? null);
+
+  return {
+    publicTelegramUrl: publicUrl,
+    publicTelegramUsername: publicUsername,
+    publicReportPrimaryMessenger: primaryMessenger?.toLowerCase() || "telegram",
+    publicPhone: firstPublicString(process.env.NEXT_PUBLIC_COMPANY_PHONE, process.env.COMPANY_PHONE, process.env.POSTER_PHONE),
+    publicBookingUrl: firstPublicString(process.env.NEXT_PUBLIC_BOOKING_URL, process.env.BOOKING_URL, process.env.PUBLIC_BOOKING_URL),
+    publicSiteUrl: firstPublicString(process.env.NEXT_PUBLIC_SITE_URL, process.env.SITE_URL, process.env.POSTER_SITE),
+    publicAddress: firstPublicString(process.env.NEXT_PUBLIC_SERVICE_ADDRESS, process.env.SERVICE_ADDRESS, process.env.POSTER_CITY),
+  };
+}
+
+function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactSettings?: PublicReportContactSettings) {
   const reportUrl = origin ? reportUrlFromRequest(origin, row.publicToken) : `/report/${row.publicToken}`;
   const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => {
     return {
@@ -500,6 +575,13 @@ function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "") {
     publicToken: row.publicToken,
     reportUrl,
     printUrl: `${reportUrl}/print`,
+    publicTelegramUrl: contactSettings?.publicTelegramUrl ?? null,
+    publicTelegramUsername: contactSettings?.publicTelegramUsername ?? null,
+    publicReportPrimaryMessenger: contactSettings?.publicReportPrimaryMessenger ?? "telegram",
+    publicPhone: contactSettings?.publicPhone ?? null,
+    publicBookingUrl: contactSettings?.publicBookingUrl ?? null,
+    publicSiteUrl: contactSettings?.publicSiteUrl ?? null,
+    publicAddress: contactSettings?.publicAddress ?? null,
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
     clientWantsReminder: row.clientWantsReminder,

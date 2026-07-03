@@ -131,6 +131,10 @@ function toastTextForMessage(message: Message) {
   return text || "Новое вложение";
 }
 
+function isMessagesPagePath(pathname: string) {
+  return pathname === "/messages" || pathname === "/crm/messages";
+}
+
 export function MessengerProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>({});
@@ -151,6 +155,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   const messagesByConversationRef = useRef<Record<string, Message[]>>({});
   const selectedConversationIdRef = useRef<string | null>(null);
   const hasLoadedConversationsRef = useRef(false);
+  const appliedUrlConversationRef = useRef<string | null>(null);
   const pollInFlightRef = useRef(false);
   const telegramSyncInFlightRef = useRef(false);
   const contextRequestIdRef = useRef(0);
@@ -410,7 +415,17 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       markAsRead(conversationId);
       void loadMessages(conversationId);
       void loadContext(conversationId);
-      if (openChat) setWidgetView("chat");
+      if (typeof window !== "undefined" && isMessagesPagePath(window.location.pathname)) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("conversationId", conversationId);
+        window.history.replaceState(null, "", url.toString());
+        appliedUrlConversationRef.current = conversationId;
+      }
+      if (openChat) {
+        setWidgetView("chat");
+      } else {
+        setWidgetView("collapsed");
+      }
     },
     [loadContext, loadMessages, markAsRead]
   );
@@ -418,8 +433,10 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const conversationId = new URLSearchParams(window.location.search).get("conversationId");
-    if (!conversationId || selectedConversationIdRef.current === conversationId) return;
-    selectConversation(conversationId, true);
+    if (!conversationId || appliedUrlConversationRef.current === conversationId || selectedConversationIdRef.current === conversationId) return;
+    if (conversations.length && !conversations.some((conversation) => conversation.id === conversationId)) return;
+    appliedUrlConversationRef.current = conversationId;
+    selectConversation(conversationId, !isMessagesPagePath(window.location.pathname));
   }, [conversations, selectConversation]);
 
   const openInbox = useCallback(() => {

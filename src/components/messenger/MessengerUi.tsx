@@ -373,7 +373,12 @@ export function MessengerTopbarButton() {
 export function MessengerWidget() {
   const pathname = usePathname();
   const { widgetView, unreadTotal, openInbox, closeWidget, selectedConversation, toast, clearToast } = useMessenger();
-  const hidden = pathname === "/login" || pathname === "/client-site" || pathname.startsWith("/report/");
+  const hidden =
+    pathname === "/login" ||
+    pathname === "/client-site" ||
+    pathname === "/messages" ||
+    pathname === "/crm/messages" ||
+    pathname.startsWith("/report/");
   if (hidden) return null;
 
   return (

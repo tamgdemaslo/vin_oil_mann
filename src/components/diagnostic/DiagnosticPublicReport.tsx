@@ -23,12 +23,20 @@ type ReportItem = {
     shortText?: string;
   };
   showInReport?: boolean;
+  selectedNotes?: string[];
   photos: { id: string; caption: string; url: string }[];
 };
 
 type ReportPayload = {
   reportUrl: string;
   publicToken?: string;
+  publicTelegramUrl?: string | null;
+  publicTelegramUsername?: string | null;
+  publicReportPrimaryMessenger?: "telegram" | string | null;
+  publicPhone?: string | null;
+  publicBookingUrl?: string | null;
+  publicSiteUrl?: string | null;
+  publicAddress?: string | null;
   vehicle: {
     title: string;
     vin?: string | null;
@@ -93,8 +101,9 @@ type DiagnosticPublicReportProps = {
 
 const REPORT_PHONE = "+7 (995) 054-58-59";
 const REPORT_PHONE_HREF = "tel:+79950545859";
-const WHATSAPP_HREF = "https://wa.me/79950545859";
 const BOOKING_HREF = "/client-site#/vin";
+const ATTENTION_STATUSES = ["crit", "warn", "no-access", "by-mileage", "by-client"] as const;
+const ATTENTION_STATUS_ORDER: Record<string, number> = { crit: 0, warn: 1, "no-access": 2, "by-mileage": 3, "by-client": 4 };
 
 async function fetchJson<T>(url: string): Promise<{ ok: true; data: T } | { ok: false }> {
   const controller = new AbortController();
@@ -159,6 +168,25 @@ function statusLabel(status: string): string {
   return "Не проверено";
 }
 
+function isAttentionStatus(status: string): boolean {
+  return ATTENTION_STATUSES.includes(normalizeStatus(status) as (typeof ATTENTION_STATUSES)[number]);
+}
+
+function sortBySeverity(a: ReportItem, b: ReportItem): number {
+  const severityDelta = (ATTENTION_STATUS_ORDER[normalizeStatus(a.status)] ?? 9) - (ATTENTION_STATUS_ORDER[normalizeStatus(b.status)] ?? 9);
+  if (severityDelta !== 0) return severityDelta;
+  return a.blockTitle.localeCompare(b.blockTitle, "ru") || a.title.localeCompare(b.title, "ru");
+}
+
+function normalizedText(value?: string | null): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/ё/gu, "е")
+    .replace(/[^a-zа-я0-9]+/giu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function itemShortResult(item: ReportItem): string {
   const text = item.reportText?.shortText?.trim();
   if (text) return text;
@@ -185,6 +213,59 @@ function shouldShowRecommendation(result: string, recommendation: string): boole
     .replace(/[.!?]/gu, "")
     .trim();
   return Boolean(normalizedRecommendation) && !normalizedResult.includes(normalizedRecommendation.slice(0, 26));
+}
+
+function detailChips(item: ReportItem, result: string, recommendation: string): string[] {
+  const text = `${normalizedText(result)} ${normalizedText(recommendation)} ${normalizedText(item.title)} ${normalizedText(statusLabel(item.status))}`;
+  const candidates = [item.reportText?.shortText, item.value, item.statusLabel, ...(item.selectedNotes ?? [])]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  const seen = new Set<string>();
+  return candidates
+    .filter((value) => {
+      const normalized = normalizedText(value);
+      if (!normalized || normalized.length < 3 || seen.has(normalized)) return false;
+      seen.add(normalized);
+      if (normalized === normalizedText(statusLabel(item.status))) return false;
+      return !text.includes(normalized);
+    })
+    .slice(0, 4);
+}
+
+function telegramUsername(value?: string | null): string | null {
+  if (!value) return null;
+  const withoutUrl = value
+    .trim()
+    .replace(/^https?:\/\/(?:www\.)?(?:t\.me|telegram\.me)\//i, "")
+    .replace(/^tg:\/\/resolve\?domain=/i, "");
+  const username = withoutUrl.replace(/^@/, "").split(/[/?#&]/)[0]?.trim();
+  return username || null;
+}
+
+function telegramUrl(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed) || /^tg:\/\//i.test(trimmed)) return trimmed;
+  if (/^(?:www\.)?(?:t\.me|telegram\.me)\//i.test(trimmed)) return `https://${trimmed.replace(/^www\./i, "")}`;
+  return null;
+}
+
+function blockSummary(items: ReportItem[]): string {
+  const active = items.filter((item) => item.showInReport !== false);
+  const countText = `${active.length} ${pluralRu(active.length, "пункт", "пункта", "пунктов")}`;
+  if (active.some((item) => normalizeStatus(item.status) === "crit")) return `${countText} · есть критично`;
+  if (active.some((item) => normalizeStatus(item.status) === "warn")) return `${countText} · есть внимание`;
+  if (active.some((item) => ["no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)))) return `${countText} · есть косвенно`;
+  return `${countText} · всё хорошо`;
+}
+
+function attentionSummaryLabel(status: string, count: number): string {
+  if (status === "crit") return `${count} критично`;
+  if (status === "warn") return `${count} внимание`;
+  if (status === "no-access") return `${count} доступ затруднён`;
+  if (status === "by-mileage") return `${count} по пробегу`;
+  if (status === "by-client") return `${count} со слов клиента`;
+  return `${count} ${statusLabel(status).toLowerCase()}`;
 }
 
 function formatDay(value?: string | null): string {
@@ -401,13 +482,10 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   if (loading) return <main className="diag-print-screen"><section className="diag-report-state">Загрузка отчёта...</section></main>;
   if (error || !payload) return <main className="diag-print-screen"><section className="diag-report-state is-error">{error ?? "Отчёт не найден"}</section></main>;
 
-  const recommendations = visibleItems
-    .filter((item) => item.recommendation || ["warn", "crit", "no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)))
-    .sort((a, b) => {
-      const order: Record<string, number> = { crit: 0, warn: 1, "no-access": 2, "by-mileage": 2, "by-client": 2 };
-      return (order[normalizeStatus(a.status)] ?? 3) - (order[normalizeStatus(b.status)] ?? 3);
-    });
+  const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
+  const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
   const photos = visibleItems.flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: item.title, status: normalizeStatus(item.status) })));
+  const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
   const good = hasRealItems ? reportCounts.good : payload.counts.good ?? payload.counts.normal ?? 0;
   const warn = hasRealItems ? reportCounts.warn : payload.counts.warn ?? payload.counts.attention ?? 0;
@@ -418,9 +496,11 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} проверены`;
   const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
   const attentionCount = recommendations.length;
-  const attentionPointsText = attentionCount > 0
-    ? `Есть ${attentionCount} ${pluralRu(attentionCount, "точка", "точки", "точек")} внимания`
-    : "Критичных замечаний нет";
+  const attentionPointsText = crit > 0
+    ? "Есть критичные замечания"
+    : attentionCount > 0
+      ? `Есть ${attentionCount} ${pluralRu(attentionCount, "точка", "точки", "точек")} внимания`
+      : "Критичных замечаний нет";
   const recommendationsText = attentionCount > 0
     ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
     : "Рекомендаций по срочным работам нет";
@@ -431,6 +511,17 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const verdictText = verdict(crit, warn, indirect);
   const vehicleShort = payload.vehicle.title.split(/\s+/).slice(0, 3).join(" ");
   const clientFirstName = (payload.clientName || "клиент").split(" ")[0] || "клиент";
+  const primaryMessenger = (payload.publicReportPrimaryMessenger || "telegram").toLowerCase();
+  const publicTelegramUsername = telegramUsername(payload.publicTelegramUsername ?? payload.publicTelegramUrl ?? null);
+  const publicTelegramHref =
+    primaryMessenger === "telegram"
+      ? telegramUrl(payload.publicTelegramUrl) ?? (publicTelegramUsername ? `https://t.me/${publicTelegramUsername}` : null)
+      : null;
+  const publicPhone = payload.publicPhone || REPORT_PHONE;
+  const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
+  const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
+  const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
+  const publicAddress = payload.publicAddress || "Калининград";
   const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
   const pdfUrl = `${publicReportUrl}/pdf`;
   const reportShareLabel = `tgm.report/${reportCode}`;
@@ -444,6 +535,13 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     blocksForReport.slice(0, checkColumnBreak),
     blocksForReport.slice(checkColumnBreak),
   ].filter((column) => column.length > 0);
+  const attentionSummaryItems = ATTENTION_STATUSES
+    .map((status) => ({
+      status,
+      count: recommendations.filter((item) => normalizeStatus(item.status) === status).length,
+    }))
+    .filter((item) => item.status === "crit" || item.count > 0);
+  const hasAttentionBlocks = blocksForReport.some((block) => block.items.some((item) => isAttentionStatus(item.status)));
 
   if (mode === "online") {
     return (
@@ -453,7 +551,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <img src="/brand/logo-wordmark-light.svg" alt="Там где масло" />
             <div>
               <span>Отчёт диагностики</span>
-              <small>service report</small>
+              <small>Там где масло</small>
             </div>
           </header>
 
@@ -514,32 +612,65 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
 
           <section className="tgm-public-section report-mobile-container">
             <div className="tgm-public-section-head">
-              <span>01 / что предлагаем</span>
+              <span>01 / точки внимания</span>
               <h2>{recommendationsText}</h2>
+              <p>Сначала показаны самые важные пункты.</p>
             </div>
+            {attentionSummaryItems.length > 0 && (
+              <div className="tgm-public-attention-summary" aria-label="Краткая сводка рекомендаций">
+                {attentionSummaryItems.map((item) => (
+                  <span className={item.status} key={item.status}>{attentionSummaryLabel(item.status, item.count)}</span>
+                ))}
+              </div>
+            )}
             {recommendations.length > 0 ? (
               <div className="tgm-public-recs">
-                {recommendations.map((item) => {
+                {recommendations.map((item, index) => {
                   const normalized = normalizeStatus(item.status);
                   const result = itemResultText(item);
                   const recommendation = itemRecommendationText(item);
+                  const chips = detailChips(item, result, recommendation);
                   return (
                     <article className={`tgm-public-rec ${normalized}`} key={`${item.blockTitle}-${item.code}`}>
-                      <div className="tgm-public-rec-head">
-                        <h3>{item.title}</h3>
-                        <span>{statusLabel(normalized)}</span>
+                      <div className="tgm-public-rec-top">
+                        <span className="tgm-public-rec-priority">{String(index + 1).padStart(2, "0")}</span>
+                        <div className="tgm-public-rec-title">
+                          <h3>{item.title}</h3>
+                          <small>{item.blockTitle}</small>
+                        </div>
+                        <span className={`tgm-public-rec-status ${normalized}`}>{statusLabel(normalized)}</span>
                       </div>
-                      <p className="tgm-public-rec-desc">{result}</p>
+                      <div className="tgm-public-rec-body">
+                        <div className="tgm-public-rec-block">
+                          <span>Что обнаружено</span>
+                          <p>{result}</p>
+                        </div>
+                      </div>
                       {shouldShowRecommendation(result, recommendation) && (
                         <div className="tgm-public-rec-note">
-                          <span>Рекомендация</span>
+                          <span>Что рекомендуем</span>
                           <strong>{recommendation}</strong>
                         </div>
                       )}
-                      {(item.reportText?.shortText || item.value || item.statusLabel) && (
-                        <div className="tgm-public-measure">
-                          <span>Признаки</span>
-                          <strong>{itemShortResult(item)}</strong>
+                      {item.photos.length > 0 && (
+                        <div className={`tgm-public-rec-photos ${item.photos.length === 1 ? "is-single" : ""}`}>
+                          {item.photos.map((photo, photoIndex) => (
+                            <a
+                              className={`tgm-public-rec-photo ${photoIndex === 0 ? "is-main" : ""}`}
+                              href={photo.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              key={photo.id}
+                            >
+                              <img src={photo.url} alt={photo.caption || item.title || "Фото диагностики"} />
+                              <span className="tgm-public-rec-photo-caption">{photo.caption || item.title}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {chips.length > 0 && (
+                        <div className="tgm-public-detail-chips" aria-label="Признаки">
+                          {chips.map((chip) => <span className="tgm-public-chip" key={chip}>{chip}</span>)}
                         </div>
                       )}
                     </article>
@@ -551,15 +682,15 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             )}
           </section>
 
-          <section className="tgm-public-section report-mobile-container">
-            <div className="tgm-public-section-head">
-              <span>02 / фотоотчёт</span>
-              <h2>Фото с диагностики</h2>
-              <p>Снимки сделаны мастером во время осмотра.</p>
-            </div>
-            {photos.length > 0 ? (
+          {generalPhotos.length > 0 && (
+            <section className="tgm-public-section report-mobile-container">
+              <div className="tgm-public-section-head">
+                <span>02 / фотоотчёт</span>
+                <h2>Дополнительные фото осмотра</h2>
+                <p>Снимки, которые дополняют диагностику.</p>
+              </div>
               <div className="tgm-public-photos">
-                {photos.map((photo, index) => (
+                {generalPhotos.map((photo, index) => (
                   <a className="tgm-public-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.id}-${index}`}>
                     <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} />
                     <span className="tgm-public-photo-status" style={{ background: statusColor(photo.status) }} />
@@ -570,10 +701,8 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                   </a>
                 ))}
               </div>
-            ) : (
-              <div className="tgm-public-empty">Фото к этому отчёту не добавлены.</div>
-            )}
-          </section>
+            </section>
+          )}
 
           <section className="tgm-public-section report-mobile-container">
             <div className="tgm-public-section-head">
@@ -581,13 +710,20 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
               <h2>Что проверили</h2>
             </div>
             <div className="tgm-public-accordions">
-              {blocksForReport.map((block) => {
-                const hasAttention = block.items.some((item) => ["warn", "crit", "no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)));
+              {blocksForReport.map((block, blockIndex) => {
+                const hasAttention = block.items.some((item) => isAttentionStatus(item.status));
+                const openByDefault = hasAttention || (!hasAttentionBlocks && blockIndex === 0);
                 return (
-                  <details className="tgm-public-accordion" open={hasAttention} key={block.code}>
+                  <details className="tgm-public-accordion" open={openByDefault} key={block.code}>
                     <summary>
-                      <span>{block.title}</span>
-                      <b>{block.items.length} {pluralRu(block.items.length, "пункт", "пункта", "пунктов")} · {hasAttention ? "есть внимание" : "всё хорошо"}</b>
+                      <div className="tgm-public-accordion-title">
+                        <span>{block.title}</span>
+                        <b>{blockSummary(block.items)}</b>
+                      </div>
+                      <strong className="tgm-public-accordion-action">
+                        <span className="is-show">Показать пункты</span>
+                        <span className="is-hide">Скрыть пункты</span>
+                      </strong>
                     </summary>
                     <div className="tgm-public-checks">
                       {block.items.map((item) => {
@@ -612,14 +748,14 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
 
           <section className="tgm-public-next report-mobile-container">
             <div>
-              <span>Что дальше</span>
+              <span>04 / что дальше</span>
               <h2>Поможем с рекомендациями</h2>
-              <p>Напишите нам, позвоните или выберите удобное время. Подготовим материалы заранее и напомним о следующей проверке.</p>
+              <p>{publicTelegramHref ? "Напишите нам в Telegram, позвоните или выберите удобное время." : "Позвоните или выберите удобное время."} Подготовим материалы заранее и напомним о следующей проверке.</p>
             </div>
             <div className="tgm-public-actions">
-              <a className="is-primary" href={WHATSAPP_HREF}>Написать</a>
-              <a href={REPORT_PHONE_HREF}>Позвонить</a>
-              <a href={BOOKING_HREF}>Записаться</a>
+              {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать в Telegram</a>}
+              <a href={publicPhoneHref}>Позвонить</a>
+              <a href={publicBookingUrl}>Записаться</a>
             </div>
           </section>
 
@@ -627,19 +763,20 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <img src="/brand/monogram-light.svg" alt="" aria-hidden />
             <div>
               <strong>Там где масло</strong>
-              <p>Отчёт отражает состояние автомобиля на момент диагностики. Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
+              <p>Отчёт отражает состояние автомобиля на момент диагностики ({formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
               <div className="tgm-public-footer-meta">
-                <span>{REPORT_PHONE}</span>
-                <span>Telegram · @tamgdemaslo</span>
-                <span>Калининград</span>
+                <span>{publicPhone}</span>
+                {publicTelegramUsername && <span>Telegram · @{publicTelegramUsername}</span>}
+                <span>{publicSite}</span>
+                <span>{publicAddress}</span>
               </div>
             </div>
           </footer>
 
-          <nav className="tgm-public-sticky no-print" aria-label="Действия клиента">
-            <a className="is-primary" href={WHATSAPP_HREF}>Написать</a>
-            <a href={REPORT_PHONE_HREF}>Позвонить</a>
-            <a href={BOOKING_HREF}>Записаться</a>
+          <nav className={`tgm-public-sticky no-print ${publicTelegramHref ? "has-telegram" : "no-telegram"}`} aria-label="Действия клиента">
+            {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать</a>}
+            <a href={publicPhoneHref}>Позвонить</a>
+            <a href={publicBookingUrl}>Записаться</a>
           </nav>
         </article>
       </main>

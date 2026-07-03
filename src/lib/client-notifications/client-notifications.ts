@@ -734,9 +734,11 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
 
   const lines = body.split(/\r?\n/).map((line) => {
     const missingInLine = new Set<string>();
+    const variablesInLine = new Set<string>();
     const rendered = line.replace(tokenPattern, (_match, doubleKey: string, doubleFallback: string, singleKey: string, singleFallback: string) => {
       const key = doubleKey || singleKey;
       const fallback = doubleFallback ?? singleFallback;
+      variablesInLine.add(key);
       if (!supportedVariableSet.has(key)) {
         unknownVariables.add(key);
         return `{${key}}`;
@@ -751,8 +753,23 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
       return replacement;
     });
 
-    if ([...missingInLine].some((key) => optionalLineVariables.has(key))) return null;
-    return rendered.replace(/[ \t]+/g, " ").trim();
+    const onlyMissingOptionalVariables =
+      variablesInLine.size > 0 &&
+      [...variablesInLine].every((key) => optionalLineVariables.has(key)) &&
+      [...missingInLine].some((key) => optionalLineVariables.has(key));
+    if (onlyMissingOptionalVariables) return null;
+
+    const cleaned = [...missingInLine].reduce((text, key) => {
+      if (key !== "address") return text;
+      return text
+        .replace(/\s*(?:Адрес|Адрес сервиса):\s*(?=[.!?]|$)/giu, "")
+        .replace(/\s*по адресу:\s*(?=[.!?]|$)/giu, "");
+    }, rendered);
+    return cleaned
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s+([,.!?])/g, "$1")
+      .replace(/([.!?]){2,}/g, "$1")
+      .trim();
   });
 
   return {
@@ -1502,6 +1519,22 @@ export async function handleAppointmentCreated(input: NotificationEventContext &
   const reminders = await enqueueClientNotificationEvent("appointment_reminder", input);
   const processed = await processDueClientNotificationJobs(10);
   return { immediate, reminders, processed };
+}
+
+export async function appointmentCreationNotificationExists(appointmentId: string | number | null | undefined) {
+  const id = nullableString(appointmentId == null ? null : String(appointmentId));
+  if (!id) return false;
+  await ensureClientNotificationsSchema();
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+    SELECT true AS "exists"
+    FROM notification_jobs
+    WHERE organization_id = ${organizationId}
+      AND appointment_id = ${id}
+      AND event_type IN ('appointment_client_created', 'appointment_admin_created')
+    LIMIT 1
+  `;
+  return Boolean(rows[0]?.exists);
 }
 
 export async function handleAppointmentUpdated(input: NotificationEventContext) {
