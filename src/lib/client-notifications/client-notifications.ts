@@ -1398,23 +1398,24 @@ export async function handleAppointmentCancelled(appointmentId: string) {
   return { cancelled };
 }
 
-async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: string) {
-  const mapRows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      clientId: string | null;
-      clientName: string | null;
-      clientPhone: string | null;
-      demandId: string | null;
-      publicToken: string | null;
-      brand: string | null;
-      model: string | null;
-      licensePlate: string | null;
-      vin: string | null;
-      redCount: number;
-      yellowCount: number;
-    }>
-  >`
+async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: string, source?: "map" | "legacy") {
+  if (source !== "legacy") {
+    const mapRows = await prisma.$queryRaw<
+      Array<{
+        id: string;
+        clientId: string | null;
+        clientName: string | null;
+        clientPhone: string | null;
+        demandId: string | null;
+        publicToken: string | null;
+        brand: string | null;
+        model: string | null;
+        licensePlate: string | null;
+        vin: string | null;
+        criticalCount: number;
+        warningCount: number;
+      }>
+    >`
     SELECT
       id,
       client_id AS "clientId",
@@ -1426,29 +1427,31 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
       model,
       license_plate AS "licensePlate",
       vin,
-      red_count AS "redCount",
-      yellow_count AS "yellowCount"
+      replace_count AS "criticalCount",
+      attention_count AS "warningCount"
     FROM diagnostic_map_sessions
     WHERE id = ${diagnosticId}
     LIMIT 1
-  `.catch(() => []);
-  const map = mapRows[0];
-  if (map) {
-    return {
-      diagnosticReportId: map.id,
-      clientId: map.clientId,
-      clientName: map.clientName,
-      clientPhone: map.clientPhone,
-      diagnosticReportLink: map.publicToken ? buildDiagnosticReportUrl(request, map.publicToken) : null,
-      car: [map.brand, map.model, map.licensePlate || map.vin].filter(Boolean).join(" · "),
-      carMake: map.brand,
-      carModel: map.model,
-      licensePlate: map.licensePlate,
-      vin: map.vin,
-      criticalCount: map.redCount,
-      warningCount: map.yellowCount,
-      payload: { source: "map", shipmentId: map.demandId },
-    } satisfies NotificationEventContext;
+  `;
+    const map = mapRows[0];
+    if (map) {
+      return {
+        diagnosticReportId: map.id,
+        clientId: map.clientId,
+        clientName: map.clientName,
+        clientPhone: map.clientPhone,
+        diagnosticReportLink: map.publicToken ? buildDiagnosticReportUrl(request, map.publicToken) : null,
+        car: [map.brand, map.model, map.licensePlate || map.vin].filter(Boolean).join(" · "),
+        carMake: map.brand,
+        carModel: map.model,
+        licensePlate: map.licensePlate,
+        vin: map.vin,
+        criticalCount: map.criticalCount,
+        warningCount: map.warningCount,
+        payload: { source: "map", shipmentId: map.demandId },
+      } satisfies NotificationEventContext;
+    }
+    if (source === "map") return null;
   }
 
   const legacy = await prisma.diagnostic.findUnique({
@@ -1498,7 +1501,7 @@ export async function handleDiagnosticReportSent(input: {
   initiatedById?: string | null;
 }) {
   await ensureClientNotificationsSchema();
-  const target = await resolveDiagnosticTarget(input.request, input.diagnosticId);
+  const target = await resolveDiagnosticTarget(input.request, input.diagnosticId, input.source);
   if (!target) return null;
   const queued = await enqueueClientNotificationEvent("diagnostic_sent", {
     ...target,
