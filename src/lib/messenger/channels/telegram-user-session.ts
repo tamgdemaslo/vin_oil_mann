@@ -962,12 +962,35 @@ function attachQrRuntimeHandler(attempt: TelegramQrRuntimeAttempt) {
     return;
   }
   attempt.client.addEventHandler((update: unknown) => {
-    if (!telegramClassName(update).includes("UpdateLoginToken")) return;
+    if (!containsTelegramLoginTokenUpdate(update)) return;
     attempt.finalizing = finalizeQrRuntimeAttempt(attempt).catch((error) => {
       attempt.status = "error";
       attempt.error = safeError(error, "QR Telegram не подтверждён");
     });
   });
+}
+
+function containsTelegramLoginTokenUpdate(update: unknown): boolean {
+  if (!update || typeof update !== "object") return false;
+  if (telegramClassName(update).includes("UpdateLoginToken")) return true;
+  const nestedUpdate = objectField(update, "update");
+  if (nestedUpdate && containsTelegramLoginTokenUpdate(nestedUpdate)) return true;
+  const updates = objectField(update, "updates");
+  return Array.isArray(updates) && updates.some((item) => containsTelegramLoginTokenUpdate(item));
+}
+
+async function resolveQrLoginTokenResult(attempt: TelegramQrRuntimeAttempt, result: unknown, Api: GramJsModule["Api"]) {
+  let nextResult = result;
+  let className = telegramClassName(nextResult);
+  if (className.includes("LoginTokenMigrateTo")) {
+    const dcId = objectField(nextResult, "dcId");
+    const token = objectField(nextResult, "token");
+    const switcher = attempt.client as TelegramRuntimeClient & { _switchDC?: (dcId: number) => Promise<void> };
+    if (typeof switcher._switchDC === "function" && typeof dcId === "number") await switcher._switchDC(dcId);
+    nextResult = await attempt.client.invoke(new Api.auth.ImportLoginToken({ token }));
+    className = telegramClassName(nextResult);
+  }
+  return { result: nextResult, className };
 }
 
 async function finalizeQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
@@ -981,15 +1004,9 @@ async function finalizeQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
         exceptIds: [],
       })
     );
-    let className = telegramClassName(result);
-    if (className.includes("LoginTokenMigrateTo")) {
-      const dcId = objectField(result, "dcId");
-      const token = objectField(result, "token");
-      const switcher = attempt.client as TelegramRuntimeClient & { _switchDC?: (dcId: number) => Promise<void> };
-      if (typeof switcher._switchDC === "function" && typeof dcId === "number") await switcher._switchDC(dcId);
-      result = await attempt.client.invoke(new Api.auth.ImportLoginToken({ token }));
-      className = telegramClassName(result);
-    }
+    const resolved = await resolveQrLoginTokenResult(attempt, result, Api);
+    result = resolved.result;
+    const className = resolved.className;
     if (!className.includes("LoginTokenSuccess")) {
       throw new Error(`Telegram QR вернул неожиданный ответ после сканирования: ${className || "unknown"}.`);
     }
@@ -1044,13 +1061,15 @@ async function saveIfQrClientAuthorized(attempt: TelegramQrRuntimeAttempt) {
 
 async function refreshQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
   const { Api } = await loadGramJs();
-  const result = await attempt.client.invoke(
+  let result = await attempt.client.invoke(
     new Api.auth.ExportLoginToken({
       apiId: attempt.apiId,
       apiHash: attempt.apiHash,
       exceptIds: [],
     })
   );
+  const resolved = await resolveQrLoginTokenResult(attempt, result, Api);
+  result = resolved.result;
   const { className, token, expiresAt } = loginTokenPayload(result);
   if (className.includes("LoginTokenSuccess")) {
     const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
@@ -1551,9 +1570,21 @@ function messageDate(value?: number | Date) {
   return new Date();
 }
 
-function stringValue(value: unknown) {
+function stringValue(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (value && typeof value === "object") {
+    const primitiveValue = objectField(value, "value");
+    if (primitiveValue !== undefined && primitiveValue !== value) {
+      const nested: string | null = stringValue(primitiveValue);
+      if (nested) return nested;
+    }
+    const toString = (value as { toString?: unknown }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+      const text = String(toString.call(value)).trim();
+      if (text && text !== "[object Object]") return text;
+    }
+  }
   return null;
 }
 
@@ -1932,15 +1963,29 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
   return { id: rows[0]?.id, chatId, externalConversationId };
 }
 
-function telegramUserFromResult(result: unknown) {
+function telegramUserFromResult(result: unknown, preferredUserId?: string | null) {
   const users = objectField(result, "users");
   if (!Array.isArray(users)) return null;
-  return users.find((user) => {
+  const activeUsers = users.filter((user) => {
     if (!user || typeof user !== "object") return false;
     const id = objectField(user, "id");
     const deleted = objectField(user, "deleted");
     return id !== undefined && id !== null && deleted !== true;
-  }) ?? null;
+  });
+  if (preferredUserId) {
+    return activeUsers.find((user) => telegramUserId(user) === preferredUserId) ?? activeUsers[0] ?? null;
+  }
+  return activeUsers[0] ?? null;
+}
+
+function telegramImportedUserId(result: unknown) {
+  const imported = objectField(result, "imported");
+  if (!Array.isArray(imported)) return null;
+  for (const item of imported) {
+    const userId = stringValue(objectField(item, "userId") ?? objectField(item, "user_id"));
+    if (userId) return userId;
+  }
+  return null;
 }
 
 function telegramUserId(user: unknown) {
@@ -2077,7 +2122,8 @@ export async function resolveTelegramUserPeerByPhone(phoneInput: string): Promis
         ],
       })
     );
-    const importedUser = telegramUserFromResult(imported);
+    const importedUserId = telegramImportedUserId(imported);
+    const importedUser = telegramUserFromResult(imported, importedUserId);
     if (!importedUser) {
       return {
         ok: false,
