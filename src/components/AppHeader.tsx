@@ -175,6 +175,12 @@ export default function AppHeader() {
           label: "Финансы",
           items: [
             {
+              href: "/finance",
+              label: "Финансовый центр",
+              description: "P&L, cashflow, расходы, прогноз и проблемы учёта.",
+              disabled: locked,
+            },
+            {
               href: "/cash#cash-state",
               label: "Касса",
               description: "Операции по кассе, закрытие кассовой смены и история.",
@@ -188,8 +194,8 @@ export default function AppHeader() {
             },
             {
               href: "/finance/profit",
-              label: "Прибыль",
-              description: "Маржа, себестоимость и прибыль по локальной базе.",
+              label: "Цены и прибыль",
+              description: "Детализация маржи и себестоимости по локальной базе.",
               disabled: locked,
             },
             {

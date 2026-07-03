@@ -374,13 +374,14 @@ export default function PlatformShell() {
       },
       {
         id: "finance",
-        href: "/cash",
+        href: "/finance",
         label: "Финансы",
         icon: CircleDollarSign,
         items: [
+          { href: "/finance", label: "Финансовый центр", description: "P&L, cashflow, расходы, план/факт.", disabled: locked },
           { href: "/cash", label: "Касса", description: "Кассовая смена, расходы и закрытие.", disabled: locked || !canAccessCash },
           { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: locked },
-          { href: "/finance/profit", label: "Прибыль", description: "Маржа и себестоимость.", disabled: locked },
+          { href: "/finance/profit", label: "Цены и прибыль", description: "Детализация по товарам и документам.", disabled: locked },
           { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: locked },
         ],
       },

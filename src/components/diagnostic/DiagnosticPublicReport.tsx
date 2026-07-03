@@ -2,8 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- report renders brand assets and diagnostic photos in browser/PDF layouts. */
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronLeft, Copy, Printer } from "lucide-react";
+import { ChevronLeft, Printer } from "lucide-react";
 import { formatServiceDayMonth, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
 type ReportItem = {
@@ -324,7 +323,7 @@ function PhotoTile({ photo, index, status }: { photo: { id: string; caption: str
   );
 }
 
-function OnlineCarSilhouette({ vin }: { vin?: string | null }) {
+function OnlineCarSilhouette({ label }: { label: string }) {
   return (
     <div className="tgm-car-card">
       <div className="tgm-car-glow" />
@@ -344,24 +343,8 @@ function OnlineCarSilhouette({ vin }: { vin?: string | null }) {
         <text x="222" y="196" textAnchor="middle" fontFamily="Oswald" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
       </svg>
       <div className="tgm-car-region">76 · KGD</div>
-      <div className="tgm-car-meta">VIN {vin ? `...${vin.slice(-6)}` : "—"}</div>
+      <div className="tgm-car-meta">{label}</div>
     </div>
-  );
-}
-
-function OnlinePhotoTile({ photo, index, status }: { photo: { id: string; caption: string; url: string; itemTitle: string }; index: number; status: string }) {
-  return (
-    <figure className="tgm-photo" key={`${photo.id}-${index}`}>
-      <div className="tgm-photo-img" style={{ backgroundImage: `url(${photo.url})` }}>
-        <div className="tgm-photo-scrim" />
-        <span className="tgm-photo-dot" style={{ background: statusColor(status) }} />
-        <span className="tgm-photo-no">IMG_{String(index + 1).padStart(3, "0")}</span>
-        <figcaption className="tgm-photo-cap">
-          <span className="lbl">{photo.itemTitle}</span>
-          <span className="cap">{photo.caption || "Фото диагностики"}</span>
-        </figcaption>
-      </div>
-    </figure>
   );
 }
 
@@ -433,12 +416,19 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const total = hasRealItems ? reportCounts.total : payload.counts.total || visibleItems.length;
   const reportDate = payload.completedAt ?? payload.startedAt;
   const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} проверены`;
+  const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
+  const attentionCount = recommendations.length;
+  const attentionPointsText = attentionCount > 0
+    ? `Есть ${attentionCount} ${pluralRu(attentionCount, "точка", "точки", "точек")} внимания`
+    : "Критичных замечаний нет";
+  const recommendationsText = attentionCount > 0
+    ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
+    : "Рекомендаций по срочным работам нет";
   const reportCode = payload.publicToken ?? token;
   const masterName = payload.master?.name || payload.master?.login || "мастер-диагност";
   const masterMasked = maskLogin(payload.master?.login || payload.master?.name);
   const percentGood = Math.round((good / (total || 1)) * 100);
   const verdictText = verdict(crit, warn, indirect);
-  const verdictTitle = crit > 0 ? "есть срочное" : warn > 0 || indirect > 0 ? "почти в форме" : "в форме";
   const vehicleShort = payload.vehicle.title.split(/\s+/).slice(0, 3).join(" ");
   const clientFirstName = (payload.clientName || "клиент").split(" ")[0] || "клиент";
   const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
@@ -463,235 +453,180 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
 
   if (mode === "online") {
     return (
-      <main className="diag-client-report-page">
-        <div className="tgm-report-toolbar no-print">
-          <Link href="/shipment"><ChevronLeft size={16} /> В платформу</Link>
-          <span>Онлайн-отчёт диагностики</span>
-          <a href={pdfUrl}><Printer size={16} /> Печать / PDF</a>
-        </div>
+      <main className="diag-client-report-page is-public">
+        <article className="tgm-client-report tgm-public-report grain">
+          <header className="tgm-public-top">
+            <img src="/brand/logo-wordmark-light.svg" alt="Там где масло" />
+            <span>Отчёт диагностики</span>
+          </header>
 
-        <article className="tgm-client-report grain">
-          <div className="topstrip">
-            <div className="container row">
-              <div className="strip-group">
-                <img src="/brand/logo-wordmark-light.svg" alt="Там где масло." className="wordmark" />
-                <span className="rust">ОТЧЁТ ДИАГНОСТИКИ</span>
-                <span>·</span>
-                <span>{formatNumericDate(reportDate)}</span>
-              </div>
-              <div className="strip-group">
-                <span>TGM.REPORT / {reportCode}</span>
-                <span className="rust">●</span>
-                <span>СТАТУС: АКТУАЛЕН</span>
-              </div>
+          <section className="tgm-public-hero">
+            <div className="tgm-public-hero-copy">
+              <span className="tgm-public-eyebrow">Привет, {clientFirstName}</span>
+              <h1>Автомобиль проверен</h1>
+              <p>{checkedClientText}. {recommendationsText}.</p>
+              <div className="tgm-public-vehicle">{payload.vehicle.title || "Ваш автомобиль"}</div>
             </div>
-          </div>
-
-          <section className="hero">
-            <div className="container">
-              <div className="hero-intro">
-                <span className="eyebrow">Привет, {clientFirstName}</span>
-                <span className="line" />
-                <span className="l-mono">CASE №{reportCode.slice(-4).toUpperCase()} / 2026</span>
-              </div>
-              <h1>
-                {payload.vehicle.title}<span className="dot">.</span><br />
-                <span>{checkedText}<span className="dot">.</span></span>
-              </h1>
-              <div className="hero-grid">
-                <div>
-                  <span className="eyebrow muted">Что мы делали {formatDay(reportDate)}</span>
-                  <p className="work-done">Провели диагностику {total} пунктов, зафиксировали состояние автомобиля и подготовили рекомендации по точкам внимания.</p>
-                  <div className="numpanels">
-                    <div className="numpanel"><div className="k">Машина</div><div className="v sm">{vehicleShort || "Авто"}</div><div className="u">{payload.vehicle.vin ? `VIN ...${payload.vehicle.vin.slice(-6)}` : "карта диагностики"}</div></div>
-                    <div className="numpanel"><div className="k">Пробег</div><div className="v sm">{formatMileage(payload.vehicle.mileage)}</div><div className="u">км</div></div>
-                    <div className="numpanel"><div className="k">Гос. номер</div><div className="v sm">{payload.vehicle.licensePlate || "—"}</div><div className="u">{formatYearTime(reportDate)}</div></div>
-                  </div>
-                </div>
-                <OnlineCarSilhouette vin={payload.vehicle.vin} />
-              </div>
-            </div>
-          </section>
-
-          <div className="chequered thin" />
-
-          <section className="verdict-section">
-            <div className="verdict" data-ghost={percentGood}>
-              <div className="v-num"><div className="n">{good}</div><div className="l">Хорошо</div></div>
-              <div className="v-num soft"><div className="n">{warn}</div><div className="l">Внимание</div></div>
-              <div className="v-num dark"><div className="n">{crit}</div><div className="l">Критично</div></div>
-              <div className="v-num verdict-title"><div className="n">{verdictTitle}</div><div className="l">{percentGood}% в норме · {indirect} косвенно</div></div>
-            </div>
-          </section>
-
-          <section>
-            <div className="container">
-              <div className="section-head">
-                <div className="l">
-                  <div className="num">— 01 / 04</div>
-                  <div><span className="eyebrow">Что проверили</span><h2>{total} {pluralRu(total, "пункт", "пункта", "пунктов")} · что мы посмотрели<span className="dot">.</span></h2></div>
-                </div>
-                <div className="master"><div className="l-mono">Мастер</div><div>{masterName}</div></div>
-              </div>
-              <div className="blocks">
-                {blocksForReport.map((block) => (
-                  <article className="block" key={block.code}>
-                    <div className="block-num">{block.num}</div>
-                    <div className="block-body">
-                      <div className="title">{block.title}</div>
-                      <div className="block-items">
-                        {block.items.map((item) => {
-                          const normalized = normalizeStatus(item.status);
-                          return (
-                            <div className="block-item" key={item.code}>
-                              <div className="item-label">{item.title}</div>
-                              <div className="item-value">{itemShortResult(item)}</div>
-                              <div className={`item-status ${normalized}`}>{statusLabel(normalized)}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="section-alt">
-            <div className="container">
-              <div className="section-head">
-                <div className="l">
-                  <div className="num">— 02 / 04</div>
-                  <div><span className="eyebrow">Что мы предлагаем</span><h2>{recommendations.length} {pluralRu(recommendations.length, "точка", "точки", "точек")} внимания<span className="dot">.</span></h2></div>
-                </div>
-              </div>
-              {recommendations.length > 0 ? (
-                <div className="recs">
-                  {recommendations.map((item) => {
-                    const normalized = normalizeStatus(item.status);
-                    return (
-                      <article className={`rec ${normalized}`} key={`${item.blockTitle}-${item.code}`}>
-                        <div className="rec-head">
-                          <h3>{item.title}</h3>
-                          <span className="rec-tag">{statusLabel(normalized)}</span>
-                        </div>
-                        {(() => {
-                          const result = itemResultText(item);
-                          const recommendation = itemRecommendationText(item);
-                          return (
-                            <>
-                              <div className="desc">
-                                {result}
-                                {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
-                              </div>
-                              {(item.reportText?.shortText || item.value || item.statusLabel) && (
-                                <div className="measurement"><span>Итог</span><b>{itemShortResult(item)}</b></div>
-                              )}
-                              {(item.comment || item.reportText?.sourceText) && <div className="quote">«{item.comment || item.reportText?.sourceText}»<br />— {masterName.split(" ")[0]}, мастер-диагност</div>}
-                            </>
-                          );
-                        })()}
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-card">Критичных рекомендаций нет. Плановое обслуживание можно проходить по регламенту.</div>
-              )}
-              <div className="sticker-wrap">
-                <div className="eyebrow muted">Наклейка-напоминание на лобовое</div>
-                <div className="sticker">
-                  <div className="sticker-row">
-                    <img src="/brand/monogram-black.svg" alt="TGM" />
-                    <div className="mini-checker" />
-                  </div>
-                  <h3>До следующего визита:</h3>
-                  <div className="km">{payload.vehicle.mileage ? `${formatMileage(payload.vehicle.mileage + 15000)} км` : "через 15 000 км"}</div>
-                  <div className="date">или {nextVisitDate}</div>
-                  <div className="quote">«Не забудь, братан — мы скучаем.»</div>
-                  <div className="meta">{REPORT_PHONE} · TGM · KGD · {payload.vehicle.vin || reportCode}</div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <div className="container">
-              <div className="section-head">
-                <div className="l">
-                  <div className="num">— 03 / 04</div>
-                  <div><span className="eyebrow">Фотоотчёт</span><h2>{photos.length} {pluralRu(photos.length, "фото", "фото", "фото")} с диагностики<span className="dot">.</span></h2></div>
-                </div>
-              </div>
-              {photos.length > 0 ? (
-                <div className="photos">
-                  {photos.map((photo, index) => <OnlinePhotoTile key={`${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />)}
-                </div>
-              ) : (
-                <div className="empty-card">Фото к этому отчёту не добавлены.</div>
-              )}
-            </div>
-          </section>
-
-          <section className="check-section">
-            <div className="container">
-              <div className="section-head">
-                <div className="l">
-                  <div className="num">— 04 / 04</div>
-                  <div><span className="eyebrow">Полный список</span><h2>Чек-лист диагностики<span className="dot">.</span></h2></div>
-                </div>
-              </div>
-              <div className="legend">
-                {["good", "warn", "crit", "no-access", "by-mileage", "by-client"].map((key) => (
-                  <span className="key" key={key}><span className="mark" style={{ background: statusColor(key) }}>{statusIcon(key)}</span>{payload.statusLegend?.[key]?.label ?? statusLabel(key)}</span>
-                ))}
-              </div>
-              <div className="checklist">
-                {blocksForReport.map((block) => (
-                  <div className="check-block" key={block.code}>
-                    <div className="check-block-title"><span>{block.num}</span>{block.title}</div>
-                    {block.items.map((item) => (
-                      <div className="check-row" key={item.code}>
-                        <span className="mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
-                        <span className="check-label">{item.title}</span>
-                        <span className="check-val">{itemShortResult(item)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="cta-section">
-            <div className="cta" data-ghost="76">
+            <OnlineCarSilhouette label={vehicleShort || "Диагностика готова"} />
+            <dl className="tgm-public-facts">
               <div>
-                <div className="eyebrow">— Что делаем дальше</div>
-                <h2>Запишем<br />на работы<span>?</span></h2>
-                <p>Пришлём слот, согласуем масло и материалы заранее. Напомним о следующей проверке к {nextVisitDate}.</p>
+                <dt>Дата</dt>
+                <dd>{formatNumericDate(reportDate)}</dd>
               </div>
-              <div className="cta-actions">
-                <a href={BOOKING_HREF} className="btn rust">Записаться на работы <span>→</span></a>
-                <a href={WHATSAPP_HREF} className="btn dark">WhatsApp <span>→</span></a>
-                <a href={REPORT_PHONE_HREF} className="phone">{REPORT_PHONE}</a>
-                <button type="button" className="copy-link no-print" onClick={() => void navigator.clipboard?.writeText(payload.reportUrl)}><Copy size={14} /> Скопировать ссылку</button>
+              <div>
+                <dt>Мастер</dt>
+                <dd>{masterName}</dd>
               </div>
+              <div>
+                <dt>Пробег</dt>
+                <dd>{formatMileage(payload.vehicle.mileage)} км</dd>
+              </div>
+              <div>
+                <dt>Номер</dt>
+                <dd>{payload.vehicle.licensePlate || "не указан"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="tgm-public-summary" aria-label="Сводка диагностики">
+            <div className="tgm-public-kpi is-good">
+              <span>{good}</span>
+              <strong>Хорошо</strong>
+            </div>
+            <div className="tgm-public-kpi is-warn">
+              <span>{warn}</span>
+              <strong>Внимание</strong>
+            </div>
+            <div className="tgm-public-kpi is-crit">
+              <span>{crit}</span>
+              <strong>Критично</strong>
+            </div>
+            <div className="tgm-public-kpi is-indirect">
+              <span>{indirect}</span>
+              <strong>Косвенно</strong>
             </div>
           </section>
 
-          <footer>
-            <div className="container">
-              <div className="foot">
-                <div className="foot-brand">
-                  <img src="/brand/monogram-light.svg" alt="TGM" />
-                  <span>© 2026 ТАМ ГДЕ МАСЛО. КАЛИНИНГРАД.</span>
-                </div>
-                <div className="foot-meta"><span>ОТЧЁТ № {reportCode}</span><span>·</span><span>{formatNumericDate(reportDate)} · {formatServiceTime(reportDate)}</span><span>·</span><span className="rust">МАСТЕР · {masterMasked}</span></div>
-              </div>
-              <div className="disclaimer">* «Машина {verdictText}» означает состояние на момент проверки. Пункты «внимание», «критично» и косвенные статусы — рекомендации, а не предписания.</div>
+          <section className="tgm-public-result">
+            <span>Итог</span>
+            <h2>{attentionPointsText}</h2>
+            <p>{percentGood}% пунктов без замечаний. Состояние отражает результат осмотра на {formatNumericDate(reportDate)}.</p>
+          </section>
+
+          <section className="tgm-public-section">
+            <div className="tgm-public-section-head">
+              <span>Точки внимания</span>
+              <h2>{recommendationsText}</h2>
             </div>
+            {recommendations.length > 0 ? (
+              <div className="tgm-public-recs">
+                {recommendations.map((item) => {
+                  const normalized = normalizeStatus(item.status);
+                  const result = itemResultText(item);
+                  const recommendation = itemRecommendationText(item);
+                  return (
+                    <article className={`tgm-public-rec ${normalized}`} key={`${item.blockTitle}-${item.code}`}>
+                      <div className="tgm-public-rec-head">
+                        <h3>{item.title}</h3>
+                        <span>{statusLabel(normalized)}</span>
+                      </div>
+                      <p>
+                        {result}
+                        {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
+                      </p>
+                      {(item.reportText?.shortText || item.value || item.statusLabel) && (
+                        <div className="tgm-public-measure">
+                          <span>Итог</span>
+                          <strong>{itemShortResult(item)}</strong>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="tgm-public-empty">Срочных рекомендаций нет. Плановое обслуживание можно проходить по регламенту.</div>
+            )}
+          </section>
+
+          <section className="tgm-public-section">
+            <div className="tgm-public-section-head">
+              <span>Фотоотчёт</span>
+              <h2>Фото с диагностики</h2>
+            </div>
+            {photos.length > 0 ? (
+              <div className="tgm-public-photos">
+                {photos.map((photo, index) => (
+                  <a className="tgm-public-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.id}-${index}`}>
+                    <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} />
+                    <span className="tgm-public-photo-status" style={{ background: statusColor(photo.status) }} />
+                    <span>{photo.caption || photo.itemTitle || "Фото диагностики"}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="tgm-public-empty">Фото к этому отчёту не добавлены.</div>
+            )}
+          </section>
+
+          <section className="tgm-public-section">
+            <div className="tgm-public-section-head">
+              <span>Полный список</span>
+              <h2>Что проверили</h2>
+            </div>
+            <div className="tgm-public-accordions">
+              {blocksForReport.map((block) => {
+                const hasAttention = block.items.some((item) => ["warn", "crit", "no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)));
+                return (
+                  <details className="tgm-public-accordion" open={hasAttention} key={block.code}>
+                    <summary>
+                      <span>{block.title}</span>
+                      <b>{block.items.length} {pluralRu(block.items.length, "пункт", "пункта", "пунктов")}</b>
+                    </summary>
+                    <div className="tgm-public-checks">
+                      {block.items.map((item) => {
+                        const normalized = normalizeStatus(item.status);
+                        return (
+                          <div className="tgm-public-check" key={item.code}>
+                            <span className="tgm-public-mark" style={{ background: statusColor(normalized) }}>{statusIcon(normalized)}</span>
+                            <div>
+                              <strong>{item.title}</strong>
+                              <span>{itemShortResult(item)}</span>
+                            </div>
+                            <em className={`tgm-public-check-status ${normalized}`}>{statusLabel(normalized)}</em>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="tgm-public-next">
+            <div>
+              <span>Что дальше</span>
+              <h2>Поможем с рекомендациями</h2>
+              <p>Напишите нам, позвоните или выберите удобное время. Подготовим материалы заранее и напомним о следующей проверке к {nextVisitDate}.</p>
+            </div>
+            <div className="tgm-public-actions">
+              <a className="is-primary" href={WHATSAPP_HREF}>Написать</a>
+              <a href={REPORT_PHONE_HREF}>Позвонить</a>
+              <a href={BOOKING_HREF}>Записаться</a>
+            </div>
+          </section>
+
+          <footer className="tgm-public-footer">
+            <img src="/brand/monogram-light.svg" alt="" aria-hidden />
+            <p>Отчёт отражает состояние автомобиля на момент диагностики. Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
           </footer>
+
+          <nav className="tgm-public-sticky no-print" aria-label="Действия клиента">
+            <a className="is-primary" href={WHATSAPP_HREF}>Написать</a>
+            <a href={REPORT_PHONE_HREF}>Позвонить</a>
+            <a href={BOOKING_HREF}>Записаться</a>
+          </nav>
         </article>
       </main>
     );

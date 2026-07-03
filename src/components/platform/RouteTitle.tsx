@@ -55,9 +55,9 @@ const routeTitleRules: RouteTitleRule[] = [
   { match: (pathname) => pathname === "/inventory", title: () => `Склад | ${APP_SUFFIX}` },
 
   { match: (pathname) => pathname === "/cash", title: () => `Касса | ${APP_SUFFIX}` },
-  { match: (pathname) => pathname === "/finance", title: () => `Финансы | ${APP_SUFFIX}` },
+  { match: (pathname) => pathname === "/finance", title: () => `Финансовый центр | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/finance/invoices", title: () => `Счета поставщиков | Финансы` },
-  { match: (pathname) => pathname === "/finance/profit", title: () => `Прибыль | Финансы` },
+  { match: (pathname) => pathname === "/finance/profit", title: () => `Цены и прибыль | Финансы` },
   { match: (pathname) => pathname === "/finance/shifts", title: () => `Зарплата | ${APP_SUFFIX}` },
   { match: (pathname) => pathname === "/salary", title: () => `Зарплата | ${APP_SUFFIX}` },
 
