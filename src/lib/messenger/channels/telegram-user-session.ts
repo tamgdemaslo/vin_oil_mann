@@ -144,7 +144,7 @@ type TelegramRuntimeClient = {
   isUserAuthorized?: () => Promise<boolean>;
   getDialogs(input: { limit: number }): Promise<unknown>;
   getMessages(entity: unknown, input: { limit?: number; ids?: number | number[] }): Promise<unknown>;
-  sendMessage(entity: unknown, input: { message: string }): Promise<{ id?: unknown }>;
+  sendMessage(entity: unknown, input: { message: string; linkPreview?: boolean }): Promise<{ id?: unknown }>;
   sendFile?(entity: unknown, input: { file: Buffer | string; caption?: string; forceDocument?: boolean; fileSize?: number; workers?: number }): Promise<{ id?: unknown }>;
   downloadMedia?: (messageOrMedia: unknown, input?: Record<string, unknown>) => Promise<string | Buffer | undefined>;
   downloadProfilePhoto?: (entity: unknown, input?: { isBig?: boolean }) => Promise<string | Buffer | undefined>;
@@ -2403,13 +2403,45 @@ export async function sendTelegramUserText(outbox: MessageOutbox): Promise<Chann
   const client = await getClient(sessionString);
   try {
     const target = await telegramSendTarget(client, outbox);
-    const result = await client.sendMessage(target, { message: outbox.text });
+    const result = await client.sendMessage(target, { message: telegramUserText(outbox), ...telegramUserSendOptions(outbox) });
     return { ok: true, status: "sent", channelMessageId: result?.id ? String(result.id) : undefined };
   } catch (error) {
     return { ok: false, error: safeError(error, "Telegram sendMessage failed") };
   } finally {
     await client.disconnect?.().catch?.(() => {});
   }
+}
+
+function telegramUrlButton(outbox: MessageOutbox) {
+  const telegram =
+    outbox.templateVarsJson && typeof outbox.templateVarsJson.telegram === "object" && outbox.templateVarsJson.telegram
+      ? (outbox.templateVarsJson.telegram as Record<string, unknown>)
+      : {};
+  if (!Array.isArray(telegram.buttons)) return null;
+  for (const button of telegram.buttons) {
+    if (!button || typeof button !== "object") continue;
+    const row = button as { text?: unknown; url?: unknown };
+    const text = typeof row.text === "string" ? row.text.trim() : "";
+    const url = typeof row.url === "string" ? row.url.trim() : "";
+    if (text && /^https?:\/\//iu.test(url)) return { text, url };
+  }
+  return null;
+}
+
+function telegramUserText(outbox: MessageOutbox) {
+  const button = telegramUrlButton(outbox);
+  if (!button || outbox.text.includes(button.url)) return outbox.text;
+  return `${outbox.text}\n\n${button.text}: ${button.url}`;
+}
+
+function telegramUserSendOptions(outbox: MessageOutbox) {
+  const telegram =
+    outbox.templateVarsJson && typeof outbox.templateVarsJson.telegram === "object" && outbox.templateVarsJson.telegram
+      ? (outbox.templateVarsJson.telegram as Record<string, unknown>)
+      : {};
+  return {
+    ...(typeof telegram.disableWebPagePreview === "boolean" ? { linkPreview: !telegram.disableWebPagePreview } : {}),
+  };
 }
 
 async function accountIdForOutbox(outbox: MessageOutbox) {

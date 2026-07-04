@@ -105,6 +105,29 @@ function sanitizeMessengerText(value: string) {
   return /^\s*\[Вложение Telegram\]\s*$/i.test(value) ? "Вложение" : value;
 }
 
+function telegramVarsFromSendInput(input: SendMessageInput) {
+  const buttonText = input.linkButton?.text.trim();
+  const buttonUrl = input.linkButton?.url.trim();
+  if (!buttonText || !buttonUrl) {
+    return input.disableWebPagePreview === undefined
+      ? undefined
+      : { telegram: { disableWebPagePreview: input.disableWebPagePreview } };
+  }
+  return {
+    telegram: {
+      disableWebPagePreview: input.disableWebPagePreview ?? true,
+      buttons: [{ text: buttonText, url: buttonUrl }],
+    },
+  };
+}
+
+function sendTextWithLinkFallback(text: string, input: SendMessageInput, inlineButtonsSupported: boolean) {
+  const buttonText = input.linkButton?.text.trim();
+  const buttonUrl = input.linkButton?.url.trim();
+  if (inlineButtonsSupported || !buttonText || !buttonUrl || text.includes(buttonUrl)) return text;
+  return `${text}\n\n${buttonText}: ${buttonUrl}`;
+}
+
 function toConversation(row: ConversationRow): Conversation {
   return {
     id: row.id,
@@ -168,6 +191,18 @@ async function messengerAccountIdForConversation(conversationId: string) {
     LIMIT 1
   `;
   return rows[0]?.messengerAccountId ?? null;
+}
+
+async function messengerAccountMode(accountId: string | null | undefined) {
+  if (!accountId) return null;
+  const rows = await prisma.$queryRaw<Array<{ mode: string | null }>>`
+    SELECT mode
+    FROM messenger_accounts
+    WHERE id = ${accountId}
+      AND organization_id = ${getMessengerOrganizationId()}
+    LIMIT 1
+  `;
+  return rows[0]?.mode ?? null;
 }
 
 export async function listMessengerConnections(): Promise<MessengerConnection[]> {
@@ -580,12 +615,16 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const organizationId = conversation.organizationId ?? getMessengerOrganizationId();
   const messengerAccountId =
     conversation.messengerAccountId ?? (conversation.channel === "telegram" ? await messengerAccountIdForConversation(conversation.id) : null);
+  const inlineButtonsSupported = conversation.channel === "telegram" && (await messengerAccountMode(messengerAccountId)) === "bot_legacy";
+  const textForSend = sendTextWithLinkFallback(text, input, inlineButtonsSupported);
+  assertMessengerOutboundTextSafe(textForSend);
+  const templateVarsJson = inlineButtonsSupported ? telegramVarsFromSendInput(input) : telegramVarsFromSendInput({ ...input, linkButton: undefined });
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
       (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
       (${messageId}, ${organizationId}, ${conversation.id}, ${messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
-       ${text}, '[]'::jsonb, 'queued', now(), now())
+       ${textForSend}, '[]'::jsonb, 'queued', now(), now())
     RETURNING
       id,
       organization_id AS "organizationId",
@@ -605,7 +644,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   `;
   await prisma.$executeRaw`
     UPDATE messenger_conversations
-    SET last_message_text = ${text}, last_message_at = now(), status = 'open', unread_count = 0, updated_at = now()
+    SET last_message_text = ${textForSend}, last_message_at = now(), status = 'open', unread_count = 0, updated_at = now()
     WHERE id = ${conversation.id}
       AND organization_id = ${organizationId}
   `;
@@ -616,7 +655,8 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     channel: conversation.channel,
     recipientExternalChatId: conversation.externalConversationId,
     messengerAccountId,
-    text,
+    text: textForSend,
+    templateVarsJson,
   });
   const processed = await processOutboxItem(outbox);
   const refreshed = (await listMessages(conversation.id)).find((message) => message.id === messageId) ?? toMessage(rows[0]);

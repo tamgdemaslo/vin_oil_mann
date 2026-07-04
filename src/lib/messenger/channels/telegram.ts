@@ -207,6 +207,28 @@ function telegramFailure(result: TelegramApiError, fallback: string): Extract<Te
   };
 }
 
+function telegramOptionsFromOutbox(outbox?: MessageOutbox | null) {
+  const telegram =
+    outbox?.templateVarsJson && typeof outbox.templateVarsJson.telegram === "object" && outbox.templateVarsJson.telegram
+      ? (outbox.templateVarsJson.telegram as Record<string, unknown>)
+      : {};
+  const buttons = Array.isArray(telegram.buttons)
+    ? telegram.buttons
+        .map((button) => {
+          if (!button || typeof button !== "object") return null;
+          const row = button as { text?: unknown; url?: unknown };
+          const text = typeof row.text === "string" ? row.text.trim() : "";
+          const url = typeof row.url === "string" ? row.url.trim() : "";
+          return text && /^https?:\/\//iu.test(url) ? { text, url } : null;
+        })
+        .filter((button): button is { text: string; url: string } => Boolean(button))
+    : [];
+  return {
+    disable_web_page_preview: typeof telegram.disableWebPagePreview === "boolean" ? telegram.disableWebPagePreview : true,
+    ...(buttons.length ? { reply_markup: { inline_keyboard: [buttons] } } : {}),
+  };
+}
+
 async function sendTelegramMethod(
   method: "sendMessage" | "sendPhoto" | "sendDocument",
   params: TelegramSendBaseParams,
@@ -380,7 +402,7 @@ export async function sendTextMessage(params: TelegramSendTextParams): Promise<T
     params,
     {
       text: params.text,
-      disable_web_page_preview: true,
+      ...telegramOptionsFromOutbox(params.outbox),
     },
     "Telegram sendMessage failed"
   );

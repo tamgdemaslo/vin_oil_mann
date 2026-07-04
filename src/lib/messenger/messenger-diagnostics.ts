@@ -1,5 +1,10 @@
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
+import {
+  diagnosticCriticalText,
+  diagnosticRecommendationText,
+  stripDiagnosticReportLink,
+} from "@/lib/diagnostic-report-message";
 import { buildDiagnosticReportUrl } from "@/lib/diagnostic-report-link";
 import { prisma } from "@/lib/db";
 import { enqueueMessageOutbox, processOutboxItem } from "./messenger-outbox";
@@ -21,6 +26,9 @@ type DiagnosticReportTarget = {
   reportToken: string | null;
   reportUrl: string | null;
   shipmentId: string | null;
+  checkedCount: number;
+  recommendationCount: number;
+  criticalCount: number;
 };
 
 type TelegramConnectionRow = {
@@ -59,15 +67,15 @@ export type DiagnosticReportTelegramResult =
       error: string;
     };
 
-function renderTemplate(text: string, vars: Record<string, string>) {
-  return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => vars[key] ?? match);
+function renderTemplate(text: string, vars: Record<string, string | number | boolean | null | undefined>) {
+  return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => String(vars[key] ?? match));
 }
 
 async function diagnosticReportTemplateText() {
   const templates = await listMessageTemplates();
   return (
     templates.find((template) => template.key === "diagnostic_report")?.text ??
-    "Здравствуйте, {{clientName}}!\nГотов отчёт диагностики по автомобилю {{vehicleName}}.\n\n{{reportUrl}}\n\nЕсли хотите согласовать работы — напишите нам."
+    "Диагностика готова\n\n{{clientName}}, диагностика {{vehicleName}} готова.\n\nПроверено {{checkedCount}} пунктов.\n{{recommendationText}}\n{{criticalText}}\n\nОткрыть отчёт: {{reportUrl}}"
   );
 }
 
@@ -96,6 +104,9 @@ async function resolveLegacyDiagnostic(request: NextRequest, diagnosticId: strin
       model: true,
       licensePlate: true,
       vin: true,
+      summaryGreen: true,
+      summaryYellow: true,
+      summaryRed: true,
     },
   });
   if (!diagnostic) return null;
@@ -110,6 +121,9 @@ async function resolveLegacyDiagnostic(request: NextRequest, diagnosticId: strin
     reportToken: diagnostic.clientReportToken,
     reportUrl: diagnostic.clientReportToken ? buildDiagnosticReportUrl(request, diagnostic.clientReportToken) : null,
     shipmentId: diagnostic.shipmentMoySkladId ?? diagnostic.shipmentDraftId,
+    checkedCount: diagnostic.summaryGreen + diagnostic.summaryYellow + diagnostic.summaryRed,
+    recommendationCount: diagnostic.summaryYellow,
+    criticalCount: diagnostic.summaryRed,
   };
 }
 
@@ -127,6 +141,12 @@ async function resolveMapDiagnostic(request: NextRequest, diagnosticId: string):
       model: true,
       licensePlate: true,
       vin: true,
+      totalCount: true,
+      attentionCount: true,
+      replaceCount: true,
+      noAccessCount: true,
+      byMileageCount: true,
+      byClientCount: true,
     },
   });
   if (!diagnostic) return null;
@@ -141,6 +161,9 @@ async function resolveMapDiagnostic(request: NextRequest, diagnosticId: string):
     reportToken: diagnostic.publicToken,
     reportUrl: diagnostic.publicToken ? buildDiagnosticReportUrl(request, diagnostic.publicToken) : null,
     shipmentId: diagnostic.demandId,
+    checkedCount: diagnostic.totalCount,
+    recommendationCount: diagnostic.attentionCount + diagnostic.noAccessCount + diagnostic.byMileageCount + diagnostic.byClientCount,
+    criticalCount: diagnostic.replaceCount,
   };
 }
 
@@ -263,11 +286,16 @@ export async function sendDiagnosticReportToTelegram(input: {
     };
   }
 
-  const text = renderTemplate(await diagnosticReportTemplateText(), {
+  const text = stripDiagnosticReportLink(renderTemplate(await diagnosticReportTemplateText(), {
     clientName: target.clientName,
     vehicleName: target.vehicleName,
     reportUrl: target.reportUrl,
-  });
+    checkedCount: target.checkedCount,
+    recommendationCount: target.recommendationCount,
+    criticalCount: target.criticalCount,
+    recommendationText: diagnosticRecommendationText(target.recommendationCount),
+    criticalText: diagnosticCriticalText(target.criticalCount),
+  }), target.reportUrl);
   assertMessengerOutboundTextSafe(text);
   const conversationId = await upsertTelegramConversation(target, connection, text);
   const messageId = await insertDiagnosticReportMessage(conversationId, text);
@@ -278,6 +306,7 @@ export async function sendDiagnosticReportToTelegram(input: {
     channel: "telegram",
     recipientExternalChatId: connection.externalChatId,
     text,
+    templateVarsJson: { telegram: { disableWebPagePreview: true, buttons: [{ text: "Открыть отчёт", url: target.reportUrl }] } },
   });
   const processed = await processOutboxItem(outbox);
   await markReportSent(target.source, target.diagnosticId);

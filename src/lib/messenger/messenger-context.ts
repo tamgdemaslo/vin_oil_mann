@@ -4,12 +4,13 @@ import { getFirstCrmStage } from "@/lib/crm";
 import { ClientApiError, createClientAppointment, listClientAppointments } from "@/lib/client-site-api";
 import { prisma } from "@/lib/db";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
+import { buildDiagnosticReportMessage } from "@/lib/diagnostic-report-message";
 import { createLocalDemand } from "@/lib/local-demand-write";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import { getConversation, listMessages, sendMessage } from "./messenger-gateway";
-import type { Conversation, MessengerChannel } from "./messenger-types";
+import type { Conversation, MessengerChannel, SendMessageInput } from "./messenger-types";
 
 export type MessengerContextState =
   | "unclassified"
@@ -1298,9 +1299,10 @@ async function sendTextAndAudit(
   text: string,
   action: string,
   actor?: ContextActor | null,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  options?: Pick<SendMessageInput, "linkButton" | "disableWebPagePreview">
 ) {
-  const result = await sendMessage({ conversationId: row.id, text });
+  const result = await sendMessage({ conversationId: row.id, text, ...options });
   if (!result?.ok) throw new MessengerContextError(result?.error ?? "Не удалось отправить сообщение", 502);
   await insertAudit(prisma, {
     organizationId: row.organizationId,
@@ -1329,12 +1331,21 @@ export async function sendDiagnosticReportFromConversation(
   const reportUrl = `${origin}/report/${diagnostic.publicToken}`;
   const clientName = diagnostic.clientName || "клиент";
   const vehicleName = [diagnostic.brand, diagnostic.model, diagnostic.licensePlate].filter(Boolean).join(" ") || "автомобилю";
+  const recommendationCount = diagnostic.attentionCount + diagnostic.noAccessCount + diagnostic.byMileageCount + diagnostic.byClientCount;
   return sendTextAndAudit(
     row,
-    `Здравствуйте, ${clientName}!\nГотов отчёт диагностики по автомобилю ${vehicleName}.\n\n${reportUrl}\n\nЕсли хотите согласовать работы — напишите нам.`,
+    `Диагностика готова\n\n${buildDiagnosticReportMessage({
+      clientName,
+      car: vehicleName,
+      reportUrl,
+      checkedCount: diagnostic.totalCount,
+      recommendationCount,
+      criticalCount: diagnostic.replaceCount,
+    }, { includeLink: false })}`,
     "conversation.send_diagnostic_report",
     actor,
-    { diagnosticId: diagnostic.id }
+    { diagnosticId: diagnostic.id },
+    { linkButton: { text: "Открыть отчёт", url: reportUrl }, disableWebPagePreview: true }
   );
 }
 

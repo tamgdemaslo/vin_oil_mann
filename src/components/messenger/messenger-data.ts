@@ -373,8 +373,8 @@ export const quickReplyTemplates: QuickReplyTemplate[] = [
     id: "tpl-diagnostic-report",
     key: "diagnostic_report",
     title: "Отчёт диагностики",
-    text: "Здравствуйте, {{clientName}}!\nГотов отчёт диагностики по автомобилю {{vehicleName}}.\n\n{{reportUrl}}\n\nЕсли хотите согласовать работы — напишите нам.",
-    variablesJson: ["clientName", "vehicleName", "reportUrl"],
+    text: "Диагностика готова\n\n{{clientName}}, диагностика {{vehicleName}} готова.\n\nПроверено {{checkedCount}} пунктов.\n{{recommendationText}}\n{{criticalText}}\n\nОткрыть отчёт: {{reportUrl}}",
+    variablesJson: ["clientName", "vehicleName", "checkedCount", "recommendationText", "criticalText", "reportUrl"],
   },
   {
     id: "tpl-appointment-confirm",

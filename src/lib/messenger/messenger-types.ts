@@ -305,6 +305,8 @@ export type SendMessageInput = {
   text: string;
   createdByLogin?: string;
   replyToId?: string;
+  linkButton?: { text: string; url: string };
+  disableWebPagePreview?: boolean;
 };
 
 export type SendMessageResult = {

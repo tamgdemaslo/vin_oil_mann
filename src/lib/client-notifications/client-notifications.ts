@@ -1,5 +1,11 @@
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
+import {
+  diagnosticCriticalText,
+  diagnosticRecommendationText,
+  nonNegativeCount,
+  stripDiagnosticReportLink,
+} from "@/lib/diagnostic-report-message";
 import { buildDiagnosticReportUrl } from "@/lib/diagnostic-report-link";
 import { prisma } from "@/lib/db";
 import {
@@ -170,6 +176,8 @@ export type NotificationEventContext = {
   address?: string | null;
   companyPhone?: string | null;
   telegramLink?: string | null;
+  checkedCount?: number | null;
+  recommendationCount?: number | null;
   criticalCount?: number | null;
   warningCount?: number | null;
   status?: string | null;
@@ -240,7 +248,7 @@ export const notificationEventDefinitions: Array<{
   },
   {
     type: "diagnostic_sent",
-    title: "Диагностика отправлена",
+    title: "Диагностика готова",
     description: "Клиент получает ссылку на публичный отчёт диагностики.",
     defaultTiming: "После нажатия «Отправить клиенту»",
   },
@@ -281,7 +289,10 @@ export const notificationVariableGroups = [
   { title: "Автомобиль", variables: ["car", "car_make", "car_model", "license_plate", "vin"] },
   { title: "Сервис", variables: ["service_name", "branch_name", "address", "company_phone", "telegram_link"] },
   { title: "Ссылки", variables: ["diagnostic_report_link", "review_link", "order_link", "precheck_link"] },
-  { title: "Диагностика", variables: ["critical_count", "warning_count"] },
+  {
+    title: "Диагностика",
+    variables: ["checked_count", "recommendation_count", "critical_count", "warning_count", "recommendation_text", "critical_text"],
+  },
 ];
 
 const supportedVariableSet = new Set(notificationVariableGroups.flatMap((group) => group.variables));
@@ -296,6 +307,11 @@ const defaultConditions: NotificationConditions = {
   timezone: SERVICE_TIME_ZONE,
   minNoticeMinutes: 30,
 };
+
+const legacyDiagnosticReadyTemplateBody =
+  "Здравствуйте, {client_name}! Диагностика по автомобилю {car} готова. Посмотреть отчёт: {diagnostic_report_link}";
+const diagnosticReadyTemplateBody =
+  "{client_name}, диагностика {car} готова.\n\nПроверено {checked_count} пунктов.\n{recommendation_text}\n{critical_text}\n\nОткрыть отчёт: {diagnostic_report_link}";
 
 const defaultTemplates: Array<{
   key: string;
@@ -326,7 +342,7 @@ const defaultTemplates: Array<{
     key: "diagnostic-ready",
     name: "Диагностика готова",
     eventType: "diagnostic_sent",
-    body: "Здравствуйте, {client_name}! Диагностика по автомобилю {car} готова. Посмотреть отчёт: {diagnostic_report_link}",
+    body: diagnosticReadyTemplateBody,
   },
   {
     key: "client-arrived",
@@ -582,6 +598,29 @@ export async function ensureClientNotificationsSchema() {
           ON CONFLICT (id) DO NOTHING
         `;
       }
+      await prisma.$executeRaw`
+        UPDATE notification_templates
+        SET name = 'Диагностика готова',
+            body = ${diagnosticReadyTemplateBody},
+            metadata_json = metadata_json || ${json({
+              defaultVersion: 2,
+              variables: [
+                "client_name",
+                "car",
+                "checked_count",
+                "recommendation_text",
+                "critical_text",
+                "diagnostic_report_link",
+              ],
+            })}::jsonb,
+            updated_at = now()
+        WHERE id = ${orgScopedId(organizationId, "tpl", "diagnostic-ready")}
+          AND organization_id = ${organizationId}
+          AND event_type = 'diagnostic_sent'
+          AND metadata_json->>'systemDefault' = 'true'
+          AND COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
+          AND body = ${legacyDiagnosticReadyTemplateBody}
+      `;
 
       for (const rule of defaultRuleSpecs) {
         await prisma.$executeRaw`
@@ -673,8 +712,12 @@ function defaultVariableValue(key: string) {
     precheck_link: "",
     company_phone: process.env.NEXT_PUBLIC_COMPANY_PHONE?.trim() || process.env.COMPANY_PHONE?.trim() || "",
     telegram_link: process.env.NEXT_PUBLIC_TELEGRAM_LINK?.trim() || process.env.TELEGRAM_LINK?.trim() || "",
+    checked_count: "0",
+    recommendation_count: "0",
     critical_count: "0",
     warning_count: "0",
+    recommendation_text: diagnosticRecommendationText(0),
+    critical_text: diagnosticCriticalText(0),
   };
   return defaults[key] ?? "";
 }
@@ -693,6 +736,13 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
   const car =
     stringValue(input.car) ||
     [input.carMake, input.carModel, input.licensePlate || input.vin].map(stringValue).filter(Boolean).join(" · ");
+  const payload = asRecord(input.payload);
+  const criticalCount = nonNegativeCount(input.criticalCount ?? payload.criticalCount ?? payload.critical_count);
+  const warningCount = nonNegativeCount(input.warningCount ?? payload.warningCount ?? payload.warning_count);
+  const recommendationCount = nonNegativeCount(
+    input.recommendationCount ?? payload.recommendationCount ?? payload.recommendation_count ?? warningCount
+  );
+  const checkedCount = nonNegativeCount(input.checkedCount ?? payload.checkedCount ?? payload.checked_count ?? payload.totalCount ?? payload.total_count);
   const values: Record<string, string> = {
     client_name: stringValue(input.clientName),
     client_phone: stringValue(input.clientPhone),
@@ -716,8 +766,12 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     precheck_link: stringValue(input.precheckLink),
     company_phone: stringValue(input.companyPhone) || defaultVariableValue("company_phone"),
     telegram_link: stringValue(input.telegramLink) || defaultVariableValue("telegram_link"),
-    critical_count: input.criticalCount == null ? "" : String(input.criticalCount),
-    warning_count: input.warningCount == null ? "" : String(input.warningCount),
+    checked_count: String(checkedCount),
+    recommendation_count: String(recommendationCount),
+    critical_count: String(criticalCount),
+    warning_count: String(warningCount),
+    recommendation_text: diagnosticRecommendationText(recommendationCount),
+    critical_text: diagnosticCriticalText(criticalCount),
   };
 
   for (const key of supportedVariableSet) {
@@ -730,7 +784,15 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
   const unknownVariables = new Set<string>();
   const missingVariables = new Set<string>();
   const usedVariables: Record<string, string> = {};
-  const optionalLineVariables = new Set(["address", "review_link", "order_link", "precheck_link", "telegram_link", "company_phone"]);
+  const optionalLineVariables = new Set([
+    "address",
+    "review_link",
+    "order_link",
+    "precheck_link",
+    "telegram_link",
+    "company_phone",
+    "diagnostic_report_link",
+  ]);
   const tokenPattern = /\{\{\s*([a-zA-Z0-9_]+)(?:\|([^}]+))?\s*\}\}|\{\s*([a-zA-Z0-9_]+)(?:\|([^}]+))?\s*\}/g;
 
   const lines = body.split(/\r?\n/).map((line) => {
@@ -1498,7 +1560,8 @@ async function processClientNotificationJob(job: NotificationJobRow) {
     return finishJob(job, "no_consent", { renderedMessage, errorMessage: "Нет согласия на Telegram-уведомления." });
   }
 
-  assertMessengerOutboundTextSafe(renderedMessage);
+  const delivery = notificationDelivery(job, payload, renderedMessage);
+  assertMessengerOutboundTextSafe(delivery.text);
   await prisma.$executeRaw`
     UPDATE notification_jobs
     SET status = 'sending',
@@ -1527,12 +1590,14 @@ async function processClientNotificationJob(job: NotificationJobRow) {
   try {
     result = await sendMessage({
       conversationId: target.id,
-      text: `Автоуведомление · ${eventTitle(job.eventType)}\n\n${renderedMessage}`,
+      text: delivery.text,
+      linkButton: delivery.linkButton,
+      disableWebPagePreview: delivery.disableWebPagePreview,
       createdByLogin: job.initiatedById ?? undefined,
     });
   } catch (error) {
     return finishJob(job, "error", {
-      renderedMessage,
+      renderedMessage: delivery.renderedMessage,
       errorMessage: error instanceof Error ? error.message : "Не удалось создать сообщение Telegram.",
       conversationId: target.id,
       retry: true,
@@ -1540,7 +1605,7 @@ async function processClientNotificationJob(job: NotificationJobRow) {
   }
   if (!result) {
     return finishJob(job, "error", {
-      renderedMessage,
+      renderedMessage: delivery.renderedMessage,
       errorMessage: "Telegram-диалог не найден.",
       conversationId: target.id,
       retry: true,
@@ -1548,7 +1613,7 @@ async function processClientNotificationJob(job: NotificationJobRow) {
   }
   if (!result.ok) {
     return finishJob(job, "error", {
-      renderedMessage,
+      renderedMessage: delivery.renderedMessage,
       errorMessage: result.error || "Telegram не отправил сообщение.",
       messengerMessageId: result.message?.id,
       messengerOutboxId: result.outbox?.id,
@@ -1558,7 +1623,7 @@ async function processClientNotificationJob(job: NotificationJobRow) {
   }
   const status: NotificationJobStatus = result.outbox?.status === "skipped" ? "skipped" : "sent";
   return finishJob(job, status, {
-    renderedMessage,
+    renderedMessage: delivery.renderedMessage,
     providerMessageId: result.message.channelMessageId ?? null,
     messengerMessageId: result.message.id,
     messengerOutboxId: result.outbox?.id ?? null,
@@ -1568,6 +1633,30 @@ async function processClientNotificationJob(job: NotificationJobRow) {
 
 function eventTitle(eventType: ClientNotificationEventType) {
   return notificationEventDefinitions.find((event) => event.type === eventType)?.title ?? eventType;
+}
+
+function diagnosticReportLinkFromPayload(payload: JsonRecord) {
+  const variables = asRecord(payload.variables);
+  return stringValue(variables.diagnostic_report_link) || stringValue(payload.diagnosticReportLink) || stringValue(payload.reportUrl);
+}
+
+function notificationDelivery(job: NotificationJobRow, payload: JsonRecord, renderedMessage: string) {
+  if (job.eventType !== "diagnostic_sent") {
+    return {
+      text: `Автоуведомление · ${eventTitle(job.eventType)}\n\n${renderedMessage}`,
+      renderedMessage,
+      linkButton: undefined,
+      disableWebPagePreview: undefined,
+    };
+  }
+  const reportUrl = diagnosticReportLinkFromPayload(payload);
+  const compactMessage = reportUrl ? stripDiagnosticReportLink(renderedMessage, reportUrl) : renderedMessage;
+  return {
+    text: `${eventTitle(job.eventType)}\n\n${compactMessage}`,
+    renderedMessage: compactMessage,
+    linkButton: reportUrl ? { text: "Открыть отчёт", url: reportUrl } : undefined,
+    disableWebPagePreview: Boolean(reportUrl),
+  };
 }
 
 export async function cancelAppointmentScheduledNotifications(appointmentId: string, reason = "Запись изменилась") {
@@ -1679,6 +1768,8 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
         model: string | null;
         licensePlate: string | null;
         vin: string | null;
+        checkedCount: number;
+        recommendationCount: number;
         criticalCount: number;
         warningCount: number;
       }>
@@ -1694,6 +1785,8 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
       model,
       license_plate AS "licensePlate",
       vin,
+      total_count AS "checkedCount",
+      (attention_count + no_access_count + by_mileage_count + by_client_count) AS "recommendationCount",
       replace_count AS "criticalCount",
       attention_count AS "warningCount"
     FROM diagnostic_map_sessions
@@ -1714,9 +1807,11 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
         carModel: map.model,
         licensePlate: map.licensePlate,
         vin: map.vin,
+        checkedCount: map.checkedCount,
+        recommendationCount: map.recommendationCount,
         criticalCount: map.criticalCount,
         warningCount: map.warningCount,
-        payload: { source: "map", shipmentId: map.demandId },
+        payload: { source: "map", shipmentId: map.demandId, checkedCount: map.checkedCount, recommendationCount: map.recommendationCount },
       } satisfies NotificationEventContext;
     }
     if (source === "map") return null;
@@ -1734,6 +1829,7 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
       model: true,
       licensePlate: true,
       vin: true,
+      summaryGreen: true,
       summaryRed: true,
       summaryYellow: true,
     },
@@ -1756,9 +1852,16 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
     carModel: legacy.model,
     licensePlate: legacy.licensePlate,
     vin: legacy.vin,
+    checkedCount: legacy.summaryGreen + legacy.summaryYellow + legacy.summaryRed,
+    recommendationCount: legacy.summaryYellow,
     criticalCount: legacy.summaryRed,
     warningCount: legacy.summaryYellow,
-    payload: { source: "legacy", shipmentId: legacy.shipmentMoySkladId ?? legacy.shipmentDraftId },
+    payload: {
+      source: "legacy",
+      shipmentId: legacy.shipmentMoySkladId ?? legacy.shipmentDraftId,
+      checkedCount: legacy.summaryGreen + legacy.summaryYellow + legacy.summaryRed,
+      recommendationCount: legacy.summaryYellow,
+    },
   } satisfies NotificationEventContext;
 }
 

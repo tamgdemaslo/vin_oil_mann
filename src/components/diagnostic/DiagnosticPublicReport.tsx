@@ -5,6 +5,29 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Printer } from "lucide-react";
 import { formatServiceDayMonth, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 
+type PublicReportPhoto = {
+  id: string;
+  caption: string;
+  url: string;
+  itemTitle: string;
+  status: string;
+};
+
+type PrintAttentionRow = {
+  item: ReportItem;
+  number: string;
+  result: string;
+  recommendation: string;
+  status: string;
+};
+
+type PrintAttentionSection = {
+  title: string;
+  meta: string;
+  rows: PrintAttentionRow[];
+  photos: PublicReportPhoto[];
+};
+
 type ReportItem = {
   code: string;
   title: string;
@@ -205,6 +228,50 @@ function itemRecommendationText(item: ReportItem): string {
   return item.recommendation || "Согласовать дальнейшие действия с мастером.";
 }
 
+function compactPrintText(value: string, fallback: string, maxLength = 150): string {
+  const text = (value || fallback).replace(/\s+/gu, " ").trim();
+  if (text.length <= maxLength) return text;
+  const slice = text.slice(0, maxLength + 1);
+  const boundary = Math.max(
+    slice.lastIndexOf("."),
+    slice.lastIndexOf(";"),
+    slice.lastIndexOf(","),
+    slice.lastIndexOf(" ")
+  );
+  const compact = slice.slice(0, boundary > 80 ? boundary : maxLength).trim().replace(/[,:;.-]+$/u, "");
+  return `${compact}...`;
+}
+
+function printSectionKind(title: string): string {
+  const text = normalizedText(title);
+  if (/жидк|масл|антифриз|тормозн/iu.test(text)) return "контроль жидкостей";
+  if (/теч|утеч|сальник|поддон/iu.test(text)) return "визуальный осмотр";
+  if (/тормоз|диск|колод/iu.test(text)) return "тормозная система";
+  if (/шин|колес|резин/iu.test(text)) return "колёса и шины";
+  if (/акб|аккум|заряд|электр/iu.test(text)) return "электрооборудование";
+  if (/трансмисс|акпп|кпп|привод/iu.test(text)) return "трансмиссия";
+  if (/ходов|подвес|осмотр снизу/iu.test(text)) return "осмотр снизу";
+  return "диагностический блок";
+}
+
+function controlMeasurementLabel(item: ReportItem): string | null {
+  const text = normalizedText(`${item.blockTitle} ${item.title} ${item.code}`);
+  if (/антифриз|охлаждающ|замерзан/iu.test(text)) return "Антифриз";
+  if (/тормозн.*жидк|жидк.*тормозн/iu.test(text)) return "Тормозная жидкость";
+  if (/\bакб\b|аккум|battery|напряж/iu.test(text)) return "АКБ";
+  return null;
+}
+
+function uniquePhotos(photos: PublicReportPhoto[]): PublicReportPhoto[] {
+  const seen = new Set<string>();
+  return photos.filter((photo) => {
+    const key = photo.id || photo.url;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function shouldShowRecommendation(result: string, recommendation: string): boolean {
   const normalizedResult = result.toLowerCase();
   const normalizedRecommendation = recommendation
@@ -229,7 +296,25 @@ function detailChips(item: ReportItem, result: string, recommendation: string): 
       if (normalized === normalizedText(statusLabel(item.status))) return false;
       return !text.includes(normalized);
     })
-    .slice(0, 4);
+    .slice(0, 3);
+}
+
+function clientItemTitle(title: string): string {
+  return title
+    .replace(/\bATF\b/giu, "масло АКПП / ATF")
+    .replace(/\bАКПП\b/giu, "АКПП");
+}
+
+function resultSummaryText(input: { crit: number; attentionCount: number; percentGood: number; reportDate: string; indirect: number }) {
+  const attentionText = `${input.attentionCount} ${pluralRu(input.attentionCount, "пункт", "пункта", "пунктов")}`;
+  const indirectText = input.indirect > 0 ? " Некоторые пункты не удалось проверить полностью из-за ограниченного доступа." : "";
+  if (input.crit > 0) {
+    return `Есть критичные замечания. ${input.percentGood}% пунктов без замечаний. Рекомендуем начать с самых важных пунктов ниже.${indirectText}`;
+  }
+  if (input.attentionCount > 0) {
+    return `Критичных замечаний не найдено. ${input.percentGood}% пунктов без замечаний. Рекомендуем обратить внимание на ${attentionText} ниже.${indirectText}`;
+  }
+  return `Критичных замечаний не найдено. ${input.percentGood}% пунктов без замечаний. Состояние зафиксировано на ${formatNumericDate(input.reportDate)}.${indirectText}`;
 }
 
 function telegramUsername(value?: string | null): string | null {
@@ -255,7 +340,7 @@ function blockSummary(items: ReportItem[]): string {
   const countText = `${active.length} ${pluralRu(active.length, "пункт", "пункта", "пунктов")}`;
   if (active.some((item) => normalizeStatus(item.status) === "crit")) return `${countText} · есть критично`;
   if (active.some((item) => normalizeStatus(item.status) === "warn")) return `${countText} · есть внимание`;
-  if (active.some((item) => ["no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)))) return `${countText} · есть косвенно`;
+  if (active.some((item) => ["no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)))) return `${countText} · проверено не полностью`;
   return `${countText} · всё хорошо`;
 }
 
@@ -394,7 +479,7 @@ function PhotoTile({ photo, index, status }: { photo: { id: string; caption: str
       <div className="rep-photo-img" style={{ backgroundImage: `url(${photo.url})` }}>
         <div className="rep-photo-scrim" />
         <span className="rep-photo-dot" style={{ background: statusColor(status) }} />
-        <span className="rep-photo-no">IMG_{String(index + 1).padStart(3, "0")}</span>
+        <span className="rep-photo-no">Фото {String(index + 1).padStart(2, "0")}</span>
         <figcaption className="rep-photo-cap">
           <span className="lbl">{photo.itemTitle}</span>
           <span className="cap">{photo.caption || "Фото диагностики"}</span>
@@ -433,6 +518,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const [payload, setPayload] = useState<ReportPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lightboxPhoto, setLightboxPhoto] = useState<PublicReportPhoto | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -463,6 +549,15 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!lightboxPhoto) return undefined;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setLightboxPhoto(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxPhoto]);
+
   const visibleItems = useMemo(
     () => payload?.blocks.flatMap((block) => block.items.map((item) => ({ ...item, blockTitle: block.title }))).filter((item) => item.showInReport !== false) ?? [],
     [payload]
@@ -484,7 +579,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
 
   const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
   const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
-  const photos = visibleItems.flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: item.title, status: normalizeStatus(item.status) })));
+  const photos: PublicReportPhoto[] = visibleItems.flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
   const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
   const good = hasRealItems ? reportCounts.good : payload.counts.good ?? payload.counts.normal ?? 0;
@@ -499,15 +594,17 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const attentionPointsText = crit > 0
     ? "Есть критичные замечания"
     : attentionCount > 0
-      ? `Есть ${attentionCount} ${pluralRu(attentionCount, "точка", "точки", "точек")} внимания`
+      ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
       : "Критичных замечаний нет";
   const recommendationsText = attentionCount > 0
     ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
     : "Рекомендаций по срочным работам нет";
+  const heroRecommendationText = crit > 0 ? "Есть критичные замечания" : recommendationsText;
   const reportCode = payload.publicToken ?? token;
   const masterName = payload.master?.name || payload.master?.login || "мастер-диагност";
   const masterMasked = maskLogin(payload.master?.login || payload.master?.name);
   const percentGood = Math.round((good / (total || 1)) * 100);
+  const resultText = resultSummaryText({ crit, attentionCount, percentGood, reportDate, indirect });
   const verdictText = verdict(crit, warn, indirect);
   const vehicleShort = payload.vehicle.title.split(/\s+/).slice(0, 3).join(" ");
   const clientFirstName = (payload.clientName || "клиент").split(" ")[0] || "клиент";
@@ -530,11 +627,6 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     num: String(index + 1).padStart(2, "0"),
     items: block.items.filter((item) => item.showInReport !== false),
   }));
-  const checkColumnBreak = Math.ceil(blocksForReport.length / 2);
-  const checkColumns = [
-    blocksForReport.slice(0, checkColumnBreak),
-    blocksForReport.slice(checkColumnBreak),
-  ].filter((column) => column.length > 0);
   const attentionSummaryItems = ATTENTION_STATUSES
     .map((status) => ({
       status,
@@ -542,6 +634,44 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     }))
     .filter((item) => item.status === "crit" || item.count > 0);
   const hasAttentionBlocks = blocksForReport.some((block) => block.items.some((item) => isAttentionStatus(item.status)));
+  const printAttentionSections: PrintAttentionSection[] = blocksForReport
+    .map((block) => {
+      const rows = [...block.items]
+        .filter((item) => isAttentionStatus(item.status))
+        .sort(sortBySeverity)
+        .map((item) => {
+          const result = itemResultText(item);
+          const recommendation = itemRecommendationText(item);
+          const issueIndex = recommendations.findIndex((candidate) => candidate.blockTitle === item.blockTitle && candidate.code === item.code && candidate.title === item.title);
+          return {
+            item,
+            number: String(Math.max(0, issueIndex) + 1).padStart(2, "0"),
+            result: compactPrintText(result, statusLabel(item.status), 170),
+            recommendation: compactPrintText(recommendation, "Согласовать дальнейшие действия с мастером.", 155),
+            status: normalizeStatus(item.status),
+          };
+        });
+      const sectionPhotos = uniquePhotos(rows.flatMap((row) => row.item.photos.map((photo) => ({
+        ...photo,
+        itemTitle: clientItemTitle(row.item.title),
+        status: row.status,
+      }))));
+      return {
+        title: block.title,
+        meta: `${rows.length} ${pluralRu(rows.length, "пункт", "пункта", "пунктов")} · ${printSectionKind(block.title)}`,
+        rows,
+        photos: sectionPhotos,
+      };
+    })
+    .filter((section) => section.rows.length > 0);
+  const controlMeasurementRows = visibleItems
+    .map((item) => ({ item, label: controlMeasurementLabel(item), status: normalizeStatus(item.status) }))
+    .filter((row): row is { item: ReportItem; label: string; status: string } => Boolean(row.label));
+  const controlMeasurementPhotos = uniquePhotos(controlMeasurementRows.flatMap((row) => row.item.photos.map((photo) => ({
+    ...photo,
+    itemTitle: row.label,
+    status: row.status,
+  }))));
 
   if (mode === "online") {
     return (
@@ -559,7 +689,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <div className="tgm-public-hero-copy">
               <span className="tgm-public-eyebrow">Привет, {clientFirstName}</span>
               <h1>Автомобиль<br />проверен</h1>
-              <p>{checkedClientText}. {recommendationsText}.</p>
+              <p>{checkedClientText}. {heroRecommendationText}.</p>
               <div className="tgm-public-vehicle">{payload.vehicle.title || "Ваш автомобиль"}</div>
             </div>
             <OnlineCarSilhouette label={vehicleShort || "Диагностика готова"} />
@@ -600,14 +730,14 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
             <div className="tgm-public-kpi is-indirect">
               <span>{indirect}</span>
-              <strong>Косвенно</strong>
+              <strong>Не полностью</strong>
             </div>
           </section>
 
           <section className="tgm-public-result report-mobile-container">
             <span>Итог</span>
             <h2>{attentionPointsText}</h2>
-            <p>{percentGood}% пунктов без замечаний. Состояние отражает результат осмотра на {formatNumericDate(reportDate)}.</p>
+            <p>{resultText}</p>
           </section>
 
           <section className="tgm-public-section report-mobile-container">
@@ -635,7 +765,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                       <div className="tgm-public-rec-top">
                         <span className="tgm-public-rec-priority">{String(index + 1).padStart(2, "0")}</span>
                         <div className="tgm-public-rec-title">
-                          <h3>{item.title}</h3>
+                          <h3>{clientItemTitle(item.title)}</h3>
                           <small>{item.blockTitle}</small>
                         </div>
                         <span className={`tgm-public-rec-status ${normalized}`}>{statusLabel(normalized)}</span>
@@ -661,9 +791,15 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                               target="_blank"
                               rel="noreferrer"
                               key={photo.id}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                setLightboxPhoto({ ...photo, itemTitle: clientItemTitle(item.title), status: normalized });
+                              }}
+                              aria-label={`Открыть фото: ${photo.caption || clientItemTitle(item.title)}`}
                             >
-                              <img src={photo.url} alt={photo.caption || item.title || "Фото диагностики"} />
-                              <span className="tgm-public-rec-photo-caption">{photo.caption || item.title}</span>
+                              <img src={photo.url} alt={photo.caption || clientItemTitle(item.title) || "Фото диагностики"} loading="lazy" decoding="async" />
+                              <span className="tgm-public-rec-photo-caption">{photo.caption || clientItemTitle(item.title)}</span>
+                              <span className="tgm-public-photo-open">Открыть фото</span>
                             </a>
                           ))}
                         </div>
@@ -691,8 +827,19 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
               </div>
               <div className="tgm-public-photos">
                 {generalPhotos.map((photo, index) => (
-                  <a className="tgm-public-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.id}-${index}`}>
-                    <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} />
+                  <a
+                    className="tgm-public-photo"
+                    href={photo.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    key={`${photo.id}-${index}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setLightboxPhoto(photo);
+                    }}
+                    aria-label={`Открыть фото: ${photo.caption || photo.itemTitle || "Фото диагностики"}`}
+                  >
+                    <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} loading="lazy" decoding="async" />
                     <span className="tgm-public-photo-status" style={{ background: statusColor(photo.status) }} />
                     <div className="tgm-public-photo-caption">
                       <strong>{photo.itemTitle || "Фото диагностики"}</strong>
@@ -732,7 +879,7 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                           <div className="tgm-public-check" key={item.code}>
                             <span className="tgm-public-mark" style={{ background: statusColor(normalized) }}>{statusIcon(normalized)}</span>
                             <div>
-                              <strong>{item.title}</strong>
+                              <strong>{clientItemTitle(item.title)}</strong>
                               <span>{itemShortResult(item)}</span>
                             </div>
                             <em className={`tgm-public-check-status ${normalized}`}>{statusLabel(normalized)}</em>
@@ -749,8 +896,8 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
           <section className="tgm-public-next report-mobile-container">
             <div>
               <span>04 / что дальше</span>
-              <h2>Поможем с рекомендациями</h2>
-              <p>{publicTelegramHref ? "Напишите нам в Telegram, позвоните или выберите удобное время." : "Позвоните или выберите удобное время."} Подготовим материалы заранее и напомним о следующей проверке.</p>
+              <h2>Остались вопросы?</h2>
+              <p>{publicTelegramHref ? "Напишите нам — объясним рекомендации и подскажем, что делать дальше." : "Позвоните нам — объясним рекомендации и подскажем, что делать дальше."}</p>
             </div>
             <div className="tgm-public-actions">
               {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать в Telegram</a>}
@@ -778,6 +925,19 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <a href={publicPhoneHref}>Позвонить</a>
             <a href={publicBookingUrl}>Записаться</a>
           </nav>
+
+          {lightboxPhoto && (
+            <div className="tgm-public-lightbox no-print" role="dialog" aria-modal="true" aria-label="Фото диагностики" onClick={() => setLightboxPhoto(null)}>
+              <div className="tgm-public-lightbox-panel" onClick={(event) => event.stopPropagation()}>
+                <button type="button" onClick={() => setLightboxPhoto(null)} aria-label="Закрыть фото">×</button>
+                <img src={lightboxPhoto.url} alt={lightboxPhoto.caption || lightboxPhoto.itemTitle || "Фото диагностики"} />
+                <div>
+                  <strong>{lightboxPhoto.itemTitle}</strong>
+                  <span>{lightboxPhoto.caption || "Фото диагностики"}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </article>
       </main>
     );
@@ -821,86 +981,115 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
           <div className="rep-v-cell good"><div className="n">{good}</div><div className="l">Хорошо</div></div>
           <div className="rep-v-cell warn"><div className="n">{warn}</div><div className="l">Внимание</div></div>
           <div className="rep-v-cell crit"><div className="n">{crit}</div><div className="l">Критично</div></div>
-          <div className="rep-v-cell ind"><div className="n">{indirect}</div><div className="l">Косвенно</div></div>
+          <div className="rep-v-cell ind"><div className="n">{indirect}</div><div className="l">Не полностью</div></div>
           <div className="rep-v-statement">
             <div className="rep-eyebrow">Итог</div>
             <div className="s">Машина {verdictText}</div>
+            <div className="rep-v-sub">{checkedClientText}. {recommendationsText}.</div>
           </div>
         </div>
 
-        {recommendations.length > 0 && (
-          <div className="rep-sec">
-            <div className="rep-sec-head">
-              <span className="rep-sec-num">01</span>
-              <div><div className="rep-eyebrow rust">Что предлагаем</div><h2 className="rep-h2">Точки внимания · {recommendations.length}</h2></div>
-            </div>
-            <div className="rep-recs">
-              {recommendations.map((item) => {
-                const normalized = normalizeStatus(item.status);
-                const result = itemResultText(item);
-                const recommendation = itemRecommendationText(item);
-                return (
-                  <div className="rep-rec" style={{ borderLeftColor: statusColor(normalized) }} key={`${item.blockTitle}-${item.code}`}>
-                    <div className="rep-rec-head">
-                      <h3>{item.title}</h3>
-                      <span className="rep-rec-tag" style={{ background: statusColor(normalized) }}>{statusLabel(normalized)}</span>
+        <div className="rep-sec rep-inspection-sec">
+          <div className="rep-sec-head">
+            <span className="rep-sec-num">01</span>
+            <div><div className="rep-eyebrow rust">Акт осмотра</div><h2 className="rep-h2">Замечания по разделам · {recommendations.length}</h2></div>
+          </div>
+          {printAttentionSections.length > 0 ? (
+            <div className="rep-table-stack">
+              {printAttentionSections.map((section) => (
+                <section className="rep-table-block" key={section.title}>
+                  <div className="rep-table-block-head">
+                    <div>
+                      <h3>{section.title}</h3>
+                      <span>{section.meta}</span>
                     </div>
-                    <div className="rep-rec-desc">
-                      {result}
-                      {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
-                    </div>
-                    {(item.comment || item.reportText?.sourceText) && (
-                      <div className="rep-rec-quote">«{item.comment || item.reportText?.sourceText}»<br /><span>— {masterName.split(" ")[0]}, мастер-диагност</span></div>
-                    )}
+                    <em>{section.rows.length} {pluralRu(section.rows.length, "замечание", "замечания", "замечаний")}</em>
                   </div>
-                );
-              })}
+                  <table className="rep-issue-table">
+                    <thead>
+                      <tr>
+                        <th>№</th>
+                        <th>Зона / узел</th>
+                        <th>Что нашли</th>
+                        <th>Рекомендация / действие</th>
+                        <th>Статус</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.rows.map((row) => (
+                        <tr key={`${section.title}-${row.item.code}`}>
+                          <td className="rep-col-num">{row.number}</td>
+                          <td className="rep-col-zone"><strong>{clientItemTitle(row.item.title)}</strong></td>
+                          <td>{row.result}</td>
+                          <td>{shouldShowRecommendation(row.result, row.recommendation) ? row.recommendation : "Контроль по рекомендации мастера."}</td>
+                          <td><span className={`rep-status-pill ${row.status}`} style={{ color: statusColor(row.status) }}>{statusLabel(row.status)}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {section.photos.length > 0 && (
+                    <div className="rep-section-photos">
+                      {section.photos.map((photo, index) => (
+                        <PhotoTile key={`${section.title}-${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))}
             </div>
+          ) : (
+            <div className="rep-print-empty">Критичных замечаний и пунктов, требующих реакции, не зафиксировано.</div>
+          )}
+        </div>
+
+        {controlMeasurementRows.length > 0 && (
+          <div className="rep-sec rep-control-sec">
+            <div className="rep-sec-head">
+              <span className="rep-sec-num">02</span>
+              <div><div className="rep-eyebrow rust">Фиксация замеров</div><h2 className="rep-h2">Контрольные замеры</h2></div>
+            </div>
+            <table className="rep-control-table">
+              <thead>
+                <tr>
+                  <th>Замер</th>
+                  <th>Пункт</th>
+                  <th>Результат</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody>
+                {controlMeasurementRows.map((row) => (
+                  <tr key={`control-${row.item.code}-${row.label}`}>
+                    <td><strong>{row.label}</strong></td>
+                    <td>{clientItemTitle(row.item.title)}</td>
+                    <td>{compactPrintText(itemShortResult(row.item), itemResultText(row.item), 130)}</td>
+                    <td><span className={`rep-status-pill ${row.status}`} style={{ color: statusColor(row.status) }}>{statusLabel(row.status)}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {controlMeasurementPhotos.length > 0 && (
+              <div className="rep-section-photos rep-control-photos">
+                {controlMeasurementPhotos.map((photo, index) => (
+                  <PhotoTile key={`control-photo-${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {photos.length > 0 && (
-          <div className="rep-sec">
+          <div className="rep-sec rep-appendix-sec">
             <div className="rep-sec-head">
-              <span className="rep-sec-num">02</span>
-              <div><div className="rep-eyebrow rust">Как это выглядит</div><h2 className="rep-h2">Фотоотчёт · {photos.length}</h2></div>
+              <span className="rep-sec-num">03</span>
+              <div><div className="rep-eyebrow rust">Приложение</div><h2 className="rep-h2">Полный фотоотчёт · {photos.length}</h2></div>
             </div>
             <div className="rep-photos">
               {photos.map((photo, index) => <PhotoTile key={`${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />)}
             </div>
-            <div className="rep-photo-note">Снимки сделаны мастером в процессе осмотра {formatNumericDate(reportDate)}.</div>
+            <div className="rep-photo-note">Полный набор снимков, сделанных мастером в процессе осмотра {formatNumericDate(reportDate)}.</div>
           </div>
         )}
-
-        <div className="rep-sec rep-check-sec">
-          <div className="rep-sec-head">
-            <span className="rep-sec-num">03</span>
-            <div><div className="rep-eyebrow rust">Полный список</div><h2 className="rep-h2">Что мы посмотрели</h2></div>
-          </div>
-          <div className="rep-legend">
-            {["good", "warn", "crit", "no-access", "by-mileage", "by-client"].map((key) => (
-              <span className="rep-key" key={key}><span className="rep-mark" style={{ background: statusColor(key) }}>{statusIcon(key)}</span>{payload.statusLegend?.[key]?.label ?? statusLabel(key)}</span>
-            ))}
-          </div>
-          <div className="rep-check">
-            {checkColumns.map((column, columnIndex) => (
-              <div className="rep-check-col" key={`check-col-${columnIndex}`}>
-                {column.map((block) => (
-                  <div className="rep-block" key={block.code}>
-                    <div className="rep-block-head"><span className="rep-block-no">{block.num}</span>{block.title}</div>
-                    {block.items.map((item) => (
-                      <div className="rep-check-row" key={item.code}>
-                        <span className="rep-mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
-                        <span className="rep-check-label">{item.title}</span>
-                        <span className="rep-check-val">{itemShortResult(item)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
 
         <div className="rep-foot">
           <div className="rep-foot-cta">
