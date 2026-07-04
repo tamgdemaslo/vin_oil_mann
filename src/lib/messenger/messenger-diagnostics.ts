@@ -6,6 +6,7 @@ import {
   stripDiagnosticReportLink,
 } from "@/lib/diagnostic-report-message";
 import { buildDiagnosticReportUrl } from "@/lib/diagnostic-report-link";
+import { syncDiagnosticVehicleFromShipment } from "@/lib/diagnostic-vehicle-sync";
 import { prisma } from "@/lib/db";
 import { enqueueMessageOutbox, processOutboxItem } from "./messenger-outbox";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
@@ -128,6 +129,7 @@ async function resolveLegacyDiagnostic(request: NextRequest, diagnosticId: strin
 }
 
 async function resolveMapDiagnostic(request: NextRequest, diagnosticId: string): Promise<DiagnosticReportTarget | null> {
+  await syncDiagnosticVehicleFromShipment(diagnosticId, { mode: "fillMissingOnly", reason: "telegram-report" });
   const diagnostic = await prisma.diagnosticMapSession.findUnique({
     where: { id: diagnosticId },
     select: {

@@ -4,6 +4,7 @@ import {
   handleDiagnosticReportSent,
   markDiagnosticReportSent,
 } from "@/lib/client-notifications/client-notifications";
+import { syncDiagnosticVehicleFromShipment } from "@/lib/diagnostic-vehicle-sync";
 
 function actionError(error: unknown) {
   const message = error instanceof Error ? error.message : "Не удалось отправить отчёт в Telegram";
@@ -21,6 +22,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
   try {
+    await syncDiagnosticVehicleFromShipment(id, {
+      mode: "fillMissingOnly",
+      reason: "before-send-report",
+      userLogin: gate.session.user.login,
+    });
     const result = await handleDiagnosticReportSent({
       source: "map",
       diagnosticId: id,

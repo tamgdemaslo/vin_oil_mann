@@ -5,6 +5,7 @@ import { ClientApiError, createClientAppointment, listClientAppointments } from 
 import { prisma } from "@/lib/db";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { buildDiagnosticReportMessage } from "@/lib/diagnostic-report-message";
+import { syncDiagnosticVehicleFromShipment } from "@/lib/diagnostic-vehicle-sync";
 import { createLocalDemand } from "@/lib/local-demand-write";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
@@ -1327,20 +1328,23 @@ export async function sendDiagnosticReportFromConversation(
     orderBy: { updatedAt: "desc" },
   });
   if (!diagnostic?.publicToken) throw new MessengerContextError("Публичный отчёт диагностики не найден", 404);
+  await syncDiagnosticVehicleFromShipment(diagnostic.id, { mode: "fillMissingOnly", reason: "messenger-send-report", userLogin: actor?.login });
+  const syncedDiagnostic = await prisma.diagnosticMapSession.findUnique({ where: { id: diagnostic.id } });
+  const currentDiagnostic = syncedDiagnostic ?? diagnostic;
   const origin = cleanOptional(input.origin)?.replace(/\/$/, "") || "";
-  const reportUrl = `${origin}/report/${diagnostic.publicToken}`;
-  const clientName = diagnostic.clientName || "клиент";
-  const vehicleName = [diagnostic.brand, diagnostic.model, diagnostic.licensePlate].filter(Boolean).join(" ") || "автомобилю";
-  const recommendationCount = diagnostic.attentionCount + diagnostic.noAccessCount + diagnostic.byMileageCount + diagnostic.byClientCount;
+  const reportUrl = `${origin}/report/${currentDiagnostic.publicToken}`;
+  const clientName = currentDiagnostic.clientName || "клиент";
+  const vehicleName = [currentDiagnostic.brand, currentDiagnostic.model, currentDiagnostic.licensePlate].filter(Boolean).join(" ") || "автомобилю";
+  const recommendationCount = currentDiagnostic.attentionCount;
   return sendTextAndAudit(
     row,
     `Диагностика готова\n\n${buildDiagnosticReportMessage({
       clientName,
       car: vehicleName,
       reportUrl,
-      checkedCount: diagnostic.totalCount,
+      checkedCount: currentDiagnostic.totalCount,
       recommendationCount,
-      criticalCount: diagnostic.replaceCount,
+      criticalCount: currentDiagnostic.replaceCount,
     }, { includeLink: false })}`,
     "conversation.send_diagnostic_report",
     actor,

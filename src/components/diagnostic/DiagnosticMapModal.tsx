@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type HTMLAttributes } from "react";
-import { Camera, ChevronLeft, ChevronRight, Copy, Printer, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Copy, Printer, RefreshCw, X } from "lucide-react";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import {
   DIAGNOSTIC_MAP_BLOCKS,
@@ -16,6 +16,17 @@ type DiagnosticMapPhoto = {
   caption: string;
   url: string;
   thumbnailUrl: string;
+};
+
+type DiagnosticVehiclePhoto = {
+  id: string;
+  caption: string;
+  url: string;
+  thumbnailUrl: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  uploadedBy?: string | null;
+  updatedAt?: string | null;
 };
 
 type DiagnosticMapItem = {
@@ -47,6 +58,14 @@ type DiagnosticMapBlock = {
   items: DiagnosticMapItem[];
 };
 
+type DiagnosticVehicleSyncDiff = {
+  field: string;
+  label: string;
+  diagnosticValue: string;
+  shipmentValue: string;
+  canFillMissing: boolean;
+};
+
 type DiagnosticMapPayload = {
   id: string;
   shipmentId: string | null;
@@ -62,6 +81,15 @@ type DiagnosticMapPayload = {
     vin: string | null;
     licensePlate: string | null;
     mileage: number | null;
+  };
+  vehiclePhoto?: DiagnosticVehiclePhoto | null;
+  vehicleSync?: {
+    shipmentId: string | null;
+    hasShipment: boolean;
+    hasDifferences: boolean;
+    fields: DiagnosticVehicleSyncDiff[];
+    missingFields: DiagnosticVehicleSyncDiff[];
+    differingFields: DiagnosticVehicleSyncDiff[];
   };
   master: { name: string | null };
   counts: { total: number };
@@ -141,6 +169,7 @@ type FieldContext = {
 };
 
 type AutoMeasurementKind =
+  | "battery"
   | "oil"
   | "coolant"
   | "brake-fluid"
@@ -210,6 +239,59 @@ function numericValue(value: string): number | null {
   if (!match) return null;
   const parsed = Number(match[0]);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clampBatterySoh(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function batterySohPercent(value?: string | null): number | null {
+  const raw = (value ?? "").trim();
+  if (!raw || /(?:^|\s)(?:в|v)(?:\s|$|[.,])/iu.test(raw)) return null;
+  const parts = valueParts(raw);
+  const candidate = parts.SOH ?? parts["Здоровье АКБ"] ?? raw;
+  const hasSohSignal = /soh|здоров|%/iu.test(raw) || /^\d{1,3}$/u.test(raw);
+  if (!hasSohSignal) return null;
+  const parsed = numericValue(candidate);
+  if (parsed === null || parsed > 100) return null;
+  return clampBatterySoh(parsed);
+}
+
+function batterySohStatus(value: number): DiagnosticMapStatusCode {
+  if (value >= 80) return "good";
+  if (value >= 60) return "warn";
+  return "crit";
+}
+
+function evaluateBatterySoh(value: number): MeasurementEvaluation {
+  const soh = clampBatterySoh(value);
+  const status = batterySohStatus(soh);
+  if (status === "good") {
+    return {
+      value: `SOH: ${soh}%`,
+      status,
+      comment: "Аккумулятор в хорошем состоянии.",
+      recommendation: "",
+      nextVisit: false,
+    };
+  }
+  if (status === "warn") {
+    return {
+      value: `SOH: ${soh}%`,
+      status,
+      comment: "Аккумулятор имеет признаки износа.",
+      recommendation: "Контроль состояния АКБ",
+      nextVisit: true,
+    };
+  }
+  return {
+    value: `SOH: ${soh}%`,
+    status,
+    comment: "Аккумулятор слабый. Возможны проблемы с запуском.",
+    recommendation: "Замена АКБ",
+    nextVisit: false,
+  };
 }
 
 function includesAny(value: string, words: string[]): boolean {
@@ -911,6 +993,7 @@ function tireWheelCommentFromDamages(wheel: (typeof TIRE_WHEELS)[number], depth:
 }
 
 function autoMeasurementKind(code: string): AutoMeasurementKind | null {
+  if (code === "battery") return "battery";
   if (code === "oil-level") return "oil";
   if (code === "coolant") return "coolant";
   if (code === "brake-fluid") return "brake-fluid";
@@ -1021,6 +1104,10 @@ function autoStatusFromItem(item: DiagnosticMapItem): DiagnosticMapStatusCode | 
   const kind = autoMeasurementKind(item.code);
   if (!kind) return null;
 
+  if (kind === "battery") {
+    const value = batterySohPercent(item.value);
+    return value === null ? null : evaluateBatterySoh(value).status;
+  }
   if (kind === "oil") {
     return checkedAutoStatus(OIL_LEVEL_ZONES.find((zone) => item.value === zone.value || item.comment === zone.comment)?.status ?? "unchecked");
   }
@@ -1529,9 +1616,12 @@ function fieldContext(item: DiagnosticMapItem): FieldContext {
     if (item.status === "good" && number >= 2) return { ...base, warning: "Для «Хорошо» влажность тормозной жидкости обычно ниже 2%." };
     if (["warn", "crit"].includes(item.status) && number < 2) return { ...base, warning: "Значение ниже 2%. Проверьте выбранный статус." };
   }
-  if (item.code === "battery" && number !== null) {
-    if (item.status === "good" && number < 12.4) return { ...base, warning: "Для «Хорошо» напряжение покоя обычно 12.4–12.7 В." };
-    if (["warn", "crit"].includes(item.status) && number >= 12.4) return { ...base, warning: "Напряжение в нормальном диапазоне. Проверьте выбранный статус." };
+  if (item.code === "battery") {
+    const soh = batterySohPercent(value);
+    if (soh === null && value) return { ...base, warning: "Старый формат проверки АКБ. Для новых диагностик укажите SOH в процентах." };
+    if (soh !== null && item.status !== "unchecked" && item.status !== batterySohStatus(soh)) {
+      return { ...base, warning: "Статус отличается от автоматического расчёта по SOH." };
+    }
   }
   if (item.code === "tires" && number !== null) {
     if (item.status === "good" && number <= 4) return { ...base, warning: "Для «Хорошо» глубина протектора обычно больше 4 мм." };
@@ -1591,6 +1681,15 @@ function itemNeedsAction(item: DiagnosticMapItem): boolean {
 
 function itemQuickSummary(item: DiagnosticMapItem): string {
   if (itemIsNotApplicable(item)) return "Агрегат отсутствует · не применимо";
+  if (item.code === "battery") {
+    const soh = batterySohPercent(item.value);
+    if (soh !== null) {
+      const status = DIAGNOSTIC_MAP_STATUSES[batterySohStatus(soh)] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+      return `SOH ${soh}% · ${status.label}`;
+    }
+    if (item.value.trim()) return "старый формат проверки АКБ";
+    return "SOH не указан";
+  }
   const parts = valueParts(item.value);
   if (item.code === "leaks") {
     const condition = parts["Утечка"];
@@ -1692,13 +1791,7 @@ function defaultGoodPatch(item: DiagnosticMapItem): Partial<DiagnosticMapItem> {
   }
 
   if (item.code === "battery") {
-    return measurementPatch(item, {
-      value: "12.6 В",
-      status: "good",
-      comment: item.notes[0] ?? "Напряжение АКБ в норме",
-      recommendation: "",
-      nextVisit: false,
-    });
+    return {};
   }
 
   return measurementPatch(item, {
@@ -1712,6 +1805,9 @@ function defaultGoodPatch(item: DiagnosticMapItem): Partial<DiagnosticMapItem> {
 
 function photoCaptionPresetsForItem(item: DiagnosticMapItem): string[] {
   const parts = valueParts(item.value);
+  if (item.code === "battery") {
+    return ["Показания тестера АКБ", "Фото тестера АКБ", "Общий вид аккумулятора"];
+  }
   if (item.code === "leaks") {
     const locations = splitMultiValue(parts["Где"]);
     return [
@@ -1737,6 +1833,10 @@ function photoCaptionPresetsForItem(item: DiagnosticMapItem): string[] {
     return ["Микротрещины ремня", "Следы масла на ремне", "Износ дорожек", "Общий вид ремня"];
   }
   return [item.title, "Общий вид", "Крупный план"];
+}
+
+function defaultPhotoCaptionForItem(item: DiagnosticMapItem): string {
+  return item.code === "battery" ? "Показания тестера АКБ" : "";
 }
 
 function CompletionRing({ pct }: { pct: number }) {
@@ -1774,6 +1874,74 @@ function MeasurementPrimaryControl({
 }) {
   const kind = autoMeasurementKind(item.code);
   const status = DIAGNOSTIC_MAP_STATUSES[item.status] ?? DIAGNOSTIC_MAP_STATUSES.unchecked;
+
+  if (kind === "battery") {
+    const soh = batterySohPercent(item.value);
+    const oldFormat = Boolean(item.value.trim() && soh === null);
+    const valueForControl = soh ?? 80;
+    const evaluation = evaluateBatterySoh(valueForControl);
+    const previewStatus = DIAGNOSTIC_MAP_STATUSES[evaluation.status];
+    const currentAutoStatus = autoStatusFromItem(item);
+    const manualOverride = Boolean(currentAutoStatus && item.status !== "unchecked" && item.status !== currentAutoStatus);
+    const applySoh = (nextValue: number) => {
+      if (manualOverride && !window.confirm("Пересчитать статус по SOH?")) return;
+      onApply(measurementPatch(item, evaluateBatterySoh(nextValue)), { debounce: true });
+    };
+    return (
+      <div className="diag-measure-card is-battery">
+        <div className="diag-measure-head">
+          <strong>Здоровье АКБ</strong>
+          <span>SOH по тестеру. Укажите процент, система сама выставит статус и понятный текст для клиента.</span>
+        </div>
+        {oldFormat && (
+          <div className="diag-measure-subpanel">
+            <small>Старый формат проверки АКБ: {formatDisplayValue(item.value)}. Новые диагностики заполняются только по SOH.</small>
+          </div>
+        )}
+        <div className="diag-measure-slider diag-battery-soh" style={{ "--diag-measure-color": previewStatus.color, "--diag-measure-fill": `${valueForControl}%` } as CSSProperties}>
+          <div className="diag-measure-readout">
+            <strong>{soh !== null ? `${soh}%` : "—"}</strong>
+            <span>{soh !== null ? previewStatus.label : "SOH не указан"}</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={valueForControl}
+            onChange={(event) => applySoh(clampBatterySoh(Number(event.target.value)))}
+          />
+          <label className="diag-battery-soh-number">
+            <span>SOH, %</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={soh ?? ""}
+              placeholder="%"
+              onChange={(event) => {
+                if (event.target.value === "") return;
+                applySoh(clampBatterySoh(Number(event.target.value)));
+              }}
+            />
+          </label>
+          <div className="diag-measure-scale">
+            <span>0</span>
+            <span>59 критично</span>
+            <span>60 внимание</span>
+            <span>80 хорошо</span>
+            <span>100</span>
+          </div>
+        </div>
+        <div className="diag-measure-auto-result" style={{ "--diag-status-color": status.color } as CSSProperties}>
+          <b>{status.icon}</b>
+          <strong>{status.label}</strong>
+          <span>{item.comment || (oldFormat ? "Старый формат проверки АКБ. Статус сохранён без пересчёта по SOH." : soh !== null ? evaluation.comment : "Передвиньте ползунок SOH, чтобы получить автоматический вывод.")}</span>
+        </div>
+      </div>
+    );
+  }
 
   if (kind === "oil") {
     const selectedZone = OIL_LEVEL_ZONES.find((zone) => zone.value === item.value || zone.comment === item.comment) ?? null;
@@ -2572,8 +2740,12 @@ export function DiagnosticMapModal({
   const [quickOpenBlocks, setQuickOpenBlocks] = useState<Set<string>>(new Set());
   const [quickExpandedItems, setQuickExpandedItems] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+  const [vehicleSyncing, setVehicleSyncing] = useState<"fillMissingOnly" | "forceOverwrite" | null>(null);
+  const [vehiclePhotoUploading, setVehiclePhotoUploading] = useState(false);
+  const [vehiclePhotoDeleting, setVehiclePhotoDeleting] = useState(false);
   const [quickUndoSnapshot, setQuickUndoSnapshot] = useState<QuickUndoSnapshot | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const vehiclePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const pendingPhotoTargetRef = useRef<string | null>(null);
   const pendingSavesRef = useRef(new Set<Promise<unknown>>());
   const pendingUploadsRef = useRef(new Set<Promise<unknown>>());
@@ -2719,10 +2891,10 @@ export function DiagnosticMapModal({
   const autoStatus = autoStatusCode ? DIAGNOSTIC_MAP_STATUSES[autoStatusCode] : null;
   const manualStatusOverride = Boolean(hasAutoMeasurement && item && autoStatusCode && item.status !== "unchecked" && item.status !== autoStatusCode);
   const activeUploads = item ? photoUploads[item.code] ?? [] : [];
-  const remainingGoodTargets = useMemo(
-    () => applicableFlatItems.filter((candidate) => candidate.status === "unchecked" && !itemIsNotApplicable(candidate)),
-    [applicableFlatItems]
-  );
+	  const remainingGoodTargets = useMemo(
+	    () => applicableFlatItems.filter((candidate) => candidate.status === "unchecked" && candidate.code !== "battery" && !itemIsNotApplicable(candidate)),
+	    [applicableFlatItems]
+	  );
   const remainingGoodLabel =
     remainingGoodTargets.length > 0 ? `Отметить ${remainingGoodTargets.length} непроверенных как хорошие` : "Все пункты уже отмечены";
   const mobileProgressLabel =
@@ -3090,6 +3262,75 @@ export function DiagnosticMapModal({
     return file.type.startsWith("image/") || /\.(avif|heic|heif|jpe?g|png|webp)$/i.test(file.name);
   }
 
+  function openVehiclePhotoPicker() {
+    const input = vehiclePhotoInputRef.current;
+    if (!input) {
+      setError("Не удалось открыть выбор фото автомобиля. Обновите страницу и попробуйте ещё раз.");
+      return;
+    }
+    try {
+      input.click();
+    } catch {
+      setError("Не удалось открыть выбор фото. Разрешите доступ к фото/камере в настройках телефона.");
+    }
+  }
+
+  async function uploadVehiclePhoto(file: File | null | undefined) {
+    if (!activeId || !file) return;
+    if (!fileLooksLikeImage(file)) {
+      setError("Неподдерживаемый формат фото автомобиля. Выберите JPG, PNG, HEIC, WebP или другой файл изображения.");
+      return;
+    }
+    if (file.size > MAX_DIAGNOSTIC_PHOTO_BYTES) {
+      setError("Фото автомобиля слишком большое. Максимальный размер — 12 МБ.");
+      return;
+    }
+    setVehiclePhotoUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.set("caption", data?.vehicle.title ? `Фото автомобиля ${data.vehicle.title}` : "Фото автомобиля");
+      form.set("file", file);
+      const response = await fetch(`/api/diagnostics/${activeId}/vehicle-photo`, { method: "POST", body: form });
+      const json = await response.json().catch(() => ({})) as { diagnostic?: DiagnosticMapPayload; error?: string };
+      if (!response.ok || !json.diagnostic) throw new Error(json.error ?? "Не удалось сохранить фото автомобиля");
+      setData(json.diagnostic);
+      onDiagnosticUpdated?.(json.diagnostic);
+      setNotice("Фото автомобиля сохранено");
+      window.setTimeout(() => setNotice(null), 2200);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось сохранить фото автомобиля");
+    } finally {
+      setVehiclePhotoUploading(false);
+    }
+  }
+
+  function handleVehiclePhotoInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    event.currentTarget.value = "";
+    void uploadVehiclePhoto(file);
+  }
+
+  async function deleteVehiclePhoto() {
+    if (!activeId || !data?.vehiclePhoto) return;
+    if (!window.confirm("Удалить фото автомобиля из диагностики? Фото по пунктам останутся на месте.")) return;
+    setVehiclePhotoDeleting(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/diagnostics/${activeId}/vehicle-photo`, { method: "DELETE" });
+      const json = await response.json().catch(() => ({})) as { diagnostic?: DiagnosticMapPayload; error?: string };
+      if (!response.ok || !json.diagnostic) throw new Error(json.error ?? "Не удалось удалить фото автомобиля");
+      setData(json.diagnostic);
+      onDiagnosticUpdated?.(json.diagnostic);
+      setNotice("Фото автомобиля удалено");
+      window.setTimeout(() => setNotice(null), 2200);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось удалить фото автомобиля");
+    } finally {
+      setVehiclePhotoDeleting(false);
+    }
+  }
+
   async function uploadPhoto(target: DiagnosticMapItem, file: File | null) {
     if (!activeId || !file) return;
     if (!fileLooksLikeImage(file)) {
@@ -3100,7 +3341,7 @@ export function DiagnosticMapModal({
       setError("Фото слишком большое. Максимальный размер — 12 МБ.");
       return;
     }
-    const caption = (photoCaptions[target.code] ?? "").trim();
+    const caption = (photoCaptions[target.code] ?? "").trim() || defaultPhotoCaptionForItem(target);
     const upload: PhotoUploadState = {
       id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${file.name}`,
       file,
@@ -3241,6 +3482,31 @@ export function DiagnosticMapModal({
     if (!data?.reportUrl) return;
     await navigator.clipboard?.writeText(data.reportUrl);
     setSaveState("saved");
+  }
+
+  async function syncVehicleFromShipment(mode: "fillMissingOnly" | "forceOverwrite") {
+    if (!activeId) return;
+    if (mode === "forceOverwrite" && !window.confirm("Обновить все данные автомобиля из отгрузки? Заполненные поля диагностики будут заменены.")) return;
+    setVehicleSyncing(mode);
+    setError(null);
+    try {
+      const response = await fetch(`/api/diagnostics/${activeId}/sync-vehicle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const json = await responseJson<{ diagnostic?: DiagnosticMapPayload; sync?: { changedFields?: DiagnosticVehicleSyncDiff[] }; error?: string }>(response, {});
+      if (!response.ok || !json.diagnostic) throw new Error(json.error ?? "Не удалось обновить данные автомобиля");
+      setData(json.diagnostic);
+      onDiagnosticUpdated?.(json.diagnostic);
+      const changed = json.sync?.changedFields?.length ?? 0;
+      setNotice(changed > 0 ? `Данные автомобиля обновлены: ${changed}` : "В диагностике нет пустых полей для обновления");
+      window.setTimeout(() => setNotice(null), 2600);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось обновить данные автомобиля");
+    } finally {
+      setVehicleSyncing(null);
+    }
   }
 
   async function copyTelegramText(value: string | null | undefined, success: string) {
@@ -3437,6 +3703,42 @@ export function DiagnosticMapModal({
     );
   }
 
+  function renderVehiclePhotoCard() {
+    if (!data) return null;
+    const photo = data.vehiclePhoto;
+    return (
+      <section className={`diag-vehicle-photo-card ${photo ? "has-photo" : "is-empty"}`}>
+        <div className="diag-vehicle-photo-copy">
+          <span>Фото автомобиля</span>
+          <strong>{photo ? "Будет использовано в печатном отчёте" : "Добавьте общее фото машины для отчёта"}</strong>
+          <p>Это отдельная фотография автомобиля. Она не попадёт в фото по проблемным пунктам.</p>
+        </div>
+        {photo ? (
+          <figure>
+            {/* eslint-disable-next-line @next/next/no-img-element -- local diagnostic vehicle photo */}
+            <img src={photo.thumbnailUrl || photo.url} alt={photo.caption || data.vehicle.title || "Фото автомобиля"} />
+            <figcaption>{photo.caption || data.vehicle.title || "Фото автомобиля"}</figcaption>
+          </figure>
+        ) : (
+          <div className="diag-vehicle-photo-placeholder">
+            <Camera size={22} />
+            <span>Фото автомобиля пока нет</span>
+          </div>
+        )}
+        <div className="diag-vehicle-photo-actions">
+          <button type="button" className="diag-archive-btn" onClick={openVehiclePhotoPicker} disabled={vehiclePhotoUploading || vehiclePhotoDeleting}>
+            <Camera size={15} /> {vehiclePhotoUploading ? "Загружаем..." : photo ? "Заменить" : "Добавить фото автомобиля"}
+          </button>
+          {photo && (
+            <button type="button" className="diag-archive-btn" onClick={() => void deleteVehiclePhoto()} disabled={vehiclePhotoUploading || vehiclePhotoDeleting}>
+              {vehiclePhotoDeleting ? "Удаляем..." : "Удалить"}
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   if (!open) return null;
 
   return (
@@ -3481,6 +3783,49 @@ export function DiagnosticMapModal({
         </div>
       )}
 
+      {data?.vehicleSync?.hasDifferences && (
+        <section className="diag-vehicle-sync-panel">
+          <div>
+            <span>Обновить из отгрузки</span>
+            <strong>
+              {data.vehicleSync.missingFields.length > 0
+                ? `Можно заполнить пустые поля: ${data.vehicleSync.missingFields.map((field) => field.label.toLowerCase()).join(", ")}`
+                : "Данные отличаются от отгрузки"}
+            </strong>
+            <details>
+              <summary>Показать сравнение</summary>
+              <div>
+                {data.vehicleSync.fields.map((field) => (
+                  <p key={field.field}>
+                    <b>{field.label}</b>
+                    <span>Диагностика: {field.diagnosticValue}</span>
+                    <span>Отгрузка: {field.shipmentValue}</span>
+                  </p>
+                ))}
+              </div>
+            </details>
+          </div>
+          <div className="diag-vehicle-sync-actions">
+            <button
+              type="button"
+              className="diag-archive-btn"
+              onClick={() => void syncVehicleFromShipment("fillMissingOnly")}
+              disabled={Boolean(vehicleSyncing)}
+            >
+              <RefreshCw size={15} /> {vehicleSyncing === "fillMissingOnly" ? "Обновляем..." : "Обновить пустые поля"}
+            </button>
+            <button
+              type="button"
+              className="diag-archive-btn is-dark"
+              onClick={() => void syncVehicleFromShipment("forceOverwrite")}
+              disabled={Boolean(vehicleSyncing)}
+            >
+              {vehicleSyncing === "forceOverwrite" ? "Обновляем..." : "Обновить все поля"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {loading || !data || !block || !item ? (
         <div className="diag-archive-loading">Загрузка карты диагностики...</div>
       ) : (
@@ -3496,6 +3841,7 @@ export function DiagnosticMapModal({
             </button>
           </div>
         )}
+        {renderVehiclePhotoCard()}
         <div className="diag-archive-body">
           {mobileStructureOpen && (
             <button
@@ -4037,6 +4383,15 @@ export function DiagnosticMapModal({
           {quickUndoSnapshot && <button type="button" onClick={undoMarkRemainingGood}>Отменить</button>}
         </div>
       )}
+
+      <input
+        ref={vehiclePhotoInputRef}
+        className="diag-photo-hidden-input"
+        type="file"
+        accept="image/*"
+        aria-hidden="true"
+        onChange={handleVehiclePhotoInputChange}
+      />
 
       <input
         ref={photoInputRef}

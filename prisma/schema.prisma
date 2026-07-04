@@ -1437,7 +1437,8 @@ model DiagnosticMapSession {
   nowRecommendationCount       Int @default(0) @map("now_recommendation_count")
   nextVisitRecommendationCount Int @default(0) @map("next_visit_recommendation_count")
 
-  items DiagnosticMapItem[]
+  items        DiagnosticMapItem[]
+  vehiclePhoto DiagnosticMapVehiclePhoto?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1504,6 +1505,25 @@ model DiagnosticMapPhoto {
 
   @@index([itemId])
   @@map("diagnostic_map_photos")
+}
+
+model DiagnosticMapVehiclePhoto {
+  id        String               @id @default(cuid())
+  sessionId String               @unique @map("session_id")
+  session   DiagnosticMapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  filePath    String  @map("file_path")
+  contentType String? @map("content_type")
+  sizeBytes   Int?    @map("size_bytes")
+  data        Bytes?
+  caption     String?
+  uploadedBy  String? @map("uploaded_by")
+  source      String  @default("diagnostic")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("diagnostic_map_vehicle_photos")
 }
 
 model DiagnosticMapRecommendationAction {

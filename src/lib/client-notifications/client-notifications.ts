@@ -1786,7 +1786,7 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
       license_plate AS "licensePlate",
       vin,
       total_count AS "checkedCount",
-      (attention_count + no_access_count + by_mileage_count + by_client_count) AS "recommendationCount",
+      attention_count AS "recommendationCount",
       replace_count AS "criticalCount",
       attention_count AS "warningCount"
     FROM diagnostic_map_sessions

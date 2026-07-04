@@ -1195,6 +1195,15 @@ export default function ShipmentDetailPage() {
             }
           : prev
       );
+      if (diagnosticRemote || diagnosticRowId) {
+        void refreshDiagnosticRemote();
+        setPaymentInfo(
+          diagnosticRemote?.status === "COMPLETED"
+            ? "Данные автомобиля обновлены. В завершённой диагностике автоматически заполняются только пустые поля."
+            : "Данные автомобиля обновлены. Диагностика синхронизирована с отгрузкой."
+        );
+        window.setTimeout(() => setPaymentInfo(null), 3500);
+      }
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети");

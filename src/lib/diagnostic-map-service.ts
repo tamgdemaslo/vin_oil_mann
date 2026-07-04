@@ -4,7 +4,14 @@ import path from "path";
 import { Prisma } from "@prisma/client";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
-import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
+import {
+  getDiagnosticVehicleSyncState,
+  getVehicleSnapshotFromShipment,
+  syncDiagnosticVehicleFromShipment,
+  syncDiagnosticVehicleFromShipmentByToken,
+  type DiagnosticVehicleSyncState,
+  type ShipmentVehicleSnapshot,
+} from "@/lib/diagnostic-vehicle-sync";
 import { getTelegramStoredSettings } from "@/lib/messenger/messenger-channel-settings";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import {
@@ -64,8 +71,21 @@ const DIAGNOSTIC_MAP_PHOTO_LIST_SELECT = {
   updatedAt: true,
 } satisfies Prisma.DiagnosticMapPhotoSelect;
 
+const DIAGNOSTIC_MAP_VEHICLE_PHOTO_SELECT = {
+  id: true,
+  filePath: true,
+  contentType: true,
+  sizeBytes: true,
+  caption: true,
+  uploadedBy: true,
+  source: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.DiagnosticMapVehiclePhotoSelect;
+
 type DiagnosticMapFullRow = Prisma.DiagnosticMapSessionGetPayload<{
   include: {
+    vehiclePhoto: { select: typeof DIAGNOSTIC_MAP_VEHICLE_PHOTO_SELECT };
     items: {
       include: {
         photos: { select: typeof DIAGNOSTIC_MAP_PHOTO_LIST_SELECT };
@@ -165,25 +185,22 @@ function currentCatalogItem(itemCode: string) {
   return archiveCatalogEntries().find(({ item }) => item.code === itemCode)?.item ?? null;
 }
 
-function demandAttrValue(payload: Awaited<ReturnType<typeof loadLocalDemandDetailPayload>> | undefined, matcher: RegExp): string {
-  if (!payload?.ok) return "";
-  const attr = payload.data.attributes.find((item) => matcher.test(item.name));
-  return asString(attr?.value);
-}
-
-function normalizeVehicle(input: VehicleInput, demandPayload?: Awaited<ReturnType<typeof loadLocalDemandDetailPayload>>): Required<VehicleInput> {
-  const modelText = asString(input.model) || demandAttrValue(demandPayload, /модель авто|модель/i);
+function normalizeVehicle(input: VehicleInput, shipmentVehicle?: ShipmentVehicleSnapshot | null): Required<VehicleInput> {
+  const modelText = asString(input.model) || [shipmentVehicle?.brand, shipmentVehicle?.model].filter(Boolean).join(" ");
   const modelParts = modelText.split(/\s+/).filter(Boolean);
-  const brand = asString(input.brand) || modelParts[0] || "";
-  const model = asString(input.model) || modelParts.slice(1).join(" ");
+  const brand = asString(input.brand) || shipmentVehicle?.brand || modelParts[0] || "";
+  const model = asString(input.model) || shipmentVehicle?.model || modelParts.slice(1).join(" ");
   return {
-    vin: asString(input.vin) || demandAttrValue(demandPayload, /vin/i),
+    vin: asString(input.vin) || shipmentVehicle?.vin || "",
     brand,
     model,
-    year: asString(input.year) || demandAttrValue(demandPayload, /^год$/i),
-    licensePlate: asString(input.licensePlate) || demandAttrValue(demandPayload, /гос|номер/i),
-    mileage: asString(input.mileage) || demandAttrValue(demandPayload, /пробег/i),
-    vehicleHints: input.vehicleHints ?? null,
+    year: asString(input.year) || shipmentVehicle?.year || "",
+    licensePlate: asString(input.licensePlate) || shipmentVehicle?.licensePlate || "",
+    mileage: asString(input.mileage) || shipmentVehicle?.mileage || "",
+    vehicleHints: {
+      ...((input.vehicleHints ?? {}) as Record<string, unknown>),
+      ...(shipmentVehicle ? { shipmentVehicleSnapshot: shipmentVehicle } : {}),
+    },
   };
 }
 
@@ -336,22 +353,17 @@ export async function createDiagnosticMapSession(input: CreateDiagnosticInput, u
     }
   }
 
-  const demandPayload = demandId ? await loadLocalDemandDetailPayload(demandId) : undefined;
-  const vehicle = normalizeVehicle(input, demandPayload);
+  const shipmentVehicle = demandId ? await getVehicleSnapshotFromShipment(demandId) : null;
+  const vehicle = normalizeVehicle(input, shipmentVehicle);
   const hints = (vehicle.vehicleHints ?? {}) as Record<string, unknown>;
-  const demandData = demandPayload?.ok ? demandPayload.data : null;
-  const demandClientName =
-    demandData?.raw && typeof demandData.raw === "object"
-      ? asString((demandData.raw as { agent?: { name?: unknown } }).agent?.name)
-      : "";
-  const clientName = asString(input.clientName) || demandClientName;
+  const clientName = asString(input.clientName) || shipmentVehicle?.clientName || "";
   const created = await prisma.$transaction(async (tx) => {
     const session = await tx.diagnosticMapSession.create({
       data: {
         demandId,
-        clientId: input.clientId || null,
+        clientId: input.clientId || shipmentVehicle?.clientId || null,
         clientName: clientName || asString(input.clientName) || null,
-        clientPhone: asString(input.clientPhone) || null,
+        clientPhone: asString(input.clientPhone) || shipmentVehicle?.clientPhone || null,
         vin: asString(vehicle.vin).replace(/\s/g, "").toUpperCase() || null,
         brand: asString(vehicle.brand) || null,
         model: asString(vehicle.model) || null,
@@ -417,9 +429,11 @@ export async function findDiagnosticMapForShipment(shipmentId: string) {
 
 export async function getDiagnosticMapSession(id: string, origin = "") {
   await ensureArchiveDiagnosticItems(id);
+  await syncDiagnosticVehicleFromShipment(id, { mode: "fillMissingOnly", reason: "open-diagnostic" });
   const row = await prisma.diagnosticMapSession.findUnique({
     where: { id },
     include: {
+      vehiclePhoto: { select: DIAGNOSTIC_MAP_VEHICLE_PHOTO_SELECT },
       items: {
         include: {
           photos: { select: DIAGNOSTIC_MAP_PHOTO_LIST_SELECT, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
@@ -430,15 +444,17 @@ export async function getDiagnosticMapSession(id: string, origin = "") {
     },
   });
   if (!row) return null;
-  return serializeDiagnosticMap(row, origin, await publicReportContactSettings());
+  return serializeDiagnosticMap(row, origin, await publicReportContactSettings(), await getDiagnosticVehicleSyncState(row.id));
 }
 
 export async function getDiagnosticMapByToken(token: string, origin = "") {
   const session = await prisma.diagnosticMapSession.findUnique({ where: { publicToken: token }, select: { id: true } });
   if (session) await ensureArchiveDiagnosticItems(session.id);
+  await syncDiagnosticVehicleFromShipmentByToken(token, { mode: "fillMissingOnly", reason: "public-report" });
   const row = await prisma.diagnosticMapSession.findUnique({
     where: { publicToken: token },
     include: {
+      vehiclePhoto: { select: DIAGNOSTIC_MAP_VEHICLE_PHOTO_SELECT },
       items: {
         include: {
           photos: { select: DIAGNOSTIC_MAP_PHOTO_LIST_SELECT, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
@@ -520,8 +536,10 @@ async function publicReportContactSettings(): Promise<PublicReportContactSetting
   };
 }
 
-function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactSettings?: PublicReportContactSettings) {
+function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactSettings?: PublicReportContactSettings, vehicleSync?: DiagnosticVehicleSyncState | null) {
   const reportUrl = origin ? reportUrlFromRequest(origin, row.publicToken) : `/report/${row.publicToken}`;
+  const vehiclePhotoVersion = row.vehiclePhoto?.updatedAt.getTime() ?? null;
+  const vehiclePhotoUrl = row.vehiclePhoto ? `/api/diagnostics/${row.id}/vehicle-photo${vehiclePhotoVersion ? `?v=${vehiclePhotoVersion}` : ""}` : "";
   const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => {
     return {
       code: block.code,
@@ -570,6 +588,28 @@ function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactS
       mileage: row.mileage,
       title: [row.brand, row.model, row.year ? String(row.year) : ""].filter(Boolean).join(" ") || "Автомобиль",
     },
+    vehiclePhoto: row.vehiclePhoto
+      ? {
+          id: row.vehiclePhoto.id,
+          caption: row.vehiclePhoto.caption ?? "",
+          url: vehiclePhotoUrl,
+          thumbnailUrl: vehiclePhotoUrl,
+          mimeType: diagnosticMapPhotoMime(row.vehiclePhoto.filePath, row.vehiclePhoto.contentType),
+          sizeBytes: row.vehiclePhoto.sizeBytes ?? null,
+          uploadedBy: row.vehiclePhoto.uploadedBy ?? null,
+          updatedAt: row.vehiclePhoto.updatedAt.toISOString(),
+        }
+      : null,
+    vehicleSync: vehicleSync
+      ? {
+          shipmentId: vehicleSync.shipmentId,
+          hasShipment: vehicleSync.hasShipment,
+          hasDifferences: vehicleSync.hasDifferences,
+          fields: vehicleSync.fields,
+          missingFields: vehicleSync.missingFields,
+          differingFields: vehicleSync.differingFields,
+        }
+      : undefined,
     master: { login: row.masterLogin, name: row.masterName },
     status: row.status,
     publicToken: row.publicToken,
@@ -736,6 +776,74 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
   return updated;
 }
 
+export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: File, caption = "", uploadedBy?: string | null) {
+  const session = await prisma.diagnosticMapSession.findUnique({
+    where: { id: sessionId },
+    include: { vehiclePhoto: true },
+  });
+  if (!session) throw new Error("Диагностика не найдена");
+  const safeCaption = asString(caption);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (bytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
+  const contentType = file.type || "image/jpeg";
+  const ext = safeExtFromMime(contentType);
+  const previousPath = session.vehiclePhoto?.filePath ?? "";
+  const dir = path.join(photoRoot(), sessionId);
+  const existingId = session.vehiclePhoto?.id;
+  const photo = await prisma.diagnosticMapVehiclePhoto.upsert({
+    where: { sessionId },
+    create: {
+      sessionId,
+      filePath: "",
+      contentType,
+      sizeBytes: bytes.length,
+      data: bytes,
+      caption: safeCaption || null,
+      uploadedBy: uploadedBy || null,
+      source: "diagnostic",
+    },
+    update: {
+      contentType,
+      sizeBytes: bytes.length,
+      data: bytes,
+      caption: safeCaption || null,
+      uploadedBy: uploadedBy || null,
+      source: "diagnostic",
+    },
+  });
+  const filePath = path.join(dir, `vehicle-${existingId ?? photo.id}.${ext}`);
+  let updated = photo;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    await fsp.writeFile(filePath, bytes);
+    updated = await prisma.diagnosticMapVehiclePhoto.update({ where: { id: photo.id }, data: { filePath } });
+    if (previousPath && previousPath !== filePath) {
+      await fsp.unlink(previousPath).catch(() => {});
+    }
+  } catch (error) {
+    console.warn("[diagnostics] vehicle photo saved in DB, disk cache failed", {
+      diagnosticId: sessionId,
+      photoId: photo.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return updated;
+}
+
+export async function getDiagnosticMapVehiclePhoto(sessionId: string) {
+  return prisma.diagnosticMapVehiclePhoto.findUnique({ where: { sessionId } });
+}
+
+export async function deleteDiagnosticMapVehiclePhoto(sessionId: string) {
+  const photo = await prisma.diagnosticMapVehiclePhoto.findUnique({ where: { sessionId } });
+  if (!photo) return false;
+  await prisma.diagnosticMapVehiclePhoto.delete({ where: { id: photo.id } });
+  if (photo.filePath) {
+    await fsp.unlink(photo.filePath).catch(() => {});
+  }
+  return true;
+}
+
 export async function getDiagnosticMapPhoto(sessionId: string, photoId: string) {
   return prisma.diagnosticMapPhoto.findFirst({
     where: { id: photoId, item: { sessionId } },
@@ -762,6 +870,7 @@ export async function deleteDiagnosticMapPhoto(sessionId: string, photoId: strin
 }
 
 export async function completeDiagnosticMapSession(sessionId: string) {
+  await syncDiagnosticVehicleFromShipment(sessionId, { mode: "fillMissingOnly", reason: "before-complete" });
   await updateSessionCounters(sessionId);
   await prisma.diagnosticMapSession.update({
     where: { id: sessionId },

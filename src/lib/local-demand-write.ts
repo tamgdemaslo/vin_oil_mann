@@ -2,6 +2,7 @@ import { Prisma, type LocalCounterparty } from "@prisma/client";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
+import { syncActiveDiagnosticVehiclesForShipment } from "@/lib/diagnostic-vehicle-sync";
 import { prisma } from "@/lib/db";
 import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
@@ -1435,6 +1436,15 @@ export async function updateLocalDemand(
 
   invalidateWarehouseReadCaches();
   invalidateDemandListCache();
+  await syncActiveDiagnosticVehiclesForShipment(updated.id, {
+    userLogin: actor?.login ?? "system",
+    reason: "shipment-save",
+  }).catch((error) => {
+    console.warn("[shipment] diagnostic vehicle sync after save failed", {
+      shipmentId: updated.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
   return {
     ok: true,
     id: updated.id,

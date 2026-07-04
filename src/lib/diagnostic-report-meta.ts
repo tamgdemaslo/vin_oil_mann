@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { diagnosticPreviewDescription, nonNegativeCount } from "@/lib/diagnostic-report-message";
+import { syncDiagnosticVehicleFromShipmentByToken } from "@/lib/diagnostic-vehicle-sync";
 
 type DiagnosticReportMeta = {
   token: string;
@@ -60,6 +61,7 @@ function buildMeta(input: {
 }
 
 export async function getDiagnosticReportMeta(token: string, origin = ""): Promise<DiagnosticReportMeta | null> {
+  await syncDiagnosticVehicleFromShipmentByToken(token, { mode: "fillMissingOnly", reason: "report-meta" });
   const map = await prisma.diagnosticMapSession.findUnique({
     where: { publicToken: token },
     select: {
@@ -71,9 +73,6 @@ export async function getDiagnosticReportMeta(token: string, origin = ""): Promi
       totalCount: true,
       attentionCount: true,
       replaceCount: true,
-      noAccessCount: true,
-      byMileageCount: true,
-      byClientCount: true,
     },
   });
   if (map) {
@@ -85,7 +84,7 @@ export async function getDiagnosticReportMeta(token: string, origin = ""): Promi
       licensePlate: map.licensePlate,
       vin: map.vin,
       checkedCount: map.totalCount,
-      recommendationCount: map.attentionCount + map.noAccessCount + map.byMileageCount + map.byClientCount,
+      recommendationCount: map.attentionCount,
       criticalCount: map.replaceCount,
     });
   }

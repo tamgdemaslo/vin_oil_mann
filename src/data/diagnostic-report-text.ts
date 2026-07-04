@@ -27,6 +27,8 @@ export type DiagnosticReportText = {
   shortText: string;
 };
 
+type DiagnosticItemSpecificText = Partial<DiagnosticReportText> & Pick<DiagnosticReportText, "resultText" | "recommendationText" | "shortText">;
+
 const METHOD_TEXT: Record<DiagnosticMapCheckMethod, string> = {
   inspection: "Пункт оценён прямым осмотром мастера.",
   mileage: "Рекомендация сформирована по пробегу и регламенту обслуживания, без прямого осмотра узла.",
@@ -109,6 +111,18 @@ function numericValue(value?: string): number | null {
   return match ? Number(match[0]) : null;
 }
 
+function batterySohPercent(value?: string | null): number | null {
+  const raw = cleanText(value);
+  if (!raw || /(?:^|\s)(?:в|v)(?:\s|$|[.,])/iu.test(raw)) return null;
+  const parts = valueParts(raw);
+  const candidate = parts.SOH ?? parts["Здоровье АКБ"] ?? raw;
+  const hasSohSignal = /soh|здоров|%/iu.test(raw) || /^\d{1,3}$/u.test(raw);
+  if (!hasSohSignal) return null;
+  const parsed = numericValue(candidate);
+  if (parsed === null || parsed < 0 || parsed > 100) return null;
+  return Math.round(parsed);
+}
+
 function locationPhrase(location: string): string {
   const place = cleanText(location);
   if (!place || place === "неизвестно") return "";
@@ -128,6 +142,68 @@ function axisStatusByPercent(value: number | null): DiagnosticMapStatusCode | nu
 function formatPercent(value: number | null): string {
   if (value === null) return "не указано";
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
+}
+
+function reportForBattery(value: string, status: DiagnosticMapStatusCode): DiagnosticReportText | null {
+  const soh = batterySohPercent(value);
+  const sohText = soh !== null ? ` Здоровье АКБ: ${soh}%.` : "";
+  const statusLabel = DIAGNOSTIC_MAP_STATUSES[status]?.label ?? "Не проверено";
+  if (status === "good") {
+    return {
+      title: "АКБ — состояние аккумулятора",
+      statusLabel,
+      sourceText: "Состояние аккумулятора оценено по SOH тестера.",
+      resultText: `Аккумулятор в хорошем состоянии.${sohText}`,
+      recommendationText: "",
+      photoText: "",
+      shortText: soh !== null ? `SOH ${soh}% · Хорошо` : "Хорошо · аккумулятор в хорошем состоянии",
+    };
+  }
+  if (status === "warn") {
+    return {
+      title: "АКБ — состояние аккумулятора",
+      statusLabel,
+      sourceText: "Состояние аккумулятора оценено по SOH тестера.",
+      resultText: `Аккумулятор имеет признаки износа.${sohText}`,
+      recommendationText: "Рекомендуем контролировать состояние аккумулятора, особенно перед холодным сезоном.",
+      photoText: "",
+      shortText: soh !== null ? `SOH ${soh}% · Внимание` : "Внимание · есть признаки износа",
+    };
+  }
+  if (status === "crit") {
+    return {
+      title: "АКБ — состояние аккумулятора",
+      statusLabel,
+      sourceText: "Состояние аккумулятора оценено по SOH тестера.",
+      resultText: `Аккумулятор слабый. Возможны проблемы с запуском.${sohText}`,
+      recommendationText: "Рекомендуем заменить аккумулятор, чтобы избежать проблем с запуском.",
+      photoText: "",
+      shortText: soh !== null ? `SOH ${soh}% · Критично` : "Критично · рекомендуется замена",
+    };
+  }
+  if (status === "unchecked") {
+    return {
+      title: "АКБ — состояние аккумулятора",
+      statusLabel,
+      sourceText: "Состояние аккумулятора не проверено.",
+      resultText: "Состояние аккумулятора не проверено.",
+      recommendationText: "",
+      photoText: "",
+      shortText: "Состояние аккумулятора не проверено",
+    };
+  }
+  if (soh === null && value) {
+    return {
+      title: "АКБ — состояние аккумулятора",
+      statusLabel,
+      sourceText: "Старый формат проверки АКБ.",
+      resultText: "АКБ проверялась в старом формате. Статус сохранён без пересчёта по SOH.",
+      recommendationText: "",
+      photoText: "",
+      shortText: "Старый формат проверки АКБ",
+    };
+  }
+  return null;
 }
 
 function brakePadConclusion(front: number | null, rear: number | null): string {
@@ -280,8 +356,10 @@ function reportForSuspension(value: string, comment: string, recommendation: str
   };
 }
 
-function buildItemSpecificText(input: DiagnosticReportTextInput, value: string, comment: string, recommendation: string) {
+function buildItemSpecificText(input: DiagnosticReportTextInput, value: string, comment: string, recommendation: string): DiagnosticItemSpecificText | null {
   switch (input.code) {
+    case "battery":
+      return reportForBattery(value, input.status);
     case "belts":
       return reportForBelts(value, comment, recommendation, input.status);
     case "leaks":
@@ -316,13 +394,13 @@ export function buildDiagnosticReportText(input: DiagnosticReportTextInput): Dia
         ? "Фото не добавлено, рекомендация основана на записи мастера."
         : "Фото не требовалось.";
 
-  return {
-    title: input.title,
-    statusLabel: status.label,
-    sourceText: METHOD_TEXT[input.checkMethod] ?? status.clientText,
-    resultText: itemSpecific?.resultText ?? `${STATUS_TEXT[input.status] ?? status.clientText}${valueText}${commentText}${mileageText}`.trim(),
-    recommendationText: itemSpecific?.recommendationText ?? recommendationSentence(recommendation, STATUS_TEXT[input.status] || status.clientText),
-    photoText,
-    shortText: itemSpecific?.shortText ?? (humanValue || status.label),
-  };
+	  return {
+	    title: itemSpecific?.title ?? input.title,
+	    statusLabel: itemSpecific?.statusLabel ?? status.label,
+	    sourceText: itemSpecific?.sourceText ?? METHOD_TEXT[input.checkMethod] ?? status.clientText,
+	    resultText: itemSpecific?.resultText ?? `${STATUS_TEXT[input.status] ?? status.clientText}${valueText}${commentText}${mileageText}`.trim(),
+	    recommendationText: itemSpecific?.recommendationText ?? recommendationSentence(recommendation, STATUS_TEXT[input.status] || status.clientText),
+	    photoText: itemSpecific?.photoText || photoText,
+	    shortText: itemSpecific?.shortText ?? (humanValue || status.label),
+	  };
 }
