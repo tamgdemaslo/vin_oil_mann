@@ -162,7 +162,7 @@ async function resolveMapDiagnostic(request: NextRequest, diagnosticId: string):
     reportUrl: diagnostic.publicToken ? buildDiagnosticReportUrl(request, diagnostic.publicToken) : null,
     shipmentId: diagnostic.demandId,
     checkedCount: diagnostic.totalCount,
-    recommendationCount: diagnostic.attentionCount + diagnostic.noAccessCount + diagnostic.byMileageCount + diagnostic.byClientCount,
+    recommendationCount: diagnostic.attentionCount,
     criticalCount: diagnostic.replaceCount,
   };
 }

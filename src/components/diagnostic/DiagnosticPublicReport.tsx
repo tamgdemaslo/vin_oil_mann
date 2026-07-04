@@ -13,21 +13,6 @@ type PublicReportPhoto = {
   status: string;
 };
 
-type PrintAttentionRow = {
-  item: ReportItem;
-  number: string;
-  result: string;
-  recommendation: string;
-  status: string;
-};
-
-type PrintAttentionSection = {
-  title: string;
-  meta: string;
-  rows: PrintAttentionRow[];
-  photos: PublicReportPhoto[];
-};
-
 type ReportItem = {
   code: string;
   title: string;
@@ -125,8 +110,9 @@ type DiagnosticPublicReportProps = {
 const REPORT_PHONE = "+7 (995) 054-58-59";
 const REPORT_PHONE_HREF = "tel:+79950545859";
 const BOOKING_HREF = "/client-site#/vin";
-const ATTENTION_STATUSES = ["crit", "warn", "no-access", "by-mileage", "by-client"] as const;
-const ATTENTION_STATUS_ORDER: Record<string, number> = { crit: 0, warn: 1, "no-access": 2, "by-mileage": 3, "by-client": 4 };
+const ATTENTION_STATUSES = ["crit", "warn"] as const;
+const INFORMATIONAL_STATUSES = ["no-access", "by-mileage", "by-client"] as const;
+const ATTENTION_STATUS_ORDER: Record<string, number> = { crit: 0, warn: 1 };
 
 async function fetchJson<T>(url: string): Promise<{ ok: true; data: T } | { ok: false }> {
   const controller = new AbortController();
@@ -195,6 +181,10 @@ function isAttentionStatus(status: string): boolean {
   return ATTENTION_STATUSES.includes(normalizeStatus(status) as (typeof ATTENTION_STATUSES)[number]);
 }
 
+function isInformationalStatus(status: string): boolean {
+  return INFORMATIONAL_STATUSES.includes(normalizeStatus(status) as (typeof INFORMATIONAL_STATUSES)[number]);
+}
+
 function sortBySeverity(a: ReportItem, b: ReportItem): number {
   const severityDelta = (ATTENTION_STATUS_ORDER[normalizeStatus(a.status)] ?? 9) - (ATTENTION_STATUS_ORDER[normalizeStatus(b.status)] ?? 9);
   if (severityDelta !== 0) return severityDelta;
@@ -216,6 +206,13 @@ function itemShortResult(item: ReportItem): string {
   return item.value || item.statusLabel || statusLabel(item.status);
 }
 
+function itemChecklistText(item: ReportItem): string {
+  if (normalizeStatus(item.status) === "no-access") {
+    return "Доступ затруднён · пункт не удалось проверить без дополнительного доступа.";
+  }
+  return itemShortResult(item);
+}
+
 function itemResultText(item: ReportItem): string {
   const text = item.reportText?.resultText?.trim();
   if (text) return text;
@@ -226,50 +223,6 @@ function itemRecommendationText(item: ReportItem): string {
   const text = item.reportText?.recommendationText?.trim();
   if (text) return text;
   return item.recommendation || "Согласовать дальнейшие действия с мастером.";
-}
-
-function compactPrintText(value: string, fallback: string, maxLength = 150): string {
-  const text = (value || fallback).replace(/\s+/gu, " ").trim();
-  if (text.length <= maxLength) return text;
-  const slice = text.slice(0, maxLength + 1);
-  const boundary = Math.max(
-    slice.lastIndexOf("."),
-    slice.lastIndexOf(";"),
-    slice.lastIndexOf(","),
-    slice.lastIndexOf(" ")
-  );
-  const compact = slice.slice(0, boundary > 80 ? boundary : maxLength).trim().replace(/[,:;.-]+$/u, "");
-  return `${compact}...`;
-}
-
-function printSectionKind(title: string): string {
-  const text = normalizedText(title);
-  if (/жидк|масл|антифриз|тормозн/iu.test(text)) return "контроль жидкостей";
-  if (/теч|утеч|сальник|поддон/iu.test(text)) return "визуальный осмотр";
-  if (/тормоз|диск|колод/iu.test(text)) return "тормозная система";
-  if (/шин|колес|резин/iu.test(text)) return "колёса и шины";
-  if (/акб|аккум|заряд|электр/iu.test(text)) return "электрооборудование";
-  if (/трансмисс|акпп|кпп|привод/iu.test(text)) return "трансмиссия";
-  if (/ходов|подвес|осмотр снизу/iu.test(text)) return "осмотр снизу";
-  return "диагностический блок";
-}
-
-function controlMeasurementLabel(item: ReportItem): string | null {
-  const text = normalizedText(`${item.blockTitle} ${item.title} ${item.code}`);
-  if (/антифриз|охлаждающ|замерзан/iu.test(text)) return "Антифриз";
-  if (/тормозн.*жидк|жидк.*тормозн/iu.test(text)) return "Тормозная жидкость";
-  if (/\bакб\b|аккум|battery|напряж/iu.test(text)) return "АКБ";
-  return null;
-}
-
-function uniquePhotos(photos: PublicReportPhoto[]): PublicReportPhoto[] {
-  const seen = new Set<string>();
-  return photos.filter((photo) => {
-    const key = photo.id || photo.url;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function shouldShowRecommendation(result: string, recommendation: string): boolean {
@@ -305,18 +258,6 @@ function clientItemTitle(title: string): string {
     .replace(/\bАКПП\b/giu, "АКПП");
 }
 
-function resultSummaryText(input: { crit: number; attentionCount: number; percentGood: number; reportDate: string; indirect: number }) {
-  const attentionText = `${input.attentionCount} ${pluralRu(input.attentionCount, "пункт", "пункта", "пунктов")}`;
-  const indirectText = input.indirect > 0 ? " Некоторые пункты не удалось проверить полностью из-за ограниченного доступа." : "";
-  if (input.crit > 0) {
-    return `Есть критичные замечания. ${input.percentGood}% пунктов без замечаний. Рекомендуем начать с самых важных пунктов ниже.${indirectText}`;
-  }
-  if (input.attentionCount > 0) {
-    return `Критичных замечаний не найдено. ${input.percentGood}% пунктов без замечаний. Рекомендуем обратить внимание на ${attentionText} ниже.${indirectText}`;
-  }
-  return `Критичных замечаний не найдено. ${input.percentGood}% пунктов без замечаний. Состояние зафиксировано на ${formatNumericDate(input.reportDate)}.${indirectText}`;
-}
-
 function telegramUsername(value?: string | null): string | null {
   if (!value) return null;
   const withoutUrl = value
@@ -340,17 +281,10 @@ function blockSummary(items: ReportItem[]): string {
   const countText = `${active.length} ${pluralRu(active.length, "пункт", "пункта", "пунктов")}`;
   if (active.some((item) => normalizeStatus(item.status) === "crit")) return `${countText} · есть критично`;
   if (active.some((item) => normalizeStatus(item.status) === "warn")) return `${countText} · есть внимание`;
-  if (active.some((item) => ["no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status)))) return `${countText} · проверено не полностью`;
+  const noAccessCount = active.filter((item) => normalizeStatus(item.status) === "no-access").length;
+  if (noAccessCount > 0) return notInspectedText(noAccessCount);
+  if (active.some((item) => isInformationalStatus(item.status))) return `${countText} · информационно`;
   return `${countText} · всё хорошо`;
-}
-
-function attentionSummaryLabel(status: string, count: number): string {
-  if (status === "crit") return `${count} критично`;
-  if (status === "warn") return `${count} внимание`;
-  if (status === "no-access") return `${count} доступ затруднён`;
-  if (status === "by-mileage") return `${count} по пробегу`;
-  if (status === "by-client") return `${count} со слов клиента`;
-  return `${count} ${statusLabel(status).toLowerCase()}`;
 }
 
 function formatDay(value?: string | null): string {
@@ -439,9 +373,9 @@ function adaptLegacy(payload: LegacyPayload): ReportPayload {
   };
 }
 
-function verdict(crit: number, warn: number, indirect: number): string {
+function verdict(crit: number, warn: number): string {
   if (crit > 0) return "требует внимания";
-  if (warn > 0 || indirect > 0) return "есть точки внимания";
+  if (warn > 0) return "есть точки внимания";
   return "в порядке";
 }
 
@@ -451,6 +385,15 @@ function pluralRu(count: number, one: string, few: string, many: string): string
   if (mod10 === 1 && mod100 !== 11) return one;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
   return many;
+}
+
+function noAccessNotice(count: number, withAlso = false): string {
+  return `${withAlso ? "Также " : ""}${count} ${pluralRu(count, "пункт", "пункта", "пунктов")} не удалось проверить без дополнительного доступа.`;
+}
+
+function notInspectedText(count: number): string {
+  const singular = count % 10 === 1 && count % 100 !== 11;
+  return `${count} ${pluralRu(count, "пункт", "пункта", "пунктов")} ${singular ? "не проверен" : "не проверены"}`;
 }
 
 function CarSilhouette({ vehicleTitle, vin }: { vehicleTitle: string; vin?: string | null }) {
@@ -479,38 +422,13 @@ function PhotoTile({ photo, index, status }: { photo: { id: string; caption: str
       <div className="rep-photo-img" style={{ backgroundImage: `url(${photo.url})` }}>
         <div className="rep-photo-scrim" />
         <span className="rep-photo-dot" style={{ background: statusColor(status) }} />
-        <span className="rep-photo-no">Фото {String(index + 1).padStart(2, "0")}</span>
+        <span className="rep-photo-no">IMG_{String(index + 1).padStart(3, "0")}</span>
         <figcaption className="rep-photo-cap">
           <span className="lbl">{photo.itemTitle}</span>
           <span className="cap">{photo.caption || "Фото диагностики"}</span>
         </figcaption>
       </div>
     </figure>
-  );
-}
-
-function OnlineCarSilhouette({ label }: { label: string }) {
-  return (
-    <div className="tgm-car-card">
-      <div className="tgm-car-glow" />
-      <svg viewBox="0 0 440 280" preserveAspectRatio="xMidYMid slice" aria-hidden>
-        <rect x="0" y="232" width="440" height="48" fill="#000" />
-        <line x1="0" y1="232" x2="440" y2="232" stroke="#C2410C" strokeWidth="1" />
-        <path d="M44 206 L78 168 L150 150 L250 147 L320 152 L366 172 L398 206 L402 212 L396 222 L380 222 L368 232 Q348 240 328 230 L320 222 L128 222 L116 232 Q96 240 76 230 L66 222 L54 222 Z" fill="#3D3D3D" />
-        <path d="M150 158 L210 150 L280 151 L318 166 L300 196 L162 196 Z" fill="#0a0a0a" />
-        <line x1="232" y1="150" x2="232" y2="196" stroke="#1a1a1a" strokeWidth="2" />
-        <ellipse cx="372" cy="196" rx="20" ry="7" fill="#F5F2ED" opacity="0.85" />
-        <ellipse cx="372" cy="196" rx="12" ry="3.5" fill="#C2410C" />
-        <circle cx="104" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
-        <circle cx="104" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
-        <circle cx="344" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
-        <circle cx="344" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
-        <circle cx="222" cy="190" r="15" fill="#C2410C" opacity="0.9" />
-        <text x="222" y="196" textAnchor="middle" fontFamily="Oswald" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
-      </svg>
-      <div className="tgm-car-region">76 · KGD</div>
-      <div className="tgm-car-meta">{label}</div>
-    </div>
   );
 }
 
@@ -563,22 +481,23 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
     [payload]
   );
 
-  const reportCounts = useMemo(() => {
-    const count = (status: string) => visibleItems.filter((item) => normalizeStatus(item.status) === status).length;
-    return {
-      total: visibleItems.length,
-      good: count("good"),
-      warn: count("warn"),
-      crit: count("crit"),
-      indirect: visibleItems.filter((item) => ["no-access", "by-mileage", "by-client"].includes(normalizeStatus(item.status))).length,
-    };
-  }, [visibleItems]);
+    const reportCounts = useMemo(() => {
+      const count = (status: string) => visibleItems.filter((item) => normalizeStatus(item.status) === status).length;
+      return {
+        total: visibleItems.length,
+        good: count("good"),
+        warn: count("warn"),
+        crit: count("crit"),
+        indirect: visibleItems.filter((item) => isInformationalStatus(item.status)).length,
+      };
+    }, [visibleItems]);
 
   if (loading) return <main className="diag-print-screen"><section className="diag-report-state">Загрузка отчёта...</section></main>;
   if (error || !payload) return <main className="diag-print-screen"><section className="diag-report-state is-error">{error ?? "Отчёт не найден"}</section></main>;
 
-  const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
-  const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
+    const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
+    const noAccessItems = visibleItems.filter((item) => normalizeStatus(item.status) === "no-access").sort(sortBySeverity);
+    const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
   const photos: PublicReportPhoto[] = visibleItems.flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
   const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
@@ -588,25 +507,25 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
   const indirect = hasRealItems ? reportCounts.indirect : payload.counts.indirect ?? 0;
   const total = hasRealItems ? reportCounts.total : payload.counts.total || visibleItems.length;
   const reportDate = payload.completedAt ?? payload.startedAt;
-  const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} проверены`;
-  const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
-  const attentionCount = recommendations.length;
-  const attentionPointsText = crit > 0
-    ? "Есть критичные замечания"
-    : attentionCount > 0
+    const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} проверены`;
+    const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
+    const attentionCount = recommendations.length;
+    const noAccessCount = noAccessItems.length;
+    const recommendationsText = attentionCount > 0
       ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
-      : "Критичных замечаний нет";
-  const recommendationsText = attentionCount > 0
-    ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
-    : "Рекомендаций по срочным работам нет";
-  const heroRecommendationText = crit > 0 ? "Есть критичные замечания" : recommendationsText;
+      : "Рекомендаций по срочным работам нет";
+    const mainResultTitle = crit > 0 ? "Есть критичные замечания" : attentionCount > 0 ? "Критичных замечаний нет" : "Замечаний не выявлено";
+    const mainResultSubtitle = crit > 0
+      ? `Нужно обратить внимание на ${attentionCount} ${pluralRu(attentionCount, "пункт", "пункта", "пунктов")}`
+      : attentionCount > 0
+        ? recommendationsText
+        : "Рекомендаций нет";
+    const noAccessSummary = noAccessCount > 0 ? noAccessNotice(noAccessCount, attentionCount > 0) : null;
   const reportCode = payload.publicToken ?? token;
   const masterName = payload.master?.name || payload.master?.login || "мастер-диагност";
   const masterMasked = maskLogin(payload.master?.login || payload.master?.name);
-  const percentGood = Math.round((good / (total || 1)) * 100);
-  const resultText = resultSummaryText({ crit, attentionCount, percentGood, reportDate, indirect });
-  const verdictText = verdict(crit, warn, indirect);
-  const vehicleShort = payload.vehicle.title.split(/\s+/).slice(0, 3).join(" ");
+  const masterShortName = masterName.split(/\s+/u).filter(Boolean)[0] || masterMasked;
+    const verdictText = verdict(crit, warn);
   const clientFirstName = (payload.clientName || "клиент").split(" ")[0] || "клиент";
   const primaryMessenger = (payload.publicReportPrimaryMessenger || "telegram").toLowerCase();
   const publicTelegramUsername = telegramUsername(payload.publicTelegramUsername ?? payload.publicTelegramUrl ?? null);
@@ -615,63 +534,59 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
       ? telegramUrl(payload.publicTelegramUrl) ?? (publicTelegramUsername ? `https://t.me/${publicTelegramUsername}` : null)
       : null;
   const publicPhone = payload.publicPhone || REPORT_PHONE;
-  const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
-  const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
-  const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
-  const publicAddress = payload.publicAddress || "Калининград";
-  const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
+    const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
+    const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
+    const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
+    const publicAddress = payload.publicAddress || "Калининград";
+    const nextStepTail = attentionCount > 0
+      ? "объясним рекомендации и подскажем, что делать дальше."
+      : "ответим на вопросы по отчёту и подскажем, что проверить при следующем визите.";
+    const nextStepText = publicTelegramHref ? `Напишите нам — ${nextStepTail}` : `Позвоните нам — ${nextStepTail}`;
+    const footerCopy = attentionCount > 0
+      ? `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.`
+      : `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Если часть пунктов не удалось проверить, их можно посмотреть отдельно при следующем визите.`;
+    const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
   const pdfUrl = `${publicReportUrl}/pdf`;
   const reportShareLabel = `tgm.report/${reportCode}`;
+  const vehicleSummaryTitle = [payload.vehicle.title || "Автомобиль", payload.vehicle.licensePlate].filter(Boolean).join(" · ");
+  const vehicleSummaryMeta = [
+    formatNumericDate(reportDate),
+    payload.vehicle.mileage != null ? `${formatMileage(payload.vehicle.mileage)} км` : null,
+    `мастер ${masterShortName}`,
+  ].filter(Boolean).join(" · ");
   const blocksForReport = payload.blocks.map((block, index) => ({
     ...block,
     num: String(index + 1).padStart(2, "0"),
     items: block.items.filter((item) => item.showInReport !== false),
   }));
-  const attentionSummaryItems = ATTENTION_STATUSES
-    .map((status) => ({
-      status,
-      count: recommendations.filter((item) => normalizeStatus(item.status) === status).length,
-    }))
-    .filter((item) => item.status === "crit" || item.count > 0);
-  const hasAttentionBlocks = blocksForReport.some((block) => block.items.some((item) => isAttentionStatus(item.status)));
-  const printAttentionSections: PrintAttentionSection[] = blocksForReport
-    .map((block) => {
-      const rows = [...block.items]
-        .filter((item) => isAttentionStatus(item.status))
-        .sort(sortBySeverity)
-        .map((item) => {
-          const result = itemResultText(item);
-          const recommendation = itemRecommendationText(item);
-          const issueIndex = recommendations.findIndex((candidate) => candidate.blockTitle === item.blockTitle && candidate.code === item.code && candidate.title === item.title);
-          return {
-            item,
-            number: String(Math.max(0, issueIndex) + 1).padStart(2, "0"),
-            result: compactPrintText(result, statusLabel(item.status), 170),
-            recommendation: compactPrintText(recommendation, "Согласовать дальнейшие действия с мастером.", 155),
-            status: normalizeStatus(item.status),
-          };
-        });
-      const sectionPhotos = uniquePhotos(rows.flatMap((row) => row.item.photos.map((photo) => ({
-        ...photo,
-        itemTitle: clientItemTitle(row.item.title),
-        status: row.status,
-      }))));
-      return {
-        title: block.title,
-        meta: `${rows.length} ${pluralRu(rows.length, "пункт", "пункта", "пунктов")} · ${printSectionKind(block.title)}`,
-        rows,
-        photos: sectionPhotos,
-      };
-    })
-    .filter((section) => section.rows.length > 0);
-  const controlMeasurementRows = visibleItems
-    .map((item) => ({ item, label: controlMeasurementLabel(item), status: normalizeStatus(item.status) }))
-    .filter((row): row is { item: ReportItem; label: string; status: string } => Boolean(row.label));
-  const controlMeasurementPhotos = uniquePhotos(controlMeasurementRows.flatMap((row) => row.item.photos.map((photo) => ({
-    ...photo,
-    itemTitle: row.label,
-    status: row.status,
-  }))));
+  const checkColumnBreak = Math.ceil(blocksForReport.length / 2);
+  const checkColumns = [
+    blocksForReport.slice(0, checkColumnBreak),
+    blocksForReport.slice(checkColumnBreak),
+  ].filter((column) => column.length > 0);
+    const criticalRecommendationCount = recommendations.filter((item) => normalizeStatus(item.status) === "crit").length;
+    const warnRecommendationCount = recommendations.filter((item) => normalizeStatus(item.status) === "warn").length;
+    const attentionSummaryItems = [
+      {
+        status: "crit",
+        count: criticalRecommendationCount,
+        label: `${criticalRecommendationCount} критично`,
+      },
+      {
+        status: "warn",
+        count: warnRecommendationCount,
+        label: `${warnRecommendationCount} внимание`,
+      },
+    ].filter((item) => item.status === "crit" || item.count > 0);
+    const compactStats = [
+      { status: "good", label: `${good} в норме` },
+      { status: "warn", label: `${warn} внимание` },
+      { status: "crit", label: `${crit} критично` },
+      { status: "limited", label: noAccessCount > 0 ? `${noAccessCount} доступ затруднён` : `${indirect} косвенно` },
+    ];
+    const printInfoSectionNumber = recommendations.length > 0 ? "02" : "01";
+    const printPhotoSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (noAccessCount > 0 ? 1 : 0) + 1).padStart(2, "0");
+    const printChecklistSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (noAccessCount > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 1).padStart(2, "0");
 
   if (mode === "online") {
     return (
@@ -687,73 +602,53 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
 
           <section className="tgm-public-hero report-mobile-container">
             <div className="tgm-public-hero-copy">
-              <span className="tgm-public-eyebrow">Привет, {clientFirstName}</span>
-              <h1>Автомобиль<br />проверен</h1>
-              <p>{checkedClientText}. {heroRecommendationText}.</p>
-              <div className="tgm-public-vehicle">{payload.vehicle.title || "Ваш автомобиль"}</div>
-            </div>
-            <OnlineCarSilhouette label={vehicleShort || "Диагностика готова"} />
-            <dl className="tgm-public-facts">
-              <div>
-                <dt>Дата</dt>
-                <dd>{formatNumericDate(reportDate)}</dd>
+              <div className="tgm-public-vehicle-summary">
+                <strong>{vehicleSummaryTitle}</strong>
+                <span>{vehicleSummaryMeta}</span>
+                <details>
+                  <summary>Данные автомобиля</summary>
+                  <dl>
+                    <div><dt>Дата</dt><dd>{formatNumericDate(reportDate)}</dd></div>
+                    <div><dt>Мастер</dt><dd>{masterName}</dd></div>
+                    <div><dt>Пробег</dt><dd>{formatMileage(payload.vehicle.mileage)} км</dd></div>
+                    <div><dt>Номер</dt><dd>{payload.vehicle.licensePlate || "не указан"}</dd></div>
+                    {payload.vehicle.vin && <div><dt>VIN</dt><dd>{payload.vehicle.vin}</dd></div>}
+                  </dl>
+                </details>
               </div>
-              <div>
-                <dt>Мастер</dt>
-                <dd>{masterName}</dd>
+              <div className="tgm-public-main-result">
+                <span className="tgm-public-eyebrow">Итог диагностики</span>
+                <h1>{mainResultTitle}</h1>
+                <p>{mainResultSubtitle}</p>
+                  {noAccessSummary && (
+                    <small>{noAccessSummary}</small>
+                  )}
               </div>
-              <div>
-                <dt>Пробег</dt>
-                <dd>{formatMileage(payload.vehicle.mileage)} км</dd>
+              <div className="tgm-public-compact-stats" aria-label="Краткая статистика диагностики">
+                <strong>{checkedClientText}</strong>
+                <div>
+                  {compactStats.map((item) => (
+                    <span className={item.status} key={item.status}>{item.label}</span>
+                  ))}
+                </div>
               </div>
-              <div>
-                <dt>Номер</dt>
-                <dd>{payload.vehicle.licensePlate || "не указан"}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <div className="tgm-public-checker report-mobile-container" aria-hidden="true" />
-
-          <section className="tgm-public-summary report-mobile-container" aria-label="Сводка диагностики">
-            <div className="tgm-public-kpi is-good">
-              <span>{good}</span>
-              <strong>Хорошо</strong>
-            </div>
-            <div className="tgm-public-kpi is-warn">
-              <span>{warn}</span>
-              <strong>Внимание</strong>
-            </div>
-            <div className="tgm-public-kpi is-crit">
-              <span>{crit}</span>
-              <strong>Критично</strong>
-            </div>
-            <div className="tgm-public-kpi is-indirect">
-              <span>{indirect}</span>
-              <strong>Не полностью</strong>
             </div>
           </section>
 
-          <section className="tgm-public-result report-mobile-container">
-            <span>Итог</span>
-            <h2>{attentionPointsText}</h2>
-            <p>{resultText}</p>
-          </section>
-
-          <section className="tgm-public-section report-mobile-container">
-            <div className="tgm-public-section-head">
-              <span>01 / точки внимания</span>
-              <h2>{recommendationsText}</h2>
-              <p>Сначала показаны самые важные пункты.</p>
-            </div>
+            <section className="tgm-public-section report-mobile-container">
+              <div className="tgm-public-section-head">
+                <span>01 / рекомендации</span>
+                <h2>{recommendations.length > 0 ? "Что требует внимания" : "Рекомендаций нет"}</h2>
+                <p>{recommendations.length > 0 ? "Сначала показаны самые важные пункты." : "По проверенным пунктам замечаний для клиента не выявлено."}</p>
+              </div>
             {attentionSummaryItems.length > 0 && (
               <div className="tgm-public-attention-summary" aria-label="Краткая сводка рекомендаций">
                 {attentionSummaryItems.map((item) => (
-                  <span className={item.status} key={item.status}>{attentionSummaryLabel(item.status, item.count)}</span>
+                  <span className={item.status} key={item.status}>{item.label}</span>
                 ))}
               </div>
             )}
-            {recommendations.length > 0 ? (
+              {recommendations.length > 0 ? (
               <div className="tgm-public-recs">
                 {recommendations.map((item, index) => {
                   const normalized = normalizeStatus(item.status);
@@ -813,12 +708,34 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                   );
                 })}
               </div>
-            ) : (
-              <div className="tgm-public-empty">Срочных рекомендаций нет. Плановое обслуживание можно проходить по регламенту.</div>
+              ) : (
+                <div className="tgm-public-empty">Замечаний по проверенным пунктам не выявлено. Плановое обслуживание можно проходить по регламенту.</div>
+              )}
+            </section>
+  
+            {noAccessItems.length > 0 && (
+              <section className="tgm-public-info report-mobile-container" aria-label="Не удалось проверить">
+                <div className="tgm-public-info-head">
+                  <span>Информационно</span>
+                  <h2>Не удалось проверить</h2>
+                  <p>Некоторые пункты не удалось проверить без дополнительного доступа. Это не является замечанием по состоянию автомобиля, но при следующем визите их можно проверить отдельно.</p>
+                </div>
+                <div className="tgm-public-info-list">
+                  {noAccessItems.map((item) => (
+                    <div className="tgm-public-info-row" key={`${item.blockTitle}-${item.code}`}>
+                      <span className="tgm-public-mark" style={{ background: statusColor("no-access") }}>{statusIcon("no-access")}</span>
+                      <div>
+                        <strong>{clientItemTitle(item.title)}</strong>
+                        <small>{item.blockTitle}</small>
+                        <span>Доступ затруднён · пункт не осматривался напрямую.</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
-          </section>
-
-          {generalPhotos.length > 0 && (
+  
+            {generalPhotos.length > 0 && (
             <section className="tgm-public-section report-mobile-container">
               <div className="tgm-public-section-head">
                 <span>02 / фотоотчёт</span>
@@ -857,10 +774,10 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
               <h2>Что проверили</h2>
             </div>
             <div className="tgm-public-accordions">
-              {blocksForReport.map((block, blockIndex) => {
-                const hasAttention = block.items.some((item) => isAttentionStatus(item.status));
-                const openByDefault = hasAttention || (!hasAttentionBlocks && blockIndex === 0);
-                return (
+                {blocksForReport.map((block) => {
+                  const hasAttention = block.items.some((item) => isAttentionStatus(item.status));
+                  const openByDefault = hasAttention;
+                  return (
                   <details className="tgm-public-accordion" open={openByDefault} key={block.code}>
                     <summary>
                       <div className="tgm-public-accordion-title">
@@ -879,9 +796,9 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
                           <div className="tgm-public-check" key={item.code}>
                             <span className="tgm-public-mark" style={{ background: statusColor(normalized) }}>{statusIcon(normalized)}</span>
                             <div>
-                              <strong>{clientItemTitle(item.title)}</strong>
-                              <span>{itemShortResult(item)}</span>
-                            </div>
+                                <strong>{clientItemTitle(item.title)}</strong>
+                                <span>{itemChecklistText(item)}</span>
+                              </div>
                             <em className={`tgm-public-check-status ${normalized}`}>{statusLabel(normalized)}</em>
                           </div>
                         );
@@ -893,12 +810,12 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
           </section>
 
-          <section className="tgm-public-next report-mobile-container">
-            <div>
-              <span>04 / что дальше</span>
-              <h2>Остались вопросы?</h2>
-              <p>{publicTelegramHref ? "Напишите нам — объясним рекомендации и подскажем, что делать дальше." : "Позвоните нам — объясним рекомендации и подскажем, что делать дальше."}</p>
-            </div>
+            <section className="tgm-public-next report-mobile-container">
+              <div>
+                <span>04 / что дальше</span>
+                <h2>Остались вопросы?</h2>
+                <p>{nextStepText}</p>
+              </div>
             <div className="tgm-public-actions">
               {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать в Telegram</a>}
               <a href={publicPhoneHref}>Позвонить</a>
@@ -906,11 +823,11 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             </div>
           </section>
 
-          <footer className="tgm-public-footer report-mobile-container">
-            <img src="/brand/monogram-light.svg" alt="" aria-hidden />
-            <div>
-              <strong>Там где масло</strong>
-              <p>Отчёт отражает состояние автомобиля на момент диагностики ({formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.</p>
+            <footer className="tgm-public-footer report-mobile-container">
+              <img src="/brand/monogram-light.svg" alt="" aria-hidden />
+              <div>
+                <strong>Там где масло</strong>
+                <p>{footerCopy}</p>
               <div className="tgm-public-footer-meta">
                 <span>{publicPhone}</span>
                 {publicTelegramUsername && <span>Telegram · @{publicTelegramUsername}</span>}
@@ -981,122 +898,113 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
           <div className="rep-v-cell good"><div className="n">{good}</div><div className="l">Хорошо</div></div>
           <div className="rep-v-cell warn"><div className="n">{warn}</div><div className="l">Внимание</div></div>
           <div className="rep-v-cell crit"><div className="n">{crit}</div><div className="l">Критично</div></div>
-          <div className="rep-v-cell ind"><div className="n">{indirect}</div><div className="l">Не полностью</div></div>
+          <div className="rep-v-cell ind"><div className="n">{indirect}</div><div className="l">Косвенно</div></div>
           <div className="rep-v-statement">
             <div className="rep-eyebrow">Итог</div>
             <div className="s">Машина {verdictText}</div>
-            <div className="rep-v-sub">{checkedClientText}. {recommendationsText}.</div>
           </div>
         </div>
 
-        <div className="rep-sec rep-inspection-sec">
-          <div className="rep-sec-head">
-            <span className="rep-sec-num">01</span>
-            <div><div className="rep-eyebrow rust">Акт осмотра</div><h2 className="rep-h2">Замечания по разделам · {recommendations.length}</h2></div>
-          </div>
-          {printAttentionSections.length > 0 ? (
-            <div className="rep-table-stack">
-              {printAttentionSections.map((section) => (
-                <section className="rep-table-block" key={section.title}>
-                  <div className="rep-table-block-head">
-                    <div>
-                      <h3>{section.title}</h3>
-                      <span>{section.meta}</span>
+          {recommendations.length > 0 && (
+            <div className="rep-sec">
+              <div className="rep-sec-head">
+                <span className="rep-sec-num">01</span>
+                <div><div className="rep-eyebrow rust">Что предлагаем</div><h2 className="rep-h2">Точки внимания · {recommendations.length}</h2></div>
+            </div>
+            <div className="rep-recs">
+              {recommendations.map((item) => {
+                const normalized = normalizeStatus(item.status);
+                const result = itemResultText(item);
+                const recommendation = itemRecommendationText(item);
+                return (
+                  <div className="rep-rec" style={{ borderLeftColor: statusColor(normalized) }} key={`${item.blockTitle}-${item.code}`}>
+                    <div className="rep-rec-head">
+                      <h3>{item.title}</h3>
+                      <span className="rep-rec-tag" style={{ background: statusColor(normalized) }}>{statusLabel(normalized)}</span>
                     </div>
-                    <em>{section.rows.length} {pluralRu(section.rows.length, "замечание", "замечания", "замечаний")}</em>
+                    <div className="rep-rec-desc">
+                      {result}
+                      {shouldShowRecommendation(result, recommendation) && <> <b>{recommendation}</b></>}
+                    </div>
+                    {(item.comment || item.reportText?.sourceText) && (
+                      <div className="rep-rec-quote">«{item.comment || item.reportText?.sourceText}»<br /><span>— {masterName.split(" ")[0]}, мастер-диагност</span></div>
+                    )}
                   </div>
-                  <table className="rep-issue-table">
-                    <thead>
-                      <tr>
-                        <th>№</th>
-                        <th>Зона / узел</th>
-                        <th>Что нашли</th>
-                        <th>Рекомендация / действие</th>
-                        <th>Статус</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {section.rows.map((row) => (
-                        <tr key={`${section.title}-${row.item.code}`}>
-                          <td className="rep-col-num">{row.number}</td>
-                          <td className="rep-col-zone"><strong>{clientItemTitle(row.item.title)}</strong></td>
-                          <td>{row.result}</td>
-                          <td>{shouldShowRecommendation(row.result, row.recommendation) ? row.recommendation : "Контроль по рекомендации мастера."}</td>
-                          <td><span className={`rep-status-pill ${row.status}`} style={{ color: statusColor(row.status) }}>{statusLabel(row.status)}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {section.photos.length > 0 && (
-                    <div className="rep-section-photos">
-                      {section.photos.map((photo, index) => (
-                        <PhotoTile key={`${section.title}-${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              ))}
+                );
+              })}
             </div>
-          ) : (
-            <div className="rep-print-empty">Критичных замечаний и пунктов, требующих реакции, не зафиксировано.</div>
+            </div>
           )}
-        </div>
-
-        {controlMeasurementRows.length > 0 && (
-          <div className="rep-sec rep-control-sec">
-            <div className="rep-sec-head">
-              <span className="rep-sec-num">02</span>
-              <div><div className="rep-eyebrow rust">Фиксация замеров</div><h2 className="rep-h2">Контрольные замеры</h2></div>
-            </div>
-            <table className="rep-control-table">
-              <thead>
-                <tr>
-                  <th>Замер</th>
-                  <th>Пункт</th>
-                  <th>Результат</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {controlMeasurementRows.map((row) => (
-                  <tr key={`control-${row.item.code}-${row.label}`}>
-                    <td><strong>{row.label}</strong></td>
-                    <td>{clientItemTitle(row.item.title)}</td>
-                    <td>{compactPrintText(itemShortResult(row.item), itemResultText(row.item), 130)}</td>
-                    <td><span className={`rep-status-pill ${row.status}`} style={{ color: statusColor(row.status) }}>{statusLabel(row.status)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {controlMeasurementPhotos.length > 0 && (
-              <div className="rep-section-photos rep-control-photos">
-                {controlMeasurementPhotos.map((photo, index) => (
-                  <PhotoTile key={`control-photo-${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />
+  
+          {noAccessItems.length > 0 && (
+            <div className="rep-sec rep-info-sec">
+              <div className="rep-sec-head">
+                <span className="rep-sec-num">{printInfoSectionNumber}</span>
+                <div><div className="rep-eyebrow">Информационно</div><h2 className="rep-h2">Не удалось проверить · {noAccessItems.length}</h2></div>
+              </div>
+              <p className="rep-info-text">Некоторые пункты не удалось проверить без дополнительного доступа. Это не является замечанием по состоянию автомобиля; при следующем визите их можно проверить отдельно.</p>
+              <div className="rep-info-list">
+                {noAccessItems.map((item) => (
+                  <div className="rep-info-row" key={`${item.blockTitle}-${item.code}`}>
+                    <span className="rep-mark sm" style={{ background: statusColor("no-access") }}>{statusIcon("no-access")}</span>
+                    <span>{item.title}</span>
+                    <b>{item.blockTitle}</b>
+                  </div>
                 ))}
               </div>
-            )}
-          </div>
-        )}
-
-        {photos.length > 0 && (
-          <div className="rep-sec rep-appendix-sec">
-            <div className="rep-sec-head">
-              <span className="rep-sec-num">03</span>
-              <div><div className="rep-eyebrow rust">Приложение</div><h2 className="rep-h2">Полный фотоотчёт · {photos.length}</h2></div>
             </div>
+          )}
+  
+          {photos.length > 0 && (
+            <div className="rep-sec">
+              <div className="rep-sec-head">
+                <span className="rep-sec-num">{printPhotoSectionNumber}</span>
+                <div><div className="rep-eyebrow rust">Как это выглядит</div><h2 className="rep-h2">Фотоотчёт · {photos.length}</h2></div>
+              </div>
             <div className="rep-photos">
               {photos.map((photo, index) => <PhotoTile key={`${photo.id}-${index}`} photo={photo} index={index} status={photo.status} />)}
             </div>
-            <div className="rep-photo-note">Полный набор снимков, сделанных мастером в процессе осмотра {formatNumericDate(reportDate)}.</div>
+            <div className="rep-photo-note">Снимки сделаны мастером в процессе осмотра {formatNumericDate(reportDate)}.</div>
           </div>
         )}
 
+          <div className="rep-sec rep-check-sec">
+            <div className="rep-sec-head">
+              <span className="rep-sec-num">{printChecklistSectionNumber}</span>
+              <div><div className="rep-eyebrow rust">Полный список</div><h2 className="rep-h2">Что мы посмотрели</h2></div>
+          </div>
+	          <div className="rep-legend">
+	            {["good", "warn", "crit", "no-access", "by-mileage", "by-client"].map((key) => {
+	              const legendLabel = key === "no-access" ? statusLabel(key) : payload.statusLegend?.[key]?.label ?? statusLabel(key);
+	              return <span className="rep-key" key={key}><span className="rep-mark" style={{ background: statusColor(key) }}>{statusIcon(key)}</span>{legendLabel}</span>;
+	            })}
+	          </div>
+          <div className="rep-check">
+            {checkColumns.map((column, columnIndex) => (
+              <div className="rep-check-col" key={`check-col-${columnIndex}`}>
+                {column.map((block) => (
+                  <div className="rep-block" key={block.code}>
+                    <div className="rep-block-head"><span className="rep-block-no">{block.num}</span>{block.title}</div>
+                    {block.items.map((item) => (
+                        <div className="rep-check-row" key={item.code}>
+                          <span className="rep-mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
+                          <span className="rep-check-label">{item.title}</span>
+                          <span className="rep-check-val">{itemChecklistText(item)}</span>
+                        </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="rep-foot">
           <div className="rep-foot-cta">
-            <div>
-              <div className="rep-eyebrow rust">Что дальше</div>
-              <div className="rep-foot-q">Запишем на работы по точкам внимания?</div>
-              <div className="rep-foot-sub">Подберём материалы заранее, согласуем время. Пишите в Telegram или звоните.</div>
+              <div>
+                <div className="rep-eyebrow rust">Что дальше</div>
+                <div className="rep-foot-q">{recommendations.length > 0 ? "Запишем на работы по точкам внимания?" : "Остались вопросы по отчёту?"}</div>
+                <div className="rep-foot-sub">{recommendations.length > 0 ? "Подберём материалы заранее, согласуем время. Пишите в Telegram или звоните." : "Ответим на вопросы по отчёту и запишем на отдельную проверку. Пишите в Telegram или звоните."}</div>
             </div>
             <div className="rep-foot-contact">
               <div className="ph">{REPORT_PHONE}</div>
@@ -1109,10 +1017,10 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
             <div className="rep-sign-cell"><div className="rep-sign-line" /><div className="rep-sign-lbl">Клиент · подпись</div></div>
             <div className="rep-sign-cell"><div className="rep-sign-line" /><div className="rep-sign-lbl">Дата ознакомления</div></div>
           </div>
-          <div className="rep-disclaimer">
-            * «В порядке» означает: критичных проблем для дальнейшей эксплуатации не выявлено. Пункты «внимание», «по пробегу» и «со слов клиента» — рекомендации, а не предписания.
-            «Доступ затруднён» — пункт не осматривался напрямую и будет проверен на следующем визите. Карта отражает состояние авто на момент осмотра ({formatNumericDate(reportDate)}).
-          </div>
+            <div className="rep-disclaimer">
+              * «В порядке» означает: критичных проблем для дальнейшей эксплуатации не выявлено. Пункты «внимание» и «критично» — поводы для согласования работ.
+              «Доступ затруднён» — пункт не осматривался напрямую и не является замечанием по состоянию автомобиля. Отметки «по пробегу» и «со слов клиента» приведены как информационный контекст. Карта отражает состояние авто на момент осмотра ({formatNumericDate(reportDate)}).
+            </div>
         </div>
       </article>
     </main>
