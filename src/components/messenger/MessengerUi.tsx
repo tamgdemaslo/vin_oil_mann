@@ -110,7 +110,7 @@ function normalizeMessengerError(value?: string | null) {
   if (/session is missing/i.test(text)) return "Telegram-сессия не найдена. Подключите Telegram заново.";
   if (/account is not connected/i.test(text)) return "Telegram-аккаунт не подключён.";
   if (/message_empty|message is empty/i.test(text)) return "Telegram отклонил пустое сообщение.";
-  if (/input entity|chat id is missing/i.test(text)) return "Telegram не нашёл диалог для отправки. Обновите синхронизацию или переподключите аккаунт.";
+  if (/input entity|chat id is missing|не нашёл .*диалог/i.test(text)) return "Telegram не нашёл этот диалог в текущей сессии. Обновите синхронизацию и повторите отправку.";
   return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 

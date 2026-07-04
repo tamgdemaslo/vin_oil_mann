@@ -78,6 +78,17 @@ type TelegramPeer = {
   className?: string;
 };
 
+type TelegramPeerSnapshot = {
+  id?: string | null;
+  chatId?: string | null;
+  accessHash?: string | null;
+  type?: "user" | "chat" | "channel" | null;
+  username?: string | null;
+  phone?: string | null;
+  className?: string | null;
+  inputClassName?: string | null;
+};
+
 type TelegramDialog = {
   id?: unknown;
   title?: string;
@@ -159,6 +170,9 @@ type GramJsModule = {
       ResolvePhone: new (input: Record<string, unknown>) => unknown;
       ImportContacts: new (input: Record<string, unknown>) => unknown;
     };
+    InputPeerUser: new (input: Record<string, unknown>) => unknown;
+    InputPeerChat: new (input: Record<string, unknown>) => unknown;
+    InputPeerChannel: new (input: Record<string, unknown>) => unknown;
     InputPhoneContact: new (input: Record<string, unknown>) => unknown;
     CodeSettings: new (input: Record<string, unknown>) => unknown;
   };
@@ -1564,6 +1578,76 @@ function peerId(value: TelegramDialog | TelegramMessage | unknown) {
   return raw === undefined || raw === null ? "" : String(raw);
 }
 
+function telegramPeerKind(input: {
+  inputEntity?: unknown;
+  entity?: unknown;
+  peer?: unknown;
+  isUser?: boolean;
+  isGroup?: boolean;
+  isChannel?: boolean;
+}): TelegramPeerSnapshot["type"] {
+  const classText = [input.inputEntity, input.entity, input.peer].map((item) => telegramClassName(item).toLowerCase()).join(" ");
+  if (input.isChannel || classText.includes("channel")) return "channel";
+  if (input.isGroup || classText.includes("chat")) return "chat";
+  if (input.isUser || classText.includes("user")) return "user";
+  return null;
+}
+
+function telegramPeerIdFromParts(input: { inputEntity?: unknown; entity?: unknown; peer?: unknown; fallback?: string | null }) {
+  return (
+    stringValue(objectField(input.inputEntity, "userId")) ??
+    stringValue(objectField(input.inputEntity, "channelId")) ??
+    stringValue(objectField(input.inputEntity, "chatId")) ??
+    stringValue(objectField(input.inputEntity, "id")) ??
+    stringValue(objectField(input.entity, "id")) ??
+    stringValue(objectField(input.peer, "userId")) ??
+    stringValue(objectField(input.peer, "channelId")) ??
+    stringValue(objectField(input.peer, "chatId")) ??
+    stringValue(objectField(input.peer, "id")) ??
+    input.fallback ??
+    null
+  );
+}
+
+function telegramAccessHashFromParts(input: { inputEntity?: unknown; entity?: unknown; peer?: unknown }) {
+  return (
+    stringValue(objectField(input.inputEntity, "accessHash")) ??
+    stringValue(objectField(input.entity, "accessHash")) ??
+    stringValue(objectField(input.peer, "accessHash"))
+  );
+}
+
+function telegramPeerSnapshotFromDialog(dialog: TelegramDialog): TelegramPeerSnapshot {
+  const inputEntity = dialog.inputEntity;
+  const entity = dialog.entity;
+  const peer = dialog.dialog?.peer;
+  const chatId = peerId(dialog);
+  return {
+    id: telegramPeerIdFromParts({ inputEntity, entity, peer, fallback: chatId }),
+    chatId: chatId || null,
+    accessHash: telegramAccessHashFromParts({ inputEntity, entity, peer }),
+    type: telegramPeerKind({ inputEntity, entity, peer, isUser: dialog.isUser, isGroup: dialog.isGroup, isChannel: dialog.isChannel }),
+    username: stringValue(objectField(entity, "username")) ?? null,
+    phone: stringValue(objectField(entity, "phone")) ?? null,
+    className: telegramClassName(entity) || null,
+    inputClassName: telegramClassName(inputEntity) || null,
+  };
+}
+
+function telegramPeerSnapshotFromUser(user: unknown): TelegramPeerSnapshot {
+  const id = telegramUserId(user);
+  return {
+    id,
+    chatId: id,
+    accessHash: telegramAccessHashFromParts({ entity: user }),
+    type: "user",
+    username: stringValue(objectField(user, "username")),
+    phone: stringValue(objectField(user, "phone")),
+    className: telegramClassName(user) || null,
+    inputClassName: null,
+  };
+}
+
 function messageDate(value?: number | Date) {
   if (value instanceof Date) return value;
   if (typeof value === "number") return new Date(value * 1000);
@@ -1930,6 +2014,7 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
   const lastAt = messageDate(dialog.message?.date);
   const conversationId = crypto.randomUUID();
   const externalConversationId = telegramExternalConversationId(account.id, chatId);
+  const telegramPeer = telegramPeerSnapshotFromDialog(dialog);
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_conversations
       (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id, external_participant_id, title,
@@ -1938,7 +2023,7 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
     VALUES
       (${conversationId}, ${organizationId}, ${account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId}, ${externalUserId},
        ${title}, ${title}, ${entity.username ?? null}, ${entity.phone ?? null}, ${Number(dialog.unreadCount ?? 0)},
-       ${lastText}, ${lastAt}, 'open', ${JSON.stringify({ source: "telegram_user_session" })}::jsonb, now(), now())
+       ${lastText}, ${lastAt}, 'open', ${JSON.stringify({ source: "telegram_user_session", telegramPeer })}::jsonb, now(), now())
     ON CONFLICT (channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
@@ -1954,6 +2039,7 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
       status = 'open',
       last_message_text = CASE WHEN EXCLUDED.last_message_text <> '' THEN EXCLUDED.last_message_text ELSE messenger_conversations.last_message_text END,
       last_message_at = GREATEST(messenger_conversations.last_message_at, EXCLUDED.last_message_at),
+      metadata_json = messenger_conversations.metadata_json || EXCLUDED.metadata_json,
       updated_at = now()
     RETURNING id
   `;
@@ -2023,6 +2109,7 @@ async function upsertTelegramConversationFromUser(input: {
   const username = stringValue(objectField(input.user, "username"));
   const displayName = telegramUserName(input.user) ?? `Telegram ${chatId}`;
   const externalConversationId = telegramExternalConversationId(input.account.id, chatId);
+  const telegramPeer = telegramPeerSnapshotFromUser(input.user);
   const connectionId = crypto.randomUUID();
   const connectionRows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_connections
@@ -2052,7 +2139,7 @@ async function upsertTelegramConversationFromUser(input: {
     VALUES
       (${conversationId}, ${organizationId}, ${input.account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId},
        ${externalUserId}, ${connectionRows[0]?.id ?? null}, ${displayName}, ${displayName}, ${username}, ${input.phone},
-       0, '', now(), 'open', ${JSON.stringify({ source: input.source, firstContact: true })}::jsonb, now(), now())
+       0, '', now(), 'open', ${JSON.stringify({ source: input.source, firstContact: true, telegramPeer })}::jsonb, now(), now())
     ON CONFLICT (channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
@@ -2066,6 +2153,7 @@ async function upsertTelegramConversationFromUser(input: {
       participant_username = COALESCE(EXCLUDED.participant_username, messenger_conversations.participant_username),
       participant_phone = COALESCE(EXCLUDED.participant_phone, messenger_conversations.participant_phone),
       status = 'open',
+      metadata_json = messenger_conversations.metadata_json || EXCLUDED.metadata_json,
       updated_at = now()
     RETURNING id
   `;
@@ -2314,7 +2402,7 @@ export async function sendTelegramUserText(outbox: MessageOutbox): Promise<Chann
   if (!sessionString) return { ok: false, error: "Telegram user session is missing" };
   const client = await getClient(sessionString);
   try {
-    const target = await telegramSendTarget(client, outbox.recipientExternalChatId);
+    const target = await telegramSendTarget(client, outbox);
     const result = await client.sendMessage(target, { message: outbox.text });
     return { ok: true, status: "sent", channelMessageId: result?.id ? String(result.id) : undefined };
   } catch (error) {
@@ -2387,14 +2475,134 @@ function telegramEntityLookupKey(externalConversationId: string) {
   return /^-?\d+$/.test(chatId) && Number.isSafeInteger(numericId) ? numericId : chatId;
 }
 
-async function telegramSendTarget(client: TelegramRuntimeClient, externalConversationId: string) {
-  const lookupKey = telegramEntityLookupKey(externalConversationId);
-  if (!client.getInputEntity) return lookupKey;
+function telegramLong(value: unknown) {
+  const text = stringValue(value)?.replace(/n$/, "");
+  if (!text || !/^-?\d+$/.test(text)) return null;
   try {
-    return await client.getInputEntity(lookupKey);
+    return BigInt(text);
   } catch {
-    return lookupKey;
+    return null;
   }
+}
+
+function telegramPeerSnapshotFromUnknown(value: unknown): TelegramPeerSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  return {
+    id: stringValue(raw.id),
+    chatId: stringValue(raw.chatId),
+    accessHash: stringValue(raw.accessHash),
+    type: raw.type === "user" || raw.type === "chat" || raw.type === "channel" ? raw.type : null,
+    username: stringValue(raw.username),
+    phone: stringValue(raw.phone),
+    className: stringValue(raw.className),
+    inputClassName: stringValue(raw.inputClassName),
+  };
+}
+
+async function telegramInputPeerFromSnapshot(peer: TelegramPeerSnapshot | null | undefined) {
+  if (!peer) return null;
+  const id = telegramLong(peer.id ?? peer.chatId);
+  if (!id) return null;
+  const accessHash = telegramLong(peer.accessHash);
+  const { Api } = await loadGramJs();
+  if (peer.type === "channel" && accessHash) {
+    return new Api.InputPeerChannel({ channelId: id, accessHash });
+  }
+  if (peer.type === "chat") {
+    return new Api.InputPeerChat({ chatId: id });
+  }
+  if (accessHash) {
+    return new Api.InputPeerUser({ userId: id, accessHash });
+  }
+  return null;
+}
+
+async function telegramGetInputEntitySafe(client: TelegramRuntimeClient, value: unknown) {
+  if (!client.getInputEntity || value === undefined || value === null || value === "") return null;
+  try {
+    return await client.getInputEntity(value);
+  } catch {
+    return null;
+  }
+}
+
+async function telegramConversationPeer(outbox: MessageOutbox): Promise<TelegramPeerSnapshot | null> {
+  if (!outbox.conversationId) return null;
+  const rows = await prisma.$queryRaw<
+    Array<{
+      externalChatId: string | null;
+      participantUsername: string | null;
+      participantPhone: string | null;
+      metadataJson: Record<string, unknown> | null;
+    }>
+  >`
+    SELECT
+      external_chat_id AS "externalChatId",
+      participant_username AS "participantUsername",
+      participant_phone AS "participantPhone",
+      metadata_json AS "metadataJson"
+    FROM messenger_conversations
+    WHERE id = ${outbox.conversationId}
+      AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const stored = telegramPeerSnapshotFromUnknown(objectField(row.metadataJson, "telegramPeer"));
+  const chatId = stored?.chatId ?? row.externalChatId ?? telegramChatIdForConversation(outbox.recipientExternalChatId) ?? null;
+  return {
+    ...stored,
+    id: stored?.id ?? chatId,
+    chatId,
+    username: stored?.username ?? row.participantUsername ?? null,
+    phone: stored?.phone ?? row.participantPhone ?? null,
+  };
+}
+
+async function saveTelegramConversationPeer(conversationId: string | null | undefined, organizationId: string, peer: TelegramPeerSnapshot) {
+  if (!conversationId) return;
+  await prisma.$executeRaw`
+    UPDATE messenger_conversations
+    SET external_chat_id = COALESCE(${peer.chatId ?? peer.id ?? null}, external_chat_id),
+        metadata_json = COALESCE(metadata_json, '{}'::jsonb) || ${JSON.stringify({ telegramPeer: peer })}::jsonb,
+        updated_at = now()
+    WHERE id = ${conversationId}
+      AND organization_id = ${organizationId}
+  `;
+}
+
+async function telegramRefreshDialogTarget(client: TelegramRuntimeClient, outbox: MessageOutbox) {
+  const expectedChatId = telegramChatIdForConversation(outbox.recipientExternalChatId);
+  if (!expectedChatId) return null;
+  const dialogs = (await client.getDialogs({ limit: 300 })) as TelegramDialog[];
+  for (const dialog of dialogs) {
+    const peer = telegramPeerSnapshotFromDialog(dialog);
+    const candidates = new Set([peer.chatId, peer.id, peerId(dialog)].filter(Boolean));
+    if (!candidates.has(expectedChatId)) continue;
+    await saveTelegramConversationPeer(outbox.conversationId, outbox.organizationId ?? getMessengerOrganizationId(), peer);
+    return dialog.inputEntity ?? dialog.entity ?? (await telegramInputPeerFromSnapshot(peer));
+  }
+  return null;
+}
+
+async function telegramSendTarget(client: TelegramRuntimeClient, outbox: MessageOutbox) {
+  const lookupKey = telegramEntityLookupKey(outbox.recipientExternalChatId);
+  const peer = await telegramConversationPeer(outbox);
+  const directPeer = await telegramInputPeerFromSnapshot(peer);
+  if (directPeer) return directPeer;
+
+  const username = peer?.username ? (peer.username.startsWith("@") ? peer.username : `@${peer.username}`) : "";
+  const byUsername = await telegramGetInputEntitySafe(client, username);
+  if (byUsername) return byUsername;
+
+  const byId = await telegramGetInputEntitySafe(client, lookupKey);
+  if (byId) return byId;
+
+  const refreshed = await telegramRefreshDialogTarget(client, outbox);
+  if (refreshed) return refreshed;
+
+  throw new Error("Telegram не нашёл этот диалог в текущей сессии. Запустите синхронизацию Telegram и повторите отправку.");
 }
 
 async function setAttachmentTerminalStatus(input: {
@@ -2589,7 +2797,7 @@ export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<Chann
   const client = await getClient(sessionString);
   try {
     if (!client.sendFile) throw new Error("GramJS sendFile недоступен.");
-    const target = await telegramSendTarget(client, outbox.recipientExternalChatId);
+    const target = await telegramSendTarget(client, outbox);
     const result = await client.sendFile(target, {
       file: object.body,
       caption: outbox.text || attachment.caption || "",
