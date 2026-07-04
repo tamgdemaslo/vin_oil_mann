@@ -835,6 +835,13 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
     FROM local_counterparties
     WHERE normalized_phone = ${phone}
        OR regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone}
+       OR (
+         length(${phone}::text) >= 10
+         AND (
+           right(COALESCE(normalized_phone, ''), 10) = right(${phone}::text, 10)
+           OR right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+         )
+       )
     ORDER BY updated_at DESC
     LIMIT 1
   `;
@@ -877,7 +884,13 @@ async function findTelegramConnectionTarget(clientId: string | null, phone: stri
       AND blocked_at IS NULL
       AND (
         (${clientId ?? null}::text IS NOT NULL AND client_id = ${clientId ?? null})
-        OR (${phone ?? null}::text IS NOT NULL AND ${phone ?? null}::text <> '' AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone ?? null})
+        OR (${phone ?? null}::text IS NOT NULL AND ${phone ?? null}::text <> '' AND (
+          regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone ?? null}
+          OR (
+            length(${phone ?? null}::text) >= 10
+            AND right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone ?? null}::text, 10)
+          )
+        ))
       )
     ORDER BY
       CASE WHEN ${clientId ?? null}::text IS NOT NULL AND client_id = ${clientId ?? null} THEN 0 ELSE 1 END,
@@ -962,15 +975,41 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
         ci.external_conversation_id = mc.external_conversation_id
         OR (ci.external_user_id IS NOT NULL AND ci.external_user_id = mc.external_user_id)
       )
+    LEFT JOIN local_counterparties conversation_client
+      ON conversation_client.id = mc.client_id OR conversation_client.moysklad_id = mc.client_id
+    LEFT JOIN local_counterparties conversation_supplier
+      ON conversation_supplier.id = mc.supplier_id OR conversation_supplier.moysklad_id = mc.supplier_id
     WHERE mc.organization_id = ${organizationId}
       AND mc.channel = 'telegram'
       AND mc.status <> 'archived'
       AND (
         (${normalizedChat}::text <> '' AND mc.external_conversation_id = ${normalizedChat})
-        OR (${clientId ?? null}::text IS NOT NULL AND (mc.client_id = ${clientId ?? null} OR ci.client_id = ${clientId ?? null}))
+        OR (${clientId ?? null}::text IS NOT NULL AND (
+          mc.client_id = ${clientId ?? null}
+          OR mc.supplier_id = ${clientId ?? null}
+          OR ci.client_id = ${clientId ?? null}
+          OR ci.supplier_id = ${clientId ?? null}
+          OR conversation_client.id = ${clientId ?? null}
+          OR conversation_client.moysklad_id = ${clientId ?? null}
+          OR conversation_supplier.id = ${clientId ?? null}
+          OR conversation_supplier.moysklad_id = ${clientId ?? null}
+        ))
         OR (${phone}::text IS NOT NULL AND ${phone}::text <> '' AND (
           regexp_replace(COALESCE(mc.participant_phone, ''), '[^0-9]', '', 'g') = ${phone}
           OR ci.phone_normalized = ${phone}
+          OR conversation_client.normalized_phone = ${phone}
+          OR conversation_supplier.normalized_phone = ${phone}
+          OR (
+            length(${phone}::text) >= 10
+            AND (
+              right(regexp_replace(COALESCE(mc.participant_phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(ci.phone_normalized, ''), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(conversation_client.normalized_phone, ''), 10) = right(${phone}::text, 10)
+              OR right(regexp_replace(COALESCE(conversation_client.phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(conversation_supplier.normalized_phone, ''), 10) = right(${phone}::text, 10)
+              OR right(regexp_replace(COALESCE(conversation_supplier.phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+            )
+          )
         ))
       )
       AND (
@@ -986,7 +1025,37 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
         )
       )
     ORDER BY
-      CASE WHEN ${clientId ?? null}::text IS NOT NULL AND mc.client_id = ${clientId ?? null} THEN 0 ELSE 1 END,
+      CASE
+        WHEN ${clientId ?? null}::text IS NOT NULL AND (
+          mc.client_id = ${clientId ?? null}
+          OR mc.supplier_id = ${clientId ?? null}
+          OR conversation_client.id = ${clientId ?? null}
+          OR conversation_client.moysklad_id = ${clientId ?? null}
+          OR conversation_supplier.id = ${clientId ?? null}
+          OR conversation_supplier.moysklad_id = ${clientId ?? null}
+        ) THEN 0
+        ELSE 1
+      END,
+      CASE
+        WHEN ${phone}::text IS NOT NULL AND ${phone}::text <> '' AND (
+          regexp_replace(COALESCE(mc.participant_phone, ''), '[^0-9]', '', 'g') = ${phone}
+          OR ci.phone_normalized = ${phone}
+          OR conversation_client.normalized_phone = ${phone}
+          OR conversation_supplier.normalized_phone = ${phone}
+          OR (
+            length(${phone}::text) >= 10
+            AND (
+              right(regexp_replace(COALESCE(mc.participant_phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(ci.phone_normalized, ''), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(conversation_client.normalized_phone, ''), 10) = right(${phone}::text, 10)
+              OR right(regexp_replace(COALESCE(conversation_client.phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+              OR right(COALESCE(conversation_supplier.normalized_phone, ''), 10) = right(${phone}::text, 10)
+              OR right(regexp_replace(COALESCE(conversation_supplier.phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
+            )
+          )
+        ) THEN 0
+        ELSE 1
+      END,
       mc.last_message_at DESC
     LIMIT 1
   `;
@@ -1693,6 +1762,38 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
   } satisfies NotificationEventContext;
 }
 
+async function requeueDiagnosticNotificationJobs(target: NotificationEventContext) {
+  const diagnosticReportId = nullableString(target.diagnosticReportId);
+  if (!diagnosticReportId) return [];
+  const organizationId = getMessengerOrganizationId();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE notification_jobs
+    SET status = 'queued',
+        scheduled_at = now(),
+        next_attempt_at = NULL,
+        error_message = NULL,
+        attempts = 0,
+        updated_at = now()
+    WHERE organization_id = ${organizationId}
+      AND event_type = 'diagnostic_sent'
+      AND diagnostic_report_id = ${diagnosticReportId}
+      AND (${nullableString(target.clientId)}::text IS NULL OR client_id = ${nullableString(target.clientId)})
+      AND status IN ('scheduled', 'queued', 'sending', 'error', 'client_not_connected')
+    RETURNING id
+  `;
+  return rows.map((row) => row.id);
+}
+
+function pickProcessedDiagnosticResult(
+  processed: Awaited<ReturnType<typeof processDueClientNotificationJobs>>,
+  jobIds: string[]
+) {
+  const relevantIds = new Set(jobIds.filter(Boolean));
+  if (!relevantIds.size) return undefined;
+  const relevant = processed.filter((item) => relevantIds.has(item.id));
+  return relevant.find((item) => item.status === "sent" || item.status === "skipped") ?? relevant[0];
+}
+
 export async function handleDiagnosticReportSent(input: {
   request: NextRequest;
   diagnosticId: string;
@@ -1707,8 +1808,17 @@ export async function handleDiagnosticReportSent(input: {
     initiatedById: input.initiatedById,
     payload: { ...asRecord(target.payload), source: input.source ?? target.payload?.source },
   });
-  const processed = await processDueClientNotificationJobs(10);
-  const sent = processed.find((item) => item.status === "sent" || item.status === "skipped") ?? processed[0];
+  const jobIds = queued.map((item) => item.id).filter((id): id is string => Boolean(id));
+  let processed = await processDueClientNotificationJobs(100);
+  let sent = pickProcessedDiagnosticResult(processed, jobIds);
+  if (!sent && queued.some((item) => item.reason === "duplicate")) {
+    const requeuedIds = await requeueDiagnosticNotificationJobs(target);
+    if (requeuedIds.length > 0) {
+      jobIds.push(...requeuedIds);
+      processed = [...processed, ...(await processDueClientNotificationJobs(100))];
+      sent = pickProcessedDiagnosticResult(processed, jobIds);
+    }
+  }
   const status = sent?.status ?? queued.find((item) => item.status)?.status ?? "queued";
   const ok = Boolean(sent && (sent.status === "sent" || sent.status === "skipped"));
   return {
