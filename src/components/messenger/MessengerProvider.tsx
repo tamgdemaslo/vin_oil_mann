@@ -65,6 +65,16 @@ type SendMessageResponse = {
 
 type SendAttachmentResponse = SendMessageResponse;
 
+type RetryMessageResponse = {
+  ok?: boolean;
+  error?: string;
+  outbox?: {
+    status?: string;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  };
+};
+
 type MessengerContextValue = {
   conversations: Conversation[];
   messagesByConversation: Record<string, Message[]>;
@@ -484,8 +494,9 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ text: trimmed }),
     })
       .then(async (res) => {
-        if (!res.ok) throw new Error("send failed");
-        return (await res.json()) as SendMessageResponse;
+        const data = (await res.json().catch(() => null)) as SendMessageResponse | null;
+        if (!res.ok) throw new Error(data?.error || "Не удалось отправить сообщение");
+        return data ?? {};
       })
       .then((data) => {
         setMessagesByConversation((map) => ({
@@ -497,14 +508,15 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         if (data.error) showToast({ id: `send-${Date.now()}`, text: data.error });
         void loadConversations({ silent: true });
       })
-      .catch(() => {
+      .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : "Не удалось отправить сообщение";
         setMessagesByConversation((map) => ({
           ...map,
           [conversationId]: (map[conversationId] ?? []).map((item) =>
-            item.id === id ? { ...item, status: "failed" } : item
+            item.id === id ? { ...item, status: "failed", errorMessage } : item
           ),
         }));
-        showToast({ id: `send-failed-${Date.now()}`, text: "Не удалось поставить сообщение в очередь" });
+        showToast({ id: `send-failed-${Date.now()}`, text: errorMessage });
       });
   }, [loadConversations, showToast]);
 
@@ -599,26 +611,28 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     setMessagesByConversation((map) => ({
       ...map,
       [conversationId]: (map[conversationId] ?? []).map((item) =>
-        item.id === messageId ? { ...item, status: "sending" } : item
+        item.id === messageId ? { ...item, status: "sending", errorCode: undefined, errorMessage: undefined } : item
       ),
     }));
     void fetch(`/api/messenger/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/retry`, {
       method: "POST",
     })
       .then(async (res) => {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        if (!res.ok) throw new Error(data?.error || "Не удалось повторить отправку");
+        const data = (await res.json().catch(() => null)) as RetryMessageResponse | null;
+        const errorMessage = data?.error || data?.outbox?.errorMessage || "Не удалось повторить отправку";
+        if (!res.ok || data?.ok === false) throw new Error(errorMessage);
         window.setTimeout(() => refreshConversation(conversationId), 400);
         window.setTimeout(() => refreshConversation(conversationId), 1800);
       })
       .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : "Не удалось повторить отправку";
         setMessagesByConversation((map) => ({
           ...map,
           [conversationId]: (map[conversationId] ?? []).map((item) =>
-            item.id === messageId ? { ...item, status: "failed" } : item
+            item.id === messageId ? { ...item, status: "failed", errorMessage } : item
           ),
         }));
-        showToast({ id: `retry-failed-${Date.now()}`, text: error instanceof Error ? error.message : "Не удалось повторить отправку" });
+        showToast({ id: `retry-failed-${Date.now()}`, text: errorMessage });
       });
   }, [refreshConversation, showToast]);
 

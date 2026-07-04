@@ -104,6 +104,16 @@ const statusLabels: Record<string, string> = {
   skipped: "пропущено",
 };
 
+function normalizeMessengerError(value?: string | null) {
+  const text = safeMessageText(value ?? "").trim();
+  if (!text) return "";
+  if (/session is missing/i.test(text)) return "Telegram-сессия не найдена. Подключите Telegram заново.";
+  if (/account is not connected/i.test(text)) return "Telegram-аккаунт не подключён.";
+  if (/message_empty|message is empty/i.test(text)) return "Telegram отклонил пустое сообщение.";
+  if (/input entity|chat id is missing/i.test(text)) return "Telegram не нашёл диалог для отправки. Обновите синхронизацию или переподключите аккаунт.";
+  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+}
+
 const channelFilterOptions: MessengerChannel[] = ["telegram", "whatsapp", "vk", "avito", "max", "sms"];
 
 type ClientSearchResult = {
@@ -709,6 +719,7 @@ function MessageBubble({
   }
   const text = safeMessageText(message.text);
   const autoNotification = autoNotificationParts(text);
+  const errorText = message.status === "failed" ? normalizeMessengerError(message.errorMessage) : "";
   return (
     <div className={cx("eco-messenger-message", message.direction === "outbound" ? "is-outbound" : "is-inbound", message.status === "failed" && "is-failed")}>
       <div className="eco-messenger-message__bubble">
@@ -728,6 +739,7 @@ function MessageBubble({
           {formatMessengerTime(message.createdAt)}
           <span className={message.status === "failed" ? "is-danger" : ""}>{message.status === "failed" ? "не отправлено" : statusLabels[message.status]}</span>
         </span>
+        {errorText && <span className="eco-messenger-message__error">{errorText}</span>}
       </div>
       {message.status === "failed" && (
         <button type="button" className="eco-messenger-retry" onClick={onRetry}>

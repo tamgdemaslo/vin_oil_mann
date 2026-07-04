@@ -2312,10 +2312,10 @@ export async function sendTelegramUserText(outbox: MessageOutbox): Promise<Chann
   const session = await getSessionByAccount(accountId);
   const sessionString = decryptSecret(session?.sessionEncrypted);
   if (!sessionString) return { ok: false, error: "Telegram user session is missing" };
-  const chatId = outbox.recipientExternalChatId.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "");
   const client = await getClient(sessionString);
   try {
-    const result = await client.sendMessage(chatId, { message: outbox.text });
+    const target = await telegramSendTarget(client, outbox.recipientExternalChatId);
+    const result = await client.sendMessage(target, { message: outbox.text });
     return { ok: true, status: "sent", channelMessageId: result?.id ? String(result.id) : undefined };
   } catch (error) {
     return { ok: false, error: safeError(error, "Telegram sendMessage failed") };
@@ -2378,6 +2378,23 @@ function mediaLimitBytes(type: string, direction: "download" | "upload") {
 
 function telegramChatIdForConversation(value: string | null | undefined) {
   return value?.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "") ?? "";
+}
+
+function telegramEntityLookupKey(externalConversationId: string) {
+  const chatId = telegramChatIdForConversation(externalConversationId).trim();
+  if (!chatId) throw new Error("Telegram chat id is missing");
+  const numericId = Number(chatId);
+  return /^-?\d+$/.test(chatId) && Number.isSafeInteger(numericId) ? numericId : chatId;
+}
+
+async function telegramSendTarget(client: TelegramRuntimeClient, externalConversationId: string) {
+  const lookupKey = telegramEntityLookupKey(externalConversationId);
+  if (!client.getInputEntity) return lookupKey;
+  try {
+    return await client.getInputEntity(lookupKey);
+  } catch {
+    return lookupKey;
+  }
 }
 
 async function setAttachmentTerminalStatus(input: {
@@ -2569,11 +2586,11 @@ export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<Chann
   const object = await getMessengerStorageObject(stored.originalStorageKey);
   const limit = mediaLimitBytes(stored.type, "upload");
   if (object.body.length > limit) return { ok: false, error: `Файл больше лимита отправки (${Math.round(limit / 1024 / 1024)} МБ)` };
-  const chatId = outbox.recipientExternalChatId.replace(/^telegram:user:[^:]+:/, "").replace(/^telegram:/, "");
   const client = await getClient(sessionString);
   try {
     if (!client.sendFile) throw new Error("GramJS sendFile недоступен.");
-    const result = await client.sendFile(chatId, {
+    const target = await telegramSendTarget(client, outbox.recipientExternalChatId);
+    const result = await client.sendFile(target, {
       file: object.body,
       caption: outbox.text || attachment.caption || "",
       forceDocument: !isPhotoAttachmentType(stored.type),

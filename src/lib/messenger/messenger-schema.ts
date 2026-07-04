@@ -229,6 +229,9 @@ export async function ensureMessengerIntegrationCoreSchema() {
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS messenger_account_id TEXT`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS external_reply_to_id TEXT`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'text'`;
+      await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS error_code TEXT`;
+      await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS error_message TEXT`;
+      await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`;
       await prisma.$executeRaw`ALTER TABLE messenger_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`;

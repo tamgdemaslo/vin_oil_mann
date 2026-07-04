@@ -46939,6 +46939,17 @@ html.tgm-print-active .tgm-client-report .qr {
   font-size: 10.5px;
 }
 
+.eco-messenger-message__error {
+  display: block;
+  max-width: 100%;
+  margin-top: 4px;
+  color: var(--eco-danger);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .eco-messenger-system-message {
   justify-self: center;
   max-width: 72%;

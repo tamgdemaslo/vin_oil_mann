@@ -68,6 +68,8 @@ type MessageRow = {
   attachmentsJson: Message["attachments"];
   createdAt: Date;
   status: Message["status"];
+  errorCode: string | null;
+  errorMessage: string | null;
 };
 
 type TelegramUserRuntimeConfig = {
@@ -148,6 +150,8 @@ function toMessage(row: MessageRow): Message {
     createdAt: row.createdAt.toISOString(),
     status: row.status,
     channelMessageId: row.externalMessageId ?? undefined,
+    errorCode: row.errorCode,
+    errorMessage: row.errorMessage,
   };
 }
 
@@ -409,7 +413,9 @@ export async function listMessages(conversationId: string): Promise<Message[]> {
       text,
       attachments_json AS "attachmentsJson",
       created_at AS "createdAt",
-      status
+      status,
+      error_code AS "errorCode",
+      error_message AS "errorMessage"
     FROM messenger_messages
     WHERE conversation_id = ${conversationId}
       AND organization_id = ${organizationId}
@@ -593,7 +599,9 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       text,
       attachments_json AS "attachmentsJson",
       created_at AS "createdAt",
-      status
+      status,
+      error_code AS "errorCode",
+      error_message AS "errorMessage"
   `;
   await prisma.$executeRaw`
     UPDATE messenger_conversations
@@ -716,7 +724,9 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
       text,
       attachments_json AS "attachmentsJson",
       created_at AS "createdAt",
-      status
+      status,
+      error_code AS "errorCode",
+      error_message AS "errorMessage"
   `;
   return rows[0] ? toMessage(rows[0]) : null;
 }

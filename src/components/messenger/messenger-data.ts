@@ -106,6 +106,8 @@ export type Message = {
   createdAt: string;
   status: MessageStatus;
   channelMessageId?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
   replyToId?: string;
 };
 
