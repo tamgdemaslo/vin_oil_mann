@@ -2534,17 +2534,29 @@ async function telegramConversationPeer(outbox: MessageOutbox): Promise<Telegram
       externalChatId: string | null;
       participantUsername: string | null;
       participantPhone: string | null;
+      clientPhone: string | null;
+      clientNormalizedPhone: string | null;
+      supplierPhone: string | null;
+      supplierNormalizedPhone: string | null;
       metadataJson: Record<string, unknown> | null;
     }>
   >`
     SELECT
-      external_chat_id AS "externalChatId",
-      participant_username AS "participantUsername",
-      participant_phone AS "participantPhone",
-      metadata_json AS "metadataJson"
-    FROM messenger_conversations
-    WHERE id = ${outbox.conversationId}
-      AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+      mc.external_chat_id AS "externalChatId",
+      mc.participant_username AS "participantUsername",
+      mc.participant_phone AS "participantPhone",
+      client.phone AS "clientPhone",
+      client.normalized_phone AS "clientNormalizedPhone",
+      supplier.phone AS "supplierPhone",
+      supplier.normalized_phone AS "supplierNormalizedPhone",
+      mc.metadata_json AS "metadataJson"
+    FROM messenger_conversations mc
+    LEFT JOIN local_counterparties client
+      ON client.id = mc.client_id OR client.moysklad_id = mc.client_id
+    LEFT JOIN local_counterparties supplier
+      ON supplier.id = mc.supplier_id OR supplier.moysklad_id = mc.supplier_id
+    WHERE mc.id = ${outbox.conversationId}
+      AND mc.organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
     LIMIT 1
   `;
   const row = rows[0];
@@ -2556,7 +2568,14 @@ async function telegramConversationPeer(outbox: MessageOutbox): Promise<Telegram
     id: stored?.id ?? chatId,
     chatId,
     username: stored?.username ?? row.participantUsername ?? null,
-    phone: stored?.phone ?? row.participantPhone ?? null,
+    phone:
+      stored?.phone ??
+      row.participantPhone ??
+      row.clientPhone ??
+      row.clientNormalizedPhone ??
+      row.supplierPhone ??
+      row.supplierNormalizedPhone ??
+      null,
   };
 }
 
@@ -2586,6 +2605,36 @@ async function telegramRefreshDialogTarget(client: TelegramRuntimeClient, outbox
   return null;
 }
 
+async function telegramResolvePhoneTarget(client: TelegramRuntimeClient, outbox: MessageOutbox, peer: TelegramPeerSnapshot | null) {
+  const phone = normalizePhone(peer?.phone ?? "");
+  if (!phone || phone.replace(/\D/g, "").length < 10) return null;
+  const { Api } = await loadGramJs();
+  const resolved = await client.invoke(new Api.contacts.ResolvePhone({ phone })).catch(() => null);
+  let user = telegramUserFromResult(resolved);
+  if (!user) {
+    const imported = await client.invoke(
+      new Api.contacts.ImportContacts({
+        contacts: [
+          new Api.InputPhoneContact({
+            clientId: BigInt(Date.now()),
+            phone,
+            firstName: "CRM",
+            lastName: "Contact",
+          }),
+        ],
+      })
+    ).catch(() => null);
+    user = telegramUserFromResult(imported, telegramImportedUserId(imported));
+  }
+  if (!user) return null;
+  const nextPeer = telegramPeerSnapshotFromUser(user);
+  await saveTelegramConversationPeer(outbox.conversationId, outbox.organizationId ?? getMessengerOrganizationId(), {
+    ...nextPeer,
+    phone,
+  });
+  return telegramInputPeerFromSnapshot(nextPeer) ?? telegramGetInputEntitySafe(client, nextPeer.username ? `@${nextPeer.username}` : nextPeer.id);
+}
+
 async function telegramSendTarget(client: TelegramRuntimeClient, outbox: MessageOutbox) {
   const lookupKey = telegramEntityLookupKey(outbox.recipientExternalChatId);
   const peer = await telegramConversationPeer(outbox);
@@ -2602,7 +2651,10 @@ async function telegramSendTarget(client: TelegramRuntimeClient, outbox: Message
   const refreshed = await telegramRefreshDialogTarget(client, outbox);
   if (refreshed) return refreshed;
 
-  throw new Error("Telegram не нашёл этот диалог в текущей сессии. Запустите синхронизацию Telegram и повторите отправку.");
+  const byPhone = await telegramResolvePhoneTarget(client, outbox, peer);
+  if (byPhone) return byPhone;
+
+  throw new Error("Telegram не нашёл этот диалог в текущей сессии и не смог восстановить его по телефону клиента.");
 }
 
 async function setAttachmentTerminalStatus(input: {

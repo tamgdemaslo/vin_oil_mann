@@ -110,7 +110,7 @@ function normalizeMessengerError(value?: string | null) {
   if (/session is missing/i.test(text)) return "Telegram-сессия не найдена. Подключите Telegram заново.";
   if (/account is not connected/i.test(text)) return "Telegram-аккаунт не подключён.";
   if (/message_empty|message is empty/i.test(text)) return "Telegram отклонил пустое сообщение.";
-  if (/input entity|chat id is missing|не нашёл .*диалог/i.test(text)) return "Telegram не нашёл этот диалог в текущей сессии. Обновите синхронизацию и повторите отправку.";
+  if (/input entity|chat id is missing|не нашёл .*диалог/i.test(text)) return "Telegram не нашёл диалог. Проверьте телефон клиента и повторите отправку.";
   return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
@@ -444,7 +444,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
 
   return (
     <div className={cx("eco-messenger-inbox", compact && "is-compact")}>
-      <div className="eco-messenger-panel-head">
+      <div className="eco-messenger-panel-head eco-messenger-inbox__head">
         <div>
           <div className="eco-page-kicker">CRM · единый центр</div>
           <h2>Сообщения</h2>
@@ -464,7 +464,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         </div>
       </div>
 
-      <div className="eco-messenger-search">
+      <div className="eco-messenger-search eco-messenger-inbox__search">
         <Search aria-hidden className="eco-icon" />
         <input
           value={search}
@@ -473,7 +473,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         />
       </div>
 
-      <label className="eco-messenger-channel-filter">
+      <label className="eco-messenger-channel-filter eco-messenger-inbox__channel">
         <span>Канал</span>
         <span className="eco-messenger-select-wrap">
           <select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}>
@@ -494,7 +494,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         </span>
       </label>
 
-      <div className="eco-messenger-filters" aria-label="Фильтры сообщений">
+      <div className="eco-messenger-filters eco-messenger-inbox__tabs" aria-label="Фильтры сообщений">
         {filterOptions.slice(0, compact ? 6 : filterOptions.length).map((option) => (
           <button
             type="button"
@@ -514,7 +514,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         </button>
       )}
 
-      <div className="eco-messenger-dialog-list">
+      <div className="eco-messenger-dialog-list eco-messenger-inbox__list">
         {loading && <MessengerState title="Загружаем диалоги" body="Получаем переписки через Messenger Gateway." />}
         {errorMode && !loading && <MessengerState danger title="Ошибка канала" body="Список недоступен, можно повторить позже." />}
         {!loading &&
