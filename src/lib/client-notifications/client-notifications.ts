@@ -11,6 +11,7 @@ import {
 } from "@/lib/date-time";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { listMessengerChannels, sendMessage } from "@/lib/messenger/messenger-gateway";
+import { startContactConversation } from "@/lib/messenger/messenger-contact-actions";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
@@ -1002,7 +1003,45 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
         appointmentId: input.appointmentId,
         payload: input.payload,
       })
-    : null;
+    : startTelegramConversationFromContact(input, resolved);
+}
+
+async function startTelegramConversationFromContact(
+  input: NotificationEventContext,
+  resolved: { clientId: string | null; clientName: string | null; clientPhone: string | null }
+): Promise<ConversationTarget | null> {
+  if (!resolved.clientId && !resolved.clientPhone && !input.clientPhone) return null;
+  try {
+    const started = await startContactConversation({
+      entityType: "counterparty",
+      entityId: resolved.clientId,
+      counterpartyId: resolved.clientId,
+      clientId: resolved.clientId,
+      phone: resolved.clientPhone ?? input.clientPhone ?? null,
+      displayName: resolved.clientName ?? input.clientName ?? null,
+      preferredChannel: "telegram",
+      context: {
+        entityType: input.diagnosticReportId ? "diagnostic" : input.appointmentId ? "appointment" : "client",
+        entityId: input.diagnosticReportId ?? input.appointmentId ?? resolved.clientId,
+        shipmentId: stringValue(input.payload?.shipmentId),
+        appointmentId: input.appointmentId ?? null,
+        diagnosticId: input.diagnosticReportId ?? null,
+        reportToken: stringValue(input.payload?.reportToken),
+        car: input.car ?? null,
+        plate: input.licensePlate ?? null,
+        link: input.diagnosticReportLink ?? input.precheckLink ?? input.orderLink ?? null,
+      },
+    });
+    if (!started?.conversationId) return null;
+    return {
+      id: started.conversationId,
+      externalConversationId: "",
+      messengerAccountId: null,
+      clientId: resolved.clientId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function clientConsentBlocked(clientId: string | null) {
@@ -1670,9 +1709,14 @@ export async function handleDiagnosticReportSent(input: {
   });
   const processed = await processDueClientNotificationJobs(10);
   const sent = processed.find((item) => item.status === "sent" || item.status === "skipped") ?? processed[0];
+  const status = sent?.status ?? queued.find((item) => item.status)?.status ?? "queued";
+  const ok = Boolean(sent && (sent.status === "sent" || sent.status === "skipped"));
   return {
-    ok: Boolean(sent && (sent.status === "sent" || sent.status === "skipped")),
-    status: sent?.status ?? queued.find((item) => item.status)?.status ?? "queued",
+    ok,
+    status,
+    error: ok
+      ? undefined
+      : sent?.error ?? (status === "client_not_connected" ? "Не удалось найти или открыть Telegram-диалог клиента." : "Отчёт не отправлен в Telegram."),
     reportUrl: target.diagnosticReportLink,
     clientId: target.clientId ?? null,
     queued,
