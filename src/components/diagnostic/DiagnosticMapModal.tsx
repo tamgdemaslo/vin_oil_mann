@@ -3710,8 +3710,8 @@ export function DiagnosticMapModal({
       <section className={`diag-vehicle-photo-card ${photo ? "has-photo" : "is-empty"}`}>
         <div className="diag-vehicle-photo-copy">
           <span>Фото автомобиля</span>
-          <strong>{photo ? "Будет использовано в печатном отчёте" : "Добавьте общее фото машины для отчёта"}</strong>
-          <p>Это отдельная фотография автомобиля. Она не попадёт в фото по проблемным пунктам.</p>
+          <strong>{photo ? "Фото для печатного отчёта" : "Добавьте фото для печатного отчёта"}</strong>
+          <p>Не попадает в фото проблемных пунктов.</p>
         </div>
         {photo ? (
           <figure>
@@ -3727,7 +3727,7 @@ export function DiagnosticMapModal({
         )}
         <div className="diag-vehicle-photo-actions">
           <button type="button" className="diag-archive-btn" onClick={openVehiclePhotoPicker} disabled={vehiclePhotoUploading || vehiclePhotoDeleting}>
-            <Camera size={15} /> {vehiclePhotoUploading ? "Загружаем..." : photo ? "Заменить" : "Добавить фото автомобиля"}
+            <Camera size={15} /> {vehiclePhotoUploading ? "Загружаем..." : photo ? "Заменить" : "Добавить фото"}
           </button>
           {photo && (
             <button type="button" className="diag-archive-btn" onClick={() => void deleteVehiclePhoto()} disabled={vehiclePhotoUploading || vehiclePhotoDeleting}>
@@ -3841,7 +3841,6 @@ export function DiagnosticMapModal({
             </button>
           </div>
         )}
-        {renderVehiclePhotoCard()}
         <div className="diag-archive-body">
           {mobileStructureOpen && (
             <button
@@ -3926,6 +3925,7 @@ export function DiagnosticMapModal({
           </aside>
 
           <main className="diag-archive-main">
+            {!showSummary && viewMode === "quick" && renderVehiclePhotoCard()}
             {showSummary ? (
               <section className="diag-archive-summary">
                 <div>
