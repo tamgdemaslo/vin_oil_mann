@@ -70,6 +70,29 @@ const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
 const CDP_PRINT_TIMEOUT_MS = 45_000;
 const CDP_STREAM_READ_TIMEOUT_MS = 10_000;
 
+async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.ProcessEnv> {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.DBUS_SESSION_BUS_ADDRESS;
+  delete env.DBUS_SYSTEM_BUS_ADDRESS;
+
+  const runtimeDir = join(userDataDir, "runtime");
+  const cacheDir = join(userDataDir, "cache");
+  const configDir = join(userDataDir, "config");
+
+  await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+  await mkdir(cacheDir, { recursive: true });
+  await mkdir(configDir, { recursive: true });
+
+  return {
+    ...env,
+    HOME: env.HOME || userDataDir,
+    TMPDIR: env.TMPDIR || tmpdir(),
+    XDG_RUNTIME_DIR: runtimeDir,
+    XDG_CACHE_HOME: cacheDir,
+    XDG_CONFIG_HOME: configDir,
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<T>((_, reject) => {
@@ -497,6 +520,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
 
   const userDataDir = join(tmpdir(), `tgm-pdf-${randomUUID()}`);
   await mkdir(userDataDir, { recursive: true });
+  const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
   console.info("[diagnostic-pdf] launching chrome", { chromePath, printerSafe, pageRanges: pageRanges ?? null });
 
   const chrome = spawn(chromePath, [
@@ -505,23 +529,31 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
     "--disable-setuid-sandbox",
     "--disable-gpu",
     "--disable-dev-shm-usage",
+    "--disable-breakpad",
+    "--disable-crashpad",
+    "--disable-crash-reporter",
     "--disable-background-networking",
     "--disable-background-timer-throttling",
     "--disable-renderer-backgrounding",
     "--disable-extensions",
     "--disable-sync",
-    "--disable-software-rasterizer",
-    "--disable-crash-reporter",
+    "--disable-component-update",
+    "--disable-default-apps",
     "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints",
     "--hide-scrollbars",
+    "--metrics-recording-only",
     "--mute-audio",
     "--no-default-browser-check",
     "--no-first-run",
+    "--no-service-autorun",
+    "--no-zygote",
+    "--ozone-platform=headless",
+    "--password-store=basic",
     "--force-color-profile=srgb",
     "--remote-debugging-port=0",
     `--user-data-dir=${userDataDir}`,
     "about:blank",
-  ]);
+  ], { env: chromeEnv });
 
   let cdp: CdpClient | null = null;
   try {
