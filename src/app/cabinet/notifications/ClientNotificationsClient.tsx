@@ -95,9 +95,24 @@ type NotificationJob = {
   errorMessage: string | null;
 };
 
+type VariableDefinition = {
+  key: string;
+  title: string;
+  description: string;
+  source: string;
+  example: string;
+  emptyBehavior: string;
+};
+
 type VariableGroup = {
   title: string;
-  variables: string[];
+  variables: VariableDefinition[];
+};
+
+type PreviewVariable = VariableDefinition & {
+  value: string;
+  used: boolean;
+  missing: boolean;
 };
 
 type SettingsPayload = {
@@ -125,6 +140,7 @@ type PreviewPayload = {
     text: string;
     missingVariables: string[];
     unknownVariables: string[];
+    variableDetails: PreviewVariable[];
   };
   error?: string;
 };
@@ -176,6 +192,7 @@ export default function ClientNotificationsClient() {
   const [templateStatus, setTemplateStatus] = useState("active");
   const [templateActive, setTemplateActive] = useState(true);
   const [preview, setPreview] = useState<PreviewPayload["preview"] | null>(null);
+  const [showPreviewVariables, setShowPreviewVariables] = useState(false);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [logEvent, setLogEvent] = useState("all");
@@ -245,6 +262,7 @@ export default function ClientNotificationsClient() {
     setTemplateStatus(selectedTemplate.status);
     setTemplateActive(selectedTemplate.isActive);
     setPreview(null);
+    setShowPreviewVariables(false);
   }, [selectedTemplate]);
 
   async function patchRule(rule: NotificationRule, patch: Partial<NotificationRule> & { conditionsJson?: NotificationConditions }) {
@@ -314,6 +332,7 @@ export default function ClientNotificationsClient() {
       const data = await safeReadJson<PreviewPayload>(response);
       if (!response.ok || !data?.preview) throw new Error(data?.error ?? "Предпросмотр не готов");
       setPreview(data.preview);
+      setShowPreviewVariables(false);
     } catch (error) {
       setResult({ tone: "danger", title: "Предпросмотр", message: error instanceof Error ? error.message : "Не удалось собрать предпросмотр." });
     } finally {
@@ -342,7 +361,7 @@ export default function ClientNotificationsClient() {
   }
 
   function insertVariable(variable: string) {
-    const token = `{${variable}}`;
+    const token = `{{${variable}}}`;
     const el = textareaRef.current;
     if (!el) {
       setTemplateBody((current) => `${current}${token}`);
@@ -610,10 +629,26 @@ export default function ClientNotificationsClient() {
             </div>
             {preview ? (
               <div className="eco-notification-preview">
-                <strong>Предпросмотр</strong>
+                <div className="eco-notification-preview__head">
+                  <strong>Предпросмотр</strong>
+                  <button type="button" onClick={() => setShowPreviewVariables((current) => !current)}>
+                    {showPreviewVariables ? "Скрыть переменные" : "Показать переменные"}
+                  </button>
+                </div>
                 <pre>{preview.text}</pre>
                 {preview.unknownVariables.length ? <EcoBadge tone="danger">Неизвестно: {preview.unknownVariables.join(", ")}</EcoBadge> : null}
                 {preview.missingVariables.length ? <EcoBadge tone="warning">Пусто: {preview.missingVariables.join(", ")}</EcoBadge> : null}
+                {showPreviewVariables ? (
+                  <div className="eco-notification-preview-vars">
+                    {(preview.variableDetails ?? []).map((variable) => (
+                      <div key={variable.key} className={cx("eco-notification-preview-var", variable.used && "is-used", variable.missing && "is-missing")}>
+                        <code>{"{{"}{variable.key}{"}}"}</code>
+                        <span>{variable.title}</span>
+                        <small>{variable.value || "пусто"} · {variable.source}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </EcoCard>
@@ -631,8 +666,9 @@ export default function ClientNotificationsClient() {
                   <strong>{group.title}</strong>
                   <div>
                     {group.variables.map((variable) => (
-                      <button key={variable} type="button" onClick={() => insertVariable(variable)}>
-                        {"{"}{variable}{"}"}
+                      <button key={variable.key} type="button" title={`${variable.description} Источник: ${variable.source}`} onClick={() => insertVariable(variable.key)}>
+                        <span>{"{{"}{variable.key}{"}}"}</span>
+                        <small>{variable.title}</small>
                       </button>
                     ))}
                   </div>
@@ -819,7 +855,14 @@ export default function ClientNotificationsClient() {
               </div>
               <div className="eco-notification-variable-grid">
                 {group.variables.map((variable) => (
-                  <code key={variable}>{"{"}{variable}{"}"}</code>
+                  <article key={variable.key} className="eco-notification-variable-card">
+                    <code>{"{{"}{variable.key}{"}}"}</code>
+                    <strong>{variable.title}</strong>
+                    <span>{variable.description}</span>
+                    <small>Источник: {variable.source}</small>
+                    <small>Пример: {variable.example}</small>
+                    <small>{variable.emptyBehavior}</small>
+                  </article>
                 ))}
               </div>
             </EcoCard>

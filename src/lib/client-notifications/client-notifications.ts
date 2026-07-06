@@ -32,6 +32,7 @@ export type ClientNotificationEventType =
   | "review_after_visit"
   | "appointment_rescheduled"
   | "appointment_cancelled"
+  | "appointment_no_show"
   | "estimate_sent"
   | "precheck_sent"
   | "order_ready"
@@ -171,6 +172,12 @@ export type NotificationEventContext = {
   serviceList?: string | null;
   managerName?: string | null;
   masterName?: string | null;
+  organizationName?: string | null;
+  locationName?: string | null;
+  locationAddress?: string | null;
+  publicPhone?: string | null;
+  telegramUsername?: string | null;
+  bookingUrl?: string | null;
   branchId?: string | null;
   branchName?: string | null;
   address?: string | null;
@@ -193,6 +200,27 @@ type RenderResult = {
   variables: Record<string, string>;
   missingVariables: string[];
   unknownVariables: string[];
+  variableDetails: NotificationVariablePreview[];
+};
+
+export type NotificationVariableDefinition = {
+  key: string;
+  title: string;
+  description: string;
+  source: string;
+  example: string;
+  emptyBehavior: string;
+};
+
+export type NotificationVariableGroup = {
+  title: string;
+  variables: NotificationVariableDefinition[];
+};
+
+export type NotificationVariablePreview = NotificationVariableDefinition & {
+  value: string;
+  used: boolean;
+  missing: boolean;
 };
 
 type ConversationTarget = {
@@ -272,6 +300,7 @@ export const notificationEventDefinitions: Array<{
   },
   { type: "appointment_rescheduled", title: "Запись перенесена", description: "Будущее событие для переноса записи.", defaultTiming: "Сразу", future: true },
   { type: "appointment_cancelled", title: "Запись отменена", description: "Будущее событие для отмены записи.", defaultTiming: "Сразу", future: true },
+  { type: "appointment_no_show", title: "Клиент не приехал", description: "Шаблон для ручной отправки после no-show.", defaultTiming: "Вручную", future: true },
   { type: "estimate_sent", title: "Расчёт отправлен", description: "Расширение для отправки расчёта клиенту.", defaultTiming: "Сразу", future: true },
   { type: "precheck_sent", title: "Предчек отправлен", description: "Расширение для предчека.", defaultTiming: "Сразу", future: true },
   { type: "order_ready", title: "Заказ готов", description: "Расширение для готовности заказа.", defaultTiming: "Сразу", future: true },
@@ -283,19 +312,115 @@ export const notificationEventDefinitions: Array<{
   { type: "oil_change_reminder", title: "Напоминание о замене масла", description: "Расширение по пробегу или дате.", defaultTiming: "По расписанию", future: true },
 ];
 
-export const notificationVariableGroups = [
-  { title: "Клиент", variables: ["client_name", "client_phone"] },
-  { title: "Запись", variables: ["appointment_date", "appointment_time", "appointment_datetime", "service_list", "manager_name", "master_name"] },
-  { title: "Автомобиль", variables: ["car", "car_make", "car_model", "license_plate", "vin"] },
-  { title: "Сервис", variables: ["service_name", "branch_name", "address", "company_phone", "telegram_link"] },
-  { title: "Ссылки", variables: ["diagnostic_report_link", "review_link", "order_link", "precheck_link"] },
+function variable(
+  key: string,
+  title: string,
+  description: string,
+  source: string,
+  example: string,
+  emptyBehavior: string
+): NotificationVariableDefinition {
+  return { key, title, description, source, example, emptyBehavior };
+}
+
+export const notificationVariableGroups: NotificationVariableGroup[] = [
+  {
+    title: "Клиент",
+    variables: [
+      variable("clientName", "Имя клиента", "Имя из карточки клиента или записи.", "Карточка клиента / запись", "Александр", "Если пусто, приветствие станет нейтральным."),
+      variable("clientPhone", "Телефон клиента", "Телефон клиента в привычном формате.", "Карточка клиента / запись", "+7 999 255-60-31", "Строки с телефоном лучше делать условными."),
+    ],
+  },
+  {
+    title: "Запись",
+    variables: [
+      variable("appointmentDate", "Дата записи", "Дата визита клиента.", "Журнал записи", "7 июля 2026", "Если даты нет, шаблон покажет ошибку предпросмотра."),
+      variable("appointmentTime", "Время записи", "Время начала визита.", "Журнал записи", "13:00", "Если времени нет, шаблон покажет ошибку предпросмотра."),
+      variable("appointmentDateTime", "Дата и время", "Дата и время визита одной строкой.", "Журнал записи", "7 июля 2026, 13:00", "Можно заменить отдельными датой и временем."),
+      variable("serviceName", "Услуга", "Основная услуга или список работ из записи.", "Журнал записи / услуги", "Замена моторного масла", "Строку с услугой можно скрыть условным блоком."),
+      variable("serviceList", "Список услуг", "Полный список услуг из записи.", "Журнал записи / услуги", "Замена масла, фильтр", "Строку можно скрыть условным блоком."),
+      variable("managerName", "Менеджер", "Ответственный менеджер.", "Запись / пользователь", "Игорь", "Пустое значение скрывайте условным блоком."),
+      variable("masterName", "Мастер", "Мастер или сотрудник.", "Запись / сотрудник", "Денис", "Пустое значение скрывайте условным блоком."),
+    ],
+  },
+  {
+    title: "Автомобиль",
+    variables: [
+      variable("vehicleDisplayName", "Автомобиль", "Готовое название авто: марка, модель, госномер или VIN.", "Авто клиента / запись", "BMW X5 · A123BC", "Если авто не указано, условный блок полностью скрывает строку."),
+      variable("vehicleBrand", "Марка", "Марка автомобиля.", "Авто клиента / запись", "BMW", "Пустое значение не подставляется автоматически."),
+      variable("vehicleModel", "Модель", "Модель автомобиля.", "Авто клиента / запись", "X5", "Пустое значение не подставляется автоматически."),
+      variable("vehiclePlate", "Госномер", "Регистрационный номер.", "Авто клиента / запись", "A123BC", "Пустое значение не подставляется автоматически."),
+      variable("vehicleVin", "VIN", "VIN автомобиля.", "Авто клиента / запись", "WBABA91070AL55203", "Пустое значение не подставляется автоматически."),
+    ],
+  },
+  {
+    title: "Сервис",
+    variables: [
+      variable("organizationName", "Название сервиса", "Публичное название организации.", "Настройки сервиса", "Там где масло", "Если не задано, используется название по умолчанию."),
+      variable("locationName", "Филиал", "Название локации или бокса.", "Запись / филиал", "Бокс №1", "Пустое значение скрывайте условным блоком."),
+      variable("locationAddress", "Адрес", "Адрес филиала.", "Запись / настройки", "Калининград, ул. Сервисная, 1", "Строка адреса скрывается, если адрес пустой."),
+      variable("publicPhone", "Телефон сервиса", "Публичный телефон для связи.", "Настройки сервиса", "+7 4012 00-00-00", "Пустое значение скрывайте условным блоком."),
+      variable("telegramUsername", "Telegram сервиса", "Ссылка или username Telegram.", "Настройки сервиса", "@tam_gde_maslo", "Пустое значение скрывайте условным блоком."),
+      variable("bookingUrl", "Ссылка записи", "Публичная ссылка для самостоятельной записи.", "Настройки онлайн-записи", "https://example.com/book", "Пустое значение скрывайте условным блоком."),
+    ],
+  },
+  {
+    title: "Ссылки",
+    variables: [
+      variable("diagnosticReportUrl", "Отчёт диагностики", "Публичная ссылка на отчёт диагностики.", "Диагностика", "https://example.com/report/demo", "Если ссылки нет, сообщение не должно содержать строку отчёта."),
+      variable("precheckUrl", "Предчек", "Ссылка на предчек.", "Документы", "https://example.com/precheck/demo", "Пустое значение скрывайте условным блоком."),
+      variable("reviewUrl", "Отзыв", "Ссылка на страницу отзыва.", "Настройки сервиса", "https://example.com/review", "Пустое значение скрывайте условным блоком."),
+      variable("orderUrl", "Заказ", "Ссылка на заказ или документ.", "Документы", "https://example.com/order/demo", "Пустое значение скрывайте условным блоком."),
+    ],
+  },
   {
     title: "Диагностика",
-    variables: ["checked_count", "recommendation_count", "critical_count", "warning_count", "recommendation_text", "critical_text"],
+    variables: [
+      variable("checkedCount", "Проверено", "Количество проверенных пунктов.", "Диагностика", "24", "Если нет данных, подставляется 0."),
+      variable("recommendationCount", "Рекомендации", "Количество рекомендаций.", "Диагностика", "3", "Если нет данных, подставляется 0."),
+      variable("criticalCount", "Критично", "Количество критичных замечаний.", "Диагностика", "1", "Если нет данных, подставляется 0."),
+      variable("warningCount", "Внимание", "Количество пунктов внимания.", "Диагностика", "3", "Если нет данных, подставляется 0."),
+      variable("recommendationText", "Текст рекомендаций", "Готовая фраза по рекомендациям.", "Диагностика", "Есть 3 рекомендации.", "Фраза адаптируется по количеству."),
+      variable("criticalText", "Текст критичных пунктов", "Готовая фраза по критичным пунктам.", "Диагностика", "Есть 1 критичный пункт.", "Фраза адаптируется по количеству."),
+    ],
   },
 ];
 
-const supportedVariableSet = new Set(notificationVariableGroups.flatMap((group) => group.variables));
+const notificationVariableDefinitions = notificationVariableGroups.flatMap((group) => group.variables);
+const supportedVariableSet = new Set(notificationVariableDefinitions.map((item) => item.key));
+const legacyVariableAliases = new Map<string, string>([
+  ["client_name", "clientName"],
+  ["client_phone", "clientPhone"],
+  ["appointment_date", "appointmentDate"],
+  ["appointment_time", "appointmentTime"],
+  ["appointment_datetime", "appointmentDateTime"],
+  ["service_name", "organizationName"],
+  ["branch_name", "locationName"],
+  ["address", "locationAddress"],
+  ["company_phone", "publicPhone"],
+  ["telegram_link", "telegramUsername"],
+  ["service_list", "serviceList"],
+  ["manager_name", "managerName"],
+  ["master_name", "masterName"],
+  ["car_make", "vehicleBrand"],
+  ["car_model", "vehicleModel"],
+  ["license_plate", "vehiclePlate"],
+  ["vin", "vehicleVin"],
+  ["diagnostic_report_link", "diagnosticReportUrl"],
+  ["review_link", "reviewUrl"],
+  ["order_link", "orderUrl"],
+  ["precheck_link", "precheckUrl"],
+  ["checked_count", "checkedCount"],
+  ["recommendation_count", "recommendationCount"],
+  ["critical_count", "criticalCount"],
+  ["warning_count", "warningCount"],
+  ["recommendation_text", "recommendationText"],
+  ["critical_text", "criticalText"],
+]);
+
+function canonicalVariableKey(key: string) {
+  return supportedVariableSet.has(key) ? key : legacyVariableAliases.get(key);
+}
 
 const defaultConditions: NotificationConditions = {
   requireTelegram: true,
@@ -310,8 +435,18 @@ const defaultConditions: NotificationConditions = {
 
 const legacyDiagnosticReadyTemplateBody =
   "Здравствуйте, {client_name}! Диагностика по автомобилю {car} готова. Посмотреть отчёт: {diagnostic_report_link}";
+const appointmentConfirmTemplateBody =
+  "{{#clientName}}Здравствуйте, {{clientName}}!{{/clientName}}{{^clientName}}Здравствуйте!{{/clientName}}\n" +
+  "Вы записаны в {{organizationName}} на {{appointmentDate}} в {{appointmentTime}}." +
+  "{{#serviceName}}\nУслуга: {{serviceName}}.{{/serviceName}}" +
+  "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
+  "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}\n" +
+  "Ждём вас.";
 const diagnosticReadyTemplateBody =
-  "{client_name}, диагностика {car} готова.\n\nПроверено {checked_count} пунктов.\n{recommendation_text}\n{critical_text}\n\nОткрыть отчёт: {diagnostic_report_link}";
+  "{{#clientName}}{{clientName}}, диагностика{{#vehicleDisplayName}} {{vehicleDisplayName}}{{/vehicleDisplayName}} готова.{{/clientName}}" +
+  "{{^clientName}}Диагностика{{#vehicleDisplayName}} {{vehicleDisplayName}}{{/vehicleDisplayName}} готова.{{/clientName}}\n\n" +
+  "Проверено {{checkedCount}} пунктов.\n{{recommendationText}}\n{{criticalText}}" +
+  "{{#diagnosticReportUrl}}\n\nОткрыть отчёт: {{diagnosticReportUrl}}{{/diagnosticReportUrl}}";
 
 const defaultTemplates: Array<{
   key: string;
@@ -324,19 +459,22 @@ const defaultTemplates: Array<{
     key: "appointment-confirm",
     name: "Подтверждение записи",
     eventType: "appointment_client_created",
-    body: "Здравствуйте, {client_name}! Вы записаны в автосервис \"{service_name}\" на {appointment_date} в {appointment_time}. Автомобиль: {car}. Адрес: {address}. Ждём вас!",
+    body: appointmentConfirmTemplateBody,
   },
   {
     key: "appointment-admin-confirm",
-    name: "Подтверждение записи администратором",
+    name: "Подтверждение записи",
     eventType: "appointment_admin_created",
-    body: "Здравствуйте, {client_name}! Администратор записал вас в автосервис \"{service_name}\" на {appointment_date} в {appointment_time}. Автомобиль: {car}. Ждём вас по адресу: {address}.",
+    body: appointmentConfirmTemplateBody,
   },
   {
     key: "appointment-reminder",
     name: "Напоминание перед визитом",
     eventType: "appointment_reminder",
-    body: "Здравствуйте, {client_name}! Напоминаем, что сегодня в {appointment_time} у вас запись в \"{service_name}\". Автомобиль: {car}. Адрес: {address}.",
+    body:
+      "{{#clientName}}{{clientName}}, {{/clientName}}напоминаем о записи в {{organizationName}} {{appointmentDate}} в {{appointmentTime}}." +
+      "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
+      "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}\nДо встречи.",
   },
   {
     key: "diagnostic-ready",
@@ -348,25 +486,63 @@ const defaultTemplates: Array<{
     key: "client-arrived",
     name: "Клиент приехал",
     eventType: "client_arrived",
-    body: "Добро пожаловать в \"{service_name}\", {client_name}! Мы отметили ваш приезд. Скоро мастер приступит к работе с автомобилем {car}.",
+    body:
+      "{{#clientName}}{{clientName}}, добро пожаловать в {{organizationName}}!{{/clientName}}" +
+      "{{^clientName}}Добро пожаловать в {{organizationName}}!{{/clientName}}\nМы отметили ваш приезд.",
+    active: false,
   },
   {
     key: "visit-review",
-    name: "Визит завершён / отзыв",
+    name: "Спасибо за визит",
     eventType: "visit_completed",
-    body: "{client_name}, спасибо, что выбрали \"{service_name}\"! Будем благодарны за отзыв о визите: {review_link}",
+    body:
+      "{{#clientName}}{{clientName}}, спасибо, что выбрали {{organizationName}}!{{/clientName}}" +
+      "{{^clientName}}Спасибо, что выбрали {{organizationName}}!{{/clientName}}" +
+      "{{#reviewUrl}}\nБудем благодарны за отзыв: {{reviewUrl}}{{/reviewUrl}}",
   },
   {
     key: "appointment-rescheduled",
     name: "Запись перенесена",
     eventType: "appointment_rescheduled",
-    body: "Здравствуйте, {client_name}! Ваша запись перенесена на {appointment_date} в {appointment_time}. Автомобиль: {car}.",
+    body:
+      "{{#clientName}}Здравствуйте, {{clientName}}!{{/clientName}}{{^clientName}}Здравствуйте!{{/clientName}}\n" +
+      "Ваша запись перенесена на {{appointmentDate}} в {{appointmentTime}}." +
+      "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}",
   },
   {
     key: "appointment-cancelled",
     name: "Запись отменена",
     eventType: "appointment_cancelled",
-    body: "Здравствуйте, {client_name}. Ваша запись на {appointment_date} в {appointment_time} отменена. Если хотите выбрать другое время, напишите нам.",
+    body:
+      "{{#clientName}}Здравствуйте, {{clientName}}.{{/clientName}}{{^clientName}}Здравствуйте.{{/clientName}}\n" +
+      "Ваша запись на {{appointmentDate}} в {{appointmentTime}} отменена. Если хотите выбрать другое время, напишите нам.",
+  },
+  {
+    key: "appointment-no-show",
+    name: "Клиент не приехал",
+    eventType: "appointment_no_show",
+    body:
+      "{{#clientName}}{{clientName}}, здравствуйте.{{/clientName}}{{^clientName}}Здравствуйте.{{/clientName}}\n" +
+      "Мы не дождались вас на запись {{appointmentDate}} в {{appointmentTime}}. Если нужно перенести визит, напишите нам.",
+    active: false,
+  },
+  {
+    key: "vehicle-ready",
+    name: "Автомобиль готов",
+    eventType: "vehicle_ready",
+    body:
+      "{{#clientName}}{{clientName}}, {{/clientName}}автомобиль{{#vehicleDisplayName}} {{vehicleDisplayName}}{{/vehicleDisplayName}} готов к выдаче." +
+      "{{#publicPhone}}\nЕсли нужно уточнить детали, позвоните: {{publicPhone}}.{{/publicPhone}}",
+    active: false,
+  },
+  {
+    key: "precheck-sent",
+    name: "Предчек",
+    eventType: "precheck_sent",
+    body:
+      "{{#clientName}}{{clientName}}, {{/clientName}}подготовили предчек по визиту." +
+      "{{#precheckUrl}}\nОткрыть предчек: {{precheckUrl}}{{/precheckUrl}}",
+    active: false,
   },
 ];
 
@@ -395,7 +571,7 @@ const defaultRuleSpecs: Array<{
     key: "client-arrived",
     eventType: "client_arrived",
     templateKey: "client-arrived",
-    enabled: true,
+    enabled: false,
     timingType: "immediate",
     conditions: { ...defaultConditions, arrivalStatuses: ["arrived"] },
   },
@@ -410,6 +586,9 @@ const defaultRuleSpecs: Array<{
   },
   { key: "appointment-rescheduled", eventType: "appointment_rescheduled", templateKey: "appointment-rescheduled", enabled: false, timingType: "immediate" },
   { key: "appointment-cancelled", eventType: "appointment_cancelled", templateKey: "appointment-cancelled", enabled: false, timingType: "immediate" },
+  { key: "appointment-no-show", eventType: "appointment_no_show", templateKey: "appointment-no-show", enabled: false, timingType: "immediate" },
+  { key: "vehicle-ready", eventType: "vehicle_ready", templateKey: "vehicle-ready", enabled: false, timingType: "immediate" },
+  { key: "precheck-sent", eventType: "precheck_sent", templateKey: "precheck-sent", enabled: false, timingType: "immediate" },
 ];
 
 function orgScopedId(organizationId: string, type: "tpl" | "rule", key: string) {
@@ -435,6 +614,16 @@ function stringValue(value: unknown) {
 function nullableString(value: unknown) {
   const text = stringValue(value);
   return text || null;
+}
+
+function extractTemplateVariables(body: string) {
+  const keys = new Set<string>();
+  for (const match of body.matchAll(/\{\{\s*[#^/]?\s*([a-zA-Z0-9_]+)|\{\s*([a-zA-Z0-9_]+)/g)) {
+    const rawKey = match[1] || match[2];
+    const key = canonicalVariableKey(rawKey);
+    if (key) keys.add(key);
+  }
+  return [...keys];
 }
 
 function numberValue(value: unknown) {
@@ -588,39 +777,35 @@ export async function ensureClientNotificationsSchema() {
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS client_notification_preferences_org_idx ON client_notification_preferences(organization_id, telegram_enabled, consent_status)`;
 
       for (const template of defaultTemplates) {
+        const metadata = { systemDefault: true, key: template.key, defaultVersion: 3, variables: extractTemplateVariables(template.body) };
         await prisma.$executeRaw`
           INSERT INTO notification_templates
             (id, organization_id, name, event_type, channel, body, is_active, status, metadata_json, created_at, updated_at)
           VALUES
             (${orgScopedId(organizationId, "tpl", template.key)}, ${organizationId}, ${template.name}, ${template.eventType},
              'telegram', ${template.body}, ${template.active ?? true}, 'active',
-             ${json({ systemDefault: true, key: template.key })}::jsonb, now(), now())
+             ${json(metadata)}::jsonb, now(), now())
           ON CONFLICT (id) DO NOTHING
         `;
+        await prisma.$executeRaw`
+          UPDATE notification_templates
+          SET name = ${template.name},
+              body = ${template.body},
+              is_active = ${template.active ?? true},
+              metadata_json = metadata_json || ${json(metadata)}::jsonb,
+              updated_at = now()
+          WHERE id = ${orgScopedId(organizationId, "tpl", template.key)}
+            AND organization_id = ${organizationId}
+            AND metadata_json->>'systemDefault' = 'true'
+            AND COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
+            AND (
+              COALESCE(metadata_json->>'defaultVersion', '0') <> '3'
+              OR body = ${legacyDiagnosticReadyTemplateBody}
+              OR body LIKE '%{car}%'
+              OR body LIKE '%Администратор записал вас%'
+            )
+        `;
       }
-      await prisma.$executeRaw`
-        UPDATE notification_templates
-        SET name = 'Диагностика готова',
-            body = ${diagnosticReadyTemplateBody},
-            metadata_json = metadata_json || ${json({
-              defaultVersion: 2,
-              variables: [
-                "client_name",
-                "car",
-                "checked_count",
-                "recommendation_text",
-                "critical_text",
-                "diagnostic_report_link",
-              ],
-            })}::jsonb,
-            updated_at = now()
-        WHERE id = ${orgScopedId(organizationId, "tpl", "diagnostic-ready")}
-          AND organization_id = ${organizationId}
-          AND event_type = 'diagnostic_sent'
-          AND metadata_json->>'systemDefault' = 'true'
-          AND COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
-          AND body = ${legacyDiagnosticReadyTemplateBody}
-      `;
 
       for (const rule of defaultRuleSpecs) {
         await prisma.$executeRaw`
@@ -633,6 +818,15 @@ export async function ensureClientNotificationsSchema() {
           ON CONFLICT (id) DO NOTHING
         `;
       }
+      await prisma.$executeRaw`
+        UPDATE notification_rules
+        SET enabled = false,
+            conditions_json = ${json({ ...defaultConditions, arrivalStatuses: ["arrived"] })}::jsonb,
+            updated_at = now()
+        WHERE organization_id = ${organizationId}
+          AND id = ${orgScopedId(organizationId, "rule", "client-arrived")}
+          AND event_type = 'client_arrived'
+      `;
     })().catch((error) => {
       schemaState.__clientNotificationsSchemaPromise = null;
       throw error;
@@ -692,34 +886,40 @@ async function loadEnabledRules(eventType: ClientNotificationEventType, branchId
 }
 
 function defaultVariableValue(key: string) {
+  const canonical = canonicalVariableKey(key) ?? key;
   const defaults: Record<string, string> = {
-    client_name: "клиент",
-    client_phone: "",
-    service_name: process.env.NEXT_PUBLIC_SERVICE_NAME?.trim() || process.env.SERVICE_NAME?.trim() || "Там где масло",
-    branch_name: process.env.NEXT_PUBLIC_BRANCH_NAME?.trim() || process.env.BRANCH_NAME?.trim() || "",
-    address: process.env.NEXT_PUBLIC_SERVICE_ADDRESS?.trim() || process.env.SERVICE_ADDRESS?.trim() || "",
-    car: "ваш автомобиль",
-    car_make: "",
-    car_model: "",
-    license_plate: "",
-    vin: "",
-    service_list: "",
-    manager_name: "",
-    master_name: "",
-    diagnostic_report_link: "",
-    review_link: process.env.NEXT_PUBLIC_REVIEW_LINK?.trim() || process.env.REVIEW_LINK?.trim() || "",
-    order_link: "",
-    precheck_link: "",
-    company_phone: process.env.NEXT_PUBLIC_COMPANY_PHONE?.trim() || process.env.COMPANY_PHONE?.trim() || "",
-    telegram_link: process.env.NEXT_PUBLIC_TELEGRAM_LINK?.trim() || process.env.TELEGRAM_LINK?.trim() || "",
-    checked_count: "0",
-    recommendation_count: "0",
-    critical_count: "0",
-    warning_count: "0",
-    recommendation_text: diagnosticRecommendationText(0),
-    critical_text: diagnosticCriticalText(0),
+    clientName: "",
+    clientPhone: "",
+    appointmentDate: "",
+    appointmentTime: "",
+    appointmentDateTime: "",
+    serviceName: "",
+    serviceList: "",
+    managerName: "",
+    masterName: "",
+    vehicleDisplayName: "",
+    vehicleBrand: "",
+    vehicleModel: "",
+    vehiclePlate: "",
+    vehicleVin: "",
+    organizationName: process.env.NEXT_PUBLIC_SERVICE_NAME?.trim() || process.env.SERVICE_NAME?.trim() || "Там где масло",
+    locationName: process.env.NEXT_PUBLIC_BRANCH_NAME?.trim() || process.env.BRANCH_NAME?.trim() || "",
+    locationAddress: process.env.NEXT_PUBLIC_SERVICE_ADDRESS?.trim() || process.env.SERVICE_ADDRESS?.trim() || "",
+    publicPhone: process.env.NEXT_PUBLIC_COMPANY_PHONE?.trim() || process.env.COMPANY_PHONE?.trim() || "",
+    telegramUsername: process.env.NEXT_PUBLIC_TELEGRAM_LINK?.trim() || process.env.TELEGRAM_LINK?.trim() || "",
+    bookingUrl: process.env.NEXT_PUBLIC_BOOKING_URL?.trim() || process.env.BOOKING_URL?.trim() || "",
+    diagnosticReportUrl: "",
+    reviewUrl: process.env.NEXT_PUBLIC_REVIEW_LINK?.trim() || process.env.REVIEW_LINK?.trim() || "",
+    orderUrl: "",
+    precheckUrl: "",
+    checkedCount: "0",
+    recommendationCount: "0",
+    criticalCount: "0",
+    warningCount: "0",
+    recommendationText: diagnosticRecommendationText(0),
+    criticalText: diagnosticCriticalText(0),
   };
-  return defaults[key] ?? "";
+  return defaults[canonical] ?? "";
 }
 
 function appointmentDate(input: NotificationEventContext) {
@@ -733,7 +933,7 @@ function appointmentDate(input: NotificationEventContext) {
 
 export function buildNotificationVariables(input: NotificationEventContext): Record<string, string> {
   const at = appointmentDate(input);
-  const car =
+  const vehicleDisplayName =
     stringValue(input.car) ||
     [input.carMake, input.carModel, input.licensePlate || input.vin].map(stringValue).filter(Boolean).join(" · ");
   const payload = asRecord(input.payload);
@@ -743,39 +943,45 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     input.recommendationCount ?? payload.recommendationCount ?? payload.recommendation_count ?? warningCount
   );
   const checkedCount = nonNegativeCount(input.checkedCount ?? payload.checkedCount ?? payload.checked_count ?? payload.totalCount ?? payload.total_count);
+  const serviceList = stringValue(input.serviceList);
   const values: Record<string, string> = {
-    client_name: stringValue(input.clientName),
-    client_phone: stringValue(input.clientPhone),
-    service_name: defaultVariableValue("service_name"),
-    branch_name: stringValue(input.branchName) || defaultVariableValue("branch_name"),
-    address: stringValue(input.address) || defaultVariableValue("address"),
-    appointment_date: at ? formatServiceDate(at) : stringValue(input.appointmentDate),
-    appointment_time: at ? formatServiceTime(at) : stringValue(input.appointmentTime),
-    appointment_datetime: at ? formatServiceDateTime(at) : [input.appointmentDate, input.appointmentTime].map(stringValue).filter(Boolean).join(" "),
-    car,
-    car_make: stringValue(input.carMake),
-    car_model: stringValue(input.carModel),
-    license_plate: stringValue(input.licensePlate),
-    vin: stringValue(input.vin),
-    service_list: stringValue(input.serviceList),
-    manager_name: stringValue(input.managerName),
-    master_name: stringValue(input.masterName),
-    diagnostic_report_link: stringValue(input.diagnosticReportLink),
-    review_link: stringValue(input.reviewLink) || defaultVariableValue("review_link"),
-    order_link: stringValue(input.orderLink),
-    precheck_link: stringValue(input.precheckLink),
-    company_phone: stringValue(input.companyPhone) || defaultVariableValue("company_phone"),
-    telegram_link: stringValue(input.telegramLink) || defaultVariableValue("telegram_link"),
-    checked_count: String(checkedCount),
-    recommendation_count: String(recommendationCount),
-    critical_count: String(criticalCount),
-    warning_count: String(warningCount),
-    recommendation_text: diagnosticRecommendationText(recommendationCount),
-    critical_text: diagnosticCriticalText(criticalCount),
+    clientName: stringValue(input.clientName),
+    clientPhone: stringValue(input.clientPhone),
+    organizationName: stringValue(input.organizationName) || defaultVariableValue("organizationName"),
+    locationName: stringValue(input.locationName) || stringValue(input.branchName) || defaultVariableValue("locationName"),
+    locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || defaultVariableValue("locationAddress"),
+    appointmentDate: at ? formatServiceDate(at) : stringValue(input.appointmentDate),
+    appointmentTime: at ? formatServiceTime(at) : stringValue(input.appointmentTime),
+    appointmentDateTime: at ? formatServiceDateTime(at) : [input.appointmentDate, input.appointmentTime].map(stringValue).filter(Boolean).join(" "),
+    vehicleDisplayName,
+    vehicleBrand: stringValue(input.carMake),
+    vehicleModel: stringValue(input.carModel),
+    vehiclePlate: stringValue(input.licensePlate),
+    vehicleVin: stringValue(input.vin),
+    serviceName: serviceList,
+    serviceList,
+    managerName: stringValue(input.managerName),
+    masterName: stringValue(input.masterName),
+    diagnosticReportUrl: stringValue(input.diagnosticReportLink),
+    reviewUrl: stringValue(input.reviewLink) || defaultVariableValue("reviewUrl"),
+    orderUrl: stringValue(input.orderLink),
+    precheckUrl: stringValue(input.precheckLink),
+    publicPhone: stringValue(input.publicPhone) || stringValue(input.companyPhone) || defaultVariableValue("publicPhone"),
+    telegramUsername: stringValue(input.telegramUsername) || stringValue(input.telegramLink) || defaultVariableValue("telegramUsername"),
+    bookingUrl: stringValue(input.bookingUrl) || defaultVariableValue("bookingUrl"),
+    checkedCount: String(checkedCount),
+    recommendationCount: String(recommendationCount),
+    criticalCount: String(criticalCount),
+    warningCount: String(warningCount),
+    recommendationText: diagnosticRecommendationText(recommendationCount),
+    criticalText: diagnosticCriticalText(criticalCount),
   };
 
-  for (const key of supportedVariableSet) {
-    values[key] = values[key] || defaultVariableValue(key);
+  for (const definition of notificationVariableDefinitions) {
+    values[definition.key] = values[definition.key] || defaultVariableValue(definition.key);
+  }
+  for (const [legacyKey, canonicalKey] of legacyVariableAliases) {
+    values[legacyKey] = values[canonicalKey] ?? "";
   }
   return values;
 }
@@ -784,28 +990,59 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
   const unknownVariables = new Set<string>();
   const missingVariables = new Set<string>();
   const usedVariables: Record<string, string> = {};
+  const usedVariableKeys = new Set<string>();
   const optionalLineVariables = new Set([
-    "address",
-    "review_link",
-    "order_link",
-    "precheck_link",
-    "telegram_link",
-    "company_phone",
-    "diagnostic_report_link",
+    "locationAddress",
+    "reviewUrl",
+    "orderUrl",
+    "precheckUrl",
+    "telegramUsername",
+    "publicPhone",
+    "diagnosticReportUrl",
+    "bookingUrl",
+    "vehicleDisplayName",
+    "serviceName",
+    "serviceList",
+    "managerName",
+    "masterName",
   ]);
   const tokenPattern = /\{\{\s*([a-zA-Z0-9_]+)(?:\|([^}]+))?\s*\}\}|\{\s*([a-zA-Z0-9_]+)(?:\|([^}]+))?\s*\}/g;
+  const sectionPattern = /\{\{\s*([#^])\s*([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\s*\/\s*\2\s*\}\}/g;
 
-  const lines = body.split(/\r?\n/).map((line) => {
+  const renderSections = (text: string) => {
+    let current = text;
+    let previous = "";
+    while (current !== previous) {
+      previous = current;
+      current = current.replace(sectionPattern, (_match, mode: string, rawKey: string, content: string) => {
+        const key = canonicalVariableKey(rawKey);
+        if (!key) {
+          unknownVariables.add(rawKey);
+          return "";
+        }
+        usedVariableKeys.add(key);
+        const value = stringValue(variables[key]);
+        if (value) usedVariables[key] = value;
+        const shouldRender = mode === "#" ? Boolean(value) : !value;
+        return shouldRender ? content : "";
+      });
+    }
+    return current;
+  };
+
+  const lines = renderSections(body).split(/\r?\n/).map((line) => {
     const missingInLine = new Set<string>();
     const variablesInLine = new Set<string>();
     const rendered = line.replace(tokenPattern, (_match, doubleKey: string, doubleFallback: string, singleKey: string, singleFallback: string) => {
-      const key = doubleKey || singleKey;
+      const rawKey = doubleKey || singleKey;
+      const key = canonicalVariableKey(rawKey);
       const fallback = doubleFallback ?? singleFallback;
-      variablesInLine.add(key);
-      if (!supportedVariableSet.has(key)) {
-        unknownVariables.add(key);
-        return `{${key}}`;
+      if (!key) {
+        unknownVariables.add(rawKey);
+        return `{${rawKey}}`;
       }
+      variablesInLine.add(key);
+      usedVariableKeys.add(key);
       const value = stringValue(variables[key]);
       const replacement = value || stringValue(fallback) || defaultVariableValue(key);
       if (!replacement) {
@@ -823,7 +1060,7 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
     if (onlyMissingOptionalVariables) return null;
 
     const cleaned = [...missingInLine].reduce((text, key) => {
-      if (key !== "address") return text;
+      if (key !== "locationAddress") return text;
       return text
         .replace(/\s*(?:Адрес|Адрес сервиса):\s*(?=[.!?]|$)/giu, "")
         .replace(/\s*по адресу:\s*(?=[.!?]|$)/giu, "");
@@ -840,6 +1077,16 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
     variables: usedVariables,
     missingVariables: [...missingVariables],
     unknownVariables: [...unknownVariables],
+    variableDetails: notificationVariableDefinitions.map((definition) => {
+      const value = stringValue(variables[definition.key]);
+      const used = usedVariableKeys.has(definition.key);
+      return {
+        ...definition,
+        value,
+        used,
+        missing: used && !value,
+      };
+    }),
   };
 }
 
@@ -857,14 +1104,14 @@ export function sampleNotificationContext(overrides: NotificationEventContext = 
     serviceList: "Замена масла + диагностика",
     managerName: "Вадим",
     masterName: "Денис",
-    branchName: defaultVariableValue("branch_name") || "Основной сервис",
-    address: defaultVariableValue("address") || "Калининград, ул. Сервисная, 1",
-    companyPhone: defaultVariableValue("company_phone") || "+7 4012 00-00-00",
+    branchName: defaultVariableValue("locationName") || "Основной сервис",
+    address: defaultVariableValue("locationAddress") || "Калининград, ул. Сервисная, 1",
+    companyPhone: defaultVariableValue("publicPhone") || "+7 4012 00-00-00",
     diagnosticReportLink: "https://example.com/report/demo",
-    reviewLink: defaultVariableValue("review_link") || "https://example.com/review",
+    reviewLink: defaultVariableValue("reviewUrl") || "https://example.com/review",
     orderLink: "https://example.com/order/demo",
     precheckLink: "https://example.com/precheck/demo",
-    telegramLink: defaultVariableValue("telegram_link") || "https://t.me/tam_gde_maslo",
+    telegramLink: defaultVariableValue("telegramUsername") || "https://t.me/tam_gde_maslo",
     criticalCount: 1,
     warningCount: 3,
     ...overrides,
@@ -1289,15 +1536,19 @@ function isQuietTime(conditions: NotificationConditions, now = new Date()) {
   return from <= to ? minuteOfDay >= from && minuteOfDay < to : minuteOfDay >= from || minuteOfDay < to;
 }
 
-function idempotencyKey(rule: NotificationRuleRow, template: NotificationTemplateRow, input: NotificationEventContext, clientId: string | null) {
+function idempotencyKey(rule: NotificationRuleRow, input: NotificationEventContext, clientId: string | null) {
   const eventType = rule.eventType;
+  const recipient = clientId ?? normalizePhoneKey(input.clientPhone) ?? "client";
   if (eventType === "diagnostic_sent") {
-    return [eventType, input.diagnosticReportId ?? input.payload?.diagnosticReportId ?? input.appointmentId ?? "diagnostic", clientId ?? normalizePhoneKey(input.clientPhone) ?? "client"].join(":");
+    const entityId = stringValue(input.diagnosticReportId ?? input.payload?.diagnosticReportId ?? input.appointmentId) || "diagnostic";
+    return [eventType, entityId, rule.channel, recipient].join(":");
   }
   if (eventType === "appointment_reminder") {
-    return [eventType, input.appointmentId ?? "appointment", rule.offsetMinutes ?? 0].join(":");
+    const entityId = `${stringValue(input.appointmentId) || "appointment"}:before:${rule.offsetMinutes ?? 0}`;
+    return [eventType, entityId, rule.channel, recipient].join(":");
   }
-  return [eventType, input.appointmentId ?? input.diagnosticReportId ?? input.payload?.sourceId ?? "entity", clientId ?? normalizePhoneKey(input.clientPhone) ?? "client", template.id].join(":");
+  const entityId = stringValue(input.appointmentId ?? input.diagnosticReportId ?? input.payload?.sourceId) || "entity";
+  return [eventType, entityId, rule.channel, recipient].join(":");
 }
 
 async function createNotificationJob(rule: NotificationRuleRow, template: NotificationTemplateRow, input: NotificationEventContext) {
@@ -1353,7 +1604,7 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
     clientPhone: resolved.clientPhone ?? input.clientPhone ?? null,
   };
   const id = crypto.randomUUID();
-  const key = idempotencyKey(rule, template, input, clientId);
+  const key = idempotencyKey(rule, input, clientId);
   const organizationId = getMessengerOrganizationId();
 
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -1637,13 +1888,18 @@ function eventTitle(eventType: ClientNotificationEventType) {
 
 function diagnosticReportLinkFromPayload(payload: JsonRecord) {
   const variables = asRecord(payload.variables);
-  return stringValue(variables.diagnostic_report_link) || stringValue(payload.diagnosticReportLink) || stringValue(payload.reportUrl);
+  return (
+    stringValue(variables.diagnosticReportUrl) ||
+    stringValue(variables.diagnostic_report_link) ||
+    stringValue(payload.diagnosticReportLink) ||
+    stringValue(payload.reportUrl)
+  );
 }
 
 function notificationDelivery(job: NotificationJobRow, payload: JsonRecord, renderedMessage: string) {
   if (job.eventType !== "diagnostic_sent") {
     return {
-      text: `Автоуведомление · ${eventTitle(job.eventType)}\n\n${renderedMessage}`,
+      text: renderedMessage,
       renderedMessage,
       linkButton: undefined,
       disableWebPagePreview: undefined,
@@ -2104,9 +2360,13 @@ export async function updateNotificationTemplate(input: {
 }) {
   await ensureClientNotificationsSchema();
   const organizationId = getMessengerOrganizationId();
+  const preview = input.body ? renderNotificationTemplate(input.body, buildNotificationVariables(sampleNotificationContext())) : null;
+  if (preview?.unknownVariables.length) {
+    throw new Error(`Неизвестные переменные: ${preview.unknownVariables.join(", ")}. Используйте список переменных справа.`);
+  }
   const metadata = input.body
     ? {
-        variables: [...input.body.matchAll(/\{\{?\s*([a-zA-Z0-9_]+)/g)].map((match) => match[1]),
+        variables: preview?.variableDetails.filter((item) => item.used).map((item) => item.key) ?? extractTemplateVariables(input.body),
         updatedFromSettings: true,
       }
     : null;

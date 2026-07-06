@@ -351,17 +351,18 @@ async function linkConversationEntities(input: {
 
 export function renderContactTemplate(templateKey: string, vars: Record<string, unknown>) {
   const clientName = cleanText(vars.clientName) ?? cleanText(vars.displayName) ?? "клиент";
-  const car = cleanText(vars.car) ?? cleanText(vars.vehicle) ?? "вашему автомобилю";
+  const car = cleanText(vars.car) ?? cleanText(vars.vehicle);
   const date = cleanText(vars.date) ?? "{date}";
   const time = cleanText(vars.time) ?? "{time}";
   const link = cleanText(vars.link) ?? cleanText(vars.reportUrl) ?? cleanText(vars.precheckUrl) ?? "{link}";
+  const vehicleSuffix = car ? ` по автомобилю ${car}` : "";
   const templates: Record<string, string> = {
     greeting: `Здравствуйте, ${clientName}! Это "Там где масло".`,
     appointment_confirm: `Здравствуйте, ${clientName}! Подтвердите, пожалуйста, запись на ${date} в ${time}.`,
     appointment_reminder: `Здравствуйте, ${clientName}! Напоминаем, что вы записаны на ${date} в ${time}.`,
-    shipment_estimate: `Здравствуйте, ${clientName}! По вашему автомобилю ${car} подготовили расчёт.`,
-    precheck_link: `Здравствуйте, ${clientName}! Отправляем предчек по вашему автомобилю ${car}: ${link}`,
-    diagnostic_report: `Здравствуйте, ${clientName}! Отправляем отчёт диагностики по вашему автомобилю ${car}: ${link}`,
+    shipment_estimate: `Здравствуйте, ${clientName}! Подготовили расчёт${vehicleSuffix}.`,
+    precheck_link: `Здравствуйте, ${clientName}! Отправляем предчек${vehicleSuffix}: ${link}`,
+    diagnostic_report: `Здравствуйте, ${clientName}! Отправляем отчёт диагностики${vehicleSuffix}: ${link}`,
     parts_waiting: `Здравствуйте, ${clientName}! Запчасти заказаны, ожидаем поставку. Как только всё придёт - напишем.`,
     vehicle_ready: `Здравствуйте, ${clientName}! Автомобиль готов, можно забирать.`,
   };

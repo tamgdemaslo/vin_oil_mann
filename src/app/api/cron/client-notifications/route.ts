@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { processDueClientNotificationJobs } from "@/lib/client-notifications/client-notifications";
+import { runClientNotificationsWorkerOnce } from "@/lib/client-notifications/worker";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,7 @@ export async function GET(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Недостаточно прав" }, { status: 401 });
   }
-  const processed = await processDueClientNotificationJobs(50);
-  return NextResponse.json({ ok: true, processed, count: processed.length });
+  return NextResponse.json(await runClientNotificationsWorkerOnce(50));
 }
 
 export async function POST(request: Request) {

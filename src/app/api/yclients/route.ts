@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  appointmentCreationNotificationExists,
   handleAppointmentCancelled,
   handleAppointmentCreated,
   handleAppointmentUpdated,
@@ -14,8 +13,6 @@ const YCLIENTS_USER_TOKEN = process.env.YCLIENTS_USER_TOKEN?.trim() ?? "";
 const YCLIENTS_USER_LOGIN = process.env.YCLIENTS_USER_LOGIN?.trim() ?? "";
 const YCLIENTS_USER_PASSWORD = process.env.YCLIENTS_USER_PASSWORD?.trim() ?? "";
 const USER_TOKEN_TTL_MS = 50 * 60 * 1000;
-const RECENT_YCLIENTS_RECORD_WINDOW_MS = 24 * 60 * 60 * 1000;
-const MAX_SYNCED_RECORD_NOTIFICATIONS = 5;
 
 let runtimeUserToken: { token: string; at: number } | null = null;
 
@@ -182,107 +179,6 @@ function appointmentContextFromPayload(payload: unknown, fallbackId?: string | n
         : stringValue(record.status) ?? stringValue(record.state) ?? null,
     payload: { yclientsPayload: record },
   };
-}
-
-function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function parseYclientsDate(value: unknown): Date | null {
-  const text = stringValue(value);
-  if (!text) return null;
-  const withColonOffset = text.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
-  const date = new Date(withColonOffset.replace(" ", "T"));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function yclientsClientName(client: Record<string, unknown>, record: Record<string, unknown>) {
-  const parts = [client.surname, client.name, client.patronymic].map(stringValue).filter(Boolean);
-  return (
-    stringValue(client.display_name) ||
-    parts.join(" ") ||
-    stringValue(client.name) ||
-    stringValue(record.name) ||
-    stringValue(record.fullname) ||
-    null
-  );
-}
-
-function yclientsServiceList(record: Record<string, unknown>) {
-  return arrayValue(record.services)
-    .map((service) => (isRecord(service) ? stringValue(service.title) || stringValue(service.name) || idStringValue(service.id) : stringValue(service)))
-    .filter(Boolean)
-    .join(", ");
-}
-
-function appointmentContextFromYclientsRecord(record: Record<string, unknown>, fallbackId?: string | null) {
-  const client = isRecord(record.client) ? record.client : {};
-  const staff = isRecord(record.staff) ? record.staff : {};
-  const comment = stringValue(record.comment) ?? "";
-  const vehicleMatch = comment.match(/(?:VIN|vin|ВИН|госномер|авто)[:\s]+([A-Za-zА-Яа-я0-9 ._-]{3,40})/);
-  const appointmentId = fallbackId ?? idStringValue(record.id) ?? idStringValue(record.record_id) ?? null;
-  return {
-    appointmentId,
-    appointmentAt: stringValue(record.datetime) || stringValue(record.date) || null,
-    clientName: yclientsClientName(client, record),
-    clientPhone: stringValue(client.phone) || stringValue(record.phone) || null,
-    clientEmail: stringValue(client.email) || stringValue(record.email) || null,
-    serviceList: yclientsServiceList(record) || null,
-    car: vehicleMatch?.[1]?.trim() || null,
-    masterName: stringValue(staff.name) || null,
-    status:
-      record.attendance === 1 || record.visit_attendance === 1
-        ? "arrived"
-        : stringValue(record.status) || stringValue(record.state) || null,
-    payload: {
-      sourceId: appointmentId,
-      yclientsRecordId: appointmentId,
-      yclientsVisitId: idStringValue(record.visit_id) || null,
-      recordFrom: stringValue(record.record_from) || null,
-      online: Boolean(record.online),
-      bookformId: numberValue(record.bookform_id),
-      shortLink: stringValue(record.short_link) || null,
-      reviewLink: stringValue(record.review_link) || null,
-    },
-  };
-}
-
-function yclientsRecordSource(record: Record<string, unknown>): "client" | "admin" {
-  if (record.online || record.bookform_id || stringValue(record.from_url) || numberValue(record.created_user_id) === 0) {
-    return "client";
-  }
-  return "admin";
-}
-
-function isRecentFutureYclientsRecord(record: Record<string, unknown>, now = new Date()) {
-  if (record.deleted === true) return false;
-  const createdAt = parseYclientsDate(record.create_date ?? record.created ?? record.date_created);
-  if (!createdAt) return false;
-  const createdDelta = now.getTime() - createdAt.getTime();
-  if (createdDelta < -5 * 60_000 || createdDelta > RECENT_YCLIENTS_RECORD_WINDOW_MS) return false;
-
-  const appointmentAt = parseYclientsDate(record.datetime ?? record.date);
-  if (appointmentAt && appointmentAt.getTime() < now.getTime() - 30 * 60_000) return false;
-  return true;
-}
-
-async function notifyRecentYclientsRecords(data: unknown) {
-  const root = isRecord(data) ? data : {};
-  const records = arrayValue(root.data).filter(isRecord);
-  let processed = 0;
-  for (const record of records) {
-    if (processed >= MAX_SYNCED_RECORD_NOTIFICATIONS) break;
-    if (!isRecentFutureYclientsRecord(record)) continue;
-    const appointmentId = idStringValue(record.id) || idStringValue(record.record_id);
-    if (!appointmentId || (await appointmentCreationNotificationExists(appointmentId))) continue;
-    processed += 1;
-    await handleAppointmentCreated({
-      source: yclientsRecordSource(record),
-      ...appointmentContextFromYclientsRecord(record, appointmentId),
-      initiatedById: "yclients-sync",
-    });
-  }
-  return processed;
 }
 
 async function fetchAccessibleCompanies(
@@ -488,14 +384,7 @@ export async function GET(request: NextRequest) {
         if (startDate) params.set("start_date", startDate);
         if (endDate) params.set("end_date", endDate);
         if (staffId) params.set("staff_id", staffId);
-        const response = await yclientsRequest(`/records/${companyId}?${params.toString()}`);
-        if (response.ok) {
-          const data = await response.clone().json().catch(() => null);
-          await notifyRecentYclientsRecords(data).catch((error) => {
-            console.warn("[client-notifications/yclients-records-sync]", error);
-          });
-        }
-        return response;
+        return yclientsRequest(`/records/${companyId}?${params.toString()}`);
       }
       case "record": {
         const recordId = getRequired(search, "record_id");

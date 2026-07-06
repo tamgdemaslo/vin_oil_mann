@@ -15573,6 +15573,7 @@ select.eco-input::-ms-expand,
 }
 
 .eco-record-card--done,
+.eco-record-card--left,
 .eco-record-card--cancelled {
   background: #f8fafc;
   border-color: #e2e8f0;
@@ -15618,6 +15619,7 @@ select.eco-input::-ms-expand,
 }
 
 .eco-record-status--done,
+.eco-record-status--left,
 .eco-record-status--cancelled {
   color: #475569;
   background: #f8fafc;
@@ -49255,6 +49257,66 @@ html.tgm-print-active .tgm-client-report .qr {
   line-height: 1.45;
 }
 
+.eco-notification-preview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.eco-notification-preview__head button {
+  border: 0;
+  background: transparent;
+  color: var(--eco-accent);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eco-notification-preview-vars {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+  padding-top: 4px;
+}
+
+.eco-notification-preview-var {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(120px, 0.7fr) minmax(180px, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid var(--eco-line);
+  border-radius: 7px;
+  background: var(--eco-card);
+}
+
+.eco-notification-preview-var code {
+  color: var(--eco-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.eco-notification-preview-var span {
+  color: var(--eco-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eco-notification-preview-var small {
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-notification-preview-var.is-used {
+  border-color: rgba(38, 166, 91, 0.28);
+}
+
+.eco-notification-preview-var.is-missing {
+  border-color: rgba(205, 82, 36, 0.35);
+}
+
 .eco-notification-variable-panel,
 .eco-notification-variable-docs,
 .eco-notification-variable-grid {
@@ -49297,7 +49359,49 @@ html.tgm-print-active .tgm-client-report .qr {
 }
 
 .eco-notification-variable-panel button {
+  display: grid;
+  align-items: center;
+  gap: 2px;
+  min-height: 42px;
+  text-align: left;
   cursor: pointer;
+}
+
+.eco-notification-variable-panel button span {
+  font-size: 12px;
+}
+
+.eco-notification-variable-panel button small {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.eco-notification-variable-card {
+  display: grid;
+  gap: 5px;
+  min-width: min(100%, 260px);
+  max-width: 320px;
+  padding: 10px;
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+  background: var(--eco-card);
+}
+
+.eco-notification-variable-card code {
+  justify-self: start;
+}
+
+.eco-notification-variable-card strong {
+  color: var(--eco-text);
+  font-size: 13px;
+}
+
+.eco-notification-variable-card span,
+.eco-notification-variable-card small {
+  color: var(--eco-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .eco-notification-test {

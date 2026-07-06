@@ -94,17 +94,18 @@ function statusUrl(payload: ContactPayload, counterpartyId?: string | null) {
 
 function renderLocalTemplate(templateKey: string, displayName?: string | null, context?: ContactActionContext | null) {
   const name = displayName?.trim() || "клиент";
-  const car = context?.car || "вашему автомобилю";
+  const car = context?.car?.trim() || "";
   const date = context?.date || "{дата}";
   const time = context?.time || "{время}";
   const link = context?.link || "{ссылка}";
+  const vehicleSuffix = car ? ` по автомобилю ${car}` : "";
   const templates: Record<string, string> = {
     greeting: `Здравствуйте, ${name}! Это "Там где масло".`,
     appointment_confirm: `Здравствуйте, ${name}! Подтвердите, пожалуйста, запись на ${date} в ${time}.`,
     appointment_reminder: `Здравствуйте, ${name}! Напоминаем, что вы записаны на ${date} в ${time}.`,
-    shipment_estimate: `Здравствуйте, ${name}! По вашему автомобилю ${car} подготовили расчёт.`,
-    precheck_link: `Здравствуйте, ${name}! Отправляем предчек по вашему автомобилю ${car}: ${link}`,
-    diagnostic_report: `Здравствуйте, ${name}! Отправляем отчёт диагностики по вашему автомобилю ${car}: ${link}`,
+    shipment_estimate: `Здравствуйте, ${name}! Подготовили расчёт${vehicleSuffix}.`,
+    precheck_link: `Здравствуйте, ${name}! Отправляем предчек${vehicleSuffix}: ${link}`,
+    diagnostic_report: `Здравствуйте, ${name}! Отправляем отчёт диагностики${vehicleSuffix}: ${link}`,
     vehicle_ready: `Здравствуйте, ${name}! Автомобиль готов, можно забирать.`,
   };
   return templates[templateKey] ?? templates.greeting;

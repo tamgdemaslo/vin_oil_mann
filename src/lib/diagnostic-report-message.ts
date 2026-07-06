@@ -54,9 +54,10 @@ export function diagnosticPreviewDescription(input: Pick<DiagnosticReportMessage
 
 export function buildDiagnosticReportMessage(input: DiagnosticReportMessageInput, options: { includeLink?: boolean } = {}) {
   const clientName = cleanText(input.clientName);
-  const car = cleanText(input.car) || "вашего автомобиля";
+  const car = cleanText(input.car);
+  const subject = clientName ? `${clientName}, диагностика` : "Диагностика";
   const lines = [
-    `${clientName ? `${clientName}, ` : ""}диагностика ${car} готова.`,
+    `${subject}${car ? ` ${car}` : ""} готова.`,
     "",
     diagnosticCheckedText(input.checkedCount),
     diagnosticRecommendationText(input.recommendationCount),

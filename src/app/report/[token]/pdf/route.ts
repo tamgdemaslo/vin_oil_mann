@@ -292,7 +292,7 @@ async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<voi
 
 async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string): Promise<void> {
   const result = await withTimeout(
-    cdp.send<{ result?: { value?: { optimizedPhotos?: number; skippedPhotos?: number } } }>(
+    cdp.send<{ result?: { value?: { optimizedPhotos?: number; skippedPhotos?: number; optimizedInlineImages?: number; skippedInlineImages?: number } } }>(
       "Runtime.evaluate",
       {
         expression: `
@@ -357,9 +357,37 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
             if (img.complete && img.naturalWidth > 0) done();
           });
 
+          const imageToJpegDataUrl = (image, options = {}) => {
+            const naturalWidth = image.naturalWidth || image.width;
+            const naturalHeight = image.naturalHeight || image.height;
+            if (!naturalWidth || !naturalHeight) return '';
+
+            const maxSide = options.maxSide || 620;
+            const maxPixels = options.maxPixels || 320000;
+            const quality = options.quality || 0.6;
+            const sideScale = Math.min(1, maxSide / naturalWidth, maxSide / naturalHeight);
+            const pixelScale = Math.min(1, Math.sqrt(maxPixels / (naturalWidth * naturalHeight)));
+            const scale = Math.min(sideScale, pixelScale);
+            const width = Math.max(1, Math.round(naturalWidth * scale));
+            const height = Math.max(1, Math.round(naturalHeight * scale));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d', { alpha: false });
+            if (!context) return '';
+
+            context.fillStyle = '#0a0a0a';
+            context.fillRect(0, 0, width, height);
+            context.drawImage(image, 0, 0, width, height);
+            return canvas.toDataURL('image/jpeg', quality);
+          };
+
           const tiles = Array.from(document.querySelectorAll('.diag-print-screen.is-print .rep-photo-img'));
           let optimizedPhotos = 0;
           let skippedPhotos = 0;
+          let optimizedInlineImages = 0;
+          let skippedInlineImages = 0;
 
           for (const tile of tiles) {
             try {
@@ -371,34 +399,12 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
 
               const absoluteUrl = new URL(rawUrl, location.href).href;
               const image = await loadImage(absoluteUrl);
-              const naturalWidth = image.naturalWidth || image.width;
-              const naturalHeight = image.naturalHeight || image.height;
-              if (!naturalWidth || !naturalHeight) {
+              const optimizedUrl = imageToJpegDataUrl(image, { maxSide: 620, maxPixels: 320000, quality: 0.6 });
+              if (!optimizedUrl) {
                 skippedPhotos += 1;
                 continue;
               }
 
-              const maxSide = 620;
-              const maxPixels = 320000;
-              const sideScale = Math.min(1, maxSide / naturalWidth, maxSide / naturalHeight);
-              const pixelScale = Math.min(1, Math.sqrt(maxPixels / (naturalWidth * naturalHeight)));
-              const scale = Math.min(sideScale, pixelScale);
-              const width = Math.max(1, Math.round(naturalWidth * scale));
-              const height = Math.max(1, Math.round(naturalHeight * scale));
-
-              const canvas = document.createElement('canvas');
-              canvas.width = width;
-              canvas.height = height;
-              const context = canvas.getContext('2d', { alpha: false });
-              if (!context) {
-                skippedPhotos += 1;
-                continue;
-              }
-
-              context.fillStyle = '#0a0a0a';
-              context.fillRect(0, 0, width, height);
-              context.drawImage(image, 0, 0, width, height);
-              const optimizedUrl = canvas.toDataURL('image/jpeg', 0.6);
               tile.style.backgroundImage = 'url("' + optimizedUrl + '")';
               tile.setAttribute('data-tgm-pdf-optimized', Math.round(optimizedUrl.length / 1024) + 'kb');
               optimizedPhotos += 1;
@@ -407,7 +413,44 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
             }
           }
 
-          return { optimizedPhotos, skippedPhotos };
+          const inlineImages = Array.from(document.querySelectorAll(
+            '.diag-print-screen.is-print .rep-vehicle-photo img, .diag-print-screen.is-print .rep-rec-photos img'
+          ));
+
+          for (const imageNode of inlineImages) {
+            try {
+              const rawUrl = imageNode.currentSrc || imageNode.getAttribute('src') || imageNode.src || '';
+              if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.endsWith('.svg')) {
+                skippedInlineImages += 1;
+                continue;
+              }
+
+              const absoluteUrl = new URL(rawUrl, location.href).href;
+              const image = await loadImage(absoluteUrl);
+              const optimizedUrl = imageToJpegDataUrl(image, { maxSide: 760, maxPixels: 420000, quality: 0.62 });
+              if (!optimizedUrl) {
+                skippedInlineImages += 1;
+                continue;
+              }
+
+              imageNode.setAttribute('src', optimizedUrl);
+              imageNode.removeAttribute('srcset');
+              imageNode.setAttribute('loading', 'eager');
+              imageNode.setAttribute('decoding', 'sync');
+              imageNode.setAttribute('data-tgm-pdf-optimized', Math.round(optimizedUrl.length / 1024) + 'kb');
+              if (typeof imageNode.decode === 'function') {
+                await Promise.race([
+                  imageNode.decode(),
+                  new Promise((resolve) => setTimeout(resolve, 500))
+                ]);
+              }
+              optimizedInlineImages += 1;
+            } catch {
+              skippedInlineImages += 1;
+            }
+          }
+
+          return { optimizedPhotos, skippedPhotos, optimizedInlineImages, skippedInlineImages };
         })()
       `,
         awaitPromise: true,
@@ -645,6 +688,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
           marginBottom: 0,
           marginLeft: 0,
           scale: 1,
+          transferMode: "ReturnAsStream",
         },
         sessionId
       ),

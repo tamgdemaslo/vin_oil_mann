@@ -131,6 +131,7 @@ type AppointmentStatusKey =
   | "arrived"
   | "in_work"
   | "done"
+  | "left"
   | "cancelled"
   | "no_show";
 
@@ -242,14 +243,24 @@ const STATUS_META: Record<
   AppointmentStatusKey,
   { label: string; tone: "success" | "warning" | "danger" | "info" | "neutral"; dot: string }
 > = {
-  new: { label: "Новая", tone: "info", dot: "#2563eb" },
+  new: { label: "Запланирована", tone: "info", dot: "#2563eb" },
   confirmed: { label: "Подтверждена", tone: "success", dot: "#15803d" },
   waiting: { label: "Ожидает", tone: "warning", dot: "#b45309" },
-  arrived: { label: "Приехал", tone: "info", dot: "#0f766e" },
+  arrived: { label: "Клиент приехал", tone: "info", dot: "#0f766e" },
   in_work: { label: "В работе", tone: "warning", dot: "#ea580c" },
-  done: { label: "Завершена", tone: "neutral", dot: "#64748b" },
+  done: { label: "Готово", tone: "neutral", dot: "#64748b" },
+  left: { label: "Клиент уехал", tone: "neutral", dot: "#334155" },
   cancelled: { label: "Отменена", tone: "neutral", dot: "#71717a" },
-  no_show: { label: "No-show", tone: "danger", dot: "#dc2626" },
+  no_show: { label: "Не приехал", tone: "danger", dot: "#dc2626" },
+};
+
+const COMMENT_STATUS_PREFIX = "Статус записи:";
+const COMMENT_STATUS_LABELS: Partial<Record<AppointmentStatusKey, string>> = {
+  arrived: "Клиент приехал",
+  in_work: "В работе",
+  done: "Готово",
+  left: "Клиент уехал",
+  no_show: "Клиент не приехал",
 };
 
 const emptyVehicle: VehicleInfo = { model: "", plate: "", vin: "" };
@@ -544,17 +555,32 @@ function objectFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-function parseCommentParts(comment?: string): { clientComment: string; internalComment: string; vehicle: VehicleInfo } {
+function commentStatusFromText(value: string): AppointmentStatusKey | null {
+  const normalized = value.toLowerCase();
+  if (/уехал|выдан|left/.test(normalized)) return "left";
+  if (/готов|done|заверш/.test(normalized)) return "done";
+  if (/работ|in_work/.test(normalized)) return "in_work";
+  if (/приехал|arrived/.test(normalized)) return "arrived";
+  if (/не приехал|no[-_\s]?show/.test(normalized)) return "no_show";
+  return null;
+}
+
+function parseCommentParts(comment?: string): { clientComment: string; internalComment: string; vehicle: VehicleInfo; statusMarker: AppointmentStatusKey | null } {
   const lines = String(comment ?? "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   const clientLines: string[] = [];
   let internalComment = "";
+  let statusMarker: AppointmentStatusKey | null = null;
   const vehicle: VehicleInfo = { ...emptyVehicle };
 
   for (const line of lines) {
     const lower = line.toLowerCase();
+    if (lower.startsWith(COMMENT_STATUS_PREFIX.toLowerCase())) {
+      statusMarker = commentStatusFromText(line.replace(new RegExp(`^${COMMENT_STATUS_PREFIX}`, "i"), "").trim());
+      continue;
+    }
     if (lower.startsWith("внутренний комментарий:")) {
       internalComment = line.replace(/^внутренний комментарий:/i, "").trim();
       continue;
@@ -571,7 +597,7 @@ function parseCommentParts(comment?: string): { clientComment: string; internalC
     clientLines.push(line);
   }
 
-  return { clientComment: clientLines.join("\n"), internalComment, vehicle };
+  return { clientComment: clientLines.join("\n"), internalComment, vehicle, statusMarker };
 }
 
 function getVehicleInfo(record: RecordItem): VehicleInfo {
@@ -626,8 +652,10 @@ function vehicleLabel(vehicle: VehicleInfo) {
 function resolveStatus(record: RecordItem, startMinute: number, endMinute: number): AppointmentStatusKey {
   const rawStatus = String(record.status ?? record.state ?? "").toLowerCase();
   if (/cancel|отмен/.test(rawStatus)) return "cancelled";
-  if (/done|finish|complete|заверш/.test(rawStatus)) return "done";
   if (record.attendance === -1) return "no_show";
+  const markerStatus = parseCommentParts(record.comment).statusMarker;
+  if (markerStatus) return markerStatus;
+  if (/done|finish|complete|заверш/.test(rawStatus)) return "done";
 
   const now = new Date();
   const isSameDay = (record.date ?? record.datetime ?? "").startsWith(toDateInputValue(now));
@@ -652,16 +680,37 @@ function sourceInfo(record: RecordItem): Pick<TimelineRecord, "source" | "source
   return { source: "yclients", sourceLabel: "YCLIENTS", syncLabel: "Синхронизировано" };
 }
 
-function composeComment(form: RecordFormState) {
-  const lines = [form.comment.trim()].filter(Boolean);
-  const vehicle = vehicleLabel({
-    model: form.vehicleModel.trim(),
-    plate: form.vehiclePlate.trim(),
-    vin: form.vehicleVin.trim(),
-  });
+function composeRecordComment(input: { comment: string; vehicle: VehicleInfo; internalComment: string; statusKey?: AppointmentStatusKey }) {
+  const lines = [input.comment.trim()].filter(Boolean);
+  const vehicle = vehicleLabel(input.vehicle);
   if (vehicle) lines.push(`Авто: ${vehicle}`);
-  if (form.internalComment.trim()) lines.push(`Внутренний комментарий: ${form.internalComment.trim()}`);
+  if (input.internalComment.trim()) lines.push(`Внутренний комментарий: ${input.internalComment.trim()}`);
+  const statusLabel = input.statusKey ? COMMENT_STATUS_LABELS[input.statusKey] : null;
+  if (statusLabel) lines.push(`${COMMENT_STATUS_PREFIX} ${statusLabel}`);
   return lines.join("\n");
+}
+
+function composeComment(form: RecordFormState) {
+  return composeRecordComment({
+    comment: form.comment,
+    vehicle: {
+      model: form.vehicleModel.trim(),
+      plate: form.vehiclePlate.trim(),
+      vin: form.vehicleVin.trim(),
+    },
+    internalComment: form.internalComment,
+    statusKey: form.statusKey,
+  });
+}
+
+function attendanceForStatus(statusKey: AppointmentStatusKey) {
+  if (statusKey === "no_show") return -1;
+  if (["arrived", "in_work", "done", "left"].includes(statusKey)) return 1;
+  return undefined;
+}
+
+function confirmedForStatus(statusKey: AppointmentStatusKey) {
+  return ["confirmed", "arrived", "in_work", "done", "left"].includes(statusKey) ? 1 : undefined;
 }
 
 function replaceDatePart(datetime: string, date: string) {
@@ -742,6 +791,7 @@ export default function RecordsPageClient() {
   const [pendingFocusRecordId, setPendingFocusRecordId] = useState<number | null>(null);
   const [timelineInteraction, setTimelineInteraction] = useState<TimelineInteraction | null>(null);
   const [timelineActionSaving, setTimelineActionSaving] = useState(false);
+  const [recordStatusSaving, setRecordStatusSaving] = useState<AppointmentStatusKey | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => monthStart(toDateInputValue(new Date())));
 
@@ -1898,8 +1948,8 @@ export default function RecordsPageClient() {
           datetime: `${form.datetime.replace("T", " ")}:00`,
           seance_length: seanceLength,
           comment: comment || undefined,
-          confirmed: form.statusKey === "confirmed" ? 1 : undefined,
-          attendance: form.statusKey === "arrived" || form.statusKey === "in_work" || form.statusKey === "done" ? 1 : undefined,
+          confirmed: confirmedForStatus(form.statusKey),
+          attendance: attendanceForStatus(form.statusKey),
           save_if_busy: true,
         };
         const res = await fetch("/api/yclients", {
@@ -1980,6 +2030,68 @@ export default function RecordsPageClient() {
     await loadRecords();
     setToast("Запись подтверждена");
   }, [companyId, loadRecords, selectedRecordItem, selectedTimelineRecord]);
+
+  const handleSetRecordStatus = useCallback(
+    async (statusKey: Extract<AppointmentStatusKey, "arrived" | "done" | "left" | "no_show">) => {
+      if (!selectedRecordItem || !selectedTimelineRecord) return;
+      if (statusKey === "no_show" && !window.confirm("Отметить, что клиент не приехал?")) return;
+      const date = String(selectedRecordItem.date ?? selectedRecordItem.datetime ?? "").replace(" ", "T").slice(0, 16);
+      if (!date) return;
+      setRecordStatusSaving(statusKey);
+      setError(null);
+      try {
+        const phone = normalizePhone(selectedTimelineRecord.phone);
+        const comment = composeRecordComment({
+          comment: selectedTimelineRecord.comment,
+          vehicle: selectedTimelineRecord.vehicle,
+          internalComment: selectedTimelineRecord.internalComment,
+          statusKey,
+        });
+        const payload = {
+          staff_id: selectedTimelineRecord.staffId,
+          services: (selectedRecordItem.services ?? []).map((service) => ({ id: Number(service.id) })).filter((service) => Number.isFinite(service.id)),
+          client: {
+            name: selectedTimelineRecord.clientName,
+            phone,
+            email: selectedTimelineRecord.email || fallbackEmail(phone),
+          },
+          datetime: `${date.replace("T", " ")}:00`,
+          seance_length: Number(selectedRecordItem.seance_length ?? selectedRecordItem.length ?? DEFAULT_RECORD_DURATION_SECONDS),
+          comment: comment || undefined,
+          confirmed: confirmedForStatus(statusKey),
+          attendance: attendanceForStatus(statusKey),
+          save_if_busy: true,
+        };
+        const res = await fetch("/api/yclients", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update-record",
+            company_id: companyId,
+            record_id: selectedRecordItem.id,
+            payload,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(getApiErrorMessage(data, "Не удалось обновить статус записи"));
+          return;
+        }
+        await loadRecords();
+        setSelectedRecordId(selectedRecordItem.id);
+        const labels: Record<typeof statusKey, string> = {
+          arrived: "Клиент приехал",
+          done: "Автомобиль готов",
+          left: "Клиент уехал",
+          no_show: "Клиент не приехал",
+        };
+        setToast(labels[statusKey]);
+      } finally {
+        setRecordStatusSaving(null);
+      }
+    },
+    [companyId, loadRecords, selectedRecordItem, selectedTimelineRecord]
+  );
 
   const handleCancelRecord = useCallback(async () => {
     if (!selectedRecordId) return;
@@ -2170,8 +2282,8 @@ export default function RecordsPageClient() {
           datetime: `${scheduleDate} ${formatMinute(startMinute)}:00`,
           seance_length: (endMinute - startMinute) * 60,
           comment: original.comment || undefined,
-          confirmed: record.statusKey === "confirmed" ? 1 : undefined,
-          attendance: record.statusKey === "arrived" || record.statusKey === "in_work" || record.statusKey === "done" ? 1 : undefined,
+          confirmed: confirmedForStatus(record.statusKey),
+          attendance: attendanceForStatus(record.statusKey),
         };
         const res = await fetch("/api/yclients", {
           method: "PUT",
@@ -2989,6 +3101,30 @@ export default function RecordsPageClient() {
                       <EcoButton type="button" variant="primary" onClick={() => void handleConfirmRecord()}>
                         <CheckCircle2 size={15} />
                         Подтвердить
+                      </EcoButton>
+                    ) : null}
+                    {!["arrived", "in_work", "done", "left", "cancelled", "no_show"].includes(selectedTimelineRecord.statusKey) ? (
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("arrived")} disabled={recordStatusSaving === "arrived"}>
+                        {recordStatusSaving === "arrived" ? <Loader2 size={15} className="eco-spin" /> : <UserRound size={15} />}
+                        Клиент приехал
+                      </EcoButton>
+                    ) : null}
+                    {["arrived", "in_work"].includes(selectedTimelineRecord.statusKey) ? (
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("done")} disabled={recordStatusSaving === "done"}>
+                        {recordStatusSaving === "done" ? <Loader2 size={15} className="eco-spin" /> : <CheckCircle2 size={15} />}
+                        Готово
+                      </EcoButton>
+                    ) : null}
+                    {["arrived", "in_work", "done"].includes(selectedTimelineRecord.statusKey) ? (
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("left")} disabled={recordStatusSaving === "left"}>
+                        {recordStatusSaving === "left" ? <Loader2 size={15} className="eco-spin" /> : <ArrowLeft size={15} />}
+                        Клиент уехал
+                      </EcoButton>
+                    ) : null}
+                    {!["cancelled", "no_show", "left", "done"].includes(selectedTimelineRecord.statusKey) ? (
+                      <EcoButton type="button" variant="danger" onClick={() => void handleSetRecordStatus("no_show")} disabled={recordStatusSaving === "no_show"}>
+                        {recordStatusSaving === "no_show" ? <Loader2 size={15} className="eco-spin" /> : <AlertTriangle size={15} />}
+                        Не приехал
                       </EcoButton>
                     ) : null}
                     <EcoButton type="button" onClick={() => selectedRecordItem && openEditForm(selectedTimelineRecord, selectedRecordItem)}>
