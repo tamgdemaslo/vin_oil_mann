@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { access, mkdir, readFile, rm } from "fs/promises";
+import { access, mkdir, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
@@ -81,7 +81,6 @@ const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
 const CDP_PRINT_TIMEOUT_MS = 45_000;
 const CDP_STREAM_READ_TIMEOUT_MS = 10_000;
-const CHROME_CLI_PRINT_TIMEOUT_MS = 60_000;
 const CHROME_OUTPUT_SNIPPET = 3_000;
 
 async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.ProcessEnv> {
@@ -412,11 +411,11 @@ async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<voi
 
 async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string): Promise<void> {
   const result = await withTimeout(
-    cdp.send<{ result?: { value?: { optimizedPhotos?: number; skippedPhotos?: number; optimizedInlineImages?: number; skippedInlineImages?: number } } }>(
+    cdp.send<{ result?: { value?: { photoTiles?: number; inlineImages?: number } } }>(
       "Runtime.evaluate",
       {
         expression: `
-        (async () => {
+        (() => {
           document.documentElement.classList.add('tgm-printer-safe');
 
           const style = document.createElement('style');
@@ -449,137 +448,26 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
           ].join('\\n');
           document.head.appendChild(style);
 
-          const parseBackgroundUrl = (value) => {
-            const match = String(value || '').match(/url\\((["']?)(.*?)\\1\\)/);
-            return match?.[2] || '';
-          };
-
-          const loadImage = (src) => new Promise((resolve, reject) => {
-            const img = new Image();
-            let settled = false;
-            const timer = setTimeout(() => fail(), 3500);
-            const done = () => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(timer);
-              resolve(img);
-            };
-            const fail = () => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(timer);
-              reject(new Error('image failed'));
-            };
-            img.decoding = 'async';
-            img.onload = done;
-            img.onerror = fail;
-            img.src = src;
-            if (img.complete && img.naturalWidth > 0) done();
-          });
-
-          const imageToJpegDataUrl = (image, options = {}) => {
-            const naturalWidth = image.naturalWidth || image.width;
-            const naturalHeight = image.naturalHeight || image.height;
-            if (!naturalWidth || !naturalHeight) return '';
-
-            const maxSide = options.maxSide || 620;
-            const maxPixels = options.maxPixels || 320000;
-            const quality = options.quality || 0.6;
-            const sideScale = Math.min(1, maxSide / naturalWidth, maxSide / naturalHeight);
-            const pixelScale = Math.min(1, Math.sqrt(maxPixels / (naturalWidth * naturalHeight)));
-            const scale = Math.min(sideScale, pixelScale);
-            const width = Math.max(1, Math.round(naturalWidth * scale));
-            const height = Math.max(1, Math.round(naturalHeight * scale));
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const context = canvas.getContext('2d', { alpha: false });
-            if (!context) return '';
-
-            context.fillStyle = '#0a0a0a';
-            context.fillRect(0, 0, width, height);
-            context.drawImage(image, 0, 0, width, height);
-            return canvas.toDataURL('image/jpeg', quality);
-          };
-
-          const tiles = Array.from(document.querySelectorAll('.diag-print-screen.is-print .rep-photo-img'));
-          let optimizedPhotos = 0;
-          let skippedPhotos = 0;
-          let optimizedInlineImages = 0;
-          let skippedInlineImages = 0;
-
-          for (const tile of tiles) {
-            try {
-              const rawUrl = parseBackgroundUrl(getComputedStyle(tile).backgroundImage);
-              if (!rawUrl || rawUrl.startsWith('data:')) {
-                skippedPhotos += 1;
-                continue;
-              }
-
-              const absoluteUrl = new URL(rawUrl, location.href).href;
-              const image = await loadImage(absoluteUrl);
-              const optimizedUrl = imageToJpegDataUrl(image, { maxSide: 620, maxPixels: 320000, quality: 0.6 });
-              if (!optimizedUrl) {
-                skippedPhotos += 1;
-                continue;
-              }
-
-              tile.style.backgroundImage = 'url("' + optimizedUrl + '")';
-              tile.setAttribute('data-tgm-pdf-optimized', Math.round(optimizedUrl.length / 1024) + 'kb');
-              optimizedPhotos += 1;
-            } catch {
-              skippedPhotos += 1;
-            }
-          }
-
-          const inlineImages = Array.from(document.querySelectorAll(
-            '.diag-print-screen.is-print .rep-rec-photos img'
+          const imageNodes = Array.from(document.querySelectorAll(
+            '.diag-print-screen.is-print .rep-photo-img img, .diag-print-screen.is-print .rep-rec-photos img'
           ));
-
-          for (const imageNode of inlineImages) {
-            try {
-              const rawUrl = imageNode.currentSrc || imageNode.getAttribute('src') || imageNode.src || '';
-              if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.endsWith('.svg')) {
-                skippedInlineImages += 1;
-                continue;
-              }
-
-              const absoluteUrl = new URL(rawUrl, location.href).href;
-              const image = await loadImage(absoluteUrl);
-              const optimizedUrl = imageToJpegDataUrl(image, { maxSide: 760, maxPixels: 420000, quality: 0.62 });
-              if (!optimizedUrl) {
-                skippedInlineImages += 1;
-                continue;
-              }
-
-              imageNode.setAttribute('src', optimizedUrl);
-              imageNode.removeAttribute('srcset');
-              imageNode.setAttribute('loading', 'eager');
-              imageNode.setAttribute('decoding', 'sync');
-              imageNode.setAttribute('data-tgm-pdf-optimized', Math.round(optimizedUrl.length / 1024) + 'kb');
-              if (typeof imageNode.decode === 'function') {
-                await Promise.race([
-                  imageNode.decode(),
-                  new Promise((resolve) => setTimeout(resolve, 500))
-                ]);
-              }
-              optimizedInlineImages += 1;
-            } catch {
-              skippedInlineImages += 1;
-            }
+          for (const imageNode of imageNodes) {
+            imageNode.setAttribute('loading', 'eager');
+            imageNode.setAttribute('decoding', 'sync');
           }
 
-          return { optimizedPhotos, skippedPhotos, optimizedInlineImages, skippedInlineImages };
+          return {
+            photoTiles: document.querySelectorAll('.diag-print-screen.is-print .rep-photo-img img').length,
+            inlineImages: document.querySelectorAll('.diag-print-screen.is-print .rep-rec-photos img').length,
+          };
         })()
       `,
-        awaitPromise: true,
         returnByValue: true,
       },
       sessionId
     ),
-    30_000,
-    "Оптимизация фото для PDF"
+    CDP_COMMAND_TIMEOUT_MS,
+    "Подготовка печати PDF"
   );
 
   console.info("[diagnostic-pdf] printer-safe optimizations", result.result?.value ?? {});
@@ -603,82 +491,6 @@ async function readCdpStream(cdp: CdpClient, stream: string, sessionId: string):
     await withTimeout(cdp.send("IO.close", { handle: stream }, sessionId), 2_000, "Закрытие PDF stream").catch(() => {});
   }
   return Buffer.concat(chunks);
-}
-
-function waitForChromeExit(chrome: ChildProcessWithoutNullStreams, timeoutMs: number, label: string): Promise<{ code: number | null; signal: NodeJS.Signals | null; output: string }> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let output = "";
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      chrome.kill("SIGTERM");
-      reject(new Error(`${label}: таймаут ${Math.round(timeoutMs / 1000)} сек. ${output.slice(-CHROME_OUTPUT_SNIPPET)}`));
-    }, timeoutMs);
-
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString("utf8");
-    };
-
-    chrome.stderr.on("data", onData);
-    chrome.stdout.on("data", onData);
-
-    chrome.once("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    chrome.once("exit", (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ code, signal, output });
-    });
-  });
-}
-
-async function renderReportPdfViaCli(url: string): Promise<Buffer> {
-  const chrome = await findChromeExecutable();
-  if (!chrome) {
-    throw new Error("Chrome/Chromium не найден на сервере. Укажите CHROME_PATH для генерации PDF.");
-  }
-
-  const userDataDir = join(tmpdir(), `tgm-pdf-cli-${randomUUID()}`);
-  const pdfPath = join(userDataDir, "report.pdf");
-  await mkdir(userDataDir, { recursive: true });
-  const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
-
-  const chromeArgs = [
-    ...chromeServerFlags(userDataDir, chrome.source),
-    "--run-all-compositor-stages-before-draw",
-    "--virtual-time-budget=10000",
-    "--print-to-pdf-no-header",
-    `--print-to-pdf=${pdfPath}`,
-    url,
-  ];
-  const launch = await chromeSpawnConfig(chrome, chromeArgs);
-  console.warn("[diagnostic-pdf] launching chrome CLI print fallback", { chromePath: chrome.path, chromeSource: chrome.source, wrapperPath: launch.wrapperPath });
-  const chromeProcess = spawn(launch.command, launch.args, { env: chromeEnv });
-
-  try {
-    const result = await waitForChromeExit(chromeProcess, CHROME_CLI_PRINT_TIMEOUT_MS, "Печать отчёта через Chrome CLI");
-    if (result.code !== 0) {
-      throw new Error(`Chrome CLI не сформировал PDF: code=${result.code ?? "null"} signal=${result.signal ?? "null"}. ${result.output.slice(-CHROME_OUTPUT_SNIPPET)}`);
-    }
-
-    const pdf = await readFile(pdfPath);
-    if (pdf.length === 0) {
-      throw new Error(`Chrome CLI вернул пустой PDF. ${result.output.slice(-CHROME_OUTPUT_SNIPPET)}`);
-    }
-    return pdf;
-  } finally {
-    chromeProcess.kill("SIGTERM");
-    setTimeout(() => {
-      void rm(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 }).catch(() => {});
-    }, 500);
-  }
 }
 
 async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
@@ -929,12 +741,6 @@ function requestOrigin(request: NextRequest): string {
   return request.nextUrl.origin;
 }
 
-function shouldRedirectToPrintFallback(request: NextRequest): boolean {
-  if (request.nextUrl.searchParams.get("json") === "1") return false;
-  const accept = request.headers.get("accept") ?? "";
-  return !accept.includes("application/json");
-}
-
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const reportUrl = new URL(`/report/${encodeURIComponent(token)}/print?pdf=1`, requestOrigin(request));
@@ -942,17 +748,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const pageRanges = pageRangesParam && /^[0-9,\-\s]+$/.test(pageRangesParam) ? pageRangesParam : undefined;
   const printerSafe = request.nextUrl.searchParams.get("rich") !== "1";
 
-  let pdfMode = printerSafe ? "printer-safe" : "rich";
+  const pdfMode = printerSafe ? "printer-safe" : "rich";
 
   try {
-    let pdf: Buffer;
-    try {
-      pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
-    } catch (cdpError) {
-      console.warn("[diagnostic-pdf] CDP render failed, trying CLI fallback", { token, error: cdpError });
-      pdf = await renderReportPdfViaCli(reportUrl.toString());
-      pdfMode = "cli-fallback";
-    }
+    const pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
 
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
@@ -964,10 +763,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
   } catch (error) {
     console.error("[diagnostic-pdf] failed", { token, error });
-    if (shouldRedirectToPrintFallback(request)) {
-      const fallbackUrl = new URL(`/report/${encodeURIComponent(token)}/print?pdfFallback=1`, requestOrigin(request));
-      return NextResponse.redirect(fallbackUrl, { status: 307 });
-    }
     return NextResponse.json(
       {
         error: "Не удалось сформировать PDF отчёта",

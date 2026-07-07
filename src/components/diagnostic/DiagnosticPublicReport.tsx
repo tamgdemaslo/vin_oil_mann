@@ -423,7 +423,8 @@ function CarSilhouette({ vehicleTitle, vin }: { vehicleTitle: string; vin?: stri
 function PhotoTile({ photo, index, status }: { photo: { id: string; caption: string; url: string; itemTitle: string }; index: number; status: string }) {
   return (
     <figure className="rep-photo" key={`${photo.id}-${index}`}>
-      <div className="rep-photo-img" style={{ backgroundImage: `url(${photo.url})` }}>
+      <div className="rep-photo-img">
+        <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} loading="eager" decoding="sync" />
         <div className="rep-photo-scrim" />
         <span className="rep-photo-dot" style={{ background: statusColor(status) }} />
         <span className="rep-photo-no">IMG_{String(index + 1).padStart(3, "0")}</span>
