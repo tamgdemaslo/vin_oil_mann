@@ -130,7 +130,6 @@ function chromeServerFlags(userDataDir: string): string[] {
     "--no-first-run",
     "--no-service-autorun",
     "--no-zygote",
-    "--single-process",
     "--password-store=basic",
     "--force-color-profile=srgb",
     `--crash-dumps-dir=${join(userDataDir, "crash-dumps")}`,
