@@ -1,22 +1,14 @@
 "use client";
 
 import {
-  AlertTriangle,
-  Bell,
-  CalendarClock,
   CalendarDays,
-  CheckCircle2,
   ChevronRight,
-  ClipboardList,
   Gauge,
   MessageCircle,
   MoreHorizontal,
-  PackagePlus,
   Play,
   Plus,
   Truck,
-  WalletCards,
-  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -240,7 +232,7 @@ function paymentLabel(status: ShipmentItem["paymentStatus"]) {
 
 function paymentTone(status: ShipmentItem["paymentStatus"]) {
   if (status === "paid") return "success";
-  if (status === "unpaid") return "danger";
+  if (status === "unpaid") return "warning";
   return "neutral";
 }
 
@@ -289,7 +281,7 @@ function appointmentStatusKey(status?: string | null) {
 function appointmentTone(status?: string | null): EcoBadgeTone {
   const key = appointmentStatusKey(status);
   if (key === "cancelled") return "neutral";
-  if (key === "no_show") return "danger";
+  if (key === "no_show") return "warning";
   if (key === "done" || key === "confirmed") return "success";
   if (key === "arrived" || key === "waiting") return "info";
   if (key === "in_work") return "warning";
@@ -298,7 +290,7 @@ function appointmentTone(status?: string | null): EcoBadgeTone {
 
 function shipmentTone(item: AppointmentItem): EcoBadgeTone {
   if (item.hasShipment) return "success";
-  return item.shipmentStatus?.toLowerCase().includes("связ") ? "warning" : "danger";
+  return "warning";
 }
 
 function appointmentActions(item: AppointmentItem) {
@@ -454,13 +446,6 @@ function RowAction({
       {children}
     </Link>
   );
-}
-
-function AlertIcon({ tone }: { tone: EcoBadgeTone }) {
-  if (tone === "danger") return <XCircle aria-hidden className="eco-icon" />;
-  if (tone === "warning") return <AlertTriangle aria-hidden className="eco-icon" />;
-  if (tone === "info") return <ClipboardList aria-hidden className="eco-icon" />;
-  return <Bell aria-hidden className="eco-icon" />;
 }
 
 function urgencyDot(urgency: NotificationUrgency) {
@@ -643,15 +628,13 @@ export default function HomeDashboard({
     };
   }, []);
 
-  const visibleAlerts = useMemo(() => (dashboard?.alerts ?? []).filter((alert) => alert.count > 0).slice(0, 5), [dashboard]);
   const cashClosed = dashboard?.cash.status !== "open";
   const cashOpenLong = (dashboard?.cash.openedHours ?? 0) >= 10;
   const notifications = dashboard?.notifications ?? [];
   const feedItems = notifications.slice(0, 5);
   const messages = dashboard?.messages ?? { total: 0, needsReply: 0, unread: 0, oldest: null };
   const forecast = buildRevenueForecast(dashboard, cashClosed);
-  const criticalProblems =
-    (cashClosed ? 1 : 0) + (dashboard?.crm.overdue ? 1 : 0) + (messages.needsReply ? 1 : 0);
+  const blockingProblems = cashClosed ? 1 : 0;
   const shiftStatusLine = sectionsLocked
     ? "Смена не начата · касса закрыта"
     : dashboard?.cash.status === "open"
@@ -664,7 +647,7 @@ export default function HomeDashboard({
     : cashClosed
       ? { href: "/cash#open", label: "Открыть кассу" }
       : { href: "/shipment/new", label: "Новая отгрузка" };
-  const mobileProblems = useMemo<MobileProblem[]>(() => {
+  const attentionItems = useMemo<MobileProblem[]>(() => {
     const items: MobileProblem[] = [];
     if (cashClosed) {
       items.push({
@@ -688,7 +671,7 @@ export default function HomeDashboard({
     if (messages.needsReply > 0) {
       items.push({
         id: "messages",
-        tone: "danger",
+        tone: "warning",
         title: `${formatCount(messages.needsReply)} сообщений требуют ответа`,
         meta: messages.oldest ? `Самое старое: ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : "Есть непрочитанные диалоги.",
         href: "/messages",
@@ -698,7 +681,7 @@ export default function HomeDashboard({
     if ((dashboard?.crm.overdue ?? 0) > 0) {
       items.push({
         id: "crm-overdue",
-        tone: "danger",
+        tone: "warning",
         title: `${formatCount(dashboard?.crm.overdue ?? 0)} просроченных дел`,
         meta: (dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `Старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "Нужен контроль дедлайнов.",
         href: "/crm?filter=overdue",
@@ -738,14 +721,24 @@ export default function HomeDashboard({
     if ((dashboard?.diagnostics.withoutPhoto ?? 0) > 0) {
       items.push({
         id: "diagnostics-without-photo",
-        tone: "info",
+        tone: "neutral",
         title: `${formatCount(dashboard?.diagnostics.withoutPhoto ?? 0)} диагностик без фото / отчёта`,
         meta: "Закройте незавершённые отчёты.",
         href: "/shipment?filter=diagnostics",
         action: "Проверить",
       });
     }
-    return items.slice(0, 5);
+    if ((dashboard?.suppliers.unpaidInvoices ?? 0) > 0) {
+      items.push({
+        id: "supplier-invoices",
+        tone: "warning",
+        title: `${formatCount(dashboard?.suppliers.unpaidInvoices ?? 0)} счетов поставщиков`,
+        meta: `${formatMoneyCents(dashboard?.suppliers.amountCents ?? 0)} к контролю оплаты.`,
+        href: "/finance/invoices",
+        action: "Счета",
+      });
+    }
+    return items.slice(0, 6);
   }, [
     cashClosed,
     cashOpenLong,
@@ -756,6 +749,8 @@ export default function HomeDashboard({
     dashboard?.crm.overdue,
     dashboard?.diagnostics.withoutPhoto,
     dashboard?.stock.belowMin,
+    dashboard?.suppliers.amountCents,
+    dashboard?.suppliers.unpaidInvoices,
     messages.needsReply,
     messages.oldest,
   ]);
@@ -816,9 +811,9 @@ export default function HomeDashboard({
               hint={dashboard?.appointments.next ? dashboard.appointments.next.client : "записей нет"}
             />
             <MobileReportMetric label="Отгрузки сегодня" value={formatCount(dashboard?.shipments.today ?? 0)} hint={`черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)}`} />
-            <MobileReportMetric label="Сообщения" value={formatCount(messages.total)} hint={`${formatCount(messages.needsReply)} требуют ответа`} tone={messages.needsReply ? "danger" : "neutral"} />
-            <MobileReportMetric label="Просрочено" value={formatCount(dashboard?.crm.overdue ?? 0)} hint={(dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "дел нет"} tone={dashboard?.crm.overdue ? "danger" : "neutral"} />
-            <MobileReportMetric label="Критичные проблемы" value={formatCount(criticalProblems)} hint={criticalProblems ? "нужны действия" : "критичных нет"} tone={criticalProblems ? "danger" : "success"} />
+            <MobileReportMetric label="Сообщения" value={formatCount(messages.total)} hint={`${formatCount(messages.needsReply)} требуют ответа`} tone={messages.needsReply ? "warning" : "neutral"} />
+            <MobileReportMetric label="Просрочено" value={formatCount(dashboard?.crm.overdue ?? 0)} hint={(dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "дел нет"} tone={dashboard?.crm.overdue ? "warning" : "neutral"} />
+            <MobileReportMetric label="Блокеры" value={formatCount(blockingProblems)} hint={blockingProblems ? "мешают продажам" : "блокеров нет"} tone={blockingProblems ? "danger" : "success"} />
           </div>
         </section>
 
@@ -838,11 +833,11 @@ export default function HomeDashboard({
         <section className="eco-mobile-card eco-mobile-attention">
           <div className="eco-mobile-card-head">
             <h2>Требует внимания</h2>
-            <span>{mobileProblems.length ? `${mobileProblems.length} из главных` : "чисто"}</span>
+            <span>{attentionItems.length ? `${attentionItems.length} из главных` : "чисто"}</span>
           </div>
-          {mobileProblems.length ? (
+          {attentionItems.length ? (
             <div className="eco-mobile-problems">
-              {mobileProblems.map((item) => (
+              {attentionItems.map((item) => (
                 <Link key={item.id} href={item.href} className={`eco-mobile-problem is-${item.tone}`}>
                   <span className="eco-mobile-problem-dot" />
                   <span>
@@ -854,7 +849,7 @@ export default function HomeDashboard({
               ))}
             </div>
           ) : (
-            <div className="eco-mobile-inline-alert is-success">Критичных проблем сейчас нет.</div>
+            <div className="eco-mobile-inline-alert is-success">Сейчас нет задач, которые требуют решения.</div>
           )}
         </section>
 
@@ -870,7 +865,7 @@ export default function HomeDashboard({
               detail={messages.oldest ? `${formatCount(messages.needsReply)} требуют ответа · ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : `${formatCount(messages.needsReply)} требуют ответа`}
               href="/messages"
               action="Открыть"
-              tone={messages.needsReply ? "danger" : "neutral"}
+              tone={messages.needsReply ? "warning" : "neutral"}
             />
             <MobileActionRow
               title="Записи"
@@ -927,9 +922,9 @@ export default function HomeDashboard({
       </nav>
 
       <div className="eco-ops-desktop">
-      <section className="eco-ops-topbar" aria-label={`Операционный центр дня для ${userName}`}>
+      <section className="eco-ops-topbar" aria-label={`Панель владельца для ${userName}`}>
         <div className="eco-ops-topbar-main">
-          <h1>Операционный центр дня</h1>
+          <h1>Панель владельца</h1>
           <div className="eco-ops-topbar-meta">
             <span>Сегодня: {todayShortPhrase()}</span>
             <span>Организация: {SERVICE_ORGANIZATION_LABEL}</span>
@@ -954,14 +949,6 @@ export default function HomeDashboard({
             <Plus aria-hidden className="eco-icon" />
             Новая отгрузка
           </Link>
-          <Link href={recordCreateHref()} className="eco-ops-btn">
-            <CalendarClock aria-hidden className="eco-icon" />
-            Создать запись
-          </Link>
-          <Link href={cashClosed ? "/cash#open" : "/cash#cash-state"} className="eco-ops-btn">
-            <WalletCards aria-hidden className="eco-icon" />
-            Открыть кассу
-          </Link>
           <Link href="/messages" className="eco-ops-btn">
             <MessageCircle aria-hidden className="eco-icon" />
             Сообщения
@@ -975,29 +962,6 @@ export default function HomeDashboard({
           Для администратора и мастера остальные разделы открываются только после начала смены.
         </div>
       )}
-
-      <section className="eco-ops-alert-strip" aria-label="Важные предупреждения">
-        <span className="eco-ops-alert-strip-title">Внимание</span>
-        {visibleAlerts.length ? (
-          <div className="eco-ops-alert-strip-list">
-            {visibleAlerts.map((alert) => (
-            <Link key={alert.id} href={alert.href} className={`eco-ops-alert-chip is-${toneClass(alert.tone)}`}>
-              <AlertIcon tone={alert.tone} />
-              <span>{alert.label}</span>
-              <strong>{formatCount(alert.count)}</strong>
-            </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="eco-ops-alert-strip-list">
-            <div className="eco-ops-alert-chip is-neutral">
-              <CheckCircle2 aria-hidden className="eco-icon" />
-              <span>Критичных предупреждений нет</span>
-              <strong>0</strong>
-            </div>
-          </div>
-        )}
-      </section>
 
       {sectionsLocked ? (
         <section className="eco-ops-locked" id="shift-control">
@@ -1016,13 +980,92 @@ export default function HomeDashboard({
         </section>
       ) : (
         <>
-          <section className="eco-ops-day-grid" aria-label="Операционный центр дня">
+          <section className="eco-ops-owner-grid" aria-label="Деньги и внимание владельца">
+            <section className="eco-ops-finance-panel">
+              <header>
+                <div>
+                  <h2>Деньги сегодня</h2>
+                  <p>
+                    {formatCount(dashboard?.finance.shipmentsCount ?? 0)} отгрузок · оплачено {formatMoneyCents(dashboard?.finance.paidCents ?? 0)}
+                  </p>
+                </div>
+                <Link href="/finance" className="eco-ops-btn eco-ops-btn--ghost eco-ops-btn--sm">
+                  Финансы <ChevronRight aria-hidden className="eco-icon" />
+                </Link>
+              </header>
+              {dashboardError ? (
+                <ErrorState title="Финансы не загрузились" hint={dashboardError} />
+              ) : loading && !dashboard ? (
+                <LoadingState rows={4} />
+              ) : (
+                <>
+                  <div className="eco-ops-money-row">
+                    <div>
+                      <span>Выручка</span>
+                      <strong>{formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
+                    </div>
+                    <div>
+                      <span>Валовая прибыль</span>
+                      <strong>{formatMoneyCents(dashboard?.finance.grossProfitCents ?? 0)}</strong>
+                    </div>
+                  </div>
+                  <div className="eco-ops-owner-metrics">
+                    <div>
+                      <span>Маржа</span>
+                      <strong>{marginPercent(dashboard?.finance.revenueCents, dashboard?.finance.grossProfitCents)}</strong>
+                    </div>
+                    <div>
+                      <span>Средний чек</span>
+                      <strong>{dashboard?.finance.shipmentsCount ? formatMoneyCents(dashboard.finance.averageCheckCents) : "—"}</strong>
+                    </div>
+                    <div>
+                      <span>Не оплачено</span>
+                      <strong className={(dashboard?.finance.unpaidCents ?? 0) > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard?.finance.unpaidCents ?? 0)}</strong>
+                    </div>
+                    <div>
+                      <span>Прогноз</span>
+                      <strong className={forecast.tone === "warning" ? "is-warning" : ""}>{forecast.short}</strong>
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="eco-ops-attention-panel">
+              <header>
+                <div>
+                  <h2>Требует решения</h2>
+                  <p>Касса, клиенты, склад и диагностика в одном списке.</p>
+                </div>
+                <span>{attentionItems.length ? formatCount(attentionItems.length) : "0"}</span>
+              </header>
+              {attentionItems.length ? (
+                <div className="eco-ops-attention-list">
+                  {attentionItems.map((item) => (
+                    <Link key={item.id} href={item.href} className={`eco-ops-attention-item is-${item.tone}`}>
+                      <span className="eco-ops-attention-dot" />
+                      <span>
+                        <b>{item.title}</b>
+                        <small>{item.meta}</small>
+                      </span>
+                      <em>{item.action}</em>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="eco-ops-attention-empty">
+                  <strong>Блокеров и срочных задач нет</strong>
+                  <span>Можно смотреть журнал и отгрузки без красного шума.</span>
+                </div>
+              )}
+            </section>
+          </section>
+
+          <section className="eco-ops-day-grid" aria-label="Рабочий слой дня">
             <Card
               title="Журнал сегодня"
-              badge={<Badge tone={(dashboard?.appointments.withoutShipment ?? 0) > 0 ? "warning" : "neutral"}>{formatCount(dashboard?.appointments.totalToday ?? 0)} записей</Badge>}
               href="/records"
               action="Журнал"
-              accent
               className="eco-ops-card--journal"
             >
               {dashboardError ? (
@@ -1057,29 +1100,30 @@ export default function HomeDashboard({
                   )}
                   {dashboard?.appointments.rows.length ? (
                     <div className="eco-ops-journal-list">
-                      {dashboard.appointments.rows.slice(0, 6).map((item) => (
-                        <article key={item.id} className={`eco-ops-journal-row is-${appointmentStatusKey(item.status)}`}>
-                          <div className="eco-ops-journal-time">
-                            <strong>{item.time || "—"}</strong>
-                            <Badge tone={appointmentTone(item.status)} dot>{item.status || "Запланирована"}</Badge>
-                          </div>
-                          <div className="eco-ops-journal-main">
-                            <Link href={recordHref(item)}>{item.client}</Link>
-                            <span>{[item.phone, item.vehicle || "авто не указано", item.service].filter(Boolean).join(" · ")}</span>
-                          </div>
-                          <div className="eco-ops-journal-shipment">
-                            <Badge tone={shipmentTone(item)}>{item.shipmentStatus || (item.hasShipment ? "Отгрузка связана" : "Отгрузка не найдена")}</Badge>
-                            {!item.hasShipment && <small>Создать или связать</small>}
-                          </div>
-                          <div className="eco-ops-row-actions">
-                            {appointmentActions(item).map((action) => (
-                              <RowAction key={`${item.id}-${action.label}`} href={action.href} tone={action.tone}>
-                                {action.label}
+                      {dashboard.appointments.rows.slice(0, 6).map((item) => {
+                        const primaryAction = appointmentActions(item)[0];
+                        return (
+                          <article key={item.id} className={`eco-ops-journal-row is-${appointmentStatusKey(item.status)}`}>
+                            <div className="eco-ops-journal-time">
+                              <strong>{item.time || "—"}</strong>
+                              <Badge tone={appointmentTone(item.status)} dot>{item.status || "Запланирована"}</Badge>
+                            </div>
+                            <div className="eco-ops-journal-main">
+                              <Link href={recordHref(item)}>{item.client}</Link>
+                              <span>{[item.phone, item.vehicle || "авто не указано", item.service].filter(Boolean).join(" · ")}</span>
+                            </div>
+                            <div className="eco-ops-journal-shipment">
+                              <Badge tone={shipmentTone(item)}>{item.shipmentStatus || (item.hasShipment ? "Отгрузка связана" : "Отгрузка не найдена")}</Badge>
+                              {!item.hasShipment && <small>Создать или связать</small>}
+                            </div>
+                            <div className="eco-ops-row-actions">
+                              <RowAction href={primaryAction.href} tone={primaryAction.tone}>
+                                {primaryAction.label}
                               </RowAction>
-                            ))}
-                          </div>
-                        </article>
-                      ))}
+                            </div>
+                          </article>
+                        );
+                      })}
                     </div>
                   ) : (
                     <>
@@ -1095,10 +1139,8 @@ export default function HomeDashboard({
 
             <Card
               title="Дела клиентов"
-              badge={<Badge tone={dashboard?.crm.overdue ? "danger" : "neutral"}>{formatCount(dashboard?.crm.overdue ?? 0)} просрочено</Badge>}
               href="/crm?filter=today"
               action="Все дела"
-              accent
               className="eco-ops-card--cases"
             >
               {dashboardError ? (
@@ -1110,7 +1152,7 @@ export default function HomeDashboard({
                   <StatStrip
                     items={[
                       { label: "Сегодня", value: dashboard?.crm.today ?? 0 },
-                      { label: "Ждут ответ", value: messages.needsReply, tone: messages.needsReply ? "danger" : "muted" },
+                      { label: "Ждут ответ", value: messages.needsReply, tone: messages.needsReply ? "warning" : "muted" },
                       { label: "Расчёт", value: dashboard?.crm.quote ?? 0, tone: dashboard?.crm.quote ? "warning" : "muted" },
                       { label: "Перезвонить", value: dashboard?.crm.callback ?? 0, tone: dashboard?.crm.callback ? "warning" : "muted" },
                       { label: "Запчасти", value: dashboard?.crm.supplies ?? 0, tone: dashboard?.crm.supplies ? "warning" : "muted" },
@@ -1140,13 +1182,11 @@ export default function HomeDashboard({
                           </div>
                           <div className="eco-ops-row-actions">
                             <RowAction href={crmHref(item)} tone="primary">Открыть</RowAction>
-                            <RowAction href={messagesHref(item.phone)}>Написать</RowAction>
                             {item.phone && (
                               <a href={`tel:${item.phone}`} className="eco-ops-row-action is-quiet">
                                 Позвонить
                               </a>
                             )}
-                            <RowAction href={crmHref(item)}>Закрыть</RowAction>
                           </div>
                         </article>
                       ))}
@@ -1158,7 +1198,7 @@ export default function HomeDashboard({
               )}
             </Card>
 
-            <Card title="Отгрузки сегодня" badge={<Badge>сегодня</Badge>} href="/shipment" action="Все отгрузки" className="eco-ops-card--shipments">
+            <Card title="Отгрузки сегодня" href="/shipment" action="Все отгрузки" className="eco-ops-card--shipments">
               {dashboardError ? (
                 <ErrorState title="Отгрузки не загрузились" hint={dashboardError} />
               ) : loading && !dashboard ? (
@@ -1170,7 +1210,7 @@ export default function HomeDashboard({
                       { label: "Всего", value: dashboard?.shipments.today ?? 0 },
                       { label: "Черновики", value: dashboard?.shipments.drafts ?? 0, tone: dashboard?.shipments.drafts ? "warning" : "muted" },
                       { label: "Проведённые", value: dashboard?.shipments.applicable ?? 0 },
-                      { label: "Неоплаченные", value: dashboard?.shipments.unpaid ?? 0, tone: dashboard?.shipments.unpaid ? "danger" : "muted" },
+                      { label: "Неоплаченные", value: dashboard?.shipments.unpaid ?? 0, tone: dashboard?.shipments.unpaid ? "warning" : "muted" },
                       { label: "Без диагн.", value: dashboard?.shipments.withoutDiagnostic ?? 0 },
                       { label: "Без предчека", value: dashboard?.shipments.withoutPrecheck ?? 0 },
                     ]}
@@ -1211,9 +1251,6 @@ export default function HomeDashboard({
                               <td>
                                 <div className="eco-ops-row-actions is-table">
                                   <RowAction href={`/shipment/${row.id}`} tone="primary">Открыть</RowAction>
-                                  {row.paymentStatus !== "paid" && <RowAction href={`/shipment/${row.id}#payment`}>Оплата</RowAction>}
-                                  <RowAction href={`/shipment/${row.id}/precheck`}>Предчек</RowAction>
-                                  <RowAction href={`/shipment/${row.id}#diagnostic`}>Диагн.</RowAction>
                                 </div>
                               </td>
                             </tr>
@@ -1233,76 +1270,9 @@ export default function HomeDashboard({
               )}
             </Card>
 
-            <Card title="Прибыль сегодня" badge={<Badge tone={dashboard?.shipments.unpaid ? "warning" : "neutral"}>{formatCount(dashboard?.shipments.unpaid ?? 0)} неоплачено</Badge>} href="/finance" action="Финансы" className="eco-ops-card--profit">
-              {dashboardError ? (
-                <ErrorState title="Финансы не загрузились" hint={dashboardError} />
-              ) : loading && !dashboard ? (
-                <LoadingState rows={4} />
-              ) : (
-                <div className="eco-ops-profit-body">
-                  <div className="eco-ops-profit-hero">
-                    <div>
-                      <span>Выручка</span>
-                      <strong>{formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Валовая прибыль</span>
-                      <strong>{formatMoneyCents(dashboard?.finance.grossProfitCents ?? 0)}</strong>
-                    </div>
-                  </div>
-                  <div className="eco-ops-profit-grid">
-                    <div>
-                      <span>Маржа</span>
-                      <strong>{marginPercent(dashboard?.finance.revenueCents, dashboard?.finance.grossProfitCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Средний чек</span>
-                      <strong>{dashboard?.finance.shipmentsCount ? formatMoneyCents(dashboard.finance.averageCheckCents) : "—"}</strong>
-                    </div>
-                    <div>
-                      <span>Оплачено</span>
-                      <strong>{formatMoneyCents(dashboard?.finance.paidCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Неоплачено</span>
-                      <strong className={(dashboard?.finance.unpaidCents ?? 0) > 0 ? "is-danger" : ""}>{formatMoneyCents(dashboard?.finance.unpaidCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Расходы</span>
-                      <strong>{formatMoneyCents(dashboard?.cash.expensesCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Прогноз</span>
-                      <strong className={forecast.tone === "warning" ? "is-warning" : ""}>{forecast.short}</strong>
-                    </div>
-                  </div>
-                  {!dashboard?.finance.shipmentsCount && (
-                    <p className="eco-ops-profit-note">Сегодня ещё нет проведённых отгрузок.</p>
-                  )}
-                </div>
-              )}
-            </Card>
           </section>
 
-          <section className="eco-ops-secondary-widgets" aria-label="Вторичные показатели">
-            <Link href={cashClosed ? "/cash#open" : "/cash#cash-state"} className={`eco-ops-secondary-widget is-${cashClosed ? "danger" : cashOpenLong ? "warning" : "success"}`}>
-              <WalletCards aria-hidden className="eco-icon" />
-              <span>Касса</span>
-              <strong>{dashboard?.cash.status === "open" ? `открыта с ${formatTime(dashboard.cash.openedAt)}` : "закрыта"}</strong>
-              <small>{dashboard?.cash.status === "open" ? `Остаток: ${formatMoneyCents(dashboard.cash.expectedBalanceCents)}` : "Открыть перед продажами"}</small>
-            </Link>
-            <Link href="/inventory/restock?mode=below_min" className={`eco-ops-secondary-widget is-${dashboard?.stock.belowMin ? "warning" : "neutral"}`}>
-              <PackagePlus aria-hidden className="eco-icon" />
-              <span>Склад</span>
-              <strong>{formatCount(dashboard?.stock.belowMin ?? 0)} ниже минимума</strong>
-              <small>{formatCount(dashboard?.suppliers.unpaidInvoices ?? 0)} счетов поставщиков</small>
-            </Link>
-            <Link href="/shipment?filter=diagnostics" className={`eco-ops-secondary-widget is-${dashboard?.diagnostics.withoutPhoto ? "info" : "neutral"}`}>
-              <ClipboardList aria-hidden className="eco-icon" />
-              <span>Диагностики</span>
-              <strong>{formatCount(dashboard?.diagnostics.active ?? 0)} в работе</strong>
-              <small>{formatCount(dashboard?.diagnostics.withoutPhoto ?? 0)} без фото / отчёта</small>
-            </Link>
+          <section className="eco-ops-secondary-widgets" aria-label="История дня">
             <Card title="Последние события" href="/notifications" action="Все" flat className="eco-ops-card--events">
               <div className="eco-ops-feed">
                 {feedItems.length ? (
