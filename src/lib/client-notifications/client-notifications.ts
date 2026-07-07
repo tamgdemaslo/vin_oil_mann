@@ -121,6 +121,14 @@ type NotificationLogRow = {
   createdAt: Date;
 };
 
+type NotificationSettingsRow = {
+  id: string;
+  organizationId: string;
+  settingsJson: JsonRecord;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type NotificationJobStatus =
   | "scheduled"
   | "queued"
@@ -148,6 +156,7 @@ export type NotificationConditions = {
   branchIds?: string[];
   excludedAppointmentTypes?: string[];
   reviewDelayMinutes?: number;
+  requireReviewLink?: boolean;
 };
 
 export type NotificationEventContext = {
@@ -175,6 +184,16 @@ export type NotificationEventContext = {
   organizationName?: string | null;
   locationName?: string | null;
   locationAddress?: string | null;
+  routeSchemeUrl?: string | null;
+  routeSchemeImageUrl?: string | null;
+  routeSchemeCaption?: string | null;
+  yandexMapsUrl?: string | null;
+  yandexReviewUrl?: string | null;
+  waitingAreaText?: string | null;
+  coffeeTeaText?: string | null;
+  receptionManagerText?: string | null;
+  wifiName?: string | null;
+  wifiPassword?: string | null;
   publicPhone?: string | null;
   telegramUsername?: string | null;
   bookingUrl?: string | null;
@@ -193,6 +212,23 @@ export type NotificationEventContext = {
   source?: string | null;
   payload?: JsonRecord | null;
   force?: boolean;
+};
+
+export type ClientNotificationSettings = {
+  locationAddress: string;
+  routeSchemeUrl: string;
+  routeSchemeImageUrl: string;
+  routeSchemeCaption: string;
+  yandexMapsUrl: string;
+  yandexReviewUrl: string;
+  waitingAreaText: string;
+  coffeeTeaText: string;
+  receptionManagerText: string;
+  wifiName: string;
+  wifiPassword: string;
+  postVisitReviewEnabled: boolean;
+  reviewDelayHours: number;
+  sendReviewOnlyIfShipmentCompleted: boolean;
 };
 
 type RenderResult = {
@@ -282,21 +318,22 @@ export const notificationEventDefinitions: Array<{
   },
   {
     type: "client_arrived",
-    title: "Клиент приехал",
-    description: "Приветствие при статусе «Клиент приехал», «В боксе» или «Работа начата».",
-    defaultTiming: "При статусе «Клиент приехал»",
+    title: "Приветствие в сервисе",
+    description: "Короткое полезное сообщение после отметки приезда клиента.",
+    defaultTiming: "Сразу после приезда",
   },
   {
     type: "visit_completed",
     title: "Визит завершён",
-    description: "Благодарность и, если включено, просьба оставить отзыв.",
-    defaultTiming: "Через 30 минут после завершения",
+    description: "Запасное событие для ручного сценария по кнопке «Уехал».",
+    defaultTiming: "Выключено",
+    future: true,
   },
   {
     type: "review_after_visit",
     title: "Отзыв после визита",
-    description: "Отдельная просьба оставить отзыв после завершения визита.",
-    defaultTiming: "Через 30 минут после завершения",
+    description: "Мягкая просьба оставить отзыв, планируется автоматически после приезда.",
+    defaultTiming: "Через 6 часов после приезда",
   },
   { type: "appointment_rescheduled", title: "Запись перенесена", description: "Будущее событие для переноса записи.", defaultTiming: "Сразу", future: true },
   { type: "appointment_cancelled", title: "Запись отменена", description: "Будущее событие для отмены записи.", defaultTiming: "Сразу", future: true },
@@ -358,10 +395,20 @@ export const notificationVariableGroups: NotificationVariableGroup[] = [
     variables: [
       variable("organizationName", "Название сервиса", "Публичное название организации.", "Настройки сервиса", "Там где масло", "Если не задано, используется название по умолчанию."),
       variable("locationName", "Филиал", "Название локации или бокса.", "Запись / филиал", "Бокс №1", "Пустое значение скрывайте условным блоком."),
-      variable("locationAddress", "Адрес", "Адрес филиала.", "Запись / настройки", "Калининград, ул. Сервисная, 1", "Строка адреса скрывается, если адрес пустой."),
+      variable("locationAddress", "Адрес", "Адрес филиала.", "Запись / настройки", "Калининград, ул. Дачная, 6В", "Строка адреса скрывается, если адрес пустой."),
       variable("publicPhone", "Телефон сервиса", "Публичный телефон для связи.", "Настройки сервиса", "+7 4012 00-00-00", "Пустое значение скрывайте условным блоком."),
       variable("telegramUsername", "Telegram сервиса", "Ссылка или username Telegram.", "Настройки сервиса", "@tam_gde_maslo", "Пустое значение скрывайте условным блоком."),
       variable("bookingUrl", "Ссылка записи", "Публичная ссылка для самостоятельной записи.", "Настройки онлайн-записи", "https://example.com/book", "Пустое значение скрывайте условным блоком."),
+      variable("routeSchemeUrl", "Схема проезда", "Ссылка на схему проезда или изображение.", "Настройки уведомлений", "https://example.com/route", "Строка скрывается, если схема не указана."),
+      variable("routeSchemeImageUrl", "Фото схемы", "Ссылка на фото схемы проезда.", "Настройки уведомлений", "https://example.com/route.jpg", "Строка скрывается, если фото не указано."),
+      variable("routeSchemeCaption", "Подпись схемы", "Короткая подсказка к схеме проезда.", "Настройки уведомлений", "Заезд со стороны ворот бокса №1", "Строка скрывается, если подпись не указана."),
+      variable("yandexMapsUrl", "Яндекс.Карты", "Ссылка на точку сервиса в Яндекс.Картах.", "Настройки уведомлений", "https://yandex.ru/maps/-/demo", "Строка скрывается, если ссылка не указана."),
+      variable("yandexReviewUrl", "Ссылка на отзыв", "Ссылка, куда клиенту удобно оставить отзыв.", "Настройки уведомлений", "https://yandex.ru/maps/org/demo/reviews", "Поствизитное сообщение не создаётся без ссылки."),
+      variable("waitingAreaText", "Зона ожидания", "Фраза про зону ожидания.", "Настройки уведомлений", "Вы можете пройти в зону ожидания.", "Строка скрывается, если текст пустой."),
+      variable("coffeeTeaText", "Чай и кофе", "Фраза про чай, кофе или воду.", "Настройки уведомлений", "Можно взять чай или кофе.", "Строка скрывается, если текст пустой."),
+      variable("receptionManagerText", "Помощь мастера", "Фраза о том, к кому обратиться на месте.", "Настройки уведомлений", "Если будет непонятно, спросите мастер-приёмщика.", "Строка скрывается, если текст пустой."),
+      variable("wifiName", "Wi‑Fi сеть", "Название Wi‑Fi для клиента.", "Настройки уведомлений", "TGM Guest", "Строка скрывается, если сеть не указана."),
+      variable("wifiPassword", "Wi‑Fi пароль", "Пароль гостевого Wi‑Fi.", "Настройки уведомлений", "oil2026", "Строка скрывается, если пароль не указан."),
     ],
   },
   {
@@ -369,7 +416,7 @@ export const notificationVariableGroups: NotificationVariableGroup[] = [
     variables: [
       variable("diagnosticReportUrl", "Отчёт диагностики", "Публичная ссылка на отчёт диагностики.", "Диагностика", "https://example.com/report/demo", "Если ссылки нет, сообщение не должно содержать строку отчёта."),
       variable("precheckUrl", "Предчек", "Ссылка на предчек.", "Документы", "https://example.com/precheck/demo", "Пустое значение скрывайте условным блоком."),
-      variable("reviewUrl", "Отзыв", "Ссылка на страницу отзыва.", "Настройки сервиса", "https://example.com/review", "Пустое значение скрывайте условным блоком."),
+      variable("reviewUrl", "Отзыв", "Ссылка на страницу отзыва.", "Настройки уведомлений", "https://yandex.ru/maps/org/demo/reviews", "Пустое значение скрывайте условным блоком."),
       variable("orderUrl", "Заказ", "Ссылка на заказ или документ.", "Документы", "https://example.com/order/demo", "Пустое значение скрывайте условным блоком."),
     ],
   },
@@ -397,6 +444,13 @@ const legacyVariableAliases = new Map<string, string>([
   ["service_name", "organizationName"],
   ["branch_name", "locationName"],
   ["address", "locationAddress"],
+  ["route_scheme_url", "routeSchemeUrl"],
+  ["route_scheme_image_url", "routeSchemeImageUrl"],
+  ["route_scheme_caption", "routeSchemeCaption"],
+  ["yandex_maps_url", "yandexMapsUrl"],
+  ["yandex_review_url", "yandexReviewUrl"],
+  ["wifi_name", "wifiName"],
+  ["wifi_password", "wifiPassword"],
   ["company_phone", "publicPhone"],
   ["telegram_link", "telegramUsername"],
   ["service_list", "serviceList"],
@@ -433,6 +487,23 @@ const defaultConditions: NotificationConditions = {
   minNoticeMinutes: 30,
 };
 
+const defaultClientNotificationSettings: ClientNotificationSettings = {
+  locationAddress: "Калининград, ул. Дачная, 6В",
+  routeSchemeUrl: "",
+  routeSchemeImageUrl: "",
+  routeSchemeCaption: "",
+  yandexMapsUrl: "",
+  yandexReviewUrl: "",
+  waitingAreaText: "Вы можете пройти в зону ожидания.",
+  coffeeTeaText: "У нас можно выпить чай или кофе.",
+  receptionManagerText: "Если будет непонятно, куда пройти или чем воспользоваться, спросите мастер-приёмщика — мы подскажем.",
+  wifiName: "",
+  wifiPassword: "",
+  postVisitReviewEnabled: true,
+  reviewDelayHours: 6,
+  sendReviewOnlyIfShipmentCompleted: false,
+};
+
 const legacyDiagnosticReadyTemplateBody =
   "Здравствуйте, {client_name}! Диагностика по автомобилю {car} готова. Посмотреть отчёт: {diagnostic_report_link}";
 const appointmentConfirmTemplateBody =
@@ -440,7 +511,10 @@ const appointmentConfirmTemplateBody =
   "Вы записаны в {{organizationName}} на {{appointmentDate}} в {{appointmentTime}}." +
   "{{#serviceName}}\nУслуга: {{serviceName}}.{{/serviceName}}" +
   "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
-  "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}\n" +
+  "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}" +
+  "{{#yandexMapsUrl}}\nЯндекс.Карты: {{yandexMapsUrl}}{{/yandexMapsUrl}}" +
+  "{{#routeSchemeUrl}}\nСхема проезда: {{routeSchemeUrl}}{{/routeSchemeUrl}}" +
+  "{{#routeSchemeCaption}}\n{{routeSchemeCaption}}{{/routeSchemeCaption}}\n" +
   "Ждём вас.";
 const diagnosticReadyTemplateBody =
   "{{#clientName}}{{clientName}}, диагностика{{#vehicleDisplayName}} {{vehicleDisplayName}}{{/vehicleDisplayName}} готова.{{/clientName}}" +
@@ -473,8 +547,13 @@ const defaultTemplates: Array<{
     eventType: "appointment_reminder",
     body:
       "{{#clientName}}{{clientName}}, {{/clientName}}напоминаем о записи в {{organizationName}} {{appointmentDate}} в {{appointmentTime}}." +
+      "{{#serviceName}}\nУслуга: {{serviceName}}.{{/serviceName}}" +
       "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
-      "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}\nДо встречи.",
+      "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}" +
+      "{{#yandexMapsUrl}}\nЯндекс.Карты: {{yandexMapsUrl}}{{/yandexMapsUrl}}" +
+      "{{#routeSchemeUrl}}\nСхема проезда: {{routeSchemeUrl}}{{/routeSchemeUrl}}" +
+      "{{#routeSchemeCaption}}\n{{routeSchemeCaption}}{{/routeSchemeCaption}}\n" +
+      "До встречи.",
   },
   {
     key: "diagnostic-ready",
@@ -488,16 +567,22 @@ const defaultTemplates: Array<{
     eventType: "client_arrived",
     body:
       "{{#clientName}}{{clientName}}, добро пожаловать в {{organizationName}}!{{/clientName}}" +
-      "{{^clientName}}Добро пожаловать в {{organizationName}}!{{/clientName}}\nМы отметили ваш приезд.",
+      "{{^clientName}}Добро пожаловать в {{organizationName}}!{{/clientName}}" +
+      "{{#waitingAreaText}}\n{{waitingAreaText}}{{/waitingAreaText}}" +
+      "{{#coffeeTeaText}}\n{{coffeeTeaText}}{{/coffeeTeaText}}" +
+      "{{#wifiName}}\nWi‑Fi: {{wifiName}}{{#wifiPassword}}, пароль: {{wifiPassword}}{{/wifiPassword}}{{/wifiName}}" +
+      "{{#receptionManagerText}}\n{{receptionManagerText}}{{/receptionManagerText}}",
   },
   {
     key: "visit-review",
-    name: "Спасибо за визит",
-    eventType: "visit_completed",
+    name: "Отзыв после визита",
+    eventType: "review_after_visit",
     body:
-      "{{#clientName}}{{clientName}}, спасибо, что выбрали {{organizationName}}!{{/clientName}}" +
-      "{{^clientName}}Спасибо, что выбрали {{organizationName}}!{{/clientName}}" +
-      "{{#reviewUrl}}\nБудем благодарны за отзыв: {{reviewUrl}}{{/reviewUrl}}",
+      "{{#clientName}}{{clientName}}, спасибо, что выбрали {{organizationName}}.{{/clientName}}" +
+      "{{^clientName}}Спасибо, что выбрали {{organizationName}}.{{/clientName}}\n" +
+      "Если всё было хорошо, будем благодарны за отзыв — это помогает другим водителям выбрать сервис." +
+      "{{#yandexReviewUrl}}\nОставить отзыв: {{yandexReviewUrl}}{{/yandexReviewUrl}}" +
+      "{{^yandexReviewUrl}}{{#yandexMapsUrl}}\nОставить отзыв: {{yandexMapsUrl}}{{/yandexMapsUrl}}{{/yandexReviewUrl}}",
   },
   {
     key: "appointment-rescheduled",
@@ -578,10 +663,19 @@ const defaultRuleSpecs: Array<{
     key: "visit-completed",
     eventType: "visit_completed",
     templateKey: "visit-review",
-    enabled: true,
+    enabled: false,
     timingType: "immediate",
     offsetMinutes: null,
     conditions: defaultConditions,
+  },
+  {
+    key: "review-after-visit",
+    eventType: "review_after_visit",
+    templateKey: "visit-review",
+    enabled: true,
+    timingType: "delayed_after_event",
+    offsetMinutes: 360,
+    conditions: { ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true },
   },
   { key: "appointment-rescheduled", eventType: "appointment_rescheduled", templateKey: "appointment-rescheduled", enabled: false, timingType: "immediate" },
   { key: "appointment-cancelled", eventType: "appointment_cancelled", templateKey: "appointment-cancelled", enabled: false, timingType: "immediate" },
@@ -610,9 +704,85 @@ function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+function booleanValue(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function reviewDelayHoursValue(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(168, Math.trunc(parsed)));
+}
+
 function nullableString(value: unknown) {
   const text = stringValue(value);
   return text || null;
+}
+
+function sanitizeClientNotificationSettings(
+  value: unknown,
+  fallback: ClientNotificationSettings = defaultClientNotificationSettings
+): ClientNotificationSettings {
+  const record = asRecord(value);
+  return {
+    locationAddress: stringValue(record.locationAddress) || fallback.locationAddress || defaultClientNotificationSettings.locationAddress,
+    routeSchemeUrl: stringValue(record.routeSchemeUrl) || fallback.routeSchemeUrl,
+    routeSchemeImageUrl: stringValue(record.routeSchemeImageUrl) || fallback.routeSchemeImageUrl,
+    routeSchemeCaption: stringValue(record.routeSchemeCaption) || fallback.routeSchemeCaption,
+    yandexMapsUrl: stringValue(record.yandexMapsUrl) || fallback.yandexMapsUrl,
+    yandexReviewUrl: stringValue(record.yandexReviewUrl) || fallback.yandexReviewUrl,
+    waitingAreaText: stringValue(record.waitingAreaText) || fallback.waitingAreaText,
+    coffeeTeaText: stringValue(record.coffeeTeaText) || fallback.coffeeTeaText,
+    receptionManagerText: stringValue(record.receptionManagerText) || fallback.receptionManagerText,
+    wifiName: stringValue(record.wifiName) || fallback.wifiName,
+    wifiPassword: stringValue(record.wifiPassword) || fallback.wifiPassword,
+    postVisitReviewEnabled: booleanValue(record.postVisitReviewEnabled, fallback.postVisitReviewEnabled),
+    reviewDelayHours: reviewDelayHoursValue(record.reviewDelayHours, fallback.reviewDelayHours),
+    sendReviewOnlyIfShipmentCompleted: booleanValue(record.sendReviewOnlyIfShipmentCompleted, fallback.sendReviewOnlyIfShipmentCompleted),
+  };
+}
+
+async function loadClientNotificationSettingsInternal(organizationId = getMessengerOrganizationId()) {
+  const rows = await prisma.$queryRaw<NotificationSettingsRow[]>`
+    SELECT
+      id,
+      organization_id AS "organizationId",
+      settings_json AS "settingsJson",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+    FROM notification_settings
+    WHERE organization_id = ${organizationId}
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  return sanitizeClientNotificationSettings(rows[0]?.settingsJson);
+}
+
+function enrichContextWithClientNotificationSettings(input: NotificationEventContext, settings: ClientNotificationSettings): NotificationEventContext {
+  const payload = asRecord(input.payload);
+  const routeSchemeUrl =
+    stringValue(input.routeSchemeUrl) ||
+    stringValue(payload.routeSchemeUrl) ||
+    settings.routeSchemeUrl ||
+    settings.routeSchemeImageUrl;
+  const yandexMapsUrl = stringValue(input.yandexMapsUrl) || stringValue(payload.yandexMapsUrl) || settings.yandexMapsUrl;
+  const yandexReviewUrl = stringValue(input.yandexReviewUrl) || stringValue(payload.yandexReviewUrl) || settings.yandexReviewUrl;
+  return {
+    ...input,
+    locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || settings.locationAddress,
+    routeSchemeUrl,
+    routeSchemeImageUrl: stringValue(input.routeSchemeImageUrl) || stringValue(payload.routeSchemeImageUrl) || settings.routeSchemeImageUrl,
+    routeSchemeCaption: stringValue(input.routeSchemeCaption) || stringValue(payload.routeSchemeCaption) || settings.routeSchemeCaption,
+    yandexMapsUrl,
+    yandexReviewUrl,
+    waitingAreaText: stringValue(input.waitingAreaText) || stringValue(payload.waitingAreaText) || settings.waitingAreaText,
+    coffeeTeaText: stringValue(input.coffeeTeaText) || stringValue(payload.coffeeTeaText) || settings.coffeeTeaText,
+    receptionManagerText: stringValue(input.receptionManagerText) || stringValue(payload.receptionManagerText) || settings.receptionManagerText,
+    wifiName: stringValue(input.wifiName) || stringValue(payload.wifiName) || settings.wifiName,
+    wifiPassword: stringValue(input.wifiPassword) || stringValue(payload.wifiPassword) || settings.wifiPassword,
+    reviewLink: stringValue(input.reviewLink) || yandexReviewUrl || yandexMapsUrl,
+    payload: { ...payload, notificationSettings: settings },
+  };
 }
 
 function extractTemplateVariables(body: string) {
@@ -763,8 +933,18 @@ export async function ensureClientNotificationsSchema() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
       `;
+      await prisma.$executeRaw`
+        CREATE TABLE IF NOT EXISTS notification_settings (
+          id TEXT PRIMARY KEY,
+          organization_id TEXT NOT NULL DEFAULT 'default',
+          settings_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `;
 
       await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS notification_jobs_org_idempotency_uidx ON notification_jobs(organization_id, idempotency_key)`;
+      await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS notification_settings_org_uidx ON notification_settings(organization_id)`;
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_templates_org_event_idx ON notification_templates(organization_id, event_type, channel, is_active)`;
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_rules_org_event_idx ON notification_rules(organization_id, event_type, enabled)`;
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_jobs_org_status_idx ON notification_jobs(organization_id, status, scheduled_at)`;
@@ -774,9 +954,18 @@ export async function ensureClientNotificationsSchema() {
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_logs_org_event_idx ON notification_logs(organization_id, event_type)`;
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_logs_org_status_idx ON notification_logs(organization_id, status)`;
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS client_notification_preferences_org_idx ON client_notification_preferences(organization_id, telegram_enabled, consent_status)`;
+      await prisma.$executeRaw`
+        INSERT INTO notification_settings
+          (id, organization_id, settings_json, created_at, updated_at)
+        VALUES
+          (${`${organizationId}:settings:client-notifications`}, ${organizationId}, ${json(defaultClientNotificationSettings)}::jsonb, now(), now())
+        ON CONFLICT (organization_id) DO UPDATE
+        SET settings_json = ${json(defaultClientNotificationSettings)}::jsonb || notification_settings.settings_json,
+            updated_at = notification_settings.updated_at
+      `;
 
       for (const template of defaultTemplates) {
-        const metadata = { systemDefault: true, key: template.key, defaultVersion: 4, variables: extractTemplateVariables(template.body) };
+        const metadata = { systemDefault: true, key: template.key, defaultVersion: 5, variables: extractTemplateVariables(template.body) };
         await prisma.$executeRaw`
           INSERT INTO notification_templates
             (id, organization_id, name, event_type, channel, body, is_active, status, metadata_json, created_at, updated_at)
@@ -789,6 +978,7 @@ export async function ensureClientNotificationsSchema() {
         await prisma.$executeRaw`
           UPDATE notification_templates
           SET name = ${template.name},
+              event_type = ${template.eventType},
               body = ${template.body},
               is_active = ${template.active ?? true},
               metadata_json = metadata_json || ${json(metadata)}::jsonb,
@@ -799,12 +989,13 @@ export async function ensureClientNotificationsSchema() {
             AND (
               (
                 COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
-                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '4'
+                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '5'
               )
               OR body = ${legacyDiagnosticReadyTemplateBody}
               OR body LIKE '%{car}%'
               OR body LIKE '%{{car%'
               OR body LIKE '%Администратор записал вас%'
+              OR body LIKE '%Мы отметили ваш приезд%'
             )
         `;
       }
@@ -831,7 +1022,7 @@ export async function ensureClientNotificationsSchema() {
       `;
       await prisma.$executeRaw`
         UPDATE notification_rules
-        SET enabled = true,
+        SET enabled = false,
             timing_type = 'immediate',
             offset_minutes = NULL,
             conditions_json = ${json(defaultConditions)}::jsonb,
@@ -840,8 +1031,17 @@ export async function ensureClientNotificationsSchema() {
           AND id = ${orgScopedId(organizationId, "rule", "visit-completed")}
           AND event_type = 'visit_completed'
           AND template_id = ${orgScopedId(organizationId, "tpl", "visit-review")}
-          AND timing_type = 'delayed_after_event'
-          AND COALESCE(offset_minutes, 0) = 30
+      `;
+      await prisma.$executeRaw`
+        UPDATE notification_rules
+        SET enabled = true,
+            timing_type = 'delayed_after_event',
+            offset_minutes = COALESCE(NULLIF((conditions_json->>'reviewDelayMinutes')::integer, 0), 360),
+            conditions_json = conditions_json || ${json({ ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true })}::jsonb,
+            updated_at = now()
+        WHERE organization_id = ${organizationId}
+          AND id = ${orgScopedId(organizationId, "rule", "review-after-visit")}
+          AND event_type = 'review_after_visit'
       `;
       await repairLegacyCarTemplateErrorJobs(organizationId);
     })().catch((error) => {
@@ -917,6 +1117,18 @@ function notificationContextFromJobPayload(job: NotificationJobRow, payload: Jso
     organizationName: stringValue(variables.organizationName) || stringValue(payload.organizationName),
     locationName: stringValue(variables.locationName) || stringValue(variables.branch_name) || stringValue(payload.locationName),
     locationAddress: stringValue(variables.locationAddress) || stringValue(variables.address) || stringValue(payload.locationAddress),
+    routeSchemeUrl: stringValue(variables.routeSchemeUrl) || stringValue(variables.route_scheme_url) || stringValue(payload.routeSchemeUrl),
+    routeSchemeImageUrl:
+      stringValue(variables.routeSchemeImageUrl) || stringValue(variables.route_scheme_image_url) || stringValue(payload.routeSchemeImageUrl),
+    routeSchemeCaption:
+      stringValue(variables.routeSchemeCaption) || stringValue(variables.route_scheme_caption) || stringValue(payload.routeSchemeCaption),
+    yandexMapsUrl: stringValue(variables.yandexMapsUrl) || stringValue(variables.yandex_maps_url) || stringValue(payload.yandexMapsUrl),
+    yandexReviewUrl: stringValue(variables.yandexReviewUrl) || stringValue(variables.yandex_review_url) || stringValue(payload.yandexReviewUrl),
+    waitingAreaText: stringValue(variables.waitingAreaText) || stringValue(payload.waitingAreaText),
+    coffeeTeaText: stringValue(variables.coffeeTeaText) || stringValue(payload.coffeeTeaText),
+    receptionManagerText: stringValue(variables.receptionManagerText) || stringValue(payload.receptionManagerText),
+    wifiName: stringValue(variables.wifiName) || stringValue(variables.wifi_name) || stringValue(payload.wifiName),
+    wifiPassword: stringValue(variables.wifiPassword) || stringValue(variables.wifi_password) || stringValue(payload.wifiPassword),
     publicPhone: stringValue(variables.publicPhone) || stringValue(variables.company_phone) || stringValue(payload.publicPhone),
     telegramUsername: stringValue(variables.telegramUsername) || stringValue(variables.telegram_link) || stringValue(payload.telegramUsername),
     bookingUrl: stringValue(variables.bookingUrl) || stringValue(payload.bookingUrl),
@@ -1095,12 +1307,29 @@ function defaultVariableValue(key: string) {
     vehicleVin: "",
     organizationName: process.env.NEXT_PUBLIC_SERVICE_NAME?.trim() || process.env.SERVICE_NAME?.trim() || "Там где масло",
     locationName: process.env.NEXT_PUBLIC_BRANCH_NAME?.trim() || process.env.BRANCH_NAME?.trim() || "",
-    locationAddress: process.env.NEXT_PUBLIC_SERVICE_ADDRESS?.trim() || process.env.SERVICE_ADDRESS?.trim() || "",
+    locationAddress: process.env.NEXT_PUBLIC_SERVICE_ADDRESS?.trim() || process.env.SERVICE_ADDRESS?.trim() || defaultClientNotificationSettings.locationAddress,
+    routeSchemeUrl: process.env.NEXT_PUBLIC_ROUTE_SCHEME_URL?.trim() || process.env.ROUTE_SCHEME_URL?.trim() || "",
+    routeSchemeImageUrl: process.env.NEXT_PUBLIC_ROUTE_SCHEME_IMAGE_URL?.trim() || process.env.ROUTE_SCHEME_IMAGE_URL?.trim() || "",
+    routeSchemeCaption: "",
+    yandexMapsUrl: process.env.NEXT_PUBLIC_YANDEX_MAPS_URL?.trim() || process.env.YANDEX_MAPS_URL?.trim() || "",
+    yandexReviewUrl: process.env.NEXT_PUBLIC_YANDEX_REVIEW_URL?.trim() || process.env.YANDEX_REVIEW_URL?.trim() || "",
+    waitingAreaText: defaultClientNotificationSettings.waitingAreaText,
+    coffeeTeaText: defaultClientNotificationSettings.coffeeTeaText,
+    receptionManagerText: defaultClientNotificationSettings.receptionManagerText,
+    wifiName: "",
+    wifiPassword: "",
     publicPhone: process.env.NEXT_PUBLIC_COMPANY_PHONE?.trim() || process.env.COMPANY_PHONE?.trim() || "",
     telegramUsername: process.env.NEXT_PUBLIC_TELEGRAM_LINK?.trim() || process.env.TELEGRAM_LINK?.trim() || "",
     bookingUrl: process.env.NEXT_PUBLIC_BOOKING_URL?.trim() || process.env.BOOKING_URL?.trim() || "",
     diagnosticReportUrl: "",
-    reviewUrl: process.env.NEXT_PUBLIC_REVIEW_LINK?.trim() || process.env.REVIEW_LINK?.trim() || "",
+    reviewUrl:
+      process.env.NEXT_PUBLIC_REVIEW_LINK?.trim() ||
+      process.env.REVIEW_LINK?.trim() ||
+      process.env.NEXT_PUBLIC_YANDEX_REVIEW_URL?.trim() ||
+      process.env.YANDEX_REVIEW_URL?.trim() ||
+      process.env.NEXT_PUBLIC_YANDEX_MAPS_URL?.trim() ||
+      process.env.YANDEX_MAPS_URL?.trim() ||
+      "",
     orderUrl: "",
     precheckUrl: "",
     checkedCount: "0",
@@ -1128,6 +1357,7 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     stringValue(input.car) ||
     [input.carMake, input.carModel, input.licensePlate || input.vin].map(stringValue).filter(Boolean).join(" · ");
   const payload = asRecord(input.payload);
+  const settings = sanitizeClientNotificationSettings(payload.notificationSettings);
   const criticalCount = nonNegativeCount(input.criticalCount ?? payload.criticalCount ?? payload.critical_count);
   const warningCount = nonNegativeCount(input.warningCount ?? payload.warningCount ?? payload.warning_count);
   const recommendationCount = nonNegativeCount(
@@ -1135,12 +1365,33 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
   );
   const checkedCount = nonNegativeCount(input.checkedCount ?? payload.checkedCount ?? payload.checked_count ?? payload.totalCount ?? payload.total_count);
   const serviceList = stringValue(input.serviceList);
+  const yandexMapsUrl = stringValue(input.yandexMapsUrl) || stringValue(payload.yandexMapsUrl) || settings.yandexMapsUrl || defaultVariableValue("yandexMapsUrl");
+  const yandexReviewUrl =
+    stringValue(input.yandexReviewUrl) || stringValue(payload.yandexReviewUrl) || settings.yandexReviewUrl || defaultVariableValue("yandexReviewUrl");
+  const routeSchemeUrl =
+    stringValue(input.routeSchemeUrl) ||
+    stringValue(payload.routeSchemeUrl) ||
+    settings.routeSchemeUrl ||
+    settings.routeSchemeImageUrl ||
+    defaultVariableValue("routeSchemeUrl");
   const values: Record<string, string> = {
     clientName: stringValue(input.clientName),
     clientPhone: stringValue(input.clientPhone),
     organizationName: stringValue(input.organizationName) || defaultVariableValue("organizationName"),
     locationName: stringValue(input.locationName) || stringValue(input.branchName) || defaultVariableValue("locationName"),
-    locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || defaultVariableValue("locationAddress"),
+    locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || settings.locationAddress || defaultVariableValue("locationAddress"),
+    routeSchemeUrl,
+    routeSchemeImageUrl:
+      stringValue(input.routeSchemeImageUrl) || stringValue(payload.routeSchemeImageUrl) || settings.routeSchemeImageUrl || defaultVariableValue("routeSchemeImageUrl"),
+    routeSchemeCaption:
+      stringValue(input.routeSchemeCaption) || stringValue(payload.routeSchemeCaption) || settings.routeSchemeCaption || defaultVariableValue("routeSchemeCaption"),
+    yandexMapsUrl,
+    yandexReviewUrl,
+    waitingAreaText: stringValue(input.waitingAreaText) || stringValue(payload.waitingAreaText) || settings.waitingAreaText,
+    coffeeTeaText: stringValue(input.coffeeTeaText) || stringValue(payload.coffeeTeaText) || settings.coffeeTeaText,
+    receptionManagerText: stringValue(input.receptionManagerText) || stringValue(payload.receptionManagerText) || settings.receptionManagerText,
+    wifiName: stringValue(input.wifiName) || stringValue(payload.wifiName) || settings.wifiName,
+    wifiPassword: stringValue(input.wifiPassword) || stringValue(payload.wifiPassword) || settings.wifiPassword,
     appointmentDate: at ? formatServiceDate(at) : stringValue(input.appointmentDate),
     appointmentTime: at ? formatServiceTime(at) : stringValue(input.appointmentTime),
     appointmentDateTime: at ? formatServiceDateTime(at) : [input.appointmentDate, input.appointmentTime].map(stringValue).filter(Boolean).join(" "),
@@ -1154,7 +1405,7 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     managerName: stringValue(input.managerName),
     masterName: stringValue(input.masterName),
     diagnosticReportUrl: stringValue(input.diagnosticReportLink),
-    reviewUrl: stringValue(input.reviewLink) || defaultVariableValue("reviewUrl"),
+    reviewUrl: stringValue(input.reviewLink) || yandexReviewUrl || yandexMapsUrl || defaultVariableValue("reviewUrl"),
     orderUrl: stringValue(input.orderLink),
     precheckUrl: stringValue(input.precheckLink),
     publicPhone: stringValue(input.publicPhone) || stringValue(input.companyPhone) || defaultVariableValue("publicPhone"),
@@ -1184,6 +1435,16 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
   const usedVariableKeys = new Set<string>();
   const optionalLineVariables = new Set([
     "locationAddress",
+    "routeSchemeUrl",
+    "routeSchemeImageUrl",
+    "routeSchemeCaption",
+    "yandexMapsUrl",
+    "yandexReviewUrl",
+    "waitingAreaText",
+    "coffeeTeaText",
+    "receptionManagerText",
+    "wifiName",
+    "wifiPassword",
     "reviewUrl",
     "orderUrl",
     "precheckUrl",
@@ -1296,10 +1557,19 @@ export function sampleNotificationContext(overrides: NotificationEventContext = 
     managerName: "Вадим",
     masterName: "Денис",
     branchName: defaultVariableValue("locationName") || "Основной сервис",
-    address: defaultVariableValue("locationAddress") || "Калининград, ул. Сервисная, 1",
+    address: defaultVariableValue("locationAddress") || "Калининград, ул. Дачная, 6В",
     companyPhone: defaultVariableValue("publicPhone") || "+7 4012 00-00-00",
+    routeSchemeUrl: defaultVariableValue("routeSchemeUrl") || "https://example.com/route",
+    routeSchemeCaption: "Заезд со стороны ул. Дачной.",
+    yandexMapsUrl: defaultVariableValue("yandexMapsUrl") || "https://yandex.ru/maps/-/demo",
+    yandexReviewUrl: defaultVariableValue("yandexReviewUrl") || "https://yandex.ru/maps/org/demo/reviews",
+    waitingAreaText: defaultClientNotificationSettings.waitingAreaText,
+    coffeeTeaText: defaultClientNotificationSettings.coffeeTeaText,
+    receptionManagerText: defaultClientNotificationSettings.receptionManagerText,
+    wifiName: "TGM Guest",
+    wifiPassword: "oil2026",
     diagnosticReportLink: "https://example.com/report/demo",
-    reviewLink: defaultVariableValue("reviewUrl") || "https://example.com/review",
+    reviewLink: defaultVariableValue("reviewUrl") || "https://yandex.ru/maps/org/demo/reviews",
     orderLink: "https://example.com/order/demo",
     precheckLink: "https://example.com/precheck/demo",
     telegramLink: defaultVariableValue("telegramUsername") || "https://t.me/tam_gde_maslo",
@@ -1313,7 +1583,8 @@ export async function previewNotificationTemplate(templateIdOrBody: string, cont
   await ensureClientNotificationsSchema();
   const template = templateIdOrBody.includes("{") || templateIdOrBody.includes("\n") ? null : await loadTemplate(templateIdOrBody);
   const body = template?.body ?? templateIdOrBody;
-  const variables = buildNotificationVariables(sampleNotificationContext(context));
+  const settings = await loadClientNotificationSettingsInternal();
+  const variables = buildNotificationVariables(enrichContextWithClientNotificationSettings(sampleNotificationContext(context), settings));
   return renderNotificationTemplate(body, variables);
 }
 
@@ -1683,6 +1954,12 @@ function isCancelledContext(input: NotificationEventContext) {
   return Boolean(input.isCancelled) || ["cancelled", "canceled", "deleted", "отменена", "отменено"].includes(status);
 }
 
+function isCompletedShipmentPayload(payload: JsonRecord) {
+  if (payload.shipmentCompleted === true || payload.orderCompleted === true || payload.visitCompleted === true) return true;
+  const status = stringValue(payload.shipmentStatus ?? payload.orderStatus ?? payload.visitStatus).toLowerCase();
+  return ["done", "completed", "closed", "shipped", "завершен", "завершён", "закрыт", "закрыта"].includes(status);
+}
+
 function scheduledAtForRule(rule: NotificationRuleRow, input: NotificationEventContext) {
   const now = new Date();
   if (rule.timingType === "before_appointment") {
@@ -1743,59 +2020,117 @@ function idempotencyKey(rule: NotificationRuleRow, input: NotificationEventConte
 }
 
 async function createNotificationJob(rule: NotificationRuleRow, template: NotificationTemplateRow, input: NotificationEventContext) {
-  const resolved = await resolveClientIdentity(input);
+  const notificationSettings = await loadClientNotificationSettingsInternal();
+  const effectiveInput = enrichContextWithClientNotificationSettings(input, notificationSettings);
+  const reviewDelayMinutes = Math.max(0, notificationSettings.reviewDelayHours * 60);
+  const effectiveRule: NotificationRuleRow =
+    rule.eventType === "review_after_visit"
+      ? {
+          ...rule,
+          offsetMinutes: reviewDelayMinutes,
+          conditionsJson: { ...rule.conditionsJson, reviewDelayMinutes, requireReviewLink: true },
+        }
+      : rule;
+  const resolved = await resolveClientIdentity(effectiveInput);
   const clientId = resolved.clientId;
-  const scheduledAt = scheduledAtForRule(rule, input);
+  if (effectiveRule.eventType === "review_after_visit" && !notificationSettings.postVisitReviewEnabled) {
+    await writeNotificationLog({
+      eventType: effectiveRule.eventType,
+      clientId,
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
+      templateId: template.id,
+      status: "skipped",
+      errorMessage: "Просьба оставить отзыв выключена в настройках.",
+      metadata: { ruleId: effectiveRule.id },
+    });
+    return { created: false, reason: "review_disabled" as const };
+  }
+  if (effectiveRule.eventType === "review_after_visit" && notificationSettings.sendReviewOnlyIfShipmentCompleted) {
+    const payload = asRecord(effectiveInput.payload);
+    if (!isCompletedShipmentPayload(payload)) {
+      await writeNotificationLog({
+        eventType: effectiveRule.eventType,
+        clientId,
+        appointmentId: nullableString(effectiveInput.appointmentId),
+        diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
+        templateId: template.id,
+        status: "skipped",
+        errorMessage: "Заказ-наряд ещё не отмечен завершённым.",
+        metadata: { ruleId: effectiveRule.id },
+      });
+      return { created: false, reason: "shipment_not_completed" as const };
+    }
+  }
+  const reviewUrl =
+    stringValue(effectiveInput.yandexReviewUrl) ||
+    stringValue(effectiveInput.reviewLink) ||
+    stringValue(effectiveInput.yandexMapsUrl);
+  if ((effectiveRule.conditionsJson?.requireReviewLink || effectiveRule.eventType === "review_after_visit") && !reviewUrl) {
+    await writeNotificationLog({
+      eventType: effectiveRule.eventType,
+      clientId,
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
+      templateId: template.id,
+      status: "skipped",
+      errorMessage: "Не указана ссылка Яндекс.Карт или ссылка для отзыва.",
+      metadata: { ruleId: effectiveRule.id },
+    });
+    return { created: false, reason: "missing_review_link" as const };
+  }
+  const scheduledAt = scheduledAtForRule(effectiveRule, effectiveInput);
   if (!scheduledAt) {
     await writeNotificationLog({
-      eventType: rule.eventType,
+      eventType: effectiveRule.eventType,
       clientId,
-      appointmentId: nullableString(input.appointmentId),
-      diagnosticReportId: nullableString(input.diagnosticReportId),
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
       templateId: template.id,
       status: "skipped",
       errorMessage: "Не удалось определить время отправки.",
-      metadata: { ruleId: rule.id },
+      metadata: { ruleId: effectiveRule.id },
     });
     return { created: false, reason: "missing_schedule" as const };
   }
-  const skipReason = shouldSkipPastReminder(rule, input, scheduledAt);
+  const skipReason = shouldSkipPastReminder(effectiveRule, effectiveInput, scheduledAt);
   if (skipReason) {
     await writeNotificationLog({
-      eventType: rule.eventType,
+      eventType: effectiveRule.eventType,
       clientId,
-      appointmentId: nullableString(input.appointmentId),
-      diagnosticReportId: nullableString(input.diagnosticReportId),
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
       templateId: template.id,
       status: "skipped",
       errorMessage: skipReason,
-      metadata: { ruleId: rule.id },
+      metadata: { ruleId: effectiveRule.id },
     });
     return { created: false, reason: "skipped" as const };
   }
 
   const variables = buildNotificationVariables({
-    ...input,
+    ...effectiveInput,
     clientId,
-    clientName: resolved.clientName ?? input.clientName,
-    clientPhone: resolved.clientPhone ?? input.clientPhone,
+    clientName: resolved.clientName ?? effectiveInput.clientName,
+    clientPhone: resolved.clientPhone ?? effectiveInput.clientPhone,
   });
   const render = renderNotificationTemplate(template.body, variables);
   const status: NotificationJobStatus = render.unknownVariables.length ? "template_error" : scheduledAt <= new Date() ? "queued" : "scheduled";
   const errorMessage = render.unknownVariables.length ? `Неизвестные переменные: ${render.unknownVariables.join(", ")}` : null;
   const payload = {
-    ...asRecord(input.payload),
-    ruleId: rule.id,
-    conditions: rule.conditionsJson,
+    ...asRecord(effectiveInput.payload),
+    ruleId: effectiveRule.id,
+    conditions: effectiveRule.conditionsJson,
+    notificationSettings,
     variables,
     renderedMessage: render.text,
     missingVariables: render.missingVariables,
     unknownVariables: render.unknownVariables,
-    clientName: resolved.clientName ?? input.clientName ?? null,
-    clientPhone: resolved.clientPhone ?? input.clientPhone ?? null,
+    clientName: resolved.clientName ?? effectiveInput.clientName ?? null,
+    clientPhone: resolved.clientPhone ?? effectiveInput.clientPhone ?? null,
   };
   const id = crypto.randomUUID();
-  const key = idempotencyKey(rule, input, clientId);
+  const key = idempotencyKey(effectiveRule, effectiveInput, clientId);
   const organizationId = getMessengerOrganizationId();
 
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -1803,45 +2138,45 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
       (id, organization_id, event_type, channel, client_id, appointment_id, diagnostic_report_id, template_id,
        scheduled_at, status, idempotency_key, payload_json, error_message, branch_id, initiated_by_id, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${rule.eventType}, ${rule.channel}, ${clientId}, ${nullableString(input.appointmentId)},
-       ${nullableString(input.diagnosticReportId)}, ${template.id}, ${scheduledAt}, ${status}, ${key}, ${json(payload)}::jsonb,
-       ${errorMessage}, ${input.branchId ?? rule.branchId ?? null}, ${nullableString(input.initiatedById)}, now(), now())
+      (${id}, ${organizationId}, ${effectiveRule.eventType}, ${effectiveRule.channel}, ${clientId}, ${nullableString(effectiveInput.appointmentId)},
+       ${nullableString(effectiveInput.diagnosticReportId)}, ${template.id}, ${scheduledAt}, ${status}, ${key}, ${json(payload)}::jsonb,
+       ${errorMessage}, ${effectiveInput.branchId ?? effectiveRule.branchId ?? null}, ${nullableString(effectiveInput.initiatedById)}, now(), now())
     ON CONFLICT (organization_id, idempotency_key) DO NOTHING
     RETURNING id
   `;
 
   if (!rows[0]?.id) {
     await writeNotificationLog({
-      eventType: rule.eventType,
+      eventType: effectiveRule.eventType,
       clientId,
-      appointmentId: nullableString(input.appointmentId),
-      diagnosticReportId: nullableString(input.diagnosticReportId),
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
       templateId: template.id,
       status: "duplicate_blocked",
       renderedMessage: render.text,
       errorMessage: "Одинаковое уведомление уже есть в очереди или было отправлено.",
-      metadata: { idempotencyKey: key, ruleId: rule.id },
+      metadata: { idempotencyKey: key, ruleId: effectiveRule.id },
     });
     return { created: false, reason: "duplicate" as const };
   }
 
   const job = {
     id,
-    eventType: rule.eventType,
-    channel: rule.channel,
+    eventType: effectiveRule.eventType,
+    channel: effectiveRule.channel,
     clientId,
-    appointmentId: nullableString(input.appointmentId),
-    diagnosticReportId: nullableString(input.diagnosticReportId),
+    appointmentId: nullableString(effectiveInput.appointmentId),
+    diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
     templateId: template.id,
-    initiatedById: nullableString(input.initiatedById),
+    initiatedById: nullableString(effectiveInput.initiatedById),
   };
   await writeNotificationLog({
     job,
-    eventType: rule.eventType,
+    eventType: effectiveRule.eventType,
     status,
     renderedMessage: render.text,
     errorMessage,
-    metadata: { ruleId: rule.id, scheduledAt: scheduledAt.toISOString() },
+    metadata: { ruleId: effectiveRule.id, scheduledAt: scheduledAt.toISOString() },
   });
   return { created: true, id, status };
 }
@@ -2195,6 +2530,7 @@ export async function handleAppointmentUpdated(input: NotificationEventContext) 
   const status = stringValue(input.status).toLowerCase();
   if (["arrived", "in_work", "client_arrived"].includes(status)) {
     events.push(...(await enqueueClientNotificationEvent("client_arrived", input)));
+    events.push(...(await enqueueClientNotificationEvent("review_after_visit", input)));
   }
   if (["left", "completed", "visit_completed"].includes(status)) {
     events.push(...(await enqueueClientNotificationEvent("visit_completed", input)));
@@ -2413,10 +2749,40 @@ export async function markDiagnosticReportSent(source: "map" | "legacy", diagnos
   `;
 }
 
+export async function updateClientNotificationSettings(input: Partial<ClientNotificationSettings>) {
+  await ensureClientNotificationsSchema();
+  const organizationId = getMessengerOrganizationId();
+  const current = await loadClientNotificationSettingsInternal(organizationId);
+  const next = sanitizeClientNotificationSettings(input, current);
+  const reviewDelayMinutes = Math.max(0, next.reviewDelayHours * 60);
+  const rows = await prisma.$queryRaw<NotificationSettingsRow[]>`
+    INSERT INTO notification_settings
+      (id, organization_id, settings_json, created_at, updated_at)
+    VALUES
+      (${`${organizationId}:settings:client-notifications`}, ${organizationId}, ${json(next)}::jsonb, now(), now())
+    ON CONFLICT (organization_id) DO UPDATE
+    SET settings_json = ${json(next)}::jsonb,
+        updated_at = now()
+    RETURNING id, organization_id AS "organizationId", settings_json AS "settingsJson", created_at AS "createdAt", updated_at AS "updatedAt"
+  `;
+  await prisma.$executeRaw`
+    UPDATE notification_rules
+    SET enabled = ${next.postVisitReviewEnabled},
+        timing_type = 'delayed_after_event',
+        offset_minutes = ${reviewDelayMinutes},
+        conditions_json = conditions_json || ${json({ reviewDelayMinutes, requireReviewLink: true })}::jsonb,
+        updated_at = now()
+    WHERE organization_id = ${organizationId}
+      AND event_type = 'review_after_visit'
+      AND id = ${orgScopedId(organizationId, "rule", "review-after-visit")}
+  `;
+  return sanitizeClientNotificationSettings(rows[0]?.settingsJson ?? next);
+}
+
 export async function listClientNotificationSettings() {
   await ensureClientNotificationsSchema();
   const organizationId = getMessengerOrganizationId();
-  const [templates, rules, logs, jobs, channels, kpiRows] = await Promise.all([
+  const [templates, rules, logs, jobs, channels, kpiRows, notificationSettings] = await Promise.all([
     prisma.$queryRaw<NotificationTemplateRow[]>`
       SELECT id, organization_id AS "organizationId", name, event_type AS "eventType", channel, body, is_active AS "isActive",
              branch_id AS "branchId", status, metadata_json AS "metadataJson", created_at AS "createdAt", updated_at AS "updatedAt"
@@ -2463,11 +2829,13 @@ export async function listClientNotificationSettings() {
       WHERE organization_id = ${organizationId}
       GROUP BY status
     `,
+    loadClientNotificationSettingsInternal(organizationId),
   ]);
   const telegram = channels.find((channel) => channel.key === "telegram") ?? null;
   const lastSuccess = logs.find((log) => log.status === "sent" || log.status === "delivered");
   return {
     events: notificationEventDefinitions,
+    notificationSettings,
     variables: notificationVariableGroups,
     templates: templates.map(mapTemplate),
     rules: rules.map(mapRule),
