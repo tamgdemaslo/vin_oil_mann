@@ -1037,7 +1037,7 @@ export async function ensureClientNotificationsSchema() {
         SET enabled = true,
             timing_type = 'delayed_after_event',
             offset_minutes = COALESCE(NULLIF((conditions_json->>'reviewDelayMinutes')::integer, 0), 360),
-            conditions_json = conditions_json || ${json({ ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true })}::jsonb,
+            conditions_json = ${json({ ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true })}::jsonb || conditions_json,
             updated_at = now()
         WHERE organization_id = ${organizationId}
           AND id = ${orgScopedId(organizationId, "rule", "review-after-visit")}

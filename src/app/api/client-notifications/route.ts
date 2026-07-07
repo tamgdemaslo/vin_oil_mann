@@ -8,8 +8,10 @@ import {
   processDueClientNotificationJobs,
   retryNotificationJob,
   sendTestNotification,
+  updateClientNotificationSettings,
   updateNotificationRule,
   updateNotificationTemplate,
+  type ClientNotificationSettings,
   type NotificationConditions,
 } from "@/lib/client-notifications/client-notifications";
 
@@ -79,6 +81,11 @@ export async function PATCH(request: NextRequest) {
         status: stringValue(body.status) || undefined,
       });
       return NextResponse.json({ ok: Boolean(updated), template: updated });
+    }
+    if (kind === "settings") {
+      const settings = body.settings && typeof body.settings === "object" ? (body.settings as Partial<ClientNotificationSettings>) : {};
+      const updated = await updateClientNotificationSettings(settings);
+      return NextResponse.json({ ok: true, notificationSettings: updated });
     }
     return NextResponse.json({ error: "Неизвестный тип обновления" }, { status: 400 });
   } catch (error) {

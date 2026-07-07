@@ -69,6 +69,25 @@ type NotificationConditions = {
   timezone?: string;
   quietHours?: { from?: string; to?: string };
   arrivalStatuses?: string[];
+  reviewDelayMinutes?: number;
+  requireReviewLink?: boolean;
+};
+
+type ClientNotificationSettings = {
+  locationAddress: string;
+  routeSchemeUrl: string;
+  routeSchemeImageUrl: string;
+  routeSchemeCaption: string;
+  yandexMapsUrl: string;
+  yandexReviewUrl: string;
+  waitingAreaText: string;
+  coffeeTeaText: string;
+  receptionManagerText: string;
+  wifiName: string;
+  wifiPassword: string;
+  postVisitReviewEnabled: boolean;
+  reviewDelayHours: number;
+  sendReviewOnlyIfShipmentCompleted: boolean;
 };
 
 type NotificationLog = {
@@ -117,6 +136,7 @@ type PreviewVariable = VariableDefinition & {
 
 type SettingsPayload = {
   events: EventDefinition[];
+  notificationSettings: ClientNotificationSettings;
   templates: NotificationTemplate[];
   rules: NotificationRule[];
   logs: NotificationLog[];
@@ -161,6 +181,23 @@ const tabs: Array<{ key: TabKey; label: string; icon: typeof BellRing }> = [
   { key: "variables", label: "Переменные", icon: Variable },
 ];
 
+const defaultNotificationSettings: ClientNotificationSettings = {
+  locationAddress: "Калининград, ул. Дачная, 6В",
+  routeSchemeUrl: "",
+  routeSchemeImageUrl: "",
+  routeSchemeCaption: "",
+  yandexMapsUrl: "",
+  yandexReviewUrl: "",
+  waitingAreaText: "Вы можете пройти в зону ожидания.",
+  coffeeTeaText: "У нас можно выпить чай или кофе.",
+  receptionManagerText: "Если будет непонятно, куда пройти или чем воспользоваться, спросите мастер-приёмщика — мы подскажем.",
+  wifiName: "",
+  wifiPassword: "",
+  postVisitReviewEnabled: true,
+  reviewDelayHours: 6,
+  sendReviewOnlyIfShipmentCompleted: false,
+};
+
 function toneForStatus(status: string): EcoBadgeTone {
   if (["sent", "delivered"].includes(status)) return "success";
   if (["scheduled", "queued", "sending"].includes(status)) return "warning";
@@ -202,6 +239,7 @@ export default function ClientNotificationsClient() {
   const [testClientPhone, setTestClientPhone] = useState("");
   const [testTelegramId, setTestTelegramId] = useState("");
   const [newReminderMinutes, setNewReminderMinutes] = useState(180);
+  const [notificationSettingsDraft, setNotificationSettingsDraft] = useState<ClientNotificationSettings>(defaultNotificationSettings);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedTemplate = useMemo(
@@ -242,6 +280,7 @@ export default function ClientNotificationsClient() {
         setSelectedTemplateId(firstTemplate.id);
         setTestTemplateId((current) => current || firstTemplate.id);
       }
+      setNotificationSettingsDraft(data.notificationSettings ?? defaultNotificationSettings);
       if (showResult) setResult({ tone: "success", title: "Обновлено", message: "Настройки уведомлений загружены." });
     } catch (error) {
       setResult({ tone: "danger", title: "Уведомления", message: error instanceof Error ? error.message : "Не удалось загрузить настройки." });
@@ -288,6 +327,31 @@ export default function ClientNotificationsClient() {
       setResult({ tone: "success", title: "Правило", message: "Настройка события сохранена." });
     } catch (error) {
       setResult({ tone: "danger", title: "Правило", message: error instanceof Error ? error.message : "Не удалось сохранить правило." });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  function updateNotificationSetting<K extends keyof ClientNotificationSettings>(key: K, value: ClientNotificationSettings[K]) {
+    setNotificationSettingsDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveNotificationSettings() {
+    setSaving("notification-settings");
+    setResult(null);
+    try {
+      const response = await fetch("/api/client-notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "settings", settings: notificationSettingsDraft }),
+      });
+      const data = await safeReadJson<{ error?: string; notificationSettings?: ClientNotificationSettings }>(response);
+      if (!response.ok) throw new Error(data?.error ?? "Настройки не сохранены");
+      if (data?.notificationSettings) setNotificationSettingsDraft(data.notificationSettings);
+      await loadSettings();
+      setResult({ tone: "success", title: "Настройки", message: "Данные для клиентских сообщений сохранены." });
+    } catch (error) {
+      setResult({ tone: "danger", title: "Настройки", message: error instanceof Error ? error.message : "Не удалось сохранить настройки." });
     } finally {
       setSaving(null);
     }
@@ -449,6 +513,130 @@ export default function ClientNotificationsClient() {
       {settings && tab === "auto" ? (
         <section className="eco-notification-layout">
           <div className="eco-notification-events">
+            <EcoCard>
+              <div className="eco-card__head">
+                <div>
+                  <div className="eco-page-kicker">Данные сервиса</div>
+                  <h2 className="eco-stock-doc-title">Сообщения клиентам</h2>
+                </div>
+                <EcoBadge tone={notificationSettingsDraft.postVisitReviewEnabled ? "success" : "neutral"}>
+                  отзыв {notificationSettingsDraft.postVisitReviewEnabled ? "включён" : "выключен"}
+                </EcoBadge>
+              </div>
+              <div className="eco-notification-form-grid">
+                <label>
+                  <span>Адрес</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.locationAddress}
+                    onChange={(event) => updateNotificationSetting("locationAddress", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Яндекс.Карты</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.yandexMapsUrl}
+                    onChange={(event) => updateNotificationSetting("yandexMapsUrl", event.target.value)}
+                    placeholder="https://yandex.ru/maps/..."
+                  />
+                </label>
+                <label>
+                  <span>Ссылка на отзыв</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.yandexReviewUrl}
+                    onChange={(event) => updateNotificationSetting("yandexReviewUrl", event.target.value)}
+                    placeholder="https://yandex.ru/maps/.../reviews"
+                  />
+                </label>
+                <label>
+                  <span>Схема проезда</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.routeSchemeUrl}
+                    onChange={(event) => updateNotificationSetting("routeSchemeUrl", event.target.value)}
+                    placeholder="ссылка на схему или фото"
+                  />
+                </label>
+                <label>
+                  <span>Фото схемы</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.routeSchemeImageUrl}
+                    onChange={(event) => updateNotificationSetting("routeSchemeImageUrl", event.target.value)}
+                    placeholder="https://.../route.jpg"
+                  />
+                </label>
+                <label>
+                  <span>Подпись схемы</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.routeSchemeCaption}
+                    onChange={(event) => updateNotificationSetting("routeSchemeCaption", event.target.value)}
+                    placeholder="например: заезд со стороны ворот"
+                  />
+                </label>
+                <label>
+                  <span>Зона ожидания</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.waitingAreaText}
+                    onChange={(event) => updateNotificationSetting("waitingAreaText", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Чай / кофе</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.coffeeTeaText}
+                    onChange={(event) => updateNotificationSetting("coffeeTeaText", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>К кому обратиться</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.receptionManagerText}
+                    onChange={(event) => updateNotificationSetting("receptionManagerText", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Wi‑Fi сеть</span>
+                  <EcoInput value={notificationSettingsDraft.wifiName} onChange={(event) => updateNotificationSetting("wifiName", event.target.value)} />
+                </label>
+                <label>
+                  <span>Wi‑Fi пароль</span>
+                  <EcoInput
+                    value={notificationSettingsDraft.wifiPassword}
+                    onChange={(event) => updateNotificationSetting("wifiPassword", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Отзыв через, часов</span>
+                  <EcoInput
+                    type="number"
+                    min={0}
+                    max={168}
+                    value={notificationSettingsDraft.reviewDelayHours}
+                    onChange={(event) => updateNotificationSetting("reviewDelayHours", Number(event.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="eco-notification-editor-actions">
+                <label className="eco-notification-toggle">
+                  <input
+                    type="checkbox"
+                    checked={notificationSettingsDraft.postVisitReviewEnabled}
+                    onChange={(event) => updateNotificationSetting("postVisitReviewEnabled", event.target.checked)}
+                  />
+                  <span>Просить отзыв после визита</span>
+                </label>
+                <label className="eco-notification-toggle">
+                  <input
+                    type="checkbox"
+                    checked={notificationSettingsDraft.sendReviewOnlyIfShipmentCompleted}
+                    onChange={(event) => updateNotificationSetting("sendReviewOnlyIfShipmentCompleted", event.target.checked)}
+                  />
+                  <span>Только после завершённого заказ-наряда</span>
+                </label>
+                <EcoButton type="button" variant="primary" onClick={() => void saveNotificationSettings()} disabled={saving === "notification-settings"}>
+                  {saving === "notification-settings" ? <Loader2 size={15} className="eco-spin" /> : <CheckCircle2 size={15} />}
+                  Сохранить данные
+                </EcoButton>
+              </div>
+            </EcoCard>
             {settings.events.filter((event) => !event.future).map((event) => {
               const rules = rulesByEvent.get(event.type) ?? [];
               const primaryRule = rules[0] ?? null;
@@ -495,12 +683,12 @@ export default function ClientNotificationsClient() {
                                       </option>
                                     ))}
                                 </EcoSelect>
-                                {rule.timingType === "before_appointment" || event.type === "visit_completed" ? (
+                                {rule.timingType === "before_appointment" || rule.timingType === "delayed_after_event" ? (
                                   <label className="eco-notification-inline-field">
                                     <Clock3 size={14} />
                                     <input
                                       type="number"
-                                      min={1}
+                                      min={rule.timingType === "delayed_after_event" ? 0 : 1}
                                       defaultValue={rule.offsetMinutes ?? 30}
                                       onBlur={(evt) => void patchRule(rule, { offsetMinutes: Number(evt.target.value) })}
                                     />
