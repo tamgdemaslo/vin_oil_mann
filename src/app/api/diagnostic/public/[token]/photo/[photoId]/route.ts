@@ -29,12 +29,12 @@ export async function GET(
     const buf = await fs.readFile(photo.filePath);
     const variant = request.nextUrl.searchParams.get("variant");
     if (variant === "print" || variant === "thumbnail") {
-      const optimized = await optimizeReportImage(buf, "thumbnail");
+      const optimized = await optimizeReportImage(buf, variant === "print" ? "diagnostic" : "thumbnail");
       return new NextResponse(responseBody(optimized.data), {
         headers: {
           "Content-Type": optimized.contentType,
           "Cache-Control": "public, max-age=86400",
-          "X-TGM-Photo-Variant": "print",
+          "X-TGM-Photo-Variant": variant,
           "X-TGM-Original-Size": String(optimized.originalSizeBytes),
           "X-TGM-Optimized-Size": String(optimized.sizeBytes),
         },

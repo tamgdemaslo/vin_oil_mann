@@ -9,9 +9,9 @@ import {
 } from "@/lib/diagnostic-map-service";
 import { optimizeReportImage } from "@/lib/report-photo-optimization";
 
-function requestedPrintVariant(request: NextRequest) {
+function requestedPhotoVariant(request: NextRequest) {
   const variant = request.nextUrl.searchParams.get("variant");
-  return variant === "print" || variant === "thumbnail";
+  return variant === "print" || variant === "thumbnail" ? variant : null;
 }
 
 async function readPhotoBytes(photo: { data: Uint8Array | Buffer | null; filePath: string }) {
@@ -30,13 +30,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   try {
     const buf = await readPhotoBytes(photo);
-    if (requestedPrintVariant(request)) {
-      const optimized = await optimizeReportImage(buf, "thumbnail");
+    const requestedVariant = requestedPhotoVariant(request);
+    if (requestedVariant) {
+      const optimized = await optimizeReportImage(buf, requestedVariant === "print" ? "diagnostic" : "thumbnail");
       return new NextResponse(responseBody(optimized.data), {
         headers: {
           "Content-Type": optimized.contentType,
           "Cache-Control": "private, max-age=3600",
-          "X-TGM-Photo-Variant": "print",
+          "X-TGM-Photo-Variant": requestedVariant,
           "X-TGM-Original-Size": String(optimized.originalSizeBytes),
           "X-TGM-Optimized-Size": String(optimized.sizeBytes),
         },

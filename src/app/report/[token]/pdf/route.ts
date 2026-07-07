@@ -45,6 +45,17 @@ type CdpStreamReadResult = {
   base64Encoded?: boolean;
 };
 
+type ImageReadinessResult = {
+  imgCount: number;
+  diagnosticPhotoCount: number;
+  vehiclePhotoLoadStatus: "loaded" | "missing" | "empty" | "error" | "timeout";
+  vehiclePhotoSrc: string | null;
+  backgroundCount: number;
+  totalImageCount: number;
+  imgFailed: Array<{ src: string; reason: string; role?: string }>;
+  backgroundFailed: Array<{ src: string; reason: string }>;
+};
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   process.env.NEXT_CHROME_PATH,
@@ -410,16 +421,11 @@ async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<voi
   );
 }
 
-async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<void> {
+async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<ImageReadinessResult> {
   const result = await withTimeout(
     cdp.send<{
       result?: {
-        value?: {
-          imgCount: number;
-          imgFailed: Array<{ src: string; reason: string }>;
-          backgroundCount: number;
-          backgroundFailed: Array<{ src: string; reason: string }>;
-        };
+        value?: ImageReadinessResult;
       };
     }>(
       "Runtime.evaluate",
@@ -454,15 +460,20 @@ async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<vo
           const imgNodes = Array.from(root.querySelectorAll('img'));
           const imgResults = await Promise.all(imgNodes.map((img) => {
             const src = img.currentSrc || img.src || '';
+            const role = img.classList.contains('print-vehicle-photo')
+              ? 'vehicle'
+              : img.closest('.rep-photo-img')
+                ? 'diagnostic'
+                : 'inline';
             if (!src || (img.complete && img.naturalWidth > 0)) {
-              return Promise.resolve({ src, ok: true, reason: 'loaded' });
+              return Promise.resolve({ src, ok: Boolean(src), reason: src ? 'loaded' : 'empty', role });
             }
             return new Promise((resolve) => {
               let done = false;
               const finish = (ok, reason) => {
                 if (done) return;
                 done = true;
-                resolve({ src, ok, reason });
+                resolve({ src, ok, reason, role });
               };
               const timer = setTimeout(() => finish(false, 'timeout'), timeoutMs);
               img.addEventListener('load', () => {
@@ -487,9 +498,14 @@ async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<vo
           }
           const uniqueBackgroundUrls = Array.from(new Set(backgroundUrls));
           const backgroundResults = await Promise.all(uniqueBackgroundUrls.map(waitForUrl));
+          const vehicleResult = imgResults.find((entry) => entry.role === 'vehicle') || null;
           return {
             imgCount: imgResults.length,
-            imgFailed: imgResults.filter((entry) => !entry.ok).map((entry) => ({ src: entry.src.slice(0, 240), reason: entry.reason })),
+            diagnosticPhotoCount: imgResults.filter((entry) => entry.role === 'diagnostic').length,
+            vehiclePhotoLoadStatus: vehicleResult ? vehicleResult.reason : 'missing',
+            vehiclePhotoSrc: vehicleResult?.src ? vehicleResult.src.slice(0, 240) : null,
+            totalImageCount: imgResults.length + backgroundResults.length,
+            imgFailed: imgResults.filter((entry) => !entry.ok).map((entry) => ({ src: entry.src.slice(0, 240), reason: entry.reason, role: entry.role })),
             backgroundCount: backgroundResults.length,
             backgroundFailed: backgroundResults.filter((entry) => !entry.ok).map((entry) => ({ src: entry.src.slice(0, 240), reason: entry.reason })),
           };
@@ -510,6 +526,16 @@ async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<vo
   } else {
     console.info("[diagnostic-pdf] images ready", value ?? {});
   }
+  return value ?? {
+    imgCount: 0,
+    diagnosticPhotoCount: 0,
+    vehiclePhotoLoadStatus: "missing",
+    vehiclePhotoSrc: null,
+    backgroundCount: 0,
+    totalImageCount: 0,
+    imgFailed: [],
+    backgroundFailed: [],
+  };
 }
 
 async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string): Promise<void> {
@@ -542,6 +568,49 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero-car,',
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-photo-img {',
             '  background-color: #0a0a0a !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta {',
+            '  color: #f5f2ed !important;',
+            '  background: #0a0a0a !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-wordmark,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-title,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-fact .v,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-photo-cap .cap,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-photo-no,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-q,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .tg {',
+            '  color: #f5f2ed !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero-top,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero-meta,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-fact .k,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-fact .u,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-car-tag,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-photo-note,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-sub,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .link {',
+            '  color: #9a9a9a !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-title .muted2 {',
+            '  color: #6e6e6e !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-eyebrow.rust,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-title .rust,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-photo-cap .lbl,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .ph {',
+            '  color: #c2410c !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-fact,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero-car {',
+            '  border-color: #2a2a2a !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-chequered {',
+            '  background-color: #0a0a0a !important;',
+            '  background-image: linear-gradient(45deg,#f5f2ed 25%,transparent 25%), linear-gradient(-45deg,#f5f2ed 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#f5f2ed 75%), linear-gradient(-45deg,transparent 75%,#f5f2ed 75%) !important;',
+            '  background-size: 9px 9px !important;',
+            '  background-position: 0 0, 0 4.5px, 4.5px -4.5px, -4.5px 0 !important;',
             '}',
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep,',
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep * {',
@@ -655,8 +724,11 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       CDP_COMMAND_TIMEOUT_MS,
       "Emulation.setDeviceMetricsOverride"
     );
+    const pageLoadStartedAt = Date.now();
     await withTimeout(cdp.send("Page.navigate", { url }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Переход на страницу отчёта");
     await waitForReportReady(cdp, sessionId);
+    console.info("[diagnostic-pdf] page ready", { url, durationMs: Date.now() - pageLoadStartedAt });
+    const cssStartedAt = Date.now();
     await withTimeout(
       cdp.send(
         "Runtime.evaluate",
@@ -710,6 +782,43 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
               .diag-print-screen.is-print .paper-a4.rep * {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-hero,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta {
+                color: #f5f2ed !important;
+                background: #0a0a0a !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-wordmark,
+              .diag-print-screen.is-print .paper-a4.rep .rep-title,
+              .diag-print-screen.is-print .paper-a4.rep .rep-fact .v,
+              .diag-print-screen.is-print .paper-a4.rep .rep-photo-cap .cap,
+              .diag-print-screen.is-print .paper-a4.rep .rep-photo-no,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-q,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .tg {
+                color: #f5f2ed !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-hero-top,
+              .diag-print-screen.is-print .paper-a4.rep .rep-hero-meta,
+              .diag-print-screen.is-print .paper-a4.rep .rep-fact .k,
+              .diag-print-screen.is-print .paper-a4.rep .rep-fact .u,
+              .diag-print-screen.is-print .paper-a4.rep .rep-car-tag,
+              .diag-print-screen.is-print .paper-a4.rep .rep-photo-note,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-sub,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .link {
+                color: #9a9a9a !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-title .muted2 {
+                color: #6e6e6e !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-eyebrow.rust,
+              .diag-print-screen.is-print .paper-a4.rep .rep-title .rust,
+              .diag-print-screen.is-print .paper-a4.rep .rep-photo-cap .lbl,
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .ph {
+                color: #c2410c !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-fact,
+              .diag-print-screen.is-print .paper-a4.rep .rep-hero-car {
+                border-color: #2a2a2a !important;
               }
               .diag-print-screen.is-print .paper-a4.rep .rep-sec,
               .diag-print-screen.is-print .paper-a4.rep .rep-recs,
@@ -767,12 +876,23 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       CDP_COMMAND_TIMEOUT_MS,
       "Подготовка CSS для PDF"
     );
+    console.info("[diagnostic-pdf] render CSS prepared", { durationMs: Date.now() - cssStartedAt });
     if (printerSafe) {
+      const printerSafeStartedAt = Date.now();
       await applyPrinterSafeOptimizations(cdp, sessionId);
+      console.info("[diagnostic-pdf] printer-safe CSS prepared", { durationMs: Date.now() - printerSafeStartedAt });
     }
+    const fontsStartedAt = Date.now();
     await waitForFontsReady(cdp, sessionId);
-    await waitForImagesReady(cdp, sessionId);
+    console.info("[diagnostic-pdf] fonts ready", { durationMs: Date.now() - fontsStartedAt });
+    const imagesStartedAt = Date.now();
+    const imageReadiness = await waitForImagesReady(cdp, sessionId);
+    console.info("[diagnostic-pdf] image wait completed", {
+      durationMs: Date.now() - imagesStartedAt,
+      ...imageReadiness,
+    });
 
+    const printStartedAt = Date.now();
     const pdf = await withTimeout(
       cdp.send<CdpPdfResult>(
         "Page.printToPDF",
@@ -794,6 +914,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       CDP_PRINT_TIMEOUT_MS,
       "Печать отчёта в PDF"
     );
+    console.info("[diagnostic-pdf] print command completed", { durationMs: Date.now() - printStartedAt });
 
     if (pdf.data) {
       return Buffer.from(pdf.data, "base64");
@@ -855,22 +976,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const printerSafe = request.nextUrl.searchParams.get("rich") !== "1";
 
   const pdfMode = printerSafe ? "printer-safe" : "rich";
-  const diagnosticMeta = await prisma.diagnosticMapSession.findUnique({
-    where: { publicToken: token },
-    select: {
-      id: true,
-      vehiclePhoto: {
-        select: {
-          id: true,
-          contentType: true,
-          sizeBytes: true,
-          updatedAt: true,
+  const [diagnosticMeta, diagnosticPhotoCount] = await Promise.all([
+    prisma.diagnosticMapSession.findUnique({
+      where: { publicToken: token },
+      select: {
+        id: true,
+        vehiclePhoto: {
+          select: {
+            id: true,
+            contentType: true,
+            sizeBytes: true,
+            updatedAt: true,
+          },
         },
       },
-    },
-  }).catch((error) => {
+    }),
+    prisma.diagnosticMapPhoto.count({
+      where: { item: { session: { publicToken: token } } },
+    }),
+  ]).catch((error) => {
     console.warn("[diagnostic-pdf] meta lookup failed", { pdfJobId, reportToken: token, error });
-    return null;
+    return [null, null] as const;
   });
 
   console.info("[diagnostic-pdf] job started", {
@@ -879,8 +1005,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     diagnosticId: diagnosticMeta?.id ?? null,
     vehiclePhotoId: diagnosticMeta?.vehiclePhoto?.id ?? null,
     vehiclePhotoVariant: "printHero",
-    vehiclePhotoSize: diagnosticMeta?.vehiclePhoto?.sizeBytes ?? null,
+    vehiclePhotoOriginalSize: diagnosticMeta?.vehiclePhoto?.sizeBytes ?? null,
     vehiclePhotoContentType: diagnosticMeta?.vehiclePhoto?.contentType ?? null,
+    diagnosticPhotoCount,
     pdfMode,
   });
 

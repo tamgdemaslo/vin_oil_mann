@@ -207,6 +207,59 @@ function formatShortDeadline(value?: string | null) {
   return `${day} · ${time}`;
 }
 
+const SCHEDULE_WINDOW_MINUTES = 60;
+
+type ScheduleTimelineItem =
+  | { kind: "record"; key: string; start: number; item: AppointmentItem }
+  | { kind: "window"; key: string; start: number; end: number; label: string };
+
+function parseClockMinutes(value?: string | null) {
+  const match = String(value ?? "").match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function formatClockMinutes(value: number) {
+  const safeValue = Math.max(0, Math.min(24 * 60 - 1, Math.round(value)));
+  const hours = Math.floor(safeValue / 60);
+  const minutes = safeValue % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function scheduleWindowLabel(value: string) {
+  const start = parseClockMinutes(value);
+  if (start === null) return value;
+  return `${formatClockMinutes(start)}–${formatClockMinutes(start + SCHEDULE_WINDOW_MINUTES)}`;
+}
+
+function buildScheduleTimeline(appointments: AppointmentItem[], freeWindows: string[]) {
+  const recordItems: ScheduleTimelineItem[] = appointments.map((item, index) => ({
+    kind: "record",
+    key: `record-${item.id}`,
+    start: parseClockMinutes(item.time) ?? 24 * 60 + index,
+    item,
+  }));
+  const windowItems: ScheduleTimelineItem[] = freeWindows.flatMap((window, index) => {
+    const start = parseClockMinutes(window);
+    if (start === null) return [];
+    return [
+      {
+        kind: "window",
+        key: `window-${window}-${index}`,
+        start,
+        end: start + SCHEDULE_WINDOW_MINUTES,
+        label: scheduleWindowLabel(window),
+      },
+    ];
+  });
+
+  return [...recordItems, ...windowItems].sort((a, b) => a.start - b.start).slice(0, 12);
+}
+
 function initials(value?: string | null) {
   const parts = String(value || "")
     .trim()
@@ -237,11 +290,6 @@ function paymentTone(status: ShipmentItem["paymentStatus"]) {
 }
 
 const SERVICE_ORGANIZATION_LABEL = "Там где масло";
-
-function marginPercent(revenueCents?: number, grossProfitCents?: number) {
-  if (!revenueCents || revenueCents <= 0) return "—";
-  return `${Math.round(((grossProfitCents ?? 0) / revenueCents) * 100)}%`;
-}
 
 function recordHref(item: AppointmentItem) {
   return `/records?recordId=${encodeURIComponent(item.id)}`;
@@ -286,11 +334,6 @@ function appointmentTone(status?: string | null): EcoBadgeTone {
   if (key === "arrived" || key === "waiting") return "info";
   if (key === "in_work") return "warning";
   return "neutral";
-}
-
-function shipmentTone(item: AppointmentItem): EcoBadgeTone {
-  if (item.hasShipment) return "success";
-  return "warning";
 }
 
 function appointmentActions(item: AppointmentItem) {
@@ -634,6 +677,10 @@ export default function HomeDashboard({
   const feedItems = notifications.slice(0, 5);
   const messages = dashboard?.messages ?? { total: 0, needsReply: 0, unread: 0, oldest: null };
   const forecast = buildRevenueForecast(dashboard, cashClosed);
+  const scheduleItems = useMemo(
+    () => buildScheduleTimeline(dashboard?.appointments.rows ?? [], dashboard?.appointments.freeWindows ?? []),
+    [dashboard?.appointments.rows, dashboard?.appointments.freeWindows]
+  );
   const blockingProblems = cashClosed ? 1 : 0;
   const shiftStatusLine = sectionsLocked
     ? "Смена не начата · касса закрыта"
@@ -811,7 +858,6 @@ export default function HomeDashboard({
               hint={dashboard?.appointments.next ? dashboard.appointments.next.client : "записей нет"}
             />
             <MobileReportMetric label="Отгрузки сегодня" value={formatCount(dashboard?.shipments.today ?? 0)} hint={`черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)}`} />
-            <MobileReportMetric label="Сообщения" value={formatCount(messages.total)} hint={`${formatCount(messages.needsReply)} требуют ответа`} tone={messages.needsReply ? "warning" : "neutral"} />
             <MobileReportMetric label="Просрочено" value={formatCount(dashboard?.crm.overdue ?? 0)} hint={(dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "дел нет"} tone={dashboard?.crm.overdue ? "warning" : "neutral"} />
             <MobileReportMetric label="Блокеры" value={formatCount(blockingProblems)} hint={blockingProblems ? "мешают продажам" : "блокеров нет"} tone={blockingProblems ? "danger" : "success"} />
           </div>
@@ -856,17 +902,9 @@ export default function HomeDashboard({
         <section className="eco-mobile-card eco-mobile-quick">
           <div className="eco-mobile-card-head">
             <h2>Быстрый доступ</h2>
-            <span>3 раздела</span>
+            <span>2 раздела</span>
           </div>
           <div className="eco-mobile-action-list">
-            <MobileActionRow
-              title="Сообщения"
-              value={formatCount(messages.total)}
-              detail={messages.oldest ? `${formatCount(messages.needsReply)} требуют ответа · ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : `${formatCount(messages.needsReply)} требуют ответа`}
-              href="/messages"
-              action="Открыть"
-              tone={messages.needsReply ? "warning" : "neutral"}
-            />
             <MobileActionRow
               title="Записи"
               value={formatCount(dashboard?.appointments.totalToday ?? 0)}
@@ -949,11 +987,6 @@ export default function HomeDashboard({
             <Plus aria-hidden className="eco-icon" />
             Новая отгрузка
           </Link>
-          <Link href="/messages" className="eco-ops-btn">
-            <MessageCircle aria-hidden className="eco-icon" />
-            Сообщения
-            {!!messages.needsReply && <span className="eco-ops-btn-badge">{messages.needsReply > 99 ? "99+" : messages.needsReply}</span>}
-          </Link>
         </div>
       </section>
 
@@ -998,36 +1031,20 @@ export default function HomeDashboard({
               ) : loading && !dashboard ? (
                 <LoadingState rows={4} />
               ) : (
-                <>
-                  <div className="eco-ops-money-row">
-                    <div>
-                      <span>Выручка</span>
-                      <strong>{formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Валовая прибыль</span>
-                      <strong>{formatMoneyCents(dashboard?.finance.grossProfitCents ?? 0)}</strong>
-                    </div>
+                <div className="eco-ops-finance-mini" aria-label="Короткая финансовая сводка">
+                  <div className="is-main">
+                    <span>Выручка</span>
+                    <strong>{formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
                   </div>
-                  <div className="eco-ops-owner-metrics">
-                    <div>
-                      <span>Маржа</span>
-                      <strong>{marginPercent(dashboard?.finance.revenueCents, dashboard?.finance.grossProfitCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Средний чек</span>
-                      <strong>{dashboard?.finance.shipmentsCount ? formatMoneyCents(dashboard.finance.averageCheckCents) : "—"}</strong>
-                    </div>
-                    <div>
-                      <span>Не оплачено</span>
-                      <strong className={(dashboard?.finance.unpaidCents ?? 0) > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard?.finance.unpaidCents ?? 0)}</strong>
-                    </div>
-                    <div>
-                      <span>Прогноз</span>
-                      <strong className={forecast.tone === "warning" ? "is-warning" : ""}>{forecast.short}</strong>
-                    </div>
+                  <div>
+                    <span>Прибыль</span>
+                    <strong>{formatMoneyCents(dashboard?.finance.grossProfitCents ?? 0)}</strong>
                   </div>
-                </>
+                  <div>
+                    <span>Не оплачено</span>
+                    <strong className={(dashboard?.finance.unpaidCents ?? 0) > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard?.finance.unpaidCents ?? 0)}</strong>
+                  </div>
+                </div>
               )}
             </section>
 
@@ -1091,39 +1108,86 @@ export default function HomeDashboard({
                     ]}
                     dense
                   />
-                  {dashboard?.appointments.next && (
-                    <div className="eco-ops-next-record is-strong">
-                      <span>Ближайшая запись</span>
-                      <strong>{dashboard.appointments.next.time} · {dashboard.appointments.next.client}</strong>
-                      <small>{dashboard.appointments.next.vehicle || "авто не указано"} · {dashboard.appointments.next.service}</small>
-                    </div>
-                  )}
-                  {dashboard?.appointments.rows.length ? (
-                    <div className="eco-ops-journal-list">
-                      {dashboard.appointments.rows.slice(0, 6).map((item) => {
-                        const primaryAction = appointmentActions(item)[0];
-                        return (
-                          <article key={item.id} className={`eco-ops-journal-row is-${appointmentStatusKey(item.status)}`}>
-                            <div className="eco-ops-journal-time">
-                              <strong>{item.time || "—"}</strong>
-                              <Badge tone={appointmentTone(item.status)} dot>{item.status || "Запланирована"}</Badge>
-                            </div>
-                            <div className="eco-ops-journal-main">
-                              <Link href={recordHref(item)}>{item.client}</Link>
-                              <span>{[item.phone, item.vehicle || "авто не указано", item.service].filter(Boolean).join(" · ")}</span>
-                            </div>
-                            <div className="eco-ops-journal-shipment">
-                              <Badge tone={shipmentTone(item)}>{item.shipmentStatus || (item.hasShipment ? "Отгрузка связана" : "Отгрузка не найдена")}</Badge>
-                              {!item.hasShipment && <small>Создать или связать</small>}
-                            </div>
-                            <div className="eco-ops-row-actions">
-                              <RowAction href={primaryAction.href} tone={primaryAction.tone}>
-                                {primaryAction.label}
-                              </RowAction>
-                            </div>
-                          </article>
-                        );
-                      })}
+                  {scheduleItems.length ? (
+                    <div className="eco-ops-schedule">
+                      <div className="eco-ops-schedule-summary">
+                        <div>
+                          <span>Ближайшая запись</span>
+                          <strong>
+                            {dashboard?.appointments.next
+                              ? `${dashboard.appointments.next.time} · ${dashboard.appointments.next.client}`
+                              : "Записей нет"}
+                          </strong>
+                          <small>
+                            {dashboard?.appointments.next
+                              ? `${dashboard.appointments.next.vehicle || "авто не указано"} · ${dashboard.appointments.next.service}`
+                              : "Можно ставить новые окна в журнал."}
+                          </small>
+                        </div>
+                        <div>
+                          <span>Свободные окна</span>
+                          <strong>{formatCount(dashboard?.appointments.freeWindows.length ?? 0)}</strong>
+                          <small>
+                            {(dashboard?.appointments.freeWindows ?? []).slice(0, 3).map(scheduleWindowLabel).join(" · ") || "окон нет"}
+                          </small>
+                        </div>
+                      </div>
+                      <div className="eco-ops-timeline" aria-label="Расписание и свободные окна">
+                        {scheduleItems.map((slot) => {
+                          if (slot.kind === "window") {
+                            return (
+                              <article key={slot.key} className="eco-ops-timeline-item is-window">
+                                <div className="eco-ops-timeline-time">
+                                  <strong>{formatClockMinutes(slot.start)}</strong>
+                                  <span>{formatClockMinutes(slot.end)}</span>
+                                </div>
+                                <div className="eco-ops-timeline-rail" aria-hidden>
+                                  <span className="eco-ops-timeline-dot is-window" />
+                                </div>
+                                <div className="eco-ops-timeline-card">
+                                  <div className="eco-ops-timeline-card-head">
+                                    <b>Свободное окно</b>
+                                    <Badge tone="success">окно</Badge>
+                                  </div>
+                                  <span>{slot.label} · можно записать клиента</span>
+                                </div>
+                                <div className="eco-ops-row-actions">
+                                  <RowAction href={recordCreateHref()} tone="quiet">Записать</RowAction>
+                                </div>
+                              </article>
+                            );
+                          }
+
+                          const item = slot.item;
+                          const primaryAction = appointmentActions(item)[0];
+                          return (
+                            <article key={slot.key} className={`eco-ops-timeline-item is-record is-${appointmentStatusKey(item.status)}`}>
+                              <div className="eco-ops-timeline-time">
+                                <strong>{item.time || "—"}</strong>
+                                <span>{item.status || "запись"}</span>
+                              </div>
+                              <div className="eco-ops-timeline-rail" aria-hidden>
+                                <span className={`eco-ops-timeline-dot is-${toneClass(appointmentTone(item.status))}`} />
+                              </div>
+                              <div className="eco-ops-timeline-card">
+                                <div className="eco-ops-timeline-card-head">
+                                  <Link href={recordHref(item)}>{item.client}</Link>
+                                  <Badge tone={appointmentTone(item.status)} dot>{item.status || "Запланирована"}</Badge>
+                                </div>
+                                <span>{[item.phone, item.vehicle || "авто не указано", item.service].filter(Boolean).join(" · ")}</span>
+                                <small className={item.hasShipment ? "" : "is-warning"}>
+                                  {item.shipmentStatus || (item.hasShipment ? "Отгрузка связана" : "Отгрузка не найдена")}
+                                </small>
+                              </div>
+                              <div className="eco-ops-row-actions">
+                                <RowAction href={primaryAction.href} tone={primaryAction.tone}>
+                                  {primaryAction.label}
+                                </RowAction>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -1152,7 +1216,7 @@ export default function HomeDashboard({
                   <StatStrip
                     items={[
                       { label: "Сегодня", value: dashboard?.crm.today ?? 0 },
-                      { label: "Ждут ответ", value: messages.needsReply, tone: messages.needsReply ? "warning" : "muted" },
+                      { label: "Без ответств.", value: dashboard?.crm.noResponsible ?? 0, tone: dashboard?.crm.noResponsible ? "warning" : "muted" },
                       { label: "Расчёт", value: dashboard?.crm.quote ?? 0, tone: dashboard?.crm.quote ? "warning" : "muted" },
                       { label: "Перезвонить", value: dashboard?.crm.callback ?? 0, tone: dashboard?.crm.callback ? "warning" : "muted" },
                       { label: "Запчасти", value: dashboard?.crm.supplies ?? 0, tone: dashboard?.crm.supplies ? "warning" : "muted" },

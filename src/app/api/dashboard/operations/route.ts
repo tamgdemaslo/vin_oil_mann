@@ -535,12 +535,13 @@ export async function GET() {
   ]);
 
   const notifications: DashboardNotification[] = [];
-  const revenueCents = todayDemands.reduce((sum, demand) => sum + demand.sumCents, 0);
-  const grossProfitCents = todayDemands.reduce(
+  const todayShipments = todayDemands.filter((demand) => demand.applicable);
+  const revenueCents = todayShipments.reduce((sum, demand) => sum + demand.sumCents, 0);
+  const grossProfitCents = todayShipments.reduce(
     (sum, demand) => sum + demand.positions.reduce((lineSum, position) => lineSum + lineProfitCents(position), 0),
     0
   );
-  const paidStats = todayDemands.reduce(
+  const paidStats = todayShipments.reduce(
     (acc, demand) => {
       const paymentStatus = paymentStatusFromRaw(demand.raw, demand.applicable);
       const kind = paymentKindFromRaw(demand.raw);
@@ -552,9 +553,9 @@ export async function GET() {
     },
     { paidCents: 0, unpaidCents: 0, cashCents: 0, cardCents: 0 }
   );
-  const applicableToday = todayDemands.filter((demand) => demand.applicable).length;
-  const missingDiagnostic = todayDemands.filter((demand) => demand.diagnosticMapSessions.length === 0).length;
-  const missingPrecheck = todayDemands.filter((demand) => {
+  const applicableToday = todayShipments.length;
+  const missingDiagnostic = todayShipments.filter((demand) => demand.diagnosticMapSessions.length === 0).length;
+  const missingPrecheck = todayShipments.filter((demand) => {
     const attrs = JSON.stringify(demand.attributes ?? demand.raw ?? {}).toLowerCase();
     return !attrs.includes("предчек") && !attrs.includes("precheck");
   }).length;
@@ -575,7 +576,7 @@ export async function GET() {
     const value = appointmentDateTime(item);
     return value ? value.getTime() >= now.getTime() : false;
   }) ?? todayAppointments[0] ?? null;
-  const appointmentShipmentStatuses = reconcileAppointmentShipments(todayAppointments, todayDemands);
+  const appointmentShipmentStatuses = reconcileAppointmentShipments(todayAppointments, todayShipments);
   const appointmentShipmentStatusById = new Map(appointmentShipmentStatuses.map((status) => [status.appointmentId, status]));
   const appointmentsWithoutShipment = todayAppointments.filter((item) => {
     const id = stringValue(item.id);
@@ -676,7 +677,7 @@ export async function GET() {
     });
   }
 
-  const unpaidToday = todayDemands.filter((demand) => paymentStatusFromRaw(demand.raw, demand.applicable) === "unpaid");
+  const unpaidToday = todayShipments.filter((demand) => paymentStatusFromRaw(demand.raw, demand.applicable) === "unpaid");
   if (unpaidToday.length > 0) {
     notifications.push({
       id: "unpaid-demands-today",
@@ -756,8 +757,8 @@ export async function GET() {
     finance: {
       revenueCents,
       grossProfitCents,
-      averageCheckCents: todayDemands.length ? cents(revenueCents / todayDemands.length) : 0,
-      shipmentsCount: todayDemands.length,
+      averageCheckCents: todayShipments.length ? cents(revenueCents / todayShipments.length) : 0,
+      shipmentsCount: todayShipments.length,
       paidCents: paidStats.paidCents,
       unpaidCents: paidStats.unpaidCents,
       cashCents: paidStats.cashCents,
@@ -842,13 +843,13 @@ export async function GET() {
         })),
     },
     shipments: {
-      today: todayDemands.length,
+      today: todayShipments.length,
       drafts: activeDemands.filter((demand) => !demand.applicable).length,
       applicable: applicableToday,
       unpaid: unpaidToday.length,
       withoutDiagnostic: missingDiagnostic,
       withoutPrecheck: missingPrecheck,
-      rows: activeDemands.slice(0, 8).map((demand) => ({
+      rows: todayShipments.slice(0, 8).map((demand) => ({
         id: demand.id,
         name: demand.name,
         moment: demand.momentAt.toISOString(),

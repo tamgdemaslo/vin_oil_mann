@@ -6,7 +6,8 @@ import { optimizeReportImage, type ReportPhotoVariant } from "@/lib/report-photo
 
 const VEHICLE_PHOTO_VARIANTS = new Set<ReportPhotoVariant>(["reportHero", "printHero", "thumbnail"]);
 
-function vehiclePhotoVariant(value: string): ReportPhotoVariant {
+function vehiclePhotoVariant(value: string | null): ReportPhotoVariant {
+  if (value === "print") return "printHero";
   return VEHICLE_PHOTO_VARIANTS.has(value as ReportPhotoVariant) ? (value as ReportPhotoVariant) : "reportHero";
 }
 
@@ -39,29 +40,26 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   const photo = session?.vehiclePhoto;
   if (!photo) return NextResponse.json({ error: "Фото автомобиля не найдено" }, { status: 404 });
   const contentType = diagnosticMapPhotoMime(photo.filePath, photo.contentType);
-  if (/heic|heif/i.test(contentType) || /\.(heic|heif)$/i.test(photo.filePath)) {
-    console.warn("[diagnostic-vehicle-photo] unsupported public image format", {
-      reportToken: token,
-      diagnosticId: session.id,
-      vehiclePhotoId: photo.id,
-      variant,
-      contentType,
-      sizeBytes: photo.sizeBytes ?? null,
-    });
-    return NextResponse.json(
-      { error: "Формат фото автомобиля не подходит для печати PDF" },
-      { status: 415, headers: { "Cache-Control": "no-store" } }
-    );
-  }
 
   try {
     const original = await readVehiclePhotoBuffer(photo);
     const optimized = await optimizeReportImage(original, variant);
+    console.info("[diagnostic-vehicle-photo] public image optimized", {
+      reportToken: token,
+      diagnosticId: session.id,
+      vehiclePhotoId: photo.id,
+      requestedVariant,
+      variant,
+      originalSizeBytes: photo.sizeBytes ?? original.byteLength,
+      optimizedSizeBytes: optimized.sizeBytes,
+      width: optimized.width,
+      height: optimized.height,
+    });
     return new NextResponse(new Uint8Array(optimized.data), {
       headers: {
         "Content-Type": optimized.contentType,
         "Cache-Control": "public, max-age=86400",
-        "X-TGM-Photo-Variant": variant,
+        "X-TGM-Photo-Variant": requestedVariant === "print" ? "print" : variant,
         "X-TGM-Photo-Original-Size": String(photo.sizeBytes ?? original.byteLength),
         "X-TGM-Photo-Size": String(optimized.sizeBytes),
       },
