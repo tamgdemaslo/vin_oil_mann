@@ -41282,8 +41282,20 @@ html.tgm-print-active .tgm-client-report .qr {
   padding: 12px 16px 10px;
   color: #f5f2ed;
   background: #0a0a0a;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
   break-inside: avoid;
   page-break-inside: avoid;
+}
+
+.diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .rep-foot-q,
+.diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .tg {
+  color: #f5f2ed;
+}
+
+.diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .rep-foot-sub,
+.diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .link {
+  color: #b8b1a6;
 }
 
 .diag-print-screen.is-print .paper-a4.rep .rep-foot-contact {
