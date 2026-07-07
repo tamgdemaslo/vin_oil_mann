@@ -529,12 +529,13 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
   const noAccessCount = visibleItems.filter((item) => normalizeStatus(item.status) === "no-access").length;
   const uncheckedCount = visibleItems.filter((item) => normalizeStatus(item.status) === "unchecked").length;
   const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
+  const isServerPdfPrint = mode === "print" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pdf") === "1";
   const vehiclePhoto = payload.vehiclePhoto?.url ? payload.vehiclePhoto : null;
   const diagnosticPhotos: PublicReportPhoto[] = visibleItems
     .filter((item) => normalizeStatus(item.status) !== "no-access")
     .flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
   const photos: PublicReportPhoto[] = [
-    ...(vehiclePhoto
+    ...(vehiclePhoto && !isServerPdfPrint
       ? [{
           id: `vehicle-${vehiclePhoto.id}`,
           caption: vehiclePhoto.caption || "Фото автомобиля",
