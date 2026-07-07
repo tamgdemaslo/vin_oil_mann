@@ -539,7 +539,9 @@ async function publicReportContactSettings(): Promise<PublicReportContactSetting
 function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactSettings?: PublicReportContactSettings, vehicleSync?: DiagnosticVehicleSyncState | null) {
   const reportUrl = origin ? reportUrlFromRequest(origin, row.publicToken) : `/report/${row.publicToken}`;
   const vehiclePhotoVersion = row.vehiclePhoto?.updatedAt.getTime() ?? null;
-  const vehiclePhotoUrl = row.vehiclePhoto ? `/api/diagnostics/${row.id}/vehicle-photo${vehiclePhotoVersion ? `?v=${vehiclePhotoVersion}` : ""}` : "";
+  const vehiclePhotoUrl = row.vehiclePhoto
+    ? `/api/diagnostics/public/${row.publicToken}/vehicle-photo${vehiclePhotoVersion ? `?v=${vehiclePhotoVersion}` : ""}`
+    : "";
   const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => {
     return {
       code: block.code,
