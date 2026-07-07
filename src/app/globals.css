@@ -41500,6 +41500,29 @@ html.tgm-print-active .tgm-client-report .qr {
     padding: 14px 16px !important;
     color: #f5f2ed !important;
     background: #0a0a0a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta,
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .rep-eyebrow,
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .rep-foot-q,
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .tg {
+    color: #f5f2ed !important;
+  }
+
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .rep-foot-sub,
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .link {
+    color: #b8b1a6 !important;
+  }
+
+  .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .ph {
+    color: var(--rust) !important;
   }
 
   .diag-print-screen.is-print .paper-a4.rep .rep-sec,
