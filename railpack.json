@@ -2,10 +2,6 @@
   "$schema": "https://schema.railpack.com",
   "provider": "node",
   "deploy": {
-    "aptPackages": ["dbus", "chromium", "fonts-liberation"],
-    "variables": {
-      "CHROME_PATH": "/usr/bin/chromium",
-      "CHROME_WRAPPER": "/usr/bin/dbus-run-session"
-    }
+    "aptPackages": ["fonts-liberation"]
   }
 }

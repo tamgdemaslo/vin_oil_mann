@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
+    "@sparticuz/chromium": "^147.0.0",
     "jiti": "^2.6.1",
     "lucide-react": "^1.16.0",
     "next": "16.1.6",
