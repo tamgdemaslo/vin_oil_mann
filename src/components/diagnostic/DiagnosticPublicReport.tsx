@@ -329,6 +329,13 @@ function maskLogin(login?: string | null): string {
   return `${login[0]}${"•".repeat(Math.max(1, login.length - 2))}${login.slice(-1)}`;
 }
 
+function withPhotoVariant(url: string, variant: string): string {
+  if (!url || /[?&]variant=/u.test(url)) return url;
+  const [path, hash = ""] = url.split("#");
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}variant=${encodeURIComponent(variant)}${hash ? `#${hash}` : ""}`;
+}
+
 function adaptLegacy(payload: LegacyPayload): ReportPayload {
   const problemItems: ReportItem[] = payload.positions.map((position) => {
     const status = position.status === "RED" ? "crit" : "warn";
@@ -570,7 +577,8 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
   const diagnosticPhotos: PublicReportPhoto[] = visibleItems
     .filter((item) => normalizeStatus(item.status) !== "no-access")
     .flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
-  const photos: PublicReportPhoto[] = diagnosticPhotos;
+  const photos: PublicReportPhoto[] =
+    mode === "print" ? diagnosticPhotos.map((photo) => ({ ...photo, url: withPhotoVariant(photo.url, "print") })) : diagnosticPhotos;
   const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
   const good = hasRealItems ? reportCounts.good : payload.counts.good ?? payload.counts.normal ?? 0;

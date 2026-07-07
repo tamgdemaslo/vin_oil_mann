@@ -7,28 +7,55 @@ import {
   getDiagnosticMapPhoto,
   updateDiagnosticMapPhoto,
 } from "@/lib/diagnostic-map-service";
+import { optimizeReportImage } from "@/lib/report-photo-optimization";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
+function requestedPrintVariant(request: NextRequest) {
+  const variant = request.nextUrl.searchParams.get("variant");
+  return variant === "print" || variant === "thumbnail";
+}
+
+async function readPhotoBytes(photo: { data: Uint8Array | Buffer | null; filePath: string }) {
+  if (photo.data && photo.data.byteLength > 0) return Buffer.from(photo.data);
+  return fs.readFile(photo.filePath);
+}
+
+function responseBody(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const { id, photoId } = await params;
   const photo = await getDiagnosticMapPhoto(id, photoId);
   if (!photo) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
-  if (photo.data && photo.data.byteLength > 0) {
-    return new NextResponse(Buffer.from(photo.data), {
-      headers: {
-        "Content-Type": diagnosticMapPhotoMime(photo.filePath, photo.contentType),
-        "Cache-Control": "private, max-age=300",
-      },
-    });
-  }
+
   try {
-    const buf = await fs.readFile(photo.filePath);
-    return new NextResponse(buf, {
+    const buf = await readPhotoBytes(photo);
+    if (requestedPrintVariant(request)) {
+      const optimized = await optimizeReportImage(buf, "thumbnail");
+      return new NextResponse(responseBody(optimized.data), {
+        headers: {
+          "Content-Type": optimized.contentType,
+          "Cache-Control": "private, max-age=3600",
+          "X-TGM-Photo-Variant": "print",
+          "X-TGM-Original-Size": String(optimized.originalSizeBytes),
+          "X-TGM-Optimized-Size": String(optimized.sizeBytes),
+        },
+      });
+    }
+
+    return new NextResponse(responseBody(buf), {
       headers: {
         "Content-Type": diagnosticMapPhotoMime(photo.filePath, photo.contentType),
         "Cache-Control": "private, max-age=300",
       },
     });
-  } catch {
+  } catch (error) {
+    console.warn("[diagnostic-photo] failed to read or optimize photo", {
+      sessionId: id,
+      photoId,
+      variant: request.nextUrl.searchParams.get("variant"),
+      error,
+    });
     return NextResponse.json({ error: "Файл фото не найден" }, { status: 404 });
   }
 }
