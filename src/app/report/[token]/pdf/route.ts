@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { access, mkdir, rm } from "fs/promises";
+import { access, mkdir, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
@@ -69,28 +69,73 @@ const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
 const CDP_PRINT_TIMEOUT_MS = 45_000;
 const CDP_STREAM_READ_TIMEOUT_MS = 10_000;
+const CHROME_CLI_PRINT_TIMEOUT_MS = 60_000;
+const CHROME_OUTPUT_SNIPPET = 3_000;
 
 async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.DBUS_SESSION_BUS_ADDRESS;
-  delete env.DBUS_SYSTEM_BUS_ADDRESS;
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("DBUS_")) delete env[key];
+  }
 
   const runtimeDir = join(userDataDir, "runtime");
   const cacheDir = join(userDataDir, "cache");
   const configDir = join(userDataDir, "config");
+  const crashDir = join(userDataDir, "crash-dumps");
+  const dbusStub = join(userDataDir, "no-dbus.sock");
 
   await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await mkdir(cacheDir, { recursive: true });
   await mkdir(configDir, { recursive: true });
+  await mkdir(crashDir, { recursive: true });
 
   return {
     ...env,
-    HOME: env.HOME || userDataDir,
+    HOME: userDataDir,
     TMPDIR: env.TMPDIR || tmpdir(),
     XDG_RUNTIME_DIR: runtimeDir,
     XDG_CACHE_HOME: cacheDir,
     XDG_CONFIG_HOME: configDir,
+    NO_AT_BRIDGE: "1",
+    GTK_USE_PORTAL: "0",
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=${dbusStub}`,
+    DBUS_SYSTEM_BUS_ADDRESS: `unix:path=${dbusStub}`,
   };
+}
+
+function chromeServerFlags(userDataDir: string): string[] {
+  return [
+    "--headless",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--disable-breakpad",
+    "--disable-crashpad",
+    "--disable-crash-reporter",
+    "--disable-dbus",
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-extensions",
+    "--disable-sync",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-accelerated-2d-canvas",
+    "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints,Crashpad,MojoIpcz",
+    "--hide-scrollbars",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-default-browser-check",
+    "--no-first-run",
+    "--no-service-autorun",
+    "--no-zygote",
+    "--single-process",
+    "--password-store=basic",
+    "--force-color-profile=srgb",
+    `--crash-dumps-dir=${join(userDataDir, "crash-dumps")}`,
+    `--user-data-dir=${userDataDir}`,
+  ];
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -147,7 +192,7 @@ function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new Error(`Chrome DevTools endpoint не появился. ${chromeOutput.slice(-800)}`));
+      reject(new Error(`Chrome DevTools endpoint не появился. ${chromeOutput.slice(-CHROME_OUTPUT_SNIPPET)}`));
     }, CHROME_DEVTOOLS_TIMEOUT_MS);
 
     const handleOutput = (chunk: Buffer) => {
@@ -174,7 +219,7 @@ function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`Chrome завершился до генерации PDF: code=${code ?? "null"} signal=${signal ?? "null"}. ${chromeOutput.slice(-800)}`));
+      reject(new Error(`Chrome завершился до генерации PDF: code=${code ?? "null"} signal=${signal ?? "null"}. ${chromeOutput.slice(-CHROME_OUTPUT_SNIPPET)}`));
     });
   });
 }
@@ -508,6 +553,80 @@ async function readCdpStream(cdp: CdpClient, stream: string, sessionId: string):
   return Buffer.concat(chunks);
 }
 
+function waitForChromeExit(chrome: ChildProcessWithoutNullStreams, timeoutMs: number, label: string): Promise<{ code: number | null; signal: NodeJS.Signals | null; output: string }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let output = "";
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      chrome.kill("SIGTERM");
+      reject(new Error(`${label}: таймаут ${Math.round(timeoutMs / 1000)} сек. ${output.slice(-CHROME_OUTPUT_SNIPPET)}`));
+    }, timeoutMs);
+
+    const onData = (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    };
+
+    chrome.stderr.on("data", onData);
+    chrome.stdout.on("data", onData);
+
+    chrome.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    chrome.once("exit", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, signal, output });
+    });
+  });
+}
+
+async function renderReportPdfViaCli(url: string): Promise<Buffer> {
+  const chromePath = await findChromeExecutable();
+  if (!chromePath) {
+    throw new Error("Chrome/Chromium не найден на сервере. Укажите CHROME_PATH для генерации PDF.");
+  }
+
+  const userDataDir = join(tmpdir(), `tgm-pdf-cli-${randomUUID()}`);
+  const pdfPath = join(userDataDir, "report.pdf");
+  await mkdir(userDataDir, { recursive: true });
+  const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
+
+  console.warn("[diagnostic-pdf] launching chrome CLI print fallback", { chromePath });
+  const chrome = spawn(chromePath, [
+    ...chromeServerFlags(userDataDir),
+    "--run-all-compositor-stages-before-draw",
+    "--virtual-time-budget=10000",
+    "--print-to-pdf-no-header",
+    `--print-to-pdf=${pdfPath}`,
+    url,
+  ], { env: chromeEnv });
+
+  try {
+    const result = await waitForChromeExit(chrome, CHROME_CLI_PRINT_TIMEOUT_MS, "Печать отчёта через Chrome CLI");
+    if (result.code !== 0) {
+      throw new Error(`Chrome CLI не сформировал PDF: code=${result.code ?? "null"} signal=${result.signal ?? "null"}. ${result.output.slice(-CHROME_OUTPUT_SNIPPET)}`);
+    }
+
+    const pdf = await readFile(pdfPath);
+    if (pdf.length === 0) {
+      throw new Error(`Chrome CLI вернул пустой PDF. ${result.output.slice(-CHROME_OUTPUT_SNIPPET)}`);
+    }
+    return pdf;
+  } finally {
+    chrome.kill("SIGTERM");
+    setTimeout(() => {
+      void rm(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 }).catch(() => {});
+    }, 500);
+  }
+}
+
 async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
   const { pageRanges, printerSafe = true } = options;
   const chromePath = await findChromeExecutable();
@@ -524,34 +643,9 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
   console.info("[diagnostic-pdf] launching chrome", { chromePath, printerSafe, pageRanges: pageRanges ?? null });
 
   const chrome = spawn(chromePath, [
-    "--headless=new",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-gpu",
-    "--disable-dev-shm-usage",
-    "--disable-breakpad",
-    "--disable-crashpad",
-    "--disable-crash-reporter",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-extensions",
-    "--disable-sync",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints",
-    "--hide-scrollbars",
-    "--metrics-recording-only",
-    "--mute-audio",
-    "--no-default-browser-check",
-    "--no-first-run",
-    "--no-service-autorun",
-    "--no-zygote",
-    "--ozone-platform=headless",
-    "--password-store=basic",
-    "--force-color-profile=srgb",
+    ...chromeServerFlags(userDataDir),
     "--remote-debugging-port=0",
-    `--user-data-dir=${userDataDir}`,
+    "--remote-debugging-address=127.0.0.1",
     "about:blank",
   ], { env: chromeEnv });
 
@@ -778,6 +872,12 @@ function requestOrigin(request: NextRequest): string {
   return request.nextUrl.origin;
 }
 
+function shouldRedirectToPrintFallback(request: NextRequest): boolean {
+  if (request.nextUrl.searchParams.get("json") === "1") return false;
+  const accept = request.headers.get("accept") ?? "";
+  return !accept.includes("application/json");
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const reportUrl = new URL(`/report/${encodeURIComponent(token)}/print?pdf=1`, requestOrigin(request));
@@ -785,18 +885,32 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const pageRanges = pageRangesParam && /^[0-9,\-\s]+$/.test(pageRangesParam) ? pageRangesParam : undefined;
   const printerSafe = request.nextUrl.searchParams.get("rich") !== "1";
 
+  let pdfMode = printerSafe ? "printer-safe" : "rich";
+
   try {
-    const pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
+    let pdf: Buffer;
+    try {
+      pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
+    } catch (cdpError) {
+      console.warn("[diagnostic-pdf] CDP render failed, trying CLI fallback", { token, error: cdpError });
+      pdf = await renderReportPdfViaCli(reportUrl.toString());
+      pdfMode = "cli-fallback";
+    }
+
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="tgm-diagnostic-${token}${printerSafe ? "-printer" : ""}.pdf"`,
         "Cache-Control": "no-store",
-        "X-TGM-PDF-Mode": printerSafe ? "printer-safe" : "rich",
+        "X-TGM-PDF-Mode": pdfMode,
       },
     });
   } catch (error) {
     console.error("[diagnostic-pdf] failed", { token, error });
+    if (shouldRedirectToPrintFallback(request)) {
+      const fallbackUrl = new URL(`/report/${encodeURIComponent(token)}/print?pdfFallback=1`, requestOrigin(request));
+      return NextResponse.redirect(fallbackUrl, { status: 307 });
+    }
     return NextResponse.json(
       {
         error: "Не удалось сформировать PDF отчёта",
