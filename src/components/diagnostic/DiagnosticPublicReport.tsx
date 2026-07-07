@@ -113,6 +113,7 @@ type LegacyPayload = {
 type DiagnosticPublicReportProps = {
   token: string;
   mode?: "online" | "print";
+  autoPrint?: boolean;
 };
 
 const REPORT_PHONE = "+7 (995) 054-58-59";
@@ -435,11 +436,12 @@ function PhotoTile({ photo, index, status }: { photo: { id: string; caption: str
   );
 }
 
-export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPublicReportProps) {
+export function DiagnosticPublicReport({ token, mode = "online", autoPrint = false }: DiagnosticPublicReportProps) {
   const [payload, setPayload] = useState<ReportPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lightboxPhoto, setLightboxPhoto] = useState<PublicReportPhoto | null>(null);
+  const [autoPrintRequested, setAutoPrintRequested] = useState(autoPrint);
 
   useEffect(() => {
     let cancelled = false;
@@ -469,6 +471,30 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    setAutoPrintRequested(autoPrint);
+  }, [autoPrint]);
+
+  useEffect(() => {
+    if (mode !== "print" || !autoPrintRequested || loading || error || !payload) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (document.fonts?.ready) await document.fonts.ready;
+      } catch {
+        /* ignore */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      if (!cancelled) {
+        window.print();
+        setAutoPrintRequested(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [autoPrintRequested, error, loading, mode, payload]);
 
   useEffect(() => {
     if (!lightboxPhoto) return undefined;
@@ -844,7 +870,13 @@ export function DiagnosticPublicReport({ token, mode = "online" }: DiagnosticPub
         <a className="btn" href={payload.reportUrl}><ChevronLeft size={16} /> Онлайн-отчёт</a>
         <div style={{ flex: 1 }} />
         <span>Клиентский отчёт · A4 · {photos.length} фото</span>
-        <a className="btn primary" href={pdfUrl}><Printer size={16} /> Печать / PDF</a>
+        {autoPrint ? (
+          <button className="btn primary" type="button" onClick={() => setAutoPrintRequested(true)}>
+            <Printer size={16} /> Открыть печать
+          </button>
+        ) : (
+          <a className="btn primary" href={pdfUrl}><Printer size={16} /> Печать / PDF</a>
+        )}
       </div>
 
       <article className="paper-a4 rep">
