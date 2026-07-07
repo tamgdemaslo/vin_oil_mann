@@ -537,7 +537,7 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
       ? [{
           id: `vehicle-${vehiclePhoto.id}`,
           caption: vehiclePhoto.caption || "Фото автомобиля",
-          url: vehiclePhoto.url,
+          url: vehiclePhoto.thumbnailUrl || vehiclePhoto.url,
           itemTitle: payload.vehicle.title ? `Фото автомобиля · ${payload.vehicle.title}` : "Фото автомобиля",
           status: "unchecked",
         }]

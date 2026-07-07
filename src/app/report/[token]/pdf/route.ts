@@ -114,7 +114,7 @@ async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.Proc
 
 function chromeServerFlags(userDataDir: string, source: ChromeExecutable["source"] = "system"): string[] {
   const bundledArgs = source === "bundled"
-    ? chromium.args.filter((arg) => !arg.startsWith("--disable-features="))
+    ? chromium.args.filter((arg) => !arg.startsWith("--disable-features=") && arg !== "--single-process")
     : [];
   const disabledFeatures = source === "bundled"
     ? "AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,BackForwardCache,MediaRouter,OptimizationHints"
