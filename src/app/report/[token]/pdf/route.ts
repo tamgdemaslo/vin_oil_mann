@@ -482,7 +482,7 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
           }
 
           const inlineImages = Array.from(document.querySelectorAll(
-            '.diag-print-screen.is-print .rep-vehicle-photo img, .diag-print-screen.is-print .rep-rec-photos img'
+            '.diag-print-screen.is-print .rep-rec-photos img'
           ));
 
           for (const imageNode of inlineImages) {

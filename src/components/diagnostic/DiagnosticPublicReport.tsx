@@ -524,13 +524,26 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
   if (loading) return <main className="diag-print-screen"><section className="diag-report-state">Загрузка отчёта...</section></main>;
   if (error || !payload) return <main className="diag-print-screen"><section className="diag-report-state is-error">{error ?? "Отчёт не найден"}</section></main>;
 
-    const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
-    const noAccessCount = visibleItems.filter((item) => normalizeStatus(item.status) === "no-access").length;
-    const uncheckedCount = visibleItems.filter((item) => normalizeStatus(item.status) === "unchecked").length;
-    const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
-  const photos: PublicReportPhoto[] = visibleItems
+  const recommendations = visibleItems.filter((item) => isAttentionStatus(item.status)).sort(sortBySeverity);
+  const noAccessCount = visibleItems.filter((item) => normalizeStatus(item.status) === "no-access").length;
+  const uncheckedCount = visibleItems.filter((item) => normalizeStatus(item.status) === "unchecked").length;
+  const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
+  const vehiclePhoto = payload.vehiclePhoto?.url ? payload.vehiclePhoto : null;
+  const diagnosticPhotos: PublicReportPhoto[] = visibleItems
     .filter((item) => normalizeStatus(item.status) !== "no-access")
     .flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
+  const photos: PublicReportPhoto[] = [
+    ...(vehiclePhoto
+      ? [{
+          id: `vehicle-${vehiclePhoto.id}`,
+          caption: vehiclePhoto.caption || "Фото автомобиля",
+          url: vehiclePhoto.url,
+          itemTitle: payload.vehicle.title ? `Фото автомобиля · ${payload.vehicle.title}` : "Фото автомобиля",
+          status: "unchecked",
+        }]
+      : []),
+    ...diagnosticPhotos,
+  ];
   const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
   const good = hasRealItems ? reportCounts.good : payload.counts.good ?? payload.counts.normal ?? 0;
@@ -540,30 +553,30 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
   const limitedCount = noAccessCount + uncheckedCount + indirect;
   const total = hasRealItems ? reportCounts.total : payload.counts.total || visibleItems.length;
   const reportDate = payload.completedAt ?? payload.startedAt;
-    const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} ${total === 1 ? "проверен" : "проверены"}`;
-    const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
-    const attentionCount = recommendations.length;
-    const recommendationsText = attentionCount > 0
-      ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
-      : "Рекомендаций по срочным работам нет";
-    const mainResultTitle = crit > 0
-      ? "Есть критичные замечания"
-      : attentionCount > 0 || noAccessCount > 0
-        ? "Критичных замечаний нет"
-        : "Замечаний нет";
-    const mainResultSubtitle = crit > 0
-      ? `Нужно обратить внимание на ${attentionCount} ${pluralRu(attentionCount, "пункт", "пункта", "пунктов")}`
-      : attentionCount > 0
-        ? recommendationsText
-        : "Рекомендаций нет";
-    const limitedResultText = limitedCount > 0
-      ? `${limitedCount} ${pluralRu(limitedCount, "пункт", "пункта", "пунктов")} ${limitedCount === 1 ? "не полностью проверен" : "не полностью проверены"}`
-      : null;
+  const checkedText = `${total} ${pluralRu(total, "пункт", "пункта", "пунктов")} ${total === 1 ? "проверен" : "проверены"}`;
+  const checkedClientText = `Проверено ${total} ${pluralRu(total, "пункт", "пункта", "пунктов")}`;
+  const attentionCount = recommendations.length;
+  const recommendationsText = attentionCount > 0
+    ? `Есть ${attentionCount} ${pluralRu(attentionCount, "рекомендация", "рекомендации", "рекомендаций")}`
+    : "Рекомендаций по срочным работам нет";
+  const mainResultTitle = crit > 0
+    ? "Есть критичные замечания"
+    : attentionCount > 0 || noAccessCount > 0
+      ? "Критичных замечаний нет"
+      : "Замечаний нет";
+  const mainResultSubtitle = crit > 0
+    ? `Нужно обратить внимание на ${attentionCount} ${pluralRu(attentionCount, "пункт", "пункта", "пунктов")}`
+    : attentionCount > 0
+      ? recommendationsText
+      : "Рекомендаций нет";
+  const limitedResultText = limitedCount > 0
+    ? `${limitedCount} ${pluralRu(limitedCount, "пункт", "пункта", "пунктов")} ${limitedCount === 1 ? "не полностью проверен" : "не полностью проверены"}`
+    : null;
   const reportCode = payload.publicToken ?? token;
   const masterName = payload.master?.name || payload.master?.login || "мастер-диагност";
   const masterMasked = maskLogin(payload.master?.login || payload.master?.name);
   const masterShortName = masterName.split(/\s+/u).filter(Boolean)[0] || masterMasked;
-    const verdictText = verdict(crit, warn);
+  const verdictText = verdict(crit, warn);
   const clientFirstName = (payload.clientName || "клиент").split(" ")[0] || "клиент";
   const primaryMessenger = (payload.publicReportPrimaryMessenger || "telegram").toLowerCase();
   const publicTelegramUsername = telegramUsername(payload.publicTelegramUsername ?? payload.publicTelegramUrl ?? null);
@@ -572,21 +585,20 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
       ? telegramUrl(payload.publicTelegramUrl) ?? (publicTelegramUsername ? `https://t.me/${publicTelegramUsername}` : null)
       : null;
   const publicPhone = payload.publicPhone || REPORT_PHONE;
-    const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
-    const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
-    const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
-    const publicAddress = payload.publicAddress || "Калининград";
-    const nextStepTail = attentionCount > 0
-      ? "объясним рекомендации и подскажем, что делать дальше."
-      : "ответим на вопросы по отчёту и подскажем, что проверить при следующем визите.";
-    const nextStepText = publicTelegramHref ? `Напишите нам — ${nextStepTail}` : `Позвоните нам — ${nextStepTail}`;
-    const footerCopy = attentionCount > 0
-      ? `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.`
-      : `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Если останутся вопросы по отчёту, мастер подскажет следующий шаг.`;
-    const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
+  const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
+  const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
+  const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
+  const publicAddress = payload.publicAddress || "Калининград";
+  const nextStepTail = attentionCount > 0
+    ? "объясним рекомендации и подскажем, что делать дальше."
+    : "ответим на вопросы по отчёту и подскажем, что проверить при следующем визите.";
+  const nextStepText = publicTelegramHref ? `Напишите нам — ${nextStepTail}` : `Позвоните нам — ${nextStepTail}`;
+  const footerCopy = attentionCount > 0
+    ? `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.`
+    : `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Если останутся вопросы по отчёту, мастер подскажет следующий шаг.`;
+  const publicReportUrl = payload.reportUrl.replace(/\/print\/?$/, "").replace(/\/$/, "");
   const pdfUrl = `${publicReportUrl}/pdf`;
   const reportShareLabel = `tgm.report/${reportCode}`;
-  const vehiclePhoto = payload.vehiclePhoto?.url ? payload.vehiclePhoto : null;
   const vehicleSummaryMeta = [
     formatNumericDate(reportDate),
     payload.vehicle.mileage != null ? `${formatMileage(payload.vehicle.mileage)} км` : null,
@@ -602,17 +614,17 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
     blocksForReport.slice(0, checkColumnBreak),
     blocksForReport.slice(checkColumnBreak),
   ].filter((column) => column.length > 0);
-    const compactStats = [
-      { status: "good", value: good, label: "В норме" },
-      { status: "warn", value: warn, label: "Внимание" },
-      { status: "crit", value: crit, label: "Критично" },
-      { status: "limited", value: limitedCount, label: "Не полностью" },
-    ];
-    const printPhotoSectionNumber = String((recommendations.length > 0 ? 1 : 0) + 1).padStart(2, "0");
-    const printChecklistSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 1).padStart(2, "0");
-    const publicPhotoSectionNumber = String((recommendations.length > 0 ? 1 : 0) + 1).padStart(2, "0");
-    const publicChecklistSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 1).padStart(2, "0");
-    const publicNextStepSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 2).padStart(2, "0");
+  const compactStats = [
+    { status: "good", value: good, label: "В норме" },
+    { status: "warn", value: warn, label: "Внимание" },
+    { status: "crit", value: crit, label: "Критично" },
+    { status: "limited", value: limitedCount, label: "Не полностью" },
+  ];
+  const printPhotoSectionNumber = String((recommendations.length > 0 ? 1 : 0) + 1).padStart(2, "0");
+  const printChecklistSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 1).padStart(2, "0");
+  const publicPhotoSectionNumber = String((recommendations.length > 0 ? 1 : 0) + 1).padStart(2, "0");
+  const publicChecklistSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 1).padStart(2, "0");
+  const publicNextStepSectionNumber = String((recommendations.length > 0 ? 1 : 0) + (photos.length > 0 ? 1 : 0) + 2).padStart(2, "0");
 
   if (mode === "online") {
     return (
@@ -644,12 +656,6 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
                   </dl>
                 </details>
               </div>
-              {vehiclePhoto && (
-                <figure className="tgm-public-vehicle-photo">
-                  <img src={vehiclePhoto.thumbnailUrl || vehiclePhoto.url} alt={vehiclePhoto.caption || `Фото автомобиля ${payload.vehicle.title}`} loading="eager" decoding="async" />
-                  <figcaption>{vehiclePhoto.caption || "Фото автомобиля"}</figcaption>
-                </figure>
-              )}
               <div className="tgm-public-main-result">
                 <span className="tgm-public-eyebrow">Итог</span>
                 <strong>{mainResultTitle}</strong>
@@ -899,14 +905,7 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
                 <div className="rep-fact"><div className="k">Мастер</div><div className="v sm">{masterName.split(" ").slice(-1)[0] || masterName}</div><div className="u">{masterName.split(" ")[0] || masterMasked}</div></div>
               </div>
             </div>
-            {vehiclePhoto ? (
-              <figure className="rep-vehicle-photo">
-                <img src={vehiclePhoto.url} alt={vehiclePhoto.caption || `Фото автомобиля ${payload.vehicle.title}`} />
-                <figcaption>{vehiclePhoto.caption || "Фото автомобиля"}</figcaption>
-              </figure>
-            ) : (
-              <CarSilhouette vehicleTitle={payload.clientName?.split(" ")[1] || payload.clientName || payload.vehicle.title} vin={payload.vehicle.vin} />
-            )}
+            <CarSilhouette vehicleTitle={payload.clientName?.split(" ")[1] || payload.clientName || payload.vehicle.title} vin={payload.vehicle.vin} />
           </div>
           <div className="rep-chequered" />
         </div>
