@@ -413,31 +413,34 @@ function CarSilhouette({
   photoUrl?: string | null;
   photoAlt?: string;
 }) {
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const showPhoto = Boolean(photoUrl && !photoFailed);
+  const showSilhouette = !photoUrl || photoFailed;
+
   return (
-    <div className={`rep-hero-car ${photoUrl ? "has-photo" : ""}`}>
-      <svg viewBox="0 0 440 280" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} aria-hidden>
-        <rect x="0" y="232" width="440" height="48" fill="#000" />
-        <line x1="0" y1="232" x2="440" y2="232" stroke="#C2410C" strokeWidth="1" />
-        <path d="M 50 205 L 90 170 L 160 155 L 240 150 L 300 155 L 350 175 L 385 205 L 390 210 L 385 220 L 370 220 L 360 232 Q 340 240 320 230 L 312 220 L 132 220 L 120 232 Q 100 240 80 230 L 70 220 L 60 220 Z" fill="#3D3D3D" />
-        <path d="M 150 162 L 200 156 L 270 156 L 305 168 L 290 195 L 165 195 Z" fill="#0a0a0a" />
-        <circle cx="100" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
-        <circle cx="100" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
-        <circle cx="340" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
-        <circle cx="340" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
-        <circle cx="220" cy="195" r="14" fill="#C2410C" />
-        <text x="220" y="201" textAnchor="middle" fontFamily="Oswald" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
-      </svg>
-      {photoUrl && (
+    <div className={`rep-hero-car ${showPhoto ? "has-photo" : ""} ${photoFailed ? "is-photo-failed" : ""}`}>
+      {showSilhouette && (
+        <svg viewBox="0 0 440 280" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} aria-hidden>
+          <rect x="0" y="232" width="440" height="48" fill="#000" />
+          <line x1="0" y1="232" x2="440" y2="232" stroke="#C2410C" strokeWidth="1" />
+          <path d="M 50 205 L 90 170 L 160 155 L 240 150 L 300 155 L 350 175 L 385 205 L 390 210 L 385 220 L 370 220 L 360 232 Q 340 240 320 230 L 312 220 L 132 220 L 120 232 Q 100 240 80 230 L 70 220 L 60 220 Z" fill="#3D3D3D" />
+          <path d="M 150 162 L 200 156 L 270 156 L 305 168 L 290 195 L 165 195 Z" fill="#0a0a0a" />
+          <circle cx="100" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
+          <circle cx="100" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
+          <circle cx="340" cy="222" r="22" fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1.5" />
+          <circle cx="340" cy="222" r="10" fill="#1a1a1a" stroke="#3a3a3a" />
+          <circle cx="220" cy="195" r="14" fill="#C2410C" />
+          <text x="220" y="201" textAnchor="middle" fontFamily="Oswald" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
+        </svg>
+      )}
+      {showPhoto && (
         <img
           className="rep-hero-photo print-vehicle-photo"
-          src={photoUrl}
+          src={photoUrl || ""}
           alt={photoAlt || "Фото автомобиля"}
           loading="eager"
           decoding="sync"
-          onError={(event) => {
-            event.currentTarget.hidden = true;
-            event.currentTarget.closest(".rep-hero-car")?.classList.add("is-photo-failed");
-          }}
+          onError={() => setPhotoFailed(true)}
         />
       )}
       <div className="rep-car-tag">{vehicleTitle} · VIN {vin ? `...${vin.slice(-6)}` : "—"}</div>

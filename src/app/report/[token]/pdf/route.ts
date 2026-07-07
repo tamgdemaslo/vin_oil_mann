@@ -788,7 +788,6 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
           marginBottom: 0,
           marginLeft: 0,
           scale: 1,
-          transferMode: "ReturnAsStream",
         },
         sessionId
       ),
