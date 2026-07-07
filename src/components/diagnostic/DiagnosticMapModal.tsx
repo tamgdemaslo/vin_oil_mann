@@ -159,6 +159,71 @@ type QuickUndoSnapshot = Array<{
 }>;
 
 const MAX_DIAGNOSTIC_PHOTO_BYTES = 12 * 1024 * 1024;
+const REPORT_PHOTO_MAX_EDGE = 1600;
+const REPORT_PHOTO_JPEG_QUALITY = 0.82;
+
+function isHeicLikeFile(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  const name = file.name.toLowerCase();
+  return mime.includes("heic") || mime.includes("heif") || /\.(heic|heif)$/i.test(name);
+}
+
+function reportPhotoFileName(file: File): string {
+  const base = file.name.replace(/\.[^.]+$/u, "") || "diagnostic-photo";
+  return `${base}.jpg`;
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Не удалось подготовить фото для отчёта"));
+    }, "image/jpeg", quality);
+  });
+}
+
+function loadImageForOptimization(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Не удалось прочитать фото. Попробуйте JPG или PNG."));
+    };
+    image.src = url;
+  });
+}
+
+async function optimizeReportPhotoFile(file: File): Promise<File> {
+  if (isHeicLikeFile(file)) {
+    throw new Error("HEIC/HEIF не подходит для печати PDF. Сохраните фото как JPG или PNG и загрузите ещё раз.");
+  }
+  if (!file.type.startsWith("image/")) return file;
+
+  const image = await loadImageForOptimization(file);
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) return file;
+
+  const scale = Math.min(1, REPORT_PHOTO_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return file;
+
+  context.fillStyle = "#f5f2ed";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const blob = await canvasToJpegBlob(canvas, REPORT_PHOTO_JPEG_QUALITY);
+  return new File([blob], reportPhotoFileName(file), { type: "image/jpeg", lastModified: Date.now() });
+}
 
 type FieldContext = {
   label: string;
@@ -3278,7 +3343,7 @@ export function DiagnosticMapModal({
   async function uploadVehiclePhoto(file: File | null | undefined) {
     if (!activeId || !file) return;
     if (!fileLooksLikeImage(file)) {
-      setError("Неподдерживаемый формат фото автомобиля. Выберите JPG, PNG, HEIC, WebP или другой файл изображения.");
+      setError("Неподдерживаемый формат фото автомобиля. Выберите JPG, PNG или WebP.");
       return;
     }
     if (file.size > MAX_DIAGNOSTIC_PHOTO_BYTES) {
@@ -3288,9 +3353,13 @@ export function DiagnosticMapModal({
     setVehiclePhotoUploading(true);
     setError(null);
     try {
+      const preparedFile = await optimizeReportPhotoFile(file);
+      if (preparedFile.size > MAX_DIAGNOSTIC_PHOTO_BYTES) {
+        throw new Error("Фото автомобиля слишком большое даже после подготовки. Выберите файл поменьше.");
+      }
       const form = new FormData();
       form.set("caption", data?.vehicle.title ? `Фото автомобиля ${data.vehicle.title}` : "Фото автомобиля");
-      form.set("file", file);
+      form.set("file", preparedFile);
       const response = await fetch(`/api/diagnostics/${activeId}/vehicle-photo`, { method: "POST", body: form });
       const json = await response.json().catch(() => ({})) as { diagnostic?: DiagnosticMapPayload; error?: string };
       if (!response.ok || !json.diagnostic) throw new Error(json.error ?? "Не удалось сохранить фото автомобиля");
@@ -3334,19 +3403,30 @@ export function DiagnosticMapModal({
   async function uploadPhoto(target: DiagnosticMapItem, file: File | null) {
     if (!activeId || !file) return;
     if (!fileLooksLikeImage(file)) {
-      setError("Неподдерживаемый формат фото. Выберите JPG, PNG, HEIC, WebP или другой файл изображения.");
+      setError("Неподдерживаемый формат фото. Выберите JPG, PNG или WebP.");
       return;
     }
     if (file.size > MAX_DIAGNOSTIC_PHOTO_BYTES) {
       setError("Фото слишком большое. Максимальный размер — 12 МБ.");
       return;
     }
+    let preparedFile: File;
+    try {
+      preparedFile = await optimizeReportPhotoFile(file);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Не удалось подготовить фото для отчёта");
+      return;
+    }
+    if (preparedFile.size > MAX_DIAGNOSTIC_PHOTO_BYTES) {
+      setError("Фото слишком большое даже после подготовки. Выберите файл поменьше.");
+      return;
+    }
     const caption = (photoCaptions[target.code] ?? "").trim() || defaultPhotoCaptionForItem(target);
     const upload: PhotoUploadState = {
-      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${file.name}`,
-      file,
+      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${preparedFile.name}`,
+      file: preparedFile,
       caption,
-      previewUrl: URL.createObjectURL(file),
+      previewUrl: URL.createObjectURL(preparedFile),
       progress: 0,
       status: "uploading",
     };

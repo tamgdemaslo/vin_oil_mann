@@ -56,7 +56,9 @@ type ReportPayload = {
     caption?: string | null;
     url: string;
     thumbnailUrl?: string;
+    printUrl?: string;
     mimeType?: string | null;
+    sizeBytes?: number | null;
     updatedAt?: string | null;
   } | null;
   clientName?: string | null;
@@ -400,9 +402,19 @@ function pluralRu(count: number, one: string, few: string, many: string): string
   return many;
 }
 
-function CarSilhouette({ vehicleTitle, vin }: { vehicleTitle: string; vin?: string | null }) {
+function CarSilhouette({
+  vehicleTitle,
+  vin,
+  photoUrl,
+  photoAlt,
+}: {
+  vehicleTitle: string;
+  vin?: string | null;
+  photoUrl?: string | null;
+  photoAlt?: string;
+}) {
   return (
-    <div className="rep-hero-car">
+    <div className={`rep-hero-car ${photoUrl ? "has-photo" : ""}`}>
       <svg viewBox="0 0 440 280" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} aria-hidden>
         <rect x="0" y="232" width="440" height="48" fill="#000" />
         <line x1="0" y1="232" x2="440" y2="232" stroke="#C2410C" strokeWidth="1" />
@@ -415,16 +427,30 @@ function CarSilhouette({ vehicleTitle, vin }: { vehicleTitle: string; vin?: stri
         <circle cx="220" cy="195" r="14" fill="#C2410C" />
         <text x="220" y="201" textAnchor="middle" fontFamily="Oswald" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
       </svg>
+      {photoUrl && (
+        <img
+          className="rep-hero-photo print-vehicle-photo"
+          src={photoUrl}
+          alt={photoAlt || "Фото автомобиля"}
+          loading="eager"
+          decoding="sync"
+          onError={(event) => {
+            event.currentTarget.hidden = true;
+            event.currentTarget.closest(".rep-hero-car")?.classList.add("is-photo-failed");
+          }}
+        />
+      )}
       <div className="rep-car-tag">{vehicleTitle} · VIN {vin ? `...${vin.slice(-6)}` : "—"}</div>
     </div>
   );
 }
 
 function PhotoTile({ photo, index, status }: { photo: { id: string; caption: string; url: string; itemTitle: string }; index: number; status: string }) {
+  const backgroundImage = `url("${photo.url.replace(/"/gu, "%22")}")`;
+
   return (
     <figure className="rep-photo" key={`${photo.id}-${index}`}>
-      <div className="rep-photo-img">
-        <img src={photo.url} alt={photo.caption || photo.itemTitle || "Фото диагностики"} loading="eager" decoding="sync" />
+      <div className="rep-photo-img" style={{ backgroundImage }}>
         <div className="rep-photo-scrim" />
         <span className="rep-photo-dot" style={{ background: statusColor(status) }} />
         <span className="rep-photo-no">IMG_{String(index + 1).padStart(3, "0")}</span>
@@ -529,23 +555,13 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
   const noAccessCount = visibleItems.filter((item) => normalizeStatus(item.status) === "no-access").length;
   const uncheckedCount = visibleItems.filter((item) => normalizeStatus(item.status) === "unchecked").length;
   const recommendationPhotoIds = new Set(recommendations.flatMap((item) => item.photos.map((photo) => photo.id)));
-  const isServerPdfPrint = mode === "print" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("pdf") === "1";
   const vehiclePhoto = payload.vehiclePhoto?.url ? payload.vehiclePhoto : null;
+  const vehiclePhotoReportUrl = vehiclePhoto?.url || vehiclePhoto?.thumbnailUrl || null;
+  const vehiclePhotoPrintUrl = vehiclePhoto?.printUrl || vehiclePhoto?.url || vehiclePhoto?.thumbnailUrl || null;
   const diagnosticPhotos: PublicReportPhoto[] = visibleItems
     .filter((item) => normalizeStatus(item.status) !== "no-access")
     .flatMap((item) => item.photos.map((photo) => ({ ...photo, itemTitle: clientItemTitle(item.title), status: normalizeStatus(item.status) })));
-  const photos: PublicReportPhoto[] = [
-    ...(vehiclePhoto && !isServerPdfPrint
-      ? [{
-          id: `vehicle-${vehiclePhoto.id}`,
-          caption: vehiclePhoto.caption || "Фото автомобиля",
-          url: vehiclePhoto.thumbnailUrl || vehiclePhoto.url,
-          itemTitle: payload.vehicle.title ? `Фото автомобиля · ${payload.vehicle.title}` : "Фото автомобиля",
-          status: "unchecked",
-        }]
-      : []),
-    ...diagnosticPhotos,
-  ];
+  const photos: PublicReportPhoto[] = diagnosticPhotos;
   const generalPhotos = photos.filter((photo) => !recommendationPhotoIds.has(photo.id));
   const hasRealItems = reportCounts.total > 0;
   const good = hasRealItems ? reportCounts.good : payload.counts.good ?? payload.counts.normal ?? 0;
@@ -676,6 +692,12 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
                 </div>
               </div>
             </div>
+            {vehiclePhotoReportUrl && (
+              <figure className="tgm-public-vehicle-photo">
+                <img src={vehiclePhotoReportUrl} alt={vehiclePhoto?.caption || payload.vehicle.title || "Фото автомобиля"} loading="eager" decoding="async" />
+                <figcaption>{vehiclePhoto?.caption || "Фото автомобиля"}</figcaption>
+              </figure>
+            )}
           </section>
 
           {recommendations.length > 0 && (
@@ -877,7 +899,7 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
       <div className="diag-print-toolbar no-print">
         <a className="btn" href={payload.reportUrl}><ChevronLeft size={16} /> Онлайн-отчёт</a>
         <div style={{ flex: 1 }} />
-        <span>Клиентский отчёт · A4 · {photos.length} фото</span>
+        <span>Клиентский отчёт · A4 · {photos.length} фото диагностики</span>
         {autoPrint ? (
           <button className="btn primary" type="button" onClick={() => setAutoPrintRequested(true)}>
             <Printer size={16} /> Открыть печать
@@ -907,7 +929,12 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
                 <div className="rep-fact"><div className="k">Мастер</div><div className="v sm">{masterName.split(" ").slice(-1)[0] || masterName}</div><div className="u">{masterName.split(" ")[0] || masterMasked}</div></div>
               </div>
             </div>
-            <CarSilhouette vehicleTitle={payload.clientName?.split(" ")[1] || payload.clientName || payload.vehicle.title} vin={payload.vehicle.vin} />
+            <CarSilhouette
+              vehicleTitle={payload.clientName?.split(" ")[1] || payload.clientName || payload.vehicle.title}
+              vin={payload.vehicle.vin}
+              photoUrl={vehiclePhotoPrintUrl}
+              photoAlt={vehiclePhoto?.caption || payload.vehicle.title || "Фото автомобиля"}
+            />
           </div>
           <div className="rep-chequered" />
         </div>

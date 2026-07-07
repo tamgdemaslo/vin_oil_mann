@@ -41208,6 +41208,22 @@ html.tgm-print-active .tgm-client-report .qr {
 .diag-print-screen.is-print .paper-a4.rep .rep-fact .u { margin-top: 1px; color: #8a8a8a; font-size: 8px; }
 .diag-print-screen.is-print .paper-a4.rep .rep-hero-car { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: #0e0e0e; border: 1px solid #2a2a2a; }
 .diag-print-screen.is-print .paper-a4.rep .rep-hero-car svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.diag-print-screen.is-print .paper-a4.rep .rep-hero-car.has-photo:not(.is-photo-failed) svg { opacity: 0; }
+.diag-print-screen.is-print .paper-a4.rep .rep-hero-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border: 0;
+  filter: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.diag-print-screen.is-print .paper-a4.rep .rep-hero-car.is-photo-failed .rep-hero-photo { display: none; }
 .diag-print-screen.is-print .paper-a4.rep .rep-car-tag { position: absolute; z-index: 2; bottom: 8px; left: 10px; color: #b8b2a8; font-family: var(--f-mono); font-size: 8px; letter-spacing: 0.1em; }
 .diag-print-screen.is-print .paper-a4.rep .rep-chequered { height: 9px; background-image: linear-gradient(45deg,#f5f2ed 25%,transparent 25%), linear-gradient(-45deg,#f5f2ed 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#f5f2ed 75%), linear-gradient(-45deg,transparent 75%,#f5f2ed 75%); background-size: 9px 9px; background-position: 0 0, 0 4.5px, 4.5px -4.5px, -4.5px 0; background-color: #0a0a0a; }
 
@@ -51632,6 +51648,37 @@ html.tgm-print-active .tgm-client-report .qr {
 
   .tgm-public-hero-copy {
     max-width: 760px;
+  }
+
+  .tgm-public-vehicle-photo {
+    position: relative;
+    margin: 18px 0 0;
+    overflow: hidden;
+    border: 1px solid rgba(245, 242, 237, 0.14);
+    border-radius: 8px;
+    background: rgba(245, 242, 237, 0.06);
+    aspect-ratio: 16 / 9;
+  }
+
+  .tgm-public-vehicle-photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+
+  .tgm-public-vehicle-photo figcaption {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    color: rgba(245, 242, 237, 0.82);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-transform: uppercase;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.72);
   }
 
   .tgm-public-vehicle-summary {

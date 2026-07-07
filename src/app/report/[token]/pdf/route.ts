@@ -6,6 +6,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import chromium from "@sparticuz/chromium";
 import { NextRequest, NextResponse } from "next/server";
 import { WebSocket } from "undici";
+import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -409,9 +410,111 @@ async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<voi
   );
 }
 
+async function waitForImagesReady(cdp: CdpClient, sessionId: string): Promise<void> {
+  const result = await withTimeout(
+    cdp.send<{
+      result?: {
+        value?: {
+          imgCount: number;
+          imgFailed: Array<{ src: string; reason: string }>;
+          backgroundCount: number;
+          backgroundFailed: Array<{ src: string; reason: string }>;
+        };
+      };
+    }>(
+      "Runtime.evaluate",
+      {
+        expression: `
+        (async () => {
+          const root = document.querySelector('.diag-print-screen.is-print .paper-a4.rep') || document;
+          const timeoutMs = 8000;
+          const waitForUrl = (src) => new Promise((resolve) => {
+            if (!src) {
+              resolve({ src: '', ok: true, reason: 'empty' });
+              return;
+            }
+            const image = new Image();
+            let done = false;
+            const finish = (ok, reason) => {
+              if (done) return;
+              done = true;
+              resolve({ src, ok, reason });
+            };
+            const timer = setTimeout(() => finish(false, 'timeout'), timeoutMs);
+            image.onload = () => {
+              clearTimeout(timer);
+              finish(Boolean(image.naturalWidth), image.naturalWidth ? 'loaded' : 'empty');
+            };
+            image.onerror = () => {
+              clearTimeout(timer);
+              finish(false, 'error');
+            };
+            image.src = src;
+          });
+          const imgNodes = Array.from(root.querySelectorAll('img'));
+          const imgResults = await Promise.all(imgNodes.map((img) => {
+            const src = img.currentSrc || img.src || '';
+            if (!src || (img.complete && img.naturalWidth > 0)) {
+              return Promise.resolve({ src, ok: true, reason: 'loaded' });
+            }
+            return new Promise((resolve) => {
+              let done = false;
+              const finish = (ok, reason) => {
+                if (done) return;
+                done = true;
+                resolve({ src, ok, reason });
+              };
+              const timer = setTimeout(() => finish(false, 'timeout'), timeoutMs);
+              img.addEventListener('load', () => {
+                clearTimeout(timer);
+                finish(Boolean(img.naturalWidth), img.naturalWidth ? 'loaded' : 'empty');
+              }, { once: true });
+              img.addEventListener('error', () => {
+                clearTimeout(timer);
+                finish(false, 'error');
+              }, { once: true });
+            });
+          }));
+          const backgroundUrls = [];
+          const backgroundPattern = /url\\((['"]?)(.*?)\\1\\)/g;
+          for (const node of Array.from(root.querySelectorAll('*'))) {
+            const backgroundImage = getComputedStyle(node).backgroundImage || '';
+            let match;
+            while ((match = backgroundPattern.exec(backgroundImage))) {
+              const src = match[2];
+              if (src && !src.startsWith('data:')) backgroundUrls.push(src);
+            }
+          }
+          const uniqueBackgroundUrls = Array.from(new Set(backgroundUrls));
+          const backgroundResults = await Promise.all(uniqueBackgroundUrls.map(waitForUrl));
+          return {
+            imgCount: imgResults.length,
+            imgFailed: imgResults.filter((entry) => !entry.ok).map((entry) => ({ src: entry.src.slice(0, 240), reason: entry.reason })),
+            backgroundCount: backgroundResults.length,
+            backgroundFailed: backgroundResults.filter((entry) => !entry.ok).map((entry) => ({ src: entry.src.slice(0, 240), reason: entry.reason })),
+          };
+        })()
+      `,
+        awaitPromise: true,
+        returnByValue: true,
+      },
+      sessionId
+    ),
+    20_000,
+    "Ожидание изображений"
+  );
+
+  const value = result.result?.value;
+  if (value?.imgFailed.length || value?.backgroundFailed.length) {
+    console.warn("[diagnostic-pdf] image readiness completed with fallbacks", value);
+  } else {
+    console.info("[diagnostic-pdf] images ready", value ?? {});
+  }
+}
+
 async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string): Promise<void> {
   const result = await withTimeout(
-    cdp.send<{ result?: { value?: { photoTiles?: number; inlineImages?: number } } }>(
+    cdp.send<{ result?: { value?: { photoTiles?: number; inlineImages?: number; vehicleHeroImages?: number } } }>(
       "Runtime.evaluate",
       {
         expression: `
@@ -457,8 +560,9 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
           }
 
           return {
-            photoTiles: document.querySelectorAll('.diag-print-screen.is-print .rep-photo-img img').length,
+            photoTiles: document.querySelectorAll('.diag-print-screen.is-print .rep-photo-img').length,
             inlineImages: document.querySelectorAll('.diag-print-screen.is-print .rep-rec-photos img').length,
+            vehicleHeroImages: document.querySelectorAll('.diag-print-screen.is-print .print-vehicle-photo').length,
           };
         })()
       `,
@@ -536,7 +640,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
 
     await withTimeout(cdp.send("Page.enable", {}, sessionId), CDP_COMMAND_TIMEOUT_MS, "Page.enable");
     await withTimeout(cdp.send("Runtime.enable", {}, sessionId), CDP_COMMAND_TIMEOUT_MS, "Runtime.enable");
-    await withTimeout(cdp.send("Emulation.setEmulatedMedia", { media: "screen" }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Emulation.setEmulatedMedia");
+    await withTimeout(cdp.send("Emulation.setEmulatedMedia", { media: "print" }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Emulation.setEmulatedMedia");
     await withTimeout(
       cdp.send(
         "Emulation.setDeviceMetricsOverride",
@@ -667,6 +771,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       await applyPrinterSafeOptimizations(cdp, sessionId);
     }
     await waitForFontsReady(cdp, sessionId);
+    await waitForImagesReady(cdp, sessionId);
 
     const pdf = await withTimeout(
       cdp.send<CdpPdfResult>(
@@ -743,15 +848,53 @@ function requestOrigin(request: NextRequest): string {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const pdfJobId = randomUUID();
+  const startedAt = Date.now();
   const reportUrl = new URL(`/report/${encodeURIComponent(token)}/print?pdf=1`, requestOrigin(request));
   const pageRangesParam = request.nextUrl.searchParams.get("pages")?.trim();
   const pageRanges = pageRangesParam && /^[0-9,\-\s]+$/.test(pageRangesParam) ? pageRangesParam : undefined;
   const printerSafe = request.nextUrl.searchParams.get("rich") !== "1";
 
   const pdfMode = printerSafe ? "printer-safe" : "rich";
+  const diagnosticMeta = await prisma.diagnosticMapSession.findUnique({
+    where: { publicToken: token },
+    select: {
+      id: true,
+      vehiclePhoto: {
+        select: {
+          id: true,
+          contentType: true,
+          sizeBytes: true,
+          updatedAt: true,
+        },
+      },
+    },
+  }).catch((error) => {
+    console.warn("[diagnostic-pdf] meta lookup failed", { pdfJobId, reportToken: token, error });
+    return null;
+  });
+
+  console.info("[diagnostic-pdf] job started", {
+    pdfJobId,
+    reportToken: token,
+    diagnosticId: diagnosticMeta?.id ?? null,
+    vehiclePhotoId: diagnosticMeta?.vehiclePhoto?.id ?? null,
+    vehiclePhotoVariant: "printHero",
+    vehiclePhotoSize: diagnosticMeta?.vehiclePhoto?.sizeBytes ?? null,
+    vehiclePhotoContentType: diagnosticMeta?.vehiclePhoto?.contentType ?? null,
+    pdfMode,
+  });
 
   try {
     const pdf = await renderReportPdfWithRetry(reportUrl.toString(), { pageRanges, printerSafe });
+    console.info("[diagnostic-pdf] job completed", {
+      pdfJobId,
+      reportToken: token,
+      diagnosticId: diagnosticMeta?.id ?? null,
+      renderDurationMs: Date.now() - startedAt,
+      pdfSizeBytes: pdf.byteLength,
+      status: "ok",
+    });
 
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
@@ -762,7 +905,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     });
   } catch (error) {
-    console.error("[diagnostic-pdf] failed", { token, error });
+    console.error("[diagnostic-pdf] failed", {
+      pdfJobId,
+      reportToken: token,
+      diagnosticId: diagnosticMeta?.id ?? null,
+      vehiclePhotoId: diagnosticMeta?.vehiclePhoto?.id ?? null,
+      renderDurationMs: Date.now() - startedAt,
+      status: "failed",
+      error,
+    });
     return NextResponse.json(
       {
         error: "Не удалось сформировать PDF отчёта",

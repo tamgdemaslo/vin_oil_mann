@@ -2,17 +2,35 @@ import fs from "fs/promises";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { diagnosticMapPhotoMime } from "@/lib/diagnostic-map-service";
+import { optimizeReportImage, type ReportPhotoVariant } from "@/lib/report-photo-optimization";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
+const VEHICLE_PHOTO_VARIANTS = new Set<ReportPhotoVariant>(["reportHero", "printHero", "thumbnail"]);
+
+function vehiclePhotoVariant(value: string): ReportPhotoVariant {
+  return VEHICLE_PHOTO_VARIANTS.has(value as ReportPhotoVariant) ? (value as ReportPhotoVariant) : "reportHero";
+}
+
+async function readVehiclePhotoBuffer(photo: { data: Uint8Array | null; filePath: string }): Promise<Buffer> {
+  if (photo.data && photo.data.byteLength > 0) return Buffer.from(photo.data);
+  return fs.readFile(photo.filePath);
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const requestedVariant = new URL(request.url).searchParams.get("variant") || "reportHero";
+  const variant = vehiclePhotoVariant(requestedVariant);
   const session = await prisma.diagnosticMapSession.findUnique({
     where: { publicToken: token },
     select: {
+      id: true,
       vehiclePhoto: {
         select: {
+          id: true,
           data: true,
           filePath: true,
           contentType: true,
+          sizeBytes: true,
+          updatedAt: true,
         },
       },
     },
@@ -20,20 +38,44 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 
   const photo = session?.vehiclePhoto;
   if (!photo) return NextResponse.json({ error: "Фото автомобиля не найдено" }, { status: 404 });
-
-  const headers = {
-    "Content-Type": diagnosticMapPhotoMime(photo.filePath, photo.contentType),
-    "Cache-Control": "public, max-age=86400",
-  };
-
-  if (photo.data && photo.data.byteLength > 0) {
-    return new NextResponse(Buffer.from(photo.data), { headers });
+  const contentType = diagnosticMapPhotoMime(photo.filePath, photo.contentType);
+  if (/heic|heif/i.test(contentType) || /\.(heic|heif)$/i.test(photo.filePath)) {
+    console.warn("[diagnostic-vehicle-photo] unsupported public image format", {
+      reportToken: token,
+      diagnosticId: session.id,
+      vehiclePhotoId: photo.id,
+      variant,
+      contentType,
+      sizeBytes: photo.sizeBytes ?? null,
+    });
+    return NextResponse.json(
+      { error: "Формат фото автомобиля не подходит для печати PDF" },
+      { status: 415, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   try {
-    const buf = await fs.readFile(photo.filePath);
-    return new NextResponse(buf, { headers });
-  } catch {
+    const original = await readVehiclePhotoBuffer(photo);
+    const optimized = await optimizeReportImage(original, variant);
+    return new NextResponse(new Uint8Array(optimized.data), {
+      headers: {
+        "Content-Type": optimized.contentType,
+        "Cache-Control": "public, max-age=86400",
+        "X-TGM-Photo-Variant": variant,
+        "X-TGM-Photo-Original-Size": String(photo.sizeBytes ?? original.byteLength),
+        "X-TGM-Photo-Size": String(optimized.sizeBytes),
+      },
+    });
+  } catch (error) {
+    console.warn("[diagnostic-vehicle-photo] public image optimization failed", {
+      reportToken: token,
+      diagnosticId: session.id,
+      vehiclePhotoId: photo.id,
+      variant,
+      contentType,
+      sizeBytes: photo.sizeBytes ?? null,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: "Файл фото автомобиля недоступен" }, { status: 404 });
   }
 }

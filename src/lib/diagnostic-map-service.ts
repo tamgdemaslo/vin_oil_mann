@@ -24,6 +24,7 @@ import {
   type DiagnosticMapStatusCode,
 } from "@/data/diagnostic-map";
 import { buildDiagnosticReportText } from "@/data/diagnostic-report-text";
+import { optimizeReportImage, type ReportPhotoVariant } from "@/lib/report-photo-optimization";
 
 type SessionUser = {
   login: string;
@@ -216,10 +217,50 @@ export function diagnosticMapPhotoMime(filePath: string, contentType?: string | 
   return "image/jpeg";
 }
 
-function safeExtFromMime(mime: string): string {
-  if (mime.includes("png")) return "png";
-  if (mime.includes("webp")) return "webp";
-  return "jpg";
+function normalizedReportPhotoContentType(file: File): string {
+  const mime = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+  if (mime.includes("heic") || mime.includes("heif") || /\.(heic|heif)$/i.test(name)) {
+    throw new Error("Формат HEIC/HEIF не подходит для печати PDF. Сохраните фото как JPG или PNG и загрузите ещё раз.");
+  }
+  if (mime.includes("png")) return "image/png";
+  if (mime.includes("webp")) return "image/webp";
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "image/jpeg";
+  return "image/jpeg";
+}
+
+async function optimizeUploadedReportPhoto(bytes: Buffer, variant: ReportPhotoVariant, context: Record<string, unknown>) {
+  try {
+    const optimized = await optimizeReportImage(bytes, variant);
+    console.info("[diagnostics] report photo optimized", {
+      ...context,
+      variant,
+      originalSizeBytes: optimized.originalSizeBytes,
+      optimizedSizeBytes: optimized.sizeBytes,
+      width: optimized.width,
+      height: optimized.height,
+    });
+    return optimized;
+  } catch (error) {
+    console.warn("[diagnostics] report photo optimization failed", {
+      ...context,
+      variant,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw new Error("Не удалось обработать фото для отчёта. Попробуйте JPG или PNG.");
+  }
+}
+
+function prismaBytes(buffer: Buffer): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(buffer.byteLength);
+  bytes.set(buffer);
+  return bytes;
+}
+
+function diagnosticVehiclePhotoUrl(publicToken: string, variant: "reportHero" | "printHero" | "thumbnail", version: number | null): string {
+  const params = new URLSearchParams({ variant });
+  if (version) params.set("v", String(version));
+  return `/api/diagnostics/public/${publicToken}/vehicle-photo?${params.toString()}`;
 }
 
 function reportUrlFromRequest(origin: string, token: string): string {
@@ -539,9 +580,9 @@ async function publicReportContactSettings(): Promise<PublicReportContactSetting
 function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactSettings?: PublicReportContactSettings, vehicleSync?: DiagnosticVehicleSyncState | null) {
   const reportUrl = origin ? reportUrlFromRequest(origin, row.publicToken) : `/report/${row.publicToken}`;
   const vehiclePhotoVersion = row.vehiclePhoto?.updatedAt.getTime() ?? null;
-  const vehiclePhotoUrl = row.vehiclePhoto
-    ? `/api/diagnostics/public/${row.publicToken}/vehicle-photo${vehiclePhotoVersion ? `?v=${vehiclePhotoVersion}` : ""}`
-    : "";
+  const vehiclePhotoUrl = row.vehiclePhoto ? diagnosticVehiclePhotoUrl(row.publicToken, "reportHero", vehiclePhotoVersion) : "";
+  const vehiclePhotoPrintUrl = row.vehiclePhoto ? diagnosticVehiclePhotoUrl(row.publicToken, "printHero", vehiclePhotoVersion) : "";
+  const vehiclePhotoThumbnailUrl = row.vehiclePhoto ? diagnosticVehiclePhotoUrl(row.publicToken, "thumbnail", vehiclePhotoVersion) : "";
   const blocks = DIAGNOSTIC_MAP_BLOCKS.map((block) => {
     return {
       code: block.code,
@@ -595,7 +636,8 @@ function serializeDiagnosticMap(row: DiagnosticMapFullRow, origin = "", contactS
           id: row.vehiclePhoto.id,
           caption: row.vehiclePhoto.caption ?? "",
           url: vehiclePhotoUrl,
-          thumbnailUrl: vehiclePhotoUrl,
+          thumbnailUrl: vehiclePhotoThumbnailUrl,
+          printUrl: vehiclePhotoPrintUrl,
           mimeType: diagnosticMapPhotoMime(row.vehiclePhoto.filePath, row.vehiclePhoto.contentType),
           sizeBytes: row.vehiclePhoto.sizeBytes ?? null,
           uploadedBy: row.vehiclePhoto.uploadedBy ?? null,
@@ -744,10 +786,14 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
   });
   if (!item) throw new Error("Пункт диагностики не найден");
   const safeCaption = asString(caption);
-  const bytes = Buffer.from(await file.arrayBuffer());
-  if (bytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
-  const contentType = file.type || "image/jpeg";
-  const ext = safeExtFromMime(contentType);
+  normalizedReportPhotoContentType(file);
+  const originalBytes = Buffer.from(await file.arrayBuffer());
+  if (originalBytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
+  const optimized = await optimizeUploadedReportPhoto(originalBytes, "diagnostic", { diagnosticId: sessionId, itemCode });
+  const bytes = optimized.data;
+  const data = prismaBytes(bytes);
+  const contentType = optimized.contentType;
+  const ext = optimized.extension;
   const dir = path.join(photoRoot(), sessionId);
   const photo = await prisma.diagnosticMapPhoto.create({
     data: {
@@ -755,7 +801,7 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
       filePath: "",
       contentType,
       sizeBytes: bytes.length,
-      data: bytes,
+      data,
       caption: safeCaption,
       sortOrder: item._count.photos,
     },
@@ -785,10 +831,14 @@ export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: Fil
   });
   if (!session) throw new Error("Диагностика не найдена");
   const safeCaption = asString(caption);
-  const bytes = Buffer.from(await file.arrayBuffer());
-  if (bytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
-  const contentType = file.type || "image/jpeg";
-  const ext = safeExtFromMime(contentType);
+  normalizedReportPhotoContentType(file);
+  const originalBytes = Buffer.from(await file.arrayBuffer());
+  if (originalBytes.length > 12 * 1024 * 1024) throw new Error("Фото больше 12 МБ");
+  const optimized = await optimizeUploadedReportPhoto(originalBytes, "printHero", { diagnosticId: sessionId, vehiclePhoto: true });
+  const bytes = optimized.data;
+  const data = prismaBytes(bytes);
+  const contentType = optimized.contentType;
+  const ext = optimized.extension;
   const previousPath = session.vehiclePhoto?.filePath ?? "";
   const dir = path.join(photoRoot(), sessionId);
   const existingId = session.vehiclePhoto?.id;
@@ -799,7 +849,7 @@ export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: Fil
       filePath: "",
       contentType,
       sizeBytes: bytes.length,
-      data: bytes,
+      data,
       caption: safeCaption || null,
       uploadedBy: uploadedBy || null,
       source: "diagnostic",
@@ -807,7 +857,7 @@ export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: Fil
     update: {
       contentType,
       sizeBytes: bytes.length,
-      data: bytes,
+      data,
       caption: safeCaption || null,
       uploadedBy: uploadedBy || null,
       source: "diagnostic",
