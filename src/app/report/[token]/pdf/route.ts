@@ -82,7 +82,6 @@ async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.Proc
   const cacheDir = join(userDataDir, "cache");
   const configDir = join(userDataDir, "config");
   const crashDir = join(userDataDir, "crash-dumps");
-  const dbusStub = join(userDataDir, "no-dbus.sock");
 
   await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await mkdir(cacheDir, { recursive: true });
@@ -98,22 +97,16 @@ async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.Proc
     XDG_CONFIG_HOME: configDir,
     NO_AT_BRIDGE: "1",
     GTK_USE_PORTAL: "0",
-    DBUS_SESSION_BUS_ADDRESS: `unix:path=${dbusStub}`,
-    DBUS_SYSTEM_BUS_ADDRESS: `unix:path=${dbusStub}`,
   };
 }
 
 function chromeServerFlags(userDataDir: string): string[] {
   return [
-    "--headless",
+    "--headless=new",
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-gpu",
     "--disable-dev-shm-usage",
-    "--disable-breakpad",
-    "--disable-crashpad",
-    "--disable-crash-reporter",
-    "--disable-dbus",
     "--disable-background-networking",
     "--disable-background-timer-throttling",
     "--disable-renderer-backgrounding",
@@ -122,14 +115,12 @@ function chromeServerFlags(userDataDir: string): string[] {
     "--disable-component-update",
     "--disable-default-apps",
     "--disable-accelerated-2d-canvas",
-    "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints,Crashpad,MojoIpcz",
+    "--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints",
     "--hide-scrollbars",
     "--metrics-recording-only",
     "--mute-audio",
     "--no-default-browser-check",
     "--no-first-run",
-    "--no-service-autorun",
-    "--no-zygote",
     "--password-store=basic",
     "--force-color-profile=srgb",
     `--crash-dumps-dir=${join(userDataDir, "crash-dumps")}`,
