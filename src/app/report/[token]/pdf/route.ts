@@ -65,6 +65,12 @@ const CHROME_CANDIDATES = [
   "/usr/bin/chromium",
 ].filter(Boolean) as string[];
 
+const CHROME_WRAPPER_CANDIDATES = [
+  process.env.CHROME_WRAPPER,
+  "/usr/bin/dbus-run-session",
+  "dbus-run-session",
+].filter(Boolean) as string[];
+
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
 const CDP_PRINT_TIMEOUT_MS = 45_000;
@@ -173,6 +179,37 @@ async function findChromeExecutable(): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function findChromeWrapperExecutable(): Promise<string | null> {
+  for (const candidate of [...new Set(CHROME_WRAPPER_CANDIDATES)]) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      if (await canLaunchExecutable(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+async function chromeSpawnConfig(chromePath: string, chromeArgs: string[]) {
+  const wrapperPath = await findChromeWrapperExecutable();
+  if (!wrapperPath) {
+    return {
+      command: chromePath,
+      args: chromeArgs,
+      wrapperPath: null as string | null,
+    };
+  }
+
+  return {
+    command: wrapperPath,
+    args: ["--", chromePath, ...chromeArgs],
+    wrapperPath,
+  };
 }
 
 function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string> {
@@ -588,15 +625,17 @@ async function renderReportPdfViaCli(url: string): Promise<Buffer> {
   await mkdir(userDataDir, { recursive: true });
   const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
 
-  console.warn("[diagnostic-pdf] launching chrome CLI print fallback", { chromePath });
-  const chrome = spawn(chromePath, [
+  const chromeArgs = [
     ...chromeServerFlags(userDataDir),
     "--run-all-compositor-stages-before-draw",
     "--virtual-time-budget=10000",
     "--print-to-pdf-no-header",
     `--print-to-pdf=${pdfPath}`,
     url,
-  ], { env: chromeEnv });
+  ];
+  const launch = await chromeSpawnConfig(chromePath, chromeArgs);
+  console.warn("[diagnostic-pdf] launching chrome CLI print fallback", { chromePath, wrapperPath: launch.wrapperPath });
+  const chrome = spawn(launch.command, launch.args, { env: chromeEnv });
 
   try {
     const result = await waitForChromeExit(chrome, CHROME_CLI_PRINT_TIMEOUT_MS, "Печать отчёта через Chrome CLI");
@@ -630,14 +669,17 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
   const userDataDir = join(tmpdir(), `tgm-pdf-${randomUUID()}`);
   await mkdir(userDataDir, { recursive: true });
   const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
-  console.info("[diagnostic-pdf] launching chrome", { chromePath, printerSafe, pageRanges: pageRanges ?? null });
 
-  const chrome = spawn(chromePath, [
+  const chromeArgs = [
     ...chromeServerFlags(userDataDir),
     "--remote-debugging-port=0",
     "--remote-debugging-address=127.0.0.1",
     "about:blank",
-  ], { env: chromeEnv });
+  ];
+  const launch = await chromeSpawnConfig(chromePath, chromeArgs);
+  console.info("[diagnostic-pdf] launching chrome", { chromePath, wrapperPath: launch.wrapperPath, printerSafe, pageRanges: pageRanges ?? null });
+
+  const chrome = spawn(launch.command, launch.args, { env: chromeEnv });
 
   let cdp: CdpClient | null = null;
   try {
