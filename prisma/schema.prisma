@@ -446,6 +446,7 @@ model CrmStage {
 
 model CrmDeal {
   id                       String    @id @default(cuid())
+  organizationId           String?   @map("organization_id")
   title                    String
   customerName             String?   @map("customer_name")
   phoneNormalized          String?   @map("phone_normalized")
@@ -461,11 +462,25 @@ model CrmDeal {
   moyskladCounterpartyHref String?   @map("moysklad_counterparty_href") @db.Text
   yclientsRecordId         String?   @map("yclients_record_id")
   moyskladDemandId         String?   @map("moysklad_demand_id")
+  conversationId           String?   @map("conversation_id")
+  appointmentId            String?   @map("appointment_id")
+  shipmentId               String?   @map("shipment_id")
+  precheckId               String?   @map("precheck_id")
+  diagnosticId             String?   @map("diagnostic_id")
+  procurementId            String?   @map("procurement_id")
+  caseStatus               String    @default("calculation_needed") @map("case_status")
+  caseType                 String    @default("manual") @map("case_type")
+  priority                 Int       @default(50)
+  caseKey                  String?   @unique @map("case_key")
   suppliesNote             String?   @map("supplies_note") @db.Text
   suppliesSupplier         String?   @map("supplies_supplier")
   suppliesExpectedAt       DateTime? @map("supplies_expected_at")
+  nextActionAt             DateTime? @map("next_action_at")
   nextContactAt            DateTime? @map("next_contact_at")
   snoozeUntil              DateTime? @map("snooze_until")
+  lastClientMessageAt      DateTime? @map("last_client_message_at")
+  lastOutboundMessageAt    DateTime? @map("last_outbound_message_at")
+  closedAt                 DateTime? @map("closed_at")
   status                   String    @default("open") // open | won | lost
   closeReason              String?   @map("close_reason")
   notes                    String?   @db.Text
@@ -476,15 +491,43 @@ model CrmDeal {
   stage CrmStage @relation(fields: [stageId], references: [id])
 
   notificationLogs ClientCaseNotificationLog[]
+  events ClientCaseEvent[]
 
   @@index([phoneNormalized])
   @@index([moyskladCounterpartyId])
+  @@index([conversationId])
+  @@index([appointmentId])
+  @@index([shipmentId])
+  @@index([precheckId])
+  @@index([diagnosticId])
+  @@index([procurementId])
+  @@index([caseStatus])
+  @@index([caseType])
+  @@index([priority])
   @@index([clientType])
+  @@index([nextActionAt])
   @@index([nextContactAt])
   @@index([snoozeUntil])
   @@index([stageId])
   @@index([status])
   @@map("crm_deals")
+}
+
+model ClientCaseEvent {
+  id         String   @id @default(cuid())
+  caseId     String   @map("case_id")
+  actorLogin String?  @map("actor_login")
+  eventType  String   @map("event_type")
+  title      String
+  note       String?  @db.Text
+  metadata   Json?    @map("metadata_json")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  case CrmDeal @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt], map: "client_case_events_case_time_idx")
+  @@index([eventType], map: "client_case_events_type_idx")
+  @@map("client_case_events")
 }
 
 model ClientCaseNotificationLog {

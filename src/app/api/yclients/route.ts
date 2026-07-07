@@ -154,6 +154,20 @@ function responseRecordId(data: unknown) {
   return id ?? null;
 }
 
+function appointmentStatusFromComment(value: string) {
+  const statusLine = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^Статус записи:/i.test(line));
+  const normalized = (statusLine || value).toLowerCase();
+  if (/не приехал|no[-_\s]?show/.test(normalized)) return "no_show";
+  if (/уехал|выдан|left/.test(normalized)) return "left";
+  if (/готов|done|заверш/.test(normalized)) return "done";
+  if (/работ|in_work/.test(normalized)) return "in_work";
+  if (/приехал|arrived/.test(normalized)) return "arrived";
+  return null;
+}
+
 function appointmentContextFromPayload(payload: unknown, fallbackId?: string | null) {
   const record = isRecord(payload) ? payload : {};
   const client = isRecord(record.client) ? record.client : {};
@@ -165,6 +179,7 @@ function appointmentContextFromPayload(payload: unknown, fallbackId?: string | n
   const datetime = stringValue(record.datetime) ?? stringValue(record.date);
   const comment = stringValue(record.comment) ?? "";
   const vehicleMatch = comment.match(/(?:VIN|vin|ВИН|госномер|авто)[:\s]+([A-Za-zА-Яа-я0-9 ._-]{3,40})/);
+  const statusFromComment = appointmentStatusFromComment(comment);
   return {
     appointmentId: fallbackId ?? idStringValue(record.id) ?? idStringValue(record.record_id) ?? null,
     appointmentAt: datetime ?? null,
@@ -174,9 +189,12 @@ function appointmentContextFromPayload(payload: unknown, fallbackId?: string | n
     serviceList: serviceList || null,
     car: vehicleMatch?.[1]?.trim() || null,
     status:
-      record.attendance === 1
+      statusFromComment ??
+      (record.attendance === 1
         ? "arrived"
-        : stringValue(record.status) ?? stringValue(record.state) ?? null,
+        : record.attendance === -1
+          ? "no_show"
+          : stringValue(record.status) ?? stringValue(record.state) ?? null),
     payload: { yclientsPayload: record },
   };
 }

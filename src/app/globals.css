@@ -12277,6 +12277,783 @@ select.eco-input::-ms-expand,
   }
 }
 
+/* Operations dashboard: day center layout */
+.eco-ops-dashboard {
+  --ops-bg: #f6f7f8;
+  --ops-surface: #fff;
+  --ops-sunk: #f0f2f4;
+  --ops-deep: #e7ebef;
+  --ops-hover: #eef1f4;
+  --ops-line: #dde3e8;
+  --ops-line2: #c5ced6;
+  --ops-dash: #c9d2da;
+  --ops-rust-tint: #fff0e8;
+  --ops-rust-tint2: #ffd8c5;
+  gap: 14px;
+  max-width: 1500px;
+  padding: 18px 22px 28px;
+  background: var(--ops-bg);
+}
+
+.eco-ops-desktop {
+  gap: 14px;
+}
+
+.eco-ops-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 14px 12px 16px;
+  background: var(--ops-surface);
+  border: 1px solid var(--ops-line);
+  border-radius: 6px;
+}
+
+.eco-ops-topbar h1 {
+  margin: 0;
+  color: var(--ops-ink);
+  font-size: 23px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.eco-ops-topbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 7px;
+}
+
+.eco-ops-topbar-meta span {
+  color: var(--ops-ink3);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.eco-ops-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.eco-ops-topbar-actions .eco-ops-btn {
+  height: 34px;
+}
+
+.eco-ops-alert-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--ops-surface);
+  border: 1px solid var(--ops-line);
+  border-radius: 6px;
+}
+
+.eco-ops-alert-strip-title {
+  flex-shrink: 0;
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.eco-ops-alert-strip-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.eco-ops-alert-chip {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 9px;
+  color: var(--ops-ink2);
+  background: var(--ops-sunk);
+  border: 1px solid var(--ops-line);
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.eco-ops-alert-chip:hover {
+  background: var(--ops-hover);
+  border-color: var(--ops-line2);
+}
+
+.eco-ops-alert-chip .eco-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.eco-ops-alert-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-alert-chip strong {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.eco-ops-alert-chip.is-danger {
+  color: var(--ops-danger);
+  background: var(--ops-danger-tint);
+  border-color: var(--ops-danger-tint2);
+}
+
+.eco-ops-alert-chip.is-warning {
+  color: var(--ops-warning);
+  background: var(--ops-warning-tint);
+  border-color: var(--ops-warning-tint2);
+}
+
+.eco-ops-alert-chip.is-info {
+  color: var(--ops-info);
+  background: var(--ops-info-tint);
+  border-color: var(--ops-info-tint2);
+}
+
+.eco-ops-day-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.eco-ops-card--journal,
+.eco-ops-card--cases {
+  grid-column: span 6;
+}
+
+.eco-ops-card--shipments {
+  grid-column: span 7;
+}
+
+.eco-ops-card--profit {
+  grid-column: span 5;
+}
+
+.eco-ops-card-head {
+  min-height: 46px;
+  padding: 11px 14px;
+}
+
+.eco-ops-card-title h3 {
+  font-size: 15px;
+}
+
+.eco-ops-statcell {
+  padding: 8px 11px;
+}
+
+.eco-ops-journal-list,
+.eco-ops-case-list {
+  max-height: 348px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.eco-ops-journal-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1.2fr) minmax(150px, 0.55fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+}
+
+.eco-ops-journal-row:hover,
+.eco-ops-case-row:hover {
+  background: var(--ops-hover);
+}
+
+.eco-ops-journal-time strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ops-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.eco-ops-journal-main,
+.eco-ops-journal-shipment,
+.eco-ops-case-person,
+.eco-ops-case-task {
+  min-width: 0;
+}
+
+.eco-ops-journal-main a,
+.eco-ops-case-person a {
+  display: block;
+  overflow: hidden;
+  color: var(--ops-ink);
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-journal-main a:hover,
+.eco-ops-case-person a:hover,
+.eco-ops-doc:hover {
+  color: var(--ops-rust);
+}
+
+.eco-ops-journal-main span,
+.eco-ops-journal-shipment small,
+.eco-ops-case-person span,
+.eco-ops-case-owner small {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--ops-muted);
+  font-size: 11.5px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-case-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.55fr) minmax(0, 1fr) 92px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ops-line);
+  background: var(--ops-surface);
+}
+
+.eco-ops-case-task strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ops-ink2);
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-case-task > span {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.eco-ops-case-task em {
+  color: var(--ops-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.eco-ops-case-task em.is-over {
+  color: var(--ops-danger);
+}
+
+.eco-ops-case-owner {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.eco-ops-case-owner > span {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ops-ink3);
+  background: var(--ops-deep);
+  border-radius: 50%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.eco-ops-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.eco-ops-row-actions.is-table {
+  min-width: 220px;
+  justify-content: flex-start;
+}
+
+.eco-ops-row-action {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  color: var(--ops-ink2);
+  background: var(--ops-surface);
+  border: 1px solid var(--ops-line2);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.eco-ops-row-action:hover {
+  background: var(--ops-hover);
+}
+
+.eco-ops-row-action.is-primary {
+  color: #fff;
+  background: var(--ops-rust);
+  border-color: var(--ops-rust);
+}
+
+.eco-ops-row-action.is-primary:hover {
+  background: var(--ops-rust-hover);
+  border-color: var(--ops-rust-hover);
+}
+
+.eco-ops-row-action.is-danger {
+  color: var(--ops-danger);
+  background: var(--ops-danger-tint);
+  border-color: var(--ops-danger-tint2);
+}
+
+.eco-ops-next-record.is-strong {
+  margin: 12px 14px;
+  background: var(--ops-rust-tint);
+  border-color: var(--ops-rust-tint2);
+}
+
+.eco-ops-next-record.is-strong span {
+  color: var(--ops-rust-hover);
+}
+
+.eco-ops-shipments-table {
+  min-width: 930px;
+}
+
+.eco-ops-table tr {
+  cursor: default;
+}
+
+.eco-ops-table td {
+  height: 43px;
+}
+
+.eco-ops-doc {
+  display: block;
+}
+
+.eco-ops-profit-body {
+  padding: 14px;
+}
+
+.eco-ops-profit-hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.eco-ops-profit-hero div {
+  padding: 13px;
+  background: var(--ops-sunk);
+  border: 1px solid var(--ops-line);
+  border-radius: 5px;
+}
+
+.eco-ops-profit-hero span,
+.eco-ops-profit-grid span,
+.eco-ops-secondary-widget span {
+  display: block;
+  color: var(--ops-muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.eco-ops-profit-hero strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--ops-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 27px;
+  font-weight: 900;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.eco-ops-profit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: var(--ops-line);
+  border: 1px solid var(--ops-line);
+  border-radius: 5px;
+}
+
+.eco-ops-profit-grid div {
+  min-width: 0;
+  padding: 10px 11px;
+  background: var(--ops-surface);
+}
+
+.eco-ops-profit-grid strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--ops-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-profit-grid strong.is-danger {
+  color: var(--ops-danger);
+}
+
+.eco-ops-profit-grid strong.is-warning {
+  color: var(--ops-warning);
+}
+
+.eco-ops-profit-note {
+  margin: 10px 0 0;
+  color: var(--ops-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.eco-ops-secondary-widgets {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(180px, 0.75fr) minmax(180px, 0.75fr) minmax(320px, 1.5fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.eco-ops-secondary-widget {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-content: center;
+  min-height: 84px;
+  padding: 12px;
+  background: var(--ops-surface);
+  border: 1px solid var(--ops-line);
+  border-radius: 6px;
+}
+
+.eco-ops-secondary-widget:hover {
+  background: var(--ops-hover);
+  border-color: var(--ops-line2);
+}
+
+.eco-ops-secondary-widget .eco-icon {
+  grid-row: span 3;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  color: var(--ops-muted);
+}
+
+.eco-ops-secondary-widget strong,
+.eco-ops-secondary-widget small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-ops-secondary-widget strong {
+  color: var(--ops-ink);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.eco-ops-secondary-widget small {
+  color: var(--ops-muted);
+  font-size: 11.5px;
+}
+
+.eco-ops-secondary-widget.is-danger {
+  border-color: var(--ops-danger-tint2);
+  background: var(--ops-danger-tint);
+}
+
+.eco-ops-secondary-widget.is-warning {
+  border-color: var(--ops-warning-tint2);
+  background: var(--ops-warning-tint);
+}
+
+.eco-ops-secondary-widget.is-success {
+  border-color: var(--ops-success-tint2);
+  background: var(--ops-success-tint);
+}
+
+.eco-ops-secondary-widget.is-info {
+  border-color: var(--ops-info-tint2);
+  background: var(--ops-info-tint);
+}
+
+.eco-ops-card--events .eco-ops-card-head {
+  min-height: 42px;
+}
+
+.eco-ops-card--events .eco-ops-feed-item {
+  padding-block: 8px;
+}
+
+.eco-ops-loading {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+}
+
+.eco-ops-loading span {
+  display: block;
+  height: 34px;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--ops-sunk), var(--ops-deep), var(--ops-sunk));
+  background-size: 220% 100%;
+  border-radius: 4px;
+  animation: eco-ops-skeleton 1.1s ease-in-out infinite;
+}
+
+.eco-ops-empty.is-error {
+  color: var(--ops-danger);
+  background: var(--ops-danger-tint);
+  border-color: var(--ops-danger-tint2);
+}
+
+.eco-ops-empty.is-error strong {
+  color: var(--ops-danger);
+}
+
+.eco-ops-empty-actions {
+  display: flex;
+  justify-content: center;
+  margin: -5px 16px 16px;
+}
+
+@keyframes eco-ops-skeleton {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-ops-loading span {
+    animation: none;
+  }
+}
+
+@media (max-width: 1240px) {
+  .eco-ops-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-ops-topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .eco-ops-journal-row,
+  .eco-ops-case-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .eco-ops-row-actions {
+    justify-content: flex-start;
+  }
+
+  .eco-ops-journal-list,
+  .eco-ops-case-list {
+    max-height: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .eco-ops-card--journal,
+  .eco-ops-card--cases,
+  .eco-ops-card--shipments,
+  .eco-ops-card--profit {
+    grid-column: 1 / -1;
+  }
+
+  .eco-ops-secondary-widgets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .eco-ops-dashboard {
+    max-width: none;
+    padding: 10px 10px calc(84px + env(safe-area-inset-bottom));
+    gap: 10px;
+    background: var(--ops-bg);
+  }
+
+  .eco-mobile-control {
+    display: none;
+  }
+
+  .eco-ops-desktop {
+    display: flex;
+    gap: 10px;
+  }
+
+  .eco-ops-topbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    min-height: auto;
+    padding: 12px;
+  }
+
+  .eco-ops-topbar h1 {
+    font-size: 21px;
+  }
+
+  .eco-ops-topbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .eco-ops-topbar-actions .eco-ops-btn {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+    white-space: normal;
+  }
+
+  .eco-ops-alert-strip {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .eco-ops-alert-strip-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .eco-ops-alert-chip {
+    justify-content: flex-start;
+    border-radius: 5px;
+  }
+
+  .eco-ops-day-grid,
+  .eco-ops-secondary-widgets {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .eco-ops-card--journal {
+    order: 1;
+  }
+
+  .eco-ops-card--cases {
+    order: 2;
+  }
+
+  .eco-ops-card--shipments {
+    order: 3;
+  }
+
+  .eco-ops-card--profit {
+    order: 4;
+  }
+
+  .eco-ops-card-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .eco-ops-statstrip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-ops-statcell,
+  .eco-ops-statcell:first-child {
+    border-left: 0;
+    border-top: 1px solid var(--ops-line);
+  }
+
+  .eco-ops-statcell:nth-child(-n + 2) {
+    border-top: 0;
+  }
+
+  .eco-ops-journal-row,
+  .eco-ops-case-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 11px 12px;
+  }
+
+  .eco-ops-row-actions {
+    justify-content: flex-start;
+  }
+
+  .eco-ops-row-action {
+    min-height: 29px;
+  }
+
+  .eco-ops-profit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-ops-secondary-widget {
+    min-height: 72px;
+  }
+}
+
+@media (max-width: 420px) {
+  .eco-ops-topbar-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-ops-statstrip {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-ops-statcell:nth-child(2) {
+    border-top: 1px solid var(--ops-line);
+  }
+}
+
 .eco-action-list {
   padding: 8px 8px 12px;
 }
@@ -13640,7 +14417,7 @@ select.eco-input::-ms-expand,
 }
 
 .eco-crm-metrics {
-  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  grid-template-columns: repeat(8, minmax(120px, 1fr));
   margin-bottom: 14px;
 }
 
@@ -14131,6 +14908,37 @@ select.eco-input::-ms-expand,
   white-space: nowrap;
 }
 
+.eco-deal-card__primary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.eco-deal-card__primary-btn,
+.eco-deal-card__primary-contact {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  color: #fff;
+  background: var(--eco-rust);
+  border: 1px solid var(--eco-rust);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.eco-deal-card__primary-btn:hover,
+.eco-deal-card__primary-contact:hover {
+  color: #fff;
+  background: var(--eco-rust-ink);
+  border-color: var(--eco-rust-ink);
+}
+
 .eco-deal-card__badges {
   display: flex;
   flex-wrap: wrap;
@@ -14265,6 +15073,7 @@ select.eco-input::-ms-expand,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: flex-start;
 }
 
 .eco-deal-card__actions a,
@@ -14287,6 +15096,67 @@ select.eco-input::-ms-expand,
 .eco-deal-card__actions button:hover {
   color: var(--eco-rust);
   border-color: #f0c2aa;
+}
+
+.eco-deal-card__more {
+  position: relative;
+}
+
+.eco-deal-card__more summary {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  cursor: pointer;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.eco-deal-card__more summary::-webkit-details-marker {
+  display: none;
+}
+
+.eco-deal-card__more[open] summary {
+  color: var(--eco-rust);
+  border-color: #f0c2aa;
+}
+
+.eco-deal-card__more > div {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: min(238px, 72vw);
+  max-height: 330px;
+  overflow: auto;
+  padding: 5px;
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 6px;
+  box-shadow: var(--eco-shadow-pop);
+}
+
+.eco-deal-card__more > div a,
+.eco-deal-card__more > div button {
+  justify-content: flex-start;
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+
+.eco-deal-card__more > div a:hover,
+.eco-deal-card__more > div button:hover {
+  background: var(--eco-hover);
+  border-color: transparent;
 }
 
 .eco-deal-card__move {

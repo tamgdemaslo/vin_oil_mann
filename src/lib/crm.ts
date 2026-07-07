@@ -1,15 +1,15 @@
 import { prisma } from "@/lib/db";
 
 export const DEFAULT_CRM_STAGES = [
-  { name: "Новый запрос", sortOrder: 10, color: "sky" },
-  { name: "Уточнить данные", sortOrder: 20, color: "blue" },
-  { name: "Рассчитать", sortOrder: 30, color: "amber" },
-  { name: "Расчёт отправлен", sortOrder: 40, color: "sky" },
-  { name: "Проверить расходники", sortOrder: 50, color: "orange" },
-  { name: "Ждём расходники", sortOrder: 60, color: "orange" },
-  { name: "Запись создана", sortOrder: 70, color: "violet" },
-  { name: "На визите / в документе", sortOrder: 80, color: "zinc" },
-  { name: "Контроль после визита", sortOrder: 90, color: "blue" },
+  { name: "Нужно рассчитать", sortOrder: 10, color: "amber" },
+  { name: "Расчёт отправлен", sortOrder: 20, color: "sky" },
+  { name: "Проверить ответ", sortOrder: 30, color: "blue" },
+  { name: "Клиент ответил", sortOrder: 40, color: "violet" },
+  { name: "Ожидает запчасти", sortOrder: 50, color: "orange" },
+  { name: "Запчасти пришли", sortOrder: 60, color: "emerald" },
+  { name: "Отложено", sortOrder: 70, color: "zinc" },
+  { name: "Клиент отказался", sortOrder: 80, color: "rose" },
+  { name: "Дубль / архив", sortOrder: 90, color: "zinc" },
   { name: "Закрыто", sortOrder: 100, color: "emerald" },
 ] as const;
 

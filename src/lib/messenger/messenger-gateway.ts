@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { touchClientCaseMessageState } from "@/lib/client-case-workflow";
 import { prisma } from "@/lib/db";
 import { assertTelegramWebhookSecret, getTelegramUpdates, telegramChannelAdapter } from "./channels/telegram";
 import {
@@ -659,6 +660,12 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     templateVarsJson,
   });
   const processed = await processOutboxItem(outbox);
+  await touchClientCaseMessageState({
+    conversationId: conversation.id,
+    direction: "outbound",
+    at: new Date(),
+    text: textForSend,
+  }).catch((error) => console.warn("[messenger send] client case touch failed", error));
   const refreshed = (await listMessages(conversation.id)).find((message) => message.id === messageId) ?? toMessage(rows[0]);
   return { ok: processed.status !== "failed", message: refreshed, outbox: processed, error: processed.errorMessage ?? undefined };
 }
@@ -768,6 +775,14 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
       error_code AS "errorCode",
       error_message AS "errorMessage"
   `;
+  if (rows[0]) {
+    await touchClientCaseMessageState({
+      conversationId: conversation.id,
+      direction: "inbound",
+      at: event.createdAt,
+      text: event.text,
+    }).catch((error) => console.warn("[messenger inbound] client case touch failed", error));
+  }
   return rows[0] ? toMessage(rows[0]) : null;
 }
 

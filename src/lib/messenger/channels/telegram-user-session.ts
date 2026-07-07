@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { touchClientCaseMessageState } from "@/lib/client-case-workflow";
 import { prisma } from "@/lib/db";
 import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatus, MessengerConnection } from "../messenger-types";
 import { enqueueMessengerMediaJob, refreshMessageAttachmentsJson } from "../messenger-media";
@@ -2324,6 +2325,14 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
       attachments,
     });
     await refreshMessageAttachmentsJson(messageId);
+  }
+  if (inserted[0]?.id) {
+    await touchClientCaseMessageState({
+      conversationId,
+      direction,
+      at: createdAt,
+      text,
+    }).catch((error) => console.warn("[telegram sync] client case touch failed", error));
   }
 }
 

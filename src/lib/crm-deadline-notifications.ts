@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getUsersFromEnv, type User } from "@/lib/auth";
+import { processClientCaseWorkflowTransitions } from "@/lib/client-case-workflow";
 import { prisma } from "@/lib/db";
 import { sendEmployeeTelegramTemplate } from "@/lib/messenger/messenger-employee-notifications";
 
@@ -168,17 +169,17 @@ async function loadActiveCases(now: Date): Promise<CrmCaseRow[]> {
       d.customer_name AS "customerName",
       d.phone_normalized AS "phoneNormalized",
       d.next_action AS "nextAction",
-      d.next_contact_at AS "nextContactAt",
+      COALESCE(d.next_action_at, d.next_contact_at) AS "nextContactAt",
       d.snooze_until AS "snoozeUntil",
       d.responsible_login AS "responsibleLogin",
       d.status,
       s.name AS "stageName"
     FROM crm_deals d
     LEFT JOIN crm_stages s ON s.id = d.stage_id
-    WHERE d.next_contact_at IS NOT NULL
+    WHERE COALESCE(d.next_action_at, d.next_contact_at) IS NOT NULL
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
       AND d.status = 'open'
-    ORDER BY d.next_contact_at ASC
+    ORDER BY COALESCE(d.next_action_at, d.next_contact_at) ASC
     LIMIT 500
   `;
 }
@@ -206,6 +207,42 @@ async function loadRecentLog(caseId: string, userId: string, type: ClientCaseNot
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+async function loadActiveInAppLog(caseId: string, userId: string) {
+  const rows = await prisma.$queryRaw<NotificationLogRow[]>`
+    SELECT
+      id,
+      case_id AS "caseId",
+      user_id AS "userId",
+      type,
+      channel,
+      sent_at AS "sentAt",
+      acknowledged_at AS "acknowledgedAt",
+      snoozed_until AS "snoozedUntil",
+      status,
+      error_message AS "errorMessage"
+    FROM client_case_notification_log
+    WHERE case_id = ${caseId}
+      AND user_id = ${userId}
+      AND channel = 'in_app'
+      AND status = 'sent'
+      AND acknowledged_at IS NULL
+    ORDER BY sent_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+async function updateActiveInAppLog(logId: string, type: ClientCaseNotificationType) {
+  await prisma.$executeRaw`
+    UPDATE client_case_notification_log
+    SET type = ${type},
+        sent_at = now(),
+        status = 'sent',
+        error_message = NULL
+    WHERE id = ${logId}
+  `;
 }
 
 async function writeLog(input: {
@@ -309,6 +346,7 @@ export async function notifyClientCaseTaskAssigned(input: {
 export async function processClientCaseDeadlineNotifications(now = new Date()) {
   const config = getCrmNotificationConfig();
   if (!config.enabled) return { sent: 0, skipped: 0, failed: 0 };
+  const transitions = await processClientCaseWorkflowTransitions(now);
   const users = await getUsersFromEnv();
   const cases = (await loadActiveCases(now)).filter((row) => !isClosedCase(row));
   let sent = 0;
@@ -320,6 +358,18 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
     if (!type) continue;
     const recipients = await recipientsForCase(row, type, users);
     for (const userId of recipients) {
+      const active = await loadActiveInAppLog(row.id, userId);
+      if (active) {
+        const elapsed = now.getTime() - active.sentAt.getTime();
+        const limit = config.repeatMinutes * 60_000;
+        if (elapsed < limit) {
+          skipped += 1;
+          continue;
+        }
+        await updateActiveInAppLog(active.id, type);
+        sent += 1;
+        continue;
+      }
       const recent = await loadRecentLog(row.id, userId, type, "in_app");
       if (recent) {
         const elapsed = now.getTime() - recent.sentAt.getTime();
@@ -347,7 +397,7 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
       }
     }
   }
-  return { sent, skipped, failed };
+  return { sent, skipped, failed, transitions };
 }
 
 export async function listClientCaseNotificationsForUser(userId: string, now = new Date()): Promise<ClientCaseNotificationItem[]> {
@@ -383,7 +433,7 @@ export async function listClientCaseNotificationsForUser(userId: string, now = n
       d.customer_name AS "customerName",
       d.phone_normalized AS "phoneNormalized",
       d.next_action AS "nextAction",
-      d.next_contact_at AS "nextContactAt",
+      COALESCE(d.next_action_at, d.next_contact_at) AS "nextContactAt",
       d.snooze_until AS "snoozeUntil",
       d.responsible_login AS "responsibleLogin",
       d.status AS "dealStatus",
@@ -394,7 +444,7 @@ export async function listClientCaseNotificationsForUser(userId: string, now = n
     WHERE l.user_id = ${userId}
       AND l.channel = 'in_app'
       AND l.status = 'sent'
-      AND (l.acknowledged_at IS NULL OR d.next_contact_at < ${now})
+      AND (l.acknowledged_at IS NULL OR COALESCE(d.next_action_at, d.next_contact_at) < ${now})
       AND d.status = 'open'
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
     ORDER BY l.case_id, l.type, l.sent_at DESC
@@ -449,7 +499,15 @@ export async function acknowledgeClientCaseNotification(logId: string, userId: s
 export async function snoozeClientCase(caseId: string, userId: string, minutes: number) {
   const snoozedUntil = new Date(Date.now() + Math.max(1, minutes) * 60_000);
   await prisma.$transaction([
-    prisma.$executeRaw`UPDATE crm_deals SET snooze_until = ${snoozedUntil}, updated_at = now() WHERE id = ${caseId}`,
+    prisma.$executeRaw`
+      UPDATE crm_deals
+      SET snooze_until = ${snoozedUntil},
+          next_action_at = ${snoozedUntil},
+          next_contact_at = ${snoozedUntil},
+          case_status = 'postponed',
+          updated_at = now()
+      WHERE id = ${caseId}
+    `,
     prisma.$executeRaw`
       UPDATE client_case_notification_log
       SET acknowledged_at = now(), snoozed_until = ${snoozedUntil}
@@ -462,7 +520,14 @@ export async function snoozeClientCase(caseId: string, userId: string, minutes: 
 export async function closeClientCaseFromNotification(caseId: string) {
   await prisma.$executeRaw`
     UPDATE crm_deals
-    SET status = 'won', close_reason = COALESCE(close_reason, 'закрыто из уведомления'), updated_at = now()
+    SET status = 'won',
+        case_status = 'closed',
+        next_action_at = NULL,
+        next_contact_at = NULL,
+        snooze_until = NULL,
+        closed_at = COALESCE(closed_at, now()),
+        close_reason = COALESCE(close_reason, 'закрыто из уведомления'),
+        updated_at = now()
     WHERE id = ${caseId}
   `;
 }

@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { reconcileAppointmentShipments } from "@/lib/appointment-shipment-reconcile";
 import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
 import { listClientAppointments } from "@/lib/client-site-api";
+import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-case-shared";
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
@@ -369,14 +370,6 @@ function notificationSortWeight(item: DashboardNotification) {
   return urgencyWeight[item.urgency];
 }
 
-function crmStageKind(stageName?: string | null, nextAction?: string | null, suppliesNote?: string | null) {
-  const text = [stageName, nextAction, suppliesNote].join(" ").toLowerCase().replace(/ё/g, "е");
-  if (text.includes("рассчитать") || text.includes("расчет") || text.includes("смет")) return "quote";
-  if (text.includes("расход") || text.includes("запчаст") || text.includes("постав")) return "supplies";
-  if (text.includes("уточ") || text.includes("звон") || text.includes("перезвон") || text.includes("контрол")) return "callback";
-  return "other";
-}
-
 async function getCashState() {
   const shift = await getCurrentShift();
   if (!shift) {
@@ -510,7 +503,7 @@ export async function GET() {
     prisma.crmDeal.findMany({
       where: { status: "open" },
       include: { stage: true },
-      orderBy: [{ nextContactAt: "asc" }, { updatedAt: "desc" }],
+      orderBy: [{ nextActionAt: "asc" }, { nextContactAt: "asc" }, { updatedAt: "desc" }],
       take: 80,
     }),
     prisma.localStockBalance.findMany({
@@ -596,16 +589,24 @@ export async function GET() {
     (time) => !todayAppointments.some((item) => appointmentTime(item) === time)
   );
 
-  const crmToday = crmDeals.filter((deal) => deal.nextContactAt && deal.nextContactAt >= todayStart && deal.nextContactAt < tomorrowStart);
-  const crmOverdue = crmDeals.filter((deal) => deal.nextContactAt && deal.nextContactAt < now);
+  const crmDueAt = (deal: (typeof crmDeals)[number]) => deal.nextActionAt ?? deal.nextContactAt;
+  const crmToday = crmDeals.filter((deal) => {
+    const dueAt = crmDueAt(deal);
+    return dueAt && dueAt >= todayStart && dueAt < tomorrowStart;
+  });
+  const crmOverdue = crmDeals.filter((deal) => {
+    const dueAt = crmDueAt(deal);
+    return dueAt && dueAt < now;
+  });
   const oldestOverdueHours = crmOverdue.reduce((max, deal) => {
-    if (!deal.nextContactAt) return max;
-    return Math.max(max, Math.floor((now.getTime() - deal.nextContactAt.getTime()) / 3_600_000));
+    const dueAt = crmDueAt(deal);
+    if (!dueAt) return max;
+    return Math.max(max, Math.floor((now.getTime() - dueAt.getTime()) / 3_600_000));
   }, 0);
   const crmNoResponsible = crmDeals.filter((deal) => !deal.responsibleLogin);
-  const crmQuote = crmDeals.filter((deal) => crmStageKind(deal.stage.name, deal.nextAction, deal.suppliesNote) === "quote");
-  const crmSupplies = crmDeals.filter((deal) => crmStageKind(deal.stage.name, deal.nextAction, deal.suppliesNote) === "supplies");
-  const crmCallback = crmDeals.filter((deal) => crmStageKind(deal.stage.name, deal.nextAction, deal.suppliesNote) === "callback");
+  const crmQuote = crmDeals.filter((deal) => normalizeClientCaseStatus(deal.caseStatus, deal.stage.name) === "calculation_needed");
+  const crmSupplies = crmDeals.filter((deal) => normalizeClientCaseStatus(deal.caseStatus, deal.stage.name) === "waiting_parts");
+  const crmCallback = crmDeals.filter((deal) => normalizeClientCaseStatus(deal.caseStatus, deal.stage.name) === "check_response");
 
   for (const deal of crmOverdue.slice(0, 8)) {
     notifications.push({
@@ -613,7 +614,7 @@ export async function GET() {
       urgency: "urgent",
       title: `${deal.nextAction || "Связаться с клиентом"} — просрочено`,
       description: [deal.customerName || deal.title, deal.phoneNormalized || "", deal.vehicle || ""].filter(Boolean).join(" · "),
-      deadline: dueLabel(deal.nextContactAt),
+      deadline: dueLabel(crmDueAt(deal)),
       entityLabel: "CRM-дело",
       entityHref: `/crm?dealId=${deal.id}`,
       actionLabel: "Открыть",
@@ -738,7 +739,7 @@ export async function GET() {
       urgency: "today",
       title: deal.nextAction || "Дело клиента на сегодня",
       description: [deal.customerName || deal.title, deal.phoneNormalized || "", deal.vehicle || ""].filter(Boolean).join(" · "),
-      deadline: dueLabel(deal.nextContactAt),
+      deadline: dueLabel(crmDueAt(deal)),
       entityLabel: "CRM-дело",
       entityHref: `/crm?dealId=${deal.id}`,
       actionLabel: "Открыть",
@@ -835,8 +836,8 @@ export async function GET() {
           client: deal.customerName || deal.title,
           phone: deal.phoneNormalized || "",
           title: deal.nextAction || deal.title,
-          status: deal.stage.name,
-          deadline: dueLabel(deal.nextContactAt),
+          status: clientCaseStatusLabel(deal.caseStatus, deal.stage.name),
+          deadline: dueLabel(crmDueAt(deal)),
           responsible: deal.responsibleLogin || "без ответственного",
         })),
     },

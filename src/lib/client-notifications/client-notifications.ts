@@ -489,7 +489,6 @@ const defaultTemplates: Array<{
     body:
       "{{#clientName}}{{clientName}}, добро пожаловать в {{organizationName}}!{{/clientName}}" +
       "{{^clientName}}Добро пожаловать в {{organizationName}}!{{/clientName}}\nМы отметили ваш приезд.",
-    active: false,
   },
   {
     key: "visit-review",
@@ -571,7 +570,7 @@ const defaultRuleSpecs: Array<{
     key: "client-arrived",
     eventType: "client_arrived",
     templateKey: "client-arrived",
-    enabled: false,
+    enabled: true,
     timingType: "immediate",
     conditions: { ...defaultConditions, arrivalStatuses: ["arrived"] },
   },
@@ -580,9 +579,9 @@ const defaultRuleSpecs: Array<{
     eventType: "visit_completed",
     templateKey: "visit-review",
     enabled: true,
-    timingType: "delayed_after_event",
-    offsetMinutes: 30,
-    conditions: { ...defaultConditions, reviewDelayMinutes: 30 },
+    timingType: "immediate",
+    offsetMinutes: null,
+    conditions: defaultConditions,
   },
   { key: "appointment-rescheduled", eventType: "appointment_rescheduled", templateKey: "appointment-rescheduled", enabled: false, timingType: "immediate" },
   { key: "appointment-cancelled", eventType: "appointment_cancelled", templateKey: "appointment-cancelled", enabled: false, timingType: "immediate" },
@@ -777,7 +776,7 @@ export async function ensureClientNotificationsSchema() {
       await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS client_notification_preferences_org_idx ON client_notification_preferences(organization_id, telegram_enabled, consent_status)`;
 
       for (const template of defaultTemplates) {
-        const metadata = { systemDefault: true, key: template.key, defaultVersion: 3, variables: extractTemplateVariables(template.body) };
+        const metadata = { systemDefault: true, key: template.key, defaultVersion: 4, variables: extractTemplateVariables(template.body) };
         await prisma.$executeRaw`
           INSERT INTO notification_templates
             (id, organization_id, name, event_type, channel, body, is_active, status, metadata_json, created_at, updated_at)
@@ -797,11 +796,14 @@ export async function ensureClientNotificationsSchema() {
           WHERE id = ${orgScopedId(organizationId, "tpl", template.key)}
             AND organization_id = ${organizationId}
             AND metadata_json->>'systemDefault' = 'true'
-            AND COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
             AND (
-              COALESCE(metadata_json->>'defaultVersion', '0') <> '3'
+              (
+                COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
+                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '4'
+              )
               OR body = ${legacyDiagnosticReadyTemplateBody}
               OR body LIKE '%{car}%'
+              OR body LIKE '%{{car%'
               OR body LIKE '%Администратор записал вас%'
             )
         `;
@@ -820,13 +822,28 @@ export async function ensureClientNotificationsSchema() {
       }
       await prisma.$executeRaw`
         UPDATE notification_rules
-        SET enabled = false,
+        SET enabled = true,
             conditions_json = ${json({ ...defaultConditions, arrivalStatuses: ["arrived"] })}::jsonb,
             updated_at = now()
         WHERE organization_id = ${organizationId}
           AND id = ${orgScopedId(organizationId, "rule", "client-arrived")}
           AND event_type = 'client_arrived'
       `;
+      await prisma.$executeRaw`
+        UPDATE notification_rules
+        SET enabled = true,
+            timing_type = 'immediate',
+            offset_minutes = NULL,
+            conditions_json = ${json(defaultConditions)}::jsonb,
+            updated_at = now()
+        WHERE organization_id = ${organizationId}
+          AND id = ${orgScopedId(organizationId, "rule", "visit-completed")}
+          AND event_type = 'visit_completed'
+          AND template_id = ${orgScopedId(organizationId, "tpl", "visit-review")}
+          AND timing_type = 'delayed_after_event'
+          AND COALESCE(offset_minutes, 0) = 30
+      `;
+      await repairLegacyCarTemplateErrorJobs(organizationId);
     })().catch((error) => {
       schemaState.__clientNotificationsSchemaPromise = null;
       throw error;
@@ -857,6 +874,180 @@ async function loadTemplate(templateId: string) {
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+function arrayOfStrings(value: unknown) {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function notificationContextFromJobPayload(job: NotificationJobRow, payload: JsonRecord): NotificationEventContext {
+  const variables = asRecord(payload.variables);
+  const appointmentDateValue = stringValue(variables.appointmentDate) || stringValue(variables.appointment_date);
+  const appointmentTimeValue = stringValue(variables.appointmentTime) || stringValue(variables.appointment_time);
+  return {
+    eventType: job.eventType,
+    clientId: job.clientId,
+    clientName: stringValue(payload.clientName) || stringValue(variables.clientName) || stringValue(variables.client_name),
+    clientPhone: stringValue(payload.clientPhone) || stringValue(variables.clientPhone) || stringValue(variables.client_phone),
+    appointmentId: job.appointmentId,
+    appointmentAt:
+      stringValue(payload.appointmentAt) ||
+      stringValue(variables.appointmentDateTime) ||
+      stringValue(variables.appointment_datetime) ||
+      [appointmentDateValue, appointmentTimeValue].filter(Boolean).join(" "),
+    appointmentDate: appointmentDateValue || stringValue(payload.appointmentDate),
+    appointmentTime: appointmentTimeValue || stringValue(payload.appointmentTime),
+    diagnosticReportId: job.diagnosticReportId,
+    diagnosticReportLink:
+      stringValue(variables.diagnosticReportUrl) ||
+      stringValue(variables.diagnostic_report_link) ||
+      stringValue(payload.diagnosticReportLink) ||
+      stringValue(payload.reportUrl),
+    reviewLink: stringValue(variables.reviewUrl) || stringValue(variables.review_link) || stringValue(payload.reviewLink),
+    orderLink: stringValue(variables.orderUrl) || stringValue(variables.order_link) || stringValue(payload.orderLink),
+    precheckLink: stringValue(variables.precheckUrl) || stringValue(variables.precheck_link) || stringValue(payload.precheckLink),
+    car: stringValue(variables.vehicleDisplayName) || stringValue(variables.car) || stringValue(payload.car),
+    carMake: stringValue(variables.vehicleBrand) || stringValue(variables.car_make) || stringValue(payload.carMake),
+    carModel: stringValue(variables.vehicleModel) || stringValue(variables.car_model) || stringValue(payload.carModel),
+    licensePlate: stringValue(variables.vehiclePlate) || stringValue(variables.license_plate) || stringValue(payload.licensePlate),
+    vin: stringValue(variables.vehicleVin) || stringValue(variables.vin) || stringValue(payload.vin),
+    serviceList: stringValue(variables.serviceList) || stringValue(variables.service_list) || stringValue(payload.serviceList),
+    managerName: stringValue(variables.managerName) || stringValue(variables.manager_name) || stringValue(payload.managerName),
+    masterName: stringValue(variables.masterName) || stringValue(variables.master_name) || stringValue(payload.masterName),
+    organizationName: stringValue(variables.organizationName) || stringValue(payload.organizationName),
+    locationName: stringValue(variables.locationName) || stringValue(variables.branch_name) || stringValue(payload.locationName),
+    locationAddress: stringValue(variables.locationAddress) || stringValue(variables.address) || stringValue(payload.locationAddress),
+    publicPhone: stringValue(variables.publicPhone) || stringValue(variables.company_phone) || stringValue(payload.publicPhone),
+    telegramUsername: stringValue(variables.telegramUsername) || stringValue(variables.telegram_link) || stringValue(payload.telegramUsername),
+    bookingUrl: stringValue(variables.bookingUrl) || stringValue(payload.bookingUrl),
+    checkedCount: Number(variables.checkedCount ?? variables.checked_count ?? payload.checkedCount ?? payload.checked_count),
+    recommendationCount: Number(variables.recommendationCount ?? variables.recommendation_count ?? payload.recommendationCount ?? payload.recommendation_count),
+    criticalCount: Number(variables.criticalCount ?? variables.critical_count ?? payload.criticalCount ?? payload.critical_count),
+    warningCount: Number(variables.warningCount ?? variables.warning_count ?? payload.warningCount ?? payload.warning_count),
+    branchId: job.branchId,
+    initiatedById: job.initiatedById,
+    payload,
+  };
+}
+
+function variablesFromJobPayload(job: NotificationJobRow, payload: JsonRecord) {
+  const variables = buildNotificationVariables(notificationContextFromJobPayload(job, payload));
+  const storedVariables = asRecord(payload.variables);
+  for (const [rawKey, rawValue] of Object.entries(storedVariables)) {
+    const value = stringValue(rawValue);
+    if (!value) continue;
+    if (rawKey === "car") {
+      variables.vehicleDisplayName = variables.vehicleDisplayName || value;
+      continue;
+    }
+    const key = canonicalVariableKey(rawKey) ?? rawKey;
+    if (supportedVariableSet.has(key)) variables[key] = value;
+  }
+  for (const [legacyKey, canonicalKey] of legacyVariableAliases) {
+    variables[legacyKey] = variables[canonicalKey] ?? "";
+  }
+  return variables;
+}
+
+async function rerenderNotificationJobWithCurrentTemplate(job: NotificationJobRow, payload: JsonRecord) {
+  const template = await loadTemplate(job.templateId);
+  const fallbackMessage = stringValue(payload.renderedMessage);
+  if (!template || !template.isActive || template.status === "draft") {
+    return { ok: false as const, renderedMessage: fallbackMessage, errorMessage: "Шаблон отключён или не найден." };
+  }
+  const variables = variablesFromJobPayload(job, payload);
+  const render = renderNotificationTemplate(template.body, variables);
+  if (render.unknownVariables.length) {
+    return {
+      ok: false as const,
+      renderedMessage: render.text || fallbackMessage,
+      errorMessage: `Неизвестные переменные: ${render.unknownVariables.join(", ")}`,
+    };
+  }
+  if (!render.text) {
+    return { ok: false as const, renderedMessage: fallbackMessage, errorMessage: "Пустой текст уведомления." };
+  }
+  const nextPayload = {
+    ...payload,
+    variables,
+    renderedMessage: render.text,
+    missingVariables: render.missingVariables,
+    unknownVariables: [],
+    templateRepairedAt: new Date().toISOString(),
+  };
+  await prisma.$executeRaw`
+    UPDATE notification_jobs
+    SET payload_json = ${json(nextPayload)}::jsonb,
+        error_message = NULL,
+        updated_at = now()
+    WHERE organization_id = ${job.organizationId}
+      AND id = ${job.id}
+  `;
+  return { ok: true as const, payload: nextPayload, renderedMessage: render.text };
+}
+
+async function repairLegacyCarTemplateErrorJobs(organizationId: string) {
+  const rows = await prisma.$queryRaw<NotificationJobRow[]>`
+    SELECT
+      id,
+      organization_id AS "organizationId",
+      event_type AS "eventType",
+      channel,
+      client_id AS "clientId",
+      appointment_id AS "appointmentId",
+      diagnostic_report_id AS "diagnosticReportId",
+      template_id AS "templateId",
+      scheduled_at AS "scheduledAt",
+      status,
+      idempotency_key AS "idempotencyKey",
+      payload_json AS "payloadJson",
+      error_message AS "errorMessage",
+      attempts,
+      next_attempt_at AS "nextAttemptAt",
+      sent_at AS "sentAt",
+      provider_message_id AS "providerMessageId",
+      messenger_message_id AS "messengerMessageId",
+      messenger_outbox_id AS "messengerOutboxId",
+      conversation_id AS "conversationId",
+      branch_id AS "branchId",
+      initiated_by_id AS "initiatedById",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+    FROM notification_jobs
+    WHERE organization_id = ${organizationId}
+      AND status = 'template_error'
+      AND (
+        COALESCE(error_message, '') ILIKE '%car%'
+        OR payload_json::text ILIKE '%car%'
+      )
+    ORDER BY created_at DESC
+    LIMIT 250
+  `;
+
+  for (const job of rows) {
+    const repaired = await rerenderNotificationJobWithCurrentTemplate(job, asRecord(job.payloadJson));
+    if (!repaired.ok) continue;
+    const status: NotificationJobStatus = job.scheduledAt <= new Date() ? "queued" : "scheduled";
+    await prisma.$executeRaw`
+      UPDATE notification_jobs
+      SET status = ${status},
+          attempts = 0,
+          next_attempt_at = NULL,
+          error_message = NULL,
+          updated_at = now()
+      WHERE organization_id = ${organizationId}
+        AND id = ${job.id}
+        AND status = 'template_error'
+    `;
+    await writeNotificationLog({
+      job,
+      eventType: job.eventType,
+      status,
+      renderedMessage: repaired.renderedMessage,
+      errorMessage: "Старый шаблон с {car} автоматически исправлен.",
+      metadata: { repair: "legacy_car_template" },
+    });
+  }
 }
 
 async function loadEnabledRules(eventType: ClientNotificationEventType, branchId?: string | null) {
@@ -1728,7 +1919,6 @@ export async function processDueClientNotificationJobs(limit = 20) {
         (status IN ('scheduled', 'queued') AND scheduled_at <= now())
         OR (status = 'error' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 3)
         OR (status = 'sending' AND updated_at <= now() - interval '1 minute' AND attempts < 3)
-        OR status = 'template_error'
       )
     ORDER BY scheduled_at ASC, created_at ASC
     LIMIT ${Math.max(1, Math.min(100, limit))}
@@ -1787,15 +1977,22 @@ async function finishJob(
 }
 
 async function processClientNotificationJob(job: NotificationJobRow) {
-  const payload = asRecord(job.payloadJson);
-  const conditions = asRecord(payload.conditions) as NotificationConditions;
-  const renderedMessage = stringValue(payload.renderedMessage);
-  const unknownVariables = Array.isArray(payload.unknownVariables) ? payload.unknownVariables.map(String) : [];
+  let payload = asRecord(job.payloadJson);
+  let conditions = asRecord(payload.conditions) as NotificationConditions;
+  let renderedMessage = stringValue(payload.renderedMessage);
+  let unknownVariables = arrayOfStrings(payload.unknownVariables);
   if (unknownVariables.length || job.status === "template_error") {
-    return finishJob(job, "template_error", {
-      renderedMessage,
-      errorMessage: job.errorMessage || `Неизвестные переменные: ${unknownVariables.join(", ")}`,
-    });
+    const repaired = await rerenderNotificationJobWithCurrentTemplate(job, payload);
+    if (!repaired.ok) {
+      return finishJob(job, "template_error", {
+        renderedMessage: repaired.renderedMessage || renderedMessage,
+        errorMessage: repaired.errorMessage || job.errorMessage || `Неизвестные переменные: ${unknownVariables.join(", ")}`,
+      });
+    }
+    payload = repaired.payload;
+    conditions = asRecord(payload.conditions) as NotificationConditions;
+    renderedMessage = repaired.renderedMessage;
+    unknownVariables = [];
   }
   if (!renderedMessage) {
     return finishJob(job, "template_error", { errorMessage: "Пустой текст уведомления." });
@@ -1995,11 +2192,18 @@ export async function handleAppointmentUpdated(input: NotificationEventContext) 
   if (appointmentId) await cancelAppointmentScheduledNotifications(appointmentId, "Напоминания пересозданы после изменения записи");
   const reminders = await enqueueClientNotificationEvent("appointment_reminder", input);
   const events = [];
-  if (input.status && ["arrived", "in_work", "client_arrived"].includes(input.status)) {
+  const status = stringValue(input.status).toLowerCase();
+  if (["arrived", "in_work", "client_arrived"].includes(status)) {
     events.push(...(await enqueueClientNotificationEvent("client_arrived", input)));
   }
-  if (input.status && ["done", "completed", "visit_completed"].includes(input.status)) {
+  if (["left", "completed", "visit_completed"].includes(status)) {
     events.push(...(await enqueueClientNotificationEvent("visit_completed", input)));
+  }
+  if (["done", "vehicle_ready"].includes(status)) {
+    events.push(...(await enqueueClientNotificationEvent("vehicle_ready", input)));
+  }
+  if (["no_show", "no-show", "appointment_no_show"].includes(status)) {
+    events.push(...(await enqueueClientNotificationEvent("appointment_no_show", input)));
   }
   const processed = await processDueClientNotificationJobs(10);
   return { reminders, events, processed };
@@ -2430,12 +2634,13 @@ export async function retryNotificationJob(id: string) {
   await prisma.$executeRaw`
     UPDATE notification_jobs
     SET status = 'queued',
+        attempts = 0,
         next_attempt_at = NULL,
         error_message = NULL,
         updated_at = now()
     WHERE organization_id = ${organizationId}
       AND id = ${id}
-      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending')
+      AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending', 'template_error')
   `;
   return processDueClientNotificationJobs(5);
 }

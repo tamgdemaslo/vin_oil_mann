@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
+import { clientCaseStatusLabel, defaultNextActionForCaseStatus } from "@/lib/client-case-shared";
 import { getFirstCrmStage } from "@/lib/crm";
 import { ClientApiError, createClientAppointment, listClientAppointments } from "@/lib/client-site-api";
 import { prisma } from "@/lib/db";
@@ -10,7 +11,7 @@ import { createLocalDemand } from "@/lib/local-demand-write";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
-import { getConversation, listMessages, sendMessage } from "./messenger-gateway";
+import { listMessages, sendMessage } from "./messenger-gateway";
 import type { Conversation, MessengerChannel, SendMessageInput } from "./messenger-types";
 
 export type MessengerContextState =
@@ -161,7 +162,6 @@ const CASE_LINK_TYPE = "CLIENT_CASE";
 const APPOINTMENT_LINK_TYPE = "APPOINTMENT";
 const SHIPMENT_LINK_TYPE = "SHIPMENT";
 const TASK_LINK_TYPE = "TASK";
-const DIAGNOSTIC_LINK_TYPE = "DIAGNOSTIC";
 
 function nowIso() {
   return new Date().toISOString();
@@ -430,13 +430,14 @@ async function loadClientCases(client: LocalCounterparty, conversationId: string
     where: {
       status: "open",
       OR: [
+        { conversationId },
         { moyskladCounterpartyId: client.id },
         ...(client.moyskladId ? [{ moyskladCounterpartyId: client.moyskladId }] : []),
         ...(client.normalizedPhone ? [{ phoneNormalized: client.normalizedPhone }] : []),
         { notes: { contains: `conversation:${conversationId}` } },
       ],
     },
-    orderBy: [{ nextContactAt: "asc" }, { updatedAt: "desc" }],
+    orderBy: [{ nextActionAt: "asc" }, { nextContactAt: "asc" }, { updatedAt: "desc" }],
     take: 8,
   });
 }
@@ -517,6 +518,7 @@ async function loadClientContext(row: ConversationContextRow, client: LocalCount
     take: 5,
   });
   const activeCase = cases[0] ?? null;
+  const activeCaseDueAt = activeCase?.nextActionAt ?? activeCase?.nextContactAt ?? null;
   return {
     id: client.id,
     name: client.name,
@@ -529,10 +531,10 @@ async function loadClientContext(row: ConversationContextRow, client: LocalCount
       ? {
           id: activeCase.id,
           title: activeCase.title,
-          status: activeCase.status,
+          status: clientCaseStatusLabel(activeCase.caseStatus, undefined),
           responsible: activeCase.responsibleLogin ?? "не назначен",
-          deadline: activeCase.nextContactAt?.toISOString() ?? "",
-          overdue: Boolean(activeCase.nextContactAt && activeCase.nextContactAt.getTime() < Date.now()),
+          deadline: activeCaseDueAt?.toISOString() ?? "",
+          overdue: Boolean(activeCaseDueAt && activeCaseDueAt.getTime() < Date.now()),
         }
       : undefined,
     appointment: appointment
@@ -1031,7 +1033,8 @@ export async function createCaseForConversation(
   const stage = await getFirstCrmStage();
   if (!stage) throw new MessengerContextError("Не найдены стадии CRM", 500);
   const messages = await listMessages(row.id);
-  const lastInbound = [...messages].reverse().find((message) => message.direction === "inbound")?.text;
+  const lastInboundMessage = [...messages].reverse().find((message) => message.direction === "inbound");
+  const lastInbound = lastInboundMessage?.text;
   const clientContext = await loadClientContext(row, client);
   const title = cleanOptional(input.title) || `Дело из Telegram: ${client.name}`;
   let deal: Awaited<ReturnType<typeof prisma.crmDeal.create>> | null = null;
@@ -1044,13 +1047,19 @@ export async function createCaseForConversation(
         vehicle: compactVehicle(clientContext.vehicle),
         source: "messenger",
         clientType: "regular",
-        nextAction: "Ответить клиенту",
+        nextAction: defaultNextActionForCaseStatus("calculation_needed"),
         stageId: stage.id,
         responsibleLogin: cleanOptional(input.responsibleLogin) || actor?.login || null,
         moyskladCounterpartyId: client.id,
         moyskladCounterpartyName: client.name,
         moyskladCounterpartyHref: client.moyskladHref,
+        conversationId: row.id,
+        caseStatus: "calculation_needed",
+        caseType: "message",
+        caseKey: `client_message:${row.id}`,
+        lastClientMessageAt: lastInboundMessage?.createdAt ? new Date(lastInboundMessage.createdAt) : null,
         nextContactAt: cleanOptional(input.deadline) ? new Date(input.deadline as string) : null,
+        nextActionAt: cleanOptional(input.deadline) ? new Date(input.deadline as string) : null,
         notes: [`messenger conversation:${row.id}`, lastInbound ? `Последнее сообщение: ${lastInbound}` : null].filter(Boolean).join("\n"),
         createdByLogin: actor?.login || "messenger",
       },

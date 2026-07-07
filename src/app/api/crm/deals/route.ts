@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { ensureDefaultCrmStages, getCrmStageBySortOrder, getFirstCrmStage } from "@/lib/crm";
+import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
+import { processClientCaseWorkflowTransitions, writeClientCaseEvent } from "@/lib/client-case-workflow";
+import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
 import { canAccessCrm } from "@/lib/crm-access";
 import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
@@ -10,6 +12,7 @@ type Meta = { href: string; type: string; mediaType: string };
 type CounterpartyInput = { id?: unknown; name?: unknown; meta?: { href?: unknown; type?: unknown; mediaType?: unknown } };
 type CounterpartyLink = { id: string; name: string; meta: Meta };
 const CLIENT_TYPES = new Set(["new_lead", "regular", "repeat", "unlinked"]);
+const CASE_TYPES = new Set(["calculation", "followup", "parts", "message", "shipment", "diagnostic", "manual"]);
 type CrmDealCreateData = Parameters<typeof prisma.crmDeal.create>[0]["data"];
 type CrmStageWithDeals = Awaited<ReturnType<typeof loadStagesWithDeals>>;
 const LEGACY_DEAL_SELECT = {
@@ -72,6 +75,20 @@ function defaultDeadline(hours = 1) {
 function parseClientType(value: unknown): string | null {
   const raw = parseOptionalString(value);
   return raw && CLIENT_TYPES.has(raw) ? raw : null;
+}
+
+function parseCaseStatus(value: unknown, stageName?: string | null) {
+  return isClientCaseStatus(value) ? value : caseStatusFromStageName(stageName);
+}
+
+function parseCaseType(value: unknown) {
+  const raw = parseOptionalString(value);
+  return raw && CASE_TYPES.has(raw) ? raw : "manual";
+}
+
+function parsePriority(value: unknown) {
+  const priority = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(priority) ? Math.max(0, Math.min(100, Math.round(priority))) : 50;
 }
 
 function parseCounterparty(value: unknown): CounterpartyLink | null {
@@ -153,6 +170,21 @@ function isMissingCrmCaseColumns(error: unknown) {
   return (
     message.includes("crm_deals.client_type") ||
     message.includes("crm_deals.next_action") ||
+    message.includes("crm_deals.organization_id") ||
+    message.includes("crm_deals.conversation_id") ||
+    message.includes("crm_deals.appointment_id") ||
+    message.includes("crm_deals.shipment_id") ||
+    message.includes("crm_deals.precheck_id") ||
+    message.includes("crm_deals.diagnostic_id") ||
+    message.includes("crm_deals.procurement_id") ||
+    message.includes("crm_deals.case_status") ||
+    message.includes("crm_deals.case_type") ||
+    message.includes("crm_deals.priority") ||
+    message.includes("crm_deals.case_key") ||
+    message.includes("crm_deals.next_action_at") ||
+    message.includes("crm_deals.last_client_message_at") ||
+    message.includes("crm_deals.last_outbound_message_at") ||
+    message.includes("crm_deals.closed_at") ||
     message.includes("crm_deals.snooze_until") ||
     message.includes("crm_deals.supplies_note") ||
     message.includes("crm_deals.close_reason") ||
@@ -164,6 +196,21 @@ function stripCaseFields(data: CrmDealCreateData): CrmDealCreateData {
   const legacyData = { ...(data as CrmDealCreateData & Record<string, unknown>) };
   delete legacyData.clientType;
   delete legacyData.nextAction;
+  delete legacyData.organizationId;
+  delete legacyData.conversationId;
+  delete legacyData.appointmentId;
+  delete legacyData.shipmentId;
+  delete legacyData.precheckId;
+  delete legacyData.diagnosticId;
+  delete legacyData.procurementId;
+  delete legacyData.caseStatus;
+  delete legacyData.caseType;
+  delete legacyData.priority;
+  delete legacyData.caseKey;
+  delete legacyData.nextActionAt;
+  delete legacyData.lastClientMessageAt;
+  delete legacyData.lastOutboundMessageAt;
+  delete legacyData.closedAt;
   delete legacyData.snoozeUntil;
   delete legacyData.suppliesNote;
   delete legacyData.suppliesSupplier;
@@ -181,7 +228,7 @@ async function loadStagesWithDeals() {
     orderBy: { sortOrder: "asc" },
     include: {
       deals: {
-        orderBy: [{ nextContactAt: "asc" }, { updatedAt: "desc" }],
+        orderBy: [{ nextActionAt: "asc" }, { nextContactAt: "asc" }, { priority: "asc" }, { updatedAt: "desc" }],
       },
     },
   });
@@ -235,6 +282,11 @@ export async function GET() {
 
   try {
     await ensureDefaultCrmStages();
+    try {
+      await processClientCaseWorkflowTransitions();
+    } catch (error) {
+      if (!isMissingCrmCaseColumns(error)) throw error;
+    }
     let stages: CrmStageWithDeals;
     try {
       stages = await loadStagesWithDeals();
@@ -292,21 +344,22 @@ export async function POST(request: NextRequest) {
     }
 
     const requestedStageId = parseOptionalString(body.stageId);
-    const linkedStage =
-      moyskladDemandId
-        ? await getCrmStageBySortOrder(80)
-        : yclientsRecordId
-          ? await getCrmStageBySortOrder(70)
-          : null;
-    const stageId = requestedStageId ?? linkedStage?.id ?? firstStage.id;
+    const stageId = requestedStageId ?? firstStage.id;
     const stage = await prisma.crmStage.findUnique({ where: { id: stageId } });
-    const stageName = stage?.name.toLowerCase() ?? "";
+    const caseStatus = parseCaseStatus(body.caseStatus, stage?.name);
+    const parsedNextActionAt = parseDate(body.nextActionAt);
     const parsedNextContactAt = parseDate(body.nextContactAt);
-    const nextContactAt = stageName.includes("расчёт отправлен") && !parsedNextContactAt ? defaultDeadline(1) : parsedNextContactAt;
+    const defaultActionAt = caseStatus === "calculation_sent" ? defaultDeadline(24) : null;
+    const nextActionAt = parsedNextActionAt ?? parsedNextContactAt ?? defaultActionAt;
+    const nextContactAt = parsedNextContactAt ?? nextActionAt;
     const parsedSuppliesExpectedAt = parseDate(body.suppliesExpectedAt);
-    const suppliesExpectedAt = stageName.includes("ждём расходники") && !parsedSuppliesExpectedAt ? defaultDeadline(24) : parsedSuppliesExpectedAt;
+    const suppliesExpectedAt = caseStatus === "waiting_parts" && !parsedSuppliesExpectedAt ? defaultDeadline(24) : parsedSuppliesExpectedAt;
+    const caseType = parseCaseType(body.type ?? body.caseType ?? (body.conversationId ? "message" : moyskladDemandId ? "shipment" : "manual"));
+    const lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt) ?? (caseStatus === "calculation_sent" ? new Date() : null);
+    const lastClientMessageAt = parseDate(body.lastClientMessageAt) ?? null;
 
     const createData: CrmDealCreateData = {
+      organizationId: parseOptionalString(body.organizationId),
       title: title ?? customerName ?? counterparty?.name ?? phoneNormalized ?? "Новое дело клиента",
       customerName: customerName ?? counterparty?.name ?? null,
       phoneNormalized,
@@ -322,13 +375,29 @@ export async function POST(request: NextRequest) {
       moyskladCounterpartyHref: counterparty?.meta.href ?? null,
       yclientsRecordId,
       moyskladDemandId,
+      conversationId: parseOptionalString(body.conversationId),
+      appointmentId: parseOptionalString(body.appointmentId) ?? yclientsRecordId,
+      shipmentId: parseOptionalString(body.shipmentId) ?? moyskladDemandId,
+      precheckId: parseOptionalString(body.precheckId),
+      diagnosticId: parseOptionalString(body.diagnosticId),
+      procurementId: parseOptionalString(body.procurementId),
+      caseStatus,
+      caseType,
+      priority: parsePriority(body.priority),
+      caseKey: parseOptionalString(body.caseKey),
       suppliesNote: parseOptionalString(body.suppliesNote),
       suppliesSupplier: parseOptionalString(body.suppliesSupplier),
       suppliesExpectedAt,
+      nextActionAt,
       nextContactAt,
+      lastClientMessageAt,
+      lastOutboundMessageAt,
       notes: parseOptionalString(body.notes),
       createdByLogin: session.user.login,
     };
+    if (!createData.nextAction) {
+      createData.nextAction = defaultNextActionForCaseStatus(caseStatus);
+    }
 
     let created;
     try {
@@ -350,6 +419,14 @@ export async function POST(request: NextRequest) {
         console.warn("[crm/deals POST] telegram task notification failed", error);
       }
     }
+
+    await writeClientCaseEvent({
+      caseId: created.id,
+      actorLogin: session.user.login,
+      eventType: "case_created",
+      title: "Дело создано",
+      metadata: { status: caseStatus, source: createData.source ?? null },
+    }).catch((error) => console.warn("[crm/deals POST] client case event failed", error));
 
     return NextResponse.json(created, { status: 201 });
   } catch (error) {

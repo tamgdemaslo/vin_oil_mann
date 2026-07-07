@@ -70,7 +70,7 @@ export async function POST(
   if (wants && diagnostic.positions.length > 0) {
     await ensureDefaultCrmStages();
     const stage =
-      (await getCrmStageBySortOrder(90)) ??
+      (await getCrmStageBySortOrder(10)) ??
       (await prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } }));
     if (!stage) return NextResponse.json({ error: "Не найдены стадии CRM" }, { status: 500 });
 
@@ -124,6 +124,11 @@ export async function POST(
           moyskladCounterpartyName: counterparty?.name ?? null,
           moyskladCounterpartyHref: counterparty?.moyskladHref ?? (counterparty ? `local://counterparty/${counterparty.id}` : null),
           moyskladDemandId: diagnostic.shipmentMoySkladId,
+          diagnosticId: diagnostic.id,
+          caseStatus: "calculation_needed",
+          caseType: "diagnostic",
+          caseKey: marker,
+          nextActionAt: deadline,
           nextContactAt: deadline,
           notes,
           createdByLogin: diagnostic.mechanicLogin ?? "client-report",

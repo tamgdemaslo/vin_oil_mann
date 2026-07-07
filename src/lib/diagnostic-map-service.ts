@@ -989,7 +989,7 @@ export async function createDiagnosticCrmTask(sessionId: string, itemCode: strin
   if (!item) throw new Error("Пункт диагностики не найден");
   await ensureDefaultCrmStages();
   const stage =
-    (await getCrmStageBySortOrder(90)) ??
+    (await getCrmStageBySortOrder(10)) ??
     (await prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } }));
   if (!stage) throw new Error("CRM-воронка не настроена");
   const title = item.recommendation?.trim() || `Диагностика: ${item.itemTitle}`;
@@ -1004,6 +1004,10 @@ export async function createDiagnosticCrmTask(sessionId: string, itemCode: strin
       nextAction: "Связаться по рекомендации диагностики",
       stageId: stage.id,
       responsibleLogin: user.login,
+      diagnosticId: session.id,
+      caseStatus: "calculation_needed",
+      caseType: "diagnostic",
+      caseKey: `diagnostic-map:${session.id}:${item.id}`,
       notes: [
         session.demandId ? `Локальная отгрузка: ${session.demandId}` : "",
         `Пункт: ${item.itemTitle}`,

@@ -1675,7 +1675,7 @@ export default function RecordsPageClient() {
 
   useEffect(() => {
     const crmDealId = searchParams.get("crmDealId");
-    const shouldOpen = searchParams.get("new") === "1" && Boolean(crmDealId);
+    const shouldOpen = searchParams.get("new") === "1";
     if (!shouldOpen || crmPrefillAppliedRef.current || staff.length === 0) return;
     crmPrefillAppliedRef.current = true;
     const clientName = searchParams.get("client") ?? searchParams.get("search") ?? "";
@@ -1688,10 +1688,10 @@ export default function RecordsPageClient() {
       clientPhone: phone,
       vehicleModel: vehicle,
       comment,
-      internalComment: `Источник: CRM-дело ${crmDealId}`,
+      internalComment: crmDealId ? `Источник: CRM-дело ${crmDealId}` : "",
     });
     setLinkedCreateDealId(crmDealId);
-    setToast("Форма записи заполнена из дела клиента");
+    setToast(crmDealId ? "Форма записи заполнена из дела клиента" : "Форма новой записи открыта");
   }, [openCreateForm, searchParams, staff.length]);
 
   useEffect(() => {
