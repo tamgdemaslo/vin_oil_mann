@@ -223,8 +223,35 @@ function telegramOptionsFromOutbox(outbox?: MessageOutbox | null) {
         })
         .filter((button): button is { text: string; url: string } => Boolean(button))
     : [];
+  const boldEntities = Array.isArray(telegram.boldRanges)
+    ? telegram.boldRanges
+        .map((range) => {
+          if (!range || typeof range !== "object") return null;
+          const row = range as { offset?: unknown; length?: unknown };
+          const offset = Number(row.offset);
+          const length = Number(row.length);
+          return Number.isFinite(offset) && Number.isFinite(length) && length > 0 ? { type: "bold", offset, length } : null;
+        })
+        .filter((entity): entity is { type: "bold"; offset: number; length: number } => Boolean(entity))
+    : [];
+  const linkEntities = Array.isArray(telegram.textLinks)
+    ? telegram.textLinks
+        .map((link) => {
+          if (!link || typeof link !== "object") return null;
+          const row = link as { offset?: unknown; length?: unknown; url?: unknown };
+          const offset = Number(row.offset);
+          const length = Number(row.length);
+          const url = typeof row.url === "string" ? row.url.trim() : "";
+          return Number.isFinite(offset) && Number.isFinite(length) && length > 0 && /^https?:\/\//iu.test(url)
+            ? { type: "text_link", offset, length, url }
+            : null;
+        })
+        .filter((entity): entity is { type: "text_link"; offset: number; length: number; url: string } => Boolean(entity))
+    : [];
+  const entities = [...boldEntities, ...linkEntities].sort((a, b) => a.offset - b.offset || b.length - a.length);
   return {
     disable_web_page_preview: typeof telegram.disableWebPagePreview === "boolean" ? telegram.disableWebPagePreview : true,
+    ...(entities.length ? { entities } : {}),
     ...(buttons.length ? { reply_markup: { inline_keyboard: [buttons] } } : {}),
   };
 }

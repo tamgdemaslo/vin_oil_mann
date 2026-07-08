@@ -109,15 +109,20 @@ function sanitizeMessengerText(value: string) {
 function telegramVarsFromSendInput(input: SendMessageInput) {
   const buttonText = input.linkButton?.text.trim();
   const buttonUrl = input.linkButton?.url.trim();
+  const textLinks = (input.textLinks ?? []).filter((link) => Number.isFinite(link.offset) && Number.isFinite(link.length) && link.length > 0 && /^https?:\/\//iu.test(link.url));
+  const boldRanges = (input.boldRanges ?? []).filter((range) => Number.isFinite(range.offset) && Number.isFinite(range.length) && range.length > 0);
+  const hasFormatting = textLinks.length > 0 || boldRanges.length > 0;
   if (!buttonText || !buttonUrl) {
-    return input.disableWebPagePreview === undefined
+    return input.disableWebPagePreview === undefined && !hasFormatting
       ? undefined
-      : { telegram: { disableWebPagePreview: input.disableWebPagePreview } };
+      : { telegram: { disableWebPagePreview: input.disableWebPagePreview, textLinks, boldRanges } };
   }
   return {
     telegram: {
       disableWebPagePreview: input.disableWebPagePreview ?? true,
       buttons: [{ text: buttonText, url: buttonUrl }],
+      textLinks,
+      boldRanges,
     },
   };
 }
@@ -125,6 +130,8 @@ function telegramVarsFromSendInput(input: SendMessageInput) {
 function sendTextWithLinkFallback(text: string, input: SendMessageInput, inlineButtonsSupported: boolean) {
   const buttonText = input.linkButton?.text.trim();
   const buttonUrl = input.linkButton?.url.trim();
+  const hasTextLink = (input.textLinks ?? []).some((link) => link.url === buttonUrl);
+  if (hasTextLink) return text;
   if (inlineButtonsSupported || !buttonText || !buttonUrl || text.includes(buttonUrl)) return text;
   return `${text}\n\n${buttonText}: ${buttonUrl}`;
 }
@@ -619,7 +626,9 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const inlineButtonsSupported = conversation.channel === "telegram" && (await messengerAccountMode(messengerAccountId)) === "bot_legacy";
   const textForSend = sendTextWithLinkFallback(text, input, inlineButtonsSupported);
   assertMessengerOutboundTextSafe(textForSend);
-  const templateVarsJson = inlineButtonsSupported ? telegramVarsFromSendInput(input) : telegramVarsFromSendInput({ ...input, linkButton: undefined });
+  const templateVarsJson = inlineButtonsSupported
+    ? telegramVarsFromSendInput(input)
+    : telegramVarsFromSendInput({ ...input, linkButton: undefined });
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
       (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)

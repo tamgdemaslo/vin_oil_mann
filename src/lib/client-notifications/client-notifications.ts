@@ -239,6 +239,24 @@ type RenderResult = {
   variableDetails: NotificationVariablePreview[];
 };
 
+type TelegramTextLink = { offset: number; length: number; url: string };
+type TelegramBoldRange = { offset: number; length: number };
+
+type FormattedTelegramMessage = {
+  text: string;
+  textLinks: TelegramTextLink[];
+  boldRanges: TelegramBoldRange[];
+};
+
+type NotificationDeliveryPayload = {
+  text: string;
+  renderedMessage: string;
+  textLinks?: TelegramTextLink[];
+  boldRanges?: TelegramBoldRange[];
+  linkButton?: { text: string; url: string };
+  disableWebPagePreview?: boolean;
+};
+
 export type NotificationVariableDefinition = {
   key: string;
   title: string;
@@ -507,14 +525,14 @@ const defaultClientNotificationSettings: ClientNotificationSettings = {
 const legacyDiagnosticReadyTemplateBody =
   "Здравствуйте, {client_name}! Диагностика по автомобилю {car} готова. Посмотреть отчёт: {diagnostic_report_link}";
 const appointmentConfirmTemplateBody =
-  "{{#clientName}}Здравствуйте, {{clientName}}!{{/clientName}}{{^clientName}}Здравствуйте!{{/clientName}}\n" +
-  "Вы записаны в {{organizationName}} на {{appointmentDate}} в {{appointmentTime}}." +
-  "{{#serviceName}}\nУслуга: {{serviceName}}.{{/serviceName}}" +
-  "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
-  "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}" +
-  "{{#yandexMapsUrl}}\nЯндекс.Карты: {{yandexMapsUrl}}{{/yandexMapsUrl}}" +
-  "{{#routeSchemeUrl}}\nСхема проезда: {{routeSchemeUrl}}{{/routeSchemeUrl}}" +
-  "{{#routeSchemeCaption}}\n{{routeSchemeCaption}}{{/routeSchemeCaption}}\n" +
+  "{{#clientName}}<b>Здравствуйте, {{clientName}}!</b>{{/clientName}}{{^clientName}}<b>Здравствуйте!</b>{{/clientName}}\n\n" +
+  "Вы записаны в «{{organizationName}}».\n\n" +
+  "📅 <b>{{appointmentDate}} в {{appointmentTime}}</b>" +
+  "{{#serviceName}}\n🛠 {{serviceName}}{{/serviceName}}" +
+  "{{#vehicleDisplayName}}\n🚗 {{vehicleDisplayName}}{{/vehicleDisplayName}}" +
+  "{{#locationAddress}}\n📍 {{locationAddress}}{{/locationAddress}}\n\n" +
+  "{{#yandexMapsUrl}}<a href=\"{{yandexMapsUrl}}\">Открыть маршрут</a>\n{{/yandexMapsUrl}}" +
+  "{{^yandexMapsUrl}}{{#routeSchemeUrl}}<a href=\"{{routeSchemeUrl}}\">Схема проезда</a>\n{{/routeSchemeUrl}}{{/yandexMapsUrl}}" +
   "Ждём вас.";
 const diagnosticReadyTemplateBody =
   "{{#clientName}}{{clientName}}, диагностика{{#vehicleDisplayName}} {{vehicleDisplayName}}{{/vehicleDisplayName}} готова.{{/clientName}}" +
@@ -545,15 +563,7 @@ const defaultTemplates: Array<{
     key: "appointment-reminder",
     name: "Напоминание перед визитом",
     eventType: "appointment_reminder",
-    body:
-      "{{#clientName}}{{clientName}}, {{/clientName}}напоминаем о записи в {{organizationName}} {{appointmentDate}} в {{appointmentTime}}." +
-      "{{#serviceName}}\nУслуга: {{serviceName}}.{{/serviceName}}" +
-      "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}" +
-      "{{#locationAddress}}\nАдрес: {{locationAddress}}.{{/locationAddress}}" +
-      "{{#yandexMapsUrl}}\nЯндекс.Карты: {{yandexMapsUrl}}{{/yandexMapsUrl}}" +
-      "{{#routeSchemeUrl}}\nСхема проезда: {{routeSchemeUrl}}{{/routeSchemeUrl}}" +
-      "{{#routeSchemeCaption}}\n{{routeSchemeCaption}}{{/routeSchemeCaption}}\n" +
-      "До встречи.",
+    body: appointmentConfirmTemplateBody,
   },
   {
     key: "diagnostic-ready",
@@ -566,23 +576,25 @@ const defaultTemplates: Array<{
     name: "Клиент приехал",
     eventType: "client_arrived",
     body:
-      "{{#clientName}}{{clientName}}, добро пожаловать в {{organizationName}}!{{/clientName}}" +
-      "{{^clientName}}Добро пожаловать в {{organizationName}}!{{/clientName}}" +
-      "{{#waitingAreaText}}\n{{waitingAreaText}}{{/waitingAreaText}}" +
-      "{{#coffeeTeaText}}\n{{coffeeTeaText}}{{/coffeeTeaText}}" +
-      "{{#wifiName}}\nWi‑Fi: {{wifiName}}{{#wifiPassword}}, пароль: {{wifiPassword}}{{/wifiPassword}}{{/wifiName}}" +
-      "{{#receptionManagerText}}\n{{receptionManagerText}}{{/receptionManagerText}}",
+      "{{#clientName}}<b>{{clientName}}, добро пожаловать в «{{organizationName}}»!</b>{{/clientName}}" +
+      "{{^clientName}}<b>Добро пожаловать в «{{organizationName}}»!</b>{{/clientName}}\n\n" +
+      "{{#waitingAreaText}}{{waitingAreaText}}{{/waitingAreaText}}" +
+      "{{#coffeeTeaText}}\n{{coffeeTeaText}}{{/coffeeTeaText}}\n\n" +
+      "{{#wifiName}}Wi‑Fi: <b>{{wifiName}}</b>\n{{/wifiName}}" +
+      "{{#wifiPassword}}Пароль: <b>{{wifiPassword}}</b>\n{{/wifiPassword}}" +
+      "{{#receptionManagerText}}{{receptionManagerText}}{{/receptionManagerText}}",
   },
   {
     key: "visit-review",
     name: "Отзыв после визита",
     eventType: "review_after_visit",
     body:
-      "{{#clientName}}{{clientName}}, спасибо, что выбрали {{organizationName}}.{{/clientName}}" +
-      "{{^clientName}}Спасибо, что выбрали {{organizationName}}.{{/clientName}}\n" +
-      "Если всё было хорошо, будем благодарны за отзыв — это помогает другим водителям выбрать сервис." +
-      "{{#yandexReviewUrl}}\nОставить отзыв: {{yandexReviewUrl}}{{/yandexReviewUrl}}" +
-      "{{^yandexReviewUrl}}{{#yandexMapsUrl}}\nОставить отзыв: {{yandexMapsUrl}}{{/yandexMapsUrl}}{{/yandexReviewUrl}}",
+      "{{#clientName}}<b>{{clientName}}, спасибо, что были у нас сегодня.</b>{{/clientName}}" +
+      "{{^clientName}}<b>Спасибо, что были у нас сегодня.</b>{{/clientName}}\n\n" +
+      "Если вам было удобно, поделитесь, пожалуйста, впечатлением на Яндекс.Картах — это помогает другим водителям выбрать сервис.\n\n" +
+      "{{#yandexReviewUrl}}<a href=\"{{yandexReviewUrl}}\">Оставить отзыв</a>\n{{/yandexReviewUrl}}" +
+      "{{^yandexReviewUrl}}{{#yandexMapsUrl}}<a href=\"{{yandexMapsUrl}}\">Оставить отзыв</a>\n{{/yandexMapsUrl}}{{/yandexReviewUrl}}" +
+      "Если есть замечания, напишите нам здесь — мы обязательно разберёмся.",
   },
   {
     key: "appointment-rescheduled",
@@ -591,7 +603,7 @@ const defaultTemplates: Array<{
     body:
       "{{#clientName}}Здравствуйте, {{clientName}}!{{/clientName}}{{^clientName}}Здравствуйте!{{/clientName}}\n" +
       "Ваша запись перенесена на {{appointmentDate}} в {{appointmentTime}}." +
-      "{{#vehicleDisplayName}}\nАвтомобиль: {{vehicleDisplayName}}.{{/vehicleDisplayName}}",
+      "{{#vehicleDisplayName}}\n🚗 {{vehicleDisplayName}}{{/vehicleDisplayName}}",
   },
   {
     key: "appointment-cancelled",
@@ -719,6 +731,43 @@ function nullableString(value: unknown) {
   return text || null;
 }
 
+function cleanPublicUrl(value: unknown) {
+  const raw = stringValue(value);
+  if (!/^https?:\/\//iu.test(raw)) return "";
+  try {
+    const url = new URL(raw);
+    for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "from", "share"]) {
+      url.searchParams.delete(key);
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function decodeHtmlEntities(value: string) {
+  return value.replace(/&(#x?[0-9a-f]+|amp|lt|gt|quot|apos|#39);/giu, (_match, entity: string) => {
+    const lower = entity.toLowerCase();
+    if (lower === "amp") return "&";
+    if (lower === "lt") return "<";
+    if (lower === "gt") return ">";
+    if (lower === "quot") return '"';
+    if (lower === "apos" || lower === "#39") return "'";
+    if (lower.startsWith("#x")) return String.fromCodePoint(Number.parseInt(lower.slice(2), 16));
+    if (lower.startsWith("#")) return String.fromCodePoint(Number.parseInt(lower.slice(1), 10));
+    return "";
+  });
+}
+
 function sanitizeClientNotificationSettings(
   value: unknown,
   fallback: ClientNotificationSettings = defaultClientNotificationSettings
@@ -726,11 +775,11 @@ function sanitizeClientNotificationSettings(
   const record = asRecord(value);
   return {
     locationAddress: stringValue(record.locationAddress) || fallback.locationAddress || defaultClientNotificationSettings.locationAddress,
-    routeSchemeUrl: stringValue(record.routeSchemeUrl) || fallback.routeSchemeUrl,
-    routeSchemeImageUrl: stringValue(record.routeSchemeImageUrl) || fallback.routeSchemeImageUrl,
+    routeSchemeUrl: cleanPublicUrl(record.routeSchemeUrl) || fallback.routeSchemeUrl,
+    routeSchemeImageUrl: cleanPublicUrl(record.routeSchemeImageUrl) || fallback.routeSchemeImageUrl,
     routeSchemeCaption: stringValue(record.routeSchemeCaption) || fallback.routeSchemeCaption,
-    yandexMapsUrl: stringValue(record.yandexMapsUrl) || fallback.yandexMapsUrl,
-    yandexReviewUrl: stringValue(record.yandexReviewUrl) || fallback.yandexReviewUrl,
+    yandexMapsUrl: cleanPublicUrl(record.yandexMapsUrl) || fallback.yandexMapsUrl,
+    yandexReviewUrl: cleanPublicUrl(record.yandexReviewUrl) || fallback.yandexReviewUrl,
     waitingAreaText: stringValue(record.waitingAreaText) || fallback.waitingAreaText,
     coffeeTeaText: stringValue(record.coffeeTeaText) || fallback.coffeeTeaText,
     receptionManagerText: stringValue(record.receptionManagerText) || fallback.receptionManagerText,
@@ -761,17 +810,17 @@ async function loadClientNotificationSettingsInternal(organizationId = getMessen
 function enrichContextWithClientNotificationSettings(input: NotificationEventContext, settings: ClientNotificationSettings): NotificationEventContext {
   const payload = asRecord(input.payload);
   const routeSchemeUrl =
-    stringValue(input.routeSchemeUrl) ||
-    stringValue(payload.routeSchemeUrl) ||
+    cleanPublicUrl(input.routeSchemeUrl) ||
+    cleanPublicUrl(payload.routeSchemeUrl) ||
     settings.routeSchemeUrl ||
     settings.routeSchemeImageUrl;
-  const yandexMapsUrl = stringValue(input.yandexMapsUrl) || stringValue(payload.yandexMapsUrl) || settings.yandexMapsUrl;
-  const yandexReviewUrl = stringValue(input.yandexReviewUrl) || stringValue(payload.yandexReviewUrl) || settings.yandexReviewUrl;
+  const yandexMapsUrl = cleanPublicUrl(input.yandexMapsUrl) || cleanPublicUrl(payload.yandexMapsUrl) || cleanPublicUrl(settings.yandexMapsUrl);
+  const yandexReviewUrl = cleanPublicUrl(input.yandexReviewUrl) || cleanPublicUrl(payload.yandexReviewUrl) || cleanPublicUrl(settings.yandexReviewUrl);
   return {
     ...input,
     locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || settings.locationAddress,
     routeSchemeUrl,
-    routeSchemeImageUrl: stringValue(input.routeSchemeImageUrl) || stringValue(payload.routeSchemeImageUrl) || settings.routeSchemeImageUrl,
+    routeSchemeImageUrl: cleanPublicUrl(input.routeSchemeImageUrl) || cleanPublicUrl(payload.routeSchemeImageUrl) || cleanPublicUrl(settings.routeSchemeImageUrl),
     routeSchemeCaption: stringValue(input.routeSchemeCaption) || stringValue(payload.routeSchemeCaption) || settings.routeSchemeCaption,
     yandexMapsUrl,
     yandexReviewUrl,
@@ -780,7 +829,7 @@ function enrichContextWithClientNotificationSettings(input: NotificationEventCon
     receptionManagerText: stringValue(input.receptionManagerText) || stringValue(payload.receptionManagerText) || settings.receptionManagerText,
     wifiName: stringValue(input.wifiName) || stringValue(payload.wifiName) || settings.wifiName,
     wifiPassword: stringValue(input.wifiPassword) || stringValue(payload.wifiPassword) || settings.wifiPassword,
-    reviewLink: stringValue(input.reviewLink) || yandexReviewUrl || yandexMapsUrl,
+    reviewLink: cleanPublicUrl(input.reviewLink) || yandexReviewUrl || yandexMapsUrl,
     payload: { ...payload, notificationSettings: settings },
   };
 }
@@ -965,7 +1014,7 @@ export async function ensureClientNotificationsSchema() {
       `;
 
       for (const template of defaultTemplates) {
-        const metadata = { systemDefault: true, key: template.key, defaultVersion: 5, variables: extractTemplateVariables(template.body) };
+        const metadata = { systemDefault: true, key: template.key, defaultVersion: 6, variables: extractTemplateVariables(template.body) };
         await prisma.$executeRaw`
           INSERT INTO notification_templates
             (id, organization_id, name, event_type, channel, body, is_active, status, metadata_json, created_at, updated_at)
@@ -989,13 +1038,15 @@ export async function ensureClientNotificationsSchema() {
             AND (
               (
                 COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
-                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '5'
+                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '6'
               )
               OR body = ${legacyDiagnosticReadyTemplateBody}
               OR body LIKE '%{car}%'
               OR body LIKE '%{{car%'
               OR body LIKE '%Администратор записал вас%'
               OR body LIKE '%Мы отметили ваш приезд%'
+              OR body LIKE '%Яндекс.Карты:%'
+              OR body LIKE '%Оставить отзыв:%'
             )
         `;
       }
@@ -1365,15 +1416,18 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
   );
   const checkedCount = nonNegativeCount(input.checkedCount ?? payload.checkedCount ?? payload.checked_count ?? payload.totalCount ?? payload.total_count);
   const serviceList = stringValue(input.serviceList);
-  const yandexMapsUrl = stringValue(input.yandexMapsUrl) || stringValue(payload.yandexMapsUrl) || settings.yandexMapsUrl || defaultVariableValue("yandexMapsUrl");
+  const yandexMapsUrl = cleanPublicUrl(input.yandexMapsUrl) || cleanPublicUrl(payload.yandexMapsUrl) || cleanPublicUrl(settings.yandexMapsUrl) || cleanPublicUrl(defaultVariableValue("yandexMapsUrl"));
   const yandexReviewUrl =
-    stringValue(input.yandexReviewUrl) || stringValue(payload.yandexReviewUrl) || settings.yandexReviewUrl || defaultVariableValue("yandexReviewUrl");
+    cleanPublicUrl(input.yandexReviewUrl) ||
+    cleanPublicUrl(payload.yandexReviewUrl) ||
+    cleanPublicUrl(settings.yandexReviewUrl) ||
+    cleanPublicUrl(defaultVariableValue("yandexReviewUrl"));
   const routeSchemeUrl =
-    stringValue(input.routeSchemeUrl) ||
-    stringValue(payload.routeSchemeUrl) ||
-    settings.routeSchemeUrl ||
-    settings.routeSchemeImageUrl ||
-    defaultVariableValue("routeSchemeUrl");
+    cleanPublicUrl(input.routeSchemeUrl) ||
+    cleanPublicUrl(payload.routeSchemeUrl) ||
+    cleanPublicUrl(settings.routeSchemeUrl) ||
+    cleanPublicUrl(settings.routeSchemeImageUrl) ||
+    cleanPublicUrl(defaultVariableValue("routeSchemeUrl"));
   const values: Record<string, string> = {
     clientName: stringValue(input.clientName),
     clientPhone: stringValue(input.clientPhone),
@@ -1382,7 +1436,10 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     locationAddress: stringValue(input.locationAddress) || stringValue(input.address) || settings.locationAddress || defaultVariableValue("locationAddress"),
     routeSchemeUrl,
     routeSchemeImageUrl:
-      stringValue(input.routeSchemeImageUrl) || stringValue(payload.routeSchemeImageUrl) || settings.routeSchemeImageUrl || defaultVariableValue("routeSchemeImageUrl"),
+      cleanPublicUrl(input.routeSchemeImageUrl) ||
+      cleanPublicUrl(payload.routeSchemeImageUrl) ||
+      cleanPublicUrl(settings.routeSchemeImageUrl) ||
+      cleanPublicUrl(defaultVariableValue("routeSchemeImageUrl")),
     routeSchemeCaption:
       stringValue(input.routeSchemeCaption) || stringValue(payload.routeSchemeCaption) || settings.routeSchemeCaption || defaultVariableValue("routeSchemeCaption"),
     yandexMapsUrl,
@@ -1404,10 +1461,10 @@ export function buildNotificationVariables(input: NotificationEventContext): Rec
     serviceList,
     managerName: stringValue(input.managerName),
     masterName: stringValue(input.masterName),
-    diagnosticReportUrl: stringValue(input.diagnosticReportLink),
-    reviewUrl: stringValue(input.reviewLink) || yandexReviewUrl || yandexMapsUrl || defaultVariableValue("reviewUrl"),
-    orderUrl: stringValue(input.orderLink),
-    precheckUrl: stringValue(input.precheckLink),
+    diagnosticReportUrl: cleanPublicUrl(input.diagnosticReportLink),
+    reviewUrl: cleanPublicUrl(input.reviewLink) || yandexReviewUrl || yandexMapsUrl || cleanPublicUrl(defaultVariableValue("reviewUrl")),
+    orderUrl: cleanPublicUrl(input.orderLink),
+    precheckUrl: cleanPublicUrl(input.precheckLink),
     publicPhone: stringValue(input.publicPhone) || stringValue(input.companyPhone) || defaultVariableValue("publicPhone"),
     telegramUsername: stringValue(input.telegramUsername) || stringValue(input.telegramLink) || defaultVariableValue("telegramUsername"),
     bookingUrl: stringValue(input.bookingUrl) || defaultVariableValue("bookingUrl"),
@@ -1433,6 +1490,7 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
   const missingVariables = new Set<string>();
   const usedVariables: Record<string, string> = {};
   const usedVariableKeys = new Set<string>();
+  const usesHtmlFormatting = /<\/?(?:a|b)\b/iu.test(body);
   const optionalLineVariables = new Set([
     "locationAddress",
     "routeSchemeUrl",
@@ -1502,7 +1560,7 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
         missingInLine.add(key);
       }
       usedVariables[key] = replacement;
-      return replacement;
+      return usesHtmlFormatting ? escapeHtml(replacement) : replacement;
     });
 
     const onlyMissingOptionalVariables =
@@ -1540,6 +1598,78 @@ export function renderNotificationTemplate(body: string, variables: Record<strin
       };
     }),
   };
+}
+
+function hrefFromTag(tag: string) {
+  const match = tag.match(/\bhref\s*=\s*(["'])(.*?)\1/iu) ?? tag.match(/\bhref\s*=\s*([^\s>]+)/iu);
+  const raw = match?.[2] ?? match?.[1] ?? "";
+  return cleanPublicUrl(decodeHtmlEntities(raw));
+}
+
+function formatTelegramHtmlMessage(input: string): FormattedTelegramMessage {
+  const textLinks: TelegramTextLink[] = [];
+  const boldRanges: TelegramBoldRange[] = [];
+  const boldStack: number[] = [];
+  const linkStack: Array<{ offset: number; url: string }> = [];
+  let text = "";
+  let cursor = 0;
+  const tagPattern = /<\/?[^>]+>/g;
+
+  const appendText = (chunk: string) => {
+    if (!chunk) return;
+    text += decodeHtmlEntities(chunk);
+  };
+
+  for (const match of input.matchAll(tagPattern)) {
+    appendText(input.slice(cursor, match.index));
+    const tag = match[0];
+    if (/^<\s*b\s*>$/iu.test(tag)) {
+      boldStack.push(text.length);
+    } else if (/^<\s*\/\s*b\s*>$/iu.test(tag)) {
+      const offset = boldStack.pop();
+      if (offset !== undefined && text.length > offset) boldRanges.push({ offset, length: text.length - offset });
+    } else if (/^<\s*a\b/iu.test(tag)) {
+      const url = hrefFromTag(tag);
+      if (url) linkStack.push({ offset: text.length, url });
+    } else if (/^<\s*\/\s*a\s*>$/iu.test(tag)) {
+      const link = linkStack.pop();
+      if (link && text.length > link.offset) textLinks.push({ offset: link.offset, length: text.length - link.offset, url: link.url });
+    }
+    cursor = (match.index ?? 0) + tag.length;
+  }
+  appendText(input.slice(cursor));
+
+  for (const offset of boldStack) {
+    if (text.length > offset) boldRanges.push({ offset, length: text.length - offset });
+  }
+  for (const link of linkStack) {
+    if (text.length > link.offset) textLinks.push({ offset: link.offset, length: text.length - link.offset, url: link.url });
+  }
+
+  const trimStart = text.length - text.trimStart().length;
+  const finalText = text.trim();
+  const adjustRange = <T extends { offset: number; length: number }>(range: T) => ({ ...range, offset: range.offset - trimStart });
+  return {
+    text: finalText,
+    textLinks: textLinks.map(adjustRange).filter((link) => link.length > 0 && link.offset >= 0 && link.offset + link.length <= finalText.length),
+    boldRanges: boldRanges.map(adjustRange).filter((range) => range.length > 0 && range.offset >= 0 && range.offset + range.length <= finalText.length),
+  };
+}
+
+function longRawUrlInText(text: string) {
+  return text.match(/https?:\/\/[^\s<>"']{80,}/iu)?.[0] ?? "";
+}
+
+function validateClientNotificationMessage(text: string) {
+  if (!text.trim()) return "Пустой текст уведомления.";
+  if (/\bundefined\b|\bnull\b/iu.test(text)) return "В сообщении остались undefined/null.";
+  if (/\{\{?\s*car\s*\}?\}?/iu.test(text)) return "Шаблон содержит незарегистрированную переменную car.";
+  if (/ваш автомобиль/iu.test(text)) return "В сообщении остался запрещённый fallback «ваш автомобиль».";
+  if (/Автоуведомление/iu.test(text)) return "В сообщении осталась техническая метка «Автоуведомление».";
+  const rawUrl = longRawUrlInText(text);
+  if (rawUrl) return "Длинная ссылка выводится как обычный текст.";
+  if (text.length > 1200) return "Сообщение слишком длинное для автоуведомления.";
+  return "";
 }
 
 export function sampleNotificationContext(overrides: NotificationEventContext = {}): NotificationEventContext {
@@ -1585,7 +1715,14 @@ export async function previewNotificationTemplate(templateIdOrBody: string, cont
   const body = template?.body ?? templateIdOrBody;
   const settings = await loadClientNotificationSettingsInternal();
   const variables = buildNotificationVariables(enrichContextWithClientNotificationSettings(sampleNotificationContext(context), settings));
-  return renderNotificationTemplate(body, variables);
+  const render = renderNotificationTemplate(body, variables);
+  const formatted = formatTelegramHtmlMessage(render.text);
+  const validationError = render.unknownVariables.length ? "" : validateClientNotificationMessage(formatted.text);
+  return {
+    ...render,
+    text: formatted.text || render.text,
+    unknownVariables: validationError ? [...render.unknownVariables, validationError] : render.unknownVariables,
+  };
 }
 
 async function resolveLocalCounterparty(clientId: string | null, phone: string | null) {
@@ -2115,8 +2252,6 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
     clientPhone: resolved.clientPhone ?? effectiveInput.clientPhone,
   });
   const render = renderNotificationTemplate(template.body, variables);
-  const status: NotificationJobStatus = render.unknownVariables.length ? "template_error" : scheduledAt <= new Date() ? "queued" : "scheduled";
-  const errorMessage = render.unknownVariables.length ? `Неизвестные переменные: ${render.unknownVariables.join(", ")}` : null;
   const payload = {
     ...asRecord(effectiveInput.payload),
     ruleId: effectiveRule.id,
@@ -2129,6 +2264,41 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
     clientName: resolved.clientName ?? effectiveInput.clientName ?? null,
     clientPhone: resolved.clientPhone ?? effectiveInput.clientPhone ?? null,
   };
+  const validation =
+    render.unknownVariables.length > 0
+      ? { ok: false as const, errorMessage: `Неизвестные переменные: ${render.unknownVariables.join(", ")}` }
+      : notificationDelivery(
+          {
+            id: "",
+            organizationId: getMessengerOrganizationId(),
+            eventType: effectiveRule.eventType,
+            channel: effectiveRule.channel,
+            clientId,
+            appointmentId: nullableString(effectiveInput.appointmentId),
+            diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
+            templateId: template.id,
+            scheduledAt,
+            status: "queued",
+            idempotencyKey: "",
+            payloadJson: payload,
+            errorMessage: null,
+            attempts: 0,
+            nextAttemptAt: null,
+            sentAt: null,
+            providerMessageId: null,
+            messengerMessageId: null,
+            messengerOutboxId: null,
+            conversationId: null,
+            branchId: effectiveInput.branchId ?? effectiveRule.branchId ?? null,
+            initiatedById: nullableString(effectiveInput.initiatedById),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+          payload,
+          render.text
+        );
+  const status: NotificationJobStatus = validation.ok ? (scheduledAt <= new Date() ? "queued" : "scheduled") : "template_error";
+  const errorMessage = validation.ok ? null : validation.errorMessage;
   const id = crypto.randomUUID();
   const key = idempotencyKey(effectiveRule, effectiveInput, clientId);
   const organizationId = getMessengerOrganizationId();
@@ -2343,7 +2513,14 @@ async function processClientNotificationJob(job: NotificationJobRow) {
     return finishJob(job, "no_consent", { renderedMessage, errorMessage: "Нет согласия на Telegram-уведомления." });
   }
 
-  const delivery = notificationDelivery(job, payload, renderedMessage);
+  const preparedDelivery = notificationDelivery(job, payload, renderedMessage);
+  if (!preparedDelivery.ok) {
+    return finishJob(job, "template_error", {
+      renderedMessage: preparedDelivery.renderedMessage || renderedMessage,
+      errorMessage: preparedDelivery.errorMessage,
+    });
+  }
+  const delivery = preparedDelivery.delivery;
   assertMessengerOutboundTextSafe(delivery.text);
   await prisma.$executeRaw`
     UPDATE notification_jobs
@@ -2375,6 +2552,8 @@ async function processClientNotificationJob(job: NotificationJobRow) {
       conversationId: target.id,
       text: delivery.text,
       linkButton: delivery.linkButton,
+      textLinks: delivery.textLinks,
+      boldRanges: delivery.boldRanges,
       disableWebPagePreview: delivery.disableWebPagePreview,
       createdByLogin: job.initiatedById ?? undefined,
     });
@@ -2428,23 +2607,37 @@ function diagnosticReportLinkFromPayload(payload: JsonRecord) {
   );
 }
 
-function notificationDelivery(job: NotificationJobRow, payload: JsonRecord, renderedMessage: string) {
+function deliveryFromHtml(eventType: ClientNotificationEventType, renderedMessage: string): { ok: true; delivery: NotificationDeliveryPayload } | { ok: false; errorMessage: string; renderedMessage: string } {
+  const formatted = formatTelegramHtmlMessage(renderedMessage);
+  const errorMessage = validateClientNotificationMessage(formatted.text);
+  if (errorMessage) return { ok: false, errorMessage, renderedMessage: formatted.text || renderedMessage };
+  return {
+    ok: true,
+    delivery: {
+      text: formatted.text,
+      renderedMessage: formatted.text,
+      textLinks: formatted.textLinks,
+      boldRanges: formatted.boldRanges,
+      disableWebPagePreview: eventType === "appointment_reminder" || eventType === "appointment_client_created" || eventType === "appointment_admin_created",
+    },
+  };
+}
+
+function notificationDelivery(
+  job: NotificationJobRow,
+  payload: JsonRecord,
+  renderedMessage: string
+): { ok: true; delivery: NotificationDeliveryPayload } | { ok: false; errorMessage: string; renderedMessage: string } {
   if (job.eventType !== "diagnostic_sent") {
-    return {
-      text: renderedMessage,
-      renderedMessage,
-      linkButton: undefined,
-      disableWebPagePreview: undefined,
-    };
+    return deliveryFromHtml(job.eventType, renderedMessage);
   }
   const reportUrl = diagnosticReportLinkFromPayload(payload);
   const compactMessage = reportUrl ? stripDiagnosticReportLink(renderedMessage, reportUrl) : renderedMessage;
-  return {
-    text: `${eventTitle(job.eventType)}\n\n${compactMessage}`,
-    renderedMessage: compactMessage,
-    linkButton: reportUrl ? { text: "Открыть отчёт", url: reportUrl } : undefined,
-    disableWebPagePreview: Boolean(reportUrl),
-  };
+  const reportLink = cleanPublicUrl(reportUrl);
+  return deliveryFromHtml(
+    job.eventType,
+    `${eventTitle(job.eventType)}\n\n${compactMessage}${reportLink ? `\n\n<a href="${escapeHtml(reportLink)}">Открыть отчёт</a>` : ""}`
+  );
 }
 
 export async function cancelAppointmentScheduledNotifications(appointmentId: string, reason = "Запись изменилась") {
@@ -2935,6 +3128,11 @@ export async function updateNotificationTemplate(input: {
   const preview = input.body ? renderNotificationTemplate(input.body, buildNotificationVariables(sampleNotificationContext())) : null;
   if (preview?.unknownVariables.length) {
     throw new Error(`Неизвестные переменные: ${preview.unknownVariables.join(", ")}. Используйте список переменных справа.`);
+  }
+  if (preview) {
+    const formatted = formatTelegramHtmlMessage(preview.text);
+    const validationError = validateClientNotificationMessage(formatted.text);
+    if (validationError) throw new Error(validationError);
   }
   const metadata = input.body
     ? {
