@@ -4,27 +4,50 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   Ban,
   ChevronLeft,
   ChevronRight,
+  CheckCircle2,
   CreditCard,
   Download,
   ExternalLink,
   Eye,
   FileText,
+  Landmark,
   Link2,
   Loader2,
   PackagePlus,
   Printer,
   RefreshCw,
   Search,
+  Send,
+  ShieldCheck,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { EcoBadge, EcoButton, EcoInput, EcoKpi, EcoSelect, EcoTable } from "@/components/platform/EcoUI";
 import { formatServiceDate, toServiceDateInput } from "@/lib/date-time";
 
-type InvoiceStatus = "draft" | "unpaid" | "partial" | "paid" | "overdue" | "cancelled";
+type InvoiceStatus =
+  | "draft"
+  | "unpaid"
+  | "partial"
+  | "paid"
+  | "overdue"
+  | "cancelled"
+  | "requisites_review"
+  | "ready_to_pay"
+  | "tbank_draft_created"
+  | "tbank_waiting_confirmation"
+  | "tbank_confirmed"
+  | "tbank_sent"
+  | "tbank_processing"
+  | "payment_error"
+  | "bank_rejected"
+  | "payment_cancelled"
+  | "requires_review"
+  | "paid_manually";
 type PaymentType = "cash" | "card" | "bank_transfer";
 type SortBy = "invoiceDate" | "dueDate" | "sum" | "supplier" | "status";
 type SortDir = "asc" | "desc";
@@ -46,6 +69,33 @@ type SupplierInvoicePayment = {
   };
 };
 
+type TBankPayment = {
+  id: string;
+  provider: string;
+  mode: "draft" | "direct" | string;
+  status: string;
+  providerStatus: string;
+  tbankDocumentId: string;
+  tbankPaymentId: string;
+  tbankRequestId: string;
+  amount: number;
+  amountCents: number;
+  fromAccountNumberMasked: string;
+  recipientName: string;
+  recipientInn: string;
+  recipientKpp: string;
+  recipientAccount: string;
+  recipientBik: string;
+  paymentPurpose: string;
+  confirmationUrl: string;
+  createdAt: string;
+  sentAt: string;
+  confirmedAt: string;
+  paidAt: string;
+  failedAt: string;
+  errorMessage: string;
+};
+
 type SupplierInvoice = {
   id: string;
   number: string;
@@ -63,6 +113,20 @@ type SupplierInvoice = {
   comment: string;
   attachmentUrl: string;
   counterpartyName: string;
+  supplierRequisites: {
+    id: string;
+    name: string;
+    legalTitle: string;
+    inn: string;
+    kpp: string;
+    checkingAccount: string;
+    bik: string;
+    correspondentAccount: string;
+    bankName: string;
+    bankLocation: string;
+    companyType: string;
+    archived: boolean;
+  };
   createdAt: string;
   updatedAt: string;
   document: {
@@ -85,6 +149,54 @@ type SupplierInvoice = {
     }[];
   };
   payments: SupplierInvoicePayment[];
+  tbankPayments: TBankPayment[];
+};
+
+type TBankPrecheck = {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  integration: {
+    configured: boolean;
+    connected: boolean;
+    tokenConfigured: boolean;
+    tokenPreview: string;
+    debitAccountNumberMasked: string;
+    mode: string;
+    sandbox: boolean;
+    productionMode: boolean;
+    lastCheckedAt: string;
+    lastCheckStatus: string;
+    lastCheckMessage: string;
+    accounts: Array<{
+      id: string;
+      accountNumberMasked: string;
+      accountName: string;
+      bankName: string;
+      currency: string;
+      isDefault: boolean;
+      isActive: boolean;
+    }>;
+  };
+  activePayment: null | TBankPayment & { label?: string };
+  payment: null | {
+    supplierInvoiceId: string;
+    amount: number;
+    amountCents: number;
+    supplierName: string;
+    recipientName: string;
+    recipientInn: string;
+    recipientKpp: string;
+    recipientAccount: string;
+    recipientBik: string;
+    recipientCorrAccount: string;
+    recipientBankName: string;
+    paymentPurpose: string;
+    paymentPurposeMaxLength: number;
+    fromAccountNumberMasked: string;
+    fromAccountId: string;
+    invoice: SupplierInvoice;
+  };
 };
 
 type InvoiceResponse = {
@@ -156,11 +268,41 @@ function plural(value: number, forms: [string, string, string]) {
 
 function statusMeta(status: InvoiceStatus) {
   if (status === "paid") return { label: "Оплачено", tone: "success" as const };
+  if (status === "paid_manually") return { label: "Оплачено вручную", tone: "success" as const };
   if (status === "partial") return { label: "Частично оплачено", tone: "info" as const };
   if (status === "overdue") return { label: "Просрочено", tone: "danger" as const };
   if (status === "cancelled") return { label: "Отменено", tone: "neutral" as const };
   if (status === "draft") return { label: "Черновик", tone: "neutral" as const };
+  if (status === "requisites_review") return { label: "Проверить реквизиты", tone: "warning" as const };
+  if (status === "ready_to_pay") return { label: "Готов к оплате", tone: "info" as const };
+  if (status === "tbank_draft_created") return { label: "Черновик T-Bank", tone: "info" as const };
+  if (status === "tbank_waiting_confirmation") return { label: "Ожидает T-Bank", tone: "info" as const };
+  if (status === "tbank_confirmed") return { label: "Подтверждён", tone: "success" as const };
+  if (status === "tbank_sent") return { label: "Отправлен в банк", tone: "info" as const };
+  if (status === "tbank_processing") return { label: "В исполнении", tone: "info" as const };
+  if (status === "payment_error") return { label: "Ошибка оплаты", tone: "danger" as const };
+  if (status === "bank_rejected") return { label: "Отклонён банком", tone: "danger" as const };
+  if (status === "payment_cancelled") return { label: "Отменён в T-Bank", tone: "neutral" as const };
+  if (status === "requires_review") return { label: "Требует проверки", tone: "warning" as const };
   return { label: "Не оплачено", tone: "warning" as const };
+}
+
+function tbankStatusMeta(payment?: TBankPayment | null) {
+  if (!payment) return { label: "не создан", tone: "neutral" as const };
+  if (payment.status === "paid") return { label: "оплачен", tone: "success" as const };
+  if (payment.status === "payment_error") return { label: "ошибка", tone: "danger" as const };
+  if (payment.status === "bank_rejected") return { label: "отклонён", tone: "danger" as const };
+  if (payment.status === "cancelled") return { label: "отменён", tone: "neutral" as const };
+  if (payment.status === "confirmed") return { label: "подтверждён", tone: "success" as const };
+  if (payment.status === "sent_to_bank") return { label: "отправлен", tone: "info" as const };
+  if (payment.status === "processing") return { label: "в исполнении", tone: "info" as const };
+  if (payment.status === "draft_created" || payment.status === "waiting_confirmation") return { label: "ждёт подтверждения", tone: "info" as const };
+  if (payment.status === "draft_creating") return { label: "создаётся", tone: "info" as const };
+  return { label: payment.status, tone: "neutral" as const };
+}
+
+function latestTBankPayment(invoice?: SupplierInvoice | null) {
+  return invoice?.tbankPayments?.[0] ?? null;
 }
 
 function sourceLabel(value: string) {
@@ -228,6 +370,10 @@ export default function SupplierInvoicesClient() {
   const [paymentComment, setPaymentComment] = useState("");
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [tbankPrecheck, setTbankPrecheck] = useState<TBankPrecheck | null>(null);
+  const [tbankPurpose, setTbankPurpose] = useState("");
+  const [tbankAccountId, setTbankAccountId] = useState("");
+  const [tbankWorking, setTbankWorking] = useState<"precheck" | "create" | "refresh" | "manual" | null>(null);
 
   const activeInvoice = useMemo(
     () => invoices.find((invoice) => invoice.id === openId) ?? null,
@@ -314,6 +460,10 @@ export default function SupplierInvoicesClient() {
       setPaymentType("cash");
       setPaymentComment("");
       setActionError(null);
+      setTbankPrecheck(null);
+      setTbankPurpose("");
+      setTbankAccountId("");
+      setTbankWorking(null);
     }
   }, [activeInvoice]);
 
@@ -401,6 +551,115 @@ export default function SupplierInvoicesClient() {
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Не удалось отменить счёт");
       openInvoice(invoice);
+    }
+  }
+
+  async function runTBankPrecheck(invoice = activeInvoice): Promise<TBankPrecheck | null> {
+    if (!invoice) return null;
+    setTbankWorking("precheck");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/supplier-invoices/${invoice.id}/tbank/precheck`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromAccountId: tbankAccountId || undefined,
+          paymentPurpose: tbankPurpose || undefined,
+        }),
+      });
+      const data = await readJson<TBankPrecheck & { error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось проверить платёж T-Bank");
+      if (!data) throw new Error("Сервер не вернул результат проверки");
+      setTbankPrecheck(data);
+      if (data.payment?.paymentPurpose && !tbankPurpose) setTbankPurpose(data.payment.paymentPurpose);
+      const defaultAccount = data.integration.accounts.find((account) => account.isDefault) ?? data.integration.accounts[0];
+      if (!tbankAccountId && defaultAccount?.id) setTbankAccountId(defaultAccount.id);
+      if (!data.ok && data.errors.length > 0) setActionError(data.errors[0]);
+      return data;
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Не удалось проверить платёж T-Bank");
+      return null;
+    } finally {
+      setTbankWorking(null);
+    }
+  }
+
+  async function createTBankDraft() {
+    if (!activeInvoice) return;
+    setTbankWorking("create");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const precheck = tbankPrecheck?.ok ? tbankPrecheck : await runTBankPrecheck(activeInvoice);
+      if (!precheck?.ok) {
+        setTbankWorking(null);
+        return;
+      }
+      const res = await fetch(`/api/supplier-invoices/${activeInvoice.id}/tbank/create-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromAccountId: tbankAccountId || undefined,
+          paymentPurpose: tbankPurpose || precheck.payment?.paymentPurpose,
+        }),
+      });
+      const data = await readJson<{ ok?: boolean; error?: string; payment?: TBankPayment; action?: { type: string; url?: string; label?: string } }>(res);
+      if (!res.ok || !data?.ok) throw new Error(data?.error ?? "Не удалось создать черновик в T-Bank");
+      setNotice(data.action?.type === "link"
+        ? "Черновик создан. Откройте T-Business для подтверждения платежа."
+        : "Черновик создан. Подтвердите платёж в T-Business.");
+      setTbankPrecheck(null);
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Не удалось создать черновик в T-Bank");
+    } finally {
+      setTbankWorking(null);
+    }
+  }
+
+  async function refreshTBankStatus(payment: TBankPayment) {
+    if (!activeInvoice) return;
+    setTbankWorking("refresh");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/supplier-invoices/${activeInvoice.id}/tbank/payments/${payment.id}/refresh-status`, {
+        method: "POST",
+      });
+      const data = await readJson<{ ok?: boolean; error?: string; payment?: TBankPayment }>(res);
+      if (!res.ok || !data?.ok) throw new Error(data?.error ?? "Не удалось обновить статус T-Bank");
+      setNotice(`Статус T-Bank обновлён: ${tbankStatusMeta(data.payment ?? payment).label}`);
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Не удалось обновить статус T-Bank");
+    } finally {
+      setTbankWorking(null);
+    }
+  }
+
+  async function markPaidManually() {
+    if (!activeInvoice) return;
+    const ok = window.confirm(`Отметить счёт ${activeInvoice.number || "без номера"} оплаченным вручную?`);
+    if (!ok) return;
+    setTbankWorking("manual");
+    setActionError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/supplier-invoices/${activeInvoice.id}/mark-paid-manually`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: "Оплата подтверждена вручную" }),
+      });
+      const data = await readJson<SupplierInvoice & { error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Не удалось отметить счёт оплаченным");
+      if (!data?.id) throw new Error("Сервер не вернул обновлённый счёт");
+      setInvoices((current) => current.map((invoice) => invoice.id === data.id ? data : invoice));
+      setNotice("Счёт отмечен оплаченным вручную");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Не удалось отметить счёт оплаченным");
+    } finally {
+      setTbankWorking(null);
     }
   }
 
@@ -722,12 +981,15 @@ export default function SupplierInvoicesClient() {
                   <th className="l-money">К оплате</th>
                   <th>{renderSortLabel("Срок оплаты", "dueDate")}</th>
                   <th>{renderSortLabel("Статус", "status")}</th>
+                  <th>T-Bank</th>
                   <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {invoices.map((invoice) => {
                   const meta = statusMeta(invoice.status);
+                  const tbankPayment = latestTBankPayment(invoice);
+                  const tbankMeta = tbankStatusMeta(tbankPayment);
                   return (
                     <tr key={invoice.id} className="eco-invoices-row" onClick={() => openInvoice(invoice)}>
                       <td className="eco-invoices-select-cell" onClick={(event) => event.stopPropagation()}>
@@ -773,6 +1035,12 @@ export default function SupplierInvoicesClient() {
                         {invoice.status === "overdue" && <div className="eco-invoices-danger">требует действия</div>}
                       </td>
                       <td><EcoBadge tone={meta.tone}>{meta.label}</EcoBadge></td>
+                      <td>
+                        <EcoBadge tone={tbankMeta.tone}>{tbankMeta.label}</EcoBadge>
+                        {tbankPayment?.tbankDocumentId && (
+                          <div className="eco-invoices-secondary">doc {tbankPayment.tbankDocumentId}</div>
+                        )}
+                      </td>
                       <td onClick={(event) => event.stopPropagation()}>
                         <div className="eco-invoices-actions">
                           <button type="button" className="eco-icon-btn" onClick={() => openInvoice(invoice)} title="Открыть" aria-label="Открыть">
@@ -802,6 +1070,7 @@ export default function SupplierInvoicesClient() {
             <div className="eco-invoices-mobile-list">
               {invoices.map((invoice) => {
                 const meta = statusMeta(invoice.status);
+                const tbankMeta = tbankStatusMeta(latestTBankPayment(invoice));
                 return (
                   <button key={invoice.id} type="button" className="eco-invoices-mobile-card" onClick={() => openInvoice(invoice)}>
                     <span className="eco-invoices-mobile-card__top">
@@ -818,6 +1087,10 @@ export default function SupplierInvoicesClient() {
                     <span className="eco-invoices-doc-link">
                       <Link2 aria-hidden className="eco-icon" />
                       {invoice.document.name}
+                    </span>
+                    <span className="eco-invoices-doc-link">
+                      <Landmark aria-hidden className="eco-icon" />
+                      T-Bank: {tbankMeta.label}
                     </span>
                   </button>
                 );
@@ -895,6 +1168,148 @@ export default function SupplierInvoicesClient() {
               <section className="eco-invoices-detail-block">
                 <h3>Поставщик</h3>
                 <p>{activeInvoice.counterpartyName || "Поставщик не указан"}</p>
+              </section>
+
+              <section className="eco-invoices-detail-block eco-tbank-block">
+                <div className="eco-tbank-block__head">
+                  <div>
+                    <h3>Оплата через T-Bank</h3>
+                    <p>Эко-платформа создаёт черновик, подтверждение проходит только на стороне T-Business.</p>
+                  </div>
+                  <EcoBadge tone={tbankStatusMeta(latestTBankPayment(activeInvoice)).tone}>
+                    {tbankStatusMeta(latestTBankPayment(activeInvoice)).label}
+                  </EcoBadge>
+                </div>
+
+                <div className="eco-tbank-safety">
+                  <ShieldCheck aria-hidden className="eco-icon" />
+                  <span>СМС-коды и банковские подтверждения не вводятся в Эко-платформе.</span>
+                </div>
+
+                <div className="eco-tbank-summary">
+                  <span><b>Сумма</b>{formatMoney(activeInvoice.remaining)}</span>
+                  <span><b>Получатель</b>{activeInvoice.supplierRequisites.legalTitle || activeInvoice.counterpartyName || "не указан"}</span>
+                  <span><b>ИНН / КПП</b>{activeInvoice.supplierRequisites.inn || "—"} / {activeInvoice.supplierRequisites.kpp || "0"}</span>
+                  <span><b>БИК</b>{activeInvoice.supplierRequisites.bik || "—"}</span>
+                  <span><b>Счёт получателя</b>{activeInvoice.supplierRequisites.checkingAccount || "—"}</span>
+                  <span><b>Банк</b>{activeInvoice.supplierRequisites.bankName || "—"}</span>
+                </div>
+
+                {latestTBankPayment(activeInvoice) && (
+                  <div className="eco-tbank-current">
+                    <div>
+                      <strong>{tbankStatusMeta(latestTBankPayment(activeInvoice)).label}</strong>
+                      <span>
+                        {latestTBankPayment(activeInvoice)?.tbankDocumentId
+                          ? `Документ ${latestTBankPayment(activeInvoice)?.tbankDocumentId}`
+                          : "Черновик связан со счётом"}
+                        {latestTBankPayment(activeInvoice)?.providerStatus ? ` · ${latestTBankPayment(activeInvoice)?.providerStatus}` : ""}
+                      </span>
+                    </div>
+                    <div className="eco-actions">
+                      {latestTBankPayment(activeInvoice)?.confirmationUrl && (
+                        <a className="eco-btn eco-btn--sm" href={latestTBankPayment(activeInvoice)?.confirmationUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink aria-hidden className="eco-icon" />
+                          Открыть T-Business
+                        </a>
+                      )}
+                      <EcoButton
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          const payment = latestTBankPayment(activeInvoice);
+                          if (payment) void refreshTBankStatus(payment);
+                        }}
+                        disabled={tbankWorking !== null}
+                      >
+                        {tbankWorking === "refresh" ? <Loader2 aria-hidden className="eco-icon eco-invoices-spin" /> : <RefreshCw aria-hidden className="eco-icon" />}
+                        Обновить статус
+                      </EcoButton>
+                    </div>
+                  </div>
+                )}
+
+                {tbankPrecheck && (
+                  <div className="eco-tbank-confirm">
+                    <div className="eco-tbank-confirm__head">
+                      <div>
+                        <strong>Проверьте платёж</strong>
+                        <span>{tbankPrecheck.integration.connected ? "Интеграция подключена" : "Интеграция требует настройки"}</span>
+                      </div>
+                      <EcoBadge tone={tbankPrecheck.ok ? "success" : "warning"}>
+                        {tbankPrecheck.ok ? "можно создать" : "нужна проверка"}
+                      </EcoBadge>
+                    </div>
+
+                    {tbankPrecheck.integration.accounts.length > 0 && (
+                      <label className="eco-tbank-field">
+                        <span>Счёт списания</span>
+                        <EcoSelect
+                          value={tbankAccountId}
+                          onChange={(event) => {
+                            setTbankAccountId(event.target.value);
+                            setTbankPrecheck(null);
+                          }}
+                        >
+                          <option value="">Счёт по умолчанию</option>
+                          {tbankPrecheck.integration.accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.accountNumberMasked} · {account.currency}{account.accountName ? ` · ${account.accountName}` : ""}
+                            </option>
+                          ))}
+                        </EcoSelect>
+                      </label>
+                    )}
+
+                    <label className="eco-tbank-field">
+                      <span>Назначение платежа</span>
+                      <textarea
+                        className="eco-input eco-tbank-purpose"
+                        value={tbankPurpose}
+                        maxLength={tbankPrecheck.payment?.paymentPurposeMaxLength ?? 210}
+                        onChange={(event) => {
+                          setTbankPurpose(event.target.value);
+                          const warning = "Назначение изменено. Запустите проверку ещё раз перед созданием черновика.";
+                          setTbankPrecheck((current) => current
+                            ? { ...current, ok: false, warnings: current.warnings.includes(warning) ? current.warnings : [...current.warnings, warning] }
+                            : current);
+                        }}
+                      />
+                      <small>{tbankPurpose.length} / {tbankPrecheck.payment?.paymentPurposeMaxLength ?? 210}</small>
+                    </label>
+
+                    {(tbankPrecheck.errors.length > 0 || tbankPrecheck.warnings.length > 0) && (
+                      <div className="eco-tbank-messages">
+                        {tbankPrecheck.errors.map((item) => (
+                          <span key={item} className="is-error"><AlertTriangle aria-hidden className="eco-icon" />{item}</span>
+                        ))}
+                        {tbankPrecheck.warnings.map((item) => (
+                          <span key={item}><AlertTriangle aria-hidden className="eco-icon" />{item}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="eco-tbank-actions">
+                  <EcoButton type="button" onClick={() => void runTBankPrecheck()} disabled={tbankWorking !== null}>
+                    {tbankWorking === "precheck" ? <Loader2 aria-hidden className="eco-icon eco-invoices-spin" /> : <CheckCircle2 aria-hidden className="eco-icon" />}
+                    Проверить реквизиты
+                  </EcoButton>
+                  <EcoButton
+                    type="button"
+                    variant="primary"
+                    onClick={() => void createTBankDraft()}
+                    disabled={tbankWorking !== null || (tbankPrecheck !== null && !tbankPrecheck.ok)}
+                  >
+                    {tbankWorking === "create" ? <Loader2 aria-hidden className="eco-icon eco-invoices-spin" /> : <Send aria-hidden className="eco-icon" />}
+                    Создать черновик в T-Bank
+                  </EcoButton>
+                  <EcoButton type="button" variant="ghost" onClick={() => void markPaidManually()} disabled={tbankWorking !== null}>
+                    <Landmark aria-hidden className="eco-icon" />
+                    Отметить вручную
+                  </EcoButton>
+                </div>
               </section>
 
               <section className="eco-invoices-detail-block">

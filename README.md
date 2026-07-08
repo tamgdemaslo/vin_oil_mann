@@ -1,5 +1,7 @@
 # VIN → Масло и фильтры Mann
 
+Для быстрого знакомства нового разработчика с проектом см. [ONBOARDING.md](ONBOARDING.md).
+
 - **Номера фильтров (OEM)** — [Parts API](https://partsapi.ru) по VIN: масляный, воздушный, салонный (группы 7, 8, 9).
 - **МойСклад** — поиск по OEM и вывод наличия (опционально).
 
@@ -7,8 +9,8 @@
 
 ```bash
 npm install
-cp .env.example .env.local
-# Заполните PARTSAPI_KEY
+cp .env.local.template .env.local
+# Проверьте DATABASE_URL и заполните нужные ключи интеграций
 npm run dev
 ```
 

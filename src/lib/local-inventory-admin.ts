@@ -23,6 +23,8 @@ import { assertNoActiveInventoryLocks } from "@/lib/warehouse-inventory";
 
 export type LocalStockDocumentType = "receipt" | "writeoff";
 type LocalAdjustmentType = "technical" | "expense";
+type LocalReceiptStatus = "draft" | "posted" | "cancelled" | "needs_review" | "blocked";
+type ReceiptDangerAction = "unpost" | "cancel";
 
 const TECHNICAL_ADJUSTMENT_REASONS = new Set([
   "Ошибка начальных остатков",
@@ -242,12 +244,13 @@ type SupplierInvoicePaymentInput = {
 type ActingUser = {
   login?: string;
   name?: string | null;
+  role?: string;
 };
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof productWithStockInclude }>;
 type ProductListIndexProduct = Prisma.LocalProductGetPayload<{ select: typeof productListIndexSelect }>;
 type RestockProductWithStock = Prisma.LocalProductGetPayload<{ include: typeof restockProductInclude }>;
-const supplierInvoiceInclude = {
+export const supplierInvoiceInclude = {
   document: {
     include: {
       store: true,
@@ -261,9 +264,24 @@ const supplierInvoiceInclude = {
     },
     orderBy: [{ paymentDate: "desc" as const }, { createdAt: "desc" as const }],
   },
+  tbankPayments: {
+    orderBy: [{ createdAt: "desc" as const }],
+  },
 } satisfies Prisma.LocalSupplierInvoiceInclude;
-type SupplierInvoiceWithDocument = Prisma.LocalSupplierInvoiceGetPayload<{
+const stockDocumentActionInclude = {
+  store: true,
+  counterparty: true,
+  positions: {
+    include: { product: true },
+    orderBy: { id: "asc" as const },
+  },
+  supplierInvoice: true,
+} satisfies Prisma.LocalInventoryDocumentInclude;
+export type SupplierInvoiceWithDocument = Prisma.LocalSupplierInvoiceGetPayload<{
   include: typeof supplierInvoiceInclude;
+}>;
+type StockDocumentForAction = Prisma.LocalInventoryDocumentGetPayload<{
+  include: typeof stockDocumentActionInclude;
 }>;
 type CounterpartyRow = LocalCounterparty;
 
@@ -1101,6 +1119,7 @@ type StockDocumentAdminList = {
     name: string;
     moment: string;
     documentDate: string;
+    status: LocalReceiptStatus;
     applicable: boolean;
     sum: number;
     description: string;
@@ -1108,6 +1127,10 @@ type StockDocumentAdminList = {
     adjustmentMethod: string | null;
     adjustmentReason: string;
     affectsManagementProfit: boolean;
+    correctionOfId: string | null;
+    isDeleted: boolean;
+    cancelledAt: string | null;
+    deletedAt: string | null;
     storeId: string;
     storeName: string;
     counterpartyId: string;
@@ -2435,6 +2458,8 @@ async function aggregateLocalOutflowByProduct(dateFrom: string, dateTo: string) 
         document: {
           type: "writeoff",
           applicable: true,
+          isDeleted: false,
+          status: { not: "cancelled" },
           documentDate: { gte: dateFrom, lte: dateTo },
         },
       },
@@ -3364,8 +3389,140 @@ async function nextSupplierInvoiceNumber(invoiceDate: string) {
   return `СЧ-${invoiceDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
 
-function normalizeSupplierInvoiceStatus(value?: string): "draft" | "unpaid" | "paid" | "partial" | "cancelled" {
-  if (value === "draft" || value === "paid" || value === "partial" || value === "cancelled") return value;
+function normalizeStockDocumentStatus(value: unknown, applicable: boolean): LocalReceiptStatus {
+  if (value === "draft" || value === "posted" || value === "cancelled" || value === "needs_review" || value === "blocked") return value;
+  return applicable ? "posted" : "draft";
+}
+
+function isReceiptDraft(document: { status?: string | null; applicable: boolean; isDeleted?: boolean | null }) {
+  return !document.isDeleted && normalizeStockDocumentStatus(document.status, document.applicable) === "draft" && !document.applicable;
+}
+
+function isReceiptPosted(document: { status?: string | null; applicable: boolean; isDeleted?: boolean | null }) {
+  return !document.isDeleted && normalizeStockDocumentStatus(document.status, document.applicable) === "posted" && document.applicable;
+}
+
+function canManageReceiptDangerousActions(user?: ActingUser | null) {
+  return user?.role === "owner" || user?.role === "admin";
+}
+
+function receiptPermissionError(user?: ActingUser | null) {
+  return canManageReceiptDangerousActions(user)
+    ? null
+    : "Недостаточно прав. Отменять, удалять и возвращать приёмки может только владелец или администратор.";
+}
+
+function stockDocumentSnapshot(document: {
+  id: string;
+  type: string;
+  name: string;
+  status?: string | null;
+  applicable: boolean;
+  documentDate: string;
+  momentAt: Date;
+  sumCents: number;
+  description?: string | null;
+  storeId?: string | null;
+  storeNameSnapshot?: string | null;
+  counterpartyId?: string | null;
+  counterpartyNameSnapshot?: string | null;
+  positions?: Array<{
+    id: string;
+    productId: string | null;
+    productName: string;
+    quantity: Prisma.Decimal | number;
+    priceCentsPerUnit: number;
+    slotName?: string | null;
+  }>;
+  supplierInvoice?: {
+    id: string;
+    number: string | null;
+    status: string;
+    sumCents: number;
+    paidAmountCents: number;
+  } | null;
+}) {
+  return {
+    id: document.id,
+    type: document.type,
+    name: document.name,
+    status: normalizeStockDocumentStatus(document.status, document.applicable),
+    applicable: document.applicable,
+    documentDate: document.documentDate,
+    momentAt: document.momentAt.toISOString(),
+    sumCents: document.sumCents,
+    description: document.description ?? "",
+    storeId: document.storeId ?? "",
+    storeName: document.storeNameSnapshot ?? "",
+    counterpartyId: document.counterpartyId ?? "",
+    counterpartyName: document.counterpartyNameSnapshot ?? "",
+    invoice: document.supplierInvoice
+      ? {
+          id: document.supplierInvoice.id,
+          number: document.supplierInvoice.number ?? "",
+          status: document.supplierInvoice.status,
+          sumCents: document.supplierInvoice.sumCents,
+          paidAmountCents: document.supplierInvoice.paidAmountCents,
+        }
+      : null,
+    positions: (document.positions ?? []).map((position) => ({
+      id: position.id,
+      productId: position.productId,
+      productName: position.productName,
+      quantity: decimalToNumber(position.quantity),
+      priceCentsPerUnit: position.priceCentsPerUnit,
+      slotName: position.slotName ?? "",
+    })),
+  };
+}
+
+async function writeStockDocumentAudit(
+  tx: Prisma.TransactionClient,
+  input: {
+    documentId: string;
+    action: string;
+    statusBefore?: string | null;
+    statusAfter?: string | null;
+    message?: string | null;
+    oldValue?: unknown;
+    newValue?: unknown;
+    user?: ActingUser | null;
+  }
+) {
+  await tx.localInventoryDocumentAuditLog.create({
+    data: {
+      documentId: input.documentId,
+      action: input.action,
+      statusBefore: input.statusBefore ?? null,
+      statusAfter: input.statusAfter ?? null,
+      message: input.message ?? null,
+      oldValue: input.oldValue === undefined ? Prisma.JsonNull : toJson(input.oldValue),
+      newValue: input.newValue === undefined ? Prisma.JsonNull : toJson(input.newValue),
+      createdById: input.user?.login ?? null,
+      createdByName: input.user?.name ?? null,
+    },
+  });
+}
+
+function normalizeSupplierInvoiceStatus(value?: string): "draft" | "unpaid" | "paid" | "partial" | "cancelled" | "requisites_review" | "ready_to_pay" | "tbank_draft_created" | "tbank_waiting_confirmation" | "tbank_confirmed" | "tbank_sent" | "tbank_processing" | "payment_error" | "bank_rejected" | "payment_cancelled" | "requires_review" | "paid_manually" {
+  if (
+    value === "draft" ||
+    value === "paid" ||
+    value === "partial" ||
+    value === "cancelled" ||
+    value === "requisites_review" ||
+    value === "ready_to_pay" ||
+    value === "tbank_draft_created" ||
+    value === "tbank_waiting_confirmation" ||
+    value === "tbank_confirmed" ||
+    value === "tbank_sent" ||
+    value === "tbank_processing" ||
+    value === "payment_error" ||
+    value === "bank_rejected" ||
+    value === "payment_cancelled" ||
+    value === "requires_review" ||
+    value === "paid_manually"
+  ) return value;
   if (value === "partially_paid") return "partial";
   return "unpaid";
 }
@@ -3386,7 +3543,22 @@ function effectivePaidCents(invoice: Pick<SupplierInvoiceWithDocument, "status" 
 
 function effectiveInvoiceStatus(invoice: Pick<SupplierInvoiceWithDocument, "status" | "dueDate" | "sumCents" | "paidAmountCents">) {
   const status = normalizeSupplierInvoiceStatus(invoice.status);
-  if (status === "cancelled" || status === "draft") return status;
+  if (
+    status === "cancelled" ||
+    status === "draft" ||
+    status === "requisites_review" ||
+    status === "ready_to_pay" ||
+    status === "tbank_draft_created" ||
+    status === "tbank_waiting_confirmation" ||
+    status === "tbank_confirmed" ||
+    status === "tbank_sent" ||
+    status === "tbank_processing" ||
+    status === "payment_error" ||
+    status === "bank_rejected" ||
+    status === "payment_cancelled" ||
+    status === "requires_review"
+  ) return status;
+  if (status === "paid_manually") return status;
   const remainingCents = Math.max(0, invoice.sumCents - effectivePaidCents(invoice));
   if (remainingCents <= 0) return "paid";
   const today = toServiceDateInput(new Date());
@@ -3395,8 +3567,15 @@ function effectiveInvoiceStatus(invoice: Pick<SupplierInvoiceWithDocument, "stat
   return "unpaid";
 }
 
-function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
+function supplierInvoiceHasPaymentRisk(invoice?: { status: string; sumCents: number; paidAmountCents: number } | null) {
+  if (!invoice) return false;
+  const status = normalizeSupplierInvoiceStatus(invoice.status);
+  return invoice.paidAmountCents > 0 || status === "paid" || status === "partial" || status === "paid_manually";
+}
+
+export function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
   const document = invoice.document;
+  const counterparty = document.counterparty;
   const paidAmountCents = effectivePaidCents(invoice);
   const remainingAmountCents = normalizeSupplierInvoiceStatus(invoice.status) === "cancelled"
     ? 0
@@ -3417,7 +3596,21 @@ function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
     source: invoice.source ?? "receipt",
     comment: invoice.comment ?? "",
     attachmentUrl: invoice.attachmentUrl ?? "",
-    counterpartyName: invoice.counterpartyNameSnapshot ?? document.counterparty?.name ?? document.counterpartyNameSnapshot ?? "",
+    counterpartyName: invoice.counterpartyNameSnapshot ?? counterparty?.name ?? document.counterpartyNameSnapshot ?? "",
+    supplierRequisites: {
+      id: counterparty?.id ?? "",
+      name: counterparty?.name ?? document.counterpartyNameSnapshot ?? invoice.counterpartyNameSnapshot ?? "",
+      legalTitle: counterparty?.legalTitle ?? "",
+      inn: counterparty?.inn ?? "",
+      kpp: counterparty?.kpp ?? "",
+      checkingAccount: counterparty?.checkingAccount ?? "",
+      bik: counterparty?.bik ?? "",
+      correspondentAccount: counterparty?.correspondentAccount ?? "",
+      bankName: counterparty?.bankName ?? "",
+      bankLocation: counterparty?.bankLocation ?? "",
+      companyType: counterparty?.companyType ?? "",
+      archived: counterparty?.archived ?? false,
+    },
     createdAt: invoice.createdAt.toISOString(),
     updatedAt: invoice.updatedAt.toISOString(),
     document: {
@@ -3439,6 +3632,32 @@ function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
         slotName: position.slotName ?? "",
       })),
     },
+    tbankPayments: invoice.tbankPayments.map((payment) => ({
+      id: payment.id,
+      provider: payment.provider,
+      mode: payment.mode,
+      status: payment.status,
+      providerStatus: payment.providerStatus ?? "",
+      tbankDocumentId: payment.tbankDocumentId ?? "",
+      tbankPaymentId: payment.tbankPaymentId ?? "",
+      tbankRequestId: payment.tbankRequestId ?? "",
+      amount: payment.amountCents / 100,
+      amountCents: payment.amountCents,
+      fromAccountNumberMasked: payment.fromAccountNumberMasked ?? "",
+      recipientName: payment.recipientName,
+      recipientInn: payment.recipientInn,
+      recipientKpp: payment.recipientKpp ?? "",
+      recipientAccount: payment.recipientAccount,
+      recipientBik: payment.recipientBik,
+      paymentPurpose: payment.paymentPurpose,
+      confirmationUrl: payment.confirmationUrl ?? "",
+      createdAt: payment.createdAt.toISOString(),
+      sentAt: payment.sentAt?.toISOString() ?? "",
+      confirmedAt: payment.confirmedAt?.toISOString() ?? "",
+      paidAt: payment.paidAt?.toISOString() ?? "",
+      failedAt: payment.failedAt?.toISOString() ?? "",
+      errorMessage: payment.errorMessage ?? "",
+    })),
     payments: invoice.payments.map((payment) => ({
       id: payment.id,
       amount: payment.amountCents / 100,
@@ -3872,6 +4091,8 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     id: string;
     name: string;
     type: string;
+    status: string;
+    applicable: boolean;
     adjustmentType: string | null;
     adjustmentMethod: string | null;
     adjustmentReason: string | null;
@@ -3885,6 +4106,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         name,
         momentAt,
         documentDate,
+        status: applicable ? "posted" : "draft",
         applicable,
         sumCents,
         description: body.description?.trim() || null,
@@ -4011,6 +4233,22 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       }
     }
 
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: applicable ? "create_posted" : "create_draft",
+      statusAfter: applicable ? "posted" : "draft",
+      message: applicable ? "Документ создан и проведён. Остатки обновлены." : "Документ создан как черновик.",
+      newValue: {
+        type,
+        name,
+        documentDate,
+        sumCents,
+        positionsCount: positions.length,
+        invoiceCreated: invoiceRequested,
+      },
+      user,
+    });
+
       return document;
     });
   } catch (error) {
@@ -4025,6 +4263,8 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       id: created.id,
       name: created.name,
       type: created.type,
+      status: normalizeStockDocumentStatus(created.status, created.applicable),
+      applicable: created.applicable,
       adjustmentType: created.adjustmentType,
       adjustmentMethod: created.adjustmentMethod,
       adjustmentReason: created.adjustmentReason,
@@ -4048,16 +4288,20 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
 
   const current = await prisma.localInventoryDocument.findUnique({
     where: { id },
-    include: { supplierInvoice: true },
+    include: {
+      positions: { orderBy: { id: "asc" } },
+      supplierInvoice: true,
+    },
   });
   if (!current) return { ok: false as const, error: "Складской документ не найден", notFound: true };
+  if (current.isDeleted) return { ok: false as const, error: "Удалённый документ нельзя редактировать" };
   if (current.type !== "receipt" && current.type !== "writeoff") {
     return { ok: false as const, error: "Неизвестный тип складского документа" };
   }
   if (body.type && body.type !== current.type) {
     return { ok: false as const, error: "Тип складского документа нельзя изменить" };
   }
-  if (current.applicable) {
+  if (!isReceiptDraft(current)) {
     return { ok: false as const, error: "Проведённый документ нельзя редактировать. Создайте документ на основе." };
   }
 
@@ -4132,6 +4376,13 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
   const invoiceRequested = type === "receipt" && body.invoice?.create === true;
+  const paidInvoiceLocked = supplierInvoiceHasPaymentRisk(current.supplierInvoice);
+  if (!invoiceRequested && paidInvoiceLocked) {
+    return {
+      ok: false as const,
+      error: "У этой приёмки есть оплаченный счёт поставщика. Счёт нельзя удалить при редактировании черновика, переведите его в проверку отдельно.",
+    };
+  }
   const invoiceDate = invoiceRequested ? documentDateFromInput(body.invoice?.invoiceDate || documentDate) : null;
   const invoiceDueDate = invoiceRequested ? optionalDocumentDateFromInput(body.invoice?.dueDate) : null;
   const invoiceStatus = invoiceRequested ? normalizeSupplierInvoiceStatus(body.invoice?.status) : null;
@@ -4147,6 +4398,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     id: string;
     name: string;
     type: string;
+    status: string;
     applicable: boolean;
     adjustmentType: string | null;
     adjustmentMethod: string | null;
@@ -4154,6 +4406,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     affectsManagementProfit: boolean;
   };
   try {
+    const oldSnapshot = stockDocumentSnapshot(current);
     updated = await prisma.$transaction(async (tx) => {
       const document = await tx.localInventoryDocument.update({
       where: { id: current.id },
@@ -4161,6 +4414,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
         name: nextName,
         momentAt,
         documentDate,
+        status: applicable ? "posted" : "draft",
         applicable,
         sumCents,
         description: body.description?.trim() || null,
@@ -4214,9 +4468,11 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           number: invoiceNumber,
           invoiceDate: invoiceDate!,
           dueDate: invoiceDueDate,
-          status: invoiceStatus!,
+          status: paidInvoiceLocked ? "requires_review" : invoiceStatus!,
           sumCents,
-          paidAmountCents: initialPaidCentsForStatus(invoiceStatus!, sumCents),
+          paidAmountCents: paidInvoiceLocked
+            ? current.supplierInvoice?.paidAmountCents ?? 0
+            : initialPaidCentsForStatus(invoiceStatus!, sumCents),
           counterpartyNameSnapshot: counterparty?.name ?? supplierSnapshotName,
           raw: toJson(body.invoice),
         },
@@ -4301,6 +4557,42 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       }
     }
 
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: applicable ? "post" : "update_draft",
+      statusBefore: normalizeStockDocumentStatus(current.status, current.applicable),
+      statusAfter: applicable ? "posted" : "draft",
+      message: applicable ? "Черновик проведён. Остатки обновлены." : "Черновик приёмки сохранён.",
+      oldValue: oldSnapshot,
+      newValue: {
+        ...stockDocumentSnapshot({
+          ...document,
+          positions: positions.map((position, index) => {
+            if ("error" in position) throw new Error(position.error);
+            return {
+              id: `${document.id}:${index}`,
+              productId: position.product.id,
+              productName: position.product.name,
+              quantity: position.quantity,
+              priceCentsPerUnit: position.priceCents,
+              slotName: position.slotName,
+            };
+          }),
+          supplierInvoice: invoiceRequested
+            ? {
+                id: current.supplierInvoice?.id ?? "",
+                number: invoiceNumber,
+                status: paidInvoiceLocked ? "requires_review" : invoiceStatus!,
+                sumCents,
+                paidAmountCents: paidInvoiceLocked ? current.supplierInvoice?.paidAmountCents ?? 0 : initialPaidCentsForStatus(invoiceStatus!, sumCents),
+              }
+            : null,
+        }),
+        invoiceRequiresReview: paidInvoiceLocked,
+      },
+      user,
+    });
+
       return document;
     });
   } catch (error) {
@@ -4315,6 +4607,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       id: updated.id,
       name: updated.name,
       type: updated.type,
+      status: normalizeStockDocumentStatus(updated.status, updated.applicable),
       applicable: updated.applicable,
       adjustmentType: updated.adjustmentType,
       adjustmentMethod: updated.adjustmentMethod,
@@ -4330,6 +4623,656 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           }
         : null,
     },
+  };
+}
+
+type ReceiptActionProblem = {
+  productId?: string | null;
+  productName?: string;
+  message: string;
+  currentQuantity?: number;
+  currentAvailable?: number;
+  rollbackQuantity?: number;
+  projectedQuantity?: number;
+  projectedAvailable?: number;
+};
+
+type ReceiptActionWarning = {
+  message: string;
+};
+
+function receiptActionLabel(action: ReceiptDangerAction) {
+  return action === "unpost" ? "вернуть приёмку в черновик" : "отменить приёмку";
+}
+
+function receiptActionSuccessMessage(action: ReceiptDangerAction) {
+  return action === "unpost"
+    ? "Приёмка возвращена в черновик. Складские движения отменены."
+    : "Приёмка отменена. Документ сохранён в истории.";
+}
+
+function receiptPositionsByProduct(document: StockDocumentForAction) {
+  const map = new Map<string, {
+    productId: string;
+    productName: string;
+    quantity: number;
+    priceCentsPerUnit: number;
+  }>();
+  for (const position of document.positions) {
+    if (!position.productId) continue;
+    const current = map.get(position.productId) ?? {
+      productId: position.productId,
+      productName: position.productName,
+      quantity: 0,
+      priceCentsPerUnit: position.priceCentsPerUnit,
+    };
+    current.quantity += position.quantity.toNumber();
+    current.priceCentsPerUnit = position.priceCentsPerUnit || current.priceCentsPerUnit;
+    map.set(position.productId, current);
+  }
+  return [...map.values()];
+}
+
+async function loadReceiptForAction(documentId: string) {
+  const id = documentId?.trim();
+  if (!id) return null;
+  return prisma.localInventoryDocument.findFirst({
+    where: { id, type: "receipt" },
+    include: stockDocumentActionInclude,
+  });
+}
+
+export async function checkReceiptRollbackSafety(documentId: string, action: ReceiptDangerAction, user?: ActingUser) {
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+
+  const permissionError = receiptPermissionError(user);
+  if (permissionError) return { ok: false as const, error: permissionError, status: 403 };
+
+  const problems: ReceiptActionProblem[] = [];
+  const warnings: ReceiptActionWarning[] = [];
+  const status = normalizeStockDocumentStatus(document.status, document.applicable);
+  if (document.isDeleted) {
+    problems.push({ message: "Удалённую приёмку нельзя изменить." });
+  }
+  if (!isReceiptPosted(document)) {
+    problems.push({
+      message: status === "cancelled"
+        ? "Эта приёмка уже отменена."
+        : "Операция доступна только для проведённой приёмки.",
+    });
+  }
+  if (!document.storeId || !document.store) {
+    problems.push({ message: "У приёмки не указан склад. Без склада нельзя безопасно отменить движение." });
+  }
+  const positions = receiptPositionsByProduct(document);
+  if (positions.length === 0) {
+    problems.push({ message: "В приёмке нет товарных позиций для отката." });
+  }
+  const productIds = positions.map((position) => position.productId);
+  const productNames = new Map(positions.map((position) => [position.productId, position.productName]));
+
+  if (document.storeId && productIds.length > 0) {
+    const [balances, salesAfter, writeoffsAfter, inventoryAfter] = await Promise.all([
+      prisma.localStockBalance.findMany({
+        where: { storeId: document.storeId, productId: { in: productIds } },
+      }),
+      prisma.localDemandPosition.findMany({
+        where: {
+          productId: { in: productIds },
+          demand: {
+            is: {
+              applicable: true,
+              storeId: document.storeId,
+              momentAt: { gt: document.momentAt },
+            },
+          },
+        },
+        include: { demand: { select: { id: true, name: true, momentAt: true } } },
+        take: 20,
+      }),
+      prisma.localInventoryDocument.findMany({
+        where: {
+          id: { not: document.id },
+          type: "writeoff",
+          applicable: true,
+          isDeleted: false,
+          status: { not: "cancelled" },
+          storeId: document.storeId,
+          momentAt: { gt: document.momentAt },
+          positions: { some: { productId: { in: productIds } } },
+        },
+        include: { positions: true },
+        take: 20,
+      }),
+      prisma.inventoryLine.findMany({
+        where: {
+          productId: { in: productIds },
+          warehouseId: document.storeId,
+          session: {
+            is: {
+              postedAt: { gt: document.momentAt },
+            },
+          },
+        },
+        include: { session: { select: { number: true, postedAt: true } } },
+        take: 20,
+      }),
+    ]);
+
+    const balanceByProduct = new Map(balances.map((balance) => [balance.productId, balance]));
+    for (const position of positions) {
+      const balance = balanceByProduct.get(position.productId);
+      if (!balance) {
+        problems.push({
+          productId: position.productId,
+          productName: position.productName,
+          message: `Нельзя ${receiptActionLabel(action)}: по товару «${position.productName}» нет текущего остатка на складе.`,
+          rollbackQuantity: position.quantity,
+        });
+        continue;
+      }
+      const currentQuantity = balance.quantity.toNumber();
+      const currentAvailable = balance.available.toNumber();
+      const reserve = balance.reserve.toNumber();
+      const projectedQuantity = currentQuantity - position.quantity;
+      const projectedAvailable = projectedQuantity - reserve;
+      if (projectedQuantity < -0.000001 || projectedAvailable < -0.000001) {
+        problems.push({
+          productId: position.productId,
+          productName: position.productName,
+          message: `Нельзя ${receiptActionLabel(action)}: товар «${position.productName}» уйдёт в отрицательный остаток.`,
+          currentQuantity,
+          currentAvailable,
+          rollbackQuantity: position.quantity,
+          projectedQuantity,
+          projectedAvailable,
+        });
+      }
+      if (reserve > 0 && currentAvailable < position.quantity - 0.000001) {
+        problems.push({
+          productId: position.productId,
+          productName: position.productName,
+          message: `Нельзя ${receiptActionLabel(action)}: по товару «${position.productName}» есть резерв ${formatQtyForError(reserve)} шт.`,
+          currentQuantity,
+          currentAvailable,
+          rollbackQuantity: position.quantity,
+          projectedQuantity,
+          projectedAvailable,
+        });
+      }
+    }
+
+    const salesByProduct = new Map<string, string>();
+    for (const sale of salesAfter) {
+      if (!sale.productId || salesByProduct.has(sale.productId)) continue;
+      salesByProduct.set(sale.productId, sale.demand.name);
+    }
+    for (const [productId, demandName] of salesByProduct) {
+      const productName = productNames.get(productId) ?? "товар";
+      problems.push({
+        productId,
+        productName,
+        message: `Нельзя ${receiptActionLabel(action)}: товар «${productName}» уже был продан после этой приёмки (${demandName}).`,
+      });
+    }
+
+    const writeoffProductIds = new Set<string>();
+    for (const writeoff of writeoffsAfter) {
+      for (const position of writeoff.positions) {
+        if (position.productId && productIds.includes(position.productId)) writeoffProductIds.add(position.productId);
+      }
+    }
+    for (const productId of writeoffProductIds) {
+      const productName = productNames.get(productId) ?? "товар";
+      problems.push({
+        productId,
+        productName,
+        message: `Нельзя ${receiptActionLabel(action)}: товар «${productName}» уже участвовал в списании после этой приёмки.`,
+      });
+    }
+
+    const inventoryProductIds = new Set(inventoryAfter.map((line) => line.productId).filter(Boolean) as string[]);
+    for (const productId of inventoryProductIds) {
+      const productName = productNames.get(productId) ?? "товар";
+      problems.push({
+        productId,
+        productName,
+        message: `Нельзя ${receiptActionLabel(action)}: товар «${productName}» уже участвовал в проведённой инвентаризации после этой приёмки.`,
+      });
+    }
+  }
+
+  if (supplierInvoiceHasPaymentRisk(document.supplierInvoice)) {
+    warnings.push({
+      message: "Счёт поставщика уже оплачен или частично оплачен. Приёмку можно изменить только с последующей проверкой счёта в финансах.",
+    });
+  } else if (document.supplierInvoice) {
+    warnings.push({
+      message: "Связанный счёт поставщика останется в системе и будет помечен как требующий проверки.",
+    });
+  }
+
+  return {
+    ok: true as const,
+    documentId: document.id,
+    action,
+    canProceed: problems.length === 0,
+    status,
+    problems,
+    warnings,
+  };
+}
+
+function formatQtyForError(value: number) {
+  return value.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+
+async function rollbackPostedReceiptStock(
+  tx: Prisma.TransactionClient,
+  document: StockDocumentForAction
+) {
+  if (!document.storeId || !document.store) throw new Error("У приёмки не указан склад");
+  const positions = receiptPositionsByProduct(document);
+  await assertNoActiveInventoryLocks(tx, {
+    organizationId: document.store.organizationId,
+    warehouseId: document.store.id,
+    productIds: positions.map((position) => position.productId),
+  });
+  for (const position of positions) {
+    const balance = await tx.localStockBalance.findUnique({
+      where: { productId_storeId: { productId: position.productId, storeId: document.store.id } },
+    });
+    if (!balance) throw new Error(`Нет текущего остатка по товару «${position.productName}»`);
+    const currentQuantity = balance.quantity.toNumber();
+    const reserve = balance.reserve.toNumber();
+    const nextQuantity = currentQuantity - position.quantity;
+    const nextAvailable = nextQuantity - reserve;
+    if (nextQuantity < -0.000001 || nextAvailable < -0.000001) {
+      throw new Error(`Откат создаёт отрицательный остаток по товару «${position.productName}»`);
+    }
+    await tx.localStockBalance.update({
+      where: { id: balance.id },
+      data: {
+        quantity: new Prisma.Decimal(nextQuantity),
+        available: new Prisma.Decimal(nextAvailable),
+        syncedAt: new Date(),
+      },
+    });
+  }
+}
+
+async function postDraftReceiptStock(
+  tx: Prisma.TransactionClient,
+  document: StockDocumentForAction
+) {
+  if (!document.storeId || !document.store) throw new Error("Выберите склад");
+  const positions = document.positions.filter((position) => position.productId && position.product);
+  if (positions.length === 0) throw new Error("Добавьте хотя бы одну позицию приёмки");
+  await assertNoActiveInventoryLocks(tx, {
+    organizationId: document.store.organizationId,
+    warehouseId: document.store.id,
+    productIds: positions.map((position) => position.productId),
+  });
+  for (const position of positions) {
+    if (!position.productId || !position.product) continue;
+    const quantity = position.quantity.toNumber();
+    if (quantity <= 0) throw new Error(`Количество товара «${position.productName}» должно быть больше нуля`);
+    if (position.priceCentsPerUnit <= 0) throw new Error(`Укажите закупочную цену товара «${position.productName}»`);
+    const current = await tx.localStockBalance.findUnique({
+      where: { productId_storeId: { productId: position.productId, storeId: document.store.id } },
+    });
+    const currentQuantity = current?.quantity.toNumber() ?? 0;
+    const reserve = current?.reserve.toNumber() ?? 0;
+    const nextQuantity = currentQuantity + quantity;
+    const nextAvailable = nextQuantity - reserve;
+    const raw = jsonRecord(position.raw);
+    const makeDefaultCell = raw.makeDefaultCell === true;
+    if (current) {
+      await tx.localStockBalance.update({
+        where: { id: current.id },
+        data: {
+          quantity: new Prisma.Decimal(nextQuantity),
+          available: new Prisma.Decimal(nextAvailable),
+          slotName: position.slotName ?? current.slotName,
+          syncedAt: new Date(),
+        },
+      });
+    } else {
+      await tx.localStockBalance.create({
+        data: {
+          productId: position.productId,
+          storeId: document.store.id,
+          quantity: new Prisma.Decimal(nextQuantity),
+          reserve: new Prisma.Decimal(0),
+          available: new Prisma.Decimal(nextAvailable),
+          slotName: position.slotName,
+          syncedAt: new Date(),
+        },
+      });
+    }
+    const productUpdate: Prisma.LocalProductUpdateInput = { syncedAt: new Date() };
+    let shouldUpdateProduct = false;
+    if (position.priceCentsPerUnit > 0) {
+      productUpdate.buyPriceCents = position.priceCentsPerUnit;
+      shouldUpdateProduct = true;
+    }
+    if (makeDefaultCell && position.slotName) {
+      productUpdate.cell = position.slotName;
+      shouldUpdateProduct = true;
+    }
+    if (shouldUpdateProduct) {
+      await tx.localProduct.update({
+        where: { id: position.productId },
+        data: productUpdate,
+      });
+    }
+  }
+}
+
+export async function postLocalReceipt(documentId: string, user?: ActingUser) {
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  if (document.isDeleted) return { ok: false as const, error: "Удалённую приёмку нельзя провести" };
+  if (!isReceiptDraft(document)) return { ok: false as const, error: "Провести можно только черновик приёмки" };
+  const oldSnapshot = stockDocumentSnapshot(document);
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      await postDraftReceiptStock(tx, document);
+      const next = await tx.localInventoryDocument.update({
+        where: { id: document.id },
+        data: {
+          applicable: true,
+          status: "posted",
+          raw: toJson({
+            ...jsonRecord(document.raw),
+            postedAt: new Date().toISOString(),
+            postedBy: user?.login ?? null,
+          }),
+        },
+        include: stockDocumentActionInclude,
+      });
+      await writeStockDocumentAudit(tx, {
+        documentId: document.id,
+        action: "post",
+        statusBefore: "draft",
+        statusAfter: "posted",
+        message: "Приёмка проведена. Остатки обновлены.",
+        oldValue: oldSnapshot,
+        newValue: stockDocumentSnapshot(next),
+        user,
+      });
+      return next;
+    });
+    invalidateWarehouseReadCaches();
+    return { ok: true as const, message: "Приёмка проведена. Остатки обновлены.", document: stockDocumentSnapshot(updated) };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести приёмку" };
+  }
+}
+
+async function markReceiptInvoiceRequiresReview(
+  tx: Prisma.TransactionClient,
+  document: StockDocumentForAction
+) {
+  if (!document.supplierInvoice) return;
+  await tx.localSupplierInvoice.update({
+    where: { id: document.supplierInvoice.id },
+    data: {
+      status: "requires_review",
+      raw: toJson({
+        ...jsonRecord(document.supplierInvoice.raw),
+        receiptStatusChangedAt: new Date().toISOString(),
+        receiptStatusChangedFrom: normalizeStockDocumentStatus(document.status, document.applicable),
+      }),
+    },
+  });
+}
+
+export async function unpostLocalReceipt(documentId: string, user?: ActingUser) {
+  const check = await checkReceiptRollbackSafety(documentId, "unpost", user);
+  if (!check.ok) return check;
+  if (!check.canProceed) {
+    return { ok: false as const, error: "Нельзя вернуть приёмку в черновик", problems: check.problems, warnings: check.warnings };
+  }
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  const oldSnapshot = stockDocumentSnapshot(document);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await rollbackPostedReceiptStock(tx, document);
+    await markReceiptInvoiceRequiresReview(tx, document);
+    const next = await tx.localInventoryDocument.update({
+      where: { id: document.id },
+      data: {
+        applicable: false,
+        status: "draft",
+        raw: toJson({
+          ...jsonRecord(document.raw),
+          unpostedAt: new Date().toISOString(),
+          unpostedBy: user?.login ?? null,
+        }),
+      },
+      include: stockDocumentActionInclude,
+    });
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: "unpost",
+      statusBefore: normalizeStockDocumentStatus(document.status, document.applicable),
+      statusAfter: "draft",
+      message: receiptActionSuccessMessage("unpost"),
+      oldValue: oldSnapshot,
+      newValue: stockDocumentSnapshot(next),
+      user,
+    });
+    return next;
+  });
+
+  invalidateWarehouseReadCaches();
+  return { ok: true as const, message: receiptActionSuccessMessage("unpost"), document: stockDocumentSnapshot(updated), warnings: check.warnings };
+}
+
+export async function cancelLocalReceipt(documentId: string, user?: ActingUser) {
+  const check = await checkReceiptRollbackSafety(documentId, "cancel", user);
+  if (!check.ok) return check;
+  if (!check.canProceed) {
+    return { ok: false as const, error: "Нельзя отменить приёмку", problems: check.problems, warnings: check.warnings };
+  }
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  const oldSnapshot = stockDocumentSnapshot(document);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await rollbackPostedReceiptStock(tx, document);
+    await markReceiptInvoiceRequiresReview(tx, document);
+    const next = await tx.localInventoryDocument.update({
+      where: { id: document.id },
+      data: {
+        applicable: false,
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelledById: user?.login ?? null,
+        cancelledByName: user?.name ?? null,
+        raw: toJson({
+          ...jsonRecord(document.raw),
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: user?.login ?? null,
+        }),
+      },
+      include: stockDocumentActionInclude,
+    });
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: "cancel",
+      statusBefore: normalizeStockDocumentStatus(document.status, document.applicable),
+      statusAfter: "cancelled",
+      message: receiptActionSuccessMessage("cancel"),
+      oldValue: oldSnapshot,
+      newValue: stockDocumentSnapshot(next),
+      user,
+    });
+    return next;
+  });
+
+  invalidateWarehouseReadCaches();
+  return { ok: true as const, message: receiptActionSuccessMessage("cancel"), document: stockDocumentSnapshot(updated), warnings: check.warnings };
+}
+
+export async function softDeleteDraftReceipt(documentId: string, body: { invoiceAction?: string } = {}, user?: ActingUser) {
+  const permissionError = receiptPermissionError(user);
+  if (permissionError) return { ok: false as const, error: permissionError, status: 403 };
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  if (!isReceiptDraft(document)) {
+    return {
+      ok: false as const,
+      error: "Проведённую приёмку нельзя удалить напрямую. Можно отменить, вернуть в черновик или создать корректировку.",
+      status: 400,
+    };
+  }
+  const invoiceAction = body.invoiceAction === "delete" ? "delete" : "keep";
+  if (invoiceAction === "delete" && supplierInvoiceHasPaymentRisk(document.supplierInvoice)) {
+    return { ok: false as const, error: "Счёт уже оплачен. Его нельзя удалить вместе с черновиком.", status: 400 };
+  }
+  const oldSnapshot = stockDocumentSnapshot(document);
+  await prisma.$transaction(async (tx) => {
+    if (invoiceAction === "delete" && document.supplierInvoice) {
+      await tx.localSupplierInvoice.delete({ where: { id: document.supplierInvoice.id } });
+    } else if (document.supplierInvoice) {
+      await tx.localSupplierInvoice.update({
+        where: { id: document.supplierInvoice.id },
+        data: { status: "requires_review" },
+      });
+    }
+    const next = await tx.localInventoryDocument.update({
+      where: { id: document.id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedById: user?.login ?? null,
+        deletedByName: user?.name ?? null,
+        raw: toJson({
+          ...jsonRecord(document.raw),
+          deletedAt: new Date().toISOString(),
+          deletedBy: user?.login ?? null,
+          invoiceAction,
+        }),
+      },
+      include: stockDocumentActionInclude,
+    });
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: "delete_draft",
+      statusBefore: "draft",
+      statusAfter: "draft",
+      message: "Черновик приёмки удалён.",
+      oldValue: oldSnapshot,
+      newValue: stockDocumentSnapshot(next),
+      user,
+    });
+  });
+  invalidateWarehouseReadCaches();
+  return { ok: true as const, message: "Черновик приёмки удалён." };
+}
+
+export async function createReceiptCorrection(documentId: string, body: { reason?: string } = {}, user?: ActingUser) {
+  const permissionError = receiptPermissionError(user);
+  if (permissionError) return { ok: false as const, error: permissionError, status: 403 };
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  if (document.isDeleted) return { ok: false as const, error: "По удалённой приёмке нельзя создать корректировку" };
+  if (document.positions.length === 0) return { ok: false as const, error: "В приёмке нет позиций для корректировки" };
+  const reason = cleanText(body.reason) ?? `Корректировка приёмки ${document.name}`;
+  const result = await createLocalStockDocument(
+    {
+      type: "writeoff",
+      storeId: document.storeId ?? undefined,
+      counterpartyId: document.counterpartyId ?? undefined,
+      documentDate: toServiceDateInput(new Date()),
+      description: `${reason}. Исходная приёмка: ${document.name}.`,
+      adjustmentType: "technical",
+      adjustmentMethod: "WRITE_OFF_QUANTITY",
+      adjustmentReason: "Дублирующий складской документ",
+      applicable: false,
+      positions: document.positions
+        .filter((position) => position.productId)
+        .map((position) => ({
+          productId: position.productId!,
+          quantity: position.quantity.toNumber(),
+          price: position.priceCentsPerUnit / 100,
+          slotName: position.slotName ?? undefined,
+        })),
+    },
+    user
+  );
+  if (!result.ok) return result;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.localInventoryDocument.update({
+      where: { id: result.document.id },
+      data: {
+        correctionOfId: document.id,
+        raw: toJson({
+          sourceReceiptId: document.id,
+          sourceReceiptName: document.name,
+          reason,
+        }),
+      },
+    });
+    await writeStockDocumentAudit(tx, {
+      documentId: document.id,
+      action: "create_correction",
+      statusBefore: normalizeStockDocumentStatus(document.status, document.applicable),
+      statusAfter: normalizeStockDocumentStatus(document.status, document.applicable),
+      message: `Создана корректировка ${result.document.name}.`,
+      newValue: { correctionDocumentId: result.document.id, correctionDocumentName: result.document.name, reason },
+      user,
+    });
+    await writeStockDocumentAudit(tx, {
+      documentId: result.document.id,
+      action: "correction_created_from_receipt",
+      statusAfter: "draft",
+      message: `Корректировка создана по приёмке ${document.name}.`,
+      newValue: { sourceReceiptId: document.id, sourceReceiptName: document.name, reason },
+      user,
+    });
+  });
+  invalidateWarehouseReadCaches();
+  return {
+    ok: true as const,
+    message: "Создана корректировка приёмки.",
+    document: {
+      id: result.document.id,
+      name: result.document.name,
+      href: `/inventory/writeoffs?document=${encodeURIComponent(result.document.id)}&open=edit`,
+    },
+  };
+}
+
+export async function listReceiptAudit(documentId: string, user?: ActingUser) {
+  const permissionError = user ? null : "Необходима авторизация";
+  if (permissionError) return { ok: false as const, error: permissionError, status: 401 };
+  const document = await loadReceiptForAction(documentId);
+  if (!document) return { ok: false as const, error: "Приёмка не найдена", notFound: true };
+  const logs = await prisma.localInventoryDocumentAuditLog.findMany({
+    where: { documentId: document.id },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  return {
+    ok: true as const,
+    audit: logs.map((log) => ({
+      id: log.id,
+      action: log.action,
+      statusBefore: log.statusBefore,
+      statusAfter: log.statusAfter,
+      message: log.message ?? "",
+      oldValue: log.oldValue,
+      newValue: log.newValue,
+      createdById: log.createdById ?? "",
+      createdByName: log.createdByName ?? "",
+      createdAt: log.createdAt.toISOString(),
+    })),
   };
 }
 
@@ -4349,6 +5292,7 @@ export async function listLocalStockDocuments(params: {
   if (cached && cached.expiresAt > now) return cached.value;
 
   const where: Prisma.LocalInventoryDocumentWhereInput = {
+    isDeleted: false,
     ...(type ? { type } : {}),
     ...(search
       ? {
@@ -4394,6 +5338,7 @@ export async function listLocalStockDocuments(params: {
       name: document.name,
       moment: document.momentAt.toISOString(),
       documentDate: document.documentDate,
+      status: normalizeStockDocumentStatus(document.status, document.applicable),
       applicable: document.applicable,
       sum: document.sumCents / 100,
       description: document.description ?? "",
@@ -4401,6 +5346,10 @@ export async function listLocalStockDocuments(params: {
       adjustmentMethod: document.adjustmentMethod,
       adjustmentReason: document.adjustmentReason ?? "",
       affectsManagementProfit: document.affectsManagementProfit,
+      correctionOfId: document.correctionOfId,
+      isDeleted: document.isDeleted,
+      cancelledAt: document.cancelledAt?.toISOString() ?? null,
+      deletedAt: document.deletedAt?.toISOString() ?? null,
       storeId: document.storeId ?? "",
       storeName: document.store?.name ?? document.storeNameSnapshot ?? "",
       counterpartyId: document.counterpartyId ?? "",

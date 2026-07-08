@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, Database, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
-import { EcoBadge, EcoButton, EcoCard, EcoKpi, EcoStatusDot } from "@/components/platform/EcoUI";
+import { Activity, Building2, Database, Landmark, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
+import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoStatusDot } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
 
@@ -45,10 +45,67 @@ type StatusPayload = {
   analyticsError: string | null;
 };
 
+type TBankStatus = {
+  configured: boolean;
+  connected: boolean;
+  inn: string;
+  kpp: string;
+  tokenConfigured: boolean;
+  tokenPreview: string;
+  debitAccountNumberMasked: string;
+  mode: string;
+  directPaymentsEnabled: boolean;
+  maxSinglePayment: string;
+  dailyPaymentLimit: string;
+  allowedSupplierInns: string;
+  webhookUrl: string;
+  sandbox: boolean;
+  productionMode: boolean;
+  lastCheckedAt: string;
+  lastCheckStatus: string;
+  lastCheckMessage: string;
+  accounts: Array<{
+    id: string;
+    accountNumberMasked: string;
+    accountName: string;
+    bankName: string;
+    currency: string;
+    isDefault: boolean;
+  }>;
+};
+
+type TBankForm = {
+  inn: string;
+  kpp: string;
+  debitAccountNumber: string;
+  token: string;
+  mode: string;
+  maxSinglePayment: string;
+  dailyPaymentLimit: string;
+  allowedSupplierInns: string;
+  webhookUrl: string;
+  sandbox: boolean;
+  productionMode: boolean;
+};
+
 type RunResult = {
   title: string;
   message: string;
   tone: "success" | "warning" | "danger" | "info";
+};
+
+const DEFAULT_TBANK_FORM: TBankForm = {
+  inn: "",
+  kpp: "",
+  debitAccountNumber: "",
+  token: "",
+  mode: "draft_only",
+  maxSinglePayment: "",
+  dailyPaymentLimit: "",
+  allowedSupplierInns: "",
+  webhookUrl: "",
+  sandbox: false,
+  productionMode: false,
 };
 
 const TECHNICAL_ERROR_RE = /prisma|p\d{4}|stack|trace|econn|timeout|failed to connect|can't reach|database server|fetch failed|api\/|http/i;
@@ -116,15 +173,19 @@ export default function IntegrationsClient() {
     inventoryError: null,
     analyticsError: null,
   });
+  const [tbank, setTbank] = useState<TBankStatus | null>(null);
+  const [tbankError, setTbankError] = useState<string | null>(null);
+  const [tbankForm, setTbankForm] = useState<TBankForm>(DEFAULT_TBANK_FORM);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState<"inventory" | "analytics" | null>(null);
+  const [running, setRunning] = useState<"inventory" | "analytics" | "tbank-save" | "tbank-test" | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
 
   async function loadStatus() {
     setLoading(true);
-    const [inventoryRes, analyticsRes] = await Promise.allSettled([
+    const [inventoryRes, analyticsRes, tbankRes] = await Promise.allSettled([
       fetch("/api/local-inventory/sync", { cache: "no-store" }),
       fetch("/api/analytics/customers/sync-status", { cache: "no-store" }),
+      fetch("/api/integrations/tbank/status", { cache: "no-store" }),
     ]);
 
     let inventory: InventoryStatus | null = null;
@@ -148,6 +209,18 @@ export default function IntegrationsClient() {
       analyticsError = "Статус аналитики временно недоступен";
     }
 
+    if (tbankRes.status === "fulfilled") {
+      const data = await safeReadJson<TBankStatus & { error?: string }>(tbankRes.value);
+      if (tbankRes.value.ok && data) {
+        setTbank(data);
+        setTbankError(null);
+      } else {
+        setTbankError(safeMessage(data?.error, "Статус T-Bank временно недоступен"));
+      }
+    } else {
+      setTbankError("Статус T-Bank временно недоступен");
+    }
+
     setPayload({ inventory, analytics, inventoryError, analyticsError });
     setLoading(false);
   }
@@ -155,6 +228,23 @@ export default function IntegrationsClient() {
   useEffect(() => {
     void loadStatus();
   }, []);
+
+  useEffect(() => {
+    if (!tbank) return;
+    setTbankForm({
+      inn: tbank.inn,
+      kpp: tbank.kpp,
+      debitAccountNumber: "",
+      token: "",
+      mode: tbank.mode || "draft_only",
+      maxSinglePayment: tbank.maxSinglePayment,
+      dailyPaymentLimit: tbank.dailyPaymentLimit,
+      allowedSupplierInns: tbank.allowedSupplierInns,
+      webhookUrl: tbank.webhookUrl,
+      sandbox: tbank.sandbox,
+      productionMode: tbank.productionMode,
+    });
+  }, [tbank]);
 
   useEffect(() => {
     if (!payload.inventory?.isRunning && !payload.analytics?.isRunning) return;
@@ -225,8 +315,70 @@ export default function IntegrationsClient() {
     }
   }
 
+  function updateTBankForm<K extends keyof TBankForm>(key: K, value: TBankForm[K]) {
+    setTbankForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveTBankSettings() {
+    setRunning("tbank-save");
+    setRunResult(null);
+    try {
+      const response = await fetch("/api/integrations/tbank/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tbankForm),
+      });
+      const data = await safeReadJson<TBankStatus & { error?: string }>(response);
+      if (!response.ok || !data?.configured) {
+        throw new Error(safeMessage(data?.error, "Настройки T-Bank не сохранены."));
+      }
+      setTbank(data);
+      setRunResult({
+        title: "T-Bank",
+        message: "Настройки интеграции сохранены.",
+        tone: "success",
+      });
+    } catch (error) {
+      setRunResult({
+        title: "T-Bank",
+        message: error instanceof Error ? error.message : "Настройки T-Bank не сохранены.",
+        tone: "danger",
+      });
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function testTBankConnection() {
+    setRunning("tbank-test");
+    setRunResult(null);
+    try {
+      const response = await fetch("/api/integrations/tbank/test", { method: "POST" });
+      const data = await safeReadJson<{ ok?: boolean; message?: string; error?: string; integration?: TBankStatus }>(response);
+      if (!response.ok || !data?.ok) {
+        if (data?.integration) setTbank(data.integration);
+        throw new Error(safeMessage(data?.error, "Не удалось проверить T-Bank."));
+      }
+      if (data.integration) setTbank(data.integration);
+      setRunResult({
+        title: "T-Bank",
+        message: data.message || "Подключение T-Bank проверено.",
+        tone: "success",
+      });
+    } catch (error) {
+      setRunResult({
+        title: "T-Bank",
+        message: error instanceof Error ? error.message : "Не удалось проверить T-Bank.",
+        tone: "danger",
+      });
+    } finally {
+      setRunning(null);
+    }
+  }
+
   const inventoryTone = toneForStatus(payload.inventory);
   const analyticsTone = toneForStatus(payload.analytics);
+  const tbankTone = tbank?.connected ? "success" as const : tbank?.configured ? "warning" as const : "neutral" as const;
 
   return (
     <main className="eco-page">
@@ -278,6 +430,103 @@ export default function IntegrationsClient() {
           </div>
         </EcoCard>
       )}
+
+      <EcoCard className="eco-tbank-settings">
+        <div className="eco-card__head">
+          <div>
+            <div className="eco-page-kicker">T-Bank</div>
+            <h2 className="eco-stock-doc-title">Оплата счетов поставщиков</h2>
+            <p>Безопасный режим создаёт черновик платёжного поручения, а подтверждение остаётся в T-Business.</p>
+          </div>
+          <EcoBadge tone={tbankTone} dot>
+            {tbank?.connected ? "подключено" : tbank?.configured ? "требует проверки" : "не настроено"}
+          </EcoBadge>
+        </div>
+
+        {tbankError && <div className="eco-form-error eco-tbank-settings-error">{tbankError}</div>}
+
+        <div className="eco-tbank-settings-grid">
+          <label>
+            <span>ИНН организации</span>
+            <EcoInput value={tbankForm.inn} onChange={(event) => updateTBankForm("inn", event.target.value)} placeholder="10 или 12 цифр" />
+          </label>
+          <label>
+            <span>КПП</span>
+            <EcoInput value={tbankForm.kpp} onChange={(event) => updateTBankForm("kpp", event.target.value)} placeholder="если есть" />
+          </label>
+          <label>
+            <span>Расчётный счёт списания</span>
+            <EcoInput
+              value={tbankForm.debitAccountNumber}
+              onChange={(event) => updateTBankForm("debitAccountNumber", event.target.value)}
+              placeholder={tbank?.debitAccountNumberMasked || "20 цифр"}
+            />
+          </label>
+          <label>
+            <span>T-API токен</span>
+            <EcoInput
+              type="password"
+              value={tbankForm.token}
+              onChange={(event) => updateTBankForm("token", event.target.value)}
+              placeholder={tbank?.tokenConfigured ? `сохранён: ${tbank.tokenPreview}` : "вставьте токен T-API"}
+            />
+          </label>
+          <label>
+            <span>Режим оплаты</span>
+            <EcoSelect value={tbankForm.mode} onChange={(event) => updateTBankForm("mode", event.target.value)}>
+              <option value="draft_only">Только черновики</option>
+              <option value="direct_enabled">Прямые платежи после отдельного включения</option>
+            </EcoSelect>
+          </label>
+          <label>
+            <span>Лимит одного платежа</span>
+            <EcoInput value={tbankForm.maxSinglePayment} onChange={(event) => updateTBankForm("maxSinglePayment", event.target.value)} placeholder="например 100000" />
+          </label>
+          <label>
+            <span>Лимит в день</span>
+            <EcoInput value={tbankForm.dailyPaymentLimit} onChange={(event) => updateTBankForm("dailyPaymentLimit", event.target.value)} placeholder="например 300000" />
+          </label>
+          <label>
+            <span>Разрешённые ИНН поставщиков</span>
+            <EcoInput value={tbankForm.allowedSupplierInns} onChange={(event) => updateTBankForm("allowedSupplierInns", event.target.value)} placeholder="через запятую, пусто = все" />
+          </label>
+          <label className="eco-tbank-settings-wide">
+            <span>Webhook URL</span>
+            <EcoInput value={tbankForm.webhookUrl} onChange={(event) => updateTBankForm("webhookUrl", event.target.value)} placeholder="/api/integrations/tbank/webhook/payment-status" />
+          </label>
+        </div>
+
+        <div className="eco-tbank-settings-flags">
+          <label className="eco-check-row">
+            <input type="checkbox" checked={tbankForm.sandbox} onChange={(event) => updateTBankForm("sandbox", event.target.checked)} />
+            <span>Тестовый режим / sandbox</span>
+          </label>
+          <label className="eco-check-row">
+            <input type="checkbox" checked={tbankForm.productionMode} onChange={(event) => updateTBankForm("productionMode", event.target.checked)} />
+            <span>Production mode</span>
+          </label>
+        </div>
+
+        <StatusRows
+          rows={[
+            ["Статус подключения", tbank?.connected ? "готово к созданию черновиков" : "требуется токен и счёт списания"],
+            ["Счета T-Bank", tbank?.accounts.length ? tbank.accounts.map((account) => account.accountNumberMasked).join(", ") : "не загружены"],
+            ["Последняя проверка", tbank?.lastCheckedAt ? formatDateTime(tbank.lastCheckedAt) : "—"],
+            ["Результат проверки", safeMessage(tbank?.lastCheckMessage, "Проверка ещё не выполнялась")],
+          ]}
+        />
+
+        <div className="eco-form-actions">
+          <EcoButton type="button" variant="primary" onClick={() => void saveTBankSettings()} disabled={running !== null}>
+            <Building2 size={16} />
+            {running === "tbank-save" ? "Сохраняем..." : "Сохранить T-Bank"}
+          </EcoButton>
+          <EcoButton type="button" onClick={() => void testTBankConnection()} disabled={running !== null || !tbank?.configured}>
+            <Landmark size={16} />
+            {running === "tbank-test" ? "Проверяем..." : "Проверить подключение"}
+          </EcoButton>
+        </div>
+      </EcoCard>
 
       <section className="eco-cabinet-grid">
         <EcoCard>

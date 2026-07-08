@@ -1110,7 +1110,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
       ? prisma.localInventoryDocumentPosition.findMany({
           where: {
             ...productIdWhere,
-            document: { is: { ...inventoryScope, type: "receipt" } },
+            document: { is: { ...inventoryScope, type: "receipt", isDeleted: false, status: { not: "cancelled" } } },
           },
           include: { document: { select: { type: true, documentDate: true, momentAt: true, affectsManagementProfit: true, adjustmentType: true } } },
           orderBy: [{ document: { momentAt: "desc" } }],
@@ -1121,7 +1121,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
       ? prisma.localInventoryDocumentPosition.findMany({
           where: {
             ...productIdWhere,
-            document: { is: { ...inventoryPeriodScope, type: "writeoff" } },
+            document: { is: { ...inventoryPeriodScope, type: "writeoff", isDeleted: false, status: { not: "cancelled" } } },
           },
           include: { document: { select: { type: true, documentDate: true, momentAt: true, affectsManagementProfit: true, adjustmentType: true } } },
           orderBy: [{ document: { momentAt: "desc" } }],

@@ -1325,6 +1325,7 @@ async function createResultDocument(
       name: `${session.number} ${title}`,
       momentAt: now,
       documentDate,
+      status: "posted",
       applicable: true,
       sumCents,
       description: `Создано по результатам инвентаризации ${session.number}`,

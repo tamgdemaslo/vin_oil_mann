@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   CheckSquare2,
   Copy,
@@ -12,12 +13,15 @@ import {
   Eye,
   ExternalLink,
   FilePlus2,
+  History,
   Loader2,
   MapPin,
+  MoreHorizontal,
   PackagePlus,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Square,
@@ -30,9 +34,11 @@ import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 
 type StockDocumentType = "receipt" | "writeoff";
+type StockDocumentStatus = "draft" | "posted" | "cancelled" | "needs_review" | "blocked";
 type AdjustmentType = "technical" | "expense";
 type FormMode = "new" | "edit" | "view";
 type SaveAction = "draft" | "conduct";
+type ReceiptAction = "open" | "edit" | "post" | "delete" | "duplicate" | "unpost" | "cancel" | "correction" | "history";
 
 type StoreOption = { id: string; name: string };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
@@ -80,6 +86,7 @@ type MovementRow = {
   name: string;
   moment: string;
   documentDate: string;
+  status?: StockDocumentStatus;
   applicable: boolean;
   sum: number;
   description: string;
@@ -87,6 +94,10 @@ type MovementRow = {
   adjustmentMethod: string | null;
   adjustmentReason: string;
   affectsManagementProfit: boolean;
+  correctionOfId?: string | null;
+  isDeleted?: boolean;
+  cancelledAt?: string | null;
+  deletedAt?: string | null;
   storeId: string;
   storeName: string;
   counterpartyId: string;
@@ -117,6 +128,46 @@ type MovementRow = {
     makeDefaultCell?: boolean;
   }[];
 };
+
+type ReceiptActionProblem = {
+  productId?: string | null;
+  productName?: string;
+  message: string;
+  currentQuantity?: number;
+  currentAvailable?: number;
+  rollbackQuantity?: number;
+  projectedQuantity?: number;
+  projectedAvailable?: number;
+};
+
+type ReceiptActionWarning = {
+  message: string;
+};
+
+type ReceiptActionCheck = {
+  canProceed: boolean;
+  problems: ReceiptActionProblem[];
+  warnings: ReceiptActionWarning[];
+};
+
+type ReceiptAuditRow = {
+  id: string;
+  action: string;
+  statusBefore: string | null;
+  statusAfter: string | null;
+  message: string;
+  createdByName: string;
+  createdById: string;
+  createdAt: string;
+};
+
+type ReceiptDialogState =
+  | { type: "edit-posted"; document: MovementRow }
+  | { type: "delete-draft"; document: MovementRow; invoiceAction: "keep" | "delete" }
+  | { type: "posted-delete"; document: MovementRow }
+  | { type: "unpost" | "cancel"; document: MovementRow; check: ReceiptActionCheck }
+  | { type: "correction"; document: MovementRow; reason: string }
+  | { type: "history"; document: MovementRow; audit: ReceiptAuditRow[]; error?: string };
 
 type CellEditorState = {
   mode: "single" | "bulk";
@@ -218,10 +269,29 @@ function invoiceStatusLabel(value: string) {
   return "не оплачен";
 }
 
-function statusMeta(document: Pick<MovementRow, "applicable">) {
-  return document.applicable
-    ? { label: "Проведена", tone: "success" as const }
-    : { label: "Черновик", tone: "warning" as const };
+function documentStatus(document: Pick<MovementRow, "status" | "applicable">): StockDocumentStatus {
+  return document.status ?? (document.applicable ? "posted" : "draft");
+}
+
+function statusMeta(document: Pick<MovementRow, "status" | "applicable">) {
+  const status = documentStatus(document);
+  if (status === "posted") return { label: "Проведена", tone: "success" as const };
+  if (status === "cancelled") return { label: "Отменена", tone: "danger" as const };
+  if (status === "needs_review") return { label: "Требует проверки", tone: "warning" as const };
+  if (status === "blocked") return { label: "Заблокирована", tone: "danger" as const };
+  return { label: "Черновик", tone: "warning" as const };
+}
+
+function isDraftDocument(document: Pick<MovementRow, "status" | "applicable">) {
+  return documentStatus(document) === "draft" && !document.applicable;
+}
+
+function isPostedDocument(document: Pick<MovementRow, "status" | "applicable">) {
+  return documentStatus(document) === "posted" && document.applicable;
+}
+
+function isCancelledDocument(document: Pick<MovementRow, "status" | "applicable">) {
+  return documentStatus(document) === "cancelled";
 }
 
 function adjustmentMeta(document: Pick<MovementRow, "adjustmentType" | "affectsManagementProfit">) {
@@ -310,6 +380,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [formMode, setFormMode] = useState<FormMode>("new");
   const [editingDocument, setEditingDocument] = useState<MovementRow | null>(null);
   const [savingAction, setSavingAction] = useState<SaveAction | null>(null);
+  const [receiptDialog, setReceiptDialog] = useState<ReceiptDialogState | null>(null);
+  const [receiptActionBusy, setReceiptActionBusy] = useState<string | null>(null);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -322,7 +394,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [newProduct, setNewProduct] = useState(emptyProductDraft);
   const [newProductSaving, setNewProductSaving] = useState(false);
 
-  const readOnly = formMode === "view" || Boolean(editingDocument?.applicable);
+  const readOnly = formMode === "view" || Boolean(editingDocument && !isDraftDocument(editingDocument));
 
   const total = useMemo(
     () => positions.reduce((sum, position) => sum + position.quantity * position.price, 0),
@@ -363,8 +435,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const documentStats = useMemo(
     () => ({
       count: documents.length,
-      conducted: documents.filter((document) => document.applicable).length,
-      drafts: documents.filter((document) => !document.applicable).length,
+      conducted: documents.filter(isPostedDocument).length,
+      drafts: documents.filter(isDraftDocument).length,
+      cancelled: documents.filter(isCancelledDocument).length,
       invoices: documents.filter((document) => document.invoice).length,
       technical: documents.filter((document) => document.adjustmentType === "technical" || document.affectsManagementProfit === false).length,
       expense: documents.filter((document) => document.type === "writeoff" && document.adjustmentType !== "technical" && document.affectsManagementProfit !== false).length,
@@ -391,7 +464,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const canSaveDraft = !readOnly && positions.length > 0 && !hasInvalidQty && !savingAction;
   const canConduct = canSaveDraft && Boolean(selectedStoreId) && !hasInvalidReceiptPrice && (isReceipt || Boolean(adjustmentReason)) && !hasKnownWriteoffOverAvailable;
   const footerHelper = (() => {
-    if (readOnly) return "Проведённый документ открыт только для просмотра. Для нового движения используйте копию.";
+    if (readOnly) return `${editingDocument ? statusMeta(editingDocument).label : "Документ"} открыт только для просмотра. Для нового движения используйте копию или корректировку.`;
     if (positions.length === 0) return "Добавьте хотя бы одну позицию, чтобы сохранить документ.";
     if (hasInvalidQty) return "Количество по каждой позиции должно быть больше нуля.";
     if (!selectedStoreId) return "Черновик можно сохранить без движения остатков; для проведения выберите склад.";
@@ -492,11 +565,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }
 
   function openExistingDocument(document: MovementRow) {
-    fillFormFromDocument(document, document.applicable ? "view" : "edit");
+    if (isPostedDocument(document) && isReceipt) {
+      setReceiptDialog({ type: "edit-posted", document });
+      return;
+    }
+    fillFormFromDocument(document, isDraftDocument(document) ? "edit" : "view");
   }
 
   function copyFromDocument(document: MovementRow) {
-    fillFormFromDocument({ ...document, id: "", name: "", applicable: false, invoice: null }, "new");
+    fillFormFromDocument({ ...document, id: "", name: "", status: "draft", applicable: false, invoice: null }, "new");
     setEditingDocument(null);
     setCreateInvoice(false);
     setInvoiceNumber("");
@@ -541,7 +618,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
-  async function loadDocuments() {
+  async function loadDocuments(): Promise<MovementRow[]> {
     setDocumentsLoading(true);
     setDocumentsError(null);
     try {
@@ -549,9 +626,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
       const data = await readJson<{ documents?: MovementRow[]; error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
-      setDocuments(Array.isArray(data?.documents) ? data.documents : []);
+      const nextDocuments = Array.isArray(data?.documents) ? data.documents : [];
+      setDocuments(nextDocuments);
+      return nextDocuments;
     } catch (e) {
       setDocumentsError(e instanceof Error ? e.message : "Не удалось загрузить журнал");
+      return [];
     } finally {
       setDocumentsLoading(false);
     }
@@ -573,7 +653,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       setOpenId(documentId);
       if (searchParams.get("open") === "edit" && autoOpenedDocumentRef.current !== documentId) {
         autoOpenedDocumentRef.current = documentId;
-        fillFormFromDocument(document, document.applicable ? "view" : "edit");
+        fillFormFromDocument(document, isDraftDocument(document) ? "edit" : "view");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -979,13 +1059,14 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
-  function buildCurrentDocument(data: { id?: string; name?: string; applicable?: boolean; invoice?: MovementRow["invoice"] | null }): MovementRow {
+  function buildCurrentDocument(data: { id?: string; name?: string; status?: StockDocumentStatus; applicable?: boolean; invoice?: MovementRow["invoice"] | null }): MovementRow {
     return {
       id: data.id || editingDocument?.id || "",
       type,
       name: data.name || editingDocument?.name || "",
       moment: editingDocument?.moment || toServiceMomentString(),
       documentDate,
+      status: data.status ?? (data.applicable ? "posted" : "draft"),
       applicable: Boolean(data.applicable),
       sum: total,
       description,
@@ -1092,6 +1173,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       const data = await readJson<{
         id?: string;
         name?: string;
+        status?: StockDocumentStatus;
         applicable?: boolean;
         adjustmentType?: AdjustmentType | null;
         adjustmentMethod?: string | null;
@@ -1104,6 +1186,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       const nextDocument = buildCurrentDocument({
         id: data?.id,
         name: data?.name,
+        status: data?.status,
         applicable: nextApplicable,
         invoice: data?.invoice ?? null,
       });
@@ -1164,6 +1247,431 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
+  function receiptActionKey(document: MovementRow, action: string) {
+    return `${document.id}:${action}`;
+  }
+
+  async function requestReceiptAction<T>(
+    document: MovementRow,
+    action: string,
+    options: { method?: "GET" | "POST" | "DELETE"; body?: unknown } = {}
+  ) {
+    const method = options.method ?? "POST";
+    const url = action
+      ? `/api/warehouse/receipts/${document.id}/${action}`
+      : `/api/warehouse/receipts/${document.id}`;
+    const res = await fetch(url, {
+      method,
+      headers: options.body ? { "Content-Type": "application/json" } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const data = await readJson<(T & {
+      error?: string;
+      message?: string;
+      problems?: ReceiptActionProblem[];
+      warnings?: ReceiptActionWarning[];
+    })>(res);
+    if (!res.ok) {
+      const error = new Error(data?.error ?? "Не удалось выполнить действие");
+      (error as Error & { payload?: typeof data }).payload = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async function runPostReceipt(document: MovementRow) {
+    const key = receiptActionKey(document, "post");
+    setReceiptActionBusy(key);
+    setFormError(null);
+    setInfo(null);
+    try {
+      const data = await requestReceiptAction<{ message?: string }>(document, "post");
+      setInfo(data?.message || "Приёмка проведена. Остатки обновлены.");
+      await loadDocuments();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Не удалось провести приёмку");
+    } finally {
+      setReceiptActionBusy(null);
+    }
+  }
+
+  async function openReceiptDangerDialog(document: MovementRow, action: "unpost" | "cancel") {
+    const key = receiptActionKey(document, `check-${action}`);
+    setReceiptActionBusy(key);
+    setFormError(null);
+    setInfo(null);
+    try {
+      const endpoint = action === "unpost" ? "check-unpost" : "check-cancel";
+      const data = await requestReceiptAction<ReceiptActionCheck>(document, endpoint);
+      setReceiptDialog({
+        type: action,
+        document,
+        check: {
+          canProceed: Boolean(data?.canProceed),
+          problems: data?.problems ?? [],
+          warnings: data?.warnings ?? [],
+        },
+      });
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Не удалось проверить приёмку");
+    } finally {
+      setReceiptActionBusy(null);
+    }
+  }
+
+  async function openReceiptHistory(document: MovementRow) {
+    const key = receiptActionKey(document, "history");
+    setReceiptActionBusy(key);
+    setFormError(null);
+    try {
+      const data = await requestReceiptAction<{ audit?: ReceiptAuditRow[] }>(document, "audit", { method: "GET" });
+      setReceiptDialog({ type: "history", document, audit: data?.audit ?? [] });
+    } catch (e) {
+      setReceiptDialog({
+        type: "history",
+        document,
+        audit: [],
+        error: e instanceof Error ? e.message : "Не удалось загрузить историю",
+      });
+    } finally {
+      setReceiptActionBusy(null);
+    }
+  }
+
+  async function createCorrectionFromDialog(document: MovementRow, reason?: string) {
+    const key = receiptActionKey(document, "correction");
+    setReceiptActionBusy(key);
+    setFormError(null);
+    setInfo(null);
+    try {
+      const data = await requestReceiptAction<{ message?: string; document?: { name?: string; href?: string } }>(
+        document,
+        "correction",
+        { body: { reason: reason?.trim() || undefined } }
+      );
+      setReceiptDialog(null);
+      setInfo(data?.message || "Создана корректировка приёмки.");
+      await loadDocuments();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Не удалось создать корректировку");
+    } finally {
+      setReceiptActionBusy(null);
+    }
+  }
+
+  async function confirmReceiptDialog() {
+    const dialog = receiptDialog;
+    if (!dialog) return;
+    if (dialog.type === "delete-draft") {
+      const key = receiptActionKey(dialog.document, "delete");
+      setReceiptActionBusy(key);
+      setFormError(null);
+      setInfo(null);
+      try {
+        const data = await requestReceiptAction<{ message?: string }>(dialog.document, "", {
+          method: "DELETE",
+          body: { invoiceAction: dialog.invoiceAction },
+        });
+        setReceiptDialog(null);
+        setInfo(data?.message || "Черновик приёмки удалён.");
+        await loadDocuments();
+      } catch (e) {
+        setFormError(e instanceof Error ? e.message : "Не удалось удалить черновик");
+      } finally {
+        setReceiptActionBusy(null);
+      }
+      return;
+    }
+    if (dialog.type === "unpost" || dialog.type === "cancel") {
+      if (!dialog.check.canProceed) return;
+      const endpoint = dialog.type === "unpost" ? "unpost" : "cancel";
+      const key = receiptActionKey(dialog.document, endpoint);
+      setReceiptActionBusy(key);
+      setFormError(null);
+      setInfo(null);
+      try {
+        const data = await requestReceiptAction<{ message?: string }>(dialog.document, endpoint);
+        setReceiptDialog(null);
+        setInfo(
+          data?.message ||
+          (dialog.type === "unpost"
+            ? "Приёмка возвращена в черновик. Складские движения отменены."
+            : "Приёмка отменена. Документ сохранён в истории.")
+        );
+        const nextDocuments = await loadDocuments();
+        const updated = nextDocuments.find((item) => item.id === dialog.document.id);
+        if (dialog.type === "unpost" && updated) fillFormFromDocument(updated, "edit");
+        if (dialog.type === "cancel" && editingDocument?.id === dialog.document.id && updated) fillFormFromDocument(updated, "view");
+      } catch (e) {
+        const payload = e instanceof Error ? (e as Error & { payload?: { problems?: ReceiptActionProblem[]; warnings?: ReceiptActionWarning[] } }).payload : null;
+        if (payload?.problems) {
+          setReceiptDialog({
+            type: dialog.type,
+            document: dialog.document,
+            check: { canProceed: false, problems: payload.problems, warnings: payload.warnings ?? [] },
+          });
+        }
+        setFormError(e instanceof Error ? e.message : "Не удалось выполнить действие");
+      } finally {
+        setReceiptActionBusy(null);
+      }
+      return;
+    }
+    if (dialog.type === "correction") {
+      await createCorrectionFromDialog(dialog.document, dialog.reason);
+    }
+  }
+
+  function handleDocumentAction(document: MovementRow, action: ReceiptAction | "") {
+    if (!action) return;
+    if (action === "open") {
+      fillFormFromDocument(document, "view");
+      return;
+    }
+    if (action === "edit") {
+      openExistingDocument(document);
+      return;
+    }
+    if (action === "post") {
+      void runPostReceipt(document);
+      return;
+    }
+    if (action === "delete") {
+      if (!isDraftDocument(document)) {
+        setReceiptDialog({ type: "posted-delete", document });
+        return;
+      }
+      setReceiptDialog({ type: "delete-draft", document, invoiceAction: "keep" });
+      return;
+    }
+    if (action === "duplicate") {
+      copyFromDocument(document);
+      return;
+    }
+    if (action === "unpost") {
+      void openReceiptDangerDialog(document, "unpost");
+      return;
+    }
+    if (action === "cancel") {
+      void openReceiptDangerDialog(document, "cancel");
+      return;
+    }
+    if (action === "correction") {
+      setReceiptDialog({ type: "correction", document, reason: `Исправление приёмки ${document.name}` });
+      return;
+    }
+    if (action === "history") {
+      void openReceiptHistory(document);
+    }
+  }
+
+  function auditActionLabel(action: string) {
+    if (action === "create_draft") return "Создание черновика";
+    if (action === "create_posted") return "Создание и проведение";
+    if (action === "update_draft") return "Редактирование черновика";
+    if (action === "post") return "Проведение";
+    if (action === "unpost") return "Возврат в черновик";
+    if (action === "cancel") return "Отмена";
+    if (action === "delete_draft") return "Удаление черновика";
+    if (action === "create_correction") return "Корректировка";
+    if (action === "correction_created_from_receipt") return "Создание корректировки";
+    return action;
+  }
+
+  function renderReceiptDialog() {
+    if (!receiptDialog) return null;
+    const dialog = receiptDialog;
+    const busy = receiptActionBusy?.startsWith(`${dialog.document.id}:`);
+    const close = () => {
+      if (!busy) setReceiptDialog(null);
+    };
+    const paidInvoice = dialog.document.invoice && ["paid", "partial", "paid_manually"].includes(dialog.document.invoice.status);
+    const actionTitle =
+      dialog.type === "delete-draft" ? "Удалить черновик приёмки"
+      : dialog.type === "posted-delete" ? "Проведённую приёмку нельзя удалить"
+      : dialog.type === "edit-posted" ? "Приёмка уже проведена"
+      : dialog.type === "unpost" ? "Вернуть приёмку в черновик"
+      : dialog.type === "cancel" ? "Отменить приёмку"
+      : dialog.type === "correction" ? "Создать корректировку"
+      : "История изменений";
+
+    return (
+      <div className="eco-receipt-action-backdrop" role="dialog" aria-modal="true" aria-label={actionTitle}>
+        <div className="eco-receipt-action-dialog">
+          <header>
+            <div>
+              <span>{dialog.document.name}</span>
+              <h2>{actionTitle}</h2>
+            </div>
+            <button type="button" onClick={close} aria-label="Закрыть" disabled={busy}>
+              <X size={17} />
+            </button>
+          </header>
+
+          {dialog.type === "edit-posted" && (
+            <div className="eco-receipt-action-body">
+              <p>Эта приёмка уже проведена и изменила остатки склада. Чтобы изменить документ, нужно вернуть его в черновик или создать корректировку.</p>
+              <div className="eco-receipt-action-grid">
+                <button type="button" onClick={() => void openReceiptDangerDialog(dialog.document, "unpost")}>
+                  <RotateCcw size={16} /> Вернуть в черновик
+                </button>
+                <button type="button" onClick={() => setReceiptDialog({ type: "correction", document: dialog.document, reason: `Исправление приёмки ${dialog.document.name}` })}>
+                  <FilePlus2 size={16} /> Создать корректировку
+                </button>
+                <button type="button" onClick={() => {
+                  setReceiptDialog(null);
+                  fillFormFromDocument(dialog.document, "view");
+                }}>
+                  <Eye size={16} /> Открыть для просмотра
+                </button>
+              </div>
+            </div>
+          )}
+
+          {dialog.type === "posted-delete" && (
+            <div className="eco-receipt-action-body">
+              <p>Проведённую приёмку нельзя удалить напрямую, потому что она уже изменила остатки склада. Вы можете отменить приёмку, вернуть её в черновик или создать корректировку.</p>
+              <div className="eco-receipt-action-grid">
+                <button type="button" onClick={() => void openReceiptDangerDialog(dialog.document, "cancel")}>
+                  <Ban size={16} /> Отменить приёмку
+                </button>
+                <button type="button" onClick={() => void openReceiptDangerDialog(dialog.document, "unpost")}>
+                  <RotateCcw size={16} /> Вернуть в черновик
+                </button>
+                <button type="button" onClick={() => setReceiptDialog({ type: "correction", document: dialog.document, reason: `Исправление приёмки ${dialog.document.name}` })}>
+                  <FilePlus2 size={16} /> Создать корректировку
+                </button>
+              </div>
+            </div>
+          )}
+
+          {dialog.type === "delete-draft" && (
+            <div className="eco-receipt-action-body">
+              <p>Удалить черновик приёмки? Это действие нельзя будет отменить.</p>
+              {dialog.document.invoice && (
+                <div className="eco-receipt-action-options">
+                  <strong>У этой приёмки есть связанный счёт поставщика.</strong>
+                  <label>
+                    <input
+                      type="radio"
+                      checked={dialog.invoiceAction === "keep"}
+                      onChange={() => setReceiptDialog({ ...dialog, invoiceAction: "keep" })}
+                    />
+                    <span>Оставить счёт и пометить его как требующий проверки</span>
+                  </label>
+                  <label className={paidInvoice ? "is-disabled" : undefined}>
+                    <input
+                      type="radio"
+                      checked={dialog.invoiceAction === "delete"}
+                      disabled={Boolean(paidInvoice)}
+                      onChange={() => setReceiptDialog({ ...dialog, invoiceAction: "delete" })}
+                    />
+                    <span>{paidInvoice ? "Счёт уже оплачен, удалить нельзя" : "Удалить счёт вместе с черновиком"}</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(dialog.type === "unpost" || dialog.type === "cancel") && (
+            <div className="eco-receipt-action-body">
+              <p>
+                {dialog.type === "unpost"
+                  ? "Система проверила остатки, продажи, списания, резервы и инвентаризации перед возвратом в черновик."
+                  : "Отменить приёмку? Остатки по позициям будут уменьшены. Документ останется в истории."}
+              </p>
+              {dialog.check.warnings.length > 0 && (
+                <div className="eco-receipt-action-warning">
+                  {dialog.check.warnings.map((warning, index) => <span key={index}>{warning.message}</span>)}
+                </div>
+              )}
+              {dialog.check.problems.length > 0 && (
+                <div className="eco-receipt-action-problems">
+                  <strong>Действие сейчас запрещено</strong>
+                  {dialog.check.problems.map((problem, index) => (
+                    <div key={index}>
+                      <AlertTriangle size={15} />
+                      <span>{problem.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {dialog.type === "correction" && (
+            <div className="eco-receipt-action-body">
+              <p>Корректировка будет создана отдельным черновиком и связана с исходной приёмкой.</p>
+              <label className="eco-receipt-field">
+                <span>Причина корректировки</span>
+                <textarea
+                  className="eco-input"
+                  rows={3}
+                  value={dialog.reason}
+                  onChange={(event) => setReceiptDialog({ ...dialog, reason: event.target.value })}
+                />
+              </label>
+            </div>
+          )}
+
+          {dialog.type === "history" && (
+            <div className="eco-receipt-action-body">
+              {dialog.error ? (
+                <div className="eco-receipt-action-problems">
+                  <div><AlertTriangle size={15} /><span>{dialog.error}</span></div>
+                </div>
+              ) : dialog.audit.length === 0 ? (
+                <p>История изменений пока пустая. Старые документы могли быть созданы до включения аудита.</p>
+              ) : (
+                <div className="eco-receipt-audit-list">
+                  {dialog.audit.map((row) => (
+                    <div key={row.id}>
+                      <time>{formatMoment(row.createdAt)}</time>
+                      <strong>{auditActionLabel(row.action)}</strong>
+                      <span>{row.message || "Изменение зафиксировано"}</span>
+                      <em>{row.createdByName || row.createdById || "система"}</em>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <footer>
+            <EcoButton type="button" onClick={close} disabled={busy}>Отмена</EcoButton>
+            {dialog.type === "delete-draft" && (
+              <EcoButton type="button" variant="danger" onClick={() => void confirmReceiptDialog()} disabled={busy}>
+                {busy ? <Loader2 size={15} /> : <Trash2 size={15} />} Удалить черновик
+              </EcoButton>
+            )}
+            {(dialog.type === "unpost" || dialog.type === "cancel") && (
+              <>
+                {!dialog.check.canProceed && (
+                  <EcoButton type="button" onClick={() => setReceiptDialog({ type: "correction", document: dialog.document, reason: `Исправление приёмки ${dialog.document.name}` })}>
+                    <FilePlus2 size={15} /> Создать корректировку
+                  </EcoButton>
+                )}
+                <EcoButton type="button" variant={dialog.type === "cancel" ? "danger" : "primary"} onClick={() => void confirmReceiptDialog()} disabled={busy || !dialog.check.canProceed}>
+                  {busy ? <Loader2 size={15} /> : dialog.type === "cancel" ? <Ban size={15} /> : <RotateCcw size={15} />}
+                  {dialog.type === "cancel" ? "Отменить" : "Вернуть в черновик"}
+                </EcoButton>
+              </>
+            )}
+            {dialog.type === "correction" && (
+              <EcoButton type="button" variant="primary" onClick={() => void confirmReceiptDialog()} disabled={busy}>
+                {busy ? <Loader2 size={15} /> : <FilePlus2 size={15} />} Создать корректировку
+              </EcoButton>
+            )}
+          </footer>
+        </div>
+      </div>
+    );
+  }
+
+  const drawerStatus = editingDocument
+    ? statusMeta(editingDocument)
+    : { label: "Черновик", tone: "warning" as const };
+
   const renderSkeletonKpis = () => (
     <div className="eco-receipt-kpis" aria-label="Загружаем приёмки…">
       {Array.from({ length: 6 }).map((_, index) => (
@@ -1178,6 +1686,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   return (
     <div className="eco-stock-doc-page eco-receipt-page">
+      {renderReceiptDialog()}
       {formOpen && (
         <div className="eco-receipt-drawer-backdrop">
           <aside role="dialog" aria-modal="true" className="eco-receipt-drawer">
@@ -1185,8 +1694,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               <div>
                 <div className="eco-title-row">
                   <h2>{editingDocument?.name ? `${title} ${editingDocument.name}` : `Новая ${title.toLowerCase()}`}</h2>
-                  <EcoBadge tone={readOnly ? "success" : "warning"} dot>
-                    {readOnly ? "Проведена" : "Черновик"}
+                  <EcoBadge tone={drawerStatus.tone} dot>
+                    {drawerStatus.label}
                   </EcoBadge>
                 </div>
                 <p>{isReceipt ? "Оприходование товаров на локальный склад" : "Корректировка остатков локального склада"}</p>
@@ -1788,7 +2297,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       <div><dt>Прибыль</dt><dd>{adjustmentType === "technical" ? "не влияет" : "учитывается расходом"}</dd></div>
                     </>
                   )}
-                  <div><dt>Статус</dt><dd>{readOnly ? "Проведена" : "Черновик"}</dd></div>
+                  <div><dt>Статус</dt><dd>{drawerStatus.label}</dd></div>
                 </dl>
               </aside>
             </div>
@@ -1801,16 +2310,43 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               <div className="eco-receipt-footer-actions">
                 {readOnly ? (
                   <>
+                    {editingDocument && isReceipt && isPostedDocument(editingDocument) && (
+                      <>
+                        <EcoButton type="button" onClick={() => void openReceiptDangerDialog(editingDocument, "unpost")} disabled={receiptActionBusy === receiptActionKey(editingDocument, "check-unpost")}>
+                          {receiptActionBusy === receiptActionKey(editingDocument, "check-unpost") ? <Loader2 size={15} /> : <RotateCcw size={15} />}
+                          В черновик
+                        </EcoButton>
+                        <EcoButton type="button" variant="danger" onClick={() => void openReceiptDangerDialog(editingDocument, "cancel")} disabled={receiptActionBusy === receiptActionKey(editingDocument, "check-cancel")}>
+                          {receiptActionBusy === receiptActionKey(editingDocument, "check-cancel") ? <Loader2 size={15} /> : <Ban size={15} />}
+                          Отменить
+                        </EcoButton>
+                        <EcoButton type="button" onClick={() => setReceiptDialog({ type: "correction", document: editingDocument, reason: `Исправление приёмки ${editingDocument.name}` })}>
+                          <FilePlus2 size={15} /> Корректировка
+                        </EcoButton>
+                      </>
+                    )}
                     {editingDocument && (
-                      <EcoButton type="button" onClick={() => copyFromDocument(editingDocument)}>
-                        <Copy size={15} /> Создать на основе
-                      </EcoButton>
+                      <>
+                        <EcoButton type="button" onClick={() => copyFromDocument(editingDocument)}>
+                          <Copy size={15} /> Дублировать
+                        </EcoButton>
+                        {isReceipt && (
+                          <EcoButton type="button" onClick={() => void openReceiptHistory(editingDocument)}>
+                            <History size={15} /> История
+                          </EcoButton>
+                        )}
+                      </>
                     )}
                     <EcoButton type="button" variant="primary" onClick={closeDocumentForm}>Закрыть</EcoButton>
                   </>
                 ) : (
                   <>
                     <EcoButton type="button" onClick={closeDocumentForm}>Отмена</EcoButton>
+                    {editingDocument?.id && isReceipt && isDraftDocument(editingDocument) && (
+                      <EcoButton type="button" variant="danger" onClick={() => setReceiptDialog({ type: "delete-draft", document: editingDocument, invoiceAction: "keep" })}>
+                        <Trash2 size={15} /> Удалить
+                      </EcoButton>
+                    )}
                     <EcoButton type="button" variant="primary" onClick={() => void submit(false)} disabled={!canSaveDraft} title={!canSaveDraft ? footerHelper : undefined}>
                       {savingAction === "draft" ? <Loader2 size={15} /> : <Save size={15} />}
                       Сохранить черновик
@@ -1871,7 +2407,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           <div className="eco-receipt-kpi is-success">
             <span>Проведено</span>
             <strong>{documentStats.conducted}</strong>
-            <em>{documentStats.drafts} черновика</em>
+            <em>{documentStats.drafts} черн. · {documentStats.cancelled} отмен.</em>
           </div>
           <div className="eco-receipt-kpi is-warning">
             <span>Черновики</span>
@@ -2011,6 +2547,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   const open = openId === document.id;
                   const status = statusMeta(document);
                   const adjustment = adjustmentMeta(document);
+                  const draft = isDraftDocument(document);
+                  const posted = isPostedDocument(document);
+                  const cancelled = isCancelledDocument(document);
+                  const rowBusy = receiptActionBusy?.startsWith(`${document.id}:`);
                   return (
                     <Fragment key={document.id}>
                       <tr key={document.id}>
@@ -2040,19 +2580,52 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         <td><EcoBadge tone={status.tone}>{status.label}</EcoBadge></td>
                         <td className="l-number l-sum">{formatMoney(document.sum)} ₽</td>
                         <td>
-                          <div className="eco-receipt-table-actions">
-                            <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)}>
-                              {document.applicable ? <Eye size={16} /> : <Pencil size={16} />}
-                            </button>
-                            <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)}>
-                              <Copy size={16} />
-                            </button>
-                            {isReceipt && !document.invoice && (
-                              <button type="button" title="Создать счёт" aria-label="Создать счёт" onClick={() => startInvoiceForDocument(document)}>
-                                <FilePlus2 size={16} />
+                          {isReceipt ? (
+                            <div className="eco-receipt-table-actions">
+                              <label className="eco-receipt-action-select">
+                                {rowBusy ? <Loader2 size={15} /> : <MoreHorizontal size={15} />}
+                                <select
+                                  value=""
+                                  disabled={rowBusy}
+                                  aria-label={`Действия ${document.name}`}
+                                  onChange={(event) => {
+                                    handleDocumentAction(document, event.target.value as ReceiptAction);
+                                    event.currentTarget.value = "";
+                                  }}
+                                >
+                                  <option value="">Действия</option>
+                                  <option value="open">Открыть</option>
+                                  {draft && <option value="edit">Редактировать</option>}
+                                  {posted && <option value="edit">Редактировать…</option>}
+                                  {draft && <option value="post">Провести</option>}
+                                  <option value="duplicate">Дублировать</option>
+                                  {posted && <option value="unpost">Вернуть в черновик</option>}
+                                  {posted && <option value="cancel">Отменить приёмку</option>}
+                                  {posted && <option value="correction">Создать корректировку</option>}
+                                  {draft ? (
+                                    <option value="delete">Удалить</option>
+                                  ) : (
+                                    <option value="delete" disabled>{cancelled ? "Удалить нельзя: отменена" : "Удалить нельзя: проведена"}</option>
+                                  )}
+                                  {!draft && <option value="history">История изменений</option>}
+                                </select>
+                              </label>
+                              {!document.invoice && (
+                                <button type="button" title="Создать счёт" aria-label="Создать счёт" onClick={() => startInvoiceForDocument(document)}>
+                                  <FilePlus2 size={16} />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="eco-receipt-table-actions">
+                              <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)}>
+                                {document.applicable ? <Eye size={16} /> : <Pencil size={16} />}
                               </button>
-                            )}
-                          </div>
+                              <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)}>
+                                <Copy size={16} />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                       {open && (

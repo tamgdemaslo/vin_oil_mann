@@ -2705,6 +2705,7 @@ model LocalInventoryDocument {
   name                    String
   momentAt                DateTime @map("moment_at")
   documentDate            String   @map("document_date")
+  status                  String   @default("posted")
   applicable              Boolean  @default(true)
   sumCents                Int      @default(0) @map("sum_cents")
   description             String?  @db.Text
@@ -2732,13 +2733,25 @@ model LocalInventoryDocument {
   syncedAt         DateTime? @map("synced_at")
   syncStatus       String?   @map("sync_status")
   syncError        String?   @map("sync_error") @db.Text
+  isDeleted        Boolean   @default(false) @map("is_deleted")
+  deletedAt        DateTime? @map("deleted_at")
+  deletedById      String?   @map("deleted_by_id")
+  deletedByName    String?   @map("deleted_by_name")
+  cancelledAt      DateTime? @map("cancelled_at")
+  cancelledById    String?   @map("cancelled_by_id")
+  cancelledByName  String?   @map("cancelled_by_name")
+  correctionOfId   String?   @map("correction_of_id")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
+  correctionOf    LocalInventoryDocument?  @relation("LocalInventoryDocumentCorrections", fields: [correctionOfId], references: [id], onDelete: SetNull)
+  corrections     LocalInventoryDocument[] @relation("LocalInventoryDocumentCorrections")
   positions       LocalInventoryDocumentPosition[]
   supplierInvoice LocalSupplierInvoice?
+  auditLogs       LocalInventoryDocumentAuditLog[]
 
   @@index([type])
+  @@index([status])
   @@index([documentDate])
   @@index([momentAt])
   @@index([applicable])
@@ -2750,7 +2763,30 @@ model LocalInventoryDocument {
   @@index([externalCode])
   @@index([syncedAt])
   @@index([syncStatus])
+  @@index([isDeleted])
+  @@index([correctionOfId])
   @@map("local_inventory_documents")
+}
+
+/// История изменений локального складского документа.
+model LocalInventoryDocumentAuditLog {
+  id             String                 @id @default(cuid())
+  documentId     String                 @map("document_id")
+  document       LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  action         String
+  statusBefore   String?                @map("status_before")
+  statusAfter    String?                @map("status_after")
+  message        String?                @db.Text
+  oldValue       Json?                  @map("old_value")
+  newValue       Json?                  @map("new_value")
+  createdById    String?                @map("created_by_id")
+  createdByName  String?                @map("created_by_name")
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("local_inventory_document_audit_logs")
 }
 
 /// Позиции локального складского документа.
@@ -2810,7 +2846,8 @@ model LocalSupplierInvoice {
   createdAt                DateTime               @default(now()) @map("created_at")
   updatedAt                DateTime               @updatedAt @map("updated_at")
 
-  payments LocalSupplierInvoicePayment[]
+  payments      LocalSupplierInvoicePayment[]
+  tbankPayments SupplierInvoiceTBankPayment[]
 
   @@index([invoiceDate])
   @@index([dueDate])
@@ -2856,6 +2893,143 @@ model LocalSupplierInvoicePayment {
   @@index([syncedAt])
   @@index([syncStatus])
   @@map("local_supplier_invoice_payments")
+}
+
+/// Настройки подключения T-Bank T-API для безопасной оплаты счетов поставщиков.
+model TBankIntegration {
+  id                          String   @id @default(cuid())
+  organizationId              String   @default("default") @unique @map("organization_id")
+  inn                         String?
+  kpp                         String?
+  tokenEncrypted              String?  @map("token_encrypted") @db.Text
+  tokenPreview                String?  @map("token_preview")
+  debitAccountNumberEncrypted String?  @map("debit_account_number_encrypted") @db.Text
+  debitAccountNumberMasked    String?  @map("debit_account_number_masked")
+  mode                        String   @default("draft_only")
+  directPaymentsEnabled       Boolean  @default(false) @map("direct_payments_enabled")
+  maxSinglePaymentCents       Int?     @map("max_single_payment_cents")
+  dailyPaymentLimitCents      Int?     @map("daily_payment_limit_cents")
+  allowedSupplierInnsJson     Json     @default("[]") @map("allowed_supplier_inns_json")
+  webhookUrl                  String?  @map("webhook_url") @db.Text
+  webhookSecretEncrypted      String?  @map("webhook_secret_encrypted") @db.Text
+  sandbox                     Boolean  @default(false)
+  productionMode              Boolean  @default(false) @map("production_mode")
+  apiBaseUrl                  String?  @map("api_base_url") @db.Text
+  certificateConfigured       Boolean  @default(false) @map("certificate_configured")
+  mtlsRequired                Boolean  @default(false) @map("mtls_required")
+  lastCheckedAt               DateTime? @map("last_checked_at")
+  lastCheckStatus             String?  @map("last_check_status")
+  lastCheckMessage            String?  @map("last_check_message") @db.Text
+  createdById                 String?  @map("created_by_id")
+  updatedById                 String?  @map("updated_by_id")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  accounts TBankSettlementAccount[]
+  payments SupplierInvoiceTBankPayment[]
+
+  @@map("tbank_integrations")
+}
+
+/// Расчётные счета списания, полученные из T-Bank или добавленные вручную.
+model TBankSettlementAccount {
+  id                     String           @id @default(cuid())
+  organizationId         String           @default("default") @map("organization_id")
+  integrationId          String           @map("integration_id")
+  integration            TBankIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  accountNumberEncrypted String?          @map("account_number_encrypted") @db.Text
+  accountNumberMasked    String           @map("account_number_masked")
+  accountNumberHash      String?          @map("account_number_hash")
+  accountName            String?          @map("account_name")
+  bankName               String?          @map("bank_name")
+  currency               String           @default("RUB")
+  isDefault              Boolean          @default(false) @map("is_default")
+  isActive               Boolean          @default(true) @map("is_active")
+  providerAccountId      String?          @map("provider_account_id")
+  raw                    Json?
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+
+  @@unique([integrationId, accountNumberHash])
+  @@index([organizationId])
+  @@index([integrationId])
+  @@map("tbank_settlement_accounts")
+}
+
+/// Попытки оплаты счёта поставщика через T-Bank T-API.
+model SupplierInvoiceTBankPayment {
+  id                       String               @id @default(cuid())
+  organizationId           String               @default("default") @map("organization_id")
+  supplierInvoiceId        String               @map("supplier_invoice_id")
+  supplierInvoice          LocalSupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+  integrationId            String?              @map("integration_id")
+  integration              TBankIntegration?    @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  provider                 String               @default("tbank")
+  mode                     String               @default("draft")
+  tbankPaymentId           String?              @map("tbank_payment_id")
+  tbankDocumentId          String?              @map("tbank_document_id")
+  tbankRequestId           String?              @map("tbank_request_id")
+  idempotencyKey           String               @unique @map("idempotency_key")
+  attemptNumber            Int                  @default(1) @map("attempt_number")
+  amountCents              Int                  @map("amount_cents")
+  fromAccountNumberMasked  String?              @map("from_account_number_masked")
+  recipientName            String               @map("recipient_name")
+  recipientInn             String               @map("recipient_inn")
+  recipientKpp             String?              @map("recipient_kpp")
+  recipientAccount         String               @map("recipient_account")
+  recipientBik             String               @map("recipient_bik")
+  recipientCorrAccount     String?              @map("recipient_corr_account")
+  recipientBankName        String?              @map("recipient_bank_name")
+  paymentPurpose           String               @map("payment_purpose") @db.Text
+  status                   String               @default("draft_created")
+  providerStatus           String?              @map("provider_status")
+  providerStatusRaw        Json?                @map("provider_status_raw")
+  createdById              String               @map("created_by_id")
+  createdByName            String?              @map("created_by_name")
+  confirmedById            String?              @map("confirmed_by_id")
+  createdAt                DateTime             @default(now()) @map("created_at")
+  sentAt                   DateTime?            @map("sent_at")
+  confirmedAt              DateTime?            @map("confirmed_at")
+  paidAt                   DateTime?            @map("paid_at")
+  failedAt                 DateTime?            @map("failed_at")
+  cancelledAt              DateTime?            @map("cancelled_at")
+  errorCode                String?              @map("error_code")
+  errorMessage             String?              @map("error_message") @db.Text
+  requestPayloadEncrypted  String?              @map("request_payload_encrypted") @db.Text
+  responsePayloadEncrypted String?              @map("response_payload_encrypted") @db.Text
+  confirmationUrl          String?              @map("confirmation_url") @db.Text
+  raw                      Json?
+
+  webhookEvents TBankWebhookEvent[]
+
+  @@index([organizationId, status])
+  @@index([supplierInvoiceId])
+  @@index([tbankDocumentId])
+  @@index([tbankPaymentId])
+  @@map("supplier_invoice_tbank_payments")
+}
+
+/// Входящие события T-Bank по статусам платежей.
+model TBankWebhookEvent {
+  id                            String                       @id @default(cuid())
+  organizationId                String                       @default("default") @map("organization_id")
+  eventId                       String?                      @unique @map("event_id")
+  supplierInvoiceTBankPaymentId String?                      @map("supplier_invoice_tbank_payment_id")
+  payment                       SupplierInvoiceTBankPayment? @relation(fields: [supplierInvoiceTBankPaymentId], references: [id], onDelete: SetNull)
+  tbankDocumentId               String?                      @map("tbank_document_id")
+  tbankPaymentId                String?                      @map("tbank_payment_id")
+  providerStatus                String?                      @map("provider_status")
+  payload                       Json
+  receivedHeaders               Json                         @default("{}") @map("received_headers")
+  sourceIp                      String?                      @map("source_ip")
+  processedAt                   DateTime?                    @map("processed_at")
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([supplierInvoiceTBankPaymentId])
+  @@index([tbankDocumentId])
+  @@index([tbankPaymentId])
+  @@map("tbank_webhook_events")
 }
 
 /// Состояние импорта локального складского зеркала.

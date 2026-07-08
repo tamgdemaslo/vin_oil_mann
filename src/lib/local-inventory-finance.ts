@@ -339,6 +339,8 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
   ];
   const inventoryWhere = {
     ...(applicableOnly ? { applicable: true } : {}),
+    isDeleted: false,
+    status: { not: "cancelled" },
     documentDate: { gte: dateFrom, lte: dateTo },
     type: { in: documentTypes.length ? documentTypes : ["__none__"] },
     ...(storeId ? { storeId } : {}),

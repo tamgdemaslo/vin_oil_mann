@@ -528,6 +528,7 @@ export async function GET() {
       prisma.diagnostic.count({ where: { status: { in: ["DRAFT", "IN_PROGRESS"] } } }),
     ]),
     prisma.localInventoryDocument.findMany({
+      where: { isDeleted: false },
       orderBy: [{ momentAt: "desc" }],
       take: 5,
     }),
