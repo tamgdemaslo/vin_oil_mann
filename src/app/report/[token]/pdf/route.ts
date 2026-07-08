@@ -21,6 +21,7 @@ type CdpResponse = {
 
 type CdpClient = {
   send<T = Record<string, unknown>>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T>;
+  sendNoWait(method: string, params?: Record<string, unknown>, sessionId?: string): void;
   close(): void;
 };
 
@@ -150,9 +151,11 @@ function chromeServerFlags(userDataDir: string, source: ChromeExecutable["source
     "--hide-scrollbars",
     "--metrics-recording-only",
     "--mute-audio",
+    "--no-proxy-server",
     "--no-default-browser-check",
     "--no-first-run",
     "--password-store=basic",
+    "--proxy-bypass-list=<-loopback>",
     "--force-color-profile=srgb",
     `--crash-dumps-dir=${join(userDataDir, "crash-dumps")}`,
     `--user-data-dir=${userDataDir}`,
@@ -310,6 +313,11 @@ function connectCdp(wsUrl: string): Promise<CdpClient> {
             socket.send(JSON.stringify(payload));
           });
         },
+        sendNoWait(method: string, params: Record<string, unknown> = {}, sessionId?: string): void {
+          const id = nextId++;
+          const payload = sessionId ? { id, method, params, sessionId } : { id, method, params };
+          socket.send(JSON.stringify(payload));
+        },
         close() {
           socket.close();
         },
@@ -340,6 +348,7 @@ function connectCdp(wsUrl: string): Promise<CdpClient> {
 
 async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<void> {
   const deadline = Date.now() + 60_000;
+  let probeFailures = 0;
   let lastState: {
     readyState?: string;
     href?: string;
@@ -352,40 +361,49 @@ async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<vo
   } = {};
 
   while (Date.now() < deadline) {
-    const result = await withTimeout(
-      cdp.send<{ result?: { value?: typeof lastState } }>(
-        "Runtime.evaluate",
-        {
-          expression: `
-          (() => {
-            const heroCount = document.querySelectorAll('.paper-a4.rep .rep-hero').length;
-            const verdictCount = document.querySelectorAll('.paper-a4.rep .rep-verdict').length;
-            const stateText = document.querySelector('.diag-report-state')?.textContent?.trim() || '';
-            const bodyText = document.body?.innerText?.replace(/\\s+/g, ' ').trim().slice(0, 360) || '';
-            return {
-              readyState: document.readyState,
-              href: location.href,
-              title: document.title,
-              hasReport: heroCount > 0 && verdictCount > 0,
-              heroCount,
-              verdictCount,
-              stateText,
-              bodyText,
-            };
-          })()
-        `,
-          returnByValue: true,
-        },
-        sessionId
-      ),
-      CDP_COMMAND_TIMEOUT_MS,
-      "Ожидание готовности отчёта"
-    );
-    lastState = result.result?.value ?? lastState;
-    if (lastState.hasReport) return;
+    try {
+      const result = await withTimeout(
+        cdp.send<{ result?: { value?: typeof lastState } }>(
+          "Runtime.evaluate",
+          {
+            expression: `
+            (() => {
+              const heroCount = document.querySelectorAll('.paper-a4.rep .rep-hero').length;
+              const verdictCount = document.querySelectorAll('.paper-a4.rep .rep-verdict').length;
+              const stateText = document.querySelector('.diag-report-state')?.textContent?.trim() || '';
+              const bodyText = document.body?.innerText?.replace(/\\s+/g, ' ').trim().slice(0, 360) || '';
+              return {
+                readyState: document.readyState,
+                href: location.href,
+                title: document.title,
+                hasReport: heroCount > 0 && verdictCount > 0,
+                heroCount,
+                verdictCount,
+                stateText,
+                bodyText,
+              };
+            })()
+          `,
+            returnByValue: true,
+          },
+          sessionId
+        ),
+        CDP_COMMAND_TIMEOUT_MS,
+        "Ожидание готовности отчёта"
+      );
+      lastState = result.result?.value ?? lastState;
+      if (lastState.hasReport) return;
 
-    if (lastState.stateText && !lastState.stateText.includes("Загрузка")) {
-      throw new Error(`Страница отчёта открылась, но не отдала документ: ${lastState.stateText}`);
+      if (lastState.stateText && !lastState.stateText.includes("Загрузка")) {
+        throw new Error(`Страница отчёта открылась, но не отдала документ: ${lastState.stateText}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/таймаут|timeout/i.test(message)) throw error;
+      probeFailures += 1;
+      if (probeFailures === 1 || probeFailures % 3 === 0) {
+        console.warn("[diagnostic-pdf] report readiness probe timed out", { probeFailures, message, lastState });
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -695,9 +713,8 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
   try {
     const wsUrl = await waitForDevtools(chromeProcess);
     cdp = await withTimeout(connectCdp(wsUrl), CDP_COMMAND_TIMEOUT_MS, "Подключение к Chrome DevTools");
-    const pageLoadStartedAt = Date.now();
     const created = await withTimeout(
-      cdp.send<{ targetId: string }>("Target.createTarget", { url }),
+      cdp.send<{ targetId: string }>("Target.createTarget", { url: "about:blank" }),
       CDP_COMMAND_TIMEOUT_MS,
       "Создание вкладки Chrome"
     );
@@ -725,6 +742,8 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       CDP_COMMAND_TIMEOUT_MS,
       "Emulation.setDeviceMetricsOverride"
     );
+    const pageLoadStartedAt = Date.now();
+    cdp.sendNoWait("Page.navigate", { url }, sessionId);
     await waitForReportReady(cdp, sessionId);
     console.info("[diagnostic-pdf] page ready", { url, durationMs: Date.now() - pageLoadStartedAt });
     const cssStartedAt = Date.now();
@@ -933,7 +952,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
 
 function isRetryablePdfError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /CDP connection closed|Target closed|WebSocket|DevTools|Chrome завершился|browser has disconnected|таймаут|timeout/i.test(message);
+  return /CDP connection closed|Target closed|WebSocket|DevTools|Chrome завершился|browser has disconnected|таймаут|timeout|Отчёт не успел/i.test(message);
 }
 
 async function renderReportPdfWithRetry(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
