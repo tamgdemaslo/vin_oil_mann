@@ -620,6 +620,56 @@ async function applyPrinterSafeOptimizations(cdp: CdpClient, sessionId: string):
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .ph {',
             '  color: #c2410c !important;',
             '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.good .n { color: #166534 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.warn .n { color: #9a4e12 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.crit .n { color: #991b1b !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.ind .n { color: #1d4ed8 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.good { border-left-color: #166534 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.warn { border-left-color: #9a4e12 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.crit { border-left-color: #991b1b !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.no-access,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.by-mileage,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec.by-client { border-left-color: #475569 !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.good,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.good { background: #166534 !important; color: #fff !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.warn,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.warn { background: #9a4e12 !important; color: #fff !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.crit,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.crit { background: #991b1b !important; color: #fff !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.no-access,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.by-mileage,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.by-client,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.no-access,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.by-mileage,',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark.by-client { background: #475569 !important; color: #fff !important; }',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-mark {',
+            '  font-family: Arial, sans-serif !important;',
+            '  line-height: 1 !important;',
+            '  text-align: center !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta {',
+            '  display: grid !important;',
+            '  grid-template-columns: minmax(0, 1fr) minmax(210px, 300px) !important;',
+            '  align-items: start !important;',
+            '  gap: 16px 18px !important;',
+            '  min-height: 84px !important;',
+            '  padding: 12px 16px 10px !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-contact {',
+            '  display: flex !important;',
+            '  flex-direction: column !important;',
+            '  align-items: flex-end !important;',
+            '  justify-content: flex-start !important;',
+            '  justify-self: end !important;',
+            '  width: min(300px, 100%) !important;',
+            '  min-width: 0 !important;',
+            '  text-align: right !important;',
+            '}',
+            'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-foot-contact .link {',
+            '  max-width: 100% !important;',
+            '  overflow-wrap: anywhere !important;',
+            '  text-align: right !important;',
+            '}',
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-fact,',
             'html.tgm-printer-safe .diag-print-screen.is-print .paper-a4.rep .rep-hero-car {',
             '  border-color: #2a2a2a !important;',
@@ -833,6 +883,70 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
               .diag-print-screen.is-print .paper-a4.rep .rep-photo-cap .lbl,
               .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta .ph {
                 color: #c2410c !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.good .n { color: #166534 !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.warn .n { color: #9a4e12 !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.crit .n { color: #991b1b !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-v-cell.ind .n { color: #1d4ed8 !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.good { border-left-color: #166534 !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.warn { border-left-color: #9a4e12 !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.crit { border-left-color: #991b1b !important; }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.no-access,
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.by-mileage,
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec.by-client {
+                border-left-color: #475569 !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.good,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.good {
+                background: #166534 !important;
+                color: #fff !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.warn,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.warn {
+                background: #9a4e12 !important;
+                color: #fff !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.crit,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.crit {
+                background: #991b1b !important;
+                color: #fff !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.no-access,
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.by-mileage,
+              .diag-print-screen.is-print .paper-a4.rep .rep-rec-tag.by-client,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.no-access,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.by-mileage,
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark.by-client {
+                background: #475569 !important;
+                color: #fff !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-mark {
+                font-family: Arial, sans-serif !important;
+                line-height: 1 !important;
+                text-align: center !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-cta {
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr) minmax(210px, 300px) !important;
+                align-items: start !important;
+                gap: 16px 18px !important;
+                min-height: 84px !important;
+                padding: 12px 16px 10px !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-contact {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: flex-end !important;
+                justify-content: flex-start !important;
+                justify-self: end !important;
+                width: min(300px, 100%) !important;
+                min-width: 0 !important;
+                text-align: right !important;
+              }
+              .diag-print-screen.is-print .paper-a4.rep .rep-foot-contact .link {
+                max-width: 100% !important;
+                overflow-wrap: anywhere !important;
+                text-align: right !important;
               }
               .diag-print-screen.is-print .paper-a4.rep .rep-fact,
               .diag-print-screen.is-print .paper-a4.rep .rep-hero-car {

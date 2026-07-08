@@ -995,10 +995,10 @@ export function DiagnosticPublicReport({
                 const result = itemResultText(item);
                 const recommendation = itemRecommendationText(item);
                 return (
-                  <div className="rep-rec" style={{ borderLeftColor: statusColor(normalized) }} key={`${item.blockTitle}-${item.code}`}>
+                  <div className={`rep-rec ${normalized}`} style={{ borderLeftColor: statusColor(normalized) }} key={`${item.blockTitle}-${item.code}`}>
                     <div className="rep-rec-head">
                       <h3>{item.title}</h3>
-                      <span className="rep-rec-tag" style={{ background: statusColor(normalized) }}>{statusLabel(normalized)}</span>
+                      <span className={`rep-rec-tag ${normalized}`} style={{ background: statusColor(normalized) }}>{statusLabel(normalized)}</span>
                     </div>
                     <div className="rep-rec-desc">
                       {result}
@@ -1035,7 +1035,7 @@ export function DiagnosticPublicReport({
 	          <div className="rep-legend">
 	            {["good", "warn", "crit", "no-access", "by-mileage", "by-client"].map((key) => {
 	              const legendLabel = key === "no-access" ? statusLabel(key) : payload.statusLegend?.[key]?.label ?? statusLabel(key);
-	              return <span className="rep-key" key={key}><span className="rep-mark" style={{ background: statusColor(key) }}>{statusIcon(key)}</span>{legendLabel}</span>;
+	              return <span className="rep-key" key={key}><span className={`rep-mark ${key}`} style={{ background: statusColor(key) }}>{statusIcon(key)}</span>{legendLabel}</span>;
 	            })}
 	          </div>
           <div className="rep-check">
@@ -1046,7 +1046,7 @@ export function DiagnosticPublicReport({
                     <div className="rep-block-head"><span className="rep-block-no">{block.num}</span>{block.title}</div>
                     {block.items.map((item) => (
                         <div className="rep-check-row" key={item.code}>
-                          <span className="rep-mark sm" style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
+                          <span className={`rep-mark sm ${normalizeStatus(item.status)}`} style={{ background: statusColor(item.status) }}>{statusIcon(item.status)}</span>
                           <span className="rep-check-label">{item.title}</span>
                           <span className="rep-check-val">{itemChecklistText(item)}</span>
                         </div>
