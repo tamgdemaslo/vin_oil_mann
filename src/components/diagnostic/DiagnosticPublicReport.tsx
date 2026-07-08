@@ -116,6 +116,8 @@ type DiagnosticPublicReportProps = {
   token: string;
   mode?: "online" | "print";
   autoPrint?: boolean;
+  initialPayload?: ReportPayload | null;
+  initialError?: string | null;
 };
 
 const REPORT_PHONE = "+7 (995) 054-58-59";
@@ -479,15 +481,29 @@ function PhotoTile({ photo, index, status }: { photo: { id: string; caption: str
   );
 }
 
-export function DiagnosticPublicReport({ token, mode = "online", autoPrint = false }: DiagnosticPublicReportProps) {
-  const [payload, setPayload] = useState<ReportPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function DiagnosticPublicReport({
+  token,
+  mode = "online",
+  autoPrint = false,
+  initialPayload = null,
+  initialError = null,
+}: DiagnosticPublicReportProps) {
+  const [payload, setPayload] = useState<ReportPayload | null>(initialPayload);
+  const [loading, setLoading] = useState(!initialPayload && !initialError);
+  const [error, setError] = useState<string | null>(initialError);
   const [lightboxPhoto, setLightboxPhoto] = useState<PublicReportPhoto | null>(null);
   const [autoPrintRequested, setAutoPrintRequested] = useState(autoPrint);
 
   useEffect(() => {
     let cancelled = false;
+    if (initialPayload || initialError) {
+      setPayload(initialPayload);
+      setError(initialError);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     async function load() {
       setLoading(true);
       setError(null);
@@ -513,7 +529,7 @@ export function DiagnosticPublicReport({ token, mode = "online", autoPrint = fal
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [initialError, initialPayload, token]);
 
   useEffect(() => {
     setAutoPrintRequested(autoPrint);

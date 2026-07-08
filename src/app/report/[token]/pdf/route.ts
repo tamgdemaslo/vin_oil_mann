@@ -90,6 +90,7 @@ const CHROME_WRAPPER_CANDIDATES = [
 ].filter(Boolean) as string[];
 
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
+const CDP_NAVIGATION_TIMEOUT_MS = 20_000;
 const CHROME_DEVTOOLS_TIMEOUT_MS = 30_000;
 const CDP_PRINT_TIMEOUT_MS = 45_000;
 const CDP_STREAM_READ_TIMEOUT_MS = 10_000;
@@ -394,6 +395,16 @@ async function waitForReportReady(cdp: CdpClient, sessionId: string): Promise<vo
   throw new Error(
     `Отчёт не успел отрендериться для PDF. Состояние страницы: ${lastState.stateText || lastState.bodyText || lastState.readyState || "пусто"}`
   );
+}
+
+async function navigateReportPage(cdp: CdpClient, sessionId: string, url: string): Promise<void> {
+  try {
+    await withTimeout(cdp.send("Page.navigate", { url }, sessionId), CDP_NAVIGATION_TIMEOUT_MS, "Переход на страницу отчёта");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/таймаут|timeout/i.test(message)) throw error;
+    console.warn("[diagnostic-pdf] navigation command timed out; waiting for report DOM", { url, error: message });
+  }
 }
 
 async function waitForFontsReady(cdp: CdpClient, sessionId: string): Promise<void> {
@@ -725,7 +736,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
       "Emulation.setDeviceMetricsOverride"
     );
     const pageLoadStartedAt = Date.now();
-    await withTimeout(cdp.send("Page.navigate", { url }, sessionId), CDP_COMMAND_TIMEOUT_MS, "Переход на страницу отчёта");
+    await navigateReportPage(cdp, sessionId, url);
     await waitForReportReady(cdp, sessionId);
     console.info("[diagnostic-pdf] page ready", { url, durationMs: Date.now() - pageLoadStartedAt });
     const cssStartedAt = Date.now();
@@ -934,7 +945,7 @@ async function renderReportPdf(url: string, options: RenderReportPdfOptions = {}
 
 function isRetryablePdfError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /CDP connection closed|Target closed|WebSocket|DevTools|Chrome завершился|browser has disconnected/i.test(message);
+  return /CDP connection closed|Target closed|WebSocket|DevTools|Chrome завершился|browser has disconnected|таймаут|timeout/i.test(message);
 }
 
 async function renderReportPdfWithRetry(url: string, options: RenderReportPdfOptions = {}): Promise<Buffer> {
