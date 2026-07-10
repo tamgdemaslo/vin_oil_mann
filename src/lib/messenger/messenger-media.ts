@@ -333,7 +333,8 @@ export function kickMessengerMediaWorker() {
       inProcessWorkerBusy = false;
     }
   };
-  setInterval(() => void tick(), Number(process.env.MESSENGER_MEDIA_WORKER_INTERVAL_MS ?? 15_000));
+  const interval = setInterval(() => void tick(), Number(process.env.MESSENGER_MEDIA_WORKER_INTERVAL_MS ?? 15_000));
+  interval.unref?.();
   void tick();
 }
 

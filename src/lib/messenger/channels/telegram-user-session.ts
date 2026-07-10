@@ -186,6 +186,8 @@ type GramJsModule = {
 };
 
 const ENCRYPTION_VERSION = 1;
+const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
+const DEFAULT_CONNECTION_RETRIES = 1;
 let schemaEnsurePromise: Promise<void> | null = null;
 
 type TelegramQrRuntimeAttempt = {
@@ -285,6 +287,18 @@ function isEnabled() {
   return process.env.TELEGRAM_USER_SESSION_ENABLED === "true";
 }
 
+function telegramConnectTimeoutMs() {
+  const configured = Number(process.env.TELEGRAM_CONNECT_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_CONNECT_TIMEOUT_MS;
+  return Math.max(5_000, Math.floor(configured));
+}
+
+function telegramConnectionRetries() {
+  const configured = Number(process.env.TELEGRAM_CONNECTION_RETRIES);
+  if (!Number.isFinite(configured) || configured < 0) return DEFAULT_CONNECTION_RETRIES;
+  return Math.floor(configured);
+}
+
 function redact(value: string) {
   const apiHash = configuredApiHash();
   return apiHash ? value.split(apiHash).join("[TELEGRAM_API_HASH]") : value;
@@ -356,23 +370,47 @@ async function getClient(session = "") {
   if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
   const { TelegramClient, StringSession } = await loadGramJs();
   const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
-    connectionRetries: 3,
+    connectionRetries: telegramConnectionRetries(),
     testServers: false,
     useWSS: true,
   }) as TelegramRuntimeClient;
-  await client.connect();
+  try {
+    await withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs());
+  } catch (error) {
+    await disconnectTelegramClient(client);
+    throw error;
+  }
   return client;
 }
 
-function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
+async function withTelegramConnectTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Telegram connect timeout after ${timeoutMs}ms`)), timeoutMs);
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function disconnectTelegramClient(client: TelegramRuntimeClient) {
   const disconnect = client.disconnect;
   if (!disconnect) return;
-  void disconnect.call(client).catch((error) => {
+  await disconnect.call(client).catch((error) => {
     console.warn("[messenger.telegram_user.auth]", {
       action: "disconnect_failed",
       error: safeError(error, "Telegram disconnect failed"),
     });
   });
+}
+
+function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
+  void disconnectTelegramClient(client);
 }
 
 function statusToConnection(status?: MessengerAccountStatus): MessengerConnection["connectionStatus"] {
