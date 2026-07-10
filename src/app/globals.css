@@ -21626,35 +21626,117 @@ select.eco-input::-ms-expand,
 }
 
 .eco-restock-head {
+  align-items: flex-start;
   margin-top: 8px;
   margin-bottom: 0;
+}
+
+.eco-restock-head-actions {
+  max-width: min(900px, 100%);
+  align-items: flex-start;
+}
+
+.eco-restock-action-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px;
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-action-group--wide {
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.eco-restock-action-label {
+  padding: 0 7px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.eco-restock-seg {
+  border: 0;
 }
 
 .eco-restock-metrics {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.eco-restock-summary-strip {
-  display: flex;
+.eco-restock-decisionbar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(132px, 1fr)) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 36px;
-  padding: 8px 12px;
-  color: var(--eco-ink-3);
+  gap: 1px;
+  overflow: hidden;
   background: var(--eco-surface);
   border: 1px solid var(--eco-line);
   border-radius: 6px;
-  font-size: 13px;
-  font-weight: 760;
+  box-shadow: var(--eco-shadow-sm);
 }
 
-.eco-restock-summary-strip em {
+.eco-restock-decisionbar__item,
+.eco-restock-decisionbar__button {
+  min-height: 58px;
+  padding: 10px 12px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-decisionbar__item {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.eco-restock-decisionbar__item.is-primary {
+  background: color-mix(in srgb, var(--eco-rust-tint) 52%, var(--eco-surface));
+}
+
+.eco-restock-decisionbar__item span,
+.eco-restock-decisionbar__item em {
   color: var(--eco-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-style: normal;
-  font-weight: 700;
+  font-weight: 800;
+  line-height: 1.2;
   white-space: nowrap;
+}
+
+.eco-restock-decisionbar__item strong {
+  color: var(--eco-ink);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-restock-decisionbar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 116px;
+  color: var(--eco-ink-2);
+  border: 0;
+  border-left: 1px solid var(--eco-line);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.eco-restock-decisionbar__button:hover {
+  color: var(--eco-ink);
+  background: var(--eco-hover);
 }
 
 .eco-restock-category-tabs {
@@ -21736,6 +21818,7 @@ select.eco-input::-ms-expand,
 .eco-restock-rail {
   position: sticky;
   top: calc(var(--eco-topbar-h) + var(--eco-substrip-h) + 16px);
+  padding: 12px;
 }
 
 .eco-restock-rail-head {
@@ -21795,8 +21878,7 @@ select.eco-input::-ms-expand,
 .eco-restock-supplier-btn.is-active {
   color: var(--eco-ink);
   background: var(--eco-rust-tint);
-  border-color: #ffd6c2;
-  box-shadow: inset 3px 0 0 var(--eco-rust);
+  border-color: var(--eco-rust);
 }
 
 .eco-restock-supplier-btn span {
@@ -21828,6 +21910,88 @@ select.eco-input::-ms-expand,
   border-radius: 4px;
 }
 
+.eco-restock-flow-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.eco-restock-period-panel {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-field {
+  display: grid;
+  gap: 5px;
+  min-width: 156px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.eco-restock-field .eco-input {
+  min-height: 34px;
+  text-transform: none;
+}
+
+.eco-restock-period-panel__summary {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 5px;
+  color: var(--eco-muted);
+  font-size: 13px;
+}
+
+.eco-restock-period-panel__summary strong {
+  color: var(--eco-ink);
+  font-weight: 800;
+}
+
+.eco-restock-meta-note {
+  margin: 0;
+  color: var(--eco-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.eco-restock-meta-note span {
+  margin-left: 6px;
+}
+
+.eco-restock-alert,
+.eco-restock-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.eco-restock-alert.is-error {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.eco-restock-loading {
+  justify-content: center;
+  min-height: 144px;
+  border: 1px solid var(--eco-line);
+  background: var(--eco-surface);
+  color: var(--eco-muted);
+}
+
 .eco-restock-empty-state {
   display: grid;
   justify-items: center;
@@ -21854,6 +22018,17 @@ select.eco-input::-ms-expand,
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.eco-restock-table-section {
+  display: grid;
+  gap: 8px;
+}
+
+.eco-restock-group-label {
+  color: var(--eco-ink-2);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .eco-restock-supplier-group {
@@ -22279,7 +22454,7 @@ select.eco-input::-ms-expand,
   margin: 0;
   padding: 14px;
   border-top: 1px solid var(--eco-line);
-  background: linear-gradient(180deg, color-mix(in srgb, #f8fafc 72%, var(--eco-surface)), var(--eco-surface));
+  background: var(--eco-surface-sunk);
 }
 
 .eco-restock-offers-drawer .eco-restock-cart-head {
@@ -22948,7 +23123,87 @@ select.eco-input::-ms-expand,
   font-size: 13px;
 }
 
+.eco-restock-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  border: 0;
+  background: rgb(15 23 42 / 0.42);
+}
+
+.eco-restock-info-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 81;
+  display: grid;
+  width: min(460px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px);
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+  background: var(--eco-surface);
+  box-shadow: var(--eco-shadow-md);
+}
+
+.eco-restock-info-modal header,
+.eco-restock-info-modal footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.eco-restock-info-modal header {
+  border-bottom: 1px solid var(--eco-line);
+  background: var(--eco-soft);
+}
+
+.eco-restock-info-modal header span {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.eco-restock-info-modal h2 {
+  margin: 3px 0 0;
+  color: var(--eco-ink);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.eco-restock-info-modal ul {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px 16px 32px;
+  color: var(--eco-ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.eco-restock-info-modal footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--eco-line);
+}
+
 @media (max-width: 1180px) {
+  .eco-restock-decisionbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-restock-decisionbar__button {
+    grid-column: 1 / -1;
+    min-height: 42px;
+    border-top: 1px solid var(--eco-line);
+    border-left: 0;
+  }
+
   .eco-restock-category-tabs {
     display: flex;
   }
@@ -22963,7 +23218,67 @@ select.eco-input::-ms-expand,
   }
 }
 
+@media (max-width: 980px) {
+  .eco-restock-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-restock-head-actions,
+  .eco-restock-action-group--wide {
+    justify-content: flex-start;
+  }
+
+  .eco-restock-layout,
+  .eco-restock-layout.is-sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-restock-rail {
+    position: static;
+  }
+
+  .eco-restock-supplier-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .eco-restock-supplier-btn {
+    min-width: 168px;
+  }
+}
+
 @media (max-width: 760px) {
+  .eco-restock-head-actions,
+  .eco-restock-head-actions .eco-btn,
+  .eco-restock-import-order,
+  .eco-restock-action-group {
+    width: 100%;
+  }
+
+  .eco-restock-action-group,
+  .eco-restock-action-group--wide,
+  .eco-restock-period-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-restock-seg,
+  .eco-restock-seg .eco-seg-btn,
+  .eco-restock-period-panel .eco-btn {
+    width: 100%;
+  }
+
+  .eco-restock-import-order {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  .eco-restock-import-order .eco-input {
+    width: 100%;
+  }
+
   .eco-restock-category-tabs {
     display: flex;
     overflow-x: auto;

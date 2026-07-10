@@ -6,7 +6,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   FilePlus2,
   Loader2,
@@ -1184,7 +1185,6 @@ export default function RestockClient() {
     [categoryItems.length, channelStats, excluded, filteredItems, rosskoCartTotal]
   );
   const activeTab = procurementTabs.find((tab) => tab.id === procurementCategory);
-  const summaryLine = `${categoryTitle(procurementCategory)} · ${restockStats.shown} позиций · дефицит ${fmtNum(restockStats.shortage)} · выбрано ${fmtNum(activeTab?.selectedQty ?? 0)} · ${selectedChannelLabel}`;
   const offerDrawerItem = useMemo(
     () => (offerDrawerProductId ? items.find((item) => item.productId === offerDrawerProductId) ?? null : null),
     [items, offerDrawerProductId]
@@ -1770,25 +1770,28 @@ export default function RestockClient() {
             </EcoBadge>
           </div>
           <p className="eco-page-subtitle">
-            {summaryLine}
+            Соберите заказ по дефициту, проверьте канал закупки и сформируйте корзину или сообщение поставщику.
           </p>
         </div>
-        <div className="eco-page-actions">
-          <div className="eco-seg">
-            <button
-              type="button"
-              onClick={() => setMode("below_min")}
-              className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
-            >
-              Ниже минимума
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("outflow")}
-              className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
-            >
-              С расходом
-            </button>
+        <div className="eco-page-actions eco-restock-head-actions">
+          <div className="eco-restock-action-group">
+            <span className="eco-restock-action-label">Расчёт</span>
+            <div className="eco-seg eco-restock-seg">
+              <button
+                type="button"
+                onClick={() => setMode("below_min")}
+                className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
+              >
+                Ниже минимума
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("outflow")}
+                className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
+              >
+                С расходом
+              </button>
+            </div>
           </div>
           {mode === "below_min" && (
             <EcoButton type="button" onClick={() => void loadBelowMin(true)} disabled={loading}>
@@ -1797,7 +1800,7 @@ export default function RestockClient() {
             </EcoButton>
           )}
           {isRosskoMode ? (
-            <>
+            <div className="eco-restock-action-group eco-restock-action-group--wide">
               <EcoButton type="button" onClick={() => setIncomingOpen(true)}>
                 <Truck size={15} />
                 В пути ({fmtNum(incomingSummary.total)})
@@ -1823,7 +1826,7 @@ export default function RestockClient() {
                 <ShoppingCart size={15} />
                 Корзина ROSSKO ({rosskoCartTotal})
               </EcoButton>
-            </>
+            </div>
           ) : (
             <EcoButton type="button" variant="primary" onClick={buildMessage} disabled={!canBuildMessage}>
               <FilePlus2 size={15} />
@@ -1833,9 +1836,31 @@ export default function RestockClient() {
         </div>
       </section>
 
-      <div className="eco-restock-summary-strip">
-        <span>{summaryLine}</span>
-        <em>{restockStats.excluded ? `${restockStats.excluded} исключено` : "без исключений"}</em>
+      <div className="eco-restock-decisionbar" aria-label="Сводка пополнения">
+        <div className="eco-restock-decisionbar__item is-primary">
+          <span>В выборке</span>
+          <strong>{fmtNum(restockStats.shown)}</strong>
+          <em>из {fmtNum(restockStats.all)}</em>
+        </div>
+        <div className="eco-restock-decisionbar__item">
+          <span>Дефицит</span>
+          <strong>{fmtNum(restockStats.shortage)}</strong>
+          <em>{selectedChannelLabel}</em>
+        </div>
+        <div className="eco-restock-decisionbar__item">
+          <span>Выбрано</span>
+          <strong>{fmtNum(activeTab?.selectedQty ?? 0)}</strong>
+          <em>к заказу</em>
+        </div>
+        <div className="eco-restock-decisionbar__item">
+          <span>{isRosskoMode ? "Корзина" : "Исключено"}</span>
+          <strong>{fmtNum(isRosskoMode ? restockStats.inCart : restockStats.excluded)}</strong>
+          <em>{isRosskoMode ? "ROSSKO" : "строк"}</em>
+        </div>
+        <button type="button" className="eco-restock-decisionbar__button" onClick={() => setSettingsOpen(true)}>
+          <Settings2 size={15} />
+          О данных
+        </button>
       </div>
 
       <div className="eco-restock-category-tabs" role="tablist" aria-label="Категории закупки">
@@ -1870,7 +1895,7 @@ export default function RestockClient() {
               aria-label={sidebarCollapsed ? "Показать каналы" : "Свернуть каналы"}
               title={sidebarCollapsed ? "Показать каналы" : "Свернуть каналы"}
             >
-              {sidebarCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
           </div>
           {!sidebarCollapsed && (
@@ -1888,16 +1913,6 @@ export default function RestockClient() {
                   </button>
                 ))}
               </div>
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-                <EcoButton
-                  type="button"
-                  onClick={() => setSettingsOpen(true)}
-                  size="sm"
-                >
-                  <Settings2 size={14} />
-                  О данных
-                </EcoButton>
-              </div>
             </>
           )}
         </div>
@@ -1911,17 +1926,6 @@ export default function RestockClient() {
           </span>
           <div className="grow" />
           <div className="flex flex-wrap gap-2">
-            {mode === "below_min" && (
-              <EcoButton
-                type="button"
-                onClick={() => void loadBelowMin(true)}
-                disabled={loading}
-                size="sm"
-              >
-                <RefreshCw size={14} />
-                Обновить
-              </EcoButton>
-            )}
             {isRosskoMode && rosskoCartTotal > 0 && (
               <EcoBadge tone="success">ROSSKO: {rosskoCartTotal}</EcoBadge>
             )}
@@ -1929,23 +1933,21 @@ export default function RestockClient() {
         </div>
 
         {mode === "outflow" && (
-          <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-            <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              С даты
-              <input
+          <div className="eco-restock-period-panel">
+            <label className="eco-restock-field">
+              <span>С даты</span>
+              <EcoInput
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              По дату
-              <input
+            <label className="eco-restock-field">
+              <span>По дату</span>
+              <EcoInput
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
               />
             </label>
             <EcoButton
@@ -1958,34 +1960,36 @@ export default function RestockClient() {
               Загрузить
             </EcoButton>
             {outflowLoaded && meta.dateLabel && (
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                Период: <span className="font-medium text-zinc-900 dark:text-zinc-100">{meta.dateLabel}</span>
+              <span className="eco-restock-period-panel__summary">
+                Период: <strong>{meta.dateLabel}</strong>
               </span>
             )}
           </div>
         )}
 
         {meta.fetchedRows !== undefined && (
-          <p className="text-xs text-zinc-500 dark:text-zinc-500">
+          <p className="eco-restock-meta-note">
             Товаров проверено: {meta.fetchedRows}, позиций в каталоге: {meta.catalogSize ?? "—"}.
-            {meta.note && <span className="ml-1">{meta.note}</span>}
+            {meta.note && <span>{meta.note}</span>}
           </p>
         )}
 
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
-            {error}
+          <div className="eco-restock-alert is-error">
+            <AlertTriangle size={17} />
+            <span>{error}</span>
           </div>
         )}
 
         {loading && (
-          <div className="rounded-2xl border border-zinc-200 bg-white px-6 py-12 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-            Загрузка данных из локальной БД…
+          <div className="eco-restock-loading">
+            <Loader2 size={18} className="eco-spin" />
+            <span>Загрузка данных из локальной БД…</span>
           </div>
         )}
 
         {!loading && isRosskoMode && (
-          <div className="space-y-4">
+          <div className="eco-restock-flow-stack">
             <div className="eco-restock-incoming-strip">
               <span>Нужно заказать {fmtNum(filteredItems.reduce((sum, item) => sum + (coverageByProduct.get(item.productId)?.remaining ?? 0), 0))}</span>
               <span>В пути {fmtNum(incomingSummary.total)}</span>
@@ -2030,7 +2034,7 @@ export default function RestockClient() {
         )}
 
         {!loading && !isRosskoMode && !isSetupMode && (
-          <div className="space-y-4">
+          <div className="eco-restock-flow-stack">
             <ItemsTable
               supplier={selectedChannelLabel}
               grouped={grouped}
@@ -2154,15 +2158,23 @@ export default function RestockClient() {
       {settingsOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 cursor-default bg-black/40"
+          className="eco-restock-modal-backdrop"
           aria-label="Закрыть"
           onClick={() => setSettingsOpen(false)}
         />
       )}
       {settingsOpen && (
-        <div className="fixed left-1/2 top-1/2 z-50 w-[min(100%,420px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-          <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">О данных</div>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="eco-restock-info-modal" role="dialog" aria-modal="true" aria-labelledby="restock-info-title">
+          <header>
+            <div>
+              <span>Источник расчёта</span>
+              <h2 id="restock-info-title">О данных пополнения</h2>
+            </div>
+            <button type="button" className="eco-icon-btn" onClick={() => setSettingsOpen(false)} aria-label="Закрыть">
+              <X size={18} />
+            </button>
+          </header>
+          <ul>
             <li>В список попадают только локальные товары с заполненным неснижаемым остатком.</li>
             <li>Условие: доступный остаток в локальной БД меньше неснижаемого.</li>
             <li>
@@ -2171,13 +2183,11 @@ export default function RestockClient() {
             </li>
             <li>Количества для сообщения и исключения позиций хранятся в браузере на этом устройстве.</li>
           </ul>
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(false)}
-            className="mt-5 w-full rounded-xl bg-zinc-900 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-950"
-          >
-            Понятно
-          </button>
+          <footer>
+            <EcoButton type="button" variant="primary" onClick={() => setSettingsOpen(false)}>
+              Понятно
+            </EcoButton>
+          </footer>
         </div>
       )}
     </div>
@@ -2847,17 +2857,19 @@ function RosskoItemsTable({
 }) {
   if (grouped.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 px-6 py-12 text-center text-sm text-zinc-500 dark:border-zinc-700">
-        Нет позиций для ROSSKO. Проверьте поставщика в карточках товаров: ожидается {ROSSKO_SUPPLIER_FIXED}.
+      <div className="eco-restock-empty-state">
+        <PackageSearch size={28} />
+        <strong>Нет позиций для ROSSKO</strong>
+        <span>Проверьте поставщика в карточках товаров: ожидается {ROSSKO_SUPPLIER_FIXED}.</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="eco-restock-supplier-stack">
       {grouped.map(([groupName, rows]) => (
-        <div key={groupName}>
-          <div className="mb-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">{groupName}</div>
+        <section key={groupName} className="eco-restock-table-section">
+          <div className="eco-restock-group-label">{groupName}</div>
           <div className="eco-restock-table-wrap">
             <table className="eco-restock-rossko-table">
               <thead>
@@ -2946,7 +2958,7 @@ function RosskoItemsTable({
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       ))}
     </div>
   );
