@@ -18,6 +18,7 @@ import {
   PackageOpen,
   PanelLeftClose,
   Pencil,
+  Plus,
   RotateCcw,
   Save,
   Search,
@@ -1366,6 +1367,24 @@ export default function ProductsClient() {
     [filters]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0;
+  const searchAndFiltersCount = activeFiltersCount + (search.trim() ? 1 : 0);
+  const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
+  const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
+  const visibleStockTotal = useMemo(
+    () => rows.reduce((sum, row) => sum + Math.max(0, Number(row.totalQuantity) || 0), 0),
+    [rows]
+  );
+  const visibleMarkingProblemCount = useMemo(
+    () => rows.reduce((count, row) => count + (productHasMarkingProblem({
+      markingEnabled: row.markingEnabled,
+      markingMode: row.markingMode,
+      markingStatus: row.markingStatus,
+      groupPath: row.groupPath,
+      uomName: row.uomName,
+      settings: row.markingSettings,
+    }) ? 1 : 0), 0),
+    [rows]
+  );
   const filtersLayoutClass = [
     "eco-inventory-layout",
     filtersCollapsed ? "is-filter-collapsed" : "",
@@ -3699,7 +3718,7 @@ export default function ProductsClient() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="eco-products-page">
       {formOpen && (
         <div className="product-editor-backdrop">
           <section role="dialog" aria-modal="true" className="product-editor-drawer">
@@ -4101,16 +4120,31 @@ export default function ProductsClient() {
       {!formOpen ? (
       <section className="eco-products-shell">
         <div className="eco-products-head">
-          <div>
-            <div className="eco-products-breadcrumb">Главная / Склад / Товары</div>
-            <h2 className="eco-page-title">
-              Товары
-              <span className="muted" style={{ fontSize: 18, fontWeight: 600 }}> · {rows.length} из {meta?.total ?? rows.length}</span>
-            </h2>
+          <div className="eco-products-head-copy">
+            <div className="eco-page-crumbs eco-products-crumbs">
+              <span>Главная</span>
+              <span className="sep">/</span>
+              <span>Склад</span>
+              <span className="sep">/</span>
+              <span className="cur">Товары</span>
+            </div>
+            <div className="eco-title-row eco-products-title-row">
+              <h1 className="eco-page-title">Товары</h1>
+              <span className="eco-products-count-badge">{visibleProductsLabel} из {totalProductsLabel}</span>
+            </div>
+            <p className="eco-page-subtitle eco-products-subtitle">
+              Карточки, остатки, цены, ячейки и маркировка в одном рабочем списке.
+            </p>
           </div>
           <div className="eco-products-actions">
             <div className="eco-product-export-menu" ref={exportMenuRef}>
-              <button type="button" className="eco-btn" onClick={() => setExportMenuOpen((value) => !value)}>
+              <button
+                type="button"
+                className="eco-btn"
+                onClick={() => setExportMenuOpen((value) => !value)}
+                aria-haspopup="menu"
+                aria-expanded={exportMenuOpen}
+              >
                 <Download aria-hidden className="eco-icon" />
                 Экспорт
               </button>
@@ -4135,9 +4169,47 @@ export default function ProductsClient() {
               onClick={openNewProduct}
               className="eco-btn eco-btn--primary"
             >
+              <Plus aria-hidden className="eco-icon" />
               Новый товар
             </button>
           </div>
+        </div>
+
+        <div className="eco-products-summary" aria-label="Сводка каталога товаров">
+          <div className="eco-products-summary__item is-primary">
+            <span>В выборке</span>
+            <strong>{visibleProductsLabel}</strong>
+            <em>из {totalProductsLabel}</em>
+          </div>
+          <div className="eco-products-summary__item">
+            <span>Видимый остаток</span>
+            <strong>{formatQty(visibleStockTotal)}</strong>
+            <em>по загруженным строкам</em>
+          </div>
+          <div className="eco-products-summary__item">
+            <span>Выбрано</span>
+            <strong>{selectedProductIds.length.toLocaleString("ru-RU")}</strong>
+            <em>для экспорта</em>
+          </div>
+          <div className={`eco-products-summary__item ${visibleMarkingProblemCount > 0 ? "is-warning" : ""}`}>
+            <span>Маркировка</span>
+            <strong>{visibleMarkingProblemCount.toLocaleString("ru-RU")}</strong>
+            <em>проблем в выборке</em>
+          </div>
+          <button
+            type="button"
+            className="eco-products-summary__button"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.matchMedia("(max-width: 1180px)").matches) {
+                setFiltersDrawerOpen(true);
+              } else {
+                setFiltersCollapsed(false);
+              }
+            }}
+          >
+            <SlidersHorizontal aria-hidden className="eco-icon" />
+            {searchAndFiltersCount > 0 ? `${searchAndFiltersCount} активно` : "Фильтры"}
+          </button>
         </div>
 
         <div className={filtersLayoutClass}>
@@ -4267,15 +4339,11 @@ export default function ProductsClient() {
               </button>
             )}
           </div>
-          <span className="l-meta">{rows.length}{meta?.hasMore ? "+" : ""} из {meta?.total ?? rows.length} артикулов</span>
+          <span className="l-meta">{visibleProductsLabel} из {totalProductsLabel} артикулов</span>
         </div>
 
         {((error && !(error === "Не удалось выполнить поиск" && rows.length === 0)) || info) && (
-          <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
-            error
-              ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
-              : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200"
-          }`}>
+          <div className={`eco-products-notice ${error ? "is-error" : "is-success"}`}>
             {error || info}
           </div>
         )}
@@ -4403,9 +4471,9 @@ export default function ProductsClient() {
             </tbody>
           </table>
         </div>
-        <div ref={loadMoreTargetRef} className="h-1" />
+        <div ref={loadMoreTargetRef} className="eco-products-load-sentinel" />
         {meta && rows.length > 0 && (
-          <div className="mt-3 flex flex-col gap-2 text-sm text-zinc-500 dark:text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+          <div className="eco-products-footer">
             <span>
               Показано {rows.length} из {meta.total}
             </span>
@@ -4414,7 +4482,7 @@ export default function ProductsClient() {
                 type="button"
                 onClick={() => void loadMore()}
                 disabled={loading || loadingMore}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                className="eco-btn eco-btn--sm"
               >
                 {loadingMore ? "Загружаю..." : "Показать ещё"}
               </button>

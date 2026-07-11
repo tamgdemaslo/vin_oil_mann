@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-deploy-check/
 /out/
 
 # production
