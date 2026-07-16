@@ -77,6 +77,42 @@ function searchText(parts) {
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
+function crossReferenceKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "")
+    .replace(/[^0-9a-zа-яё]/gi, "");
+}
+
+function splitCrossReferences(value) {
+  const result = [];
+  for (const chunk of String(value ?? "").split(/[,;\r\n\t]+/g)) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const spacedArticle = words.length > 1 && /^[a-zа-яё]$/i.test(words[0]) && words.slice(1).every((word) => /^[\d./-]+$/.test(word));
+    const splitSpaces = words.length > 1 && !spacedArticle && words.every((word) => crossReferenceKey(word).length >= 3);
+    result.push(...(splitSpaces ? words : [trimmed]));
+  }
+  return result;
+}
+
+function mergeCrossReferences(...values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    for (const item of splitCrossReferences(value)) {
+      const display = item.replace(/[\s-]+/g, "").toUpperCase();
+      const key = crossReferenceKey(display);
+      if (key.length < 2 || seen.has(key)) continue;
+      seen.add(key);
+      result.push(display);
+    }
+  }
+  return result.length ? `${result.join("; ")};` : null;
+}
+
 async function seedAttributeDefinitions() {
   const definitions = [
     ["vin номер", 10, false, false],
@@ -160,8 +196,8 @@ async function importProducts(entityType) {
     const params = attrValue(row, ["Параметры"]);
     const packageVolume = attrValue(row, ["Объем"]);
     const brand = attrValue(row, ["Brand"]);
-    const oemParts = attrValue(row, ["OEM PARTS"]);
     const mannName = attrValue(row, ["Наименование по Mann", "Наиминование по Mann"]);
+    const oemParts = mergeCrossReferences(attrValue(row, ["OEM PARTS"]), mannName);
     const cell = attrValue(row, ["Ячейка"]);
     const imageHref = row.images?.rows?.[0]?.tiny?.href ?? row.images?.rows?.[0]?.miniature?.href ?? null;
     await prisma.localProduct.upsert({
@@ -182,12 +218,11 @@ async function importProducts(entityType) {
         packageVolume,
         brand,
         oemParts,
-        mannName,
         params,
         cell,
         imageHref,
         attributes: row.attributes ?? null,
-        searchText: searchText([row.name, row.article, row.code, sae, oem, acea, apiSpec, params, packageVolume, brand, oemParts, mannName, cell]),
+        searchText: searchText([row.name, row.article, row.code, sae, oem, acea, apiSpec, params, packageVolume, brand, oemParts, cell]),
         archived: Boolean(row.archived),
         raw: row,
         syncedAt: new Date(),
@@ -209,12 +244,11 @@ async function importProducts(entityType) {
         packageVolume,
         brand,
         oemParts,
-        mannName,
         params,
         cell,
         imageHref,
         attributes: row.attributes ?? null,
-        searchText: searchText([row.name, row.article, row.code, sae, oem, acea, apiSpec, params, packageVolume, brand, oemParts, mannName, cell]),
+        searchText: searchText([row.name, row.article, row.code, sae, oem, acea, apiSpec, params, packageVolume, brand, oemParts, cell]),
         archived: Boolean(row.archived),
         raw: row,
       },

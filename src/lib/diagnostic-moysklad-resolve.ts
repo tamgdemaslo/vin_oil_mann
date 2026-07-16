@@ -27,7 +27,6 @@ export async function findFirstProductBySearchHint(
         { searchText: { contains: q.toLowerCase(), mode: "insensitive" } },
         { oem: { contains: q, mode: "insensitive" } },
         { oemParts: { contains: q, mode: "insensitive" } },
-        { mannName: { contains: q, mode: "insensitive" } },
         { params: { contains: q, mode: "insensitive" } },
       ],
     },

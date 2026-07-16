@@ -4,6 +4,7 @@ import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
+import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import {
@@ -728,7 +729,6 @@ function buildProductSearchText(input: {
   ilsac?: string | null;
   aceaExtra?: string | null;
   oemAtf?: string | null;
-  mannName?: string | null;
   rosskoPartNumber?: string | null;
   rosskoBrand?: string | null;
   supplierAttribute?: string | null;
@@ -912,7 +912,6 @@ function mapProduct(product: ProductWithStock) {
       ilsac: product.ilsac,
       aceaExtra: product.aceaExtra,
       oemAtf: product.oemAtf,
-      mannName: product.mannName,
       rosskoPartNumber: product.rosskoPartNumber,
       rosskoBrand: product.rosskoBrand,
       rosskoMin: product.rosskoMin,
@@ -1000,7 +999,6 @@ function mapProductSearchRow(
       ilsac: product.ilsac,
       aceaExtra: product.aceaExtra,
       oemAtf: product.oemAtf,
-      mannName: product.mannName,
       rosskoPartNumber: product.rosskoPartNumber,
       rosskoBrand: product.rosskoBrand,
       rosskoMin: product.rosskoMin,
@@ -1509,7 +1507,6 @@ function productIdentityMatchesSearch(row: ProductSearchRow, query: SearchQuery)
     row.brand,
     row.rosskoBrand,
     row.rosskoPartNumber,
-    row.mannName,
     row.sae,
     row.packageVolume,
     row.supplierName,
@@ -1538,7 +1535,6 @@ function productSearchRank(row: ProductSearchRow, query: SearchQuery) {
     [row.rosskoBrand, 5],
     [row.name, 8],
     [row.rosskoPartNumber, 10],
-    [row.mannName, 12],
     [row.sae, 16],
     [row.packageVolume, 18],
     [row.apiSpec, 20],
@@ -2583,12 +2579,12 @@ export async function createLocalAdminProduct(body: ProductInput, actor?: Acting
   const ilsac = cleanText(body.ilsac);
   const aceaExtra = cleanText(body.aceaExtra);
   const oemAtf = cleanText(body.oemAtf);
-  const mannName = cleanText(body.mannName);
+  const legacyMannName = cleanText(body.mannName);
   const rosskoPartNumber = cleanText(body.rosskoPartNumber);
   const rosskoBrand = cleanText(body.rosskoBrand);
   const rosskoMin = cleanText(body.rosskoMin);
   const supplierAttribute = cleanText(body.supplierAttribute);
-  const oemParts = cleanText(body.oemParts);
+  const oemParts = mergeProductCrossReferences(cleanText(body.oemParts), [legacyMannName]);
   const cell = cleanText(body.cell);
   const mannCharacteristicName = cleanText(body.mannCharacteristicName);
   const marking = normalizeProductMarkingData(body, undefined, uomName, groupPath);
@@ -2631,7 +2627,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor?: Acting
       ilsac,
       aceaExtra,
       oemAtf,
-      mannName,
+      mannName: null,
       rosskoPartNumber,
       rosskoBrand,
       rosskoMin,
@@ -2668,7 +2664,6 @@ export async function createLocalAdminProduct(body: ProductInput, actor?: Acting
         ilsac,
         aceaExtra,
         oemAtf,
-        mannName,
         rosskoPartNumber,
         rosskoBrand,
         rosskoMin,
@@ -2746,14 +2741,15 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
   const ilsac = body.ilsac === undefined ? current.ilsac : cleanText(body.ilsac);
   const aceaExtra = body.aceaExtra === undefined ? current.aceaExtra : cleanText(body.aceaExtra);
   const oemAtf = body.oemAtf === undefined ? current.oemAtf : cleanText(body.oemAtf);
-  const mannName = body.mannName === undefined ? current.mannName : cleanText(body.mannName);
+  const legacyMannName = body.mannName === undefined ? current.mannName : cleanText(body.mannName);
   const rosskoPartNumber =
     body.rosskoPartNumber === undefined ? current.rosskoPartNumber : cleanText(body.rosskoPartNumber);
   const rosskoBrand = body.rosskoBrand === undefined ? current.rosskoBrand : cleanText(body.rosskoBrand);
   const rosskoMin = body.rosskoMin === undefined ? current.rosskoMin : cleanText(body.rosskoMin);
   const supplierAttribute =
     body.supplierAttribute === undefined ? current.supplierAttribute : cleanText(body.supplierAttribute);
-  const oemParts = body.oemParts === undefined ? current.oemParts : cleanText(body.oemParts);
+  const oemPartsBase = body.oemParts === undefined ? current.oemParts : cleanText(body.oemParts);
+  const oemParts = mergeProductCrossReferences(oemPartsBase, [legacyMannName]);
   const cell = body.cell === undefined ? current.cell : cleanText(body.cell);
   const mannCharacteristicName =
     body.mannCharacteristicName === undefined ? current.mannCharacteristicName : cleanText(body.mannCharacteristicName);
@@ -2800,7 +2796,6 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
       ilsac,
       aceaExtra,
       oemAtf,
-      mannName,
       rosskoPartNumber,
       rosskoBrand,
       rosskoMin,
@@ -2838,7 +2833,6 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
         ilsac,
         aceaExtra,
         oemAtf,
-        mannName,
         rosskoPartNumber,
         rosskoBrand,
         rosskoMin,

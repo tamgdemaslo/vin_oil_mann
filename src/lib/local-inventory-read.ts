@@ -8,7 +8,6 @@ type MoySkladMeta = {
 };
 
 const OEM_ATTR_ID = "d1aad1ea-14e1-11f1-0a80-0eb200223523";
-const MANN_ATTR_ID = "ca6f792f-4451-11ee-0a80-0dba0047437a";
 const PARAMS_ATTR_ID = "7944ef04-f831-11e5-7a69-971500188b19";
 const CELL_ATTR_ID = "7ad15eda-204c-11f1-0a80-19f100217481";
 
@@ -193,7 +192,7 @@ function productMatchesSearchFields(
 ): boolean {
   const search = params.search?.trim();
   const oem = params.oem?.trim();
-  const mannName = params.mannName?.trim();
+  const legacyMannName = params.mannName?.trim();
   const paramsValue = params.params?.trim();
 
   if (search && !textMatchesQuery([productIdentityText(product), product.searchText].join(" "), search)) return false;
@@ -202,8 +201,8 @@ function productMatchesSearchFields(
     !textIncludesTerm([product.oem, product.oemParts, attributeText(product.attributes, OEM_ATTR_ID, ["oem parts", "oem"]), product.searchText].join(" "), oem)
   ) return false;
   if (
-    mannName &&
-    !textIncludesTerm([product.mannName, attributeText(product.attributes, MANN_ATTR_ID, ["наименование по mann", "mann"]), product.searchText].join(" "), mannName)
+    legacyMannName &&
+    !textIncludesTerm([product.oem, product.oemParts, attributeText(product.attributes, OEM_ATTR_ID, ["oem parts", "oem"]), product.searchText].join(" "), legacyMannName)
   ) {
     return false;
   }
@@ -256,15 +255,16 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
   const terms = buildTerms(params).slice(0, 5);
   const search = params.search?.trim() ?? "";
   const oem = params.oem?.trim() ?? "";
-  const mannName = params.mannName?.trim() ?? "";
+  const legacyMannName = params.mannName?.trim() ?? "";
   const paramsValue = params.params?.trim() ?? "";
   const entityType = params.entityType?.trim() ?? "";
   const searchTokens = splitSearchTokens(search).slice(0, 6);
   const storeName = params.storeName?.trim() ?? "";
   const storeMoyskladId = params.storeId?.trim() ?? "";
-  const [normalizedSearchIds, normalizedOemIds] = await Promise.all([
+  const [normalizedSearchIds, normalizedOemIds, normalizedLegacyMannIds] = await Promise.all([
     search ? findNormalizedProductIds([search]) : Promise.resolve([]),
     oem ? findNormalizedProductIds([oem]) : Promise.resolve([]),
+    legacyMannName ? findNormalizedProductIds([legacyMannName]) : Promise.resolve([]),
   ]);
   const andFilters = [];
   const tokenSearchFilter = (token: string) => {
@@ -315,11 +315,13 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
       ],
     });
   }
-  if (mannName) {
+  if (legacyMannName) {
     andFilters.push({
       OR: [
-        { mannName: { contains: mannName, mode: "insensitive" as const } },
-        { searchText: { contains: mannName.toLowerCase(), mode: "insensitive" as const } },
+        { oem: { contains: legacyMannName, mode: "insensitive" as const } },
+        { oemParts: { contains: legacyMannName, mode: "insensitive" as const } },
+        { searchText: { contains: legacyMannName.toLowerCase(), mode: "insensitive" as const } },
+        ...(normalizedLegacyMannIds.length ? [{ id: { in: normalizedLegacyMannIds } }] : []),
       ],
     });
   }

@@ -742,7 +742,6 @@ export default function ShipmentDetailPage() {
   const [vehicleOverridePromptVin, setVehicleOverridePromptVin] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
-  const [productMannName, setProductMannName] = useState("");
   const [productParams, setProductParams] = useState("");
   const [productOptions, setProductOptions] = useState<
     {
@@ -997,7 +996,7 @@ export default function ShipmentDetailPage() {
   ]);
 
   useEffect(() => {
-    const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+    const hasQuery = [productSearch.trim(), productOem.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
       return;
@@ -1007,7 +1006,6 @@ export default function ShipmentDetailPage() {
       const params = new URLSearchParams();
       if (productSearch.trim()) params.set("search", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
-      if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
       if (data?.header.storeId) params.set("storeId", data.header.storeId);
       if (data?.header.storeName) params.set("storeName", data.header.storeName);
@@ -1020,7 +1018,7 @@ export default function ShipmentDetailPage() {
         .finally(() => setProductSearchLoading(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [productSearch, productOem, productMannName, productParams, data?.header.storeId, data?.header.storeName]);
+  }, [productSearch, productOem, productParams, data?.header.storeId, data?.header.storeName]);
 
   const addFromVinLookup = useCallback((items: VinLookupItem[], desiredByProductId?: Record<string, number>) => {
     setPositions((prev) => {
@@ -1432,7 +1430,6 @@ export default function ShipmentDetailPage() {
     ]);
     setProductSearch("");
     setProductOem("");
-    setProductMannName("");
     setProductParams("");
     setProductOptions([]);
   };
@@ -1932,13 +1929,7 @@ export default function ShipmentDetailPage() {
                       type="text"
                       value={productOem}
                       onChange={(e) => setProductOem(e.target.value)}
-                      placeholder="OEM"
-                    />
-                    <input
-                      type="text"
-                      value={productMannName}
-                      onChange={(e) => setProductMannName(e.target.value)}
-                      placeholder="Mann"
+                      placeholder="OEM, MANN/POMAN, аналоги"
                     />
                     <input
                       type="text"
@@ -1947,7 +1938,7 @@ export default function ShipmentDetailPage() {
                       placeholder="Параметры"
                     />
                   </div>
-                  {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
+                  {(productSearch.trim() || productOem.trim() || productParams.trim()) && (
                     <div className="eco-shipment-detail-product-results">
                       {productSearchLoading ? (
                         <div className="eco-shipment-detail-empty is-compact">Ищем товары...</div>
@@ -3217,24 +3208,14 @@ export default function ShipmentDetailPage() {
               className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
             />
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label className="block text-xs text-zinc-500">OEM PARTS</label>
+              <label className="block text-xs text-zinc-500">OEM Parts / кросс-номера / аналоги</label>
               <input
                 type="text"
                 value={productOem}
                 onChange={(e) => setProductOem(e.target.value)}
-                placeholder="Фильтр по OEM"
-                className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-500">Наименование по Mann</label>
-              <input
-                type="text"
-                value={productMannName}
-                onChange={(e) => setProductMannName(e.target.value)}
-                placeholder="Фильтр по Mann"
+                placeholder="OEM, MANN/POMAN, аналоги"
                 className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
               />
             </div>
@@ -3250,7 +3231,7 @@ export default function ShipmentDetailPage() {
             </div>
           </div>
         </div>
-        {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
+        {(productSearch.trim() || productOem.trim() || productParams.trim()) && (
             <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
               {!productSearchLoading && productOptions.length > 0 && (
                 <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
@@ -3287,7 +3268,6 @@ export default function ShipmentDetailPage() {
                         ]);
                         setProductSearch("");
                         setProductOem("");
-                        setProductMannName("");
                         setProductParams("");
                         setProductOptions([]);
                       }}

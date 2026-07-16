@@ -406,6 +406,7 @@ const searchImpactFields = new Set<keyof ProductForm>([
   "groupPath",
   "barcodeEan13",
   "oem",
+  "oemParts",
 ]);
 
 const shipmentImpactFields = new Set<keyof ProductForm>([
@@ -464,7 +465,7 @@ const productEditorSections: Array<{ id: ProductEditorSectionId; label: string; 
   {
     id: "oil",
     label: "Характеристики",
-    aliases: ["характеристики", "масло", "фильтр", "жидкость", "sae", "api", "acea", "ilsac", "atf", "объем", "фасовка", "oem", "poman", "кроссы"],
+    aliases: ["характеристики", "масло", "фильтр", "жидкость", "sae", "api", "acea", "ilsac", "atf", "объем", "фасовка", "oem", "кроссы", "аналоги"],
   },
   {
     id: "extra",
@@ -938,9 +939,8 @@ const oilCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> 
 ];
 
 const filterCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
-  { key: "mannName", label: "POMAN / MANN" },
   { key: "oem", label: "OEM" },
-  { key: "oemParts", label: "OEM Parts" },
+  { key: "oemParts", label: "OEM Parts / кросс-номера / аналоги" },
   { key: "mannCharacteristicName", label: "Применимость / примечание" },
 ];
 
@@ -1367,24 +1367,8 @@ export default function ProductsClient() {
     [filters]
   );
   const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0;
-  const searchAndFiltersCount = activeFiltersCount + (search.trim() ? 1 : 0);
   const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
   const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
-  const visibleStockTotal = useMemo(
-    () => rows.reduce((sum, row) => sum + Math.max(0, Number(row.totalQuantity) || 0), 0),
-    [rows]
-  );
-  const visibleMarkingProblemCount = useMemo(
-    () => rows.reduce((count, row) => count + (productHasMarkingProblem({
-      markingEnabled: row.markingEnabled,
-      markingMode: row.markingMode,
-      markingStatus: row.markingStatus,
-      groupPath: row.groupPath,
-      uomName: row.uomName,
-      settings: row.markingSettings,
-    }) ? 1 : 0), 0),
-    [rows]
-  );
   const filtersLayoutClass = [
     "eco-inventory-layout",
     filtersCollapsed ? "is-filter-collapsed" : "",
@@ -1454,8 +1438,7 @@ export default function ProductsClient() {
     } else if (groupKind === "filter") {
       items.push(
         { label: "Артикул", ok: Boolean(form.article.trim()) },
-        { label: "OEM Parts", ok: Boolean(form.oemParts.trim() || form.oem.trim()) },
-        { label: "POMAN", ok: Boolean(form.mannName.trim()) },
+        { label: "OEM Parts / аналоги", ok: Boolean(form.oemParts.trim() || form.oem.trim()) },
         { label: "Ячейка", ok: Boolean(form.cell.trim()) }
       );
     }
@@ -2470,7 +2453,6 @@ export default function ProductsClient() {
       category: form.groupPath.trim(),
       productName: form.name.trim(),
       supplierCode: form.rosskoPartNumber.trim(),
-      pomanName: form.mannName.trim(),
     };
   }
 
@@ -2569,7 +2551,6 @@ export default function ProductsClient() {
         ilsac: form.ilsac.trim() || undefined,
         aceaExtra: form.aceaExtra.trim() || undefined,
         oemAtf: form.oemAtf.trim() || undefined,
-        mannName: form.mannName.trim() || undefined,
         rosskoPartNumber: form.rosskoPartNumber.trim() || undefined,
         rosskoBrand: form.rosskoBrand.trim() || undefined,
         rosskoMin: form.rosskoMin.trim() || undefined,
@@ -3121,7 +3102,7 @@ export default function ProductsClient() {
 
   function clearHiddenCharacteristics() {
     if (groupKind === "oil") {
-      updateForm({ mannName: "", oem: "", oemParts: "", mannCharacteristicName: "" });
+      updateForm({ oem: "", oemParts: "", mannCharacteristicName: "" });
     } else if (groupKind === "filter") {
       updateForm({
         sae: "",
@@ -3145,7 +3126,6 @@ export default function ProductsClient() {
         packageVolume: "",
         volume: "",
         oemAtf: "",
-        mannName: "",
         oem: "",
         oemParts: "",
         mannCharacteristicName: "",
@@ -3233,7 +3213,7 @@ export default function ProductsClient() {
           <div className="product-editor-section-head">
             <div>
               <h3>Применимость и аналоги</h3>
-              <p>OEM Parts, POMAN, кросс-номера и применимость для фильтров</p>
+              <p>OEM, MANN/POMAN, аналоги и кросс-номера в одном поле поиска</p>
             </div>
             <button
               type="button"
@@ -3247,18 +3227,18 @@ export default function ProductsClient() {
           </div>
           {renderHiddenCharacteristicsWarning()}
           <div className="product-editor-grid">
-            {renderField("mannName", "POMAN / Наименование POMAN", { full: true, placeholder: "POMAN / MANN reference" })}
             {renderField("oem", "OEM", {
               type: "textarea",
               rows: 3,
               full: true,
               placeholder: "Разделяйте значения пробелом, запятой или новой строкой",
             })}
-            {renderField("oemParts", "OEM Parts / кросс-номера", {
+            {renderField("oemParts", "OEM Parts / кросс-номера / аналоги", {
               type: "textarea",
               rows: 4,
               full: true,
-              placeholder: "Аналоги, кроссы, применимость",
+              placeholder: "Разделяйте значения запятой, точкой с запятой или новой строкой",
+              hint: "Сюда добавляются OEM, MANN/POMAN, аналоги и кросс-номера, по которым товар должен находиться в поиске.",
             })}
             {renderField("mannCharacteristicName", "Применимость / примечание", {
               type: "textarea",
@@ -4121,20 +4101,10 @@ export default function ProductsClient() {
       <section className="eco-products-shell">
         <div className="eco-products-head">
           <div className="eco-products-head-copy">
-            <div className="eco-page-crumbs eco-products-crumbs">
-              <span>Главная</span>
-              <span className="sep">/</span>
-              <span>Склад</span>
-              <span className="sep">/</span>
-              <span className="cur">Товары</span>
-            </div>
             <div className="eco-title-row eco-products-title-row">
               <h1 className="eco-page-title">Товары</h1>
-              <span className="eco-products-count-badge">{visibleProductsLabel} из {totalProductsLabel}</span>
+              <span className="eco-products-count-badge">{visibleProductsLabel} / {totalProductsLabel}</span>
             </div>
-            <p className="eco-page-subtitle eco-products-subtitle">
-              Карточки, остатки, цены, ячейки и маркировка в одном рабочем списке.
-            </p>
           </div>
           <div className="eco-products-actions">
             <div className="eco-product-export-menu" ref={exportMenuRef}>
@@ -4173,43 +4143,6 @@ export default function ProductsClient() {
               Новый товар
             </button>
           </div>
-        </div>
-
-        <div className="eco-products-summary" aria-label="Сводка каталога товаров">
-          <div className="eco-products-summary__item is-primary">
-            <span>В выборке</span>
-            <strong>{visibleProductsLabel}</strong>
-            <em>из {totalProductsLabel}</em>
-          </div>
-          <div className="eco-products-summary__item">
-            <span>Видимый остаток</span>
-            <strong>{formatQty(visibleStockTotal)}</strong>
-            <em>по загруженным строкам</em>
-          </div>
-          <div className="eco-products-summary__item">
-            <span>Выбрано</span>
-            <strong>{selectedProductIds.length.toLocaleString("ru-RU")}</strong>
-            <em>для экспорта</em>
-          </div>
-          <div className={`eco-products-summary__item ${visibleMarkingProblemCount > 0 ? "is-warning" : ""}`}>
-            <span>Маркировка</span>
-            <strong>{visibleMarkingProblemCount.toLocaleString("ru-RU")}</strong>
-            <em>проблем в выборке</em>
-          </div>
-          <button
-            type="button"
-            className="eco-products-summary__button"
-            onClick={() => {
-              if (typeof window !== "undefined" && window.matchMedia("(max-width: 1180px)").matches) {
-                setFiltersDrawerOpen(true);
-              } else {
-                setFiltersCollapsed(false);
-              }
-            }}
-          >
-            <SlidersHorizontal aria-hidden className="eco-icon" />
-            {searchAndFiltersCount > 0 ? `${searchAndFiltersCount} активно` : "Фильтры"}
-          </button>
         </div>
 
         <div className={filtersLayoutClass}>
@@ -4325,22 +4258,27 @@ export default function ProductsClient() {
               {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
             </button>
 
-        <div className="eco-products-strip">
-          <div className="eco-products-chips">
-            {activeFilterChips().map((chip) => (
-              <button key={chip.key} type="button" className="eco-pill is-active eco-filter-chip" onClick={chip.onRemove}>
-                <span>{chip.label}</span>
-                <X aria-hidden className="eco-icon" />
-              </button>
-            ))}
-            {hasActiveSearchOrFilters && (
-              <button type="button" className="eco-pill is-dashed" onClick={resetAll}>
-                × Сбросить всё
-              </button>
-            )}
+        {(hasActiveSearchOrFilters || selectedProductIds.length > 0) ? (
+          <div className="eco-products-strip">
+            <div className="eco-products-chips">
+              {activeFilterChips().map((chip) => (
+                <button key={chip.key} type="button" className="eco-pill is-active eco-filter-chip" onClick={chip.onRemove}>
+                  <span>{chip.label}</span>
+                  <X aria-hidden className="eco-icon" />
+                </button>
+              ))}
+              {hasActiveSearchOrFilters && (
+                <button type="button" className="eco-pill is-dashed" onClick={resetAll}>
+                  × Сбросить всё
+                </button>
+              )}
+            </div>
+            <div className="eco-products-strip-meta">
+              {selectedProductIds.length > 0 ? <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span> : null}
+              <span>{visibleProductsLabel} из {totalProductsLabel}</span>
+            </div>
           </div>
-          <span className="l-meta">{visibleProductsLabel} из {totalProductsLabel} артикулов</span>
-        </div>
+        ) : null}
 
         {((error && !(error === "Не удалось выполнить поиск" && rows.length === 0)) || info) && (
           <div className={`eco-products-notice ${error ? "is-error" : "is-success"}`}>
@@ -4412,8 +4350,10 @@ export default function ProductsClient() {
                   </td>
                 </tr>
               )}
-              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => (
-                <tr key={row.id}>
+              {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => {
+                const markingBadge = productMarkingListBadge(row);
+                return (
+                <tr key={row.id} className={row.archived ? "is-archived" : ""}>
                   <td>
                     <input
                       type="checkbox"
@@ -4426,20 +4366,22 @@ export default function ProductsClient() {
                     <div className="eco-product-title">{row.name}</div>
                     <div className="eco-product-meta">
                       {usefulProductMetaLines(row).map((line) => (
-                        <span key={line}>· {line}</span>
+                        <span key={line}>{line}</span>
                       ))}
-                      <span
-                        className={`eco-product-marking-badge is-${productMarkingListBadge(row).tone}`}
-                        title={productMarkingListBadge(row).title}
-                      >
-                        {productMarkingListBadge(row).label}
-                      </span>
+                      {markingBadge.tone !== "muted" ? (
+                        <span
+                          className={`eco-product-marking-badge is-${markingBadge.tone}`}
+                          title={markingBadge.title}
+                        >
+                          {markingBadge.label}
+                        </span>
+                      ) : null}
                       {row.archived ? <span className="eco-product-archive-badge">В архиве</span> : null}
                     </div>
                   </td>
                   <td className="eco-product-cell">{row.cell || "—"}</td>
                   <td className="eco-product-number">
-                    <span className="eco-stock-badge">{formatQty(row.totalQuantity)}</span>
+                    <span className={`eco-stock-badge ${row.totalQuantity > 0 ? "is-positive" : "is-empty"}`}>{formatQty(row.totalQuantity)}</span>
                   </td>
                   <td className="eco-product-number">
                     {formatQty(row.totalAvailable)}
@@ -4467,7 +4409,8 @@ export default function ProductsClient() {
                     {renderRowActionsMenu(row)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

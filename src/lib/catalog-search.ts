@@ -316,7 +316,6 @@ export function buildCatalogSearchText(input: {
   ilsac?: string | null;
   aceaExtra?: string | null;
   oemAtf?: string | null;
-  mannName?: string | null;
   rosskoPartNumber?: string | null;
   rosskoBrand?: string | null;
   rosskoMin?: string | null;
@@ -356,7 +355,6 @@ export function buildCatalogSearchText(input: {
     input.description,
     input.supplierName,
     input.tnvedCode,
-    input.mannName,
     input.rosskoMin,
     input.supplierAttribute,
     input.cell,
@@ -489,7 +487,7 @@ function fieldsForProduct(product: CatalogProduct): SearchField[] {
     { key: "article", label: "Артикул", value: product.article ?? "", weight: 90, exact: true, identifier: true },
     { key: "externalCode", label: "Внешний код", value: product.externalCode ?? "", weight: 88, exact: true, identifier: true },
     { key: "oem", label: "OEM", value: product.oem ?? "", weight: 90, exact: true, identifier: true },
-    { key: "oemParts", label: "Кросс-номера", value: product.oemParts ?? "", weight: 86, exact: true, identifier: true },
+    { key: "oemParts", label: "OEM Parts / кросс-номера / аналоги", value: product.oemParts ?? "", weight: 86, exact: true, identifier: true },
     { key: "rosskoPartNumber", label: "Код поставщика", value: product.rosskoPartNumber ?? "", weight: 84, exact: true, identifier: true },
     { key: "name", label: "Название", value: product.name, weight: 80 },
     { key: "brand", label: "Бренд", value: product.brand ?? "", weight: 35 },
@@ -700,7 +698,7 @@ function strictNameOemMatchedFields(product: CatalogProduct, value: unknown): Ca
     matched.push({ field: "name", label: "Название", value: product.name, token: String(value ?? ""), match: "compact" });
   }
   if (compactIdentifier(product.oemParts).includes(term)) {
-    matched.push({ field: "oemParts", label: "OEM PARTS", value: product.oemParts ?? "", token: String(value ?? ""), match: "compact" });
+    matched.push({ field: "oemParts", label: "OEM Parts / кросс-номера / аналоги", value: product.oemParts ?? "", token: String(value ?? ""), match: "compact" });
   }
   return matched;
 }
@@ -1052,7 +1050,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       normalizedQuery,
       tokens,
       matchedOutsideFilters: Math.max(0, scored.length - filtered.length),
-      suggestions: !items.length && normalizedQuery ? [`Нет совпадений в названии или OEM PARTS: ${normalizedQuery}`] : [],
+      suggestions: !items.length && normalizedQuery ? [`Нет совпадений в названии или OEM Parts / кросс-номерах / аналогах: ${normalizedQuery}`] : [],
       meta: {
         total: filtered.length,
         hasMore: offset + limit < filtered.length,

@@ -1737,6 +1737,7 @@ model LocalProduct {
   ilsac                     String?
   aceaExtra                 String?   @map("acea_extra")
   oemAtf                    String?   @map("oem_atf") @db.Text
+  /// Deprecated manual POMAN/MANN card field. Values are migrated into oemParts and this field must not be used by UI/search.
   mannName                  String?   @map("mann_name")
   rosskoPartNumber          String?   @map("rossko_part_number")
   rosskoBrand               String?   @map("rossko_brand")
@@ -1771,6 +1772,7 @@ model LocalProduct {
   photos                     LocalProductPhoto[]
   markingAuditLogs           ProductMarkingAuditLog[]
   mannLinks                  ProductMannLink[]
+  mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
 
   @@index([entityType])
   @@index([name])
@@ -1811,6 +1813,21 @@ model ProductMannLink {
   @@index([productId])
   @@index([linkType])
   @@map("product_mann_links")
+}
+
+model ProductMannPomanMigrationAudit {
+  id            String       @id @default(cuid())
+  migrationKey  String       @map("migration_key")
+  productId     String       @map("product_id")
+  product       LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldMannName   String?      @map("old_mann_name") @db.Text
+  oldOemParts   String?      @map("old_oem_parts") @db.Text
+  newOemParts   String?      @map("new_oem_parts") @db.Text
+  migratedAt    DateTime     @default(now()) @map("migrated_at")
+
+  @@unique([migrationKey, productId])
+  @@index([productId])
+  @@map("product_mann_poman_migration_audit")
 }
 
 model MannPdfImportBatch {

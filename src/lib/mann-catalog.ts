@@ -2,13 +2,15 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
-const MANN_EXPECTED_COUNTS = {
+const LEGACY_MANN_EXPECTED_COUNTS = {
   applicationRows: 24502,
   filterRows: 37772,
   uniqueMakes: 133,
   uniqueModels: 1618,
   uniqueMannArticles: 2050,
 };
+
+type MannExpectedCounts = typeof LEGACY_MANN_EXPECTED_COUNTS;
 
 type CsvRow = Record<string, string>;
 
@@ -32,7 +34,7 @@ export type MannImportStats = {
   filterTypeCounts: Record<string, number>;
   applicationsSourceHash: string;
   filtersSourceHash: string;
-  expected?: Partial<typeof MANN_EXPECTED_COUNTS>;
+  expected?: Partial<MannExpectedCounts>;
   warnings: string[];
 };
 
@@ -254,21 +256,48 @@ function requiredColumns(rows: CsvRow[], required: string[]): string[] {
   return required.filter((key) => !(key in first));
 }
 
+function summaryObject(value: Prisma.InputJsonValue | typeof Prisma.JsonNull): Record<string, unknown> | null {
+  return value && value !== Prisma.JsonNull && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function expectedCountsFromSummary(summary: Prisma.InputJsonValue | typeof Prisma.JsonNull): MannExpectedCounts | null {
+  const counts = summaryObject(summary)?.counts;
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) return null;
+  const raw = counts as Record<string, unknown>;
+  const read = (snake: string, camel: keyof MannExpectedCounts): number | null => {
+    const value = Number(raw[snake] ?? raw[camel]);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const applicationRows = read("application_rows", "applicationRows");
+  const filterRows = read("filter_rows", "filterRows");
+  const uniqueMakes = read("unique_makes", "uniqueMakes");
+  const uniqueModels = read("unique_models", "uniqueModels");
+  const uniqueMannArticles = read("unique_mann_articles", "uniqueMannArticles");
+  if ([applicationRows, filterRows, uniqueMakes, uniqueModels, uniqueMannArticles].some((value) => value == null)) return null;
+  return { applicationRows: applicationRows!, filterRows: filterRows!, uniqueMakes: uniqueMakes!, uniqueModels: uniqueModels!, uniqueMannArticles: uniqueMannArticles! };
+}
+
+function summaryWarnings(summary: Prisma.InputJsonValue | typeof Prisma.JsonNull): string[] {
+  const warnings = summaryObject(summary)?.warnings;
+  return Array.isArray(warnings)
+    ? warnings.filter((warning): warning is string => typeof warning === "string" && Boolean(warning.trim())).map((warning) => warning.trim())
+    : [];
+}
+
 function warningFromExpected(stats: MannImportStats, summary: Prisma.InputJsonValue | typeof Prisma.JsonNull): string[] {
   const warnings: string[] = [];
-  const expected =
-    summary && summary !== Prisma.JsonNull && typeof summary === "object" && "counts" in summary
-      ? (summary as { counts?: Record<string, unknown> }).counts
-      : null;
+  const expected = expectedCountsFromSummary(summary) ?? LEGACY_MANN_EXPECTED_COUNTS;
   const filterCounts =
     summary && summary !== Prisma.JsonNull && typeof summary === "object" && "filter_type_counts" in summary
       ? (summary as { filter_type_counts?: Record<string, unknown> }).filter_type_counts
       : null;
-  const expectedFilterRows = Number(expected?.filter_rows ?? MANN_EXPECTED_COUNTS.filterRows);
-  const expectedApplicationRows = Number(expected?.application_rows ?? MANN_EXPECTED_COUNTS.applicationRows);
-  const expectedMakes = Number(expected?.unique_makes ?? MANN_EXPECTED_COUNTS.uniqueMakes);
-  const expectedModels = Number(expected?.unique_models ?? MANN_EXPECTED_COUNTS.uniqueModels);
-  const expectedArticles = Number(expected?.unique_mann_articles ?? MANN_EXPECTED_COUNTS.uniqueMannArticles);
+  const expectedFilterRows = expected.filterRows;
+  const expectedApplicationRows = expected.applicationRows;
+  const expectedMakes = expected.uniqueMakes;
+  const expectedModels = expected.uniqueModels;
+  const expectedArticles = expected.uniqueMannArticles;
 
   if (stats.filterRows !== expectedFilterRows) warnings.push(`Ожидалось ${expectedFilterRows} строк фильтров, подготовлено ${stats.filterRows}.`);
   if (stats.applicationRows !== expectedApplicationRows) warnings.push(`Ожидалось ${expectedApplicationRows} строк применяемости, подготовлено ${stats.applicationRows}.`);
@@ -387,10 +416,10 @@ function prepareMannImport(input: MannImportInput): ImportPrepared {
     filterTypeCounts,
     applicationsSourceHash,
     filtersSourceHash,
-    expected: MANN_EXPECTED_COUNTS,
+    expected: expectedCountsFromSummary(summary) ?? LEGACY_MANN_EXPECTED_COUNTS,
     warnings: [],
   };
-  stats.warnings = warningFromExpected(stats, summary);
+  stats.warnings = [...summaryWarnings(summary), ...warningFromExpected(stats, summary)];
 
   return { stats, summary, rawRows, filterRows };
 }
@@ -410,6 +439,9 @@ export async function dryRunMannImport(input: MannImportInput): Promise<MannImpo
 export async function importMannCatalog(input: MannImportInput): Promise<MannImportStats & { batchId: string }> {
   const prepared = prepareMannImport(input);
   if (input.dryRun) return { ...prepared.stats, batchId: "" };
+  if (prepared.stats.warnings.length > 0) {
+    throw new Error(`Каталог не заменён: контрольная проверка не пройдена. ${prepared.stats.warnings.join(" ")}`);
+  }
   const batch = await prisma.mannPdfImportBatch.create({
     data: {
       status: "importing",
@@ -437,7 +469,7 @@ export async function importMannCatalog(input: MannImportInput): Promise<MannImp
       await tx.mannPdfImportBatch.update({
         where: { id: batch.id },
         data: {
-          status: prepared.stats.warnings.length > 0 ? "imported_with_warnings" : "imported",
+          status: "imported",
           statsJson: prepared.stats as unknown as Prisma.InputJsonValue,
           errorsJson: prepared.stats.warnings as unknown as Prisma.InputJsonValue,
           completedAt: new Date(),
@@ -483,9 +515,10 @@ export async function getMannCatalogStats() {
       prisma.mannPdfImportBatch.findFirst({ orderBy: { importedAt: "desc" } }),
     ]);
     const row = counts[0];
+    const expected = expectedCountsFromSummary(latestBatch?.summaryJson ?? Prisma.JsonNull) ?? LEGACY_MANN_EXPECTED_COUNTS;
     return {
       ok: true,
-      expected: MANN_EXPECTED_COUNTS,
+      expected,
       counts: {
         filterRows: asCount(row?.filter_rows),
         applicationRows: asCount(row?.application_rows),
@@ -498,7 +531,7 @@ export async function getMannCatalogStats() {
   } catch (error) {
     return {
       ok: false,
-      expected: MANN_EXPECTED_COUNTS,
+      expected: LEGACY_MANN_EXPECTED_COUNTS,
       counts: { filterRows: 0, applicationRows: 0, uniqueMakes: 0, uniqueModels: 0, uniqueMannArticles: 0 },
       latestBatch: null,
       error: error instanceof Error ? error.message : "MANN-таблицы пока недоступны",
@@ -605,7 +638,16 @@ export async function listMannFilters(params: { make?: string | null; model?: st
       MIN(pdf_page) AS "pdfPage",
       MIN(catalog_page) AS "catalogPage"
     FROM mann_filter_applications
-    WHERE vehicle_variant_key = ${params.variantId}
+    WHERE (
+        vehicle_variant_key = ${params.variantId}
+        OR (
+          vehicle_text = 'All models'
+          AND effective_vehicle_text = 'All models'
+          AND NULLIF(BTRIM(COALESCE(engine_code, '')), '') IS NULL
+          AND NULLIF(BTRIM(COALESCE(kw, '')), '') IS NULL
+          AND NULLIF(BTRIM(COALESCE(hp, '')), '') IS NULL
+        )
+      )
       ${makeSql}
       ${modelSql}
     GROUP BY filter_type, filter_subtype, mann_article_normalized

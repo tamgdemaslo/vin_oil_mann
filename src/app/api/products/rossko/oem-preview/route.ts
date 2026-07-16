@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   const query = buildQuery(body);
-  if (!query) return NextResponse.json({ error: "Заполните артикул, код, OEM или POMAN для поиска в ROSSKO" }, { status: 400 });
+  if (!query) return NextResponse.json({ error: "Заполните артикул, код или OEM Parts для поиска в ROSSKO" }, { status: 400 });
 
   try {
     const cfg = rosskoConfig();

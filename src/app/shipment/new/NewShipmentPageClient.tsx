@@ -817,7 +817,7 @@ function MannCombobox({
   const selected = options.find((option) => option.value === value) ?? null;
   const shownQuery = open ? query : selected?.label ?? "";
   const visibleOptions = useMemo(
-    () => options.filter((option) => mannOptionMatchesQuery(option, query)).slice(0, 80),
+    () => options.filter((option) => mannOptionMatchesQuery(option, query)),
     [options, query]
   );
   const activeIndex = visibleOptions.length > 0 ? Math.min(highlighted, visibleOptions.length - 1) : 0;
@@ -920,21 +920,28 @@ function MannCombobox({
           {loading ? (
             <div className="eco-mann-combobox-state">Ищем...</div>
           ) : visibleOptions.length > 0 ? (
-            visibleOptions.map((option, index) => (
-              <button
-                id={`${menuId}-option-${index}`}
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={activeIndex === index}
-                className={activeIndex === index ? "is-highlighted" : undefined}
-                onMouseEnter={() => setHighlighted(index)}
-                onClick={() => choose(option)}
-              >
-                <strong>{option.label}</strong>
-                {option.meta ? <span>{option.meta}</span> : null}
-              </button>
-            ))
+            <>
+              <div className="eco-mann-combobox-count" aria-live="polite">
+                {visibleOptions.length === options.length
+                  ? `Всего вариантов: ${options.length}`
+                  : `Найдено: ${visibleOptions.length} из ${options.length}`}
+              </div>
+              {visibleOptions.map((option, index) => (
+                <button
+                  id={`${menuId}-option-${index}`}
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={activeIndex === index}
+                  className={activeIndex === index ? "is-highlighted" : undefined}
+                  onMouseEnter={() => setHighlighted(index)}
+                  onClick={() => choose(option)}
+                >
+                  <strong>{option.label}</strong>
+                  {option.meta ? <span>{option.meta}</span> : null}
+                </button>
+              ))}
+            </>
           ) : (
             <div className="eco-mann-combobox-state">
               <strong>Ничего не найдено</strong>
@@ -1094,7 +1101,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [cellByAssortment, setCellByAssortment] = useState<Record<string, number | string>>({});
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
-  const [productMannName, setProductMannName] = useState("");
   const [productParams, setProductParams] = useState("");
   const [productSearchMode, setProductSearchMode] = useState<ProductSearchMode>("all");
   const [productOptions, setProductOptions] = useState<Product[]>([]);
@@ -1676,7 +1682,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const manualMannArticle = manualMannFilter ? productSearch.trim() || manualMannFilter.mannArticle : "";
     const hasQuery = manualMannFilter
       ? Boolean(manualMannArticle.trim())
-      : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+      : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
       setProductSearchError(null);
@@ -1755,7 +1761,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       const params = new URLSearchParams();
       if (productSearch.trim()) params.set("q", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
-      if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
       params.set("context", "shipment");
       if (productSearchMode !== "all") {
@@ -1808,7 +1813,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [manualMannFilter, productSearch, productOem, productMannName, productParams, productSearchMode, productSearchRetrySeed, selectedStore?.id, selectedStore?.name]);
+  }, [manualMannFilter, productSearch, productOem, productParams, productSearchMode, productSearchRetrySeed, selectedStore?.id, selectedStore?.name]);
 
   useEffect(() => {
     if (!authChecked || positionAddMode === "vin" || mannMakes.length > 0) return;
@@ -2115,7 +2120,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setManualMannFilter(filter);
     setProductSearchMode("product");
     setProductOem("");
-    setProductMannName("");
     setProductParams("");
     setProductSearch(filter.mannArticle);
     productResultsDismissedRef.current = false;
@@ -2228,7 +2232,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setPositionAddMode("catalog");
     setProductSearchMode("all");
     setProductOem("");
-    setProductMannName("");
     setProductParams("");
     setOneOffServiceOpen(true);
     setOneOffServiceName((current) => current || productSearch.trim());
@@ -2289,7 +2292,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const handleProductSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     const hasQuery =
       productSearchMode === "service" ||
-      [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+      [productSearch.trim(), productOem.trim(), productParams.trim()].some(Boolean);
 
     if (event.key === "Escape") {
       if (productResultsOpen) {
@@ -3118,7 +3121,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   };
   const hasProductSearchQuery = manualMannFilter
     ? Boolean((productSearch.trim() || manualMannFilter.mannArticle).trim())
-    : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+    : productSearchMode === "service" || [productSearch.trim(), productOem.trim(), productParams.trim()].some(Boolean);
   const showProductResults = productResultsOpen && hasProductSearchQuery;
   const addProductFromSearch = manualMannFilter ? addManualMannProductToPosition : addPosition;
   const productSearchEntityLabel =
@@ -3993,7 +3996,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             </div>
             <div>
               <label className="eco-field">
-                <span>OEM PARTS</span>
+                <span>OEM Parts / кросс-номера / аналоги</span>
               <input
                 type="text"
                 value={productOem}
@@ -4003,24 +4006,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   setProductResultsOpen(true);
                   setHighlightedProductIndex(0);
                 }}
-                placeholder="Фильтр по OEM"
-                className="eco-input"
-              />
-              </label>
-            </div>
-            <div>
-              <label className="eco-field">
-                <span>Наименование по Mann</span>
-              <input
-                type="text"
-                value={productMannName}
-                onChange={(e) => {
-                  productResultsDismissedRef.current = false;
-                  setProductMannName(e.target.value);
-                  setProductResultsOpen(true);
-                  setHighlightedProductIndex(0);
-                }}
-                placeholder="Фильтр по Mann"
+                placeholder="OEM, MANN/POMAN, аналоги"
                 className="eco-input"
               />
               </label>
@@ -4314,6 +4300,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     filter.kw ? `${filter.kw} kW` : "",
                     filter.hp ? `${filter.hp} hp` : "",
                   ].filter(Boolean).join(" · ");
+                  const filterApplicability = filter.vehicleText === "All models"
+                    ? "Для всех двигателей этой модели"
+                    : filterMeta;
                   const stockLine = availability?.label ?? `MANN ${filter.mannArticle} не найден в локальном каталоге`;
                   const choiceMatches = match?.localMatches ?? [];
                   const choiceOpen = mannExpandedChoiceArticle === filter.mannArticleNormalized && status === "multiple_matches" && choiceMatches.length > 0;
@@ -4334,7 +4323,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                             {filter.filterSubtype || filter.filterNote ? (
                               <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span>
                             ) : null}
-                            {filterMeta ? <em>{filterMeta}</em> : null}
+                            {filterApplicability ? <em>{filterApplicability}</em> : null}
                             {filter.condition ? <em>Условие MANN: {filter.condition}</em> : null}
                           </div>
                         </div>

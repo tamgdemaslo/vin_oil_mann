@@ -18,6 +18,42 @@ function clean(value) {
   return text || null;
 }
 
+function crossReferenceKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "")
+    .replace(/[^0-9a-zа-яё]/gi, "");
+}
+
+function splitCrossReferences(value) {
+  const result = [];
+  for (const chunk of String(value ?? "").split(/[,;\r\n\t]+/g)) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const spacedArticle = words.length > 1 && /^[a-zа-яё]$/i.test(words[0]) && words.slice(1).every((word) => /^[\d./-]+$/.test(word));
+    const splitSpaces = words.length > 1 && !spacedArticle && words.every((word) => crossReferenceKey(word).length >= 3);
+    result.push(...(splitSpaces ? words : [trimmed]));
+  }
+  return result;
+}
+
+function mergeCrossReferences(...values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    for (const item of splitCrossReferences(value)) {
+      const display = item.replace(/[\s-]+/g, "").toUpperCase();
+      const key = crossReferenceKey(display);
+      if (key.length < 2 || seen.has(key)) continue;
+      seen.add(key);
+      result.push(display);
+    }
+  }
+  return result.length ? `${result.join("; ")};` : null;
+}
+
 function parseNumber(value) {
   const text = clean(value);
   if (!text) return null;
@@ -75,6 +111,7 @@ function counterpartyCompanyType(label) {
 }
 
 function productUpdateData(row) {
+  const mannPoman = clean(row["Наиминование по Mann"]) ?? clean(row["Наименование по Mann"]);
   return {
     groupPath: clean(row["Группы"]),
     code: clean(row["Код"]),
@@ -110,12 +147,11 @@ function productUpdateData(row) {
     ilsac: clean(row["ILSAC"]),
     aceaExtra: clean(row["ACEA (!)"]),
     oemAtf: clean(row["OEM ATF"]),
-    mannName: clean(row["Наиминование по Mann"]),
     rosskoPartNumber: clean(row["rossko_part_number"]),
     rosskoBrand: clean(row["rossko_brand"]),
     rosskoMin: clean(row["rossko_min"]),
     supplierAttribute: clean(row["Supplier"]),
-    oemParts: clean(row["OEM PARTS"]),
+    oemParts: mergeCrossReferences(clean(row["OEM PARTS"]), mannPoman),
     cell: clean(row["Ячейка"]),
     mannCharacteristicName: clean(row["Характеристика:Нименование по Mann"]),
   };

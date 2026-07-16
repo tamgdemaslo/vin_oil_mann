@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { prisma } from "@/lib/db";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
+import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{
   include: { stockBalances: true };
@@ -61,7 +62,6 @@ type ProductFieldKey =
   | "tnvedCode"
   | "aceaExtra"
   | "oemAtf"
-  | "mannName"
   | "rosskoPartNumber"
   | "rosskoBrand"
   | "rosskoMin"
@@ -101,6 +101,8 @@ type ImportPreviewRow = {
 
 const MAX_IMPORT_FILE_BYTES = 15 * 1024 * 1024;
 const CLEAR_MARKER = "#CLEAR";
+const LEGACY_MANN_POMAN_KEY = "legacy_mann_poman";
+const LEGACY_MANN_POMAN_WARNING = "Колонка MANN/POMAN устарела. Значения добавлены в OEM Parts.";
 const prismaWithImport = prisma as typeof prisma & {
   productImportJob: {
     create(args: unknown): Promise<unknown>;
@@ -127,7 +129,7 @@ const columns: ColumnDef[] = [
   { key: "ean8", label: "EAN8", field: "barcodeEan8", aliases: ["barcodeEan8"], width: 16 },
   { key: "code128", label: "Code128", field: "barcodeCode128", aliases: ["barcodeCode128"], width: 18 },
   { key: "oem", label: "OEM", field: "oem", width: 26 },
-  { key: "crosses", label: "Кроссы", field: "oemParts", aliases: ["oemParts"], width: 26 },
+  { key: "crosses", label: "OEM Parts / кросс-номера / аналоги", field: "oemParts", aliases: ["oemParts", "OEM PARTS"], width: 34 },
   { key: "brand", label: "Бренд", field: "brand", width: 18 },
   { key: "category", label: "Категория", field: "groupPath", aliases: ["group", "groupPath"], width: 32 },
   { key: "unit", label: "Ед. изм.", field: "uomName", aliases: ["uomName"], width: 14 },
@@ -159,7 +161,6 @@ const columns: ColumnDef[] = [
   { key: "tnved", label: "ТН ВЭД", field: "tnvedCode", width: 18 },
   { key: "acea_extra", label: "ACEA extra", field: "aceaExtra", width: 18 },
   { key: "oem_atf", label: "OEM ATF", field: "oemAtf", width: 24 },
-  { key: "mann_name", label: "MANN name", field: "mannName", width: 24 },
   { key: "rossko_part_number", label: "Rossko part number", field: "rosskoPartNumber", width: 22 },
   { key: "rossko_brand", label: "Rossko brand", field: "rosskoBrand", width: 18 },
   { key: "rossko_min", label: "Rossko min", field: "rosskoMin", width: 14 },
@@ -171,10 +172,29 @@ const columns: ColumnDef[] = [
   { key: "updated_at", label: "Дата изменения", readonly: true, kind: "date", width: 22 },
 ];
 
+const importOnlyColumns: ColumnDef[] = [
+  {
+    key: LEGACY_MANN_POMAN_KEY,
+    label: "MANN/POMAN",
+    aliases: [
+      "mann_name",
+      "MANN name",
+      "MANN",
+      "POMAN",
+      "POMAN / MANN",
+      "POMAN / Наименование POMAN",
+      "Наименование по Mann",
+      "Наиминование по Mann",
+      "mannName",
+      "pomanName",
+    ],
+  },
+];
+
 const editableColumns = columns.filter((column) => column.field && !column.readonly);
 const serviceColumns = columns.filter((column) => column.readonly);
 const columnAliases = new Map<string, ColumnDef>();
-for (const column of columns) {
+for (const column of [...columns, ...importOnlyColumns]) {
   columnAliases.set(normalizeHeader(column.key), column);
   columnAliases.set(normalizeHeader(column.label), column);
   for (const alias of column.aliases ?? []) columnAliases.set(normalizeHeader(alias), column);
@@ -279,7 +299,6 @@ function productSnapshot(product: ProductWithStock) {
     tnved: product.tnvedCode ?? "",
     acea_extra: product.aceaExtra ?? "",
     oem_atf: product.oemAtf ?? "",
-    mann_name: product.mannName ?? "",
     rossko_part_number: product.rosskoPartNumber ?? "",
     rossko_brand: product.rosskoBrand ?? "",
     rossko_min: product.rosskoMin ?? "",
@@ -416,7 +435,8 @@ function instructionRows() {
     ["Создание", "Оставьте internal_id пустым и заполните название, тип, цены и нужные справочные поля."],
     ["Обновление", "Экспортируйте каталог, измените редактируемые поля и импортируйте этот же файл обратно."],
     ["Сопоставление", "Приоритет: internal_id, внешний ID, код, артикул, EAN, затем точное нормализованное название."],
-    ["Массивы", "OEM и кроссы можно разделять переносом строки или точкой с запятой."],
+    ["Массивы", "OEM Parts / кросс-номера / аналоги можно разделять запятой, точкой с запятой или новой строкой."],
+    ["MANN/POMAN", "Отдельная колонка устарела. При импорте старого файла её значения добавляются в OEM Parts."],
   ];
 }
 
@@ -581,7 +601,6 @@ function productInputFromPreview(after: Record<string, unknown>) {
     ilsac: after.ilsac ? String(after.ilsac).trim() : null,
     aceaExtra: after.aceaExtra ? String(after.aceaExtra).trim() : null,
     oemAtf: after.oemAtf ? String(after.oemAtf).trim() : null,
-    mannName: after.mannName ? String(after.mannName).trim() : null,
     rosskoPartNumber: after.rosskoPartNumber ? String(after.rosskoPartNumber).trim() : null,
     rosskoBrand: after.rosskoBrand ? String(after.rosskoBrand).trim() : null,
     rosskoMin: after.rosskoMin ? String(after.rosskoMin).trim() : null,
@@ -635,7 +654,6 @@ function buildSearchText(after: Record<string, unknown>) {
     ilsac: textOrNull(after.ilsac),
     aceaExtra: textOrNull(after.aceaExtra),
     oemAtf: textOrNull(after.oemAtf),
-    mannName: textOrNull(after.mannName),
     rosskoPartNumber: textOrNull(after.rosskoPartNumber),
     rosskoBrand: textOrNull(after.rosskoBrand),
     rosskoMin: textOrNull(after.rosskoMin),
@@ -755,8 +773,17 @@ async function buildPreviewRows(rows: ParsedImportRow[], options: Required<Produ
       if ("missing" in cell) continue;
       after[column.field] = cell.value;
     }
+    if (after.oemParts) {
+      after.oemParts = mergeProductCrossReferences(after.oemParts, []);
+    }
+    const rowWarnings: string[] = [];
+    if (parsed.presentKeys.has(LEGACY_MANN_POMAN_KEY) && !isBlank(parsed.values[LEGACY_MANN_POMAN_KEY])) {
+      after.oemParts = mergeProductCrossReferences(after.oemParts, [parsed.values[LEGACY_MANN_POMAN_KEY]]);
+      rowWarnings.push(LEGACY_MANN_POMAN_WARNING);
+    }
     const changedFields = buildChangedFields(before, after);
     const validation = validateAfter(after, parsed, products, product?.id ?? null);
+    validation.warnings.push(...rowWarnings);
     const fingerprintParts = ["external_id", "code", "article", "ean13", "ean8", "code128"]
       .map((key) => `${key}:${normalizeText(parsed.values[key])}`)
       .filter((part) => !part.endsWith(":"));

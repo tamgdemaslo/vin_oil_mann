@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-flags";
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import {
   listRawPhonesFromCounterparty,
   normalizePhoneKey,
@@ -505,7 +506,7 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
       const rosskoBrand = attributeValueByName(row.attributes, ["rossko_brand"]);
       const rosskoMin = attributeValueByName(row.attributes, ["rossko_min"]);
       const supplierAttribute = attributeValueByName(row.attributes, ["Supplier"]);
-      const oemParts = attributeValueByName(row.attributes, ["OEM PARTS"]);
+      const oemParts = mergeProductCrossReferences(attributeValueByName(row.attributes, ["OEM PARTS"]), [mannName]);
       const cell = attributeValueByName(row.attributes, ["Ячейка"]);
       const mannCharacteristicName = attributeValueByName(row.attributes, ["Характеристика:Нименование по Mann", "Характеристика:Наименование по Mann"]);
       const searchText = buildCatalogSearchText({
@@ -531,7 +532,6 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
         ilsac,
         aceaExtra,
         oemAtf,
-        mannName,
         rosskoPartNumber,
         rosskoBrand,
         rosskoMin,
@@ -580,7 +580,6 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
         ilsac: ilsac ?? undefined,
         aceaExtra: aceaExtra ?? undefined,
         oemAtf: oemAtf ?? undefined,
-        mannName: mannName ?? undefined,
         rosskoPartNumber: rosskoPartNumber ?? undefined,
         rosskoBrand: rosskoBrand ?? undefined,
         rosskoMin: rosskoMin ?? undefined,
