@@ -23,6 +23,7 @@
     "worker:messenger-media": "node scripts/messenger-media-worker.mjs"
   },
   "dependencies": {
+    "@openai/agents": "^0.13.5",
     "@prisma/client": "^6.9.0",
     "@sparticuz/chromium": "^147.0.0",
     "jiti": "^2.6.1",
@@ -36,7 +37,8 @@
     "soap": "^1.9.1",
     "telegram": "^2.26.22",
     "undici": "^7.25.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

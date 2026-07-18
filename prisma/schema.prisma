@@ -491,7 +491,7 @@ model CrmDeal {
   stage CrmStage @relation(fields: [stageId], references: [id])
 
   notificationLogs ClientCaseNotificationLog[]
-  events ClientCaseEvent[]
+  events           ClientCaseEvent[]
 
   @@index([phoneNormalized])
   @@index([moyskladCounterpartyId])
@@ -1202,15 +1202,15 @@ model NotificationLog {
 }
 
 model ClientNotificationPreference {
-  clientId       String    @id @map("client_id")
-  organizationId String    @default("default") @map("organization_id")
-  telegramEnabled Boolean  @default(true) @map("telegram_enabled")
-  consentStatus  String    @default("unknown") @map("consent_status")
-  consentSource  String?   @map("consent_source")
-  consentAt      DateTime? @map("consent_at") @db.Timestamptz(6)
-  unsubscribedAt DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  clientId        String    @id @map("client_id")
+  organizationId  String    @default("default") @map("organization_id")
+  telegramEnabled Boolean   @default(true) @map("telegram_enabled")
+  consentStatus   String    @default("unknown") @map("consent_status")
+  consentSource   String?   @map("consent_source")
+  consentAt       DateTime? @map("consent_at") @db.Timestamptz(6)
+  unsubscribedAt  DateTime? @map("unsubscribed_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([organizationId, telegramEnabled, consentStatus])
   @@map("client_notification_preferences")
@@ -1816,14 +1816,14 @@ model ProductMannLink {
 }
 
 model ProductMannPomanMigrationAudit {
-  id            String       @id @default(cuid())
-  migrationKey  String       @map("migration_key")
-  productId     String       @map("product_id")
-  product       LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
-  oldMannName   String?      @map("old_mann_name") @db.Text
-  oldOemParts   String?      @map("old_oem_parts") @db.Text
-  newOemParts   String?      @map("new_oem_parts") @db.Text
-  migratedAt    DateTime     @default(now()) @map("migrated_at")
+  id           String       @id @default(cuid())
+  migrationKey String       @map("migration_key")
+  productId    String       @map("product_id")
+  product      LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldMannName  String?      @map("old_mann_name") @db.Text
+  oldOemParts  String?      @map("old_oem_parts") @db.Text
+  newOemParts  String?      @map("new_oem_parts") @db.Text
+  migratedAt   DateTime     @default(now()) @map("migrated_at")
 
   @@unique([migrationKey, productId])
   @@index([productId])
@@ -2761,8 +2761,8 @@ model LocalInventoryDocument {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  correctionOf    LocalInventoryDocument?  @relation("LocalInventoryDocumentCorrections", fields: [correctionOfId], references: [id], onDelete: SetNull)
-  corrections     LocalInventoryDocument[] @relation("LocalInventoryDocumentCorrections")
+  correctionOf    LocalInventoryDocument?          @relation("LocalInventoryDocumentCorrections", fields: [correctionOfId], references: [id], onDelete: SetNull)
+  corrections     LocalInventoryDocument[]         @relation("LocalInventoryDocumentCorrections")
   positions       LocalInventoryDocumentPosition[]
   supplierInvoice LocalSupplierInvoice?
   auditLogs       LocalInventoryDocumentAuditLog[]
@@ -2787,18 +2787,18 @@ model LocalInventoryDocument {
 
 /// История изменений локального складского документа.
 model LocalInventoryDocumentAuditLog {
-  id             String                 @id @default(cuid())
-  documentId     String                 @map("document_id")
-  document       LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  action         String
-  statusBefore   String?                @map("status_before")
-  statusAfter    String?                @map("status_after")
-  message        String?                @db.Text
-  oldValue       Json?                  @map("old_value")
-  newValue       Json?                  @map("new_value")
-  createdById    String?                @map("created_by_id")
-  createdByName  String?                @map("created_by_name")
-  createdAt      DateTime               @default(now()) @map("created_at")
+  id            String                 @id @default(cuid())
+  documentId    String                 @map("document_id")
+  document      LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  action        String
+  statusBefore  String?                @map("status_before")
+  statusAfter   String?                @map("status_after")
+  message       String?                @db.Text
+  oldValue      Json?                  @map("old_value")
+  newValue      Json?                  @map("new_value")
+  createdById   String?                @map("created_by_id")
+  createdByName String?                @map("created_by_name")
+  createdAt     DateTime               @default(now()) @map("created_at")
 
   @@index([documentId])
   @@index([action])
@@ -2914,33 +2914,33 @@ model LocalSupplierInvoicePayment {
 
 /// Настройки подключения T-Bank T-API для безопасной оплаты счетов поставщиков.
 model TBankIntegration {
-  id                          String   @id @default(cuid())
-  organizationId              String   @default("default") @unique @map("organization_id")
+  id                          String    @id @default(cuid())
+  organizationId              String    @unique @default("default") @map("organization_id")
   inn                         String?
   kpp                         String?
-  tokenEncrypted              String?  @map("token_encrypted") @db.Text
-  tokenPreview                String?  @map("token_preview")
-  debitAccountNumberEncrypted String?  @map("debit_account_number_encrypted") @db.Text
-  debitAccountNumberMasked    String?  @map("debit_account_number_masked")
-  mode                        String   @default("draft_only")
-  directPaymentsEnabled       Boolean  @default(false) @map("direct_payments_enabled")
-  maxSinglePaymentCents       Int?     @map("max_single_payment_cents")
-  dailyPaymentLimitCents      Int?     @map("daily_payment_limit_cents")
-  allowedSupplierInnsJson     Json     @default("[]") @map("allowed_supplier_inns_json")
-  webhookUrl                  String?  @map("webhook_url") @db.Text
-  webhookSecretEncrypted      String?  @map("webhook_secret_encrypted") @db.Text
-  sandbox                     Boolean  @default(false)
-  productionMode              Boolean  @default(false) @map("production_mode")
-  apiBaseUrl                  String?  @map("api_base_url") @db.Text
-  certificateConfigured       Boolean  @default(false) @map("certificate_configured")
-  mtlsRequired                Boolean  @default(false) @map("mtls_required")
+  tokenEncrypted              String?   @map("token_encrypted") @db.Text
+  tokenPreview                String?   @map("token_preview")
+  debitAccountNumberEncrypted String?   @map("debit_account_number_encrypted") @db.Text
+  debitAccountNumberMasked    String?   @map("debit_account_number_masked")
+  mode                        String    @default("draft_only")
+  directPaymentsEnabled       Boolean   @default(false) @map("direct_payments_enabled")
+  maxSinglePaymentCents       Int?      @map("max_single_payment_cents")
+  dailyPaymentLimitCents      Int?      @map("daily_payment_limit_cents")
+  allowedSupplierInnsJson     Json      @default("[]") @map("allowed_supplier_inns_json")
+  webhookUrl                  String?   @map("webhook_url") @db.Text
+  webhookSecretEncrypted      String?   @map("webhook_secret_encrypted") @db.Text
+  sandbox                     Boolean   @default(false)
+  productionMode              Boolean   @default(false) @map("production_mode")
+  apiBaseUrl                  String?   @map("api_base_url") @db.Text
+  certificateConfigured       Boolean   @default(false) @map("certificate_configured")
+  mtlsRequired                Boolean   @default(false) @map("mtls_required")
   lastCheckedAt               DateTime? @map("last_checked_at")
-  lastCheckStatus             String?  @map("last_check_status")
-  lastCheckMessage            String?  @map("last_check_message") @db.Text
-  createdById                 String?  @map("created_by_id")
-  updatedById                 String?  @map("updated_by_id")
-  createdAt                   DateTime @default(now()) @map("created_at")
-  updatedAt                   DateTime @updatedAt @map("updated_at")
+  lastCheckStatus             String?   @map("last_check_status")
+  lastCheckMessage            String?   @map("last_check_message") @db.Text
+  createdById                 String?   @map("created_by_id")
+  updatedById                 String?   @map("updated_by_id")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt @map("updated_at")
 
   accounts TBankSettlementAccount[]
   payments SupplierInvoiceTBankPayment[]
@@ -3069,4 +3069,213 @@ model LocalInventorySyncState {
   syncMessage          String?   @map("sync_message") @db.Text
 
   @@map("local_inventory_sync_state")
+}
+
+/// Настройки клиентского ИИ-агента. Все решения и цены привязаны к организации,
+/// а секреты поставщиков и OpenAI остаются только в переменных окружения.
+model AIAgentSetting {
+  id                          String   @id @default(cuid())
+  organizationId              String   @unique @default("default") @map("organization_id")
+  enabled                     Boolean  @default(false)
+  mode                        String   @default("observe")
+  agentName                   String   @default("Помощник Там где масло") @map("agent_name")
+  model                       String?  @default("gpt-5.6-terra") @map("model_name")
+  promptVersion               String   @default("tgm-client-agent-v1") @map("prompt_version")
+  tone                        String   @default("friendly_brief")
+  greeting                    String?  @db.Text
+  language                    String   @default("ru")
+  channelsJson                Json     @default("[\"telegram\"]") @map("channels_json")
+  allowedServicesJson         Json     @default("[\"engine_oil_change\"]") @map("allowed_services_json")
+  allowedStoreIdsJson         Json     @default("[]") @map("allowed_store_ids_json")
+  businessHoursJson           Json     @default("{}") @map("business_hours_json")
+  trustedDomainsJson          Json     @default("[]") @map("trusted_domains_json")
+  calculationRulesJson        Json     @default("{}") @map("calculation_rules_json")
+  responseDelaySeconds        Int      @default(8) @map("response_delay_seconds")
+  maxTurns                    Int      @default(12) @map("max_turns")
+  maxMessagesWithoutHandoff   Int      @default(8) @map("max_messages_without_handoff")
+  autoBookingEnabled          Boolean  @default(false) @map("auto_booking_enabled")
+  bookingApprovalRequired     Boolean  @default(true) @map("booking_approval_required")
+  slotHoldMinutes             Int      @default(7) @map("slot_hold_minutes")
+  minBookingLeadMinutes       Int      @default(60) @map("min_booking_lead_minutes")
+  maxBookingHorizonDays       Int      @default(30) @map("max_booking_horizon_days")
+  slotSuggestionCount         Int      @default(3) @map("slot_suggestion_count")
+  rosskoSearchEnabled         Boolean  @default(true) @map("rossko_search_enabled")
+  rosskoOrderApprovalRequired Boolean  @default(true) @map("rossko_order_approval_required")
+  internetSearchEnabled       Boolean  @default(false) @map("internet_search_enabled")
+  handoffRulesJson            Json     @default("{}") @map("handoff_rules_json")
+  createdById                 String?  @map("created_by_id")
+  updatedById                 String?  @map("updated_by_id")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([enabled, mode])
+  @@map("ai_agent_settings")
+}
+
+/// Persistent session на один диалог. История хранится в Эко-платформе,
+/// а не восстанавливается из бесконечной истории Telegram.
+model AIAgentSession {
+  id                   String    @id @default(cuid())
+  organizationId       String    @default("default") @map("organization_id")
+  conversationId       String    @map("conversation_id")
+  clientId             String?   @map("client_id")
+  counterpartyId       String?   @map("counterparty_id")
+  vehicleId            String?   @map("vehicle_id")
+  appointmentId        String?   @map("appointment_id")
+  quoteId              String?   @map("quote_id")
+  shipmentId           String?   @map("shipment_id")
+  status               String    @default("idle")
+  intent               String?
+  confidence           Float?
+  historyJson          Json      @default("[]") @map("history_json")
+  collectedDataJson    Json      @default("{}") @map("collected_data_json")
+  pendingRunState      String?   @map("pending_run_state") @db.Text
+  pendingApprovalsJson Json      @default("[]") @map("pending_approvals_json")
+  lastDraftText        String?   @map("last_draft_text") @db.Text
+  lastError            String?   @map("last_error") @db.Text
+  humanTakenOverAt     DateTime? @map("human_taken_over_at") @db.Timestamptz(6)
+  lastActivityAt       DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, conversationId])
+  @@index([organizationId, status, lastActivityAt])
+  @@index([clientId])
+  @@index([vehicleId])
+  @@map("ai_agent_sessions")
+}
+
+/// Сохраняемый детерминированный расчёт обслуживания.
+model AIServiceQuote {
+  id                   String    @id @default(cuid())
+  organizationId       String    @default("default") @map("organization_id")
+  conversationId       String    @map("conversation_id")
+  clientId             String?   @map("client_id")
+  vehicleId            String?   @map("vehicle_id")
+  appointmentId        String?   @map("appointment_id")
+  status               String    @default("draft")
+  serviceType          String    @map("service_type")
+  vehicleSnapshot      Json      @default("{}") @map("vehicle_snapshot")
+  requirementsSnapshot Json      @default("{}") @map("requirements_snapshot")
+  sourceEvidence       Json      @default("[]") @map("source_evidence")
+  quoteOptions         Json      @default("[]") @map("quote_options")
+  selectedOption       Json?     @map("selected_option")
+  totalCents           Int?      @map("total_cents")
+  validUntil           DateTime? @map("valid_until") @db.Timestamptz(6)
+  createdBy            String    @default("ai") @map("created_by")
+  approvedById         String?   @map("approved_by_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, conversationId, createdAt])
+  @@index([clientId])
+  @@index([vehicleId])
+  @@index([status, validUntil])
+  @@map("ai_service_quotes")
+}
+
+model AIAgentRun {
+  id                  String    @id @default(cuid())
+  organizationId      String    @default("default") @map("organization_id")
+  conversationId      String    @map("conversation_id")
+  sessionId           String?   @map("session_id")
+  sourceMessageId     String?   @map("source_message_id")
+  triggerType         String    @default("manual") @map("trigger_type")
+  mode                String
+  status              String    @default("running")
+  intent              String?
+  model               String
+  promptVersion       String    @map("prompt_version")
+  inputTextMasked     String?   @map("input_text_masked") @db.Text
+  outputText          String?   @map("output_text") @db.Text
+  inputTokens         Int?      @map("input_tokens")
+  outputTokens        Int?      @map("output_tokens")
+  estimatedCostMicros Int?      @map("estimated_cost_micros")
+  durationMs          Int?      @map("duration_ms")
+  errorMessage        String?   @map("error_message") @db.Text
+  startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, sourceMessageId])
+  @@index([organizationId, conversationId, createdAt])
+  @@index([status, createdAt])
+  @@map("ai_agent_runs")
+}
+
+model AIAgentToolCall {
+  id               String    @id @default(cuid())
+  organizationId   String    @default("default") @map("organization_id")
+  runId            String    @map("run_id")
+  conversationId   String    @map("conversation_id")
+  toolName         String    @map("tool_name")
+  status           String    @default("running")
+  argumentsMasked  Json      @default("{}") @map("arguments_masked")
+  resultSummary    Json?     @map("result_summary")
+  requiresApproval Boolean   @default(false) @map("requires_approval")
+  approvedById     String?   @map("approved_by_id")
+  errorMessage     String?   @map("error_message") @db.Text
+  durationMs       Int?      @map("duration_ms")
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  @@index([organizationId, runId, startedAt])
+  @@index([conversationId, startedAt])
+  @@map("ai_agent_tool_calls")
+}
+
+model AIAgentDecision {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  runId          String   @map("run_id")
+  conversationId String   @map("conversation_id")
+  decisionType   String   @map("decision_type")
+  value          String
+  reason         String?  @db.Text
+  confidence     Float?
+  evidenceJson   Json     @default("[]") @map("evidence_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, conversationId, createdAt])
+  @@index([runId])
+  @@map("ai_agent_decisions")
+}
+
+model AIAgentHandoff {
+  id                String    @id @default(cuid())
+  organizationId    String    @default("default") @map("organization_id")
+  runId             String?   @map("run_id")
+  conversationId    String    @map("conversation_id")
+  reasonCode        String    @map("reason_code")
+  reason            String    @db.Text
+  summary           String    @db.Text
+  collectedDataJson Json      @default("{}") @map("collected_data_json")
+  productsJson      Json      @default("[]") @map("products_json")
+  quoteId           String?   @map("quote_id")
+  status            String    @default("queued")
+  assignedToId      String?   @map("assigned_to_id")
+  resolvedById      String?   @map("resolved_by_id")
+  resolvedAt        DateTime? @map("resolved_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, status, createdAt])
+  @@index([conversationId, createdAt])
+  @@map("ai_agent_handoffs")
+}
+
+model AIAgentSlotHold {
+  id             String    @id @default(cuid())
+  organizationId String    @default("default") @map("organization_id")
+  conversationId String    @map("conversation_id")
+  quoteId        String?   @map("quote_id")
+  slotId         String    @map("slot_id")
+  slotSnapshot   Json      @default("{}") @map("slot_snapshot")
+  status         String    @default("held")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  releasedAt     DateTime? @map("released_at") @db.Timestamptz(6)
+
+  @@index([organizationId, slotId, expiresAt])
+  @@index([conversationId, status])
+  @@map("ai_agent_slot_holds")
 }

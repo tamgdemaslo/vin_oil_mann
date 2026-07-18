@@ -46,6 +46,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import AIAgentPanel from "./AIAgentPanel";
 import { useMessenger, type MessengerFilter } from "./MessengerProvider";
 import {
   MESSENGER_DEV_TOOLS_ENABLED,
@@ -1283,6 +1284,8 @@ export function ContextPanel({ conversation, context }: { conversation: Conversa
   return (
     <aside className="eco-messenger-context">
       <ContextHeader conversation={conversation} context={clientContext} state={clientContext ? "Клиент привязан" : "Клиент не привязан"} />
+
+      <AIAgentPanel conversation={conversation} />
 
       {clientContext ? (
         <LinkedClientContext conversation={conversation} context={clientContext} />

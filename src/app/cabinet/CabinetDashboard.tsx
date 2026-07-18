@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BellRing, Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
+import { BellRing, Bot, Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
 import EmployeeTelegramCard from "./EmployeeTelegramCard";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
@@ -28,6 +28,12 @@ export default function CabinetDashboard({ role, canManageOrganizations = false 
       : []),
     ...(canManageIntegrations
       ? [
+          {
+            href: "/cabinet/ai-agent",
+            label: "ИИ-помощник",
+            description: "Переписка, расчёт стоимости и запись клиентов.",
+            icon: Bot,
+          },
           ...(canManageOrganizations
             ? [
                 {

@@ -2374,6 +2374,20 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
       text,
     }).catch((error) => console.warn("[telegram sync] client case touch failed", error));
   }
+  return {
+    id: messageId ?? null,
+    inserted: Boolean(inserted[0]?.id),
+    direction,
+    text,
+    organizationId,
+  };
+}
+
+function startAgentForSyncedMessages(input: { organizationId: string; conversationId: string; messageId: string; text: string }) {
+  if (!input.text.trim()) return;
+  void import("@/lib/ai-agent/runner")
+    .then(({ triggerAgentForInboundMessage }) => triggerAgentForInboundMessage(input))
+    .catch((error) => console.warn("[ai-agent telegram sync]", error instanceof Error ? error.message : String(error)));
 }
 
 export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
@@ -2382,6 +2396,7 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
     : (await listTelegramUserAccounts()).filter((account) => account.status === "connected" && account.isActive);
   const processed = [];
   for (const account of accounts) {
+    const allowAgentTrigger = Boolean(account.lastSyncAt);
     const session = await getSessionByAccount(account.id);
     const sessionString = decryptSecret(session?.sessionEncrypted);
     if (!sessionString) {
@@ -2411,9 +2426,22 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
         }
         conversationCount += 1;
         const messages = (await client.getMessages(dialog.inputEntity ?? dialog.entity ?? conversation.chatId, { limit: 30 })) as TelegramMessage[];
+        const newInboundMessages: Array<{ id: string; text: string; organizationId: string }> = [];
         for (const message of messages.reverse()) {
-          await upsertTelegramMessage(conversation.id, message);
+          const saved = await upsertTelegramMessage(conversation.id, message);
+          if (saved?.inserted && saved.direction === "inbound" && saved.id && saved.text.trim()) {
+            newInboundMessages.push({ id: saved.id, text: saved.text, organizationId: saved.organizationId });
+          }
           messageCount += 1;
+        }
+        const latestInbound = newInboundMessages.at(-1);
+        if (allowAgentTrigger && latestInbound) {
+          startAgentForSyncedMessages({
+            organizationId: latestInbound.organizationId,
+            conversationId: conversation.id,
+            messageId: latestInbound.id,
+            text: newInboundMessages.map((message) => message.text).join("\n\n"),
+          });
         }
       }
       const archivedCount = await archiveSkippedTelegramConversations(account.id, skippedExternalConversationIds);

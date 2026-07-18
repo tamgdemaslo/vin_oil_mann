@@ -795,6 +795,13 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
   return rows[0] ? toMessage(rows[0]) : null;
 }
 
+function startAgentForInboundMessage(input: { organizationId: string; conversationId: string; messageId: string; text: string }) {
+  if (!input.text.trim()) return;
+  void import("@/lib/ai-agent/runner")
+    .then(({ triggerAgentForInboundMessage }) => triggerAgentForInboundMessage(input))
+    .catch((error) => console.warn("[ai-agent inbound]", error instanceof Error ? error.message : String(error)));
+}
+
 function externalUpdateIdFromPayload(channel: MessengerChannel, payload: unknown) {
   if (payload && typeof payload === "object" && "update_id" in payload) {
     const updateId = (payload as { update_id?: unknown }).update_id;
@@ -947,6 +954,14 @@ export async function ingestIncomingEvent(event: IncomingMessageEvent) {
   try {
     const conversation = await upsertConversationFromIncoming(event);
     const message = await insertIncomingMessage(conversation, event);
+    if (message) {
+      startAgentForInboundMessage({
+        organizationId: conversation.organizationId ?? organizationId,
+        conversationId: conversation.id,
+        messageId: message.id,
+        text: event.text,
+      });
+    }
     await prisma.$executeRaw`
       UPDATE messenger_webhook_events
       SET processed_at = now(), error = NULL
@@ -984,6 +999,14 @@ export async function ingestTelegramWebhook(payload: unknown, headers?: Headers)
       const command = parseCommand(event.text);
       let commandResult: SendMessageResult | null | undefined;
       if (command) commandResult = await handleTelegramCommand(command, conversation, event);
+      if (message && !command) {
+        startAgentForInboundMessage({
+          organizationId: conversation.organizationId ?? getMessengerOrganizationId(),
+          conversationId: conversation.id,
+          messageId: message.id,
+          text: event.text,
+        });
+      }
       commandError ||= commandResult && !commandResult.ok ? commandResult.error ?? "telegram command failed" : null;
       processed.push({ conversation, message, command });
     }
