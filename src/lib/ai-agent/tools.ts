@@ -476,6 +476,27 @@ const quoteOptionSchema = z.object({
   discountCents: z.number().int().min(0),
 });
 
+const quoteRequirementSourceSchema = z.object({
+  source: z.string().min(1).max(240),
+  retrievedAt: z.string().min(1).max(64),
+  appliesToVin: z.string().max(24).nullable(),
+});
+
+const quoteRequirementsSchema = z.object({
+  found: z.boolean(),
+  requiredApproval: z.string().max(160).nullable(),
+  allowedViscosities: z.array(z.string().max(40)).max(12),
+  volumeWithFilter: z.number().positive().max(30).nullable(),
+  acea: z.array(z.string().max(40)).max(12),
+  api: z.array(z.string().max(40)).max(12),
+  ilsac: z.array(z.string().max(40)).max(12),
+  engineCode: z.string().max(80).nullable(),
+  confidence: z.number().min(0).max(1),
+  needsHumanReview: z.boolean(),
+  note: z.string().max(600).nullable(),
+  sources: z.array(quoteRequirementSourceSchema).max(10),
+});
+
 export const calculateServiceQuoteTool = tool({
   name: "calculate_service_quote",
   description: "Детерминированно рассчитать 1–3 варианта замены масла по настроенным правилам и актуальным розничным ценам каталога.",
@@ -483,7 +504,7 @@ export const calculateServiceQuoteTool = tool({
     requiredVolumeLiters: z.number().positive().max(30),
     serviceType: z.enum(["engine_oil_change"]),
     options: z.array(quoteOptionSchema).min(1).max(3),
-    requirements: z.record(z.string(), z.unknown()),
+    requirements: quoteRequirementsSchema,
   }),
   ...commonToolGuardrails,
   execute: async ({ requiredVolumeLiters, serviceType, options, requirements }, context) =>
@@ -663,7 +684,17 @@ export const handoffToHumanTool = tool({
     reasonCode: z.enum(["vehicle_ambiguous", "technical_conflict", "low_confidence", "complaint", "customer_request", "high_amount", "nonstandard", "rossko_ambiguous", "other"]),
     reason: z.string().min(3).max(500),
     summary: z.string().min(10).max(1600),
-    collectedData: z.record(z.string(), z.unknown()),
+    collectedData: z.object({
+      clientRequest: z.string().max(1000).nullable(),
+      vin: z.string().max(24).nullable(),
+      vehicle: z.string().max(300).nullable(),
+      engine: z.string().max(120).nullable(),
+      requirements: z.string().max(1000).nullable(),
+      products: z.array(z.string().max(300)).max(20),
+      quote: z.string().max(1000).nullable(),
+      proposedSlot: z.string().max(160).nullable(),
+      unresolvedQuestions: z.array(z.string().max(300)).max(10),
+    }),
     productIds: z.array(z.string()).max(20),
     quoteId: z.string().nullable(),
   }),
