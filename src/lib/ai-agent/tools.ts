@@ -1,9 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { tool, type RunContext } from "@openai/agents";
+import OpenAI from "openai";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
 import { searchCatalog } from "@/lib/catalog-search";
+import { getOilRequirementsFromOpenAI } from "@/lib/oil-recommendations";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { getVinLookupCache } from "@/lib/vin-lookup-cache";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
@@ -11,6 +13,13 @@ import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefault
 import { createYclientsAppointment, getYclientsAvailableSlots, parseYclientsSlotId } from "./yclients";
 import { safeToolOutputGuardrail, sanitizeForModel, tenantToolInputGuardrail } from "./security";
 import type { AIAgentRunContext } from "./types";
+import {
+  groupCatalogApplications,
+  resolveVehicleVariants,
+  type CatalogApplicationRow,
+  type ConfidenceLevel,
+  type VehicleRequestGoal,
+} from "./vehicle-resolution";
 
 type AgentContext = RunContext<AIAgentRunContext>;
 type JsonRecord = Record<string, unknown>;
@@ -35,6 +44,25 @@ function clean(value: unknown) {
 function requireContext(context?: AgentContext) {
   if (!context?.context) throw new Error("Контекст запуска ИИ-агента отсутствует");
   return context.context;
+}
+
+function confidenceNumber(level: ConfidenceLevel) {
+  return level === "HIGH" ? 0.9 : level === "MEDIUM" ? 0.65 : 0.35;
+}
+
+async function mergeSessionCollectedData(ctx: AIAgentRunContext, patch: JsonRecord, confidence?: number) {
+  const session = await prisma.aIAgentSession.findFirst({
+    where: { id: ctx.sessionId, organizationId: ctx.organizationId },
+    select: { collectedDataJson: true },
+  });
+  await prisma.aIAgentSession.updateMany({
+    where: { id: ctx.sessionId, organizationId: ctx.organizationId },
+    data: {
+      ...(confidence == null ? {} : { confidence }),
+      collectedDataJson: json({ ...record(session?.collectedDataJson), ...patch }),
+      lastActivityAt: new Date(),
+    },
+  });
 }
 
 async function withToolAudit<T>(
@@ -178,14 +206,14 @@ export const resolveVehicleByVinTool = tool({
       if (!candidates.length) return { valid: true, resolved: false, vin, reason: "Модификация не найдена", needsHumanReview: true };
       const unique = candidates.filter((item, index, list) => list.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index);
       const exact = unique.length === 1;
-      await prisma.aIAgentSession.updateMany({
-        where: { id: ctx.sessionId, organizationId: ctx.organizationId },
-        data: {
-          confidence: exact ? 0.9 : 0.55,
-          collectedDataJson: json({ vin, vehicleCandidates: unique }),
-          lastActivityAt: new Date(),
-        },
-      });
+      const componentConfidence = {
+        vehicleConfidence: (exact ? "HIGH" : "MEDIUM") as ConfidenceLevel,
+        oilSpecificationConfidence: "MEDIUM" as ConfidenceLevel,
+        oilVolumeConfidence: "MEDIUM" as ConfidenceLevel,
+        oilFilterConfidence: (exact ? "HIGH" : "MEDIUM") as ConfidenceLevel,
+        partsFitmentConfidence: (exact ? "HIGH" : "MEDIUM") as ConfidenceLevel,
+      };
+      await mergeSessionCollectedData(ctx, { vin, vehicleCandidates: unique, componentConfidence }, exact ? 0.9 : 0.55);
       return {
         valid: true,
         resolved: exact,
@@ -193,15 +221,16 @@ export const resolveVehicleByVinTool = tool({
         confidence: exact ? 0.9 : 0.55,
         vehicle: exact ? unique[0] : null,
         candidates: unique.slice(0, 8),
+        componentConfidence,
         sources: [{ source: "Parts Catalogs", retrievedAt: new Date().toISOString(), appliesToVin: vin }],
-        needsClarification: exact ? [] : ["код двигателя", "мощность", "объём двигателя или VIN-проверка мастером"],
+        needsClarification: exact ? [] : ["код двигателя", "мощность", "объём двигателя"],
       };
     }),
 });
 
 export const resolveVehicleByParametersTool = tool({
   name: "resolve_vehicle_by_parameters",
-  description: "Найти возможные модификации автомобиля по марке, модели, году и двигателю без молчаливого выбора первого результата.",
+  description: "Первый обязательный поиск автомобиля по марке, модели, году и двигателю. Группирует строки каталога по реальным модификациям, сравнивает фильтры и возвращает конкретный уточняющий вопрос без требования VIN.",
   parameters: z.object({
     make: z.string().min(1).max(80),
     model: z.string().min(1).max(120),
@@ -210,99 +239,201 @@ export const resolveVehicleByParametersTool = tool({
     power: z.string().max(40).nullable(),
     transmission: z.string().max(80).nullable(),
     drive: z.string().max(40).nullable(),
+    requestGoal: z.enum(["rough_quote", "service_booking", "oil_selection", "filter_selection", "general"]),
   }),
   ...commonToolGuardrails,
-  execute: async ({ make, model, year, engine, power, transmission, drive }, context) =>
-    withToolAudit(context, "resolve_vehicle_by_parameters", { make, model, year, engine, power, transmission, drive }, async () => {
-      const rows = await prisma.mannFilterApplication.findMany({
+  execute: async ({ make, model, year, engine, power, transmission, drive, requestGoal }, context) =>
+    withToolAudit(context, "resolve_vehicle_by_parameters", { make, model, year, engine, power, transmission, drive, requestGoal }, async () => {
+      const ctx = requireContext(context);
+      const normalizedEngine = engine?.replace(/(\d),(\d)/g, "$1.$2").trim() || null;
+      const findRows = (useEngine: boolean) => prisma.mannFilterApplication.findMany({
         where: {
           make: { contains: make.trim(), mode: "insensitive" },
           AND: [
-            { OR: [{ model: { contains: model.trim(), mode: "insensitive" } }, { vehicleText: { contains: model.trim(), mode: "insensitive" } }] },
+            {
+              OR: [
+                { model: { contains: model.trim(), mode: "insensitive" } },
+                { vehicleText: { contains: model.trim(), mode: "insensitive" } },
+                { effectiveVehicleText: { contains: model.trim(), mode: "insensitive" } },
+              ],
+            },
             ...(year ? [{ OR: [{ vehicleYearFrom: null }, { vehicleYearFrom: { lte: year } }] }, { OR: [{ vehicleYearTo: null }, { vehicleYearTo: { gte: year } }] }] : []),
-            ...(engine ? [{ OR: [{ engineCode: { contains: engine, mode: "insensitive" as const } }, { detail: { contains: engine, mode: "insensitive" as const } }, { vehicleText: { contains: engine, mode: "insensitive" as const } }] }] : []),
+            ...(useEngine && normalizedEngine
+              ? [{
+                  OR: [
+                    { engineCode: { contains: normalizedEngine, mode: "insensitive" as const } },
+                    { detail: { contains: normalizedEngine, mode: "insensitive" as const } },
+                    { vehicleText: { contains: normalizedEngine, mode: "insensitive" as const } },
+                    { effectiveVehicleText: { contains: normalizedEngine, mode: "insensitive" as const } },
+                  ],
+                }]
+              : []),
           ],
         },
-        select: { make: true, model: true, detail: true, engineCode: true, vehicleYearFrom: true, vehicleYearTo: true, vehicleText: true, sourceFile: true, catalogPage: true },
-        distinct: ["make", "model", "detail", "engineCode", "vehicleYearFrom", "vehicleYearTo"],
-        take: 25,
+        select: {
+          vehicleVariantKey: true,
+          make: true,
+          model: true,
+          detail: true,
+          vehicleText: true,
+          effectiveVehicleText: true,
+          engineCode: true,
+          kw: true,
+          hp: true,
+          vehicleYears: true,
+          vehicleYearFrom: true,
+          vehicleYearTo: true,
+          condition: true,
+          filterType: true,
+          filterSubtype: true,
+          mannArticle: true,
+          filterNote: true,
+          sourceFile: true,
+          catalogPage: true,
+        },
       });
-      const candidates = rows.map((row) => ({
-        make: row.make,
-        model: row.model,
-        modification: row.detail || row.vehicleText,
-        engineCode: row.engineCode,
-        yearFrom: row.vehicleYearFrom,
-        yearTo: row.vehicleYearTo,
-        source: { name: "Локальная база применяемости MANN", file: row.sourceFile, catalogPage: row.catalogPage, retrievedAt: new Date().toISOString() },
-      }));
-      const exact = candidates.length === 1 && Boolean(engine);
+      let rows = await findRows(Boolean(normalizedEngine));
+      if (!rows.length && normalizedEngine) rows = await findRows(false);
+      const applications: CatalogApplicationRow[] = rows.map((row) => ({ ...row, variantId: row.vehicleVariantKey }));
+      const resolution = resolveVehicleVariants(
+        { make, model, year, engine: normalizedEngine, power, transmission, drive, requestGoal: requestGoal as VehicleRequestGoal },
+        groupCatalogApplications(applications)
+      );
+      const confidence = confidenceNumber(resolution.componentConfidence.vehicleConfidence);
+      await mergeSessionCollectedData(
+        ctx,
+        {
+          vehicleParameters: { make, model, year, engine: normalizedEngine, power, transmission, drive },
+          vehicleResolution: resolution,
+          componentConfidence: resolution.componentConfidence,
+        },
+        confidence
+      );
       return {
-        found: candidates.length > 0,
-        exact,
-        ambiguous: candidates.length > 1,
-        confidence: exact ? 0.82 : candidates.length ? 0.55 : 0,
-        candidates,
-        suppliedContext: { power: power || null, transmission: transmission || null, drive: drive || null },
-        needsClarification: exact ? [] : ["VIN", "код двигателя", "объём или мощность двигателя"],
-        needsHumanReview: !exact,
+        ...resolution,
+        confidence,
+        source: { name: "Локальная база применяемости MANN", retrievedAt: new Date().toISOString() },
       };
     }),
 });
 
 export const getEngineOilRequirementsTool = tool({
   name: "get_engine_oil_requirements",
-  description: "Получить сохранённые требования моторного масла. Возвращает источник и требует проверки, если доказательность недостаточна.",
-  parameters: z.object({ vin: z.string().min(17).max(24), engineCode: z.string().max(40).nullable() }),
+  description: "Получить требования моторного масла по VIN или предварительную оценку по уже найденным параметрам автомобиля. Предварительную оценку можно использовать только для ориентировочного расчёта с явной пометкой о проверке.",
+  parameters: z.object({
+    vin: z.string().max(24).nullable(),
+    make: z.string().max(80).nullable(),
+    model: z.string().max(120).nullable(),
+    year: z.number().int().min(1950).max(2100).nullable(),
+    engine: z.string().max(80).nullable(),
+    engineCode: z.string().max(40).nullable(),
+    modification: z.string().max(200).nullable(),
+  }),
   ...commonToolGuardrails,
-  execute: async ({ vin: rawVin, engineCode }, context) =>
-    withToolAudit(context, "get_engine_oil_requirements", { vin: rawVin, engineCode }, async () => {
-      const vin = normalizeVin(rawVin);
-      if (!validVin(vin)) throw new Error("Некорректный VIN");
-      const cached = await getVinLookupCache(vin);
-      const oil = cached?.oilInfo;
-      if (!oil) {
+  execute: async ({ vin: rawVin, make, model, year, engine, engineCode, modification }, context) =>
+    withToolAudit(context, "get_engine_oil_requirements", { vin: rawVin, make, model, year, engine, engineCode, modification }, async () => {
+      const vin = rawVin ? normalizeVin(rawVin) : null;
+      if (vin && !validVin(vin)) throw new Error("Некорректный VIN");
+      if (vin) {
+        const cached = await getVinLookupCache(vin);
+        const oil = cached?.oilInfo;
+        if (!oil) {
+          return {
+            found: false,
+            confidence: 0,
+            componentConfidence: { oilSpecificationConfidence: "LOW", oilVolumeConfidence: "LOW" },
+            needsHumanReview: true,
+            usableForPreliminaryQuote: false,
+            reason: "В проверенном кеше Эко-платформы нет требований для этого VIN",
+          };
+        }
+        const facts = {
+          requiredApproval: oil.approval || null,
+          allowedViscosities: oil.sae ?? [],
+          volumeWithFilter: oil.fillVolumeLiters || null,
+          acea: oil.acea ?? [],
+          api: oil.api ?? [],
+          ilsac: oil.ilsac ?? [],
+          engineCode: engineCode || cached.decoded?.engineSeries || null,
+        };
+        const hasApproval = Boolean(oil.approval || oil.acea?.length || oil.api?.length);
+        const hasVolume = Boolean(oil.fillVolumeLiters);
+        return {
+          found: true,
+          ...facts,
+          confidence: hasApproval && hasVolume ? 0.65 : 0.45,
+          componentConfidence: {
+            oilSpecificationConfidence: hasApproval ? "MEDIUM" : "LOW",
+            oilVolumeConfidence: hasVolume ? "MEDIUM" : "LOW",
+          },
+          preliminary: false,
+          usableForPreliminaryQuote: true,
+          needsHumanReview: true,
+          note: "Сохранённый VIN-подбор нужно сверить с техническим источником перед окончательным заказом деталей.",
+          sources: [{ source: "Эко-платформа: сохранённый VIN-подбор", retrievedAt: new Date().toISOString(), appliesToVin: vin }],
+        };
+      }
+
+      if (!make || !model || !year || !engine) {
         return {
           found: false,
           confidence: 0,
+          componentConfidence: { oilSpecificationConfidence: "LOW", oilVolumeConfidence: "LOW" },
           needsHumanReview: true,
-          reason: "В проверенном кеше Эко-платформы нет требований для этого VIN",
+          usableForPreliminaryQuote: false,
+          reason: "Для предварительной оценки нужны марка, модель, год и двигатель",
         };
       }
-      const facts = {
-        requiredApproval: oil.approval || null,
-        allowedViscosities: oil.sae ?? [],
-        volumeWithFilter: oil.fillVolumeLiters || null,
-        acea: oil.acea ?? [],
-        api: oil.api ?? [],
-        ilsac: oil.ilsac ?? [],
-        engineCode: engineCode || cached.decoded?.engineSeries || null,
-      };
-      const hasApproval = Boolean(oil.approval || oil.acea?.length || oil.api?.length);
-      const hasVolume = Boolean(oil.fillVolumeLiters);
+      const apiKey = process.env.OPENAI_API_KEY?.trim();
+      if (!apiKey) throw new Error("OPENAI_API_KEY не задан");
+      const oil = await getOilRequirementsFromOpenAI(new OpenAI({ apiKey }), {
+        make,
+        model,
+        year: String(year),
+        engine,
+        trim: modification || undefined,
+        hints: [engineCode && `Код двигателя: ${engineCode}`].filter((value): value is string => Boolean(value)),
+      });
+      const hasSpecification = Boolean(oil.oem_approvals.length || oil.acea.length || oil.api.length || oil.ilsac?.length);
+      const hasVolume = Boolean(oil.oil_capacity_liters);
+      const confidence = Math.min(0.65, oil.confidence);
       return {
-        found: true,
-        ...facts,
-        confidence: hasApproval && hasVolume ? 0.65 : 0.45,
+        found: hasSpecification || hasVolume || oil.sae_viscosities.length > 0,
+        requiredApproval: oil.oem_approvals,
+        allowedViscosities: oil.sae_viscosities,
+        volumeWithFilter: oil.oil_capacity_liters ?? null,
+        volumeNote: oil.oil_capacity_note ?? null,
+        acea: oil.acea,
+        api: oil.api,
+        ilsac: oil.ilsac ?? [],
+        engineCode,
+        confidence,
+        componentConfidence: {
+          oilSpecificationConfidence: hasSpecification && confidence >= 0.55 ? "MEDIUM" : "LOW",
+          oilVolumeConfidence: hasVolume && confidence >= 0.55 ? "MEDIUM" : "LOW",
+        },
+        preliminary: true,
+        usableForPreliminaryQuote: true,
         needsHumanReview: true,
-        note: "Исторический результат подбора требует проверки источника перед автономной отправкой клиенту.",
-        sources: [{ source: "Эко-платформа: сохранённый VIN-подбор", retrievedAt: new Date().toISOString(), appliesToVin: vin }],
+        note: "Это предварительная оценка по параметрам. Для точного заказа масла или фильтра требуется сверка по техническому источнику; VIN полезен, но не обязателен для ориентировочного расчёта.",
+        sources: [{ source: "Предварительная модельная оценка по параметрам автомобиля", retrievedAt: new Date().toISOString(), sourceHint: oil.source_hint ?? null }],
       };
     }),
 });
 
 export const findRequiredPartsTool = tool({
   name: "find_required_parts",
-  description: "Найти фильтры MANN в локальной базе применяемости по точной модификации автомобиля.",
+  description: "Сравнить фильтры MANN для модификаций, уже найденных через resolve_vehicle_by_parameters. Возвращает общие детали и реальные различия; не требует VIN автоматически.",
   parameters: z.object({
     make: z.string().min(1).max(80),
     model: z.string().min(1).max(120),
     year: z.number().int().min(1950).max(2100).nullable(),
     engineCode: z.string().max(40).nullable(),
+    variantIds: z.array(z.string().min(1).max(100)).max(12),
   }),
   ...commonToolGuardrails,
-  execute: async ({ make, model, year, engineCode }, context) =>
-    withToolAudit(context, "find_required_parts", { make, model, year, engineCode }, async () => {
+  execute: async ({ make, model, year, engineCode, variantIds }, context) =>
+    withToolAudit(context, "find_required_parts", { make, model, year, engineCode, variantIds }, async () => {
       const rows = await prisma.mannFilterApplication.findMany({
         where: {
           make: { contains: make.trim(), mode: "insensitive" },
@@ -313,6 +444,7 @@ export const findRequiredPartsTool = tool({
                 { vehicleText: { contains: model.trim(), mode: "insensitive" } },
               ],
             },
+            ...(variantIds.length ? [{ vehicleVariantKey: { in: variantIds } }] : []),
             ...(year
               ? [
                   { OR: [{ vehicleYearFrom: null }, { vehicleYearFrom: { lte: year } }] },
@@ -332,34 +464,60 @@ export const findRequiredPartsTool = tool({
           ],
         },
         select: {
+          vehicleVariantKey: true,
           filterType: true,
           filterSubtype: true,
           mannArticle: true,
           filterNote: true,
+          make: true,
           model: true,
           detail: true,
+          vehicleText: true,
+          effectiveVehicleText: true,
           engineCode: true,
+          kw: true,
+          hp: true,
+          vehicleYears: true,
           vehicleYearFrom: true,
           vehicleYearTo: true,
+          condition: true,
           sourceFile: true,
           catalogPage: true,
         },
-        take: 40,
       });
-      const variants = [...new Set(rows.map((row) => [row.model, row.detail, row.engineCode].filter(Boolean).join(" · ")))];
+      const applications: CatalogApplicationRow[] = rows.map((row) => ({ ...row, variantId: row.vehicleVariantKey }));
+      const resolution = resolveVehicleVariants(
+        {
+          make,
+          model,
+          year,
+          engine: engineCode,
+          power: null,
+          transmission: null,
+          drive: null,
+          requestGoal: "filter_selection",
+        },
+        groupCatalogApplications(applications)
+      );
       return {
-        found: rows.length > 0,
-        ambiguous: variants.length > 1 && !engineCode,
-        confidence: rows.length === 0 ? 0 : variants.length === 1 || engineCode ? 0.9 : 0.58,
-        needsHumanReview: rows.length === 0 || (variants.length > 1 && !engineCode),
-        parts: rows.map((row) => ({
-          type: row.filterType,
-          subtype: row.filterSubtype,
-          mannArticle: row.mannArticle,
-          note: row.filterNote,
-          appliesTo: { model: row.model, detail: row.detail, engineCode: row.engineCode, yearFrom: row.vehicleYearFrom, yearTo: row.vehicleYearTo },
-          source: { file: row.sourceFile, catalogPage: row.catalogPage },
+        found: resolution.found,
+        ambiguous: resolution.ambiguous,
+        confidence: confidenceNumber(resolution.componentConfidence.partsFitmentConfidence),
+        componentConfidence: resolution.componentConfidence,
+        commonParts: resolution.commonParts,
+        differences: resolution.differences,
+        variants: resolution.variants.map((variant) => ({
+          variantId: variant.variantId,
+          description: variant.description,
+          engineCode: variant.engineCode,
+          hp: variant.hp,
+          parts: variant.parts,
+          source: variant.source,
         })),
+        recommendedAction: resolution.recommendedAction,
+        clarifyingQuestion: resolution.clarifyingQuestion,
+        vinPolicy: resolution.vinPolicy,
+        needsHumanReview: resolution.needsHumanReview,
       };
     }),
 });
