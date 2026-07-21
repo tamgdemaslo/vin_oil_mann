@@ -52,6 +52,7 @@ type Counterparty = {
 };
 type ProductSearchMode = "all" | "product" | "service";
 type PositionAddMode = "catalog" | "mann" | "vin";
+type MannManualCue = "idle" | "manual" | "plate_not_found" | "lookup_unavailable" | "partial";
 type Product = {
   id: string;
   name: string;
@@ -745,11 +746,13 @@ const MANN_MAKE_ALIASES: Record<string, string[]> = {
   BMW: ["бм", "бмв", "бмw"],
   AUDI: ["ауди"],
   "MERCEDES-BENZ": ["мерс", "мерседес", "мерседес бенц", "mercedes"],
+  VOLKSWAGEN: ["vw", "фолькс", "фольксваген", "volkswagen", "volks"],
   "VW (VOLKSWAGEN)": ["vw", "фолькс", "фольксваген", "volkswagen", "volks"],
   SKODA: ["шкода"],
   TOYOTA: ["тойота"],
   NISSAN: ["ниссан"],
   HYUNDAI: ["хендай", "хундай", "хюндай"],
+  KIA: ["киа", "kia"],
   "KIA MOTORS": ["киа", "kia"],
   RENAULT: ["рено"],
   PEUGEOT: ["пежо"],
@@ -794,8 +797,10 @@ function mannOptionMatchesQuery(option: MannComboboxOption, query: string): bool
 }
 
 function MannCombobox({
+  inputId,
   label,
   placeholder,
+  helper,
   value,
   options,
   loading,
@@ -803,8 +808,10 @@ function MannCombobox({
   onSelect,
   onClear,
 }: {
+  inputId?: string;
   label: string;
   placeholder: string;
+  helper?: string;
   value: string;
   options: MannComboboxOption[];
   loading?: boolean;
@@ -813,6 +820,7 @@ function MannCombobox({
   onClear: () => void;
 }) {
   const menuId = useId();
+  const helperId = helper ? `${menuId}-helper` : undefined;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -850,16 +858,19 @@ function MannCombobox({
         <span>{label}</span>
         <div className="eco-mann-combobox-input">
           <input
+            id={inputId}
             className="eco-input"
             type="text"
             value={shownQuery}
             disabled={disabled}
             placeholder={loading ? "Ищем..." : placeholder}
             autoComplete="off"
+            spellCheck={false}
             role="combobox"
             aria-expanded={open}
             aria-controls={menuId}
             aria-activedescendant={activeOptionId}
+            aria-describedby={helperId}
             aria-autocomplete="list"
             onFocus={(event) => {
               if (disabled) return;
@@ -917,6 +928,7 @@ function MannCombobox({
             </button>
           ) : null}
         </div>
+        {helper ? <small id={helperId} className="eco-mann-combobox-helper">{helper}</small> : null}
       </label>
       {open && !disabled ? (
         <div id={menuId} className="eco-mann-combobox-menu" role="listbox" onMouseDown={(event) => event.preventDefault()}>
@@ -1144,6 +1156,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [mannError, setMannError] = useState<string | null>(null);
   const [manualMannFilter, setManualMannFilter] = useState<MannFilter | null>(null);
   const [mannPickerExpanded, setMannPickerExpanded] = useState(true);
+  const [mannManualCue, setMannManualCue] = useState<MannManualCue>("idle");
   const [mannSelectedMatches, setMannSelectedMatches] = useState<Record<string, MannLocalMatch>>({});
   const [mannExpandedChoiceArticle, setMannExpandedChoiceArticle] = useState<string | null>(null);
   const [mannChoiceHighlightedIndex, setMannChoiceHighlightedIndex] = useState(0);
@@ -2021,10 +2034,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   }, [selectedMannMake, selectedMannModel, selectedMannVariantId, selectedOrg?.id, selectedStore?.id]);
 
   useEffect(() => {
-    if (selectedMannVariantId) setMannPickerExpanded(false);
-  }, [selectedMannVariantId]);
-
-  useEffect(() => {
     if (!productAddNotice) return;
     const timer = window.setTimeout(() => setProductAddNotice(""), 1800);
     return () => window.clearTimeout(timer);
@@ -2469,6 +2478,20 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     );
     markDraftDirty();
   }, [markDraftDirty, vin]);
+
+  const openMannManualPicker = useCallback((context?: { reason?: MannManualCue; vehicle?: NormalizedVehicleIdentity | null }) => {
+    const reason = context?.reason && context.reason !== "idle" ? context.reason : "manual";
+    const shouldFocusVariant = reason === "partial" && Boolean(context?.vehicle?.modelRaw ?? context?.vehicle?.modelCanonical);
+    setPositionAddMode("mann");
+    setMannPickerExpanded(true);
+    setMannManualCue(reason);
+    window.setTimeout(() => {
+      document.getElementById("shipment-mann-manual")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const targetId = shouldFocusVariant ? "shipment-mann-variant-combobox" : "shipment-mann-make-combobox";
+      const input = document.getElementById(targetId) as HTMLInputElement | null;
+      input?.focus();
+    }, 80);
+  }, []);
 
   const addFromVinLookup = useCallback((items: VinLookupItem[], desiredByProductId?: Record<string, number>) => {
     setPositions((prev) => {
@@ -3253,6 +3276,23 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const mannVehicleCompactLabel = selectedMannVariant
     ? `${selectedMannMake} ${selectedMannModel} · ${describeMannVariant(selectedMannVariant)}`
     : [selectedMannMake, selectedMannModel].filter(Boolean).join(" ");
+  const mannManualReady = Boolean(selectedMannMake && selectedMannModel && selectedMannVariantId);
+  const mannManualHint =
+    mannManualCue === "plate_not_found"
+      ? "После поиска по госномеру"
+      : mannManualCue === "partial"
+        ? "Осталось уточнить модификацию"
+        : mannManualCue === "lookup_unavailable"
+          ? "Сервис недоступен, ручной подбор открыт"
+          : "";
+  const handleMannManualSubmit = () => {
+    if (!mannManualReady) return;
+    setMannPickerExpanded(false);
+    setMannManualCue("idle");
+    window.setTimeout(() => {
+      document.querySelector(".eco-shipment-mann-kit, .eco-shipment-mann-filter-list")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 80);
+  };
   const mannSortedFilters = mannFilters
     .slice()
     .sort((left, right) => mannFilterGroupOrder(left.filterType) - mannFilterGroupOrder(right.filterType) || left.mannArticle.localeCompare(right.mannArticle, "ru"));
@@ -3975,9 +4015,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 Подбор по VIN
               </button>
             )}
-            <button type="button" className="eco-shipment-link-btn" onClick={openServiceSearch}>
+            <button type="button" className="eco-shipment-link-btn" onClick={openServiceSearch} title="Добавить услугу, которой нет в каталоге">
               <Plus className="eco-icon" aria-hidden />
-              Разовая услуга
+              Услуга
             </button>
           </div>
           {oneOffServiceOpen && (
@@ -4244,8 +4284,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           <div className="eco-shipment-position-mann-panel">
             <div className="eco-shipment-mann-panel-head">
               <div className="eco-shipment-position-vin-copy">
-                <strong>Подбор фильтров по автомобилю · MANN PDF</strong>
-                <span>Определите автомобиль автоматически или продолжите с ручным подбором.</span>
+                <strong>Подбор фильтров по автомобилю · MANN</strong>
+                <span>Определите автомобиль автоматически или выберите его вручную.</span>
               </div>
             </div>
             <div className="eco-shipment-mann-panel-body">
@@ -4255,10 +4295,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               warehouseId={selectedStore?.id}
               initialVin={vin}
               onUseVehicle={applyIdentifiedVehicle}
-              onManualMode={() => {
-                setMannPickerExpanded(true);
-                document.getElementById("shipment-mann-manual-controls")?.scrollIntoView({ behavior: "smooth", block: "center" });
-              }}
+              onManualMode={openMannManualPicker}
             />
 
             {selectedMannVariant && !mannPickerExpanded ? (
@@ -4271,48 +4308,74 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             ) : null}
 
             {mannPickerExpanded || !selectedMannVariant ? (
-              <div className="eco-shipment-mann-controls" id="shipment-mann-manual-controls">
-                <MannCombobox
-                  label="Марка"
-                  placeholder="Выберите марку"
-                  value={selectedMannMake}
-                  options={mannMakeOptions}
-                  loading={mannLoading === "makes"}
-                  onSelect={(value) => setSelectedMannMake(value)}
-                  onClear={() => setSelectedMannMake("")}
-                />
-                <MannCombobox
-                  label="Модель"
-                  placeholder={selectedMannMake ? "Выберите модель" : "Сначала марка"}
-                  value={selectedMannModel}
-                  options={mannModelOptions}
-                  loading={mannLoading === "models"}
-                  disabled={!selectedMannMake}
-                  onSelect={(value) => setSelectedMannModel(value)}
-                  onClear={() => setSelectedMannModel("")}
-                />
-                <label className="eco-field eco-shipment-mann-year">
-                  <span>Год</span>
-                  <input
-                    className="eco-input"
-                    type="text"
-                    inputMode="numeric"
-                    value={mannYear}
-                    onChange={(event) => setMannYear(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder={attrYear || "год"}
+              <section className={`eco-shipment-mann-manual ${mannManualCue !== "idle" ? "is-guided" : ""}`} id="shipment-mann-manual">
+                <div className="eco-shipment-mann-manual-head">
+                  <div>
+                    <strong>Выберите автомобиль вручную</strong>
+                    <span>Укажите марку, модель и модификацию — год необязателен.</span>
+                  </div>
+                  {mannManualHint ? <em>{mannManualHint}</em> : null}
+                </div>
+                <div className="eco-shipment-mann-controls" id="shipment-mann-manual-controls">
+                  <MannCombobox
+                    inputId="shipment-mann-make-combobox"
+                    label="Марка"
+                    placeholder="Выберите марку"
+                    helper="Можно печатать: БМВ, Ауди, Мерс, Фольксваген, Киа."
+                    value={selectedMannMake}
+                    options={mannMakeOptions}
+                    loading={mannLoading === "makes"}
+                    onSelect={(value) => {
+                      setMannManualCue("idle");
+                      setSelectedMannMake(value);
+                    }}
+                    onClear={() => setSelectedMannMake("")}
                   />
-                </label>
-                <MannCombobox
-                  label="Модификация / двигатель"
-                  placeholder={selectedMannModel ? "Объём, код, мощность..." : "Сначала модель"}
-                  value={selectedMannVariantId}
-                  options={mannVariantOptions}
-                  loading={mannLoading === "variants"}
-                  disabled={!selectedMannModel}
-                  onSelect={(value) => setSelectedMannVariantId(value)}
-                  onClear={() => setSelectedMannVariantId("")}
-                />
-              </div>
+                  <MannCombobox
+                    inputId="shipment-mann-model-combobox"
+                    label="Модель"
+                    placeholder={selectedMannMake ? "Выберите модель" : "Выберите сначала марку"}
+                    helper={selectedMannMake ? "Поиск работает по названию и кузову: A4, B8, 8K, X-Trail, T32." : "Станет доступно после выбора марки."}
+                    value={selectedMannModel}
+                    options={mannModelOptions}
+                    loading={mannLoading === "models"}
+                    disabled={!selectedMannMake}
+                    onSelect={(value) => setSelectedMannModel(value)}
+                    onClear={() => setSelectedMannModel("")}
+                  />
+                  <label className="eco-field eco-shipment-mann-year">
+                    <span>Год</span>
+                    <input
+                      className="eco-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={mannYear}
+                      onChange={(event) => setMannYear(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                      placeholder={attrYear || "необязательно"}
+                      autoComplete="off"
+                    />
+                    <small className="eco-mann-combobox-helper">Фильтрует модификации, но не блокирует подбор.</small>
+                  </label>
+                  <MannCombobox
+                    inputId="shipment-mann-variant-combobox"
+                    label="Модификация / двигатель"
+                    placeholder={selectedMannModel ? "Объём, код, мощность..." : "Выберите сначала модель"}
+                    helper={selectedMannModel ? "Ищите по объёму, коду двигателя, мощности или топливу." : "Станет доступно после выбора модели."}
+                    value={selectedMannVariantId}
+                    options={mannVariantOptions}
+                    loading={mannLoading === "variants"}
+                    disabled={!selectedMannModel}
+                    onSelect={(value) => setSelectedMannVariantId(value)}
+                    onClear={() => setSelectedMannVariantId("")}
+                  />
+                  <div className="eco-shipment-mann-submit">
+                    <button type="button" className="eco-btn eco-btn--primary" disabled={!mannManualReady} onClick={handleMannManualSubmit}>
+                      Подобрать фильтры
+                    </button>
+                    <span>{mannManualReady ? "Фильтры MANN готовы ниже." : "Выберите марку, модель и модификацию."}</span>
+                  </div>
+                </div>
+              </section>
             ) : null}
 
             {mannError && <p className="eco-vin-alert">{mannError}</p>}

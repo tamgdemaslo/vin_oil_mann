@@ -208,16 +208,22 @@ function asNumber(value?: number): number | undefined {
   return value && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function toVehicle(input: RecordValue, method: VehicleSourceMethod, identifiers: Partial<Pick<NormalizedVehicleIdentity, "vin" | "frameNumber" | "licensePlate">> = {}): NormalizedVehicleIdentity {
+export function toVehicle(input: RecordValue, method: VehicleSourceMethod, identifiers: Partial<Pick<NormalizedVehicleIdentity, "vin" | "frameNumber" | "licensePlate">> = {}): NormalizedVehicleIdentity {
   const data = asRecord(input.Data ?? input.data ?? input);
-  const makeRaw = firstText(data, [["Brand"], ["brand"], ["mark"], ["make"], ["mark_info", "name"], ["mark_info", "name_eng"]]);
+  const makeRaw = firstText(data, [
+    ["Brand"], ["brand"], ["mark"], ["make"],
+    ["mark_info", "en_name"], ["mark_info", "ru_name"], ["mark_info", "name"], ["mark_info", "name_eng"], ["mark_info", "code"],
+  ]);
   const makeCanonical = normalizeVehicleMake(makeRaw);
-  const modelRaw = firstText(data, [["Model"], ["model"], ["model_info", "name"], ["model_info", "name_eng"]]);
+  const modelRaw = firstText(data, [
+    ["Model"], ["model"],
+    ["model_info", "en_name"], ["model_info", "ru_name"], ["model_info", "name"], ["model_info", "name_eng"], ["model_info", "code"],
+  ]);
   const model = normalizeVehicleModel(modelRaw, makeCanonical);
   const volumeLiters = firstNumber(data, [["EngineVolumeLiters"], ["engine_volume_liters"], ["engine", "volume"], ["tech_param", "engine_volume"], ["engine_volume"]]);
-  const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["engine", "volume_cc"]]);
-  const powerHp = firstNumber(data, [["PowerHp"], ["power_hp"], ["tech_param", "power_hp"], ["horse_power"], ["power"]]);
-  const powerKw = firstNumber(data, [["PowerKw"], ["power_kw"], ["tech_param", "power_kw"], ["kw"]]);
+  const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["engine", "volume_cc"], ["tech_param", "displacement"]]);
+  const powerHp = firstNumber(data, [["PowerHp"], ["power_hp"], ["tech_param", "power_hp"], ["tech_param", "power"], ["horse_power"], ["power"]]);
+  const powerKw = firstNumber(data, [["PowerKw"], ["power_kw"], ["tech_param", "power_kw"], ["tech_param", "power_kvt"], ["kw"]]);
   const year = firstNumber(data, [["Year"], ["year"], ["model_year"], ["year_from"]]);
   const resolvedLiters = asNumber(volumeLiters) ?? (asNumber(volumeCc) ? Number((volumeCc! / 1000).toFixed(3)) : undefined);
   const resolvedCc = asNumber(volumeCc) ?? (resolvedLiters ? Math.round(resolvedLiters * 1000) : undefined);
@@ -231,13 +237,13 @@ function toVehicle(input: RecordValue, method: VehicleSourceMethod, identifiers:
     modelCanonical: model.canonical,
     generationRaw: firstText(data, [["Generation"], ["generation"], ["super_gen", "name"]]) ?? model.generation,
     generationCanonical: model.generation,
-    bodyName: firstText(data, [["BodyName"], ["body_name"], ["body", "name"]]),
+    bodyName: firstText(data, [["BodyName"], ["body_name"], ["body", "name"], ["human_name"]]),
     bodyCode: firstText(data, [["BodyCode"], ["body_code"]]) ?? model.bodyCode,
     bodyType: firstText(data, [["BodyType"], ["body_type"]]),
     year: year ? Math.round(year) : undefined,
     modelYearFrom: firstNumber(data, [["ModelYearFrom"], ["model_year_from"], ["super_gen", "year_from"]]),
     modelYearTo: firstNumber(data, [["ModelYearTo"], ["model_year_to"], ["super_gen", "year_to"]]),
-    engineName: firstText(data, [["EngineName"], ["engine_name"], ["engine", "name"]]),
+    engineName: firstText(data, [["EngineName"], ["engine_name"], ["engine", "name"], ["tech_param", "human_name"]]),
     engineCode: normalizeEngineCode(firstText(data, [["EngineCode"], ["engine_code"], ["engine", "code"]])),
     engineSeries: normalizeEngineCode(firstText(data, [["EngineSeries"], ["engine_series"], ["engine", "series"]])),
     engineVolumeLiters: resolvedLiters,
@@ -247,7 +253,7 @@ function toVehicle(input: RecordValue, method: VehicleSourceMethod, identifiers:
     powerKw: resolvedKw,
     fuelType: firstText(data, [["FuelType"], ["fuel_type"], ["tech_param", "fuel_type"]]),
     transmissionType: firstText(data, [["TransmissionType"], ["transmission_type"], ["tech_param", "gear_type"]]),
-    transmissionName: firstText(data, [["TransmissionName"], ["transmission_name"], ["tech_param", "gearbox"]]),
+    transmissionName: firstText(data, [["TransmissionName"], ["transmission_name"], ["tech_param", "gearbox"], ["tech_param", "transmission"]]),
     driveType: firstText(data, [["DriveType"], ["drive_type"], ["tech_param", "drive_type"]]),
     steeringPosition: firstText(data, [["SteeringPosition"], ["steering_wheel"], ["steering"]]),
     market: firstText(data, [["Market"], ["market"]]),
