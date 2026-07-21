@@ -12,18 +12,45 @@ type AgentStatus = {
   enabled: boolean;
   configured: boolean;
   hasApiKey: boolean;
-  mode: "observe" | "confirm" | "autonomous";
+  mode: "off" | "suggestions" | "auto_quote_approval" | "auto_booking_approval" | "autonomous";
   agentName: string;
   state: AgentState;
   intent: string | null;
   confidence: number | null;
   draft: string | null;
   pendingApprovals: Array<{ id: string; toolName: string; arguments?: unknown }>;
-  latestQuote: { totalCents?: number | null; quoteOptions?: unknown; validUntil?: string | null } | null;
+  latestQuote: { id?: string; status?: string; totalCents?: number | null; vehicleSnapshot?: unknown; requirementsSnapshot?: unknown; sourceEvidence?: unknown; localProductsSnapshot?: unknown; rosskoOffersSnapshot?: unknown; quoteOptions?: unknown; optionalItems?: unknown; validUntil?: string | null; humanReviewReason?: string | null } | null;
   latestHandoff: { reason?: string; summary?: string; status?: string } | null;
   recentToolCalls: Array<{ id: string; toolName: string; status: string; requiresApproval?: boolean; errorMessage?: string | null }>;
   lastError: string | null;
   updatedAt: string | null;
+  conversationState: {
+    pendingQuestion: string | null;
+    vinAvailability: string;
+    vehicleConfidence: "HIGH" | "MEDIUM" | "LOW" | null;
+    unresolvedItems: string[];
+  };
+  currentRun: {
+    id: string;
+    status: "queued" | "running" | "waiting_for_client" | "waiting_for_human" | "completed" | "failed" | "research_failed" | "timed_out" | "cancelled" | "handed_off";
+    stage: string | null;
+    stageLabel: string | null;
+    startedAt: string;
+    heartbeatAt: string | null;
+    elapsedSeconds: number;
+    heartbeatSeconds: number;
+    softExceeded: boolean;
+    stale: boolean;
+    requiresHumanApproval: boolean;
+    humanApprovalReason: string | null;
+    lastToolName: string | null;
+    lastToolStatus: string | null;
+    completedStages: string[];
+    errorCode: string | null;
+    errorMessage: string | null;
+    retryCount: number;
+    events: Array<{ id: string; eventType: string; stage: string | null; publicLabel: string | null; toolName: string | null; toolStatus: string | null; durationMs: number | null; createdAt: string }>;
+  } | null;
 };
 
 type StatusResponse = { status?: AgentStatus; error?: string };
@@ -40,9 +67,11 @@ const stateLabels: Record<AgentState, string> = {
 };
 
 const modeLabels = {
-  observe: "Черновики",
-  confirm: "С подтверждением",
-  autonomous: "Автономно",
+  off: "Выключен",
+  suggestions: "Подсказки",
+  auto_quote_approval: "Расчёт с подтверждением",
+  auto_booking_approval: "Запись после расчёта",
+  autonomous: "Автономный сценарий",
 };
 
 const intentLabels: Record<string, string> = {
@@ -68,6 +97,12 @@ const toolLabels: Record<string, string> = {
   search_local_catalog: "Проверил каталог и остатки",
   rossko_search: "Проверил наличие у поставщика",
   calculate_service_quote: "Рассчитал стоимость",
+  request_quote_approval: "Подготовил расчёт к подтверждению",
+  select_quote_option: "Зафиксировал выбор клиента",
+  create_client_case: "Создал дело по запчастям",
+  save_vehicle: "Сохранил автомобиль",
+  trusted_technical_web_search: "Проверил технические источники",
+  get_transmission_requirements: "Проверил требования агрегата",
   get_available_slots: "Проверил свободное время",
   hold_appointment_slot: "Удержал выбранное время",
   create_appointment: "Создал запись",
@@ -81,6 +116,7 @@ function money(cents?: number | null) {
 }
 
 function approvalLabel(toolName: string) {
+  if (toolName === "request_quote_approval") return "Проверить расчёт перед отправкой";
   if (toolName === "create_appointment") return "Создать запись в YCLIENTS";
   if (toolName === "hold_appointment_slot") return "Удержать выбранное время";
   return toolLabels[toolName] ?? "Выполнить действие агента";
@@ -89,6 +125,33 @@ function approvalLabel(toolName: string) {
 function safeError(value: unknown, fallback: string) {
   if (value && typeof value === "object" && "error" in value && typeof value.error === "string") return value.error;
   return fallback;
+}
+
+function displayAgentError(value: string) {
+  if (/Input guardrail triggered:.*tooLarge/i.test(value)) {
+    return "Контекст диалога оказался слишком большим. История сокращена — подготовьте ответ ещё раз.";
+  }
+  return value;
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function duration(seconds: number) {
+  const value = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+}
+
+function lastActivityText(run: NonNullable<AgentStatus["currentRun"]>) {
+  const event = run.events[0];
+  if (event?.publicLabel) return event.publicLabel;
+  if (run.lastToolName) return toolLabels[run.lastToolName] ?? "Выполняется проверка";
+  return run.stageLabel ?? "Подготавливаем следующий шаг";
 }
 
 export default function AIAgentPanel({ conversation }: { conversation: Conversation }) {
@@ -124,7 +187,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
     setStatus(null);
     setLiveDraft("");
     void loadStatus();
-    const timer = window.setInterval(() => void loadStatus(true), 10_000);
+    const timer = window.setInterval(() => void loadStatus(true), 8_000);
     return () => window.clearInterval(timer);
   }, [loadStatus]);
 
@@ -204,6 +267,25 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
     }
   }
 
+  async function sendQualityFeedback(code: string) {
+    if (!status?.latestQuote?.id) return;
+    setBusy(`quality:${code}`);
+    setError(null);
+    try {
+      const response = await fetch(`/api/ai-agent/quotes/${encodeURIComponent(status.latestQuote.id)}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(safeError(data, "Оценка не сохранилась"));
+    } catch (feedbackError) {
+      setError(feedbackError instanceof Error ? feedbackError.message : "Оценка не сохранилась");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (loading && !status) {
     return (
       <section className="eco-ai-panel is-loading" aria-label="ИИ-агент">
@@ -223,8 +305,15 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
 
   const draft = liveDraft || editedDraft || status.draft;
   const approval = status.pendingApprovals[0];
+  const approvalArguments = asRecord(approval?.arguments);
+  const sourceEvidence = asArray(status.latestQuote?.sourceEvidence).map(asRecord);
   const isHuman = status.state === "human";
-  const isRunning = status.state === "running" || busy === "run";
+  const run = status.currentRun;
+  const isRunning = status.state === "running" || run?.status === "queued" || run?.status === "running" || busy === "run";
+  const currentStep = Math.min(10, run ? run.completedStages.length + (run.status === "completed" ? 0 : 1) : 0);
+  const hasQuote = asArray(status.latestQuote?.quoteOptions).length > 0;
+  const vinAwaited = run?.status === "waiting_for_client" && status.conversationState.pendingQuestion === "vin";
+  const runTitle = !run ? "" : run.status === "waiting_for_human" ? "Расчёт готов" : run.status === "waiting_for_client" ? (run.stageLabel === "Уточняет параметры без VIN" ? "Уточняет параметры без VIN" : run.stageLabel === "Ждёт пробег" ? "Ждёт пробег" : "Ждём клиента") : run.status === "completed" ? (hasQuote ? "Расчёт завершён" : "Ответ подготовлен") : run.status === "timed_out" || run.status === "research_failed" ? "Нужна техническая проверка" : run.status === "handed_off" ? "Передано сотруднику" : run.status === "cancelled" ? "Остановлено" : run.status === "failed" ? "Требует внимания" : "ИИ-агент рассчитывает";
 
   return (
     <section className={`eco-ai-panel state-${status.state}`} aria-label="ИИ-агент">
@@ -247,8 +336,34 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
         <div className="eco-ai-panel__signal">
           <span>Запрос</span>
           <strong>{intentLabels[status.intent] ?? status.intent}</strong>
-          {typeof status.confidence === "number" && <em>{Math.round(status.confidence * 100)}%</em>}
+          {typeof status.confidence === "number" && <em>Уверенность в запросе: {Math.round(status.confidence * 100)}%</em>}
         </div>
+      )}
+
+      {run && (
+        <section className={`eco-ai-panel__run status-${run.status}`} aria-label="Текущий запуск агента">
+          <div className="eco-ai-panel__run-head">
+            <span>{isRunning && <LoaderCircle size={13} className="is-spin" />}<strong>{runTitle}</strong></span>
+            <time>{duration(run.elapsedSeconds)}</time>
+          </div>
+          <p><b>Шаг {currentStep || 1} из 10</b> · {run.stageLabel ?? "Подготавливаем следующий шаг"}</p>
+          <small>Последняя активность: {lastActivityText(run)}</small>
+          {(run.softExceeded || run.stale) && (
+            <div className="eco-ai-panel__notice is-warning">
+              <CircleAlert size={14} /> {run.stale ? "Нет подтверждённой активности больше минуты — проверка могла зависнуть." : "Проверка идёт дольше обычного, результаты сохраняются."}
+            </div>
+          )}
+          <details className="eco-ai-panel__run-details">
+            <summary>Открыть детали</summary>
+            <div>
+              {run.completedStages.length > 0 && <span>Готово: {run.completedStages.length} этапа(ов)</span>}
+              {run.events.slice(0, 5).map((event) => <span key={event.id}>{event.publicLabel ?? toolLabels[event.toolName ?? ""] ?? "Проверка"}</span>)}
+            </div>
+          </details>
+          {(run.stale || run.status === "timed_out" || run.status === "failed" || run.status === "research_failed") && (
+            <button type="button" disabled={Boolean(busy)} onClick={() => void runAgent()}><RotateCcw size={14} /> Повторить подготовку</button>
+          )}
+        </section>
       )}
 
       {approval && (
@@ -257,7 +372,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
           <span><strong>Нужно ваше подтверждение</strong><small>{approvalLabel(approval.toolName)}</small></span>
           <div>
             <button type="button" className="is-approve" disabled={Boolean(busy)} onClick={() => void postAction("approval", { approvalId: approval.id, approved: true }, "approve")}>
-              <Check size={14} /> Подтвердить
+              <Check size={14} /> {approval.toolName === "request_quote_approval" ? "Проверить расчёт" : "Подтвердить"}
             </button>
             <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("approval", { approvalId: approval.id, approved: false }, "reject")}>
               <X size={14} /> Отклонить
@@ -266,19 +381,53 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
         </div>
       )}
 
+      {approval?.toolName === "request_quote_approval" && (
+        <details className="eco-ai-panel__review" open>
+          <summary>Проверка расчёта перед отправкой</summary>
+          <div>
+            <p><strong>Сводка:</strong> {String(approvalArguments.internalSummary || "не указана")}</p>
+            <p><strong>Текст клиенту:</strong> {String(approvalArguments.customerText || "не подготовлен")}</p>
+            {sourceEvidence.length > 0 && <p><strong>Источники:</strong> {sourceEvidence.slice(0, 3).map((item) => String(item.source || item.name || "источник")).join(" · ")}</p>}
+          </div>
+        </details>
+      )}
+
+      {vinAwaited && (
+        <div className="eco-ai-panel__notice is-warning">
+          <CircleAlert size={14} /> VIN ускорит точную проверку, но предварительный подбор можно продолжить по параметрам автомобиля.
+          <div className="eco-ai-panel__inline-actions">
+            <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("control", { action: "continue_without_vin" }, "without-vin")}>
+              Продолжить без VIN
+            </button>
+            <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("control", { action: "request_other_parameter" }, "other-parameter")}>
+              Запросить другой параметр
+            </button>
+          </div>
+        </div>
+      )}
+
       {draft && (
         <div className="eco-ai-panel__draft">
-          <span>{isRunning ? "Ответ формируется" : status.mode === "observe" ? "Черновик ответа" : "Последний ответ"}</span>
-          {status.mode === "observe" ? (
+          <span>{isRunning ? "Ответ формируется" : status.mode === "suggestions" ? "Черновик ответа" : "Последний ответ"}</span>
+          {status.mode === "suggestions" ? (
             <textarea value={editedDraft || liveDraft} onChange={(event) => { setEditedDraft(event.target.value); setLiveDraft(""); }} disabled={isRunning} rows={5} aria-label="Черновик ответа ИИ" />
           ) : <p>{draft}</p>}
         </div>
       )}
 
-      {status.latestQuote?.totalCents != null && (
+      {status.latestQuote && (
         <div className="eco-ai-panel__quote">
-          <span>Расчёт для клиента</span>
-          <strong>{money(status.latestQuote.totalCents)}</strong>
+          <span>Расчёт · {status.latestQuote.status === "draft_preliminary" ? "предварительный" : status.latestQuote.status === "needs_human_review" ? "проверка" : status.latestQuote.status === "sent" ? "отправлен" : "ожидает"}</span>
+          <strong>{money(status.latestQuote.totalCents) ?? "варианты"}</strong>
+        </div>
+      )}
+
+      {status.latestQuote?.id && (
+        <div className="eco-ai-panel__quality" aria-label="Быстрая оценка расчёта">
+          <span>Оценка</span>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void sendQualityFeedback("all_correct")}>Всё верно</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void sendQualityFeedback("corrected_product")}>Исправил товар</button>
+          <button type="button" disabled={Boolean(busy)} onClick={() => void sendQualityFeedback("dangerous_error")}>Опасная ошибка</button>
         </div>
       )}
 
@@ -303,7 +452,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
         </details>
       )}
 
-      {(error || status.lastError) && <div className="eco-ai-panel__notice is-error"><CircleAlert size={14} />{error || status.lastError}</div>}
+      {(error || status.lastError) && <div className="eco-ai-panel__notice is-error"><CircleAlert size={14} />{displayAgentError(error || status.lastError || "")}</div>}
 
       <div className="eco-ai-panel__actions">
         {!status.enabled ? (
@@ -318,13 +467,16 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
               {isRunning ? <LoaderCircle size={14} className="is-spin" /> : <Sparkles size={14} />}
               {isRunning ? "Готовит ответ…" : "Подготовить ответ"}
             </button>
-            {status.mode === "observe" && draft && !approval && (
+            {status.mode === "suggestions" && draft && !approval && (
               <button type="button" disabled={Boolean(busy) || !editedDraft.trim()} onClick={() => void postAction("draft/send", { text: editedDraft }, "send")}>
                 <Send size={14} /> Отправить черновик
               </button>
             )}
             <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("control", { action: "takeover" }, "takeover")}>
               <Hand size={14} /> Перехватить диалог
+            </button>
+            <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("control", { action: "handoff" }, "handoff")}>
+              <Hand size={14} /> Передать сотруднику
             </button>
             <button type="button" disabled={Boolean(busy)} onClick={() => void postAction("control", { action: "stop" }, "stop")}>
               <StopCircle size={14} /> Остановить помощника

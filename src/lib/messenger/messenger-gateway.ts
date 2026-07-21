@@ -621,6 +621,15 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const text = input.text.trim();
   assertMessengerOutboundTextSafe(text);
   const organizationId = conversation.organizationId ?? getMessengerOrganizationId();
+  if (input.idempotencyKey) {
+    const existing = await prisma.messengerOutbox.findFirst({
+      where: { organizationId, idempotencyKey: input.idempotencyKey },
+      include: { message: true },
+    });
+    if (existing?.message) {
+      return { ok: existing.status !== "failed", message: toMessage(existing.message as unknown as MessageRow), outbox: existing as unknown as import("./messenger-types").MessageOutbox, error: existing.errorMessage ?? undefined };
+    }
+  }
   const messengerAccountId =
     conversation.messengerAccountId ?? (conversation.channel === "telegram" ? await messengerAccountIdForConversation(conversation.id) : null);
   const inlineButtonsSupported = conversation.channel === "telegram" && (await messengerAccountMode(messengerAccountId)) === "bot_legacy";
@@ -667,6 +676,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     messengerAccountId,
     text: textForSend,
     templateVarsJson,
+    idempotencyKey: input.idempotencyKey,
   });
   const processed = await processOutboxItem(outbox);
   await touchClientCaseMessageState({

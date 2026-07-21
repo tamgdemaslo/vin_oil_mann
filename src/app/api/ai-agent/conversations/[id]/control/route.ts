@@ -3,7 +3,7 @@ import { z } from "zod";
 import { aiAgentApiError, requireAIAgentAccess } from "@/lib/ai-agent/access";
 import { setConversationAgentControl } from "@/lib/ai-agent/runner";
 
-const bodySchema = z.object({ action: z.enum(["takeover", "return", "stop"]) });
+const bodySchema = z.object({ action: z.enum(["takeover", "return", "stop", "handoff", "continue_without_vin", "request_other_parameter"]) });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const access = await requireAIAgentAccess();

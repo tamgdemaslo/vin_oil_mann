@@ -5,7 +5,7 @@ import { Bot, CalendarCheck, Check, CircleAlert, LoaderCircle, Save, ShieldCheck
 import { useEffect, useState, type ReactNode } from "react";
 import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect } from "@/components/platform/EcoUI";
 
-type AgentMode = "observe" | "confirm" | "autonomous";
+type AgentMode = "off" | "suggestions" | "auto_quote_approval" | "auto_booking_approval" | "autonomous";
 type Tab = "general" | "prices" | "booking";
 
 type CalculationRules = {
@@ -39,6 +39,8 @@ type HandoffRules = {
   customerRequestsHuman: boolean;
 };
 
+type RosskoMarkupRule = { fromCents: number; toCents: number | null; marginPercent: number; category?: string | null };
+
 type AgentSettings = {
   enabled: boolean;
   mode: AgentMode;
@@ -48,6 +50,7 @@ type AgentSettings = {
   channels: string[];
   allowedServices: string[];
   calculationRules: CalculationRules;
+  rosskoMarkupRules: RosskoMarkupRule[];
   responseDelaySeconds: number;
   maxTurns: number;
   maxMessagesWithoutHandoff: number;
@@ -79,9 +82,11 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
 ];
 
 const modeOptions: Array<{ id: AgentMode; title: string; body: string }> = [
-  { id: "observe", title: "Только черновики", body: "Помощник готовит ответ, сотрудник проверяет и отправляет его сам." },
-  { id: "confirm", title: "С подтверждением", body: "Обычные ответы отправляются автоматически, запись всегда подтверждает сотрудник." },
-  { id: "autonomous", title: "Автономно", body: "Помощник отвечает сам; рискованные действия и запись остаются под контролем." },
+  { id: "off", title: "Выключен", body: "Агент не отвечает и не запускает подборы в новых диалогах." },
+  { id: "suggestions", title: "Только подсказки сотруднику", body: "Готовит исследование и черновик; сотрудник отправляет ответ сам." },
+  { id: "auto_quote_approval", title: "Переписка с подтверждением расчёта", body: "Ведёт диалог сам, но каждый расчёт ожидает проверки сотрудника." },
+  { id: "auto_booking_approval", title: "Переписка и запись после расчёта", body: "После подтверждённого расчёта сам ведёт клиента до записи; запись остаётся под контролем." },
+  { id: "autonomous", title: "Автономный разрешённый сценарий", body: "Самостоятельно работает только в безопасных сценариях; расчёт всё равно подтверждает сотрудник." },
 ];
 
 function Switch({ checked, onChange, title, hint }: { checked: boolean; onChange: (checked: boolean) => void; title: string; hint: string }) {
@@ -163,6 +168,13 @@ export default function AIAgentSettingsClient() {
     setSettings((current) => current ? { ...current, handoffRules: { ...current.handoffRules, [key]: value } } : current);
   }
 
+  function patchRosskoMarkup(index: number, patchValue: Partial<RosskoMarkupRule>) {
+    setSettings((current) => current ? {
+      ...current,
+      rosskoMarkupRules: current.rosskoMarkupRules.map((rule, currentIndex) => currentIndex === index ? { ...rule, ...patchValue } : rule),
+    } : current);
+  }
+
   async function save() {
     if (!settings) return;
     setSaving(true);
@@ -177,6 +189,7 @@ export default function AIAgentSettingsClient() {
         channels: settings.channels,
         allowedServices: settings.allowedServices,
         calculationRules: settings.calculationRules,
+        rosskoMarkupRules: settings.rosskoMarkupRules,
         responseDelaySeconds: settings.responseDelaySeconds,
         maxTurns: settings.maxTurns,
         maxMessagesWithoutHandoff: settings.maxMessagesWithoutHandoff,
@@ -221,11 +234,11 @@ export default function AIAgentSettingsClient() {
         <EcoCard padded={false}>
           <SectionHead title="Основной режим" body="Начните с черновиков, проверьте ответы на реальных диалогах и только затем включайте автоматическую отправку." />
           <div className="eco-agent-settings__body">
-            <Switch checked={settings.enabled} onChange={(enabled) => patch({ enabled })} title="ИИ-помощник включён" hint="Новые входящие сообщения будут попадать в безопасный сценарий обработки." />
+            <Switch checked={settings.enabled && settings.mode !== "off"} onChange={(enabled) => patch({ enabled, mode: enabled && settings.mode === "off" ? "suggestions" : settings.mode })} title="ИИ-помощник включён" hint="Новые входящие сообщения будут попадать в безопасный сценарий обработки." />
             <div className="eco-agent-mode-list">
               {modeOptions.map((option) => (
                 <label key={option.id} className={settings.mode === option.id ? "is-selected" : ""}>
-                  <input type="radio" name="agentMode" value={option.id} checked={settings.mode === option.id} onChange={() => patch({ mode: option.id })} />
+                  <input type="radio" name="agentMode" value={option.id} checked={settings.mode === option.id} onChange={() => patch({ mode: option.id, enabled: option.id !== "off" })} />
                   <span><strong>{option.title}</strong><small>{option.body}</small></span>
                   {settings.mode === option.id && <Check size={16} />}
                 </label>
@@ -287,6 +300,19 @@ export default function AIAgentSettingsClient() {
             </div>
           </div>
         </EcoCard>
+
+        <EcoCard padded={false}>
+          <SectionHead title="ROSSKO: розничная цена" body="Наценка применяется только к предложениям под заказ. Закупочная цена остаётся внутренней и не показывается клиенту." />
+          <div className="eco-agent-settings__body eco-agent-settings__grid">
+            {settings.rosskoMarkupRules.map((rule, index) => (
+              <div className="eco-agent-field" key={`${rule.fromCents}-${index}`}>
+                <span>{rule.toCents == null ? `От ${Math.round(rule.fromCents / 100).toLocaleString("ru-RU")} ₽` : `${Math.round(rule.fromCents / 100).toLocaleString("ru-RU")}–${Math.round(rule.toCents / 100).toLocaleString("ru-RU")} ₽`}</span>
+                <div><EcoInput type="number" min={0} max={300} value={rule.marginPercent} onChange={(event) => patchRosskoMarkup(index, { marginPercent: Math.max(0, Number(event.target.value) || 0) })} /><em>%</em></div>
+                <small>Наценка для этой закупочной стоимости.</small>
+              </div>
+            ))}
+          </div>
+        </EcoCard>
       </div>
     );
   } else {
@@ -335,7 +361,7 @@ export default function AIAgentSettingsClient() {
       </section>
 
       <div className="eco-grid eco-grid--kpi">
-        <EcoKpi label="Режим" value={modeTitle} tone={settings.mode === "observe" ? "neutral" : "rust"} sub="Меняется без перезапуска приложения." />
+        <EcoKpi label="Режим" value={modeTitle} tone={settings.mode === "suggestions" || settings.mode === "off" ? "neutral" : "rust"} sub="Меняется без перезапуска приложения." />
         <EcoKpi label="Подключения" value={`${integrationsReady} из 3`} tone={integrationsReady === 3 ? "success" : "warning"} sub="OpenAI, YCLIENTS и поставщик." />
         <EcoKpi label="Запись" value={settings.autoBookingEnabled ? "Разрешена" : "Выключена"} tone={settings.autoBookingEnabled ? "success" : "neutral"} sub={settings.bookingApprovalRequired ? "С подтверждением сотрудника." : "По явному согласию клиента."} />
       </div>

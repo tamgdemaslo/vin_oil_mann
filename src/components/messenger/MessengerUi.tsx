@@ -83,6 +83,42 @@ type TemplatesResponse = {
   templates?: QuickReplyTemplate[];
 };
 
+type AgentListActivity = {
+  conversationId: string;
+  runId: string;
+  status: "queued" | "running" | "waiting_for_human" | "waiting_for_client" | "handed_off" | "failed";
+  stageLabel: string | null;
+  elapsedSeconds: number;
+  stale: boolean;
+  requiresHumanApproval: boolean;
+};
+
+type AgentListActivitiesResponse = { activities?: AgentListActivity[] };
+
+type AgentRunActivityStatus = {
+  status?: {
+    state: string;
+    currentRun: {
+      id: string;
+      status: string;
+      stageLabel: string | null;
+      elapsedSeconds: number;
+      heartbeatSeconds: number;
+      softExceeded: boolean;
+      stale: boolean;
+      completedStages: string[];
+      lastToolName: string | null;
+      lastToolStatus: string | null;
+      events: Array<{ id: string; publicLabel: string | null }>;
+    } | null;
+  };
+};
+
+function runElapsed(seconds: number) {
+  const value = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+}
+
 const filterOptions: Array<{ id: MessengerFilter; label: string }> = [
   { id: "all", label: "Все" },
   { id: "unread", label: "Непрочитанные" },
@@ -442,6 +478,28 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
     errorMode,
     simulateIncoming,
   } = useMessenger();
+  const [agentActivities, setAgentActivities] = useState<Record<string, AgentListActivity>>({});
+
+  useEffect(() => {
+    let alive = true;
+    async function loadActivities() {
+      try {
+        const response = await fetch("/api/ai-agent/runs/active", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as AgentListActivitiesResponse;
+        if (!alive) return;
+        setAgentActivities(Object.fromEntries((data.activities ?? []).map((item) => [item.conversationId, item])));
+      } catch {
+        // The conversation list remains usable if the operational feed is unavailable.
+      }
+    }
+    void loadActivities();
+    const timer = window.setInterval(() => void loadActivities(), 8_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   return (
     <div className={cx("eco-messenger-inbox", compact && "is-compact")}>
@@ -524,6 +582,7 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
             <ConversationListItem
               key={conversation.id}
               conversation={conversation}
+              agentActivity={agentActivities[conversation.id]}
               selected={conversation.id === selectedConversationId}
               onClick={() => selectConversation(conversation.id, compact)}
             />
@@ -538,10 +597,12 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
 
 export function ConversationListItem({
   conversation,
+  agentActivity,
   selected,
   onClick,
 }: {
   conversation: Conversation;
+  agentActivity?: AgentListActivity;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -566,6 +627,11 @@ export function ConversationListItem({
           {conversation.hasOverdueCase && <span className="is-danger">просрочка</span>}
         </span>
         <span className="eco-messenger-dialog__text">{preview}</span>
+        {agentActivity && (
+          <span className={cx("eco-messenger-dialog__agent-status", `status-${agentActivity.status}`, agentActivity.stale && "is-stale")}>
+            {agentActivity.status === "waiting_for_human" ? "Ждёт подтверждения" : agentActivity.status === "waiting_for_client" ? "Ждёт клиента" : agentActivity.status === "handed_off" ? "Передано сотруднику" : agentActivity.status === "failed" ? "Требует внимания" : agentActivity.stale ? "ИИ требует проверки" : `ИИ считает · ${runElapsed(agentActivity.elapsedSeconds)}`}
+          </span>
+        )}
         <span className="eco-messenger-dialog__tags">
           {conversation.isPinned && <Pin aria-hidden className="eco-icon" />}
           {conversation.isImportant && <Star aria-hidden className="eco-icon is-star" />}
@@ -667,6 +733,61 @@ export function ChatHeader({
       )}
       <div className="eco-messenger-chat-head__actions">{rightAction}</div>
     </div>
+  );
+}
+
+/** Compact operational state in the thread itself, so an employee does not
+ * have to infer a long-running calculation from a draft in the side panel. */
+export function AIAgentRunActivity({ conversation }: { conversation: Conversation }) {
+  const [status, setStatus] = useState<AgentRunActivityStatus["status"] | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const response = await fetch(`/api/ai-agent/conversations/${encodeURIComponent(conversation.id)}/status`, { cache: "no-store" });
+        const data = (await response.json()) as AgentRunActivityStatus;
+        if (alive && response.ok) setStatus(data.status ?? null);
+      } catch {
+        // A missing status feed must never interrupt the messenger thread.
+      }
+    }
+    void load();
+    const timer = window.setInterval(() => void load(), 8_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [conversation.id]);
+  const run = status?.currentRun;
+  if (!run || !["queued", "running", "waiting_for_human"].includes(run.status)) return null;
+  const event = run.events[0]?.publicLabel || run.stageLabel || "Подготавливаем следующий шаг";
+  const step = Math.min(10, run.completedStages.length + (run.status === "waiting_for_human" ? 0 : 1));
+  async function control(action: "takeover" | "stop") {
+    setBusy(true);
+    try {
+      await fetch(`/api/ai-agent/conversations/${encodeURIComponent(conversation.id)}/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className={cx("eco-messenger-agent-activity", run.stale && "is-stale", run.status === "waiting_for_human" && "is-waiting")} aria-live="polite">
+      <div>
+        <span>{run.status === "waiting_for_human" ? <CheckCircle2 aria-hidden className="eco-icon" /> : <Sparkles aria-hidden className="eco-icon" />}</span>
+        <p><strong>{run.status === "waiting_for_human" ? "Расчёт готов — ждёт проверки сотрудника" : `ИИ-агент рассчитывает · ${runElapsed(run.elapsedSeconds)}`}</strong><small>Шаг {step || 1} из 10 · {run.stageLabel ?? "Разбираем запрос"} · {event}</small></p>
+      </div>
+      <div className="eco-messenger-agent-activity__actions">
+        <details><summary>Детали</summary><span>Последняя активность: {event}</span></details>
+        <button type="button" disabled={busy} onClick={() => void control("takeover")}>Перехватить</button>
+        <button type="button" disabled={busy} onClick={() => void control("stop")}>Остановить</button>
+      </div>
+      {(run.stale || run.softExceeded) && <em><AlertTriangle aria-hidden className="eco-icon" /> {run.stale ? "Нет активности больше минуты: проверьте запуск или передайте сотруднику." : "Проверка идёт дольше обычного, результаты сохраняются."}</em>}
+    </section>
   );
 }
 

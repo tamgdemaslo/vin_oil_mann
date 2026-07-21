@@ -13,6 +13,7 @@
     "test:lookup": "node scripts/test-lookup.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
+    "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",

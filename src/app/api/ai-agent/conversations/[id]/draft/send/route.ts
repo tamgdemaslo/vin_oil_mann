@@ -21,7 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!sent?.ok) throw new Error(sent?.error || "Мессенджер не подтвердил отправку");
     await Promise.all([
       prisma.aIAgentSession.update({ where: { id: session.id }, data: { status: "waiting_client", lastDraftText: text, lastActivityAt: new Date() } }),
-      prisma.aIServiceQuote.updateMany({ where: { organizationId: access.organizationId, conversationId: id, status: "draft" }, data: { status: "sent" } }),
+      prisma.aIServiceQuote.updateMany({ where: { organizationId: access.organizationId, conversationId: id, status: "approved" }, data: { status: "sent", sentAt: new Date() } }),
     ]);
     return NextResponse.json({ ok: true, message: sent.message });
   } catch (error) {

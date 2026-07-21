@@ -78,18 +78,25 @@ export async function enqueueMessageOutbox(input: {
   attachmentsJson?: MessageOutbox["attachmentsJson"];
   templateKey?: string | null;
   templateVarsJson?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
 }): Promise<MessageOutbox> {
   await ensureMessengerIntegrationCoreSchema();
   assertMessengerOutboundTextSafe(input.text);
   const id = crypto.randomUUID();
   const organizationId = input.organizationId ?? getMessengerOrganizationId();
+  if (input.idempotencyKey) {
+    const existing = await prisma.messengerOutbox.findFirst({
+      where: { organizationId, idempotencyKey: input.idempotencyKey },
+    });
+    if (existing) return toOutbox(existing as unknown as OutboxRow);
+  }
   const rows = await prisma.$queryRaw<OutboxRow[]>`
     INSERT INTO messenger_outbox
       (id, organization_id, messenger_account_id, channel, conversation_id, message_id, connection_id, recipient_external_chat_id, message_type, text, attachments_json,
-       template_key, template_vars_json, status, created_at, updated_at)
+       template_key, template_vars_json, idempotency_key, status, created_at, updated_at)
     VALUES
       (${id}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.channel}, ${input.conversationId}, ${input.messageId ?? null}, ${input.connectionId ?? null}, ${input.recipientExternalChatId},
-       ${input.messageType ?? "text"}, ${input.text}, ${JSON.stringify(input.attachmentsJson ?? [])}::jsonb, ${input.templateKey ?? null}, ${input.templateVarsJson ? JSON.stringify(input.templateVarsJson) : null}::jsonb, 'queued', now(), now())
+       ${input.messageType ?? "text"}, ${input.text}, ${JSON.stringify(input.attachmentsJson ?? [])}::jsonb, ${input.templateKey ?? null}, ${input.templateVarsJson ? JSON.stringify(input.templateVarsJson) : null}::jsonb, ${input.idempotencyKey ?? null}, 'queued', now(), now())
     RETURNING
       id,
       organization_id AS "organizationId",

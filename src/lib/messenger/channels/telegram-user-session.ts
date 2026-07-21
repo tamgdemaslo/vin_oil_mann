@@ -2434,14 +2434,15 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
           }
           messageCount += 1;
         }
-        const latestInbound = newInboundMessages.at(-1);
-        if (allowAgentTrigger && latestInbound) {
-          startAgentForSyncedMessages({
-            organizationId: latestInbound.organizationId,
-            conversationId: conversation.id,
-            messageId: latestInbound.id,
-            text: newInboundMessages.map((message) => message.text).join("\n\n"),
-          });
+        if (allowAgentTrigger) {
+          for (const inbound of newInboundMessages) {
+            startAgentForSyncedMessages({
+              organizationId: inbound.organizationId,
+              conversationId: conversation.id,
+              messageId: inbound.id,
+              text: inbound.text,
+            });
+          }
         }
       }
       const archivedCount = await archiveSkippedTelegramConversations(account.id, skippedExternalConversationIds);

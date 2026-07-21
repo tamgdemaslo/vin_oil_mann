@@ -60,9 +60,60 @@ function isoDate(value: unknown) {
 
 function timeValue(row: JsonRecord) {
   const direct = clean(row.time) || clean(row.seance_time);
-  if (/^\d{2}:\d{2}/.test(direct)) return direct.slice(0, 5);
+  const directMatch = direct.match(/^(\d{1,2}):(\d{2})/);
+  if (directMatch) return `${directMatch[1].padStart(2, "0")}:${directMatch[2]}`;
   const datetime = clean(row.datetime) || clean(row.date);
-  return datetime.match(/[T\s](\d{2}:\d{2})/)?.[1] ?? "";
+  const datetimeMatch = datetime.match(/[T\s](\d{1,2}):(\d{2})/);
+  return datetimeMatch ? `${datetimeMatch[1].padStart(2, "0")}:${datetimeMatch[2]}` : "";
+}
+
+function minutesFromTime(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/**
+ * The booking endpoint returns starts suitable for the configured base service.
+ * For a complex visit we must ensure several consecutive booking intervals are
+ * still available; simply relabelling a 40-minute slot as a 2-hour one creates
+ * overlapping appointments.
+ */
+function continuousStartsForDuration(
+  rows: Array<{ time: string; row: JsonRecord }>,
+  durationMinutes: number,
+  baseServiceDurationMinutes: number
+) {
+  if (rows.length < 2 || durationMinutes <= baseServiceDurationMinutes) return rows;
+  const minuteValues = rows.map(({ time }) => minutesFromTime(time)).filter((value): value is number => value != null);
+  const deltas = minuteValues
+    .slice(1)
+    .map((value, index) => value - minuteValues[index])
+    .filter((value) => value > 0 && value <= 120);
+  const bookingStepMinutes = deltas.length ? Math.min(...deltas) : baseServiceDurationMinutes;
+  const segments = Math.max(1, Math.ceil(durationMinutes / Math.max(10, baseServiceDurationMinutes)));
+  const available = new Set(minuteValues);
+  return rows.filter(({ time }) => {
+    const start = minutesFromTime(time);
+    if (start == null) return false;
+    for (let segment = 1; segment < segments; segment += 1) {
+      if (!available.has(start + segment * bookingStepMinutes)) return false;
+    }
+    return true;
+  });
+}
+
+function datesFromBookingResponse(value: unknown, depth = 0): string[] {
+  if (depth > 5) return [];
+  if (typeof value === "string") {
+    const date = isoDate(value);
+    return date ? [date] : [];
+  }
+  if (Array.isArray(value)) return value.flatMap((item) => datesFromBookingResponse(item, depth + 1));
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(record(value)).flatMap(([key, item]) => {
+    const keyDate = isoDate(key);
+    return keyDate ? [keyDate, ...datesFromBookingResponse(item, depth + 1)] : datesFromBookingResponse(item, depth + 1);
+  });
 }
 
 export type AgentBookingSlot = {
@@ -82,6 +133,8 @@ export async function getYclientsAvailableSlots(input: {
   minLeadMinutes: number;
   horizonDays: number;
   durationMinutes: number;
+  baseServiceDurationMinutes?: number;
+  requestedDate?: string | null;
 }): Promise<AgentBookingSlot[]> {
   const cfg = config();
   if (!cfg.serviceId || !cfg.staffId) {
@@ -93,10 +146,15 @@ export async function getYclientsAvailableSlots(input: {
   const datesData = await requestJson(`/book_dates/${cfg.companyId}?${datesParams.toString()}`);
   const today = new Date();
   const horizon = new Date(today.getTime() + input.horizonDays * 86_400_000);
-  const dates = [...new Set(collectRecords(datesData).flatMap((row) => Object.values(row).map(isoDate)).filter(Boolean))]
+  const bookingData = record(record(datesData).data);
+  const declaredDates = [
+    ...(Array.isArray(bookingData.booking_dates) ? bookingData.booking_dates : []),
+    ...(Array.isArray(bookingData.working_dates) ? bookingData.working_dates : []),
+  ];
+  const dates = [...new Set((declaredDates.length ? declaredDates.flatMap(isoDate) : datesFromBookingResponse(datesData)).filter(Boolean))]
     .filter((date) => {
       const parsed = new Date(`${date}T23:59:59`);
-      return parsed >= today && parsed <= horizon;
+      return parsed >= today && parsed <= horizon && (!input.requestedDate || date >= input.requestedDate);
     })
     .sort()
     .slice(0, 7);
@@ -106,9 +164,17 @@ export async function getYclientsAvailableSlots(input: {
     const timeParams = new URLSearchParams();
     timeParams.set("service_ids[]", cfg.serviceId);
     const timeData = await requestJson(`/book_times/${cfg.companyId}/${cfg.staffId}/${date}?${timeParams.toString()}`);
-    for (const row of collectRecords(timeData)) {
-      const time = timeValue(row);
-      if (!time) continue;
+    const timeRows = collectRecords(timeData)
+      .map((row) => ({ row, time: timeValue(row) }))
+      .filter((item) => Boolean(item.time))
+      .sort((left, right) => left.time.localeCompare(right.time));
+    const uniqueTimeRows = timeRows.filter((item, index) => index === 0 || item.time !== timeRows[index - 1].time);
+    const supportedStarts = continuousStartsForDuration(
+      uniqueTimeRows,
+      input.durationMinutes,
+      input.baseServiceDurationMinutes ?? 45
+    );
+    for (const { time } of supportedStarts) {
       const datetime = `${date}T${time}:00`;
       if (new Date(datetime).getTime() < Date.now() + input.minLeadMinutes * 60_000) continue;
       const id = `yclients:${cfg.staffId}:${cfg.serviceId}:${date}:${time}`;

@@ -18,6 +18,11 @@ const DEFAULT_DEMAND_ATTRIBUTES = [
   { name: "пробег", type: "string", required: false, order: 50, isSystem: false },
   { name: "Объем", type: "string", required: true, order: 60, isSystem: false },
   { name: "Моторное масло", type: "string", required: true, order: 70, isSystem: false },
+  { name: "двигатель", type: "string", required: false, order: 75, isSystem: false },
+  { name: "объем двигателя", type: "string", required: false, order: 76, isSystem: false },
+  { name: "мощность", type: "string", required: false, order: 77, isSystem: false },
+  { name: "коробка", type: "string", required: false, order: 78, isSystem: false },
+  { name: "привод", type: "string", required: false, order: 79, isSystem: false },
   { name: "Эко пользователь", type: "string", required: false, order: 1000, isSystem: true },
 ];
 

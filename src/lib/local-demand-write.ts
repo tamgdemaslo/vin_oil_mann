@@ -429,22 +429,22 @@ function mergeUniqueStrings(values: unknown[], nextValues: unknown[]): string[] 
 async function buildLocalDemandAttributes(
   input: CreateDemandBody["attributes"] | unknown[] | undefined,
   ecoUserName?: string
-): Promise<Array<{ definitionId: string; name: string; value: unknown }>> {
+): Promise<Array<{ definitionId: string; name: string; value: unknown; source?: string }>> {
   const definitions = await prisma.demandAttributeDefinition.findMany();
   const byId = new Map(definitions.map((definition) => [definition.id, definition]));
   const byName = new Map(definitions.map((definition) => [normalizeAttributeName(definition.name), definition]));
-  const out = new Map<string, { definitionId: string; name: string; value: unknown }>();
+  const out = new Map<string, { definitionId: string; name: string; value: unknown; source?: string }>();
 
   for (const attr of Array.isArray(input) ? input : []) {
     if (!attr || typeof attr !== "object") continue;
-    const record = attr as { id?: unknown; name?: unknown; value?: unknown };
+    const record = attr as { id?: unknown; name?: unknown; value?: unknown; source?: unknown };
     const value = record.value;
     if (value == null || value === "") continue;
     const id = typeof record.id === "string" ? record.id : "";
     const name = typeof record.name === "string" ? record.name : "";
     const definition = byId.get(id) ?? byName.get(normalizeAttributeName(name));
     if (!definition) continue;
-    out.set(definition.id, { definitionId: definition.id, name: definition.name, value });
+    out.set(definition.id, { definitionId: definition.id, name: definition.name, value, source: typeof record.source === "string" ? record.source : undefined });
   }
 
   const ecoDefinition = byName.get(normalizeAttributeName("Эко пользователь"));

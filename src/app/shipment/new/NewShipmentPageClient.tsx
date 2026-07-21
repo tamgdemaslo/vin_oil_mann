@@ -25,8 +25,11 @@ import { ContactActionButton } from "@/components/messenger/ContactActionButton"
 import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/EcoUI";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
+import { vehicleFieldValues, type NormalizedVehicleIdentity } from "@/lib/vehicle-identity-client";
+import type { MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -99,7 +102,7 @@ type Position = {
   } | null;
 };
 
-type ShipmentAttribute = { id: string; name: string; type: string; meta: Meta; value: string | null };
+type ShipmentAttribute = { id: string; name: string; type: string; meta: Meta; value: string | null; source?: string };
 type SessionJson = { user?: { role?: string } };
 type OrganizationsJson = { organizations?: Org[]; error?: string };
 type StoresJson = { stores?: Store[]; error?: string };
@@ -1145,6 +1148,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [mannExpandedChoiceArticle, setMannExpandedChoiceArticle] = useState<string | null>(null);
   const [mannChoiceHighlightedIndex, setMannChoiceHighlightedIndex] = useState(0);
   const [mannRecentlySelectedArticle, setMannRecentlySelectedArticle] = useState<string | null>(null);
+  const mannAutoSelectionRef = useRef<{ make: string; model: string; variantId: string } | null>(null);
 
   const [demandIdLocal, setDemandIdLocal] = useState<string | null>(null);
   const [existingDemandName, setExistingDemandName] = useState<string | null>(null);
@@ -1860,11 +1864,13 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setMannMatches({});
       return;
     }
+    const autoSelection = mannAutoSelectionRef.current;
+    const preserveAutoSelection = Boolean(autoSelection && autoSelection.make === selectedMannMake);
     let cancelled = false;
     setMannLoading("models");
     setMannError(null);
     setMannModels([]);
-    setSelectedMannModel("");
+    setSelectedMannModel(preserveAutoSelection ? autoSelection!.model : "");
     setMannVariants([]);
     setSelectedMannVariantId("");
     setMannFilters([]);
@@ -1947,6 +1953,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       window.clearTimeout(t);
     };
   }, [mannYear, selectedMannMake, selectedMannModel]);
+
+  useEffect(() => {
+    const autoSelection = mannAutoSelectionRef.current;
+    if (!autoSelection || autoSelection.make !== selectedMannMake || autoSelection.model !== selectedMannModel) return;
+    if (!mannVariants.some((variant) => variant.variantId === autoSelection.variantId)) return;
+    mannAutoSelectionRef.current = null;
+    setSelectedMannVariantId(autoSelection.variantId);
+  }, [mannVariants, selectedMannMake, selectedMannModel]);
 
   useEffect(() => {
     if (!selectedMannVariantId) {
@@ -2400,6 +2414,60 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     } finally {
       setVinLookupLoading(false);
     }
+  }, [markDraftDirty, vin]);
+
+  const applyIdentifiedVehicle = useCallback((vehicle: NormalizedVehicleIdentity, resolution: MannVehicleResolution | null) => {
+    const fields = vehicleFieldValues(vehicle);
+    const fieldEntries: Array<[string, { value: string; source: string }]> = [];
+    for (const [attributeName, field] of Object.entries(fields)) {
+      if (field?.value) fieldEntries.push([attributeName, field]);
+    }
+    setAttributes((prev) => {
+      const next = [...prev];
+      for (const [attributeName, field] of fieldEntries) {
+        const normalizedTarget = normalizeAttrName(attributeName);
+        const index = next.findIndex((attribute) => normalizeAttrName(attribute.name) === normalizedTarget);
+        if (index >= 0) {
+          const current = next[index];
+          if (attributeValueToString(current?.value).trim()) continue;
+          if (current) next[index] = { ...current, value: field.value, source: field.source };
+          continue;
+        }
+        next.push({
+          id: `vehicle-tronk-${normalizedTarget.replace(/\s+/g, "-")}`,
+          name: attributeName,
+          type: "string",
+          meta: { href: `local://demand-attribute/${encodeURIComponent(attributeName)}`, type: "demandattribute", mediaType: "application/json" },
+          value: field.value,
+          source: field.source,
+        });
+      }
+      return next;
+    });
+    if (vehicle.vin && !vin.trim()) setVin(formatVehicleAttributeInput("vin номер", vehicle.vin));
+    const candidate = resolution?.selected ?? resolution?.candidates[0] ?? null;
+    if (candidate) {
+      mannAutoSelectionRef.current = resolution?.status === "matched"
+        ? { make: candidate.make, model: candidate.model, variantId: candidate.variantId }
+        : null;
+      setSelectedMannMake(candidate.make);
+      setSelectedMannModel(candidate.model);
+      if (vehicle.year) setMannYear(String(vehicle.year));
+      if (resolution?.status === "matched") {
+        setSelectedMannVariantId("");
+        setMannPickerExpanded(false);
+      } else {
+        setSelectedMannVariantId("");
+        setMannPickerExpanded(true);
+      }
+    }
+    setPositionAddMode("mann");
+    setProductAddNotice(
+      resolution?.status === "matched"
+        ? "Автомобиль заполнен, фильтры MANN подобраны"
+        : "Автомобиль заполнен. Проверьте модификацию MANN перед добавлением фильтров"
+    );
+    markDraftDirty();
   }, [markDraftDirty, vin]);
 
   const addFromVinLookup = useCallback((items: VinLookupItem[], desiredByProductId?: Record<string, number>) => {
@@ -4177,10 +4245,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <div className="eco-shipment-mann-panel-head">
               <div className="eco-shipment-position-vin-copy">
                 <strong>Подбор фильтров по автомобилю · MANN PDF</strong>
-                <span>Марка, модель, год и модификация для быстрого комплекта фильтров.</span>
+                <span>Определите автомобиль автоматически или продолжите с ручным подбором.</span>
               </div>
             </div>
             <div className="eco-shipment-mann-panel-body">
+
+            <VehicleLookupPanel
+              organizationId={selectedOrg?.id}
+              warehouseId={selectedStore?.id}
+              initialVin={vin}
+              onUseVehicle={applyIdentifiedVehicle}
+              onManualMode={() => {
+                setMannPickerExpanded(true);
+                document.getElementById("shipment-mann-manual-controls")?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+            />
 
             {selectedMannVariant && !mannPickerExpanded ? (
               <div className="eco-shipment-mann-selected-row">
@@ -4192,7 +4271,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             ) : null}
 
             {mannPickerExpanded || !selectedMannVariant ? (
-              <div className="eco-shipment-mann-controls">
+              <div className="eco-shipment-mann-controls" id="shipment-mann-manual-controls">
                 <MannCombobox
                   label="Марка"
                   placeholder="Выберите марку"

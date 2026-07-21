@@ -1,18 +1,21 @@
 import type { Prisma } from "@prisma/client";
 import { tool, type RunContext } from "@openai/agents";
-import OpenAI from "openai";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
+import { createLocalDemand } from "@/lib/local-demand-write";
+import { getFirstCrmStage } from "@/lib/crm";
 import { searchCatalog } from "@/lib/catalog-search";
-import { getOilRequirementsFromOpenAI } from "@/lib/oil-recommendations";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { getVinLookupCache } from "@/lib/vin-lookup-cache";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
 import { createYclientsAppointment, getYclientsAvailableSlots, parseYclientsSlotId } from "./yclients";
 import { safeToolOutputGuardrail, sanitizeForModel, tenantToolInputGuardrail } from "./security";
-import type { AIAgentRunContext } from "./types";
+import { getFreshTechnicalEvidence, queryTechnicalProvider, saveTechnicalEvidence, technicalVehicleKey, technicalWebSearchAvailability, type TechnicalVehicle } from "./technical-evidence";
+import { AI_SERVICE_TYPES, TRANSMISSION_SERVICE_TYPES, type AIAgentRunContext, type AIServiceType } from "./types";
+import { estimateConversationDurationMinutes, getConversationAgentState, withConversationAgentState } from "./conversation-state";
+import { stageForTool, updateAgentRunProgress } from "./run-progress";
 import {
   groupCatalogApplications,
   resolveVehicleVariants,
@@ -50,6 +53,30 @@ function confidenceNumber(level: ConfidenceLevel) {
   return level === "HIGH" ? 0.9 : level === "MEDIUM" ? 0.65 : 0.35;
 }
 
+function timeoutForTool(ctx: AIAgentRunContext, toolName: string) {
+  if (toolName === "get_client_profile") return ctx.settings.timeoutRules.clientProfileSeconds;
+  if (["resolve_vehicle_by_vin", "resolve_vehicle_by_parameters", "save_vehicle", "trusted_vehicle_web_search"].includes(toolName)) return ctx.settings.timeoutRules.vehicleResolutionSeconds;
+  if (["trusted_technical_web_search", "get_engine_oil_requirements", "get_transmission_requirements", "find_required_parts"].includes(toolName)) return ctx.settings.timeoutRules.technicalSearchSeconds;
+  if (["search_local_catalog", "search_compatible_oil"].includes(toolName)) return ctx.settings.timeoutRules.catalogSearchSeconds;
+  if (toolName === "rossko_search") return ctx.settings.timeoutRules.rosskoSearchSeconds;
+  if (toolName === "calculate_service_quote") return ctx.settings.timeoutRules.quoteCalculationSeconds;
+  return Math.max(ctx.settings.timeoutRules.catalogSearchSeconds, 30);
+}
+
+async function withToolTimeout<T>(task: Promise<T>, timeoutSeconds: number, toolName: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Превышен таймаут инструмента ${toolName}`)), timeoutSeconds * 1_000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function mergeSessionCollectedData(ctx: AIAgentRunContext, patch: JsonRecord, confidence?: number) {
   const session = await prisma.aIAgentSession.findFirst({
     where: { id: ctx.sessionId, organizationId: ctx.organizationId },
@@ -74,6 +101,17 @@ async function withToolAudit<T>(
 ): Promise<T> {
   const ctx = requireContext(context);
   const startedAt = Date.now();
+  const stage = stageForTool(toolName);
+  await updateAgentRunProgress({
+    organizationId: ctx.organizationId,
+    runId: ctx.runId,
+    stage,
+    status: stage === "waiting_for_human" ? "waiting_for_human" : "running",
+    eventType: "tool_started",
+    toolName,
+    toolStatus: "running",
+    payload: args,
+  });
   const row = await prisma.aIAgentToolCall.create({
     data: {
       organizationId: ctx.organizationId,
@@ -85,7 +123,7 @@ async function withToolAudit<T>(
     },
   });
   try {
-    const result = await fn();
+    const result = await withToolTimeout(fn(), timeoutForTool(ctx, toolName), toolName);
     await prisma.aIAgentToolCall.update({
       where: { id: row.id },
       data: {
@@ -95,16 +133,41 @@ async function withToolAudit<T>(
         completedAt: new Date(),
       },
     });
+    await updateAgentRunProgress({
+      organizationId: ctx.organizationId,
+      runId: ctx.runId,
+      stage,
+      status: stage === "waiting_for_human" ? "waiting_for_human" : "running",
+      eventType: "tool_completed",
+      toolName,
+      toolStatus: "completed",
+      durationMs: Date.now() - startedAt,
+      payload: result,
+    });
     return result;
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const timedOut = /Превышен таймаут инструмента/.test(errorMessage);
     await prisma.aIAgentToolCall.update({
       where: { id: row.id },
       data: {
         status: "failed",
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage,
         durationMs: Date.now() - startedAt,
         completedAt: new Date(),
       },
+    });
+    await updateAgentRunProgress({
+      organizationId: ctx.organizationId,
+      runId: ctx.runId,
+      stage,
+      status: "running",
+      eventType: "tool_failed",
+      toolName,
+      toolStatus: "failed",
+      durationMs: Date.now() - startedAt,
+      errorCode: timedOut ? "tool_timeout" : "tool_failed",
+      internalLabel: errorMessage,
     });
     throw error;
   }
@@ -228,6 +291,67 @@ export const resolveVehicleByVinTool = tool({
     }),
 });
 
+export const saveVehicleTool = tool({
+  name: "save_vehicle",
+  description: "Сохранить подтверждённые данные автомобиля текущего клиента. Перед обновлением сверяет VIN и госномер, не создаёт дубли.",
+  parameters: z.object({
+    vin: z.string().max(24).nullable(),
+    plate: z.string().max(32).nullable(),
+    make: z.string().max(80).nullable(),
+    model: z.string().max(120).nullable(),
+    generation: z.string().max(100).nullable(),
+    year: z.number().int().min(1950).max(2100).nullable(),
+    engine: z.string().max(100).nullable(),
+    engineCode: z.string().max(80).nullable(),
+    power: z.string().max(40).nullable(),
+    transmission: z.string().max(100).nullable(),
+    drive: z.string().max(60).nullable(),
+    confirmed: z.boolean(),
+  }),
+  ...commonToolGuardrails,
+  execute: async (vehicle, context) =>
+    withToolAudit(context, "save_vehicle", vehicle, async () => {
+      const ctx = requireContext(context);
+      if (!vehicle.confirmed) return { saved: false, reason: "Сохраняются только подтверждённые клиентом или VIN-каталогом данные" };
+      const conversation = await getConversationContext(ctx.conversationId);
+      if (conversation.organizationId !== ctx.organizationId) throw new Error("Диалог другой организации");
+      if (!conversation.client?.id) return { saved: false, reason: "Сначала нужно привязать клиента к диалогу" };
+      const vin = vehicle.vin ? normalizeVin(vehicle.vin) : "";
+      if (vin && !validVin(vin)) throw new Error("Некорректный VIN");
+      const plate = clean(vehicle.plate).toUpperCase().replace(/\s+/g, "");
+      const client = await prisma.localCounterparty.findFirst({ where: { id: conversation.client.id } });
+      if (!client) return { saved: false, reason: "Карточка клиента не найдена" };
+      const raw = record(client.raw);
+      const existingVehicle = record(raw.vehicle);
+      const existingVin = clean(existingVehicle.vin).toUpperCase();
+      const existingPlate = clean(existingVehicle.plate || existingVehicle.licensePlate).toUpperCase().replace(/\s+/g, "");
+      const duplicate = Boolean((vin && existingVin === vin) || (plate && existingPlate === plate));
+      const nextVehicle = {
+        ...existingVehicle,
+        id: clean(existingVehicle.id) || `vehicle:${vin || plate || client.id}`,
+        vin: vin || existingVin || null,
+        plate: plate || existingPlate || null,
+        brand: vehicle.make || clean(existingVehicle.brand) || null,
+        make: vehicle.make || clean(existingVehicle.make) || null,
+        model: vehicle.model || clean(existingVehicle.model) || null,
+        generation: vehicle.generation || clean(existingVehicle.generation) || null,
+        year: vehicle.year ?? existingVehicle.year ?? null,
+        engine: vehicle.engine || clean(existingVehicle.engine) || null,
+        engineCode: vehicle.engineCode || clean(existingVehicle.engineCode) || null,
+        power: vehicle.power || clean(existingVehicle.power) || null,
+        transmission: vehicle.transmission || clean(existingVehicle.transmission) || null,
+        drive: vehicle.drive || clean(existingVehicle.drive) || null,
+      };
+      const label = [clean(nextVehicle.make), clean(nextVehicle.model)].filter(Boolean).join(" ");
+      await prisma.localCounterparty.update({
+        where: { id: client.id },
+        data: { raw: json({ ...raw, vehicle: { ...nextVehicle, label: label || clean(existingVehicle.label) || "Автомобиль клиента" } }) },
+      });
+      await mergeSessionCollectedData(ctx, { vehicle: nextVehicle, vehicleSavedAt: new Date().toISOString() });
+      return { saved: true, updatedExistingVehicle: duplicate || Boolean(Object.keys(existingVehicle).length), vehicle: { label: label || "Автомобиль клиента", vin: nextVehicle.vin, plate: nextVehicle.plate } };
+    }),
+});
+
 export const resolveVehicleByParametersTool = tool({
   name: "resolve_vehicle_by_parameters",
   description: "Первый обязательный поиск автомобиля по марке, модели, году и двигателю. Группирует строки каталога по реальным модификациям, сравнивает фильтры и возвращает конкретный уточняющий вопрос без требования VIN.",
@@ -317,9 +441,141 @@ export const resolveVehicleByParametersTool = tool({
     }),
 });
 
+const technicalVehicleSchema = z.object({
+  vin: z.string().max(24).nullable(),
+  make: z.string().max(80).nullable(),
+  model: z.string().max(120).nullable(),
+  year: z.number().int().min(1950).max(2100).nullable(),
+  engine: z.string().max(80).nullable(),
+  engineCode: z.string().max(80).nullable(),
+  transmission: z.string().max(100).nullable(),
+  drive: z.string().max(60).nullable(),
+  modification: z.string().max(220).nullable(),
+});
+
+export const trustedTechnicalWebSearchTool = tool({
+  name: "trusted_technical_web_search",
+  description: "Запросить технические факты через серверный поиск только в белом списке источников. Сохраняет URL, дату проверки и выдержку. Нельзя заменять этим инструментом догадки.",
+  parameters: z.object({
+    vehicle: technicalVehicleSchema,
+    aggregate: z.enum(["engine", "automatic_transmission", "cvt", "dsg", "manual_transmission", "front_differential", "rear_differential", "transfer_case", "haldex", "brake_system"]),
+    factTypes: z.array(z.enum(["oil_approval", "oil_capacity", "oil_viscosity", "oil_filter", "air_filter", "cabin_filter", "fuel_filter", "fluid_specification", "fluid_capacity", "level_procedure", "service_parts"])).min(1).max(8),
+  }),
+  ...commonToolGuardrails,
+  execute: async ({ vehicle: rawVehicle, aggregate, factTypes }, context) =>
+    withToolAudit(context, "trusted_technical_web_search", { vehicle: rawVehicle, aggregate, factTypes }, async () => {
+      const ctx = requireContext(context);
+      const vehicle: TechnicalVehicle = {
+        ...rawVehicle,
+        vin: rawVehicle.vin ? normalizeVin(rawVehicle.vin) : null,
+      };
+      if (vehicle.vin && !validVin(vehicle.vin)) throw new Error("Некорректный VIN");
+      if (!vehicle.vin && (!vehicle.make || !vehicle.model || !vehicle.year || !vehicle.engine)) {
+        return { found: false, needsClarification: ["марка, модель, год и двигатель"], facts: {}, sources: [] };
+      }
+      const cached = await getFreshTechnicalEvidence({ organizationId: ctx.organizationId, vehicle, aggregate, factTypes });
+      if (!cached.missingFactTypes.length) {
+        return { found: true, cached: true, facts: cached.facts, sources: cached.sources, conflicts: [], vehicleKey: cached.vehicleKey, checkedAt: new Date().toISOString() };
+      }
+      const webSearch = technicalWebSearchAvailability();
+      if (!ctx.settings.internetSearchEnabled) {
+        return {
+          found: Boolean(cached.sources.length),
+          cached: Boolean(cached.sources.length),
+          facts: cached.facts,
+          sources: cached.sources,
+          missingFactTypes: cached.missingFactTypes,
+          needsHumanReview: true,
+          reason: "Интернет-поиск отключён в настройках организации; недостающие технические данные нельзя придумывать.",
+          vehicleKey: cached.vehicleKey,
+        };
+      }
+      if (!webSearch.responsesApi && !webSearch.internalProvider) {
+        return {
+          found: Boolean(cached.sources.length),
+          cached: Boolean(cached.sources.length),
+          facts: cached.facts,
+          sources: cached.sources,
+          missingFactTypes: cached.missingFactTypes,
+          needsHumanReview: true,
+          reason: "Интернет-поиск не подключён или завершился ошибкой: нет доступного провайдера поиска.",
+          vehicleKey: cached.vehicleKey,
+        };
+      }
+      const result = await queryTechnicalProvider({ vehicle, aggregate, factTypes: cached.missingFactTypes, trustedDomains: ctx.settings.trustedDomains });
+      if (!result) {
+        return {
+          found: Boolean(cached.sources.length),
+          facts: cached.facts,
+          sources: cached.sources,
+          missingFactTypes: cached.missingFactTypes,
+          needsHumanReview: true,
+          reason: "Интернет-поиск был вызван, но не вернул подтверждённых источников для этого автомобиля.",
+          vehicleKey: cached.vehicleKey,
+        };
+      }
+      await saveTechnicalEvidence({ organizationId: ctx.organizationId, vehicle, aggregate, factTypes: cached.missingFactTypes, result });
+      if (result.conflicts?.length) {
+        return {
+          found: false,
+          facts: { ...cached.facts, ...result.facts },
+          sources: [...cached.sources, ...result.sources],
+          conflicts: result.conflicts,
+          needsHumanReview: true,
+          reason: "Технические источники расходятся; расчёт передан на проверку сотруднику.",
+          vehicleKey: cached.vehicleKey,
+        };
+      }
+      return {
+        found: true,
+        cached: false,
+        facts: { ...cached.facts, ...result.facts },
+        sources: [...cached.sources, ...result.sources],
+        conflicts: [],
+        vehicleKey: technicalVehicleKey(vehicle),
+        checkedAt: new Date().toISOString(),
+      };
+    }),
+});
+
+export const getTransmissionRequirementsTool = tool({
+  name: "get_transmission_requirements",
+  description: "Получить подтверждённые требования к АКПП, CVT, DSG, МКПП, редуктору, раздатке или Haldex из технического кеша. Возвращает спецификацию, объёмы, детали и процедуру уровня, но не придумывает отсутствующие данные.",
+  parameters: z.object({
+    vehicle: technicalVehicleSchema,
+    aggregate: z.enum(["automatic_transmission", "cvt", "dsg", "manual_transmission", "front_differential", "rear_differential", "transfer_case", "haldex"]),
+  }),
+  ...commonToolGuardrails,
+  execute: async ({ vehicle: rawVehicle, aggregate }, context) =>
+    withToolAudit(context, "get_transmission_requirements", { vehicle: rawVehicle, aggregate }, async () => {
+      const ctx = requireContext(context);
+      const vehicle: TechnicalVehicle = { ...rawVehicle, vin: rawVehicle.vin ? normalizeVin(rawVehicle.vin) : null };
+      const evidence = await getFreshTechnicalEvidence({
+        organizationId: ctx.organizationId,
+        vehicle,
+        aggregate,
+        factTypes: ["fluid_specification", "fluid_capacity", "level_procedure", "service_parts"],
+      });
+      const facts = record(evidence.facts);
+      const hasSpec = Boolean(clean(facts.specification) || clean(facts.approval));
+      const hasVolume = Number.isFinite(Number(facts.partialChangeLiters ?? facts.volumeWithFilter ?? facts.fillVolumeLiters)) && Number(facts.partialChangeLiters ?? facts.volumeWithFilter ?? facts.fillVolumeLiters) > 0;
+      const confidence = evidence.sources.length ? Math.min(...evidence.sources.map((source) => Number(source.confidence ?? 0))) : 0;
+      return {
+        found: hasSpec && hasVolume,
+        aggregate,
+        requirements: facts,
+        sources: evidence.sources.map((source) => ({ source: source.name, url: source.url, retrievedAt: new Date().toISOString() })),
+        confidence,
+        needsHumanReview: true,
+        missingFactTypes: evidence.missingFactTypes,
+        reason: evidence.missingFactTypes.length ? "Для трансмиссионного обслуживания нужна дополнительная техническая проверка." : "Стоимость работы по трансмиссии всегда подтверждает сотрудник.",
+      };
+    }),
+});
+
 export const getEngineOilRequirementsTool = tool({
   name: "get_engine_oil_requirements",
-  description: "Получить требования моторного масла по VIN или предварительную оценку по уже найденным параметрам автомобиля. Предварительную оценку можно использовать только для ориентировочного расчёта с явной пометкой о проверке.",
+  description: "Получить только подтверждённые требования моторного масла из проверенного технического кеша. Не предполагает допуски или объём по памяти.",
   parameters: z.object({
     vin: z.string().max(24).nullable(),
     make: z.string().max(80).nullable(),
@@ -332,91 +588,57 @@ export const getEngineOilRequirementsTool = tool({
   ...commonToolGuardrails,
   execute: async ({ vin: rawVin, make, model, year, engine, engineCode, modification }, context) =>
     withToolAudit(context, "get_engine_oil_requirements", { vin: rawVin, make, model, year, engine, engineCode, modification }, async () => {
+      const ctx = requireContext(context);
       const vin = rawVin ? normalizeVin(rawVin) : null;
       if (vin && !validVin(vin)) throw new Error("Некорректный VIN");
-      if (vin) {
-        const cached = await getVinLookupCache(vin);
-        const oil = cached?.oilInfo;
-        if (!oil) {
-          return {
-            found: false,
-            confidence: 0,
-            componentConfidence: { oilSpecificationConfidence: "LOW", oilVolumeConfidence: "LOW" },
-            needsHumanReview: true,
-            usableForPreliminaryQuote: false,
-            reason: "В проверенном кеше Эко-платформы нет требований для этого VIN",
-          };
-        }
-        const facts = {
-          requiredApproval: oil.approval || null,
-          allowedViscosities: oil.sae ?? [],
-          volumeWithFilter: oil.fillVolumeLiters || null,
-          acea: oil.acea ?? [],
-          api: oil.api ?? [],
-          ilsac: oil.ilsac ?? [],
-          engineCode: engineCode || cached.decoded?.engineSeries || null,
-        };
-        const hasApproval = Boolean(oil.approval || oil.acea?.length || oil.api?.length);
-        const hasVolume = Boolean(oil.fillVolumeLiters);
-        return {
-          found: true,
-          ...facts,
-          confidence: hasApproval && hasVolume ? 0.65 : 0.45,
-          componentConfidence: {
-            oilSpecificationConfidence: hasApproval ? "MEDIUM" : "LOW",
-            oilVolumeConfidence: hasVolume ? "MEDIUM" : "LOW",
-          },
-          preliminary: false,
-          usableForPreliminaryQuote: true,
-          needsHumanReview: true,
-          note: "Сохранённый VIN-подбор нужно сверить с техническим источником перед окончательным заказом деталей.",
-          sources: [{ source: "Эко-платформа: сохранённый VIN-подбор", retrievedAt: new Date().toISOString(), appliesToVin: vin }],
-        };
-      }
-
-      if (!make || !model || !year || !engine) {
+      const vehicle: TechnicalVehicle = { vin, make, model, year, engine, engineCode, modification };
+      if (!vin && (!make || !model || !year || !engine)) {
         return {
           found: false,
           confidence: 0,
           componentConfidence: { oilSpecificationConfidence: "LOW", oilVolumeConfidence: "LOW" },
           needsHumanReview: true,
           usableForPreliminaryQuote: false,
-          reason: "Для предварительной оценки нужны марка, модель, год и двигатель",
+          reason: "Для технической проверки нужны VIN либо марка, модель, год и двигатель",
         };
       }
-      const apiKey = process.env.OPENAI_API_KEY?.trim();
-      if (!apiKey) throw new Error("OPENAI_API_KEY не задан");
-      const oil = await getOilRequirementsFromOpenAI(new OpenAI({ apiKey }), {
-        make,
-        model,
-        year: String(year),
-        engine,
-        trim: modification || undefined,
-        hints: [engineCode && `Код двигателя: ${engineCode}`].filter((value): value is string => Boolean(value)),
+      const evidence = await getFreshTechnicalEvidence({
+        organizationId: ctx.organizationId,
+        vehicle,
+        aggregate: "engine",
+        factTypes: ["oil_approval", "oil_capacity", "oil_viscosity"],
       });
-      const hasSpecification = Boolean(oil.oem_approvals.length || oil.acea.length || oil.api.length || oil.ilsac?.length);
-      const hasVolume = Boolean(oil.oil_capacity_liters);
-      const confidence = Math.min(0.65, oil.confidence);
+      const facts = record(evidence.facts);
+      const approvals = Array.isArray(facts.requiredApproval) ? facts.requiredApproval.map(clean).filter(Boolean) : [clean(facts.requiredApproval)].filter(Boolean);
+      const viscosities = Array.isArray(facts.allowedViscosities) ? facts.allowedViscosities.map(clean).filter(Boolean) : [];
+      const acea = Array.isArray(facts.acea) ? facts.acea.map(clean).filter(Boolean) : [];
+      const api = Array.isArray(facts.api) ? facts.api.map(clean).filter(Boolean) : [];
+      const ilsac = Array.isArray(facts.ilsac) ? facts.ilsac.map(clean).filter(Boolean) : [];
+      const volume = Number(facts.volumeWithFilter);
+      const hasSpecification = Boolean(approvals.length || acea.length || api.length || ilsac.length);
+      const hasVolume = Number.isFinite(volume) && volume > 0;
+      const confidence = evidence.sources.length ? Math.min(...evidence.sources.map((source) => Number(source.confidence ?? 0))) : 0;
       return {
-        found: hasSpecification || hasVolume || oil.sae_viscosities.length > 0,
-        requiredApproval: oil.oem_approvals,
-        allowedViscosities: oil.sae_viscosities,
-        volumeWithFilter: oil.oil_capacity_liters ?? null,
-        volumeNote: oil.oil_capacity_note ?? null,
-        acea: oil.acea,
-        api: oil.api,
-        ilsac: oil.ilsac ?? [],
-        engineCode,
+        found: hasSpecification && hasVolume,
+        requiredApproval: approvals[0] ?? null,
+        allowedViscosities: viscosities,
+        volumeWithFilter: hasVolume ? volume : null,
+        volumeNote: clean(facts.volumeNote) || null,
+        acea,
+        api,
+        ilsac,
+        engineCode: clean(facts.engineCode) || engineCode || null,
         confidence,
         componentConfidence: {
-          oilSpecificationConfidence: hasSpecification && confidence >= 0.55 ? "MEDIUM" : "LOW",
-          oilVolumeConfidence: hasVolume && confidence >= 0.55 ? "MEDIUM" : "LOW",
+          oilSpecificationConfidence: hasSpecification && confidence >= 0.8 ? "HIGH" : hasSpecification ? "MEDIUM" : "LOW",
+          oilVolumeConfidence: hasVolume && confidence >= 0.8 ? "HIGH" : hasVolume ? "MEDIUM" : "LOW",
         },
-        preliminary: true,
-        usableForPreliminaryQuote: true,
-        needsHumanReview: true,
-        note: "Это предварительная оценка по параметрам. Для точного заказа масла или фильтра требуется сверка по техническому источнику; VIN полезен, но не обязателен для ориентировочного расчёта.",
-        sources: [{ source: "Предварительная модельная оценка по параметрам автомобиля", retrievedAt: new Date().toISOString(), sourceHint: oil.source_hint ?? null }],
+        preliminary: !vin,
+        usableForPreliminaryQuote: hasSpecification && hasVolume,
+        needsHumanReview: !hasSpecification || !hasVolume || confidence < 0.8 || evidence.missingFactTypes.length > 0,
+        note: evidence.missingFactTypes.length ? `Нужна дополнительная проверка: ${evidence.missingFactTypes.join(", ")}.` : null,
+        sources: evidence.sources.map((source) => ({ source: source.name, url: source.url, retrievedAt: new Date().toISOString(), appliesToVin: vin })),
+        vehicleKey: evidence.vehicleKey,
       };
     }),
 });
@@ -571,6 +793,87 @@ export const searchLocalCatalogTool = tool({
     }),
 });
 
+function productTier(name: string, brand: string | null) {
+  const label = `${brand || ""} ${name}`.toLowerCase();
+  if (label.includes("lukoil") || label.includes("лукойл")) return "economy";
+  if (label.includes("eurol")) return "standard";
+  if (label.includes("bardahl")) return "premium";
+  return "other";
+}
+
+export const searchCompatibleOilTool = tool({
+  name: "search_compatible_oil",
+  description: "Детерминированно найти совместимые моторные масла в локальном каталоге по нормализованному допуску и вязкости. Чётко отличает официальный approval от заявления о соответствии, если это указано в товарной карточке.",
+  parameters: z.object({
+    requiredApproval: z.string().max(160).nullable(),
+    allowedViscosities: z.array(z.string().min(2).max(40)).min(1).max(12),
+    acea: z.array(z.string().max(40)).max(12),
+    api: z.array(z.string().max(40)).max(12),
+    ilsac: z.array(z.string().max(40)).max(12),
+    limit: z.number().int().min(1).max(12),
+  }),
+  ...commonToolGuardrails,
+  execute: async ({ requiredApproval, allowedViscosities, acea, api, ilsac, limit }, context) =>
+    withToolAudit(context, "search_compatible_oil", { requiredApproval, allowedViscosities, acea, api, ilsac, limit }, async () => {
+      const ctx = requireContext(context);
+      const products = await prisma.localProduct.findMany({
+        where: {
+          archived: false,
+          entityType: { not: "service" },
+          OR: [
+            { groupPath: { contains: "масл", mode: "insensitive" } },
+            { groupPath: { contains: "oil", mode: "insensitive" } },
+            { name: { contains: "oil", mode: "insensitive" } },
+            { name: { contains: "масл", mode: "insensitive" } },
+          ],
+        },
+        select: { id: true, name: true, article: true, brand: true, sae: true, oem: true, oemParts: true, acea: true, apiSpec: true, ilsac: true, packageVolume: true, salePriceCents: true, attributes: true, stockBalances: { select: { available: true, store: { select: { organizationId: true, archived: true } } } } },
+        take: 1000,
+      });
+      const { normalizeSAE, normalizeOEM, normalizeACEA, normalizeAPI, normalizeILSAC } = await import("@/lib/oil-normalizer");
+      const needApproval = requiredApproval ? normalizeOEM(requiredApproval) : [];
+      const needViscosity = allowedViscosities.flatMap((value) => normalizeSAE(value));
+      const needAcea = acea.flatMap((value) => normalizeACEA(value));
+      const needApi = api.flatMap((value) => normalizeAPI(value));
+      const needIlsac = ilsac.flatMap((value) => normalizeILSAC(value));
+      const matches = products.flatMap((product) => {
+        const attributes = JSON.stringify(product.attributes ?? "");
+        const productApprovals = normalizeOEM([product.oem, product.oemParts, product.name, attributes].filter(Boolean).join(" "));
+        const productViscosity = normalizeSAE([product.sae, product.name, attributes].filter(Boolean).join(" "));
+        const productAcea = normalizeACEA([product.acea, product.name, attributes].filter(Boolean).join(" "));
+        const productApi = normalizeAPI([product.apiSpec, product.name, attributes].filter(Boolean).join(" "));
+        const productIlsac = normalizeILSAC([product.ilsac, product.name, attributes].filter(Boolean).join(" "));
+        const has = (actual: string[], expected: string[]) => !expected.length || expected.some((value) => actual.some((item) => item.toUpperCase() === value.toUpperCase()));
+        if (!has(productApprovals, needApproval) || !has(productViscosity, needViscosity) || (!needApproval.length && (!has(productAcea, needAcea) || !has(productApi, needApi) || !has(productIlsac, needIlsac)))) return [];
+        const available = product.stockBalances
+          .filter((row) => !row.store.archived && (!row.store.organizationId || row.store.organizationId === ctx.organizationId))
+          .reduce((sum, row) => sum + Number(row.available), 0);
+        const approvalText = `${product.oem || ""} ${product.oemParts || ""} ${attributes}`;
+        const officialApproval = /official|одобрени|approval/i.test(approvalText);
+        const score = (needApproval.length ? 100 : 0) + (needViscosity.length ? 20 : 0) + (available > 0 ? 10 : 0);
+        return [{
+          id: product.id,
+          name: product.name,
+          article: product.article,
+          brand: product.brand,
+          tier: productTier(product.name, product.brand),
+          retailPriceCents: product.salePriceCents,
+          packageVolume: product.packageVolume,
+          available,
+          availability: available > 0 ? "in_stock" : "order_only",
+          matchedApproval: productApprovals.filter((item) => needApproval.some((value) => value.toUpperCase() === item.toUpperCase())),
+          matchedViscosity: productViscosity.filter((item) => needViscosity.some((value) => value.toUpperCase() === item.toUpperCase())),
+          approvalClaim: needApproval.length ? (officialApproval ? "official_approval" : "manufacturer_claim") : "not_required",
+          score,
+        }];
+      });
+      matches.sort((a, b) => b.score - a.score || (b.available > 0 ? 1 : 0) - (a.available > 0 ? 1 : 0) || a.retailPriceCents - b.retailPriceCents);
+      const byTier = ["economy", "standard", "premium"].flatMap((tier) => matches.filter((item) => item.tier === tier).slice(0, 1));
+      const selected = (byTier.length ? byTier : matches).slice(0, limit);
+      return { found: selected.length > 0, products: selected, totalCompatible: matches.length, normalizedRequirements: { approval: needApproval, viscosity: needViscosity, acea: needAcea, api: needApi, ilsac: needIlsac }, checkedAt: new Date().toISOString() };
+    }),
+});
+
 function collectRosskoOffers(value: unknown, depth = 0): JsonRecord[] {
   if (depth > 7) return [];
   if (Array.isArray(value)) return value.flatMap((item) => collectRosskoOffers(item, depth + 1));
@@ -585,6 +888,13 @@ function offerPriceCents(row: JsonRecord) {
   const raw = row.price ?? row.Price ?? row.cost ?? row.Cost;
   const value = Number(String(raw ?? "").replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(value) ? Math.round(value * 100) : null;
+}
+
+function rosskoRetailPriceCents(purchaseCents: number | null, rules: Array<{ fromCents: number; toCents: number | null; marginPercent: number }>) {
+  if (purchaseCents == null) return null;
+  const rule = rules.find((item) => purchaseCents >= item.fromCents && (item.toCents == null || purchaseCents < item.toCents)) ?? rules[rules.length - 1];
+  if (!rule) return null;
+  return Math.round(purchaseCents * (1 + rule.marginPercent / 100));
 }
 
 export const rosskoSearchTool = tool({
@@ -612,13 +922,13 @@ export const rosskoSearchTool = tool({
           brand: clean(row.brand) || clean(row.Brand) || brand || "",
           article: clean(row.partnumber) || clean(row.partNumber) || clean(row.article) || article,
           name: clean(row.name) || clean(row.Name) || partType || "Деталь",
-          preliminaryPriceCents: offerPriceCents(row),
+          retailPriceCents: rosskoRetailPriceCents(offerPriceCents(row), ctx.settings.rosskoMarkupRules),
           availability: clean(row.stock) || clean(row.Stock) || clean(row.count) || clean(row.quantity) || "уточняется",
           delivery: clean(row.delivery) || clean(row.delivery_time) || clean(row.period) || "уточняется",
         }))
-        .filter((offer, index, list) => list.findIndex((other) => `${other.brand}:${other.article}:${other.preliminaryPriceCents}` === `${offer.brand}:${offer.article}:${offer.preliminaryPriceCents}`) === index)
+        .filter((offer, index, list) => list.findIndex((other) => `${other.brand}:${other.article}:${other.retailPriceCents}` === `${offer.brand}:${offer.article}:${offer.retailPriceCents}`) === index)
         .slice(0, 10);
-      return { found: offers.length > 0, ordered: false, offers, priceNote: "Стоимость предварительная и фиксируется после подтверждения заказа." };
+      return { found: offers.length > 0, ordered: false, offers, validForHours: 24, priceNote: "Стоимость и наличие фиксируются в расчёте на 24 часа; заказ подтверждает сотрудник." };
     }),
 });
 
@@ -626,7 +936,9 @@ const quoteOptionSchema = z.object({
   scenario: z.enum(["service_oil_service_filter", "client_oil_service_filter", "client_oil_client_filter", "service_oil_client_filter"]),
   oilProductId: z.string().nullable(),
   filterProductId: z.string().nullable(),
+  serviceProductId: z.string().nullable(),
   consumableProductIds: z.array(z.string()).max(8),
+  optionalProductIds: z.array(z.string()).max(8),
   protectionRemoval: z.boolean(),
   protectionInstall: z.boolean(),
   complexFilter: z.boolean(),
@@ -636,8 +948,19 @@ const quoteOptionSchema = z.object({
 
 const quoteRequirementSourceSchema = z.object({
   source: z.string().min(1).max(240),
+  url: z.string().url().max(1200).nullable().optional(),
   retrievedAt: z.string().min(1).max(64),
   appliesToVin: z.string().max(24).nullable(),
+});
+
+const additionalServiceSchema = z.object({
+  serviceType: z.enum(AI_SERVICE_TYPES),
+  title: z.string().min(3).max(180),
+  serviceProductId: z.string().nullable(),
+  materialProductIds: z.array(z.string()).max(12),
+  durationMinutes: z.number().int().min(10).max(480),
+  needsHumanReview: z.boolean(),
+  sources: z.array(quoteRequirementSourceSchema).min(1).max(10),
 });
 
 const quoteRequirementsSchema = z.object({
@@ -651,35 +974,48 @@ const quoteRequirementsSchema = z.object({
   engineCode: z.string().max(80).nullable(),
   confidence: z.number().min(0).max(1),
   needsHumanReview: z.boolean(),
+  conflictingSources: z.boolean().optional(),
   note: z.string().max(600).nullable(),
   sources: z.array(quoteRequirementSourceSchema).max(10),
 });
 
 export const calculateServiceQuoteTool = tool({
   name: "calculate_service_quote",
-  description: "Детерминированно рассчитать 1–3 варианта замены масла по настроенным правилам и актуальным розничным ценам каталога.",
+  description: "Детерминированно рассчитать 1–3 варианта обслуживания по актуальным розничным ценам каталога. Не создаёт скидки и не отправляет расчёт клиенту.",
   parameters: z.object({
     requiredVolumeLiters: z.number().positive().max(30),
-    serviceType: z.enum(["engine_oil_change"]),
+    serviceType: z.enum(AI_SERVICE_TYPES),
     options: z.array(quoteOptionSchema).min(1).max(3),
     requirements: quoteRequirementsSchema,
+    additionalServices: z.array(additionalServiceSchema).max(8).default([]),
+    rosskoOffers: z.array(z.object({ offerId: z.string(), brand: z.string(), article: z.string(), name: z.string(), retailPriceCents: z.number().int().nonnegative(), delivery: z.string() })).max(20).default([]),
   }),
   ...commonToolGuardrails,
-  execute: async ({ requiredVolumeLiters, serviceType, options, requirements }, context) =>
-    withToolAudit(context, "calculate_service_quote", { requiredVolumeLiters, serviceType, options, requirements }, async () => {
+  execute: async ({ requiredVolumeLiters, serviceType, options, requirements, additionalServices, rosskoOffers }, context) =>
+    withToolAudit(context, "calculate_service_quote", { requiredVolumeLiters, serviceType, options, requirements, additionalServices, rosskoOffers }, async () => {
       const ctx = requireContext(context);
       const rules = ctx.settings.calculationRules;
       const contextData = await getConversationContext(ctx.conversationId);
       if (contextData.organizationId !== ctx.organizationId) throw new Error("Диалог другой организации");
-      const productIds = [...new Set(options.flatMap((option) => [option.oilProductId, option.filterProductId, ...option.consumableProductIds]).filter((id): id is string => Boolean(id)))];
+      if (!requirements.found || !requirements.sources.length) throw new Error("Расчёт нельзя создать без подтверждённых технических требований и источников");
+      if (requirements.conflictingSources) throw new Error("Источники технических данных расходятся; расчёт нужно передать сотруднику");
+      const productIds = [...new Set([
+        ...options.flatMap((option) => [option.oilProductId, option.filterProductId, option.serviceProductId, ...option.consumableProductIds, ...option.optionalProductIds]),
+        ...additionalServices.flatMap((service) => [service.serviceProductId, ...service.materialProductIds]),
+      ].filter((id): id is string => Boolean(id)))];
       const products = await prisma.localProduct.findMany({
         where: { id: { in: productIds }, archived: false },
-        select: { id: true, name: true, article: true, salePriceCents: true, packageVolume: true },
+        select: { id: true, name: true, article: true, brand: true, entityType: true, salePriceCents: true, packageVolume: true },
       });
       const byId = new Map(products.map((product) => [product.id, product]));
       const roundedLiters = Math.ceil(requiredVolumeLiters / rules.literRoundingStep) * rules.literRoundingStep;
+      for (const service of additionalServices) {
+        if (TRANSMISSION_SERVICE_TYPES.has(service.serviceType as AIServiceType) && !service.serviceProductId) {
+          throw new Error("Для добавленной трансмиссионной работы выберите услугу из каталога: её стоимость подтверждает сотрудник");
+        }
+      }
       const quoteOptions = options.map((option) => {
-        const lines: Array<{ type: string; name: string; quantity: number; unitPriceCents: number; totalCents: number }> = [];
+        const lines: Array<{ type: string; productId?: string; name: string; quantity: number; unitPriceCents: number; totalCents: number }> = [];
         const usesServiceOil = option.scenario.startsWith("service_oil");
         const usesServiceFilter = option.scenario.endsWith("service_filter");
         if (usesServiceOil) {
@@ -687,83 +1023,278 @@ export const calculateServiceQuoteTool = tool({
           if (!oil) throw new Error("Для варианта с маслом сервиса выберите товар масла из каталога");
           const packLiters = parsePackVolumeLitersFromOilName(oil.packageVolume || oil.name) || 1;
           const count = Math.ceil(roundedLiters / packLiters);
-          lines.push({ type: "oil", name: oil.name, quantity: count, unitPriceCents: oil.salePriceCents, totalCents: count * oil.salePriceCents });
+          lines.push({ type: "oil", productId: oil.id, name: oil.name, quantity: count, unitPriceCents: oil.salePriceCents, totalCents: count * oil.salePriceCents });
         }
         if (usesServiceFilter) {
           const filter = option.filterProductId ? byId.get(option.filterProductId) : null;
           if (!filter) throw new Error("Для варианта с фильтром сервиса выберите товар фильтра из каталога");
-          lines.push({ type: "filter", name: filter.name, quantity: 1, unitPriceCents: filter.salePriceCents, totalCents: filter.salePriceCents });
+          lines.push({ type: "filter", productId: filter.id, name: filter.name, quantity: 1, unitPriceCents: filter.salePriceCents, totalCents: filter.salePriceCents });
         }
         for (const productId of option.consumableProductIds) {
           const product = byId.get(productId);
           if (!product) throw new Error(`Расходник ${productId} не найден в каталоге`);
-          lines.push({ type: "consumable", name: product.name, quantity: 1, unitPriceCents: product.salePriceCents, totalCents: product.salePriceCents });
+          lines.push({ type: "consumable", productId: product.id, name: product.name, quantity: 1, unitPriceCents: product.salePriceCents, totalCents: product.salePriceCents });
         }
-        let workCents = usesServiceOil
-          ? rules.freeWorkWithServiceOil
-            ? 0
-            : rules.serviceOilWorkCents
-          : rules.clientOilWorkCents;
-        if (!usesServiceFilter) workCents += rules.clientFilterSurchargeCents;
-        if (option.protectionRemoval) workCents += rules.protectionRemovalCents;
-        if (option.protectionInstall) workCents += rules.protectionInstallCents;
-        if (option.complexFilter) workCents += rules.complexFilterSurchargeCents;
-        if (option.cartridgeFilter) workCents += rules.cartridgeSurchargeCents;
-        if (requiredVolumeLiters > rules.excessVolumeThresholdLiters) workCents += rules.excessVolumeSurchargeCents;
-        if (workCents > 0) lines.push({ type: "work", name: "Работа по замене масла", quantity: 1, unitPriceCents: workCents, totalCents: workCents });
+        const service = option.serviceProductId ? byId.get(option.serviceProductId) : null;
+        if (service) {
+          if (service.entityType !== "service") throw new Error("Работа должна быть выбрана из каталога услуг");
+          lines.push({ type: "work", productId: service.id, name: service.name, quantity: 1, unitPriceCents: service.salePriceCents, totalCents: service.salePriceCents });
+        } else {
+          if (TRANSMISSION_SERVICE_TYPES.has(serviceType as AIServiceType)) throw new Error("Стоимость трансмиссионной работы должна быть выбрана из каталога и подтверждена сотрудником");
+          let workCents = usesServiceOil ? (rules.freeWorkWithServiceOil ? 0 : rules.serviceOilWorkCents) : rules.clientOilWorkCents;
+          if (!usesServiceFilter) workCents += rules.clientFilterSurchargeCents;
+          if (option.protectionRemoval) workCents += rules.protectionRemovalCents;
+          if (option.protectionInstall) workCents += rules.protectionInstallCents;
+          if (option.complexFilter) workCents += rules.complexFilterSurchargeCents;
+          if (option.cartridgeFilter) workCents += rules.cartridgeSurchargeCents;
+          if (requiredVolumeLiters > rules.excessVolumeThresholdLiters) workCents += rules.excessVolumeSurchargeCents;
+          if (workCents > 0) lines.push({ type: "work", name: "Работа по обслуживанию", quantity: 1, unitPriceCents: workCents, totalCents: workCents });
+        }
+        for (const additionalService of additionalServices) {
+          const additionalWork = additionalService.serviceProductId ? byId.get(additionalService.serviceProductId) : null;
+          if (additionalService.serviceProductId && !additionalWork) throw new Error(`Услуга ${additionalService.title} не найдена в каталоге`);
+          if (additionalWork) {
+            if (additionalWork.entityType !== "service") throw new Error(`Позиция ${additionalService.title} должна быть услугой каталога`);
+            lines.push({ type: "work", productId: additionalWork.id, name: additionalWork.name, quantity: 1, unitPriceCents: additionalWork.salePriceCents, totalCents: additionalWork.salePriceCents });
+          }
+          for (const materialId of additionalService.materialProductIds) {
+            const material = byId.get(materialId);
+            if (!material) throw new Error(`Материал для ${additionalService.title} не найден в каталоге`);
+            lines.push({ type: "material", productId: material.id, name: material.name, quantity: 1, unitPriceCents: material.salePriceCents, totalCents: material.salePriceCents });
+          }
+        }
         if (rules.washerCents > 0) lines.push({ type: "consumable", name: "Уплотнительная шайба", quantity: 1, unitPriceCents: rules.washerCents, totalCents: rules.washerCents });
         if (rules.environmentalFeeCents > 0) lines.push({ type: "fee", name: "Экологический сбор", quantity: 1, unitPriceCents: rules.environmentalFeeCents, totalCents: rules.environmentalFeeCents });
         const subtotalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
         const discountCents = Math.min(option.discountCents, rules.maxAutomaticDiscountCents, subtotalCents);
         const beforeRounding = Math.max(rules.minimumOrderCents, subtotalCents - discountCents);
         const totalCents = Math.ceil(beforeRounding / rules.totalRoundingCents) * rules.totalRoundingCents;
-        return { scenario: option.scenario, roundedLiters, lines, subtotalCents, discountCents, totalCents, durationMinutes: rules.serviceDurationMinutes };
+        const optionalItems = option.optionalProductIds.map((productId) => {
+          const product = byId.get(productId);
+          if (!product) throw new Error(`Дополнительная позиция ${productId} не найдена в каталоге`);
+          return { productId: product.id, name: product.name, quantity: 1, unitPriceCents: product.salePriceCents, totalCents: product.salePriceCents };
+        });
+        return {
+          scenario: option.scenario,
+          roundedLiters,
+          lines,
+          optionalItems,
+          subtotalCents,
+          discountCents,
+          totalCents,
+          durationMinutes: rules.serviceDurationMinutes + additionalServices.reduce((sum, service) => sum + service.durationMinutes, 0),
+          services: [{ serviceType, title: "Основное обслуживание" }, ...additionalServices.map((service) => ({ serviceType: service.serviceType, title: service.title }))],
+        };
       });
       const validUntil = new Date(Date.now() + rules.quoteValidityHours * 3_600_000);
-      const needsHumanReview = quoteOptions.some((option) => option.totalCents > ctx.settings.handoffRules.highAmountCents);
+      const hasTransmissionService = TRANSMISSION_SERVICE_TYPES.has(serviceType as AIServiceType) || additionalServices.some((service) => TRANSMISSION_SERVICE_TYPES.has(service.serviceType as AIServiceType));
+      const needsHumanReview = requirements.needsHumanReview || hasTransmissionService || additionalServices.some((service) => service.needsHumanReview) || quoteOptions.some((option) => option.totalCents > ctx.settings.handoffRules.highAmountCents);
+      const localProductsSnapshot = products.map((product) => ({ id: product.id, name: product.name, article: product.article, brand: product.brand, entityType: product.entityType, retailPriceCents: product.salePriceCents, packageVolume: product.packageVolume }));
+      const sourceEvidence = [...requirements.sources, ...additionalServices.flatMap((service) => service.sources)];
+      const preQuoteSession = await prisma.aIAgentSession.findFirst({ where: { id: ctx.sessionId, organizationId: ctx.organizationId }, select: { collectedDataJson: true } });
+      const preQuoteState = getConversationAgentState(preQuoteSession?.collectedDataJson);
+      const preliminaryWithoutVin = ["unavailable_now", "refused"].includes(preQuoteState.vinAvailability);
       const quote = await prisma.aIServiceQuote.create({
         data: {
           organizationId: ctx.organizationId,
           conversationId: ctx.conversationId,
           clientId: contextData.client?.id,
           vehicleId: contextData.selectedVehicle?.id,
-          status: needsHumanReview ? "needs_human_review" : "draft",
-          serviceType,
+          status: preliminaryWithoutVin ? "draft_preliminary" : needsHumanReview ? "needs_human_review" : "draft",
+          serviceType: additionalServices.length ? "complex_service" : serviceType,
           vehicleSnapshot: json(contextData.selectedVehicle ?? {}),
-          requirementsSnapshot: json(requirements),
-          sourceEvidence: json(record(requirements).sources ?? []),
+          requirementsSnapshot: json({ ...requirements, additionalServices }),
+          sourceEvidence: json(sourceEvidence),
+          localProductsSnapshot: json(localProductsSnapshot),
+          rosskoOffersSnapshot: json(rosskoOffers),
           quoteOptions: json(quoteOptions),
+          optionalItems: json(quoteOptions.flatMap((option) => option.optionalItems)),
           totalCents: quoteOptions.length === 1 ? quoteOptions[0].totalCents : null,
           validUntil,
+          requiresHumanApproval: true,
+          humanReviewReason: preliminaryWithoutVin
+            ? "preliminary_without_vin"
+            : needsHumanReview ? (hasTransmissionService ? "transmission_labor_requires_human_review" : "technical_confidence_or_amount") : null,
         },
+      });
+      const agentSession = preQuoteSession;
+      const currentState = getConversationAgentState(agentSession?.collectedDataJson);
+      const root = agentSession?.collectedDataJson && typeof agentSession.collectedDataJson === "object" && !Array.isArray(agentSession.collectedDataJson)
+        ? agentSession.collectedDataJson as Record<string, unknown>
+        : {};
+      await prisma.aIAgentSession.updateMany({
+        where: { id: ctx.sessionId, organizationId: ctx.organizationId },
+        data: {
+          quoteId: quote.id,
+          status: "needs_approval",
+          collectedDataJson: json(withConversationAgentState(root, {
+            ...currentState,
+            quoteId: quote.id,
+            awaitingTechnicalResearch: false,
+            awaitingHumanApproval: true,
+            pendingToolAction: "none",
+            pendingQuestion: "quote",
+            updatedAt: new Date().toISOString(),
+          })),
+          lastActivityAt: new Date(),
+        },
+      });
+      return { quoteId: quote.id, status: quote.status, requiredVolumeLiters, roundedLiters, options: quoteOptions, services: [serviceType, ...additionalServices.map((service) => service.serviceType)], optionalItems: quoteOptions.flatMap((option) => option.optionalItems), validUntil: validUntil.toISOString(), requiresHumanApproval: true, needsHumanReview };
+    }),
+});
+
+export const requestQuoteApprovalTool = tool({
+  name: "request_quote_approval",
+  description: "Передать готовый расчёт сотруднику на подтверждение. Вызывай строго после calculate_service_quote. После подтверждения верни клиенту ровно сохранённый customerText без добавлений и изменений.",
+  parameters: z.object({
+    quoteId: z.string().min(1),
+    customerText: z.string().min(20).max(6000),
+    internalSummary: z.string().min(20).max(6000),
+  }),
+  needsApproval: async () => true,
+  ...commonToolGuardrails,
+  execute: async ({ quoteId, customerText, internalSummary }, context) =>
+    withToolAudit(context, "request_quote_approval", { quoteId, customerText, internalSummary }, async () => {
+      const ctx = requireContext(context);
+      const quote = await prisma.aIServiceQuote.findFirst({ where: { id: quoteId, organizationId: ctx.organizationId, conversationId: ctx.conversationId } });
+      if (!quote) throw new Error("Расчёт не найден в текущем диалоге");
+      if (quote.validUntil && quote.validUntil <= new Date()) {
+        await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "expired" } });
+        throw new Error("Срок действия расчёта истёк — цену и наличие нужно проверить снова");
+      }
+      if (quote.status === "rejected") throw new Error("Расчёт отклонён сотрудником");
+      await prisma.aIServiceQuote.update({
+        where: { id: quote.id },
+        data: { status: "approved", approvedById: ctx.actorId, approvedAt: new Date(), customerText, internalSummary },
       });
       await prisma.aIAgentSession.updateMany({
         where: { id: ctx.sessionId, organizationId: ctx.organizationId },
-        data: { quoteId: quote.id, status: needsHumanReview ? "handoff" : "waiting_client", lastActivityAt: new Date() },
+        data: { quoteId: quote.id, status: "waiting_client", lastDraftText: customerText, lastActivityAt: new Date() },
       });
-      return { quoteId: quote.id, status: quote.status, requiredVolumeLiters, roundedLiters, options: quoteOptions, validUntil: validUntil.toISOString(), needsHumanReview };
+      return { approved: true, quoteId: quote.id, customerText, nextStep: "Отправь клиенту сохранённый текст дословно." };
+    }, true),
+});
+
+export const selectQuoteOptionTool = tool({
+  name: "select_quote_option",
+  description: "Зафиксировать выбранный клиентом вариант ранее отправленного и ещё действующего расчёта. Не создаёт запись и не резервирует товар.",
+  parameters: z.object({ quoteId: z.string().min(1), optionIndex: z.number().int().min(0).max(2) }),
+  ...commonToolGuardrails,
+  execute: async ({ quoteId, optionIndex }, context) =>
+    withToolAudit(context, "select_quote_option", { quoteId, optionIndex }, async () => {
+      const ctx = requireContext(context);
+      const quote = await prisma.aIServiceQuote.findFirst({ where: { id: quoteId, organizationId: ctx.organizationId, conversationId: ctx.conversationId } });
+      if (!quote) throw new Error("Расчёт не найден в текущем диалоге");
+      if (quote.status !== "sent" && quote.status !== "approved") throw new Error("Клиент может выбрать вариант только из подтверждённого расчёта");
+      if (quote.validUntil && quote.validUntil <= new Date()) {
+        await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "expired" } });
+        throw new Error("Срок действия расчёта истёк — нужно обновить цену и наличие");
+      }
+      const options = Array.isArray(quote.quoteOptions) ? quote.quoteOptions : [];
+      const selected = options[optionIndex];
+      if (!selected || typeof selected !== "object") throw new Error("Выбранный вариант не найден в расчёте");
+      const selectedRecord = record(selected);
+      await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { selectedOption: json(selected), totalCents: Number(selectedRecord.totalCents) || quote.totalCents, status: "accepted" } });
+      return { selected: true, quoteId: quote.id, optionIndex, totalCents: Number(selectedRecord.totalCents) || null, needsPartsOrder: Array.isArray(quote.rosskoOffersSnapshot) && quote.rosskoOffersSnapshot.length > 0 };
+    }),
+});
+
+export const createClientCaseTool = tool({
+  name: "create_client_case",
+  description: "Создать или обновить единственное дело клиента «Ожидает запчасти» для выбранного расчёта. Не оформляет заказ у поставщика.",
+  parameters: z.object({ quoteId: z.string().min(1), expectedAt: z.string().datetime().nullable(), note: z.string().max(1000).nullable() }),
+  ...commonToolGuardrails,
+  execute: async ({ quoteId, expectedAt, note }, context) =>
+    withToolAudit(context, "create_client_case", { quoteId, expectedAt, note }, async () => {
+      const ctx = requireContext(context);
+      const conversation = await getConversationContext(ctx.conversationId);
+      const quote = await prisma.aIServiceQuote.findFirst({ where: { id: quoteId, organizationId: ctx.organizationId, conversationId: ctx.conversationId } });
+      if (!quote) throw new Error("Расчёт не найден в текущем диалоге");
+      const existing = await prisma.crmDeal.findFirst({ where: { conversationId: ctx.conversationId, caseStatus: "waiting_parts", status: "open" }, orderBy: { updatedAt: "desc" } });
+      const dueAt = expectedAt ? new Date(expectedAt) : null;
+      if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error("Некорректный срок поставки");
+      if (existing) {
+        await prisma.crmDeal.update({ where: { id: existing.id }, data: { suppliesExpectedAt: dueAt, suppliesNote: note || existing.suppliesNote, nextAction: "Ждать поставку запчастей", nextActionAt: dueAt, nextContactAt: dueAt } });
+        await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "waiting_parts" } });
+        return { created: false, caseId: existing.id, status: "waiting_parts" };
+      }
+      const stage = await getFirstCrmStage();
+      if (!stage) throw new Error("Не найдены стадии CRM для дела клиента");
+      const deal = await prisma.crmDeal.create({
+        data: {
+          title: `Ожидает запчасти: ${conversation.client?.name || "клиент"}`,
+          customerName: conversation.client?.name || null,
+          phoneNormalized: conversation.client?.phone || null,
+          vehicle: conversation.selectedVehicle?.label || null,
+          source: "ai-agent",
+          clientType: "regular",
+          nextAction: "Ждать поставку запчастей",
+          stageId: stage.id,
+          responsibleLogin: ctx.actorId,
+          moyskladCounterpartyId: conversation.client?.id || null,
+          conversationId: ctx.conversationId,
+          caseStatus: "waiting_parts",
+          caseType: "message",
+          caseKey: `ai_waiting_parts:${ctx.conversationId}:${quote.id}`,
+          suppliesExpectedAt: dueAt,
+          suppliesNote: note || `Расчёт ${quote.id}; товары под заказ.`,
+          nextActionAt: dueAt,
+          nextContactAt: dueAt,
+          notes: `Создано агентом. Расчёт: ${quote.id}.`,
+          createdByLogin: "ai-agent",
+        },
+      });
+      await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "waiting_parts" } });
+      return { created: true, caseId: deal.id, status: "waiting_parts" };
     }),
 });
 
 export const getAvailableSlotsTool = tool({
   name: "get_available_slots",
-  description: "Получить не более настроенного количества реальных свободных окон из YCLIENTS.",
-  parameters: z.object({ quoteId: z.string().nullable() }),
+  description: "Получить не более настроенного количества реальных свободных окон из YCLIENTS. Для комплексной услуги обязательно передай полную длительность; если запрошенный день занят, инструмент вернёт ближайшие следующие даты.",
+  parameters: z.object({
+    quoteId: z.string().nullable(),
+    requestedDate: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).nullable().optional(),
+    durationMinutes: z.number().int().min(10).max(480).nullable().optional(),
+  }),
   ...commonToolGuardrails,
-  execute: async ({ quoteId }, context) =>
-    withToolAudit(context, "get_available_slots", { quoteId }, async () => {
+  execute: async ({ quoteId, requestedDate, durationMinutes }, context) =>
+    withToolAudit(context, "get_available_slots", { quoteId, requestedDate, durationMinutes }, async () => {
       const ctx = requireContext(context);
       if (quoteId) {
         const quote = await prisma.aIServiceQuote.findFirst({ where: { id: quoteId, organizationId: ctx.organizationId, conversationId: ctx.conversationId } });
         if (!quote) throw new Error("Расчёт не найден в текущем диалоге");
+        if (quote.status !== "accepted" && quote.status !== "approved" && quote.status !== "sent") throw new Error("Сначала нужен подтверждённый и выбранный клиентом расчёт");
+        if (quote.validUntil && quote.validUntil <= new Date()) {
+          await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "expired" } });
+          throw new Error("Срок действия расчёта истёк — проверьте цену и наличие снова");
+        }
       }
+      const session = await prisma.aIAgentSession.findFirst({ where: { id: ctx.sessionId, organizationId: ctx.organizationId }, select: { collectedDataJson: true } });
+      const conversationState = getConversationAgentState(session?.collectedDataJson);
+      const fullDurationMinutes = durationMinutes ?? estimateConversationDurationMinutes(conversationState, ctx.settings.calculationRules.serviceDurationMinutes);
+      const date = requestedDate ?? conversationState.requestedDate;
       const slots = await getYclientsAvailableSlots({
         limit: ctx.settings.slotSuggestionCount,
         minLeadMinutes: ctx.settings.minBookingLeadMinutes,
         horizonDays: ctx.settings.maxBookingHorizonDays,
-        durationMinutes: ctx.settings.calculationRules.serviceDurationMinutes,
+        durationMinutes: fullDurationMinutes,
+        baseServiceDurationMinutes: ctx.settings.calculationRules.serviceDurationMinutes,
+        requestedDate: date,
       });
-      return { slots, source: "yclients", checkedAt: new Date().toISOString() };
+      const nextState = {
+        ...conversationState,
+        pendingQuestion: slots.length ? "slot_selection" as const : "slots" as const,
+        pendingToolAction: "none" as const,
+        requestedDate: date,
+        slotSuggestions: slots.map(({ id, date: slotDate, time, address, durationMinutes: slotDuration }) => ({ id, date: slotDate, time, address, durationMinutes: slotDuration })),
+        updatedAt: new Date().toISOString(),
+      };
+      const root = session?.collectedDataJson && typeof session.collectedDataJson === "object" && !Array.isArray(session.collectedDataJson)
+        ? session.collectedDataJson as Record<string, unknown>
+        : {};
+      await prisma.aIAgentSession.update({ where: { id: ctx.sessionId }, data: { collectedDataJson: json(withConversationAgentState(root, nextState)), lastActivityAt: new Date() } });
+      return { slots, source: "yclients", requestedDate: date, durationMinutes: fullDurationMinutes, checkedAt: new Date().toISOString() };
     }),
 });
 
@@ -776,6 +1307,19 @@ export const holdAppointmentSlotTool = tool({
     withToolAudit(context, "hold_appointment_slot", { slotId, quoteId }, async () => {
       const ctx = requireContext(context);
       const slot = parseYclientsSlotId(slotId);
+      const session = await prisma.aIAgentSession.findFirst({
+        where: { id: ctx.sessionId, organizationId: ctx.organizationId },
+        select: { collectedDataJson: true },
+      });
+      const conversationState = getConversationAgentState(session?.collectedDataJson);
+      const requiredDurationMinutes = estimateConversationDurationMinutes(
+        conversationState,
+        ctx.settings.calculationRules.serviceDurationMinutes
+      );
+      const suggestedSlot = conversationState.slotSuggestions.find((item) => item.id === slotId);
+      if (conversationState.activeServiceRequests.length > 1 && (!suggestedSlot || suggestedSlot.durationMinutes < requiredDurationMinutes)) {
+        throw new Error("После добавления услуги нужно заново выбрать окно, проверенное по полной длительности комплекса");
+      }
       const active = await prisma.aIAgentSlotHold.findFirst({
         where: { organizationId: ctx.organizationId, slotId, status: "held", expiresAt: { gt: new Date() }, conversationId: { not: ctx.conversationId } },
       });
@@ -786,7 +1330,14 @@ export const holdAppointmentSlotTool = tool({
       });
       const expiresAt = new Date(Date.now() + ctx.settings.slotHoldMinutes * 60_000);
       const hold = await prisma.aIAgentSlotHold.create({
-        data: { organizationId: ctx.organizationId, conversationId: ctx.conversationId, quoteId, slotId, slotSnapshot: json(slot), expiresAt },
+        data: {
+          organizationId: ctx.organizationId,
+          conversationId: ctx.conversationId,
+          quoteId,
+          slotId,
+          slotSnapshot: json({ ...slot, durationMinutes: suggestedSlot?.durationMinutes ?? requiredDurationMinutes }),
+          expiresAt,
+        },
       });
       return { held: true, holdId: hold.id, slotId, expiresAt: expiresAt.toISOString() };
     }),
@@ -798,7 +1349,7 @@ export const createAppointmentTool = tool({
   parameters: z.object({ slotId: z.string().min(10), quoteId: z.string(), comment: z.string().max(600) }),
   needsApproval: async (runContext) => {
     const ctx = runContext.context as AIAgentRunContext | undefined;
-    return !ctx || ctx.mode !== "autonomous" || !ctx.settings.autoBookingEnabled || ctx.settings.bookingApprovalRequired;
+    return !ctx || !ctx.settings.autoBookingEnabled || (ctx.mode !== "auto_booking_approval" && ctx.mode !== "autonomous");
   },
   ...commonToolGuardrails,
   execute: async ({ slotId, quoteId, comment }, context) =>
@@ -812,26 +1363,76 @@ export const createAppointmentTool = tool({
       ]);
       if (!hold) throw new Error("Удержание окна истекло. Сначала получите и удержите свободное время снова.");
       if (!quote) throw new Error("Расчёт не найден в текущем диалоге");
+      if (quote.status !== "accepted") throw new Error("Запись возможна только после подтверждённого сотрудником и выбранного клиентом расчёта");
+      if (quote.validUntil && quote.validUntil <= new Date()) {
+        await prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { status: "expired" } });
+        throw new Error("Срок действия расчёта истёк — сначала обновите расчёт");
+      }
       const consent = latestInbound?.text.trim().toLowerCase() || "";
       if (!/(^|\s)(да|подходит|записывайте|запишите|согласен|согласна)(\s|[!.?]|$)/i.test(consent) || /не\s+(надо|записывайте|подходит)/i.test(consent)) {
         throw new Error("В последнем сообщении клиента нет явного согласия на запись");
       }
       if (!conversation.client?.name || !conversation.client.phone) throw new Error("Для записи нужны имя и телефон привязанного клиента");
       const vehicle = conversation.selectedVehicle;
+      if (!vehicle?.vin || !validVin(normalizeVin(vehicle.vin))) throw new Error("Перед окончательной записью нужен VIN автомобиля");
+      const selected = record(quote.selectedOption);
+      const selectedLines = Array.isArray(selected.lines) ? selected.lines.map(record) : [];
+      const session = await prisma.aIAgentSession.findFirst({ where: { id: ctx.sessionId, organizationId: ctx.organizationId }, select: { collectedDataJson: true } });
+      const appointmentDurationMinutes = Math.max(
+        10,
+        Number(selected.durationMinutes) || estimateConversationDurationMinutes(getConversationAgentState(session?.collectedDataJson), ctx.settings.calculationRules.serviceDurationMinutes)
+      );
+      const heldDurationMinutes = Number(record(hold.slotSnapshot).durationMinutes) || 0;
+      if (heldDurationMinutes < appointmentDurationMinutes) {
+        throw new Error("Выбранное окно рассчитано на меньшую длительность. Получите свободное время заново.");
+      }
+      const client = await prisma.localCounterparty.findFirst({ where: { id: conversation.client.id } });
+      const organization = await prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: ctx.organizationId }, { isDefault: true }] }, orderBy: { isDefault: "desc" } });
+      const store = organization
+        ? await prisma.localStore.findFirst({ where: { archived: false, OR: [{ organizationId: organization.id }, { organizationId: null }] }, orderBy: { isMain: "desc" } })
+        : null;
+      if (!client || !organization || !store) throw new Error("Для записи не настроены клиент, организация или склад для черновика отгрузки");
       const appointment = await createYclientsAppointment({
         slotId,
         clientName: conversation.client.name,
         clientPhone: conversation.client.phone,
-        durationMinutes: ctx.settings.calculationRules.serviceDurationMinutes,
+        durationMinutes: appointmentDurationMinutes,
         comment: [comment, vehicle ? `${vehicle.label}; VIN ${vehicle.vin || "не указан"}; госномер ${vehicle.plate || "не указан"}` : "", `Расчёт ИИ: ${quote.id}`, `Диалог: ${ctx.conversationId}`].filter(Boolean).join("\n"),
       });
+      const commentText = [
+        "Запись создана ИИ-агентом.",
+        `Расчёт ${quote.id} подтверждён сотрудником ${quote.approvedById || "сотрудником"}.`,
+        "Остаток масла после замены отдать клиенту, если используется фасовка.",
+        comment,
+      ].filter(Boolean).join(" ");
+      let draftShipmentId: string | null = null;
+      {
+        const shipment = await createLocalDemand({
+          organization: { meta: { href: organization.moyskladHref || `local://organization/${organization.id}`, type: "organization", mediaType: "application/json" } },
+          agent: { meta: { href: client.moyskladHref || `local://counterparty/${client.id}`, type: "agent", mediaType: "application/json" } },
+          store: { meta: { href: store.moyskladHref || `local://store/${store.id}`, type: "store", mediaType: "application/json" } },
+          moment: appointment.datetime,
+          applicable: false,
+          description: `${commentText}\nЗапись: ${appointment.id}; диалог: ${ctx.conversationId}; VIN: ${normalizeVin(vehicle.vin)}`,
+          positions: selectedLines
+            .filter((line) => clean(line.productId))
+            .map((line) => ({
+              assortment: { meta: { href: `local://product/${clean(line.productId)}`, type: line.type === "work" ? "service" : "product", mediaType: "application/json" } },
+              name: clean(line.name),
+              quantity: Number(line.quantity) || 1,
+              price: (Number(line.unitPriceCents) || 0) / 100,
+            })),
+        }, { ecoUserName: "ai-agent" });
+        if (!shipment.ok) throw new Error(`Не удалось создать черновик отгрузки: ${shipment.error}`);
+        draftShipmentId = shipment.id;
+      }
       await prisma.$transaction([
         prisma.aIAgentSlotHold.update({ where: { id: hold.id }, data: { status: "converted", releasedAt: new Date() } }),
-        prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { appointmentId: appointment.id, status: "converted_to_appointment" } }),
-        prisma.aIAgentSession.update({ where: { id: ctx.sessionId }, data: { appointmentId: appointment.id, quoteId: quote.id, status: "waiting_client", lastActivityAt: new Date() } }),
+        prisma.aIServiceQuote.update({ where: { id: quote.id }, data: { appointmentId: appointment.id, draftShipmentId, status: draftShipmentId ? "converted_to_shipment" : "converted_to_appointment" } }),
+        prisma.aIAgentSession.update({ where: { id: ctx.sessionId }, data: { appointmentId: appointment.id, quoteId: quote.id, shipmentId: draftShipmentId, status: "waiting_client", lastActivityAt: new Date() } }),
         prisma.messengerConversation.update({ where: { id: ctx.conversationId }, data: { relatedAppointmentId: appointment.id } }),
       ]);
-      return { created: true, appointmentId: appointment.id, datetime: appointment.datetime, address: appointment.address, vehicle: vehicle?.label || null, quoteId: quote.id };
+      return { created: true, appointmentId: appointment.id, datetime: appointment.datetime, address: appointment.address, vehicle: vehicle?.label || null, quoteId: quote.id, draftShipmentId, internalComment: commentText };
     }, true),
 });
 
@@ -860,14 +1461,121 @@ export const handoffToHumanTool = tool({
   execute: async ({ reasonCode, reason, summary, collectedData, productIds, quoteId }, context) =>
     withToolAudit(context, "handoff_to_human", { reasonCode, reason, summary, collectedData, productIds, quoteId }, async () => {
       const ctx = requireContext(context);
+      const requiresResearch = ["vehicle_ambiguous", "technical_conflict", "low_confidence", "nonstandard", "rossko_ambiguous"].includes(reasonCode);
+      const agentSession = await prisma.aIAgentSession.findFirst({ where: { id: ctx.sessionId }, select: { collectedDataJson: true } });
+      const currentState = getConversationAgentState(agentSession?.collectedDataJson);
+      const mustCompleteComplexResearch = currentState.complexFluidRequest && !["complaint", "customer_request"].includes(reasonCode);
+      if (requiresResearch || mustCompleteComplexResearch) {
+        const attemptedResearch = await prisma.aIAgentToolCall.count({
+          where: {
+            organizationId: ctx.organizationId,
+            runId: ctx.runId,
+            status: { in: ["completed", "failed"] },
+            toolName: { in: ["get_client_profile", "resolve_vehicle_by_vin", "resolve_vehicle_by_parameters", "get_transmission_requirements", "trusted_technical_web_search", "search_local_catalog", "rossko_search"] },
+          },
+        });
+        if (!attemptedResearch) throw new Error("Перед технической передачей сотруднику нужно выполнить доступную проверку автомобиля или технических данных");
+      }
+      if (mustCompleteComplexResearch) {
+        // A complex technical handoff is meaningful only after the agent has
+        // both confirmed something and identified the exact unresolved item.
+        // This prevents an ordinary "VIN is unavailable" reply from creating
+        // a CRM case before the parameter flow and research have run.
+        if (!currentState.confirmedItems.length || !currentState.unresolvedItems.length) {
+          throw new Error("Передача сотруднику возможна после подтверждённых результатов поиска и фиксации конкретного спорного параметра");
+        }
+        const calls = await prisma.aIAgentToolCall.findMany({
+          where: { organizationId: ctx.organizationId, runId: ctx.runId, status: { in: ["completed", "failed"] } },
+          select: { toolName: true, argumentsMasked: true, resultSummary: true },
+        });
+        const names = new Set(calls.map((call) => call.toolName));
+        const active = new Set(currentState.activeServiceRequests);
+        const expectedAggregates = [
+          ...(active.has("engine_oil_change") ? ["engine"] : []),
+          ...(active.has("automatic_transmission_partial") || active.has("automatic_transmission_machine") ? ["automatic_transmission"] : []),
+          ...(active.has("transfer_case_oil_change") ? ["transfer_case"] : []),
+          ...(active.has("front_differential_oil_change") ? ["front_differential"] : []),
+          ...(active.has("rear_differential_oil_change") ? ["rear_differential"] : []),
+        ];
+        const technicalCalls = calls.filter((call) => call.toolName === "trusted_technical_web_search");
+        const searchedAggregates = new Set(technicalCalls.map((call) => clean(record(call.argumentsMasked).aggregate)));
+        const missingWebChecks = expectedAggregates.filter((aggregate) => !searchedAggregates.has(aggregate));
+        if (missingWebChecks.length) {
+          throw new Error(`Для передачи сложного подбора сначала выполните web-проверку: ${missingWebChecks.join(", ")}`);
+        }
+        const technicalSourcesUnavailable = technicalCalls.some((call) => {
+          const result = record(call.resultSummary);
+          return /интернет-поиск|подтвержд[её]нных источников|недостающ[иея] технические данные/i.test(clean(result.reason));
+        });
+        if (!technicalSourcesUnavailable) {
+          const requirements = new Set(calls
+            .filter((call) => call.toolName === "get_transmission_requirements")
+            .map((call) => clean(record(call.argumentsMasked).aggregate)));
+          const requiredTransmission = expectedAggregates.filter((aggregate) => aggregate !== "engine");
+          const missing = [
+            ...(!names.has("get_client_profile") ? ["карточка клиента"] : []),
+            ...(!names.has("get_engine_oil_requirements") && expectedAggregates.includes("engine") ? ["требования двигателя"] : []),
+            ...requiredTransmission.filter((aggregate) => !requirements.has(aggregate)).map((aggregate) => `требования ${aggregate}`),
+            ...(!names.has("find_required_parts") ? ["подбор фильтров"] : []),
+            ...(!names.has("search_local_catalog") ? ["локальный каталог"] : []),
+          ];
+          if (missing.length) throw new Error(`Для передачи сложного подбора сначала выполните: ${missing.join(", ")}`);
+        }
+      }
+      const conversation = await getConversationContext(ctx.conversationId);
       const products = productIds.length
         ? await prisma.localProduct.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, article: true, salePriceCents: true } })
         : [];
       const handoff = await prisma.aIAgentHandoff.create({
         data: { organizationId: ctx.organizationId, runId: ctx.runId, conversationId: ctx.conversationId, reasonCode, reason, summary, collectedDataJson: json(collectedData), productsJson: json(products), quoteId },
       });
-      await prisma.aIAgentSession.update({ where: { id: ctx.sessionId }, data: { status: "handoff", collectedDataJson: json(collectedData), quoteId, lastActivityAt: new Date() } });
-      return { handedOff: true, handoffId: handoff.id, status: "queued", customerMessage: "Передал ваш вопрос сотруднику — он проверит данные и ответит в этом чате." };
+      const stage = await getFirstCrmStage();
+      if (!stage) throw new Error("Не найдена стадия CRM для передачи сотруднику");
+      const unresolvedItemType = currentState.unresolvedItems[0] || reasonCode;
+      const caseKey = `ai-review:${ctx.conversationId}:${ctx.runId}:${unresolvedItemType}`;
+      const caseTitle = `Проверка агента: ${reason.slice(0, 120)}`;
+      const caseRecord = await prisma.crmDeal.upsert({
+        where: { caseKey },
+        update: { notes: summary, nextAction: reason, nextActionAt: new Date(), nextContactAt: new Date(), status: "open" },
+        create: {
+          organizationId: ctx.organizationId,
+          title: caseTitle,
+          customerName: conversation.client?.name || null,
+          phoneNormalized: conversation.client?.phone || null,
+          vehicle: conversation.selectedVehicle?.label || collectedData.vehicle || null,
+          source: "ai-agent",
+          clientType: "regular",
+          nextAction: reason,
+          stageId: stage.id,
+          responsibleLogin: ctx.actorId.startsWith("system:") ? null : ctx.actorId,
+          moyskladCounterpartyId: conversation.client?.id || null,
+          conversationId: ctx.conversationId,
+          caseStatus: "calculation_needed",
+          caseType: "message",
+          caseKey,
+          priority: 80,
+          notes: summary,
+          nextActionAt: new Date(),
+          nextContactAt: new Date(),
+          createdByLogin: "ai-agent",
+        },
+      });
+      await prisma.clientCaseEvent.create({
+        data: { caseId: caseRecord.id, actorLogin: "ai-agent", eventType: "ai_handoff", title: "Требуется проверка сотрудником", note: summary, metadata: json({ handoffId: handoff.id, reasonCode, collectedData, quoteId }) },
+      });
+      const root = agentSession?.collectedDataJson && typeof agentSession.collectedDataJson === "object" && !Array.isArray(agentSession.collectedDataJson)
+        ? agentSession.collectedDataJson as Record<string, unknown>
+        : {};
+      await prisma.aIAgentSession.update({
+        where: { id: ctx.sessionId },
+        data: {
+          status: "handoff",
+          collectedDataJson: json(withConversationAgentState({ ...root, handoffCollectedData: collectedData }, { ...currentState, quoteId: quoteId || currentState.quoteId, awaitingHumanApproval: true, awaitingTechnicalResearch: false, pendingToolAction: "none", updatedAt: new Date().toISOString() })),
+          quoteId,
+          lastActivityAt: new Date(),
+        },
+      });
+      return { handedOff: true, handoffId: handoff.id, caseId: caseRecord.id, status: "queued", customerMessage: "Передал ваш вопрос сотруднику — он проверит данные и ответит в этом чате." };
     }),
 });
 
@@ -879,22 +1587,30 @@ export const trustedVehicleWebSearchTool = tool({
   execute: async ({ factType, vehicleQuery }, context) =>
     withToolAudit(context, "trusted_vehicle_web_search", { factType, vehicleQuery }, async () => {
       const ctx = requireContext(context);
-      if (!ctx.settings.internetSearchEnabled || !ctx.settings.trustedDomains.length) {
-        return { enabled: false, facts: [], needsHumanReview: true, reason: "Доверенный интернет-поиск не настроен. Свободный браузер заблокирован." };
+      if (!ctx.settings.internetSearchEnabled) {
+        return { enabled: false, facts: [], needsHumanReview: true, reason: "Интернет-поиск отключён в настройках организации." };
       }
-      return { enabled: true, facts: [], needsHumanReview: true, reason: "Для этого факта не найден подтверждённый источник из белого списка.", trustedDomains: ctx.settings.trustedDomains };
+      const availability = technicalWebSearchAvailability();
+      return { enabled: availability.responsesApi || availability.internalProvider, facts: [], needsHumanReview: true, reason: availability.responsesApi || availability.internalProvider ? "Для этого факта не найден подтверждённый источник после попытки web search." : "Интернет-поиск не подключён или завершился ошибкой.", trustedDomains: ctx.settings.trustedDomains };
     }),
 });
 
 export const tgmClientAgentTools = [
   getClientProfileTool,
   resolveVehicleByVinTool,
+  saveVehicleTool,
   resolveVehicleByParametersTool,
+  trustedTechnicalWebSearchTool,
   getEngineOilRequirementsTool,
+  getTransmissionRequirementsTool,
   findRequiredPartsTool,
   searchLocalCatalogTool,
+  searchCompatibleOilTool,
   rosskoSearchTool,
   calculateServiceQuoteTool,
+  requestQuoteApprovalTool,
+  selectQuoteOptionTool,
+  createClientCaseTool,
   getAvailableSlotsTool,
   holdAppointmentSlotTool,
   createAppointmentTool,

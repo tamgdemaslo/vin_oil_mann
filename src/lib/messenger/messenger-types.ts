@@ -309,6 +309,8 @@ export type SendMessageInput = {
   textLinks?: Array<{ offset: number; length: number; url: string }>;
   boldRanges?: Array<{ offset: number; length: number }>;
   disableWebPagePreview?: boolean;
+  /** Stable key for retries of a system-generated message. */
+  idempotencyKey?: string;
 };
 
 export type SendMessageResult = {

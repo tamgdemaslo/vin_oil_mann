@@ -8,7 +8,7 @@ import { getAgentSettings, settingsToPublicJson } from "@/lib/ai-agent/settings"
 const moneyRule = z.number().int().min(0).max(100_000_000);
 const settingsSchema = z.object({
   enabled: z.boolean().optional(),
-  mode: z.enum(["observe", "confirm", "autonomous"]).optional(),
+  mode: z.enum(["off", "suggestions", "auto_quote_approval", "auto_booking_approval", "autonomous"]).optional(),
   agentName: z.string().trim().min(2).max(80).optional(),
   model: z.string().trim().max(80).nullable().optional(),
   tone: z.string().trim().max(50).optional(),
@@ -30,7 +30,24 @@ const settingsSchema = z.object({
   slotSuggestionCount: z.number().int().min(1).max(5).optional(),
   rosskoSearchEnabled: z.boolean().optional(),
   rosskoOrderApprovalRequired: z.boolean().optional(),
+  rosskoMarkupRules: z.array(z.object({
+    fromCents: moneyRule,
+    toCents: moneyRule.nullable(),
+    marginPercent: z.number().min(0).max(300),
+    category: z.string().trim().min(1).max(100).nullable().optional(),
+  })).min(1).max(20).optional(),
   internetSearchEnabled: z.boolean().optional(),
+  timeoutRules: z.object({
+    softRunSeconds: z.number().int().min(60).max(900),
+    hardRunSeconds: z.number().int().min(180).max(1_800),
+    staleHeartbeatSeconds: z.number().int().min(45).max(120),
+    clientProfileSeconds: z.number().int().min(5).max(60),
+    vehicleResolutionSeconds: z.number().int().min(30).max(180),
+    technicalSearchSeconds: z.number().int().min(60).max(300),
+    catalogSearchSeconds: z.number().int().min(10).max(90),
+    rosskoSearchSeconds: z.number().int().min(30).max(180),
+    quoteCalculationSeconds: z.number().int().min(10).max(90),
+  }).refine((value) => value.hardRunSeconds > value.softRunSeconds, { message: "Жёсткий таймаут должен быть больше мягкого" }).optional(),
   calculationRules: z.object({
     serviceOilWorkCents: moneyRule,
     clientOilWorkCents: moneyRule,
@@ -85,7 +102,7 @@ export async function PUT(request: Request) {
     if (parsed.mode === "autonomous" && parsed.bookingApprovalRequired === false && parsed.autoBookingEnabled !== true) {
       return NextResponse.json({ error: "Сначала включите автоматическую запись" }, { status: 422 });
     }
-    const { channels, allowedServices, allowedStoreIds, businessHours, trustedDomains, calculationRules, handoffRules, ...plain } = parsed;
+    const { channels, allowedServices, allowedStoreIds, businessHours, trustedDomains, calculationRules, timeoutRules, rosskoMarkupRules, handoffRules, ...plain } = parsed;
     const jsonFields = {
       ...(channels ? { channelsJson: json(channels) } : {}),
       ...(allowedServices ? { allowedServicesJson: json(allowedServices) } : {}),
@@ -93,6 +110,8 @@ export async function PUT(request: Request) {
       ...(businessHours ? { businessHoursJson: json(businessHours) } : {}),
       ...(trustedDomains ? { trustedDomainsJson: json(trustedDomains) } : {}),
       ...(calculationRules ? { calculationRulesJson: json(calculationRules) } : {}),
+      ...(timeoutRules ? { timeoutRulesJson: json(timeoutRules) } : {}),
+      ...(rosskoMarkupRules ? { rosskoMarkupRulesJson: json(rosskoMarkupRules) } : {}),
       ...(handoffRules ? { handoffRulesJson: json(handoffRules) } : {}),
     };
     const data = {

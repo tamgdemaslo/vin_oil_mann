@@ -430,6 +430,58 @@ model VinLookupCache {
   @@map("vin_lookup_cache")
 }
 
+/// Кэш платных запросов к TRONK. Сырые ответы хранятся только в зашифрованном виде.
+model VehicleLookupCache {
+  id                    String   @id @default(cuid())
+  organizationId        String   @default("default") @map("organization_id")
+  inputType             String   @map("input_type")
+  normalizedInputHash   String   @map("normalized_input_hash")
+  maskedInput           String   @map("masked_input")
+  method                String
+  status                String
+  rawResponseEncrypted  String?  @map("raw_response_encrypted") @db.Text
+  normalizedVehicleJson Json?    @map("normalized_vehicle_json")
+  requestedAt           DateTime @default(now()) @map("requested_at")
+  completedAt           DateTime? @map("completed_at")
+  expiresAt             DateTime @map("expires_at")
+  costCents             Int      @default(0) @map("cost_cents")
+  errorCode             String?  @map("error_code")
+  errorMessage          String?  @map("error_message") @db.Text
+  providerRequestId     String?  @map("provider_request_id")
+  sourceVersion         String?  @map("source_version")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, inputType, normalizedInputHash, method, expiresAt])
+  @@index([expiresAt])
+  @@map("vehicle_lookup_cache")
+}
+
+/// Подтвержденная человеком связка нормализованного автомобиля и строки применяемости MANN.
+model VehicleMannMapping {
+  id                String   @id @default(cuid())
+  organizationId    String   @default("default") @map("organization_id")
+  normalizedMake    String   @map("normalized_make")
+  normalizedModel   String   @map("normalized_model")
+  yearFrom          Int?     @map("year_from")
+  yearTo            Int?     @map("year_to")
+  engineCode        String?  @map("engine_code")
+  engineVolumeCc    Int?     @map("engine_volume_cc")
+  powerKw           Int?     @map("power_kw")
+  driveType         String?  @map("drive_type")
+  transmissionType  String?  @map("transmission_type")
+  mannApplicationId String   @map("mann_application_id")
+  source            String   @default("manual")
+  confidence        String   @default("high")
+  confirmedById     String?  @map("confirmed_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, normalizedMake, normalizedModel])
+  @@index([mannApplicationId])
+  @@map("vehicle_mann_mappings")
+}
+
 model CrmStage {
   id        String   @id @default(cuid())
   name      String
@@ -803,6 +855,7 @@ model MessengerOutbox {
   @@index([messageId])
   @@index([connectionId])
   @@index([channel])
+  @@unique([organizationId, idempotencyKey])
   @@map("messenger_outbox")
 }
 
@@ -3078,7 +3131,7 @@ model AIAgentSetting {
   organizationId              String   @unique @default("default") @map("organization_id")
   enabled                     Boolean  @default(false)
   mode                        String   @default("observe")
-  agentName                   String   @default("Помощник Там где масло") @map("agent_name")
+  agentName                   String   @default("Там где масло") @map("agent_name")
   model                       String?  @default("gpt-5.6-terra") @map("model_name")
   promptVersion               String   @default("tgm-client-agent-v1") @map("prompt_version")
   tone                        String   @default("friendly_brief")
@@ -3090,6 +3143,7 @@ model AIAgentSetting {
   businessHoursJson           Json     @default("{}") @map("business_hours_json")
   trustedDomainsJson          Json     @default("[]") @map("trusted_domains_json")
   calculationRulesJson        Json     @default("{}") @map("calculation_rules_json")
+  timeoutRulesJson            Json     @default("{}") @map("timeout_rules_json")
   responseDelaySeconds        Int      @default(8) @map("response_delay_seconds")
   maxTurns                    Int      @default(12) @map("max_turns")
   maxMessagesWithoutHandoff   Int      @default(8) @map("max_messages_without_handoff")
@@ -3101,7 +3155,8 @@ model AIAgentSetting {
   slotSuggestionCount         Int      @default(3) @map("slot_suggestion_count")
   rosskoSearchEnabled         Boolean  @default(true) @map("rossko_search_enabled")
   rosskoOrderApprovalRequired Boolean  @default(true) @map("rossko_order_approval_required")
-  internetSearchEnabled       Boolean  @default(false) @map("internet_search_enabled")
+  rosskoMarkupRulesJson       Json     @default("[]") @map("rossko_markup_rules_json")
+  internetSearchEnabled       Boolean  @default(true) @map("internet_search_enabled")
   handoffRulesJson            Json     @default("{}") @map("handoff_rules_json")
   createdById                 String?  @map("created_by_id")
   updatedById                 String?  @map("updated_by_id")
@@ -3158,12 +3213,22 @@ model AIServiceQuote {
   vehicleSnapshot      Json      @default("{}") @map("vehicle_snapshot")
   requirementsSnapshot Json      @default("{}") @map("requirements_snapshot")
   sourceEvidence       Json      @default("[]") @map("source_evidence")
+  localProductsSnapshot Json     @default("[]") @map("local_products_snapshot")
+  rosskoOffersSnapshot  Json     @default("[]") @map("rossko_offers_snapshot")
   quoteOptions         Json      @default("[]") @map("quote_options")
   selectedOption       Json?     @map("selected_option")
+  optionalItems        Json      @default("[]") @map("optional_items")
   totalCents           Int?      @map("total_cents")
   validUntil           DateTime? @map("valid_until") @db.Timestamptz(6)
+  requiresHumanApproval Boolean  @default(true) @map("requires_human_approval")
   createdBy            String    @default("ai") @map("created_by")
   approvedById         String?   @map("approved_by_id")
+  approvedAt           DateTime? @map("approved_at") @db.Timestamptz(6)
+  sentAt               DateTime? @map("sent_at") @db.Timestamptz(6)
+  draftShipmentId      String?   @map("draft_shipment_id")
+  customerText         String?   @map("customer_text") @db.Text
+  internalSummary      String?   @map("internal_summary") @db.Text
+  humanReviewReason    String?   @map("human_review_reason")
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -3174,15 +3239,67 @@ model AIServiceQuote {
   @@map("ai_service_quotes")
 }
 
+/// Проверяемые технические факты. Старые записи не перезаписываются: новая
+/// проверка создаёт новую версию, а истёкшие остаются частью аудита расчёта.
+model AIAgentTechnicalEvidence {
+  id              String   @id @default(cuid())
+  organizationId  String   @default("default") @map("organization_id")
+  vehicleKey      String   @map("vehicle_key")
+  vehicleSnapshot Json     @default("{}") @map("vehicle_snapshot")
+  aggregate       String
+  factType        String   @map("fact_type")
+  facts           Json     @default("{}")
+  sourceName      String   @map("source_name")
+  sourceUrl       String   @map("source_url") @db.Text
+  sourceExcerpt   String?  @map("source_excerpt") @db.Text
+  confidence      Float    @default(0)
+  status          String   @default("verified")
+  catalogVersion  String?  @map("catalog_version")
+  verifiedAt      DateTime @default(now()) @map("verified_at") @db.Timestamptz(6)
+  validUntil      DateTime? @map("valid_until") @db.Timestamptz(6)
+  invalidatedAt   DateTime? @map("invalidated_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, vehicleKey, aggregate, factType, verifiedAt])
+  @@index([organizationId, status, validUntil])
+  @@map("ai_agent_technical_evidence")
+}
+
+/// Выборочная обратная связь сотрудника по расчётам — основа контроля качества.
+model AIAgentQualityFeedback {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  quoteId        String   @map("quote_id")
+  conversationId String   @map("conversation_id")
+  code           String
+  note           String?  @db.Text
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([organizationId, quoteId, createdAt])
+  @@index([organizationId, code, createdAt])
+  @@map("ai_agent_quality_feedback")
+}
+
 model AIAgentRun {
   id                  String    @id @default(cuid())
   organizationId      String    @default("default") @map("organization_id")
   conversationId      String    @map("conversation_id")
   sessionId           String?   @map("session_id")
   sourceMessageId     String?   @map("source_message_id")
+  triggerMessageId    String?   @map("trigger_message_id")
+  clientId            String?   @map("client_id")
+  vehicleId           String?   @map("vehicle_id")
+  quoteId             String?   @map("quote_id")
+  idempotencyKey      String?   @unique @map("idempotency_key")
+  outboundMessageId   String?   @map("outbound_message_id")
   triggerType         String    @default("manual") @map("trigger_type")
   mode                String
-  status              String    @default("running")
+  status              String    @default("queued")
+  currentStage        String?   @map("current_stage")
+  stageLabel          String?   @map("stage_label")
+  stageStartedAt      DateTime? @map("stage_started_at") @db.Timestamptz(6)
+  heartbeatAt         DateTime? @map("heartbeat_at") @db.Timestamptz(6)
   intent              String?
   model               String
   promptVersion       String    @map("prompt_version")
@@ -3192,15 +3309,51 @@ model AIAgentRun {
   outputTokens        Int?      @map("output_tokens")
   estimatedCostMicros Int?      @map("estimated_cost_micros")
   durationMs          Int?      @map("duration_ms")
+  requiresHumanApproval Boolean @default(false) @map("requires_human_approval")
+  humanApprovalReason String?   @map("human_approval_reason")
+  lastToolName        String?   @map("last_tool_name")
+  lastToolStatus      String?   @map("last_tool_status")
+  completedStagesJson Json      @default("[]") @map("completed_stages_json")
+  collectedDataSummaryJson Json @default("{}") @map("collected_data_summary_json")
+  errorCode           String?   @map("error_code")
   errorMessage        String?   @map("error_message") @db.Text
+  retryCount          Int       @default(0) @map("retry_count")
+  clientProgressMessageId String? @map("client_progress_message_id")
+  createdBy           String?   @map("created_by")
   startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
   completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  failedAt            DateTime? @map("failed_at") @db.Timestamptz(6)
+  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@unique([organizationId, sourceMessageId])
   @@index([organizationId, conversationId, createdAt])
+  @@index([organizationId, idempotencyKey])
   @@index([status, createdAt])
+  @@index([organizationId, conversationId, status, heartbeatAt])
   @@map("ai_agent_runs")
+}
+
+/// Операционный аудит выполнения запуска. Содержит только безопасные метаданные,
+/// никогда не внутреннюю цепочку рассуждений модели.
+model AIAgentRunEvent {
+  id               String   @id @default(cuid())
+  runId            String   @map("run_id")
+  eventType        String   @map("event_type")
+  stage            String?
+  publicLabel      String?  @map("public_label")
+  internalLabel    String?  @map("internal_label") @db.Text
+  toolName         String?  @map("tool_name")
+  toolStatus       String?  @map("tool_status")
+  durationMs       Int?     @map("duration_ms")
+  sanitizedPayload Json?    @map("sanitized_payload")
+  errorCode        String?  @map("error_code")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([runId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("ai_agent_run_events")
 }
 
 model AIAgentToolCall {
