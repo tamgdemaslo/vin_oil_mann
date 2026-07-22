@@ -463,11 +463,16 @@ model VehicleMannMapping {
   organizationId    String   @default("default") @map("organization_id")
   normalizedMake    String   @map("normalized_make")
   normalizedModel   String   @map("normalized_model")
+  normalizedGeneration String? @map("normalized_generation")
+  bodyCodesJson     Json     @default("[]") @map("body_codes_json")
   yearFrom          Int?     @map("year_from")
   yearTo            Int?     @map("year_to")
   engineCode        String?  @map("engine_code")
+  engineFamily      String?  @map("engine_family")
   engineVolumeCc    Int?     @map("engine_volume_cc")
   powerKw           Int?     @map("power_kw")
+  powerHp           Int?     @map("power_hp")
+  fuelType          String?  @map("fuel_type")
   driveType         String?  @map("drive_type")
   transmissionType  String?  @map("transmission_type")
   mannApplicationId String   @map("mann_application_id")
@@ -480,6 +485,24 @@ model VehicleMannMapping {
   @@index([organizationId, normalizedMake, normalizedModel])
   @@index([mannApplicationId])
   @@map("vehicle_mann_mappings")
+}
+
+/// Подтверждённые соответствия между названием источника и канонической моделью.
+model VehicleModelAlias {
+  id                  String   @id @default(cuid())
+  normalizedMake      String   @map("normalized_make")
+  sourceName          String   @map("source_name")
+  canonicalBaseModel  String   @map("canonical_base_model")
+  canonicalGeneration String?  @map("canonical_generation")
+  bodyCodesJson       Json     @default("[]") @map("body_codes_json")
+  source              String   @default("manual")
+  confirmedById       String?  @map("confirmed_by_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([normalizedMake, sourceName])
+  @@index([normalizedMake, canonicalBaseModel])
+  @@map("vehicle_model_aliases")
 }
 
 model CrmStage {

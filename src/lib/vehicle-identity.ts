@@ -131,6 +131,11 @@ function firstText(object: RecordValue, paths: string[][]): string | undefined {
     const value = valueAt(object, path);
     if (typeof value === "string" && value.trim()) return value.trim();
     if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (Array.isArray(value)) {
+      const first = value.find((item): item is string | number => (typeof item === "string" && item.trim().length > 0) || (typeof item === "number" && Number.isFinite(item)));
+      if (typeof first === "string") return first.trim();
+      if (typeof first === "number") return String(first);
+    }
   }
   return undefined;
 }
@@ -140,6 +145,18 @@ function firstNumber(object: RecordValue, paths: string[][]): number | undefined
     const raw = valueAt(object, path);
     const numeric = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.replace(",", ".").replace(/[^\d.-]/g, "")) : Number.NaN;
     if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return undefined;
+}
+
+function firstYear(object: RecordValue, paths: string[][]): number | undefined {
+  for (const path of paths) {
+    const raw = valueAt(object, path);
+    if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1886 && raw <= 2100) return raw;
+    if (typeof raw !== "string") continue;
+    const years = raw.match(/(?:19|20)\d{2}/g);
+    const year = years?.at(-1);
+    if (year) return Number(year);
   }
   return undefined;
 }
@@ -178,7 +195,7 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
 }
 
 export function normalizeEngineCode(value: unknown): string | undefined {
-  const normalized = String(value ?? "").toUpperCase().replace(/[‐‑‒–—―]/g, "-").replace(/\s+/g, "").trim();
+  const normalized = String(value ?? "").toUpperCase().replace(/[‐‑‒–—―\s_-]/g, "").trim();
   return normalized || undefined;
 }
 
@@ -198,7 +215,10 @@ export function normalizePlateInput(value: string): { original: string; normaliz
 
 function vinStatus(vin: string, primary: RecordValue | null): VinStatus {
   if (vin.length !== 17) return "frame_number";
-  const check = firstText(primary ?? {}, [["decode", "CheckDigit", "Result"], ["decode", "check_digit", "result"], ["CheckDigit", "Result"]])?.toLowerCase();
+  const reportCheck = primaryReports(primary ?? {})
+    .map((report) => firstText(asRecord(report.Data ?? report.data ?? report), [["CheckDigit", "Result"], ["check_digit", "result"]]))
+    .find((value): value is string => Boolean(value));
+  const check = (firstText(primary ?? {}, [["decode", "CheckDigit", "Result"], ["decode", "check_digit", "result"], ["CheckDigit", "Result"]]) ?? reportCheck)?.toLowerCase();
   if (check && /absent|отсутств/i.test(check)) return "check_digit_absent";
   if (check && /invalid|некоррект/i.test(check)) return "format_warning";
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? "valid" : "format_warning";
@@ -220,11 +240,11 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     ["model_info", "en_name"], ["model_info", "ru_name"], ["model_info", "name"], ["model_info", "name_eng"], ["model_info", "code"],
   ]);
   const model = normalizeVehicleModel(modelRaw, makeCanonical);
-  const volumeLiters = firstNumber(data, [["EngineVolumeLiters"], ["engine_volume_liters"], ["engine", "volume"], ["tech_param", "engine_volume"], ["engine_volume"]]);
-  const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["engine", "volume_cc"], ["tech_param", "displacement"]]);
-  const powerHp = firstNumber(data, [["PowerHp"], ["power_hp"], ["tech_param", "power_hp"], ["tech_param", "power"], ["horse_power"], ["power"]]);
-  const powerKw = firstNumber(data, [["PowerKw"], ["power_kw"], ["tech_param", "power_kw"], ["tech_param", "power_kvt"], ["kw"]]);
-  const year = firstNumber(data, [["Year"], ["year"], ["model_year"], ["year_from"]]);
+  const volumeLiters = firstNumber(data, [["EngineVolumeLiters"], ["engine_volume_liters"], ["EngineVolume", "L"], ["engine", "volume"], ["tech_param", "engine_volume"], ["engine_volume"]]);
+  const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["EngineVolume", "Ccm"], ["engine", "volume_cc"], ["tech_param", "displacement"]]);
+  const powerHp = firstNumber(data, [["PowerHp"], ["power_hp"], ["EnginePower", "PS"], ["EnginePower", "Hp"], ["tech_param", "power_hp"], ["tech_param", "power"], ["horse_power"], ["power"]]);
+  const powerKw = firstNumber(data, [["PowerKw"], ["power_kw"], ["EnginePower", "KW"], ["tech_param", "power_kw"], ["tech_param", "power_kvt"], ["kw"]]);
+  const year = firstYear(data, [["Year"], ["year"], ["StartYear"], ["model_year"], ["year_from"]]);
   const resolvedLiters = asNumber(volumeLiters) ?? (asNumber(volumeCc) ? Number((volumeCc! / 1000).toFixed(3)) : undefined);
   const resolvedCc = asNumber(volumeCc) ?? (resolvedLiters ? Math.round(resolvedLiters * 1000) : undefined);
   const resolvedHp = asNumber(powerHp) ?? (asNumber(powerKw) ? Math.round(powerKw! * 1.35962) : undefined);
@@ -241,20 +261,20 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     bodyCode: firstText(data, [["BodyCode"], ["body_code"]]) ?? model.bodyCode,
     bodyType: firstText(data, [["BodyType"], ["body_type"]]),
     year: year ? Math.round(year) : undefined,
-    modelYearFrom: firstNumber(data, [["ModelYearFrom"], ["model_year_from"], ["super_gen", "year_from"]]),
-    modelYearTo: firstNumber(data, [["ModelYearTo"], ["model_year_to"], ["super_gen", "year_to"]]),
-    engineName: firstText(data, [["EngineName"], ["engine_name"], ["engine", "name"], ["tech_param", "human_name"]]),
+    modelYearFrom: firstYear(data, [["ModelYearFrom"], ["model_year_from"], ["StartYear"], ["super_gen", "year_from"]]),
+    modelYearTo: firstYear(data, [["ModelYearTo"], ["model_year_to"], ["FinishYear"], ["super_gen", "year_to"]]),
+    engineName: firstText(data, [["EngineName"], ["engine_name"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
     engineCode: normalizeEngineCode(firstText(data, [["EngineCode"], ["engine_code"], ["engine", "code"]])),
     engineSeries: normalizeEngineCode(firstText(data, [["EngineSeries"], ["engine_series"], ["engine", "series"]])),
     engineVolumeLiters: resolvedLiters,
     engineVolumeCc: resolvedCc,
     powerHp: resolvedHp,
-    powerPs: firstNumber(data, [["PowerPs"], ["power_ps"], ["tech_param", "power_ps"]]) ?? resolvedHp,
+    powerPs: firstNumber(data, [["PowerPs"], ["power_ps"], ["EnginePower", "PS"], ["tech_param", "power_ps"]]) ?? resolvedHp,
     powerKw: resolvedKw,
     fuelType: firstText(data, [["FuelType"], ["fuel_type"], ["tech_param", "fuel_type"]]),
-    transmissionType: firstText(data, [["TransmissionType"], ["transmission_type"], ["tech_param", "gear_type"]]),
+    transmissionType: firstText(data, [["TransmissionType"], ["transmission_type"], ["Gear"], ["tech_param", "gear_type"]]),
     transmissionName: firstText(data, [["TransmissionName"], ["transmission_name"], ["tech_param", "gearbox"], ["tech_param", "transmission"]]),
-    driveType: firstText(data, [["DriveType"], ["drive_type"], ["tech_param", "drive_type"]]),
+    driveType: firstText(data, [["DriveType"], ["drive_type"], ["Drive"], ["tech_param", "drive_type"]]),
     steeringPosition: firstText(data, [["SteeringPosition"], ["steering_wheel"], ["steering"]]),
     market: firstText(data, [["Market"], ["market"]]),
     countryOfOrigin: firstText(data, [["CountryOfOrigin"], ["country_of_origin"], ["country"]]),

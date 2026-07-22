@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
+import { useRef, useState } from "react";
+import type { MannVehicleCandidate, MannVehicleResolution } from "@/lib/mann-vehicle-resolver";
 import type { NormalizedVehicleIdentity, VehicleLookupResult } from "@/lib/vehicle-identity-client";
 
 type LookupTab = "vin" | "plate" | "manual";
@@ -18,6 +18,8 @@ type Props = {
   warehouseId?: string | null;
   initialVin?: string;
   onUseVehicle: (vehicle: NormalizedVehicleIdentity, resolution: MannVehicleResolution | null) => void;
+  onConfirmMannCandidate: (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => void;
+  onLookupStart: () => void;
   onManualMode: (context?: VehicleLookupManualContext) => void;
 };
 
@@ -65,7 +67,8 @@ function isLikelyRussianPlate(value: string): boolean {
 }
 
 function vehicleTitle(vehicle: NormalizedVehicleIdentity): string {
-  return [vehicle.makeRaw ?? vehicle.makeCanonical, vehicle.modelRaw ?? vehicle.modelCanonical, vehicle.generationRaw].filter(Boolean).join(" ") || "Автомобиль";
+  const title = [vehicle.makeRaw ?? vehicle.makeCanonical, vehicle.modelRaw ?? vehicle.modelCanonical, vehicle.generationRaw].filter(Boolean).join(" ");
+  return vehicle.bodyName && !title.includes(vehicle.bodyName) ? `${title} (${vehicle.bodyName})` : title || "Автомобиль";
 }
 
 function vehicleDetails(vehicle: NormalizedVehicleIdentity): string {
@@ -74,7 +77,7 @@ function vehicleDetails(vehicle: NormalizedVehicleIdentity): string {
     vehicle.year,
     vehicle.engineVolumeLiters ? `${vehicle.engineVolumeLiters} л` : undefined,
     vehicle.engineCode,
-    vehicle.powerHp ? `${vehicle.powerHp} л.с.` : undefined,
+    vehicle.powerHp ? `${Math.round(vehicle.powerHp)} л.с.` : undefined,
   ].filter(Boolean).join(" · ");
 }
 
@@ -93,14 +96,20 @@ function confidenceLabel(value?: "high" | "medium" | "low"): string {
 
 function mannStatusCopy(resolution: MannVehicleResolution | null, resolving: boolean): string {
   if (resolving) return "Автомобиль найден, подбираем фильтры MANN...";
-  if (resolution?.status === "matched") {
-    return `MANN: ${resolution.selected?.effectiveVehicleText ?? resolution.selected?.vehicleText ?? "модификация найдена"}. Фильтры готовы к проверке.`;
+  if (resolution?.status === "resolved") {
+    return `MANN: точное совпадение — ${resolution.selectedApplication?.effectiveVehicleText ?? resolution.selectedApplication?.vehicleText ?? "модификация найдена"}.`;
   }
-  if (resolution?.status === "needs_confirmation") return "Автомобиль найден, но модификацию нужно выбрать вручную.";
-  return "Автомобиль определён, но точного соответствия MANN нет. Продолжите ручной подбор.";
+  if (resolution?.status === "candidates") return "MANN: требуется подтвердить одну из найденных модификаций.";
+  return "MANN: точное совпадение не найдено. Можно продолжить ручной подбор.";
 }
 
-export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onManualMode }: Props) {
+function candidateLabel(candidate: MannVehicleCandidate): string {
+  const title = candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Все модификации";
+  const details = [candidate.engineCode, candidate.kw ? `${candidate.kw} кВт` : null, candidate.hp ? `${candidate.hp} л.с.` : null, candidate.vehicleYears].filter(Boolean);
+  return details.length ? `${title} · ${details.join(" · ")}` : title;
+}
+
+export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, onUseVehicle, onConfirmMannCandidate, onLookupStart, onManualMode }: Props) {
   const [tab, setTab] = useState<LookupTab>("vin");
   const [input, setInput] = useState(initialVin ?? "");
   const [loading, setLoading] = useState(false);
@@ -112,6 +121,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
   const [appliedResolution, setAppliedResolution] = useState<MannVehicleResolution | null>(null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
+  const lookupRequestIdRef = useRef(0);
+  const resolutionRequestIdRef = useRef(0);
+  const lookupControllerRef = useRef<AbortController | null>(null);
+  const resolutionControllerRef = useRef<AbortController | null>(null);
 
   const selectedVehicle = lookup && lookup.candidates.length > 1
     ? lookup.candidates.find((candidate) => candidate.key === selectedKey)?.vehicle ?? null
@@ -133,15 +146,21 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const handleResolution = async (vehicle: NormalizedVehicleIdentity, fromCache?: boolean) => {
+    const requestId = ++resolutionRequestIdRef.current;
+    resolutionControllerRef.current?.abort();
+    const controller = new AbortController();
+    resolutionControllerRef.current = controller;
     setResolving(true);
     setFeedback(null);
     try {
-      const response = await fetch("/api/mann-catalog/resolve-vehicle", {
+      const response = await fetch("/api/mann-catalog/resolve-decoded-vehicle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId, warehouseId, vehicle }),
+        body: JSON.stringify({ organizationId, warehouseId, normalizedVehicle: vehicle }),
+        signal: controller.signal,
       });
       const data = await responseJson<MannVehicleResolution & { error?: string }>(response);
+      if (requestId !== resolutionRequestIdRef.current) return;
       if (!response.ok || !data) {
         setFeedback({
           tone: "warning",
@@ -155,24 +174,26 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
 
       setResolution(data);
 
-      if (data.status === "matched") {
+      onUseVehicle(vehicle, data);
+      if (data.status === "resolved") {
         setAppliedVehicle(vehicle);
         setAppliedResolution(data);
         setAppliedFromCache(Boolean(fromCache));
-        onUseVehicle(vehicle, data);
         setFeedback(null);
         return;
       }
 
-      onUseVehicle(vehicle, data);
       setFeedback({
         tone: "neutral",
-        title: data.status === "needs_confirmation" ? "Автомобиль найден" : "Автомобиль найден частично",
-        body: `${vehicleTitle(vehicle)}${vehicle.licensePlate ? ` · ${vehicle.licensePlate}` : ""}. Уточните двигатель и модификацию вручную.`,
-        actionLabel: "Перейти к ручному подбору",
+        title: data.status === "candidates" ? "Автомобиль определён" : "Автомобиль определён частично",
+        body: data.status === "candidates"
+          ? "Выберите подходящую MANN-модификацию ниже. Она пока не установлена автоматически."
+          : "Точное соответствие MANN не найдено. Можно перейти к ручному подбору.",
+        actionLabel: data.status === "unresolved" ? "Перейти к ручному подбору" : undefined,
       });
-      openManualMode({ reason: "partial", vehicle, message: "Уточните двигатель и модификацию" });
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      if (requestId !== resolutionRequestIdRef.current) return;
       setFeedback({
         tone: "warning",
         title: "Сервис MANN временно недоступен",
@@ -181,7 +202,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       });
       openManualMode({ reason: "lookup_unavailable", vehicle, message: "Сервис MANN временно недоступен" });
     } finally {
-      setResolving(false);
+      if (requestId === resolutionRequestIdRef.current) setResolving(false);
     }
   };
 
@@ -203,6 +224,13 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
 
     const endpoint = tab === "plate" ? "/api/vehicle-lookup/plate" : extended ? "/api/vehicle-lookup/vin/extended" : "/api/vehicle-lookup/vin";
     const body = tab === "plate" ? { plate: value, organizationId, refresh } : { vin: value, organizationId, refresh };
+    const requestId = ++lookupRequestIdRef.current;
+    resolutionRequestIdRef.current += 1;
+    lookupControllerRef.current?.abort();
+    resolutionControllerRef.current?.abort();
+    const controller = new AbortController();
+    lookupControllerRef.current = controller;
+    onLookupStart();
     setLoading(true);
     setResolving(false);
     setLookup(null);
@@ -214,8 +242,9 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setAppliedFromCache(false);
 
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
       const data = await responseJson<LookupResponse>(response);
+      if (requestId !== lookupRequestIdRef.current) return;
       if (!response.ok || !data) {
         setFeedback({
           tone: "warning",
@@ -261,7 +290,9 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       }
 
       await handleResolution(data.vehicle, data.fromCache);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      if (requestId !== lookupRequestIdRef.current) return;
       setFeedback({
         tone: "warning",
         title: "Сервис определения автомобиля временно недоступен",
@@ -270,7 +301,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       });
       openManualMode({ reason: "lookup_unavailable", message: "Сервис определения автомобиля временно недоступен" });
     } finally {
-      setLoading(false);
+      if (requestId === lookupRequestIdRef.current) setLoading(false);
     }
   };
 
@@ -281,6 +312,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const changeTab = (next: LookupTab) => {
+    lookupRequestIdRef.current += 1;
+    resolutionRequestIdRef.current += 1;
+    lookupControllerRef.current?.abort();
+    resolutionControllerRef.current?.abort();
     setTab(next);
     setLookup(null);
     setResolution(null);
@@ -303,7 +338,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           <div className="eco-vehicle-lookup__actions">
             {appliedFromCache ? (
               <button type="button" className="eco-btn eco-btn--primary" onClick={() => onUseVehicle(appliedVehicle, appliedResolution)}>
-                Использовать
+                Сохранить данные автомобиля
               </button>
             ) : null}
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
@@ -320,17 +355,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
 
   return (
     <section className="eco-vehicle-lookup" aria-label="Определить автомобиль и подобрать фильтры">
-      <div className="eco-vehicle-lookup__head">
-        <div>
-          <strong>Выберите автомобиль</strong>
-          <span>VIN, госномер или ручной подбор по MANN.</span>
-        </div>
-        {lookup?.fromCache && selectedVehicle ? <em>Автомобиль определён ранее</em> : null}
-      </div>
       <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
-        <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>По VIN</button>
-        <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>По госномеру</button>
-        <button type="button" role="tab" aria-selected={tab === "manual"} className={tab === "manual" ? "is-active" : ""} onClick={() => changeTab("manual")}>Вручную по MANN</button>
+        <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>VIN</button>
+        <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>Госномер</button>
+        <button type="button" role="tab" aria-selected={tab === "manual"} className={tab === "manual" ? "is-active" : ""} onClick={() => changeTab("manual")}>Вручную</button>
       </div>
       {tab !== "manual" ? (
         <div className="eco-vehicle-lookup__controls">
@@ -358,9 +386,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             {loading ? "Ищем автомобиль..." : tab === "vin" ? "Расшифровать и подобрать фильтры" : "Найти автомобиль"}
           </button>
         </div>
-      ) : (
-        <p className="eco-vehicle-lookup__manual">Ручной подбор открыт ниже. Выберите марку, модель и модификацию.</p>
-      )}
+      ) : null}
       {feedback ? (
         <div className={`eco-vehicle-lookup__feedback is-${feedback.tone}`} aria-live="polite">
           <div>
@@ -393,16 +419,17 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           <div>
             <strong>{vehicleTitle(selectedVehicle)}</strong>
             <span>{vehicleDetails(selectedVehicle) || "Технические параметры не указаны"}</span>
-            {[selectedVehicle.transmissionType ?? selectedVehicle.transmissionName, selectedVehicle.driveType].filter(Boolean).length > 0 ? (
-              <span>{[selectedVehicle.transmissionType ?? selectedVehicle.transmissionName, selectedVehicle.driveType].filter(Boolean).join(" · ")}</span>
+            {[selectedVehicle.transmissionName ?? selectedVehicle.transmissionType, selectedVehicle.driveType].filter(Boolean).length > 0 ? (
+              <span>{[selectedVehicle.transmissionName ?? selectedVehicle.transmissionType, selectedVehicle.driveType].filter(Boolean).join(" · ")}</span>
             ) : null}
-            <small>{selectedVehicle.vin ? `VIN: ${selectedVehicle.vin}` : selectedVehicle.frameNumber ? `Кузов: ${selectedVehicle.frameNumber}` : "VIN не получен"} · Источник: {sourceLabel(selectedVehicle)} · Уверенность: {confidenceLabel(selectedVehicle.confidence)}</small>
+            <small>{selectedVehicle.vin ? `VIN: ${selectedVehicle.vin}` : selectedVehicle.frameNumber ? `Кузов: ${selectedVehicle.frameNumber}` : "VIN не получен"} · Источник: {sourceLabel(selectedVehicle)}</small>
+            <small>Расшифровка TRONK: {confidenceLabel(selectedVehicle.confidence)} уверенность</small>
             {selectedVehicle.vinStatus === "check_digit_absent" ? <small>Контрольная цифра VIN отсутствует или не применяется.</small> : null}
           </div>
           <div className="eco-vehicle-lookup__actions">
             {lookup?.fromCache ? <span className="eco-vehicle-lookup__cache-note">Используем данные из карточки автомобиля</span> : null}
             <button type="button" className="eco-btn eco-btn--primary" disabled={resolving} onClick={() => onUseVehicle(selectedVehicle, resolution)}>
-              Использовать
+              Сохранить данные автомобиля
             </button>
             {lookup?.fromCache ? <button type="button" onClick={() => void runLookup(false, true)} disabled={loading || resolving}>Определить заново</button> : null}
             {tab === "vin" ? <button type="button" onClick={() => void runLookup(true)} disabled={loading || resolving}>Получить расширенные данные</button> : null}
@@ -411,8 +438,30 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           {(resolving || resolution) ? (
             <div className={`eco-vehicle-lookup__mann is-${resolution?.status ?? "loading"}`}>
               {mannStatusCopy(resolution, resolving)}
-              {resolution?.selected?.warnings.length ? <span>{resolution.selected.warnings.join(" ")}</span> : null}
+              {resolution?.selectedApplication?.warnings.length ? <span>{resolution.selectedApplication.warnings.join(" ")}</span> : null}
             </div>
+          ) : null}
+          {resolution?.status === "candidates" ? (
+            <div className="eco-vehicle-lookup__mann-candidates">
+              <strong>Варианты MANN</strong>
+              {resolution.candidates.map((candidate) => (
+                <div key={candidate.applicationId}>
+                  <div>
+                    <b>{candidateLabel(candidate)}</b>
+                    <span>Оценка совпадения: {candidate.score}{candidate.matchedFields.length ? ` · совпало: ${candidate.matchedFields.join(", ")}` : ""}</span>
+                    {candidate.warnings.length ? <span>{candidate.warnings.join(" ")}</span> : null}
+                  </div>
+                  <button type="button" onClick={() => onConfirmMannCandidate(selectedVehicle, candidate)}>Выбрать эту модификацию</button>
+                </div>
+              ))}
+              <button type="button" onClick={() => openManualMode({ reason: "partial", vehicle: selectedVehicle })}>Подобрать вручную</button>
+            </div>
+          ) : null}
+          {process.env.NODE_ENV !== "production" && resolution?.trace ? (
+            <details className="eco-vehicle-lookup__trace">
+              <summary>Диагностика сопоставления MANN</summary>
+              <pre>{JSON.stringify(resolution.trace, null, 2)}</pre>
+            </details>
           ) : null}
         </article>
       ) : null}

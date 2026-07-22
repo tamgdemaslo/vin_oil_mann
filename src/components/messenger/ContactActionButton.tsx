@@ -272,7 +272,13 @@ export function ContactActionButton(props: ContactActionButtonProps) {
 
   return (
     <>
-      <button className={buttonClassName} type="button" onClick={() => setOpen(true)} title="Написать в Telegram">
+      <button
+        className={buttonClassName}
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Написать в Telegram"
+        aria-label={props.variant === "icon" ? buttonLabel : undefined}
+      >
         <MessageCircle size={props.variant === "icon" ? 16 : 15} aria-hidden="true" />
         {props.variant !== "icon" ? <span>{buttonLabel}</span> : null}
       </button>
