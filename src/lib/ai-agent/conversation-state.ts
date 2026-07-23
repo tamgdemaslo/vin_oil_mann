@@ -15,6 +15,11 @@ export type AgentSlotSuggestion = {
 
 export type ConversationAgentState = {
   version: 1;
+  /** Monotonic optimistic version of the current dialogue workflow. */
+  stateRevision: number;
+  /** The only run permitted to persist workflow transitions for this turn. */
+  activeRunId: string | null;
+  lastAppliedMessageId: string | null;
   currentIntent: string | null;
   activeServiceRequests: AIServiceType[];
   pendingQuestion: AgentPendingQuestion;
@@ -44,6 +49,7 @@ export type ConversationAgentState = {
   complexFluidRequest: boolean;
   missingRequirements: string[];
   mileage: string | null;
+  mileageApproximate: boolean;
   transmissionHistory: string | null;
   transmissionComplaints: string | null;
   confirmedItems: string[];
@@ -58,6 +64,9 @@ const STATE_KEY = "conversationAgentState";
 
 const DEFAULT_STATE: ConversationAgentState = {
   version: 1,
+  stateRevision: 0,
+  activeRunId: null,
+  lastAppliedMessageId: null,
   currentIntent: null,
   activeServiceRequests: [],
   pendingQuestion: "none",
@@ -87,6 +96,7 @@ const DEFAULT_STATE: ConversationAgentState = {
   complexFluidRequest: false,
   missingRequirements: [],
   mileage: null,
+  mileageApproximate: false,
   transmissionHistory: null,
   transmissionComplaints: null,
   confirmedItems: [],
@@ -189,6 +199,9 @@ export function getConversationAgentState(value: Prisma.JsonValue | Record<strin
   const raw = record(root[STATE_KEY]);
   return {
     ...DEFAULT_STATE,
+    stateRevision: Math.max(0, Math.floor(Number(raw.stateRevision) || 0)),
+    activeRunId: stringValue(raw.activeRunId),
+    lastAppliedMessageId: stringValue(raw.lastAppliedMessageId),
     currentIntent: stringValue(raw.currentIntent),
     activeServiceRequests: normalizedServices(raw.activeServiceRequests),
     pendingQuestion: pendingQuestion(raw.pendingQuestion),
@@ -220,6 +233,7 @@ export function getConversationAgentState(value: Prisma.JsonValue | Record<strin
     complexFluidRequest: raw.complexFluidRequest === true,
     missingRequirements: normalizedStrings(raw.missingRequirements, 12),
     mileage: stringValue(raw.mileage),
+    mileageApproximate: raw.mileageApproximate === true,
     transmissionHistory: stringValue(raw.transmissionHistory),
     transmissionComplaints: stringValue(raw.transmissionComplaints),
     confirmedItems: normalizedStrings(raw.confirmedItems, 60),

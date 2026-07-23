@@ -11,10 +11,6 @@ import { prisma } from "@/lib/db";
 const MAX_SESSION_TURN_CHARS = 9_000;
 const MAX_SINGLE_CLIENT_MESSAGE_CHARS = 3_000;
 
-function asItems(value: Prisma.JsonValue | null | undefined): AgentInputItem[] {
-  return Array.isArray(value) ? (value as unknown as AgentInputItem[]) : [];
-}
-
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
@@ -108,13 +104,13 @@ export class PrismaAgentSession implements Session {
   }
 
   async getItems(limit?: number) {
-    const row = await prisma.aIAgentSession.findFirst({
-      where: { id: this.sessionId, organizationId: this.organizationId },
-      select: { historyJson: true },
-    });
-    const items = compactAgentSessionHistory(asItems(row?.historyJson));
-    const take = limit == null ? items.length : Math.max(0, limit);
-    return take >= items.length ? items : items.slice(-take);
+    // CRM messages are replayed by `loadConversationModelHistory` as clean,
+    // role-preserving input. Do not replay the persisted Responses items here:
+    // an old record can contain an assistant message without its provider
+    // reasoning item, which makes the Responses API reject the whole request.
+    // The historical model data remains in historyJson for diagnostics only.
+    void limit;
+    return [];
   }
 
   // The Responses API requires the provider reasoning IDs to remain intact
@@ -125,8 +121,9 @@ export class PrismaAgentSession implements Session {
 
   async addItems(items: AgentInputItem[]) {
     if (!items.length) return;
-    const current = await this.getItems();
-    const next = compactAgentSessionHistory([...current, ...items]);
+    // Persist only a compact diagnostic snapshot. It is deliberately not used
+    // as future model input; the messenger transcript is the source of truth.
+    const next = compactAgentSessionHistory(items);
     await prisma.aIAgentSession.updateMany({
       where: { id: this.sessionId, organizationId: this.organizationId },
       data: { historyJson: json(next), lastActivityAt: new Date() },

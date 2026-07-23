@@ -149,6 +149,8 @@ export type AIAgentConversationStatus = {
     pendingQuestion: string | null;
     vinAvailability: string;
     vehicleConfidence: "HIGH" | "MEDIUM" | "LOW" | null;
+    mileage: string | null;
+    mileageApproximate: boolean;
     unresolvedItems: string[];
   };
   currentRun: {

@@ -28,6 +28,8 @@ type AgentStatus = {
     pendingQuestion: string | null;
     vinAvailability: string;
     vehicleConfidence: "HIGH" | "MEDIUM" | "LOW" | null;
+    mileage: string | null;
+    mileageApproximate: boolean;
     unresolvedItems: string[];
   };
   currentRun: {
@@ -313,7 +315,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
   const currentStep = Math.min(10, run ? run.completedStages.length + (run.status === "completed" ? 0 : 1) : 0);
   const hasQuote = asArray(status.latestQuote?.quoteOptions).length > 0;
   const vinAwaited = run?.status === "waiting_for_client" && status.conversationState.pendingQuestion === "vin";
-  const runTitle = !run ? "" : run.status === "waiting_for_human" ? "Расчёт готов" : run.status === "waiting_for_client" ? (run.stageLabel === "Уточняет параметры без VIN" ? "Уточняет параметры без VIN" : run.stageLabel === "Ждёт пробег" ? "Ждёт пробег" : "Ждём клиента") : run.status === "completed" ? (hasQuote ? "Расчёт завершён" : "Ответ подготовлен") : run.status === "timed_out" || run.status === "research_failed" ? "Нужна техническая проверка" : run.status === "handed_off" ? "Передано сотруднику" : run.status === "cancelled" ? "Остановлено" : run.status === "failed" ? "Требует внимания" : "ИИ-агент рассчитывает";
+  const runTitle = !run ? "" : run.status === "waiting_for_human" ? "Расчёт готов" : run.status === "waiting_for_client" ? (run.stageLabel === "Уточняет параметры без VIN" ? "Уточняет параметры без VIN" : run.stageLabel === "Ждёт пробег" ? "Ждёт пробег" : run.stageLabel === "Уточняет историю АКПП" ? "Уточняет историю АКПП" : run.stageLabel === "Проверяет жалобы на АКПП" ? "Проверяет жалобы на АКПП" : "Ждём клиента") : run.status === "completed" ? (hasQuote ? "Расчёт завершён" : "Ответ подготовлен") : run.status === "timed_out" || run.status === "research_failed" ? "Нужна техническая проверка" : run.status === "handed_off" ? "Передано сотруднику" : run.status === "cancelled" ? "Остановлено" : run.status === "failed" ? "Требует внимания" : "ИИ-агент рассчитывает";
 
   return (
     <section className={`eco-ai-panel state-${status.state}`} aria-label="ИИ-агент">
@@ -337,6 +339,14 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
           <span>Запрос</span>
           <strong>{intentLabels[status.intent] ?? status.intent}</strong>
           {typeof status.confidence === "number" && <em>Уверенность в запросе: {Math.round(status.confidence * 100)}%</em>}
+        </div>
+      )}
+
+      {status.conversationState.mileage && (
+        <div className="eco-ai-panel__signal">
+          <span>Пробег</span>
+          <strong>{status.conversationState.mileage}</strong>
+          {status.conversationState.mileageApproximate && <em>Значение ориентировочное</em>}
         </div>
       )}
 

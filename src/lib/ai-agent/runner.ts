@@ -8,12 +8,14 @@ import {
   type OutputGuardrail,
   type RunToolApprovalItem,
 } from "@openai/agents";
+import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 import { sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
 import { assertSafeAgentOutput, containsPromptInjection, maskPersonalData } from "./security";
 import { getAgentSettings } from "./settings";
 import { PrismaAgentSession } from "./session";
+import { loadConversationModelHistory, type ConversationModelHistory } from "./conversation-history";
 import { tgmClientAgentTools } from "./tools";
 import type { AIAgentConversationStatus, AIAgentRunContext, AIAgentSettings } from "./types";
 import { AGENT_RUN_STAGE_LABELS, runTimeoutState, startAgentRunHeartbeat, updateAgentRunProgress } from "./run-progress";
@@ -70,6 +72,177 @@ export const BASE_INSTRUCTIONS = `Ты отвечаешь от имени авт
 
 const DEFAULT_CLIENT_AGENT_MODEL = "gpt-5.6-terra";
 const MAX_CLIENT_MESSAGE_CHARS = 12_000;
+
+type ContextualAnswer = {
+  rawJson: string;
+  reply: string | null;
+  understood: boolean;
+  confidence: number;
+  changedTopic: boolean;
+  resolvedQuestion: "none" | "drive" | "mileage" | "transmission_history" | "transmission_complaints";
+  mileageKm: number | null;
+  approximate: boolean;
+  answerValue: string | null;
+  unknown: boolean;
+};
+
+function recordJson(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function parseContextualAnswer(value: string): ContextualAnswer | null {
+  try {
+    const parsed = recordJson(JSON.parse(value));
+    const stateUpdate = recordJson(parsed.stateUpdate);
+    const question = String(stateUpdate.resolvedQuestion ?? "none");
+    if (!["none", "drive", "mileage", "transmission_history", "transmission_complaints"].includes(question)) return null;
+    const mileage = Number(stateUpdate.mileageKm);
+    return {
+      rawJson: value.slice(0, 8_000),
+      reply: typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim().slice(0, 800) : null,
+      understood: stateUpdate.understood === true,
+      confidence: Math.max(0, Math.min(1, Number(stateUpdate.confidence) || 0)),
+      changedTopic: stateUpdate.changedTopic === true,
+      resolvedQuestion: question as ContextualAnswer["resolvedQuestion"],
+      mileageKm: Number.isFinite(mileage) && mileage > 0 ? Math.round(mileage) : null,
+      approximate: stateUpdate.approximate === true,
+      answerValue: typeof stateUpdate.answerValue === "string" && stateUpdate.answerValue.trim() ? stateUpdate.answerValue.trim().slice(0, 500) : null,
+      unknown: stateUpdate.unknown === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function contextualInterpreterInstruction(pending: ConversationAgentState["pendingQuestion"]) {
+  return [
+    "Ты интерпретируешь последний ответ клиента в настоящей переписке автосервиса. Верни только JSON по схеме, с reply и stateUpdate. Не добавляй объяснения или Markdown вне JSON.",
+    `Сейчас открыт вопрос: ${pending}. Последний вопрос компании уже есть в истории выше.`,
+    "Короткий ответ трактуй прежде всего относительно открытого вопроса. Несколько подряд идущих сообщений клиента составляют одну мысль.",
+    "Для вопроса о пробеге число вроде «150» вместе с «примерно» в контексте автомобиля обычно означает около 150000 км; это решение принимает смысл переписки, а не формат числа.",
+    "Если клиент сказал «не знаю» или «не помню», отметь unknown=true и считай текущий вопрос решённым. Если смысл действительно неясен, оставь understood=false и resolvedQuestion=none. Если вопрос понят и решён, reply коротко подтверждает понятое и задаёт ровно следующий вопрос workflow; иначе reply=null.",
+  ].join("\n");
+}
+
+async function interpretOpenQuestion(input: {
+  model: string;
+  state: ConversationAgentState;
+  history: ConversationModelHistory;
+}) {
+  const pending = input.state.pendingQuestion;
+  if (!["drive", "mileage", "transmission_history", "transmission_complaints"].includes(pending)) return null;
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey || !input.history.items.length) return null;
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["reply", "stateUpdate"],
+    properties: {
+      reply: { type: ["string", "null"] },
+      stateUpdate: {
+        type: "object",
+        additionalProperties: false,
+        required: ["understood", "confidence", "changedTopic", "resolvedQuestion", "mileageKm", "approximate", "answerValue", "unknown", "nextQuestion", "status"],
+        properties: {
+          understood: { type: "boolean" },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          changedTopic: { type: "boolean" },
+          resolvedQuestion: { type: "string", enum: ["none", "drive", "mileage", "transmission_history", "transmission_complaints"] },
+          mileageKm: { type: ["integer", "null"], minimum: 0 },
+          approximate: { type: "boolean" },
+          answerValue: { type: ["string", "null"] },
+          unknown: { type: "boolean" },
+          nextQuestion: { type: ["string", "null"], enum: ["drive", "mileage", "transmission_history", "transmission_complaints", "none", null] },
+          status: { type: "string", enum: ["waiting_for_client", "researching", "unchanged"] },
+        },
+      },
+    },
+  };
+  const instruction = contextualInterpreterInstruction(pending);
+  try {
+    const client = new OpenAI({ apiKey });
+    const response = await client.responses.create({
+      model: input.model,
+      instructions: instruction,
+      input: input.history.items as never,
+      reasoning: { effort: "high" },
+      text: { format: { type: "json_schema", name: "conversation_state_update", strict: true, schema } },
+    } as never);
+    return parseContextualAnswer(String((response as { output_text?: string }).output_text ?? ""));
+  } catch (error) {
+    console.warn("[ai-agent contextual interpretation]", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+function humanMileage(value: number, approximate: boolean) {
+  const formatted = new Intl.NumberFormat("ru-RU").format(value);
+  return `${approximate ? "≈" : ""}${formatted} км`;
+}
+
+function clientMileage(value: number, approximate: boolean) {
+  if (value > 0 && value % 1_000 === 0) return `${approximate ? "примерно " : ""}${value / 1_000} тыс. км`;
+  return humanMileage(value, approximate);
+}
+
+function contextualWorkflowReply(state: ConversationAgentState, answer: ContextualAnswer | null) {
+  if (!answer?.understood || answer.changedTopic || answer.confidence < 0.55 || answer.resolvedQuestion !== state.pendingQuestion) return null;
+  if (answer.reply) return answer.reply;
+  if (answer.resolvedQuestion === "mileage") {
+    const confirmation = answer.unknown ? "Понял, пробег уточним при приёме." : answer.mileageKm ? `Принял, пробег ${clientMileage(answer.mileageKm, answer.approximate)}.` : "Пробег принял.";
+    return `${confirmation} Масло в АКПП раньше меняли?`;
+  }
+  if (answer.resolvedQuestion === "drive") return `Принял, ${answer.answerValue || "тип привода"} указан. Какой сейчас пробег?`;
+  if (answer.resolvedQuestion === "transmission_history") return "Понял. Есть толчки, задержки, пробуксовки или ошибки по коробке?";
+  return null;
+}
+
+function applyContextualAnswer(state: ConversationAgentState, answer: ContextualAnswer | null, messageId?: string) {
+  if (!answer?.understood || answer.changedTopic || answer.confidence < 0.55 || answer.resolvedQuestion !== state.pendingQuestion) return state;
+  const now = new Date().toISOString();
+  const base = {
+    ...state,
+    pendingQuestionAnsweredAt: now,
+    pendingQuestionMessageId: null,
+    lastAppliedMessageId: messageId ?? state.lastAppliedMessageId,
+    updatedAt: now,
+  };
+  if (answer.resolvedQuestion === "mileage") {
+    return {
+      ...base,
+      mileage: answer.unknown ? "неизвестен" : answer.mileageKm ? humanMileage(answer.mileageKm, answer.approximate) : state.mileage,
+      mileageApproximate: !answer.unknown && answer.approximate,
+      pendingQuestion: "transmission_history" as const,
+      pendingQuestionType: "transmission_history" as const,
+      pendingQuestionAskedAt: now,
+    };
+  }
+  if (answer.resolvedQuestion === "drive") {
+    const vehicleData = { ...state.vehicleData, ...(answer.answerValue ? { drive: answer.answerValue } : {}) };
+    return { ...base, vehicleData, pendingQuestion: "mileage" as const, pendingQuestionType: "mileage" as const, pendingQuestionAskedAt: now };
+  }
+  if (answer.resolvedQuestion === "transmission_history") {
+    return {
+      ...base,
+      transmissionHistory: answer.unknown ? "неизвестна" : answer.answerValue || state.transmissionHistory,
+      pendingQuestion: "transmission_complaints" as const,
+      pendingQuestionType: "transmission_complaints" as const,
+      pendingQuestionAskedAt: now,
+    };
+  }
+  if (answer.resolvedQuestion === "transmission_complaints") {
+    return {
+      ...base,
+      transmissionComplaints: answer.unknown ? "неизвестно" : answer.answerValue || state.transmissionComplaints,
+      pendingQuestion: "none" as const,
+      pendingQuestionType: null,
+      pendingToolAction: "technical_research" as const,
+      awaitingTechnicalResearch: true,
+      awaitingHumanApproval: false,
+    };
+  }
+  return state;
+}
 
 function newestClientInput(input: string | unknown[]) {
   if (typeof input === "string") return input;
@@ -196,18 +369,6 @@ function clientHasNoVin(text: string) {
   return didClientRefuseVin(text)
     || /^(?:нет(?:у)?|нет\s+под\s+рукой|не\s+могу\s+посмотреть|потом\s+пришлю|без\s+(?:vin|вина)\s+посчитайте)(?:\s|$)/i.test(text.trim())
     || /(vin|вин).{0,25}(не знаю|нет|не помню|позже)|без (vin|вина)/i.test(text);
-}
-
-function driveFromMessage(text: string) {
-  if (/(полный|полнопривод|awd|4wd|4x4)/i.test(text)) return "AWD";
-  if (/(передний|переднепривод|fwd)/i.test(text)) return "FWD";
-  if (/(задний|заднепривод|rwd)/i.test(text)) return "RWD";
-  return null;
-}
-
-function mileageFromMessage(text: string) {
-  const match = text.match(/\b\d{1,3}(?:[\s.,]\d{3})+\b|\b\d{2,3}\s*(?:тыс|т\.?км)\b|\b\d{4,7}\s*км\b/i);
-  return match?.[0]?.trim() ?? null;
 }
 
 function dangerousTransmissionMessage(text: string) {
@@ -477,33 +638,10 @@ function continueComplexFluidWorkflow(state: ConversationAgentState, message: st
     next = nextComplexQuestion(next, "drive");
   }
 
-  if (next.pendingQuestion === "drive") {
-    const drive = driveFromMessage(text) || (typeof vehicleData.drive === "string" ? vehicleData.drive : null);
-    if (drive) {
-      vehicleData.drive = drive;
-      next = nextComplexQuestion({ ...next, pendingQuestionAnsweredAt: new Date().toISOString() }, "mileage");
-    }
-  }
-
-  if (next.pendingQuestion === "mileage") {
-    const mileage = mileageFromMessage(text) || next.mileage;
-    if (mileage) {
-      next.mileage = mileage;
-      next = nextComplexQuestion({ ...next, pendingQuestionAnsweredAt: new Date().toISOString() }, "transmission_history");
-    }
-  }
-
-  if (next.pendingQuestion === "transmission_history" && text && !mileageFromMessage(text)) {
-    // A free-form answer is useful here: the client usually does not know an
-    // exact mileage or replacement method.
-    next.transmissionHistory = next.transmissionHistory || text.slice(0, 500);
-    next = nextComplexQuestion({ ...next, pendingQuestionAnsweredAt: new Date().toISOString() }, "transmission_complaints");
-  }
-
-  if (next.pendingQuestion === "transmission_complaints" && text && !mileageFromMessage(text)) {
-    next.transmissionComplaints = next.transmissionComplaints || text.slice(0, 500);
-    next = nextComplexQuestion({ ...next, pendingQuestionAnsweredAt: new Date().toISOString() }, "none");
-  }
+  // Natural answers to open questions are interpreted by the contextual model
+  // before this workflow runs. Do not make a numeric/keyword parser the gate
+  // for a client reply: "150, примерно" is meaningful only together with the
+  // preceding question and the rest of the dialogue.
 
   if (next.pendingQuestion === "none") {
     next = {
@@ -628,6 +766,33 @@ async function inboundReplyIdempotencyKey(input: Pick<RunAgentInput, "organizati
   return `ai-reply:${input.organizationId}:${input.conversationId}:${externalIncomingMessageId}:${input.runStage || "conversation"}`;
 }
 
+async function isCurrentWorkflowRun(input: { organizationId: string; sessionId: string; runId: string }) {
+  const [session, runRow] = await Promise.all([
+    prisma.aIAgentSession.findFirst({
+      where: { id: input.sessionId, organizationId: input.organizationId },
+      select: { collectedDataJson: true },
+    }),
+    prisma.aIAgentRun.findFirst({
+      where: { id: input.runId, organizationId: input.organizationId },
+      select: { status: true },
+    }),
+  ]);
+  return getConversationAgentState(session?.collectedDataJson).activeRunId === input.runId
+    && Boolean(runRow && ["queued", "running"].includes(runRow.status));
+}
+
+async function markRunSuperseded(input: { organizationId: string; runId: string }) {
+  await prisma.aIAgentRun.updateMany({
+    where: { id: input.runId, organizationId: input.organizationId, status: { in: ["queued", "running"] } },
+    data: {
+      status: "cancelled",
+      stageLabel: "Заменён более новым сообщением клиента",
+      cancelledAt: new Date(),
+      completedAt: new Date(),
+    },
+  });
+}
+
 async function prefetchRequestedSlots(input: {
   organizationId: string;
   conversationId: string;
@@ -700,7 +865,21 @@ export async function runTgmClientAgent(input: RunAgentInput) {
   if (sessionRow.pendingRunState) throw new Error("Предыдущее действие ожидает подтверждения сотрудника");
 
   const previousConversationState = getConversationAgentState(sessionRow.collectedDataJson);
-  const intent = detectIntent(input.message, previousConversationState);
+  const conversationHistory = await loadConversationModelHistory({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    sourceMessageId: input.sourceMessageId,
+    fallbackClientMessage: input.message,
+  });
+  // An answer to an open question continues the existing scenario. Do not let
+  // a context-free keyword classifier replace that scenario before the model
+  // has seen the question it is answering.
+  const continuingOpenQuestion = previousConversationState.pendingQuestion !== "none";
+  const detectedIntent = detectIntent(input.message, previousConversationState);
+  const intent = continuingOpenQuestion && !["complaint", "human_request", "cancel_appointment", "reschedule_appointment"].includes(detectedIntent.intent)
+    ? { intent: previousConversationState.currentIntent || detectedIntent.intent, confidence: Math.max(previousConversationState.currentIntent ? 0.9 : 0, detectedIntent.confidence) }
+    : detectedIntent;
+  const model = configuredModel(settings);
   const conversationContext = await getConversationContext(input.conversationId).catch(() => null);
   const selectedVehicle = conversationContext?.selectedVehicle;
   const knownVehicleData = {
@@ -718,11 +897,21 @@ export async function runTgmClientAgent(input: RunAgentInput) {
     vehicleData: knownVehicleData,
   });
   const bypassComplexClarification = intent.intent === "complaint" || intent.intent === "human_request" || dangerousTransmissionMessage(input.message);
-  const complexWorkflow = bypassComplexClarification
-    ? { state: stateUpdate.state, clarificationText: null, researchReady: false }
-    : continueComplexFluidWorkflow(stateUpdate.state, input.message);
+  const contextualAnswer = bypassComplexClarification || !stateUpdate.state.complexFluidRequest
+    ? null
+    : await interpretOpenQuestion({ model, state: stateUpdate.state, history: conversationHistory });
+  const contextualReply = contextualWorkflowReply(stateUpdate.state, contextualAnswer);
+  const stateAfterContext = applyContextualAnswer(stateUpdate.state, contextualAnswer, input.sourceMessageId);
+  let complexWorkflow = bypassComplexClarification
+    ? { state: stateAfterContext, clarificationText: null, researchReady: false }
+    : continueComplexFluidWorkflow(stateAfterContext, input.message);
+  if (contextualReply) {
+    // The state transition remains deterministic and typed. The language model
+    // only supplies natural phrasing that acknowledges the client's answer and
+    // asks the next already-selected workflow question.
+    complexWorkflow = { ...complexWorkflow, clarificationText: contextualReply };
+  }
   let workflowState = complexWorkflow.state;
-  const model = configuredModel(settings);
   const idempotencyKey = await inboundReplyIdempotencyKey({
     ...input,
     runStage: workflowState.pendingToolAction || workflowState.pendingQuestion,
@@ -835,12 +1024,65 @@ export async function runTgmClientAgent(input: RunAgentInput) {
     });
   }
 
+  // Claim the dialogue before any worker can persist a follow-up state. A
+  // late worker may finish its API call, but it is no longer allowed to send a
+  // duplicate question or overwrite this newer workflow version.
+  if (previousConversationState.activeRunId && previousConversationState.activeRunId !== runRow.id) {
+    await prisma.aIAgentRun.updateMany({
+      where: {
+        id: previousConversationState.activeRunId,
+        organizationId: input.organizationId,
+        status: { in: ["queued", "running"] },
+      },
+      data: {
+        status: "cancelled",
+        stageLabel: "Заменён более новым сообщением клиента",
+        cancelledAt: new Date(),
+        completedAt: new Date(),
+      },
+    });
+  }
+  const stateData = sessionRow.collectedDataJson && typeof sessionRow.collectedDataJson === "object" && !Array.isArray(sessionRow.collectedDataJson)
+    ? sessionRow.collectedDataJson as Record<string, unknown>
+    : {};
+  workflowState = {
+    ...workflowState,
+    activeRunId: runRow.id,
+    stateRevision: Math.max(previousConversationState.stateRevision, workflowState.stateRevision) + 1,
+    lastAppliedMessageId: input.sourceMessageId ?? workflowState.lastAppliedMessageId,
+    updatedAt: new Date().toISOString(),
+  };
+  const tracePayload = {
+    runId: runRow.id,
+    pendingQuestionBefore: previousConversationState.pendingQuestion,
+    pendingQuestionAfter: workflowState.pendingQuestion,
+    context: conversationHistory.trace,
+    contextContainsAssistantMessage: conversationHistory.containsAssistantMessage,
+    contextualInterpreterSystemPrompt: contextualInterpreterInstruction(stateUpdate.state.pendingQuestion),
+    contextualStateUpdate: contextualAnswer,
+    stateRevision: workflowState.stateRevision,
+  };
+  const sessionRoot = { ...stateData, lastModelContext: tracePayload };
+  await prisma.aIAgentSession.update({
+    where: { id: sessionRow.id },
+    data: {
+      status: "running",
+      collectedDataJson: json(withConversationAgentState(sessionRoot, workflowState)),
+      lastActivityAt: new Date(),
+    },
+  });
+
   workflowState = await resolveVehicleWithoutVin({
     organizationId: input.organizationId,
     conversationId: input.conversationId,
     runId: runRow.id,
     state: workflowState,
   });
+
+  if (!await isCurrentWorkflowRun({ organizationId: input.organizationId, sessionId: sessionRow.id, runId: runRow.id })) {
+    await markRunSuperseded({ organizationId: input.organizationId, runId: runRow.id });
+    return { duplicate: false as const, runId: runRow.id, sessionId: sessionRow.id, outputText: "", sent: false, mode: settings.mode, awaitingApproval: false, approvals: [] };
+  }
 
   const context: AIAgentRunContext = {
     organizationId: input.organizationId,
@@ -858,13 +1100,11 @@ export async function runTgmClientAgent(input: RunAgentInput) {
     status: "running",
     eventType: "run_started",
     internalLabel: "Сессия и контекст диалога подготовлены",
+    payload: tracePayload,
   });
-  const stateData = sessionRow.collectedDataJson && typeof sessionRow.collectedDataJson === "object" && !Array.isArray(sessionRow.collectedDataJson)
-    ? sessionRow.collectedDataJson as Record<string, unknown>
-    : {};
   await prisma.aIAgentSession.update({
     where: { id: sessionRow.id },
-    data: { collectedDataJson: json(withConversationAgentState(stateData, workflowState)), lastActivityAt: new Date() },
+    data: { collectedDataJson: json(withConversationAgentState(sessionRoot, workflowState)), lastActivityAt: new Date() },
   });
 
   if (complexWorkflow.clarificationText) {
@@ -872,12 +1112,19 @@ export async function runTgmClientAgent(input: RunAgentInput) {
       ? "Уточняет параметры без VIN"
       : workflowState.pendingQuestion === "mileage"
         ? "Ждёт пробег"
-        : workflowState.pendingQuestion === "transmission_history" || workflowState.pendingQuestion === "transmission_complaints"
+        : workflowState.pendingQuestion === "transmission_history"
           ? "Уточняет историю АКПП"
+          : workflowState.pendingQuestion === "transmission_complaints"
+            ? "Проверяет жалобы на АКПП"
           : "Нужно уточнение клиента";
     let outboundMessageId: string | null = null;
     let sent = false;
     if (allowsAutomaticReply(settings)) {
+      if (!await isCurrentWorkflowRun({ organizationId: input.organizationId, sessionId: sessionRow.id, runId: runRow.id })) {
+        await markRunSuperseded({ organizationId: input.organizationId, runId: runRow.id });
+        return { duplicate: false as const, runId: runRow.id, sessionId: sessionRow.id, outputText: "", sent: false, mode: settings.mode, awaitingApproval: false, approvals: [] };
+      }
+      assertSafeAgentOutput(complexWorkflow.clarificationText);
       const result = await sendMessage({
         conversationId: input.conversationId,
         text: complexWorkflow.clarificationText,
@@ -913,7 +1160,7 @@ export async function runTgmClientAgent(input: RunAgentInput) {
           status: "waiting_client",
           intent: intent.intent,
           confidence: intent.confidence,
-          collectedDataJson: json(withConversationAgentState(stateData, savedState)),
+          collectedDataJson: json(withConversationAgentState(sessionRoot, savedState)),
           lastDraftText: complexWorkflow.clarificationText,
           lastActivityAt: new Date(),
         },
@@ -948,9 +1195,13 @@ export async function runTgmClientAgent(input: RunAgentInput) {
       settings,
       state: workflowState,
     });
+    if (!await isCurrentWorkflowRun({ organizationId: input.organizationId, sessionId: sessionRow.id, runId: runRow.id })) {
+      await markRunSuperseded({ organizationId: input.organizationId, runId: runRow.id });
+      return { duplicate: false as const, runId: runRow.id, sessionId: sessionRow.id, outputText: "", sent: false, mode: settings.mode, awaitingApproval: false, approvals: [] };
+    }
     await prisma.aIAgentSession.update({
       where: { id: sessionRow.id },
-      data: { collectedDataJson: json(withConversationAgentState(stateData, workflowState)), lastActivityAt: new Date() },
+      data: { collectedDataJson: json(withConversationAgentState(sessionRoot, workflowState)), lastActivityAt: new Date() },
     });
   } catch (error) {
     if (!(error instanceof TechnicalToolUnavailableError)) throw error;
@@ -1013,7 +1264,7 @@ export async function runTgmClientAgent(input: RunAgentInput) {
   ]);
 
   try {
-    const stream = await run(agent, input.message, {
+    const stream = await run(agent, conversationHistory.items, {
       context,
       session,
       stream: true,
@@ -1030,6 +1281,14 @@ export async function runTgmClientAgent(input: RunAgentInput) {
     if (outputText) {
       if (hasContradictoryWorkflowStatus(outputText)) throw new Error("Агент одновременно объявил исследование и передачу сотруднику");
       assertSafeAgentOutput(outputText);
+    }
+
+    // A newer inbound batch may have claimed the dialogue while the model was
+    // reasoning. Its predecessor must never send a stale reply or overwrite
+    // the newly collected state.
+    if (!await isCurrentWorkflowRun({ organizationId: input.organizationId, sessionId: sessionRow.id, runId: runRow.id })) {
+      await markRunSuperseded({ organizationId: input.organizationId, runId: runRow.id });
+      return { duplicate: false as const, runId: runRow.id, sessionId: sessionRow.id, outputText: "", sent: false, mode: settings.mode, awaitingApproval: false, approvals: [] };
     }
 
     if (awaitingApproval) {
@@ -1078,6 +1337,10 @@ export async function runTgmClientAgent(input: RunAgentInput) {
       });
       const stillActive = await prisma.aIAgentRun.findFirst({ where: { id: runRow.id, status: { in: ["queued", "running"] } }, select: { id: true } });
       if (!stillActive) throw new Error("Запуск остановлен сотрудником до отправки ответа");
+      if (!await isCurrentWorkflowRun({ organizationId: input.organizationId, sessionId: sessionRow.id, runId: runRow.id })) {
+        await markRunSuperseded({ organizationId: input.organizationId, runId: runRow.id });
+        return { duplicate: false as const, runId: runRow.id, sessionId: sessionRow.id, outputText: "", sent: false, mode: settings.mode, awaitingApproval: false, approvals: [] };
+      }
       const alreadySent = await prisma.aIAgentRun.findFirst({ where: { id: runRow.id, outboundMessageId: { not: null } }, select: { outboundMessageId: true } });
       if (alreadySent?.outboundMessageId) {
         sent = true;
@@ -1447,6 +1710,8 @@ export async function getConversationAgentStatus(organizationId: string, convers
       pendingQuestion: conversationState.pendingQuestion === "none" ? null : conversationState.pendingQuestion,
       vinAvailability: conversationState.vinAvailability,
       vehicleConfidence: conversationState.vehicleConfidence,
+      mileage: conversationState.mileage,
+      mileageApproximate: conversationState.mileageApproximate,
       unresolvedItems: conversationState.unresolvedItems,
     },
     currentRun: latestRun ? {
@@ -1473,35 +1738,91 @@ export async function getConversationAgentStatus(organizationId: string, convers
   };
 }
 
+const INBOUND_MESSAGE_BATCH_WINDOW_MS = 2_300;
 const inboundRunQueues = new Map<string, Promise<void>>();
+type InboundMessage = { organizationId: string; conversationId: string; messageId: string; text: string };
+type InboundMessageBatch = {
+  latest: InboundMessage;
+  timer: ReturnType<typeof setTimeout> | null;
+  delayMs: number;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+};
+const inboundMessageBatches = new Map<string, InboundMessageBatch>();
 
-export async function triggerAgentForInboundMessage(input: { organizationId: string; conversationId: string; messageId: string; text: string }) {
+function armInboundMessageBatch(key: string, batch: InboundMessageBatch) {
+  if (batch.timer) clearTimeout(batch.timer);
+  batch.timer = setTimeout(() => {
+    batch.timer = null;
+    if (inboundMessageBatches.get(key) === batch) inboundMessageBatches.delete(key);
+    const previous = inboundRunQueues.get(key) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await runTgmClientAgent({
+          organizationId: batch.latest.organizationId,
+          conversationId: batch.latest.conversationId,
+          actorId: "system:inbound",
+          message: batch.latest.text,
+          sourceMessageId: batch.latest.messageId,
+          triggerType: "inbound",
+        });
+      });
+    inboundRunQueues.set(key, next);
+    void next
+      .then(() => batch.resolve())
+      .catch((error) => batch.reject(error))
+      .finally(() => {
+        if (inboundRunQueues.get(key) === next) inboundRunQueues.delete(key);
+      });
+  }, batch.delayMs);
+}
+
+async function stopActiveInboundWorker(input: InboundMessage) {
+  const session = await prisma.aIAgentSession.findFirst({
+    where: { organizationId: input.organizationId, conversationId: input.conversationId },
+    select: { collectedDataJson: true },
+  });
+  const activeRunId = getConversationAgentState(session?.collectedDataJson).activeRunId;
+  if (activeRunId) await markRunSuperseded({ organizationId: input.organizationId, runId: activeRunId });
+}
+
+export async function triggerAgentForInboundMessage(input: InboundMessage) {
   const settings = await getAgentSettings(input.organizationId);
   const conversation = await prisma.messengerConversation.findFirst({ where: { id: input.conversationId, organizationId: input.organizationId }, select: { channel: true } });
   if (!settings.enabled || settings.mode === "off" || !conversation || !settings.channels.includes(conversation.channel) || !process.env.OPENAI_API_KEY?.trim()) return;
   const key = `${input.organizationId}:${input.conversationId}`;
-  const previous = inboundRunQueues.get(key) ?? Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(async () => {
-      if (settings.responseDelaySeconds > 0) {
-        await new Promise((resolve) => setTimeout(resolve, settings.responseDelaySeconds * 1000));
-      }
-      await runTgmClientAgent({
-        organizationId: input.organizationId,
-        conversationId: input.conversationId,
-        actorId: "system:inbound",
-        message: input.text,
-        sourceMessageId: input.messageId,
-        triggerType: "inbound",
-      });
-    });
-  inboundRunQueues.set(key, next);
+  // A short burst like "150" followed by "примерно" is one customer reply.
+  // The worker receives the latest message and independently loads the whole
+  // CRM transcript, so no text is lost while duplicate questions are avoided.
+  const existing = inboundMessageBatches.get(key);
+  if (existing) {
+    existing.latest = input;
+    armInboundMessageBatch(key, existing);
+    await existing.promise;
+    return;
+  }
+  if (inboundRunQueues.has(key)) await stopActiveInboundWorker(input);
+  let resolve!: () => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  const batch: InboundMessageBatch = {
+    latest: input,
+    timer: null,
+    delayMs: Math.max(INBOUND_MESSAGE_BATCH_WINDOW_MS, settings.responseDelaySeconds * 1_000),
+    promise,
+    resolve,
+    reject,
+  };
+  inboundMessageBatches.set(key, batch);
+  armInboundMessageBatch(key, batch);
   try {
-    await next;
+    await promise;
   } catch (error) {
     console.warn("[ai-agent inbound]", error instanceof Error ? error.message : String(error));
-  } finally {
-    if (inboundRunQueues.get(key) === next) inboundRunQueues.delete(key);
   }
 }
