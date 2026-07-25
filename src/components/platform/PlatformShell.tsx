@@ -533,8 +533,8 @@ export default function PlatformShell() {
                     <ChevronDown aria-hidden className="eco-icon platform-shell__chevron" />
                   </button>
 
-                  {open && !disabled && (
-                    <div className="platform-shell__dropdown" role="menu">
+                  {!disabled && (
+                    <div className={`platform-shell__dropdown ${open ? "is-open" : ""}`} role="menu" aria-hidden={!open}>
                       {section.items.map((item) =>
                         item.disabled ? (
                           <div key={item.href} className="platform-shell__dropdown-link is-disabled">
@@ -606,24 +606,22 @@ export default function PlatformShell() {
                   <ChevronDown aria-hidden className="eco-icon platform-shell__chevron" />
                 </button>
 
-                {profileOpen && (
-                  <div className="platform-shell__profile-menu" role="menu">
-                    <Link href="/cabinet" className="platform-shell__dropdown-link" role="menuitem">
-                      <UserRound aria-hidden className="eco-icon" />
-                      <span>Кабинет</span>
+                <div className={`platform-shell__profile-menu ${profileOpen ? "is-open" : ""}`} role="menu" aria-hidden={!profileOpen}>
+                  <Link href="/cabinet" className="platform-shell__dropdown-link" role="menuitem">
+                    <UserRound aria-hidden className="eco-icon" />
+                    <span>Кабинет</span>
+                  </Link>
+                  {canAccessCrm && (
+                    <Link href="/cabinet/customer-analytics" className="platform-shell__dropdown-link" role="menuitem">
+                      <PackageSearch aria-hidden className="eco-icon" />
+                      <span>Аналитика клиентов</span>
                     </Link>
-                    {canAccessCrm && (
-                      <Link href="/cabinet/customer-analytics" className="platform-shell__dropdown-link" role="menuitem">
-                        <PackageSearch aria-hidden className="eco-icon" />
-                        <span>Аналитика клиентов</span>
-                      </Link>
-                    )}
-                    <button type="button" className="platform-shell__dropdown-link danger" onClick={handleLogout} role="menuitem">
-                      <LogOut aria-hidden className="eco-icon" />
-                      <span>Выйти</span>
-                    </button>
-                  </div>
-                )}
+                  )}
+                  <button type="button" className="platform-shell__dropdown-link danger" onClick={handleLogout} role="menuitem">
+                    <LogOut aria-hidden className="eco-icon" />
+                    <span>Выйти</span>
+                  </button>
+                </div>
               </div>
             </>
           ) : (

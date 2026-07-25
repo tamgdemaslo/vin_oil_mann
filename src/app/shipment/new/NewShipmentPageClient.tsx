@@ -1934,6 +1934,10 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const t = window.setTimeout(() => {
       const params = new URLSearchParams({ make: selectedMannMake, model: selectedMannModel });
       if (isValidMannYear(mannYear)) params.set("year", mannYear);
+      const autoSelection = mannAutoSelectionRef.current;
+      if (autoSelection?.make === selectedMannMake && autoSelection.model === selectedMannModel) {
+        params.set("includeVariantId", autoSelection.variantId);
+      }
       setMannLoading("variants");
       setMannError(null);
       setMannVariants([]);

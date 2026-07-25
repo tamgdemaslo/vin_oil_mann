@@ -566,10 +566,19 @@ export async function listMannModels(make: string) {
   `);
 }
 
-export async function listMannVariants(params: { make: string; model: string; year?: number | null }) {
+export async function listMannVariants(params: { make: string; model: string; year?: number | null; includeVariantId?: string | null }) {
   const makeNormalized = normalizeMannText(params.make);
   const modelNormalized = normalizeMannSearchText(params.model);
-  const yearSql = params.year
+  // A VIN decoder can safely resolve a variant by engine code/volume/power even when
+  // a catalogue has an adjacent model-year boundary. Keep that already resolved
+  // variant visible so the client can fetch its filters instead of losing it to the
+  // presentation-only year filter.
+  const yearSql = params.year && params.includeVariantId
+    ? Prisma.sql`AND (
+        ((vehicle_year_from IS NULL OR vehicle_year_from <= ${params.year}) AND (vehicle_year_to IS NULL OR vehicle_year_to >= ${params.year}))
+        OR vehicle_variant_key = ${params.includeVariantId}
+      )`
+    : params.year
     ? Prisma.sql`AND (vehicle_year_from IS NULL OR vehicle_year_from <= ${params.year}) AND (vehicle_year_to IS NULL OR vehicle_year_to >= ${params.year})`
     : Prisma.empty;
   return prisma.$queryRaw<Array<{

@@ -354,7 +354,12 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   }
 
   return (
-    <section className="eco-vehicle-lookup" aria-label="Определить автомобиль и подобрать фильтры">
+    <section
+      className={`eco-vehicle-lookup ${loading || resolving ? "is-decoding" : ""}`}
+      aria-label="Определить автомобиль и подобрать фильтры"
+      aria-busy={loading || resolving}
+    >
+      <span className="eco-vehicle-lookup__decode-glow" aria-hidden />
       <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
         <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>VIN</button>
         <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>Госномер</button>

@@ -8887,6 +8887,7 @@ body.antialiased {
   width: 14px;
   height: 14px;
   color: var(--eco-faint);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms ease;
 }
 
 .platform-shell__nav-trigger.is-open .platform-shell__chevron,
@@ -8907,16 +8908,88 @@ body.antialiased {
   border: 1px solid var(--eco-line);
   border-radius: 6px;
   box-shadow: var(--eco-shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.985);
+  transform-origin: top center;
+  transition:
+    opacity 140ms ease,
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 220ms;
 }
 
 .platform-shell__dropdown {
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(-8px) scale(0.985);
 }
 
 .platform-shell__profile-menu {
   right: 0;
   width: 240px;
+}
+
+.platform-shell__dropdown.is-open,
+.platform-shell__profile-menu.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+
+.platform-shell__dropdown.is-open {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+.platform-shell__dropdown-link {
+  transition: background-color 150ms ease, color 150ms ease, transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.platform-shell__dropdown.is-open .platform-shell__dropdown-link,
+.platform-shell__profile-menu.is-open .platform-shell__dropdown-link {
+  animation: platform-shell-menu-link-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.platform-shell__dropdown.is-open .platform-shell__dropdown-link:nth-child(2),
+.platform-shell__profile-menu.is-open .platform-shell__dropdown-link:nth-child(2) {
+  animation-delay: 28ms;
+}
+
+.platform-shell__dropdown.is-open .platform-shell__dropdown-link:nth-child(3),
+.platform-shell__profile-menu.is-open .platform-shell__dropdown-link:nth-child(3) {
+  animation-delay: 52ms;
+}
+
+.platform-shell__dropdown.is-open .platform-shell__dropdown-link:nth-child(n + 4),
+.platform-shell__profile-menu.is-open .platform-shell__dropdown-link:nth-child(n + 4) {
+  animation-delay: 72ms;
+}
+
+@keyframes platform-shell-menu-link-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-shell__chevron,
+  .platform-shell__dropdown,
+  .platform-shell__profile-menu,
+  .platform-shell__dropdown-link {
+    transition-duration: 0.01ms;
+  }
+
+  .platform-shell__dropdown.is-open .platform-shell__dropdown-link,
+  .platform-shell__profile-menu.is-open .platform-shell__dropdown-link {
+    animation: none;
+  }
 }
 
 .platform-shell__dropdown-link {
@@ -8950,6 +9023,7 @@ body.antialiased {
 .platform-shell__dropdown-link:hover,
 .platform-shell__dropdown-link.is-active {
   background: var(--eco-surface-sunk);
+  transform: translateX(2px);
 }
 
 .platform-shell__dropdown-link.is-disabled {
@@ -57236,6 +57310,54 @@ html.tgm-print-active .tgm-client-report .qr {
   border-top-color: #fff;
   border-radius: 999px;
   animation: eco-vehicle-lookup-spin 0.75s linear infinite;
+}
+
+/* VIN decoding gets a transient, operational version of an AI gradient: it
+   marks the active request without turning the whole work surface into a
+   permanently animated decorative element. */
+.eco-shipment-new-page .eco-vehicle-lookup.is-decoding {
+  position: relative;
+  isolation: isolate;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__decode-glow {
+  display: none;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup.is-decoding .eco-vehicle-lookup__decode-glow {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  inset: -2px;
+  padding: 2px;
+  pointer-events: none;
+  border-radius: 10px;
+  background: conic-gradient(
+    from 15deg,
+    rgb(182 73 31 / 14%),
+    rgb(202 139 61 / 76%),
+    rgb(57 112 80 / 72%),
+    rgb(182 73 31 / 82%),
+    rgb(182 73 31 / 14%)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: eco-vin-decode-orbit 1.8s linear infinite;
+}
+
+@keyframes eco-vin-decode-orbit {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-shipment-new-page .eco-vehicle-lookup.is-decoding .eco-vehicle-lookup__decode-glow {
+    animation: none;
+  }
 }
 
 .eco-shipment-new-page .eco-vehicle-lookup__feedback {
