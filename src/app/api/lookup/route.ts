@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type { LookupResult, MoySkladItem, OilInfo, VinDecoded } from "@/types/lookup";
 import type { OilProduct, OilRecommendationItem, OilRequirements, VinDecodeResponse } from "@/types/oil";
 import { prisma } from "@/lib/db";
 import { buildRequirementsNorm, normalizeACEA, normalizeSAE } from "@/lib/oil-normalizer";
 import { getVinLookupCache, setVinLookupCache } from "@/lib/vin-lookup-cache";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
+import { createOpenAIClient } from "@/lib/openai-client";
 
 function getOpenAI(): OpenAI | null {
   const key = process.env.OPENAI_API_KEY;
-  return key ? new OpenAI({ apiKey: key }) : null;
+  return key ? createOpenAIClient(key) : null;
 }
 
 async function getOilRequirementsFromOpenAI(

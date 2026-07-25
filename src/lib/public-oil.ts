@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import type { OilProduct, OilRecommendationItem, OilRequirements, VinDecodeResponse } from "@/types/oil";
 import { prisma } from "@/lib/db";
@@ -12,6 +11,7 @@ import {
 } from "@/lib/oil-normalizer";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
+import { createOpenAIClient } from "@/lib/openai-client";
 
 export type PublicOilCard = {
   id: string;
@@ -413,7 +413,7 @@ export async function getPublicVinOilRecommendation(params: {
   const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (openaiKey && decoded && (decoded.make || decoded.model || decoded.year || (decoded.hints?.length ?? 0) > 0)) {
     try {
-      requirements = await getOilRequirementsFromOpenAI(new OpenAI({ apiKey: openaiKey }), decoded);
+      requirements = await getOilRequirementsFromOpenAI(createOpenAIClient(openaiKey), decoded);
     } catch (error) {
       console.error("[public/vin-oil] oil requirements failed", error);
       warning = "Не удалось уточнить требования масла. Проверьте VIN или повторите запрос позже.";

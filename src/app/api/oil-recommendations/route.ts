@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import OpenAI from "openai";
 import {
   getCachedRequirements,
   setCachedRequirements,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/oil-recommendations";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import type { OilRecommendationResult, OilRequirements, VinDecodeResponse } from "@/types/oil";
+import { createOpenAIClient } from "@/lib/openai-client";
 
 async function decodeVin(vin: string): Promise<VinDecodeResponse | null> {
   const cleanVin = vin.replace(/\s/g, "").toUpperCase().replace(/-/g, "");
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     if (!requirements) {
       const openaiKey = process.env.OPENAI_API_KEY?.trim();
       if (openaiKey && decoded && (decoded.make || decoded.model || decoded.year)) {
-        const openai = new OpenAI({ apiKey: openaiKey });
+        const openai = createOpenAIClient(openaiKey);
         requirements = await getOilRequirementsFromOpenAI(openai, decoded);
         setCachedRequirements(cleanVin, market, requirements);
       } else {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { ProxyAgent } from "undici";
 import type { Conversation, IncomingMessageEvent, Message, MessengerConnection, MessageOutbox } from "../messenger-types";
 import { getTelegramStoredSettings, publicTelegramSettings } from "../messenger-channel-settings";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
@@ -47,6 +48,17 @@ type TelegramApiError = { ok: false; description?: string; error_code?: number; 
 type TelegramApiResponse<T> = TelegramApiOk<T> | TelegramApiError;
 
 type TelegramSendResult = ChannelSendResult;
+
+type FetchWithDispatcherInit = RequestInit & { dispatcher?: ProxyAgent };
+
+let telegramProxyAgent: ProxyAgent | null | undefined;
+
+function telegramHttpProxyAgent(): ProxyAgent | undefined {
+  const proxyUrl = process.env.TELEGRAM_HTTP_PROXY_URL?.trim();
+  if (!proxyUrl) return undefined;
+  telegramProxyAgent ??= new ProxyAgent(proxyUrl);
+  return telegramProxyAgent;
+}
 
 type TelegramSendBaseParams = {
   conversation?: Pick<Conversation, "id" | "externalConversationId" | "channel"> | null;
@@ -181,11 +193,13 @@ async function telegramApiRequest<T>(method: string, body?: Record<string, unkno
   const token = settings.botToken ?? "";
   if (!settings.enabled) return { ok: false, description: "Telegram adapter is disabled" };
   if (!token) return { ok: false, description: "TELEGRAM_BOT_TOKEN is not configured" };
-  const res = await fetch(telegramApiUrl(method, token), {
+  const requestInit: FetchWithDispatcherInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
-  });
+    dispatcher: telegramHttpProxyAgent(),
+  };
+  const res = await fetch(telegramApiUrl(method, token), requestInit as RequestInit);
   const raw = (await res.json().catch(() => null)) as TelegramApiResponse<T> | null;
   if (raw?.ok) return raw;
   return {

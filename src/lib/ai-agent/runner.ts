@@ -7,8 +7,8 @@ import {
   type InputGuardrail,
   type OutputGuardrail,
   type RunToolApprovalItem,
+  setDefaultOpenAIClient,
 } from "@openai/agents";
-import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 import { sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
@@ -23,6 +23,7 @@ import { AGENT_RUN_STAGE_LABELS, runTimeoutState, startAgentRunHeartbeat, update
 import { didClientRefuseVin } from "./vehicle-resolution";
 import { queryTechnicalProvider, saveTechnicalEvidence, technicalWebSearchAvailability, type TechnicalVehicle } from "./technical-evidence";
 import { getYclientsAvailableSlots } from "./yclients";
+import { createOpenAIClient } from "@/lib/openai-client";
 import {
   contextInstruction,
   estimateConversationDurationMinutes,
@@ -89,6 +90,11 @@ type ContextualAnswer = {
   answerValue: string | null;
   unknown: boolean;
 };
+
+function configureAgentOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (apiKey) setDefaultOpenAIClient(createOpenAIClient(apiKey));
+}
 
 function recordJson(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -164,7 +170,8 @@ async function interpretOpenQuestion(input: {
   };
   const instruction = contextualInterpreterInstruction(pending);
   try {
-    const client = new OpenAI({ apiKey });
+    const client = createOpenAIClient(apiKey);
+    setDefaultOpenAIClient(client);
     const response = await client.responses.create({
       model: input.model,
       instructions: instruction,
@@ -866,6 +873,7 @@ export async function runTgmClientAgent(input: RunAgentInput) {
   const settings = await getAgentSettings(input.organizationId);
   if (!settings.enabled) throw new Error("ИИ-агент выключен в настройках организации");
   if (!process.env.OPENAI_API_KEY?.trim()) throw new Error("OPENAI_API_KEY не задан");
+  configureAgentOpenAIClient();
   const sessionRow = await ensureAgentSession(input.organizationId, input.conversationId);
   if (sessionRow.status === "human" || sessionRow.humanTakenOverAt) throw new Error("Диалог перехвачен сотрудником");
   if (sessionRow.pendingRunState) throw new Error("Предыдущее действие ожидает подтверждения сотрудника");
@@ -1495,6 +1503,7 @@ export async function resolveAgentApproval(input: {
   onText?: (chunk: string) => void;
 }) {
   const settings = await getAgentSettings(input.organizationId);
+  configureAgentOpenAIClient();
   const sessionRow = await prisma.aIAgentSession.findFirst({ where: { organizationId: input.organizationId, conversationId: input.conversationId } });
   if (!sessionRow?.pendingRunState) throw new Error("В диалоге нет действия, ожидающего подтверждения");
   const latestRun = await prisma.aIAgentRun.findFirst({

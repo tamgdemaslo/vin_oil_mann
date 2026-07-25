@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { Prisma } from "@prisma/client";
-import OpenAI from "openai";
 import { prisma } from "@/lib/db";
+import { createOpenAIClient } from "@/lib/openai-client";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -250,7 +250,7 @@ async function queryOpenAIWebSearch(input: {
     "Найди применимые технические данные. Предпочти официальные руководства, сервисные документы и каталоги производителей; каталоги допустимы как дополнительный источник.",
     "Верни только JSON с полями facts (object) и conflicts (array). В facts включай только подтверждённые значения. В тексте ответа используй URL-цитаты источников, чтобы они были доступны в ответе API.",
   ].join("\n");
-  const client = new OpenAI({ apiKey });
+  const client = createOpenAIClient(apiKey);
   const response = await client.responses.create({
     model: process.env.OPENAI_TECHNICAL_RESEARCH_MODEL?.trim() || "gpt-5.6",
     input: question,

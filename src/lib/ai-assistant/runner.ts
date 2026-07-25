@@ -1,10 +1,11 @@
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { adminAssistantConfig } from "./config";
 import { buildClientMessage, detectClientMessageMode, explicitCustomerRecommendation, type ClientMessageMode } from "./client-message";
 import { getSelectedAssistantQuote, saveAssistantQuoteSnapshot } from "./quotes";
 import { assistantFunctionTools, executeAssistantTool, safeAssistantJson, type AssistantToolSource } from "./tools";
+import { createOpenAIClient } from "@/lib/openai-client";
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_TURNS = 12;
@@ -334,7 +335,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     throw new Error(error);
   }
   const history = await prisma.aIAssistantMessage.findMany({ where: { threadId: thread.id, organizationId: input.organizationId }, orderBy: { createdAt: "asc" }, select: { role: true, content: true } });
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY!.trim() });
+  const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim());
   const instructions = workspacePrompt(input.actor, input.organizationId);
   const toolSources: AssistantToolSource[] = [];
   const toolSummaries: Array<Record<string, unknown>> = [];
