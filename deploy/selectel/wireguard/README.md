@@ -1,15 +1,17 @@
 # WireGuard egress for Selectel
 
-This directory is mounted into the `wireguard` service only when the VPN
-compose override is enabled. The main application keeps its usual network.
-Only two local proxy ports share WireGuard's network namespace:
+This directory is mounted into the userspace `wireguard-proxy` service only
+when the VPN compose override is enabled. The main application keeps its usual
+network. The proxy opens two private ports through the WireGuard peer:
 
-- `wireguard:1080` — SOCKS5 for the Telegram user session (GramJS);
-- `wireguard:8888` — HTTP CONNECT for every application OpenAI SDK client.
+- `wireguard-proxy:1080` — SOCKS5 for the Telegram user session (GramJS);
+- `wireguard-proxy:8888` — HTTP CONNECT for every application OpenAI SDK client.
 
-The proxy has no host port, so it is unavailable from the Internet. All other
-integrations (MoySklad, TRONK, AQSI, ROSSKO, T-Bank and so on) keep their direct
-outgoing connection.
+The proxy has no host port, so it is unavailable from the Internet. It uses
+`wireproxy`, a userspace WireGuard implementation: no host interface, TUN
+device, or Docker network capability is required. All other integrations
+(MoySklad, TRONK, AQSI, ROSSKO, T-Bank and so on) keep their direct outgoing
+connection.
 
 ## One-time server setup
 

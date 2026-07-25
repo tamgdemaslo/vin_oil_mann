@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 
 ARG WIREPROXY_VERSION=v1.1.3
 RUN go install github.com/windtf/wireproxy/cmd/wireproxy@${WIREPROXY_VERSION}

@@ -57315,6 +57315,12 @@ html.tgm-print-active .tgm-client-report .qr {
 /* VIN decoding gets a transient, operational version of an AI gradient: it
    marks the active request without turning the whole work surface into a
    permanently animated decorative element. */
+@property --eco-vin-decode-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
 .eco-shipment-new-page .eco-vehicle-lookup.is-decoding {
   position: relative;
   isolation: isolate;
@@ -57333,7 +57339,7 @@ html.tgm-print-active .tgm-client-report .qr {
   pointer-events: none;
   border-radius: 10px;
   background: conic-gradient(
-    from 15deg,
+    from calc(15deg + var(--eco-vin-decode-angle)),
     rgb(182 73 31 / 14%),
     rgb(202 139 61 / 76%),
     rgb(57 112 80 / 72%),
@@ -57345,12 +57351,12 @@ html.tgm-print-active .tgm-client-report .qr {
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: eco-vin-decode-orbit 1.8s linear infinite;
+  animation: eco-vin-decode-colors 1.8s linear infinite;
 }
 
-@keyframes eco-vin-decode-orbit {
+@keyframes eco-vin-decode-colors {
   to {
-    transform: rotate(1turn);
+    --eco-vin-decode-angle: 1turn;
   }
 }
 

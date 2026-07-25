@@ -1,8 +1,11 @@
+FROM golang:1.26-alpine AS build
+
+ARG WIREPROXY_VERSION=v1.1.3
+RUN go install github.com/windtf/wireproxy/cmd/wireproxy@${WIREPROXY_VERSION}
+
 FROM alpine:3.21
+COPY --from=build /go/bin/wireproxy /usr/local/bin/wireproxy
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod 0555 /entrypoint.sh
 
-RUN apk add --no-cache 3proxy
-
-COPY 3proxy.cfg /etc/3proxy/3proxy.cfg
-
-USER nobody
-CMD ["3proxy", "/etc/3proxy/3proxy.cfg"]
+ENTRYPOINT ["/entrypoint.sh"]

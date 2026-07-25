@@ -4,46 +4,20 @@
 # its normal Docker network. Only requests sent to the private HTTP/SOCKS proxy
 # below enter WireGuard.
 services:
-  wireguard:
-    image: lscr.io/linuxserver/wireguard:latest
-    restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    environment:
-      PUID: "1001"
-      PGID: "1001"
-      TZ: "${TZ:-Europe/Kaliningrad}"
-    volumes:
-      # This directory is deliberately ignored by Git and rsync. Put the
-      # provider/client configuration at wireguard/wg_confs/wg0.conf.
-      - ./deploy/selectel/wireguard:/config
-      - /lib/modules:/lib/modules:ro
-    sysctls:
-      net.ipv4.conf.all.src_valid_mark: "1"
-    healthcheck:
-      test: ["CMD-SHELL", "ip link show wg0 >/dev/null 2>&1 && wg show wg0 >/dev/null 2>&1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 20s
-
   wireguard-proxy:
     build:
       context: ./deploy/selectel/wireguard/proxy
     restart: unless-stopped
-    network_mode: "service:wireguard"
-    depends_on:
-      wireguard:
-        condition: service_healthy
+    volumes:
+      - ./deploy/selectel/wireguard:/config:ro
 
   app:
     environment:
-      # `wireguard` is reachable only from the Compose network. Its proxy ports
+      # `wireguard-proxy` is reachable only from the Compose network. Its proxy ports
       # are not published on the host or the Internet.
-      OPENAI_PROXY_URL: "http://wireguard:8888"
-      TELEGRAM_HTTP_PROXY_URL: "http://wireguard:8888"
-      TELEGRAM_PROXY_HOST: wireguard
+      OPENAI_PROXY_URL: "http://wireguard-proxy:8888"
+      TELEGRAM_HTTP_PROXY_URL: "http://wireguard-proxy:8888"
+      TELEGRAM_PROXY_HOST: wireguard-proxy
       TELEGRAM_PROXY_PORT: "1080"
       TELEGRAM_PROXY_SOCKS_TYPE: "5"
       TELEGRAM_PROXY_USERNAME: ""
