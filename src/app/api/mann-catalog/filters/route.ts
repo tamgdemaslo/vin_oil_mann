@@ -7,6 +7,8 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
 
   const variantId = request.nextUrl.searchParams.get("variantId")?.trim() ?? "";
+  const yearRaw = request.nextUrl.searchParams.get("year")?.trim() ?? "";
+  const year = yearRaw ? Number.parseInt(yearRaw, 10) : null;
   if (!variantId) return NextResponse.json({ error: "Укажите variantId" }, { status: 400 });
 
   return NextResponse.json({
@@ -14,6 +16,7 @@ export async function GET(request: NextRequest) {
       variantId,
       make: request.nextUrl.searchParams.get("make"),
       model: request.nextUrl.searchParams.get("model"),
+      year: Number.isFinite(year) ? year : null,
     }),
   });
 }

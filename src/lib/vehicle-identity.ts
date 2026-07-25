@@ -513,13 +513,21 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     ? primaryReports(primaryRaw).map((report) => toVehicle(asRecord(report.Data ?? report.data ?? report), "tronk_vindecode", { vin: normalizedVin }))
     : [];
   const hasPrimary = primaryRaw ? usefulPrimary(primaryRaw) : false;
-  const wantsExtended = Boolean(options.extended || !hasPrimary);
+  // Multiple reports from the legacy endpoint mean that it has not selected one
+  // concrete vehicle. In that case vindecode2 is the authoritative tie-breaker:
+  // merging it into every legacy report would retain their contradictory make/model.
+  const hasAmbiguousPrimaryReports = primaryVehicles.length > 1;
+  const wantsExtended = Boolean(options.extended || !hasPrimary || hasAmbiguousPrimaryReports);
   let mergedVehicles = primaryVehicles;
   if (wantsExtended) {
     const extended = await collect("vindecode2", "vin", () => tronkClient.decodeVinExtended(normalizedVin));
     if (extended.ok && usefulExtended(extended.data)) {
       const extendedVehicle = toVehicle(asRecord(extended.data.result), "tronk_vindecode2", { vin: normalizedVin });
-      mergedVehicles = primaryVehicles.length > 0 ? primaryVehicles.map((vehicle) => mergeVehicle(vehicle, extendedVehicle)) : [extendedVehicle];
+      mergedVehicles = hasAmbiguousPrimaryReports
+        ? [extendedVehicle]
+        : primaryVehicles.length > 0
+        ? primaryVehicles.map((vehicle) => mergeVehicle(vehicle, extendedVehicle))
+        : [extendedVehicle];
     }
   }
   if (mergedVehicles.length === 0 || !mergedVehicles.some((vehicle) => vehicle.makeCanonical && vehicle.modelCanonical)) {

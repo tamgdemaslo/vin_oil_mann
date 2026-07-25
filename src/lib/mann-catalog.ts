@@ -612,25 +612,272 @@ export async function listMannVariants(params: { make: string; model: string; ye
   `);
 }
 
-export async function listMannFilters(params: { make?: string | null; model?: string | null; variantId: string }) {
+export type MannCatalogFilter = {
+  filterType: string;
+  filterSubtype: string | null;
+  mannArticle: string;
+  mannArticleNormalized: string;
+  filterNote: string | null;
+  condition: string | null;
+  vehicleText: string | null;
+  effectiveVehicleText: string | null;
+  engineCode: string | null;
+  kw: string | null;
+  hp: string | null;
+  vehicleYears: string | null;
+  pdfPage: number | null;
+  catalogPage: number | null;
+};
+
+type MannRawContextRow = {
+  rowType: string | null;
+  vehicleText: string | null;
+  effectiveVehicleText: string | null;
+  detail: string | null;
+  engineCode: string | null;
+  kw: string | null;
+  hp: string | null;
+  vehicleYears: string | null;
+  airFilter: string | null;
+  oilFilter: string | null;
+  fuelFilter: string | null;
+  cabinOrOtherFilter: string | null;
+  cabinOrOtherType: string | null;
+  cabinFilter: string | null;
+  otherFilter: string | null;
+  otherFilterType: string | null;
+  pdfPage: number | null;
+  catalogPage: number | null;
+  rawCellsJson: Prisma.JsonValue | null;
+};
+
+type MannSelectedVariantContext = {
+  make: string;
+  model: string;
+  vehicleText: string | null;
+  effectiveVehicleText: string | null;
+  engineCode: string | null;
+  kw: string | null;
+  hp: string | null;
+  vehicleYears: string | null;
+  pdfPage: number | null;
+  catalogPage: number | null;
+};
+
+function rawRecord(value: Prisma.JsonValue | null): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function rawFilterText(row: MannRawContextRow, key: "oil" | "cabin"): string {
+  const filters = rawRecord(rawRecord(row.rawCellsJson).filters as Prisma.JsonValue | null);
+  return String(filters[key] ?? "").trim();
+}
+
+function rawRowTop(row: MannRawContextRow): number {
+  const value = Number(rawRecord(row.rawCellsJson).row_top);
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function mannConditionFromText(value: string): string | null {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const range = normalized.match(/(\d{1,2}\/\d{2})\s*(?:→|->)\s*(\d{1,2}\/\d{2})/);
+  if (range) return `${range[1]}–${range[2]}`;
+  const date = normalized.match(/\d{1,2}\/\d{2}/)?.[0];
+  if (!date) return null;
+  if (/^\s*(?:→|->)/.test(normalized)) return `до ${date}`;
+  if (new RegExp(`${date.replace("/", "\\/")}\\s*(?:→|->)`).test(normalized)) return `с ${date}`;
+  return null;
+}
+
+function monthKey(value: string): number | null {
+  const match = value.match(/(\d{1,2})\/(\d{2})/);
+  if (!match) return null;
+  const month = Number(match[1]);
+  const year = Number(match[2]);
+  if (month < 1 || month > 12 || !Number.isFinite(year)) return null;
+  return (year <= 35 ? 2000 + year : 1900 + year) * 100 + month;
+}
+
+function conditionMatchesYear(conditionText: string, year?: number | null): boolean {
+  if (!year) return true;
+  const keys = [...conditionText.matchAll(/\d{1,2}\/\d{2}/g)].map((match) => monthKey(match[0])).filter((value): value is number => value != null);
+  if (keys.length === 0) return true;
+  const yearStart = year * 100 + 1;
+  const yearEnd = year * 100 + 12;
+  const startsWithEnd = /^\s*(?:→|->)/.test(conditionText);
+  if (keys.length >= 2) return yearEnd >= keys[0] && yearStart <= keys[1];
+  const hasStartBoundary = new RegExp(`${conditionText.match(/\d{1,2}\/\d{2}/)?.[0]?.replace("/", "\\/")}\\s*(?:→|->)`).test(conditionText);
+  if (startsWithEnd) return yearStart <= keys[0];
+  if (hasStartBoundary) return yearEnd >= keys[0];
+  return true;
+}
+
+function sameMannVehicleRow(row: MannRawContextRow, selected: MannSelectedVariantContext): boolean {
+  const rowEngine = normalizeEngineCode(row.engineCode);
+  const selectedEngine = normalizeEngineCode(selected.engineCode);
+  if (rowEngine && selectedEngine) return rowEngine === selectedEngine;
+  const rowText = normalizeMannSearchText(row.effectiveVehicleText || row.vehicleText);
+  const selectedText = normalizeMannSearchText(selected.effectiveVehicleText || selected.vehicleText);
+  return Boolean(rowText && selectedText && rowText === selectedText);
+}
+
+function isConcreteRawVehicleRow(row: MannRawContextRow): boolean {
+  return Boolean(normalizeEngineCode(row.engineCode) || row.vehicleYears || row.kw || row.hp);
+}
+
+function asContextFilter(params: {
+  filterType: "oil" | "cabin";
+  article: string;
+  conditionText: string;
+  filterSubtype?: string | null;
+  selected: MannSelectedVariantContext;
+  source: MannRawContextRow;
+}): MannCatalogFilter | null {
+  const mannArticle = params.article.trim();
+  if (!mannArticle) return null;
+  const condition = mannConditionFromText(params.conditionText);
+  return {
+    filterType: params.filterType,
+    filterSubtype: params.filterSubtype ?? null,
+    mannArticle,
+    mannArticleNormalized: normalizeMannArticle(mannArticle),
+    filterNote: params.source.detail ?? null,
+    condition,
+    vehicleText: params.selected.vehicleText,
+    effectiveVehicleText: params.selected.effectiveVehicleText,
+    engineCode: params.selected.engineCode,
+    kw: params.selected.kw,
+    hp: params.selected.hp,
+    vehicleYears: params.selected.vehicleYears,
+    pdfPage: params.source.pdfPage,
+    catalogPage: params.source.catalogPage,
+  };
+}
+
+function cabinFilterSubtype(text: string, article: string): string | null {
+  if (/AKTIVKOHLE|ACTIVATED\s+CARBON/i.test(text) || /^CUK/i.test(article)) return "с активированным углём";
+  if (/^FP/i.test(article)) return "FreciousPlus";
+  if (/PARTIKEL|PARTICULATE/i.test(text)) return "противоаллергенный";
+  return null;
+}
+
+function cabinAlternativeKey(filter: MannCatalogFilter): string | null {
+  if (filter.filterType !== "cabin") return null;
+  const article = filter.mannArticleNormalized;
+  const suffix = article.replace(/^(?:CUK|CU|FP)/, "");
+  return suffix && suffix !== article ? `${suffix}:${filter.condition ?? ""}:${filter.vehicleYears ?? ""}` : null;
+}
+
+function cabinAlternativeRank(filter: MannCatalogFilter): number {
+  if (/^CUK/i.test(filter.mannArticle)) return 0;
+  if (/^CU/i.test(filter.mannArticle)) return 1;
+  if (/^FP/i.test(filter.mannArticle)) return 2;
+  return 3;
+}
+
+function preferOneCabinAlternative(filters: MannCatalogFilter[]): MannCatalogFilter[] {
+  const groups = new Map<string, MannCatalogFilter[]>();
+  for (const filter of filters) {
+    const key = cabinAlternativeKey(filter);
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), filter]);
+  }
+  const selected = new Set<string>();
+  const notes = new Map<string, string>();
+  for (const alternatives of groups.values()) {
+    if (alternatives.length < 2) continue;
+    const preferred = alternatives.slice().sort((left, right) => cabinAlternativeRank(left) - cabinAlternativeRank(right))[0];
+    selected.add(preferred.mannArticleNormalized);
+    notes.set(preferred.mannArticleNormalized, `Альтернативы MANN: ${alternatives.map((item) => item.mannArticle).join(", ")}. По умолчанию — ${preferred.mannArticle} (с активированным углём).`);
+  }
+  return filters
+    .filter((filter) => {
+      const key = cabinAlternativeKey(filter);
+      return !key || !groups.has(key) || selected.has(filter.mannArticleNormalized);
+    })
+    .map((filter) => {
+      const note = notes.get(filter.mannArticleNormalized);
+      return note ? { ...filter, filterNote: [filter.filterNote, note].filter(Boolean).join(" ") } : filter;
+    });
+}
+
+async function contextualMannFilters(params: { selected: MannSelectedVariantContext; year?: number | null }): Promise<MannCatalogFilter[]> {
+  const selected = params.selected;
+  const pageScopes = [{ pdfPage: selected.pdfPage, catalogPage: selected.catalogPage }];
+  const rows = await prisma.mannPdfApplicationRaw.findMany({
+    where: {
+      make: selected.make,
+      model: selected.model,
+      OR: pageScopes,
+    },
+    select: {
+      rowType: true,
+      vehicleText: true,
+      effectiveVehicleText: true,
+      detail: true,
+      engineCode: true,
+      kw: true,
+      hp: true,
+      vehicleYears: true,
+      airFilter: true,
+      oilFilter: true,
+      fuelFilter: true,
+      cabinOrOtherFilter: true,
+      cabinOrOtherType: true,
+      cabinFilter: true,
+      otherFilter: true,
+      otherFilterType: true,
+      pdfPage: true,
+      catalogPage: true,
+      rawCellsJson: true,
+    },
+  }) as MannRawContextRow[];
+  const ordered = rows.slice().sort((left, right) => rawRowTop(left) - rawRowTop(right));
+  const output: MannCatalogFilter[] = [];
+  let activeSelectedVehicle = false;
+
+  for (const row of ordered) {
+    if (isConcreteRawVehicleRow(row)) activeSelectedVehicle = sameMannVehicleRow(row, selected);
+
+    const isAllModels = normalizeMannSearchText(row.effectiveVehicleText || row.vehicleText) === "ALL MODELS";
+    const cabinCondition = rawFilterText(row, "cabin");
+    const cabinArticle = row.cabinFilter || row.cabinOrOtherFilter;
+    if (isAllModels && cabinArticle && conditionMatchesYear(cabinCondition, params.year)) {
+      const filter = asContextFilter({
+        filterType: "cabin",
+        article: cabinArticle,
+        conditionText: cabinCondition,
+        filterSubtype: cabinFilterSubtype(cabinCondition, cabinArticle),
+        selected,
+        source: row,
+      });
+      if (filter) output.push(filter);
+    }
+
+    const housing = /(?:GEHÄUSE|HOUSING)/i.test(`${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""}`);
+    const oilCondition = rawFilterText(row, "oil");
+    if (activeSelectedVehicle && housing && row.oilFilter && conditionMatchesYear(oilCondition, params.year)) {
+      const filter = asContextFilter({ filterType: "oil", article: row.oilFilter, conditionText: oilCondition, selected, source: row });
+      if (filter) output.push(filter);
+    }
+  }
+  return preferOneCabinAlternative(output);
+}
+
+function dedupeMannFilters(filters: MannCatalogFilter[]): MannCatalogFilter[] {
+  const unique = new Map<string, MannCatalogFilter>();
+  for (const filter of filters) {
+    const key = `${filter.filterType}:${filter.filterSubtype ?? ""}:${filter.mannArticleNormalized}`;
+    if (!unique.has(key)) unique.set(key, filter);
+  }
+  return [...unique.values()];
+}
+
+export async function listMannFilters(params: { make?: string | null; model?: string | null; variantId: string; year?: number | null }) {
   const makeSql = params.make ? Prisma.sql`AND make_normalized = ${normalizeMannText(params.make)}` : Prisma.empty;
   const modelSql = params.model ? Prisma.sql`AND model_normalized = ${normalizeMannSearchText(params.model)}` : Prisma.empty;
-  return prisma.$queryRaw<Array<{
-    filterType: string;
-    filterSubtype: string | null;
-    mannArticle: string;
-    mannArticleNormalized: string;
-    filterNote: string | null;
-    condition: string | null;
-    vehicleText: string | null;
-    effectiveVehicleText: string | null;
-    engineCode: string | null;
-    kw: string | null;
-    hp: string | null;
-    vehicleYears: string | null;
-    pdfPage: number | null;
-    catalogPage: number | null;
-  }>>(Prisma.sql`
+  const [filters, selected] = await Promise.all([
+    prisma.$queryRaw<MannCatalogFilter[]>(Prisma.sql`
     SELECT
       filter_type AS "filterType",
       filter_subtype AS "filterSubtype",
@@ -647,16 +894,7 @@ export async function listMannFilters(params: { make?: string | null; model?: st
       MIN(pdf_page) AS "pdfPage",
       MIN(catalog_page) AS "catalogPage"
     FROM mann_filter_applications
-    WHERE (
-        vehicle_variant_key = ${params.variantId}
-        OR (
-          vehicle_text = 'All models'
-          AND effective_vehicle_text = 'All models'
-          AND NULLIF(BTRIM(COALESCE(engine_code, '')), '') IS NULL
-          AND NULLIF(BTRIM(COALESCE(kw, '')), '') IS NULL
-          AND NULLIF(BTRIM(COALESCE(hp, '')), '') IS NULL
-        )
-      )
+    WHERE vehicle_variant_key = ${params.variantId}
       ${makeSql}
       ${modelSql}
     GROUP BY filter_type, filter_subtype, mann_article_normalized
@@ -669,7 +907,26 @@ export async function listMannFilters(params: { make?: string | null; model?: st
         ELSE 5
       END,
       MIN(mann_article)
-  `);
+    `),
+    prisma.mannFilterApplication.findFirst({
+      where: { vehicleVariantKey: params.variantId },
+      select: {
+        make: true,
+        model: true,
+        vehicleText: true,
+        effectiveVehicleText: true,
+        engineCode: true,
+        kw: true,
+        hp: true,
+        vehicleYears: true,
+        pdfPage: true,
+        catalogPage: true,
+      },
+    }),
+  ]);
+  if (!selected) return filters;
+  const contextual = await contextualMannFilters({ selected, year: params.year });
+  return dedupeMannFilters([...filters, ...contextual]);
 }
 
 function normalizeOemPartsToken(value: unknown): string {

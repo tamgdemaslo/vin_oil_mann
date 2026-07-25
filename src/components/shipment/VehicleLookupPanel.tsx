@@ -85,6 +85,7 @@ function sourceLabel(vehicle: NormalizedVehicleIdentity): string {
   if (vehicle.sourceMethods.includes("tronk_frame")) return "TRONK · номер кузова";
   if (vehicle.sourceMethods.includes("tronk_plate")) return "TRONK · госномер";
   if (vehicle.sourceMethods.includes("tronk_convertb2b") || vehicle.sourceMethods.includes("tronk_convertgate")) return "TRONK · госномер без VIN";
+  if (vehicle.sourceMethods.includes("tronk_vindecode2")) return "TRONK · VIN (уточнённая расшифровка)";
   return "TRONK · VIN";
 }
 

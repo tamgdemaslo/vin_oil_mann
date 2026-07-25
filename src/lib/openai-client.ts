@@ -15,10 +15,11 @@ function openAIProxyAgent(): ProxyAgent | undefined {
  * OPENAI_PROXY_URL points at the WireGuard-only HTTP CONNECT proxy; without it
  * the SDK keeps its normal direct behaviour for local development.
  */
-export function createOpenAIClient(apiKey: string): OpenAI {
+export function createOpenAIClient(apiKey: string, options?: { timeout?: number; maxRetries?: number }): OpenAI {
   const dispatcher = openAIProxyAgent();
   return new OpenAI({
     apiKey,
+    ...options,
     ...(dispatcher ? { fetchOptions: { dispatcher } } : {}),
   });
 }

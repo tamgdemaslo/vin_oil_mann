@@ -23,6 +23,17 @@ function text(value: unknown, max = 12_000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function publicRunError(error: unknown) {
+  const message = text(error instanceof Error ? error.message : String(error), 1_200);
+  if (/connection error|fetch failed|econnrefused|enotfound|network/i.test(message)) {
+    return "Не удалось подключиться к OpenAI. Проверьте исходящее HTTPS-подключение сервера и доступность API; повторите попытку после восстановления соединения.";
+  }
+  if (/timeout|timed out/i.test(message)) {
+    return "OpenAI не ответил вовремя. Повторите попытку; если ошибка сохраняется, проверьте сетевое подключение сервера.";
+  }
+  return message || "Не удалось выполнить запрос помощника";
+}
+
 function mask(value: unknown): unknown {
   if (typeof value === "string") return value.replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, (vin) => `${vin.slice(0, 4)}•••••••••${vin.slice(-4)}`).replace(/(?:\+?7|8)[\s()-]*\d(?:[\s()-]*\d){9}/g, "[телефон скрыт]").slice(0, 800);
   if (Array.isArray(value)) return value.slice(0, 20).map(mask);
@@ -335,7 +346,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     throw new Error(error);
   }
   const history = await prisma.aIAssistantMessage.findMany({ where: { threadId: thread.id, organizationId: input.organizationId }, orderBy: { createdAt: "asc" }, select: { role: true, content: true } });
-  const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim());
+  const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim(), { timeout: config.timeoutMs, maxRetries: 1 });
   const instructions = workspacePrompt(input.actor, input.organizationId);
   const toolSources: AssistantToolSource[] = [];
   const toolSummaries: Array<Record<string, unknown>> = [];
@@ -431,7 +442,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     ]);
     return { runId: run.id, messageId: assistantMessage.id, cancelled: false };
   } catch (error) {
-    const errorMessage = text(error instanceof Error ? error.message : String(error), 1_200) || "Не удалось выполнить запрос помощника";
+    const errorMessage = publicRunError(error);
     await prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "failed", errorCode: "assistant_run_failed", errorMessage, toolSummaryJson: json(toolSummaries), durationMs: Date.now() - startedAt, completedAt: new Date() } });
     throw error;
   }

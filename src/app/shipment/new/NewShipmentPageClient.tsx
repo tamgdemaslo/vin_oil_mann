@@ -1990,6 +1990,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     const params = new URLSearchParams({ variantId: selectedMannVariantId });
     if (selectedMannMake) params.set("make", selectedMannMake);
     if (selectedMannModel) params.set("model", selectedMannModel);
+    if (isValidMannYear(mannYear)) params.set("year", mannYear);
     setMannLoading("filters");
     setMannError(null);
     setMannFilters([]);
@@ -2036,7 +2037,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedMannMake, selectedMannModel, selectedMannVariantId, selectedOrg?.id, selectedStore?.id]);
+  }, [mannYear, selectedMannMake, selectedMannModel, selectedMannVariantId, selectedOrg?.id, selectedStore?.id]);
 
   useEffect(() => {
     if (!productAddNotice) return;

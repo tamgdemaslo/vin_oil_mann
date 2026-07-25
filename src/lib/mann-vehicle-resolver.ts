@@ -524,7 +524,7 @@ function safePrefillFor(vehicle: NormalizedMannVehicle, matchingMake: string | n
 
 async function filtersFor(candidate: MannVehicleCandidate | null, options: ResolveOptions) {
   if (!candidate) return { filters: [], localMatches: [] as MannArticleMatchResult[] };
-  const filters = await listMannFilters({ make: candidate.make, model: candidate.model, variantId: candidate.variantId });
+  const filters = await listMannFilters({ make: candidate.make, model: candidate.model, variantId: candidate.variantId, year: options.vehicle.year });
   const localMatches = await matchMannArticlesToLocalProducts({
     mannArticles: filters.map((filter) => ({ mannArticle: filter.mannArticle, filterType: filter.filterType, filterSubtype: filter.filterSubtype })),
     organizationId: options.organizationId,
