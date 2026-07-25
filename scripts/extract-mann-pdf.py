@@ -28,7 +28,7 @@ from typing import Any, Iterable
 import pdfplumber
 
 
-SCRIPT_VERSION = "2026-07-16.1"
+SCRIPT_VERSION = "2026-07-24.1"
 
 # RGB fills used by the source catalogue's make and model title bands.
 YELLOW = (1.0, 0.928, 0.0)
@@ -73,6 +73,9 @@ NOTE_MARKERS = (
     "SONDERAUSSTATTUNG", "TEILWEISE", "PARTLY", "MITKLIMA", "OHNEKLIMA",
     "MOTORKODE", "ENGINECODE", "FAHRZEUGIDENTIFIKATIONS", "BISCHASSIS",
     "ABCHASSIS", "FURFAHRZEUGE", "FUR", "WITHOUT", "WITH",
+    "EXPORTMODELL", "EXPORTMODELFOR", "KUNSTSTOFFOLFILTERMODUL",
+    "PLASTICOILFILTERMODULE", "ALUOLFILTERMODUL", "ALUMINIUMOILFILTERMODULE",
+    "CHINA", "CODES",
 )
 
 
@@ -148,11 +151,15 @@ def choose_model_years(words: list[dict[str, Any]], left: float) -> str:
 
 def extract_power(words: list[dict[str, Any]], left: float) -> tuple[str, str]:
     value = join_words([word for word in words if left + 170 <= float(word["x0"]) < left + 228])
-    numbers = re.findall(r"\d{1,3}", value)
-    if not numbers:
+    numbers = [int(number) for number in re.findall(r"\d{1,3}", value)]
+    kw = next((number for number in numbers if 20 <= number <= 700), None)
+    if kw is None:
         return "", ""
-    hp = re.search(r"\((\d{1,3})\)", value)
-    return numbers[0], hp.group(1) if hp else (numbers[1] if len(numbers) > 1 else "")
+    hp_values = [int(number) for number in re.findall(r"\((\d{1,3})\)", value)]
+    hp = next((number for number in hp_values if 30 <= number <= 1000), None)
+    if hp is None:
+        hp = next((number for number in numbers if number != kw and 30 <= number <= 1000), None)
+    return str(kw), str(hp) if hp is not None else ""
 
 
 def is_note(value: str) -> bool:
@@ -278,9 +285,10 @@ def model_rows(
         has_articles = any(row_articles.values())
 
         vehicle_compact = compact(vehicle)
+        row_context = text(" ".join(part for part in [vehicle, engine, vehicle_years] if part))
         if "ALLEMODELLE" in vehicle_compact or "ALLMODELS" in vehicle_compact:
             context = VehicleContext()
-        elif vehicle and not is_note(vehicle) and (engine or vehicle_years or kw or hp or has_articles):
+        elif vehicle and not is_note(row_context) and (engine or vehicle_years or kw or hp or has_articles):
             context = VehicleContext(
                 vehicle_text=vehicle,
                 effective_vehicle_text=vehicle,
@@ -291,8 +299,8 @@ def model_rows(
                 vehicle_years=vehicle_years,
                 condition="",
             )
-        elif vehicle and is_note(vehicle):
-            context.condition = text(" ".join(part for part in [context.condition, vehicle] if part))
+        elif row_context and is_note(row_context):
+            context.condition = text(" ".join(part for part in [context.condition, row_context] if part))
 
         if not vehicle and not has_articles and not engine and not vehicle_years:
             continue

@@ -29,9 +29,9 @@ export default function CabinetDashboard({ role, canManageOrganizations = false 
     ...(canManageIntegrations
       ? [
           {
-            href: "/cabinet/ai-agent",
+            href: "/cabinet/ai-assistant",
             label: "ИИ-помощник",
-            description: "Переписка, расчёт стоимости и запись клиентов.",
+            description: "Внутренний поиск, проверка данных и расчёты без действий от имени клиента.",
             icon: Bot,
           },
           ...(canManageOrganizations

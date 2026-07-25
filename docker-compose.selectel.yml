@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    env_file: .env.production
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - app_data:/app/.data
+    command: ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && npm run start"]
+
+volumes:
+  postgres_data:
+  app_data:

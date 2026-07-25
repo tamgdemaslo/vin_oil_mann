@@ -5,7 +5,6 @@ import { ArrowLeft, MoreVertical } from "lucide-react";
 import { useState } from "react";
 import { useMessenger } from "@/components/messenger/MessengerProvider";
 import {
-  AIAgentRunActivity,
   ChannelStatusStrip,
   ChatHeader,
   ChatThread,
@@ -66,7 +65,6 @@ export default function MessagesPageClient() {
                   </button>
                 }
               />
-              <AIAgentRunActivity conversation={selectedConversation} />
               <ChatThread conversation={selectedConversation} />
               <MessengerComposer conversation={selectedConversation} />
             </>

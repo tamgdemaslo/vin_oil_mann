@@ -2,6 +2,7 @@
 
 import {
   Bell,
+  Bot,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -151,6 +152,7 @@ function routeContext(pathname: string) {
   if (pathname.startsWith("/cash") || pathname.startsWith("/finance") || pathname.startsWith("/salary")) {
     return { label: "Текущий раздел:", value: "Финансы" };
   }
+  if (pathname.startsWith("/ai-assistant")) return { label: "Текущий раздел:", value: "ИИ-помощник" };
   if (pathname.startsWith("/crm") || pathname.startsWith("/records") || pathname.startsWith("/clients")) {
     return { label: "Текущий раздел:", value: "CRM" };
   }
@@ -393,11 +395,22 @@ export default function PlatformShell() {
         items: [
           { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: !canAccessCrm },
           { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: !canAccessCrm },
-          { href: "/crm/ai-agent", label: "ИИ-помощник", description: "Диалоги, расчёты и записи.", disabled: !canAccessCrm },
           { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: locked || !canAccessCash },
           { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: locked },
         ],
       },
+      ...(canAccessCrm
+        ? [{
+            id: "ai-assistant",
+            href: "/ai-assistant",
+            label: "ИИ-помощник",
+            icon: Bot,
+            items: [
+              { href: "/ai-assistant", label: "Рабочий чат", description: "Внутренний поиск и расчёты без действий от имени клиента." },
+              { href: "/cabinet/ai-assistant", label: "Настройки", description: "Доступ и границы внутреннего режима." },
+            ],
+          }]
+        : []),
       {
         id: "cabinet",
         href: "/cabinet",
@@ -412,7 +425,7 @@ export default function PlatformShell() {
             disabled: !canManageOrganizations,
           },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
-          { href: "/cabinet/ai-agent", label: "ИИ-помощник", description: "Режим, расчёт и запись.", disabled: !canManageIntegrations },
+          { href: "/cabinet/ai-assistant", label: "ИИ-помощник", description: "Внутренний режим и доступы.", disabled: !canManageIntegrations },
           {
             href: "/cabinet/integrations",
             label: "Интеграции",

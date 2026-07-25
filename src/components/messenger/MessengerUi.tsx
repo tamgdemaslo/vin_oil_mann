@@ -46,7 +46,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import AIAgentPanel from "./AIAgentPanel";
 import { useMessenger, type MessengerFilter } from "./MessengerProvider";
 import {
   MESSENGER_DEV_TOOLS_ENABLED,
@@ -478,29 +477,6 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
     errorMode,
     simulateIncoming,
   } = useMessenger();
-  const [agentActivities, setAgentActivities] = useState<Record<string, AgentListActivity>>({});
-
-  useEffect(() => {
-    let alive = true;
-    async function loadActivities() {
-      try {
-        const response = await fetch("/api/ai-agent/runs/active", { cache: "no-store" });
-        if (!response.ok) return;
-        const data = (await response.json()) as AgentListActivitiesResponse;
-        if (!alive) return;
-        setAgentActivities(Object.fromEntries((data.activities ?? []).map((item) => [item.conversationId, item])));
-      } catch {
-        // The conversation list remains usable if the operational feed is unavailable.
-      }
-    }
-    void loadActivities();
-    const timer = window.setInterval(() => void loadActivities(), 8_000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
   return (
     <div className={cx("eco-messenger-inbox", compact && "is-compact")}>
       <div className="eco-messenger-panel-head eco-messenger-inbox__head">
@@ -582,7 +558,6 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
             <ConversationListItem
               key={conversation.id}
               conversation={conversation}
-              agentActivity={agentActivities[conversation.id]}
               selected={conversation.id === selectedConversationId}
               onClick={() => selectConversation(conversation.id, compact)}
             />
@@ -597,12 +572,10 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
 
 export function ConversationListItem({
   conversation,
-  agentActivity,
   selected,
   onClick,
 }: {
   conversation: Conversation;
-  agentActivity?: AgentListActivity;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -627,11 +600,6 @@ export function ConversationListItem({
           {conversation.hasOverdueCase && <span className="is-danger">просрочка</span>}
         </span>
         <span className="eco-messenger-dialog__text">{preview}</span>
-        {agentActivity && (
-          <span className={cx("eco-messenger-dialog__agent-status", `status-${agentActivity.status}`, agentActivity.stale && "is-stale")}>
-            {agentActivity.status === "waiting_for_human" ? "Ждёт подтверждения" : agentActivity.status === "waiting_for_client" ? "Ждёт клиента" : agentActivity.status === "handed_off" ? "Передано сотруднику" : agentActivity.status === "failed" ? "Требует внимания" : agentActivity.stale ? "ИИ требует проверки" : `ИИ считает · ${runElapsed(agentActivity.elapsedSeconds)}`}
-          </span>
-        )}
         <span className="eco-messenger-dialog__tags">
           {conversation.isPinned && <Pin aria-hidden className="eco-icon" />}
           {conversation.isImportant && <Star aria-hidden className="eco-icon is-star" />}
@@ -1232,6 +1200,13 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
     };
   }, []);
 
+  useEffect(() => {
+    const draft = window.localStorage.getItem("eco:crm-draft");
+    if (!draft) return;
+    setText(draft);
+    window.localStorage.removeItem("eco:crm-draft");
+  }, [conversation.id]);
+
   const knownChannelStatus = channelStatuses[conversation.channel];
   const disabled = conversation.channel !== "mock" && Boolean(knownChannelStatus) && knownChannelStatus !== "connected";
   const canSend = text.trim().length > 0 && !disabled && !uploading;
@@ -1405,8 +1380,6 @@ export function ContextPanel({ conversation, context }: { conversation: Conversa
   return (
     <aside className="eco-messenger-context">
       <ContextHeader conversation={conversation} context={clientContext} state={clientContext ? "Клиент привязан" : "Клиент не привязан"} />
-
-      <AIAgentPanel conversation={conversation} />
 
       {clientContext ? (
         <LinkedClientContext conversation={conversation} context={clientContext} />

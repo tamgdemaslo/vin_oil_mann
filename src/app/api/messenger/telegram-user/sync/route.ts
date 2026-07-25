@@ -10,11 +10,12 @@ export async function POST(request: NextRequest) {
   if (session.user.role !== "owner" && session.user.role !== "admin") {
     return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   }
-  const body = (await request.json().catch(() => ({}))) as { accountId?: unknown; limit?: unknown };
+  const body = (await request.json().catch(() => ({}))) as { accountId?: unknown; limit?: unknown; force?: unknown };
   try {
     const result = await syncTelegramUserConversations({
       accountId: typeof body.accountId === "string" ? body.accountId : undefined,
       limit: typeof body.limit === "number" ? body.limit : undefined,
+      force: body.force === true,
     });
     return NextResponse.json(result);
   } catch (error) {

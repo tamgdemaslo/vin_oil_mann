@@ -1,7 +1,8 @@
 // Смены, ставки, бонусы/штрафы. Пользователи — по логину из AUTH_USERS,
 // а измененные пароли хранятся отдельно в БД.
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -1786,6 +1787,9 @@ model LocalProduct {
   groupPath                 String?   @map("group_path") @db.Text
   uomName                   String?   @map("uom_name")
   salePriceCents            Int       @default(0) @map("sale_price_cents")
+  /// Defines how the internal assistant may use a service-card price.  The
+  /// card itself remains available for documents and display in all modes.
+  pricingMode               String    @default("fixed") @map("pricing_mode")
   buyPriceCents             Int?      @map("buy_price_cents")
   currencyName              String?   @map("currency_name")
   minimumBalance            Decimal?  @map("minimum_balance") @db.Decimal(14, 3)
@@ -2020,6 +2024,156 @@ model MannFilterApplication {
   @@index([vehicleYearFrom, vehicleYearTo])
   @@index([importBatchId])
   @@map("mann_filter_applications")
+}
+
+/// Версия внешнего каталога технических жидкостей. Старые пакеты остаются в аудите,
+/// а актуальные строки при повторном импорте заменяются атомарно.
+model FluidCatalogImportBatch {
+  id           String    @id @default(cuid())
+  status       String    @default("imported")
+  sourceName   String    @map("source_name")
+  sourceUrl    String?   @map("source_url") @db.Text
+  sourceFile   String?   @map("source_file") @db.Text
+  sourceHash   String    @map("source_hash")
+  summaryJson  Json?     @map("summary_json")
+  statsJson    Json      @default("{}") @map("stats_json")
+  errorsJson   Json      @default("[]") @map("errors_json")
+  importedById String?   @map("imported_by_id")
+  importedAt   DateTime  @default(now()) @map("imported_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  sourceRows   FluidSourceRow[]
+  requirements VehicleFluidRequirement[]
+
+  @@index([sourceName, importedAt])
+  @@index([sourceHash])
+  @@index([status])
+  @@map("fluid_catalog_import_batches")
+}
+
+/// Потеребезопасная копия одной опубликованной строки источника.
+model FluidSourceRow {
+  id              String                   @id
+  importBatchId   String?                  @map("import_batch_id")
+  importBatch     FluidCatalogImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  sourceUrl       String                   @map("source_url") @db.Text
+  pagePath        String?                  @map("page_path") @db.Text
+  pageTitle       String?                  @map("page_title") @db.Text
+  makeRaw         String?                  @map("make_raw")
+  makeNormalized  String?                  @map("make_normalized")
+  modelRaw        String?                  @map("model_raw")
+  modelNormalized String?                  @map("model_normalized")
+  generationRaw   String?                  @map("generation_raw")
+  tableIndex      Int                      @map("table_index")
+  rowIndex        Int                      @map("row_index")
+  tableKind       String?                  @map("table_kind")
+  applicationRaw  String?                  @map("application_raw") @db.Text
+  systemNameRaw   String?                  @map("system_name_raw") @db.Text
+  rawCellsJson    Json                     @map("raw_cells_json")
+  parsedRowJson   Json                     @map("parsed_row_json")
+  sourceFetchedAt DateTime?                @map("source_fetched_at") @db.Timestamptz(6)
+  sourcePageHash  String?                  @map("source_page_hash")
+  importedAt      DateTime                 @default(now()) @map("imported_at")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+
+  requirements VehicleFluidRequirement[]
+
+  @@index([importBatchId])
+  @@index([makeNormalized, modelNormalized])
+  @@index([sourcePageHash])
+  @@map("fluid_source_rows")
+}
+
+/// Нормализованное требование по одному узлу автомобиля. Исходный текст всегда
+/// сохраняется рядом, поэтому уточнение парсера не требует повторного скрейпинга.
+model VehicleFluidRequirement {
+  id                      String                   @id
+  importBatchId           String?                  @map("import_batch_id")
+  importBatch             FluidCatalogImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  sourceRowId             String                   @map("source_row_id")
+  sourceRow               FluidSourceRow           @relation(fields: [sourceRowId], references: [id], onDelete: Cascade)
+  sourceTableKey          String                   @map("source_table_key")
+  sourceUrl               String                   @map("source_url") @db.Text
+  make                    String
+  makeNormalized          String                   @map("make_normalized")
+  model                   String
+  modelNormalized         String                   @map("model_normalized")
+  generation              String?
+  generationNumber        Int?                     @map("generation_number")
+  bodyCodesJson           Json                     @default("[]") @map("body_codes_json")
+  yearFrom                Int?                     @map("year_from")
+  yearTo                  Int?                     @map("year_to")
+  engineCodeNormalized    String?                  @map("engine_code_normalized")
+  engineCodesJson         Json                     @default("[]") @map("engine_codes_json")
+  engineVolumeCc          Int?                     @map("engine_volume_cc")
+  powerKw                 Int?                     @map("power_kw")
+  powerHp                 Int?                     @map("power_hp")
+  fuelType                String?                  @map("fuel_type")
+  driveType               String?                  @map("drive_type")
+  transmissionType        String?                  @map("transmission_type")
+  componentModel          String?                  @map("component_model") @db.Text
+  systemCode              String                   @map("system_code")
+  systemNameRaw           String                   @map("system_name_raw") @db.Text
+  fillVolumeText          String?                  @map("fill_volume_text") @db.Text
+  fillVolumeMinLiters     Float?                   @map("fill_volume_min_liters")
+  fillVolumeMaxLiters     Float?                   @map("fill_volume_max_liters")
+  serviceVolumeLiters     Float?                   @map("service_volume_liters")
+  totalVolumeLiters       Float?                   @map("total_volume_liters")
+  capacitiesJson          Json                     @default("[]") @map("capacities_json")
+  specificationText       String?                  @map("specification_text") @db.Text
+  specificationsJson      Json                     @default("[]") @map("specifications_json")
+  viscosityGradesJson     Json                     @default("[]") @map("viscosity_grades_json")
+  recommendationText      String?                  @map("recommendation_text") @db.Text
+  replacementIntervalText String?                  @map("replacement_interval_text") @db.Text
+  replacementKmMin        Int?                     @map("replacement_km_min")
+  replacementKmMax        Int?                     @map("replacement_km_max")
+  replacementMonths       Int?                     @map("replacement_months")
+  controlIntervalText     String?                  @map("control_interval_text") @db.Text
+  analogText              String?                  @map("analog_text") @db.Text
+  contextConfidence       String                   @default("page") @map("context_confidence")
+  rawRequirementJson      Json                     @map("raw_requirement_json")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+
+  mannLinks MannFluidRequirementLink[]
+
+  @@index([importBatchId])
+  @@index([sourceRowId])
+  @@index([makeNormalized, modelNormalized])
+  @@index([engineCodeNormalized])
+  @@index([systemCode])
+  @@index([yearFrom, yearTo])
+  @@map("vehicle_fluid_requirements")
+}
+
+/// Кандидат или подтверждённая связь требования с MANN vehicleVariantKey.
+/// Внешнего FK нет: один vehicleVariantKey повторяется в строках разных фильтров.
+model MannFluidRequirementLink {
+  id              String                  @id
+  requirementId   String                  @map("requirement_id")
+  requirement     VehicleFluidRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  mannVariantKey  String                  @map("mann_variant_key")
+  mannMake        String                  @map("mann_make")
+  mannModel       String                  @map("mann_model")
+  mannVehicleText String?                 @map("mann_vehicle_text") @db.Text
+  mannEngineCode  String?                 @map("mann_engine_code")
+  matchScore      Int                     @map("match_score")
+  confidence      String
+  status          String                  @default("review_required")
+  matchMethod     String                  @map("match_method")
+  evidenceJson    Json                    @default("{}") @map("evidence_json")
+  confirmedById   String?                 @map("confirmed_by_id")
+  confirmedAt     DateTime?               @map("confirmed_at")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  @@unique([requirementId, mannVariantKey])
+  @@index([mannVariantKey, status])
+  @@index([status, confidence])
+  @@index([requirementId])
+  @@map("mann_fluid_requirement_links")
 }
 
 model ProductMarkingAuditLog {
@@ -3454,4 +3608,211 @@ model AIAgentSlotHold {
   @@index([organizationId, slotId, expiresAt])
   @@index([conversationId, status])
   @@map("ai_agent_slot_holds")
+}
+
+/// Internal, employee-only assistant. These records intentionally do not
+/// reuse the retired client-agent tables: no client conversation can become an
+/// assistant thread by accident.
+model AIAssistantThread {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default") @map("organization_id")
+  createdById    String   @map("created_by_id")
+  title          String   @default("Новый разговор")
+  status         String   @default("active")
+  lastResponseId String?  @map("last_response_id")
+  summary        String?  @db.Text
+  lastMessageAt  DateTime @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  messages AIAssistantMessage[]
+  runs     AIAssistantRun[]
+  quotes   AIAssistantQuote[]
+
+  @@index([organizationId, createdById, lastMessageAt])
+  @@index([organizationId, status, lastMessageAt])
+  @@map("ai_assistant_threads")
+}
+
+model AIAssistantMessage {
+  id              String            @id @default(cuid())
+  threadId        String            @map("thread_id")
+  thread          AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  organizationId  String            @default("default") @map("organization_id")
+  role            String
+  content         String            @db.Text
+  citationsJson   Json              @default("[]") @map("citations_json")
+  attachmentsJson Json              @default("[]") @map("attachments_json")
+  runId           String?           @map("run_id")
+  createdById     String?           @map("created_by_id")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([threadId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("ai_assistant_messages")
+}
+
+model AIAssistantRun {
+  id              String            @id @default(cuid())
+  threadId        String            @map("thread_id")
+  thread          AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  organizationId  String            @default("default") @map("organization_id")
+  requestedById   String            @map("requested_by_id")
+  status          String            @default("queued")
+  model           String
+  reasoning       String
+  inputMessageId  String?           @map("input_message_id")
+  responseId      String?           @map("response_id")
+  toolSummaryJson Json              @default("[]") @map("tool_summary_json")
+  errorCode       String?           @map("error_code")
+  errorMessage    String?           @map("error_message") @db.Text
+  inputTokens     Int?              @map("input_tokens")
+  outputTokens    Int?              @map("output_tokens")
+  durationMs      Int?              @map("duration_ms")
+  startedAt       DateTime          @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt     DateTime?         @map("completed_at") @db.Timestamptz(6)
+  cancelledAt     DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  toolCalls AIAssistantToolCall[]
+  sources   AIAssistantSource[]
+  quotes    AIAssistantQuote[]
+
+  @@index([organizationId, threadId, createdAt])
+  @@index([organizationId, status, startedAt])
+  @@map("ai_assistant_runs")
+}
+
+model AIAssistantToolCall {
+  id             String         @id @default(cuid())
+  runId          String         @map("run_id")
+  run            AIAssistantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  organizationId String         @default("default") @map("organization_id")
+  toolName       String         @map("tool_name")
+  status         String         @default("running")
+  argumentsJson  Json           @default("{}") @map("arguments_json")
+  resultSummary  Json?          @map("result_summary")
+  errorMessage   String?        @map("error_message") @db.Text
+  durationMs     Int?           @map("duration_ms")
+  startedAt      DateTime       @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?      @map("completed_at") @db.Timestamptz(6)
+
+  @@index([runId, startedAt])
+  @@index([organizationId, toolName, startedAt])
+  @@map("ai_assistant_tool_calls")
+}
+
+model AIAssistantSource {
+  id             String         @id @default(cuid())
+  runId          String         @map("run_id")
+  run            AIAssistantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  messageId      String?        @map("message_id")
+  organizationId String         @default("default") @map("organization_id")
+  sourceType     String         @map("source_type")
+  title          String?        @db.Text
+  url            String?        @db.Text
+  excerpt        String?        @db.Text
+  metadataJson   Json           @default("{}") @map("metadata_json")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([runId, createdAt])
+  @@index([organizationId, sourceType, createdAt])
+  @@map("ai_assistant_sources")
+}
+
+/// Immutable working snapshot of an internal assistant calculation.  It is
+/// deliberately separate from the retired client-agent quote model: this
+/// record is for an employee to review and turn into a message, never for
+/// automatic customer delivery or accounting mutations.
+model AIAssistantQuote {
+  id                       String            @id @default(cuid())
+  organizationId           String            @default("default") @map("organization_id")
+  threadId                 String            @map("thread_id")
+  thread                   AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  runId                    String?           @map("run_id")
+  run                      AIAssistantRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+  createdById              String            @map("created_by_id")
+  status                   String            @default("draft")
+  vehicleId                String?           @map("vehicle_id")
+  vehicleDisplayName       String?           @map("vehicle_display_name")
+  vehicleSnapshotJson      Json              @default("{}") @map("vehicle_snapshot_json")
+  serviceName              String?           @map("service_name")
+  selectedScenario         String?           @map("selected_scenario")
+  appliedRuleId            String?           @map("applied_rule_id")
+  appliedRuleSnapshotJson  Json              @default("{}") @map("applied_rule_snapshot_json")
+  includedItemsJson        Json              @default("[]") @map("included_items_json")
+  optionalItemsJson        Json              @default("[]") @map("optional_items_json")
+  baseTotalCents           Int               @map("base_total_cents")
+  maximumTotalCents        Int?              @map("maximum_total_cents")
+  priceRangeJson           Json              @default("{}") @map("price_range_json")
+  assumptionsJson          Json              @default("[]") @map("assumptions_json")
+  internalWarningsJson     Json              @default("[]") @map("internal_warnings_json")
+  customerSafeWarningsJson Json              @default("[]") @map("customer_safe_warnings_json")
+  validUntil               DateTime?         @map("valid_until") @db.Timestamptz(6)
+  isSelected               Boolean           @default(true) @map("is_selected")
+  createdAt                DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, threadId, isSelected, createdAt])
+  @@index([organizationId, runId])
+  @@map("ai_assistant_quotes")
+}
+
+/// Configurable labour tariff used by the internal assistant.  It is kept
+/// independently from LocalProduct because a service-card price is not a
+/// reliable price for technically different procedures.
+model AIAssistantLaborPricingRule {
+  id                        String   @id @default(cuid())
+  organizationId            String   @default("default") @map("organization_id")
+  locationId                String   @default("dachnaya") @map("location_id")
+  serviceFamily             String   @map("service_family")
+  procedureType             String   @map("procedure_type")
+  transmissionConfiguration String?  @map("transmission_configuration")
+  materialsOwner            String?  @map("materials_owner")
+  /// Optional narrower scope has priority over generic scenario rules.
+  vehicleId                 String?  @map("vehicle_id")
+  aggregateCode             String?  @map("aggregate_code")
+  name                      String
+  laborPriceCents           Int      @map("labor_price_cents")
+  priceFromCents            Int?     @map("price_from_cents")
+  priceToCents              Int?     @map("price_to_cents")
+  requiresHumanConfirmation Boolean  @default(false) @map("requires_human_confirmation")
+  active                    Boolean  @default(true)
+  effectiveFrom             DateTime @default(now()) @map("effective_from") @db.Timestamptz(6)
+  effectiveTo               DateTime? @map("effective_to") @db.Timestamptz(6)
+  comment                   String?  @db.Text
+  createdById               String?  @map("created_by_id")
+  updatedById               String?  @map("updated_by_id")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, locationId, active, effectiveFrom, effectiveTo])
+  @@index([organizationId, vehicleId, aggregateCode])
+  @@index([organizationId, serviceFamily, procedureType, transmissionConfiguration, materialsOwner])
+  @@map("ai_assistant_labor_pricing_rules")
+}
+
+/// Confirmed difficulty of replacing a particular air or cabin filter.  No
+/// default price is inferred from a difficulty label: only this rule carries
+/// an amount that the assistant may use without asking an employee.
+model VehicleServiceComplexityRule {
+  id              String   @id @default(cuid())
+  organizationId  String   @default("default") @map("organization_id")
+  make            String
+  model           String
+  generation      String?
+  yearFrom        Int?     @map("year_from")
+  yearTo          Int?     @map("year_to")
+  engineCode      String?  @map("engine_code")
+  serviceType     String   @map("service_type")
+  complexity      String
+  laborPriceCents Int      @map("labor_price_cents")
+  source          String?
+  confirmedById   String?  @map("confirmed_by_id")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, make, model, serviceType, active])
+  @@map("vehicle_service_complexity_rules")
 }

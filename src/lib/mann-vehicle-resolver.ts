@@ -273,6 +273,26 @@ function candidateBaseModel(row: MannRow, make: string): string | undefined {
   return canonicalBaseModel(row.model, make);
 }
 
+const QUALIFIER_ONLY_VARIANT_MARKERS = [
+  "EXPORTMODELL",
+  "EXPORTMODELFOR",
+  "KUNSTSTOFF OLFILTERMODUL",
+  "PLASTIC OIL FILTER MODULE",
+  "ALU OLFILTERMODUL",
+  "ALUMINIUM OIL FILTER MODULE",
+  "GEHAUSE HOUSING",
+];
+
+function isQualifierOnlyVariant(row: MannRow): boolean {
+  const vehicleText = normalizeMannSearchText(row.effectiveVehicleText ?? row.vehicleText);
+  if (!QUALIFIER_ONLY_VARIANT_MARKERS.some((marker) => vehicleText.includes(marker))) return false;
+  const engineCode = normalizeEngineCode(row.engineCode);
+  const hasEngineCode = Boolean(engineCode && /^[A-Z0-9/.-]{2,24}$/.test(engineCode));
+  const hasPower = [numberFromText(row.kw), numberFromText(row.hp)].some((value) => value != null && value >= 20);
+  const hasYear = row.vehicleYearFrom != null || row.vehicleYearTo != null;
+  return !hasEngineCode && !hasPower && !hasYear;
+}
+
 function candidateFromRow(row: MannRow, score: number, matchedFields: string[], mismatchedFields: string[], missingFields: string[], reasons: string[], warnings: string[]): MannVehicleCandidate {
   return {
     applicationId: row.vehicleVariantKey,
@@ -298,6 +318,7 @@ function candidateFromRow(row: MannRow, score: number, matchedFields: string[], 
 
 function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEvaluation {
   const reject = (reason: string) => ({ rejected: { applicationId: row.vehicleVariantKey, model: row.model, reasons: [reason] } });
+  if (isQualifierOnlyVariant(row)) return reject("служебное условие PDF, не модификация автомобиля");
   const rowMake = normalizeVehicleMake(row.make);
   if (!rowMake || rowMake !== vehicle.canonicalMake) return reject("марка не совпадает");
   const rowModel = candidateBaseModel(row, vehicle.canonicalMake);
@@ -349,13 +370,14 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     }
   }
 
-  const rowCodes = rowBodyCodes(row);
-  if (vehicle.bodyCodes.length > 0) {
-    if (rowCodes.some((code) => vehicle.bodyCodes.includes(code))) {
+  const vehicleBodyCodes = vehicle.bodyCodes.filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
+  const rowCodes = rowBodyCodes(row).filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
+  if (vehicleBodyCodes.length > 0) {
+    if (rowCodes.some((code) => vehicleBodyCodes.includes(code))) {
       score += 20;
       matchedFields.push("код кузова");
     } else if (rowCodes.length > 0) {
-      missingFields.push("код кузова");
+      return reject(`код кузова: ${rowCodes.join(", ")} не совпадает с ${vehicleBodyCodes.join(", ")}`);
     }
   }
 

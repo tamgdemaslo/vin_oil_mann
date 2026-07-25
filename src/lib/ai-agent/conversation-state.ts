@@ -179,14 +179,16 @@ function vehicleDataFromMessage(text: string): Record<string, unknown> {
   const make = text.match(/\b(toyota|lexus|ford|volkswagen|vw|bmw|mercedes(?:-benz)?|mazda|honda|hyundai|kia|nissan|mitsubishi|subaru|audi|skoda|renault|lada)\b/i)?.[1];
   if (make) result.make = make.replace(/^vw$/i, "Volkswagen").replace(/^\w/, (letter) => letter.toUpperCase());
   const modelPatterns: Array<[RegExp, string]> = [
+    [/\bf16\b/i, "X6 (F16)"],
     [/\bhighlander\b/i, "Highlander"], [/\bmondeo\b/i, "Mondeo"], [/\b(camry|rav4|land\s*cruiser|prado)\b/i, (text.match(/\b(camry|rav4|land\s*cruiser|prado)\b/i)?.[1] ?? "").replace(/\b\w/g, (letter) => letter.toUpperCase())],
     [/\b(passat|tiguan|polo|octavia|superb|santa\s*fe|sorento|sportage|cx-5|cx-7|qashqai|x-trail)\b/i, (text.match(/\b(passat|tiguan|polo|octavia|superb|santa\s*fe|sorento|sportage|cx-5|cx-7|qashqai|x-trail)\b/i)?.[1] ?? "").replace(/\b\w/g, (letter) => letter.toUpperCase())],
   ];
   for (const [pattern, model] of modelPatterns) if (pattern.test(text) && model) { result.model = model; break; }
   const year = text.match(/\b(19[6-9]\d|20\d{2})\s*(?:г(?:од[а]?|\.)?)?\b/i)?.[1];
   if (year) result.year = Number(year);
-  const engine = text.match(/\b([1-8](?:[.,]\d)?)\s*(?:л(?:\.|итр(?:а|ов)?)?)\b/i)?.[1];
-  if (engine) result.engine = engine.replace(",", ".");
+  const dieselEngine = text.match(/\b([1-8](?:[.,]\d)?)\s*(d|tdi|td|dci|crdi)\b/i);
+  const engine = dieselEngine?.[1] ?? text.match(/\b([1-8](?:[.,]\d)?)\s*(?:л(?:\.|итр(?:а|ов)?)?)\b/i)?.[1];
+  if (engine) result.engine = `${engine.replace(",", ".")}${dieselEngine ? "d" : ""}`;
   if (/(полный|полнопривод|awd|4wd|4x4)/i.test(text)) result.drive = "AWD";
   else if (/(передний|переднепривод|fwd)/i.test(text)) result.drive = "FWD";
   else if (/(задний|заднепривод|rwd)/i.test(text)) result.drive = "RWD";
@@ -289,6 +291,65 @@ function transmissionServiceFor(text: string): AIServiceType {
 function hasEngineOilIntent(text: string) {
   return /(мотор|двигател|движок|моторк)/i.test(text)
     || /(масл\S*\s+(помен|замен|смен|нужн|хочу|сдела|махн)\S*|(помен|замен)\S*\s+масл\S*)/i.test(text);
+}
+
+/**
+ * This is not a parser for a short answer. It is a clear boundary between two
+ * service requests: a client who explicitly asks for engine oil must not
+ * inherit a stopped transmission workflow from an earlier dialogue episode.
+ */
+export function startsExplicitEngineOilOnlyRequest(text: string) {
+  if (!hasEngineOilIntent(text) || hasTransmissionOilIntent(text)) return false;
+  return /(?:какое|какой|какие|есть|подберите|подобрать|нужно|нужен|хочу|интересует|добрый\s+день|я\s*(?:же|просил)|только\s+мотор)/i.test(text);
+}
+
+export function hasVehicleIdentityInMessage(text: string) {
+  const vehicle = vehicleDataFromMessage(text);
+  return Boolean(vehicle.make || vehicle.model || vehicle.year || vehicle.engine);
+}
+
+export function resetConversationWorkflowForNewRequest(state: ConversationAgentState, options?: { clearVehicle?: boolean }) {
+  const clearVehicle = options?.clearVehicle === true;
+  return {
+    ...state,
+    currentIntent: null,
+    activeServiceRequests: [],
+    pendingQuestion: "none" as const,
+    pendingQuestionType: null,
+    pendingQuestionMessageId: null,
+    pendingQuestionAskedAt: null,
+    pendingQuestionAnsweredAt: null,
+    pendingToolAction: "none" as const,
+    requestedDate: null,
+    selectedSlot: null,
+    quoteId: null,
+    awaitingTechnicalResearch: false,
+    awaitingHumanApproval: false,
+    complexFluidRequest: false,
+    missingRequirements: [],
+    mileage: null,
+    mileageApproximate: false,
+    transmissionHistory: null,
+    transmissionComplaints: null,
+    transmissionTypeConfidence: null,
+    transmissionFluidConfidence: null,
+    transmissionVolumeConfidence: null,
+    transferCaseConfidence: null,
+    rearDifferentialConfidence: null,
+    confirmedItems: [],
+    unresolvedItems: [],
+    slotSuggestions: [],
+    ...(clearVehicle ? {
+      vehicleId: null,
+      vehicleData: {},
+      vinAvailability: "unknown" as const,
+      vehicleConfidence: null,
+      engineConfidence: null,
+      engineOilSpecificationConfidence: null,
+      engineOilVolumeConfidence: null,
+      oilFilterConfidence: null,
+    } : {}),
+  };
 }
 
 function dedupeServices(current: AIServiceType[], additions: AIServiceType[]) {

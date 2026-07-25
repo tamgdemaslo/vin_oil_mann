@@ -806,6 +806,9 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
 }
 
 function startAgentForInboundMessage(input: { organizationId: string; conversationId: string; messageId: string; text: string }) {
+  // Hard stop during the internal-assistant rollout: inbound client messages
+  // are recorded normally, but they cannot start an OpenAI run.
+  if (process.env.CLIENT_AI_AGENT_ENABLED?.trim().toLowerCase() !== "true") return;
   if (!input.text.trim()) return;
   void import("@/lib/ai-agent/runner")
     .then(({ triggerAgentForInboundMessage }) => triggerAgentForInboundMessage(input))
@@ -1050,8 +1053,8 @@ export async function pollTelegramUpdates(input: { offset?: number; limit?: numb
   return { ok: true as const, processed, nextOffset };
 }
 
-export async function syncTelegramUserConversations(input: { accountId?: string; limit?: number } = {}) {
-  return syncTelegramUserAccount(input.accountId, input.limit ?? 40);
+export async function syncTelegramUserConversations(input: { accountId?: string; limit?: number; force?: boolean } = {}) {
+  return syncTelegramUserAccount(input.accountId, input.limit ?? 40, { force: input.force });
 }
 
 export async function listTemplates() {

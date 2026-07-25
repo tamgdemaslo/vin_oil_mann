@@ -118,6 +118,7 @@ type MessengerContextValue = {
 
 const MessengerContext = createContext<MessengerContextValue | null>(null);
 const MESSENGER_POLL_INTERVAL_MS = 12_000;
+const TELEGRAM_SYNC_INTERVAL_MS = 60_000;
 
 function sortConversations(items: Conversation[]) {
   return [...items].sort((a, b) => {
@@ -229,7 +230,6 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     if (!options?.silent) setLoadingMode(true);
     try {
       void loadChannelStatuses();
-      void syncTelegramUserSession();
       const params = new URLSearchParams({ limit: "100" });
       if (filter !== "all") params.set("filter", filter);
       if (channel !== "all") params.set("channel", channel);
@@ -265,7 +265,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     } finally {
       if (!options?.silent) setLoadingMode(false);
     }
-  }, [channel, emptyMode, filter, loadChannelStatuses, responsible, search, showToast, syncTelegramUserSession]);
+  }, [channel, emptyMode, filter, loadChannelStatuses, responsible, search, showToast]);
 
   const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
     try {
@@ -327,6 +327,20 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadConversations();
   }, [loadConversations]);
+
+  useEffect(() => {
+    if (emptyMode) return;
+    const syncTelegram = () => {
+      if (document.visibilityState === "visible") void syncTelegramUserSession();
+    };
+    syncTelegram();
+    const intervalId = window.setInterval(syncTelegram, TELEGRAM_SYNC_INTERVAL_MS);
+    document.addEventListener("visibilitychange", syncTelegram);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", syncTelegram);
+    };
+  }, [emptyMode, syncTelegramUserSession]);
 
   useEffect(() => {
     const pollMessenger = async () => {

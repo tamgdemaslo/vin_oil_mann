@@ -219,6 +219,27 @@ export default function AppHeader() {
             },
           ],
         },
+        ...(canAccessCrm
+          ? [
+              {
+                id: "ai-assistant",
+                href: "/ai-assistant",
+                label: "ИИ-помощник",
+                items: [
+                  {
+                    href: "/ai-assistant",
+                    label: "Рабочий чат",
+                    description: "Внутренний поиск, проверка и расчёты без действий от имени клиента.",
+                  },
+                  {
+                    href: "/cabinet/ai-assistant",
+                    label: "Настройки",
+                    description: "Статус доступа и конфигурация внутреннего режима.",
+                  },
+                ],
+              },
+            ]
+          : []),
         {
           id: "clients",
           href: "/clients",

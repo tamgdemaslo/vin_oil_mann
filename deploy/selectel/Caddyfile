@@ -1,0 +1,10 @@
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
+www.tamgdemaslocrm.ru {
+    header Alt-Svc "clear"
+    reverse_proxy 127.0.0.1:3000
+}

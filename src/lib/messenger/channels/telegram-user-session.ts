@@ -138,6 +138,7 @@ type TelegramMessage = {
 type TelegramRuntimeClient = {
   connect(): Promise<void>;
   disconnect?: () => Promise<void>;
+  destroy?: () => Promise<void>;
   invoke(input: unknown): Promise<unknown>;
   addEventHandler?: (callback: (update: unknown) => void) => void;
   getMe?: () => Promise<unknown>;
@@ -299,6 +300,38 @@ function telegramConnectionRetries() {
   return Math.floor(configured);
 }
 
+type TelegramSocksProxy = {
+  ip: string;
+  port: number;
+  socksType: 4 | 5;
+  username?: string;
+  password?: string;
+};
+
+function telegramSocksProxy(): TelegramSocksProxy | undefined {
+  const ip = process.env.TELEGRAM_PROXY_HOST?.trim() ?? "";
+  const rawPort = process.env.TELEGRAM_PROXY_PORT?.trim() ?? "";
+  if (!ip && !rawPort) return undefined;
+
+  const port = Number(rawPort);
+  if (!ip || !Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("Для Telegram SOCKS-прокси задайте TELEGRAM_PROXY_HOST и TELEGRAM_PROXY_PORT.");
+  }
+
+  const socksType = Number(process.env.TELEGRAM_PROXY_SOCKS_TYPE ?? "5");
+  if (socksType !== 4 && socksType !== 5) {
+    throw new Error("TELEGRAM_PROXY_SOCKS_TYPE может быть только 4 или 5.");
+  }
+
+  const username = process.env.TELEGRAM_PROXY_USERNAME?.trim() || undefined;
+  const password = process.env.TELEGRAM_PROXY_PASSWORD?.trim() || undefined;
+  if (Boolean(username) !== Boolean(password)) {
+    throw new Error("Для Telegram SOCKS-прокси укажите одновременно логин и пароль.");
+  }
+
+  return { ip, port, socksType, ...(username && password ? { username, password } : {}) };
+}
+
 function redact(value: string) {
   const apiHash = configuredApiHash();
   return apiHash ? value.split(apiHash).join("[TELEGRAM_API_HASH]") : value;
@@ -369,10 +402,13 @@ async function getClient(session = "") {
   const apiHash = configuredApiHash();
   if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
   const { TelegramClient, StringSession } = await loadGramJs();
+  const proxy = telegramSocksProxy();
   const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
     connectionRetries: telegramConnectionRetries(),
     testServers: false,
-    useWSS: true,
+    // SOCKS works with GramJS' TCP socket. Telegram's WSS endpoint bypasses that socket.
+    useWSS: !proxy,
+    ...(proxy ? { proxy } : {}),
   }) as TelegramRuntimeClient;
   try {
     await withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs());
@@ -399,12 +435,12 @@ async function withTelegramConnectTimeout<T>(promise: Promise<T>, timeoutMs: num
 }
 
 async function disconnectTelegramClient(client: TelegramRuntimeClient) {
-  const disconnect = client.disconnect;
-  if (!disconnect) return;
-  await disconnect.call(client).catch((error) => {
+  const close = client.destroy ?? client.disconnect;
+  if (!close) return;
+  await close.call(client).catch((error) => {
     console.warn("[messenger.telegram_user.auth]", {
-      action: "disconnect_failed",
-      error: safeError(error, "Telegram disconnect failed"),
+      action: "client_close_failed",
+      error: safeError(error, "Telegram client close failed"),
     });
   });
 }
@@ -2384,13 +2420,15 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
 }
 
 function startAgentForSyncedMessages(input: { organizationId: string; conversationId: string; messageId: string; text: string }) {
+  // Do not replay a synced Telegram history into the retired client agent.
+  if (process.env.CLIENT_AI_AGENT_ENABLED?.trim().toLowerCase() !== "true") return;
   if (!input.text.trim()) return;
   void import("@/lib/ai-agent/runner")
     .then(({ triggerAgentForInboundMessage }) => triggerAgentForInboundMessage(input))
     .catch((error) => console.warn("[ai-agent telegram sync]", error instanceof Error ? error.message : String(error)));
 }
 
-export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
+async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
   const accounts = accountId
     ? (await listTelegramUserAccounts()).filter((account) => account.id === accountId)
     : (await listTelegramUserAccounts()).filter((account) => account.status === "connected" && account.isActive);
@@ -2466,10 +2504,61 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40) {
       await updateAccountStatus(account.id, /AUTH|SESSION|PASSWORD/i.test(message) ? "needs_auth" : "error", message);
       processed.push({ accountId: account.id, ok: false, error: message });
     } finally {
-      await client.disconnect?.().catch?.(() => {});
+      await disconnectTelegramClient(client);
     }
   }
   return { ok: true as const, processed };
+}
+
+type TelegramUserSyncResult = Awaited<ReturnType<typeof runTelegramUserAccountSync>>;
+type TelegramSyncRuntimeEntry = {
+  inFlight: Promise<TelegramUserSyncResult> | null;
+  lastStartedAt: number;
+};
+
+const telegramSyncRuntimeGlobal = globalThis as typeof globalThis & {
+  __ecoTelegramUserSyncRuntime?: Map<string, TelegramSyncRuntimeEntry>;
+};
+
+function telegramSyncRuntime() {
+  telegramSyncRuntimeGlobal.__ecoTelegramUserSyncRuntime ??= new Map<string, TelegramSyncRuntimeEntry>();
+  return telegramSyncRuntimeGlobal.__ecoTelegramUserSyncRuntime;
+}
+
+function telegramSyncMinIntervalMs() {
+  const configured = Number(process.env.TELEGRAM_SYNC_MIN_INTERVAL_MS);
+  if (!Number.isFinite(configured) || configured < 10_000) return 60_000;
+  return Math.floor(configured);
+}
+
+export async function syncTelegramUserAccount(accountId?: string, limit = 40, options: { force?: boolean } = {}) {
+  const runtime = telegramSyncRuntime();
+  const runtimeKey = `${getMessengerOrganizationId()}:telegram-user-session`;
+  const entry = runtime.get(runtimeKey) ?? { inFlight: null, lastStartedAt: 0 };
+
+  if (entry.inFlight) return entry.inFlight;
+
+  const now = Date.now();
+  const retryAfterMs = Math.max(0, telegramSyncMinIntervalMs() - (now - entry.lastStartedAt));
+  if (!options.force && retryAfterMs > 0) {
+    return {
+      ok: true as const,
+      processed: [],
+      skipped: "throttled" as const,
+      retryAfterMs,
+    };
+  }
+
+  entry.lastStartedAt = now;
+  const inFlight = runTelegramUserAccountSync(accountId, limit);
+  entry.inFlight = inFlight;
+  runtime.set(runtimeKey, entry);
+
+  try {
+    return await inFlight;
+  } finally {
+    if (entry.inFlight === inFlight) entry.inFlight = null;
+  }
 }
 
 export async function sendTelegramUserText(outbox: MessageOutbox): Promise<ChannelSendResult> {
@@ -2486,7 +2575,7 @@ export async function sendTelegramUserText(outbox: MessageOutbox): Promise<Chann
   } catch (error) {
     return { ok: false, error: safeError(error, "Telegram sendMessage failed") };
   } finally {
-    await client.disconnect?.().catch?.(() => {});
+    await disconnectTelegramClient(client);
   }
 }
 
@@ -2938,7 +3027,7 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
     await refreshMessageAttachmentsJson(row.messageId);
     return { ok: true as const, key, size: media.length };
   } finally {
-    await client.disconnect?.().catch?.(() => {});
+    await disconnectTelegramClient(client);
   }
 }
 
@@ -2979,7 +3068,7 @@ export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<Chann
   } catch (error) {
     return { ok: false, error: safeError(error, "Telegram sendFile failed") };
   } finally {
-    await client.disconnect?.().catch?.(() => {});
+    await disconnectTelegramClient(client);
   }
 }
 

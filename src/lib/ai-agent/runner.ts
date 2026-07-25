@@ -14,6 +14,7 @@ import { sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
 import { assertSafeAgentOutput, containsPromptInjection, maskPersonalData } from "./security";
 import { getAgentSettings } from "./settings";
+import { clientAIAgentDisabledError, isClientAIAgentEnabled } from "./client-agent-feature";
 import { PrismaAgentSession } from "./session";
 import { loadConversationModelHistory, type ConversationModelHistory } from "./conversation-history";
 import { tgmClientAgentTools } from "./tools";
@@ -26,8 +27,11 @@ import {
   contextInstruction,
   estimateConversationDurationMinutes,
   getConversationAgentState,
+  hasVehicleIdentityInMessage,
   hasContradictoryWorkflowStatus,
   normalizeClientFacingText,
+  resetConversationWorkflowForNewRequest,
+  startsExplicitEngineOilOnlyRequest,
   updateConversationAgentState,
   withConversationAgentState,
   type AgentSlotSuggestion,
@@ -681,6 +685,7 @@ function detectIntent(text: string, state?: ConversationAgentState) {
   if (/подешевл|дешевле|бюджетн/.test(normalized)) return { intent: "budget_quote", confidence: 0.93 };
   if (/запис|свободн(ое|ые) время|когда можно/.test(normalized)) return { intent: "book", confidence: 0.86 };
   if (/акпп|коробк|трансмис/.test(normalized) && /масл|жидкост|замен/.test(normalized)) return { intent: "transmission_oil_change", confidence: 0.9 };
+  if (/(мотор|двигател|движок|моторк)/.test(normalized) && /масл/.test(normalized)) return { intent: "engine_oil_change", confidence: 0.9 };
   if (/фильтр/.test(normalized) && /подобр|налич|есть/.test(normalized)) return { intent: "filter_lookup", confidence: 0.85 };
   if (/масл/.test(normalized) && /замен|помен|стоим|цен/.test(normalized)) return { intent: "engine_oil_change", confidence: 0.9 };
   if (/адрес|где вы|как доех/.test(normalized)) return { intent: "address", confidence: 0.94 };
@@ -854,6 +859,7 @@ export type RunAgentInput = {
 };
 
 export async function runTgmClientAgent(input: RunAgentInput) {
+  if (!isClientAIAgentEnabled()) throw new Error(clientAIAgentDisabledError());
   if (input.message.length > MAX_CLIENT_MESSAGE_CHARS || input.message.includes("\u0000")) {
     throw new Error("Сообщение клиента слишком большое или содержит недопустимые символы");
   }
@@ -871,35 +877,58 @@ export async function runTgmClientAgent(input: RunAgentInput) {
     sourceMessageId: input.sourceMessageId,
     fallbackClientMessage: input.message,
   });
-  // An answer to an open question continues the existing scenario. Do not let
-  // a context-free keyword classifier replace that scenario before the model
-  // has seen the question it is answering.
-  const continuingOpenQuestion = previousConversationState.pendingQuestion !== "none";
-  const detectedIntent = detectIntent(input.message, previousConversationState);
-  const intent = continuingOpenQuestion && !["complaint", "human_request", "cancel_appointment", "reschedule_appointment"].includes(detectedIntent.intent)
-    ? { intent: previousConversationState.currentIntent || detectedIntent.intent, confidence: Math.max(previousConversationState.currentIntent ? 0.9 : 0, detectedIntent.confidence) }
+  // A clearly phrased new engine-oil request is a separate service scenario,
+  // not an answer to a stale AKPP question. This boundary deliberately acts
+  // before the continuation rule; short answers still go through the
+  // contextual interpreter below.
+  const startsNewEngineOilScenario = startsExplicitEngineOilOnlyRequest(input.message);
+  let clearsVehicleForNewScenario = startsNewEngineOilScenario && hasVehicleIdentityInMessage(input.message);
+  let baseConversationState = startsNewEngineOilScenario
+    ? resetConversationWorkflowForNewRequest(previousConversationState, { clearVehicle: clearsVehicleForNewScenario })
+    : previousConversationState;
+  const continuingOpenQuestion = baseConversationState.pendingQuestion !== "none";
+  const detectedIntent = detectIntent(input.message, baseConversationState);
+  let intent = continuingOpenQuestion && !["complaint", "human_request", "cancel_appointment", "reschedule_appointment"].includes(detectedIntent.intent)
+    ? { intent: baseConversationState.currentIntent || detectedIntent.intent, confidence: Math.max(baseConversationState.currentIntent ? 0.9 : 0, detectedIntent.confidence) }
     : detectedIntent;
   const model = configuredModel(settings);
   const conversationContext = await getConversationContext(input.conversationId).catch(() => null);
   const selectedVehicle = conversationContext?.selectedVehicle;
-  const knownVehicleData = {
-    ...previousConversationState.vehicleData,
-    ...(selectedVehicle?.vin ? { vin: selectedVehicle.vin } : {}),
-    ...(selectedVehicle?.label ? { label: selectedVehicle.label } : {}),
-    ...(selectedVehicle?.year ? { year: selectedVehicle.year } : {}),
-  };
-  const stateUpdate = updateConversationAgentState({
-    current: previousConversationState,
+  const knownVehicleDataFor = (state: ConversationAgentState) => ({
+    ...state.vehicleData,
+    ...(!clearsVehicleForNewScenario && selectedVehicle?.vin ? { vin: selectedVehicle.vin } : {}),
+    ...(!clearsVehicleForNewScenario && selectedVehicle?.label ? { label: selectedVehicle.label } : {}),
+    ...(!clearsVehicleForNewScenario && selectedVehicle?.year ? { year: selectedVehicle.year } : {}),
+  });
+  let stateUpdate = updateConversationAgentState({
+    current: baseConversationState,
     message: input.message,
     messageId: input.sourceMessageId,
     intent: intent.intent,
-    vehicleId: sessionRow.vehicleId,
-    vehicleData: knownVehicleData,
+    vehicleId: clearsVehicleForNewScenario ? null : sessionRow.vehicleId,
+    vehicleData: knownVehicleDataFor(baseConversationState),
   });
-  const bypassComplexClarification = intent.intent === "complaint" || intent.intent === "human_request" || dangerousTransmissionMessage(input.message);
-  const contextualAnswer = bypassComplexClarification || !stateUpdate.state.complexFluidRequest
+  let bypassComplexClarification = intent.intent === "complaint" || intent.intent === "human_request" || dangerousTransmissionMessage(input.message);
+  let contextualAnswer = bypassComplexClarification || !stateUpdate.state.complexFluidRequest
     ? null
     : await interpretOpenQuestion({ model, state: stateUpdate.state, history: conversationHistory });
+  if (!startsNewEngineOilScenario && contextualAnswer?.changedTopic) {
+    // The model saw a real topic switch in the full conversation. Replace the
+    // obsolete workflow before the primary agent receives its instructions.
+    clearsVehicleForNewScenario = hasVehicleIdentityInMessage(input.message);
+    baseConversationState = resetConversationWorkflowForNewRequest(previousConversationState, { clearVehicle: clearsVehicleForNewScenario });
+    intent = detectedIntent;
+    stateUpdate = updateConversationAgentState({
+      current: baseConversationState,
+      message: input.message,
+      messageId: input.sourceMessageId,
+      intent: intent.intent,
+      vehicleId: clearsVehicleForNewScenario ? null : sessionRow.vehicleId,
+      vehicleData: knownVehicleDataFor(baseConversationState),
+    });
+    contextualAnswer = null;
+    bypassComplexClarification = intent.intent === "complaint" || intent.intent === "human_request" || dangerousTransmissionMessage(input.message);
+  }
   const contextualReply = contextualWorkflowReply(stateUpdate.state, contextualAnswer);
   const stateAfterContext = applyContextualAnswer(stateUpdate.state, contextualAnswer, input.sourceMessageId);
   let complexWorkflow = bypassComplexClarification
@@ -1789,6 +1818,7 @@ async function stopActiveInboundWorker(input: InboundMessage) {
 }
 
 export async function triggerAgentForInboundMessage(input: InboundMessage) {
+  if (!isClientAIAgentEnabled()) return;
   const settings = await getAgentSettings(input.organizationId);
   const conversation = await prisma.messengerConversation.findFirst({ where: { id: input.conversationId, organizationId: input.organizationId }, select: { channel: true } });
   if (!settings.enabled || settings.mode === "off" || !conversation || !settings.channels.includes(conversation.channel) || !process.env.OPENAI_API_KEY?.trim()) return;

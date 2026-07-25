@@ -513,7 +513,7 @@ export default function MessengerIntegrationsClient() {
     const accountId = activeAccount?.id;
     const data = await postAction(
       "/api/messenger/telegram-user/sync",
-      { accountId, limit: 200 },
+      { accountId, limit: 200, force: true },
       "sync",
       "Не удалось синхронизировать Telegram."
     );

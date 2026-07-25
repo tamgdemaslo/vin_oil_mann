@@ -78,6 +78,23 @@ assert.deepEqual({ model: civic?.baseModel, generation: civic?.generation, year:
 assert.notEqual(civic?.baseModel, "E");
 assert.ok(evaluateMannCandidate(civic, row({ make: "HONDA", model: "Civic VII", vehicleYearFrom: 2000, vehicleYearTo: 2005 })).candidate);
 
+const bmwX1 = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "BMW", modelRaw: "X1(E84)", year: 2008 }));
+const bmwPdfQualifier = evaluateMannCandidate(bmwX1, row({
+  make: "BMW",
+  model: "X1(E84)",
+  vehicleText: "Exportmodellfür/Exportmodelfor(1005)",
+  engineCode: "China.Sonderausstattung:/Optionalextra:(1016)",
+  kw: "1",
+  vehicleYears: "CodeS1AKA",
+}));
+assert.ok(bmwPdfQualifier.rejected?.reasons.some((reason) => reason.includes("служебное условие PDF")));
+const bmwWrongBody = evaluateMannCandidate(bmwX1, row({
+  make: "BMW",
+  model: "X1(F48)",
+  vehicleText: "All models",
+}));
+assert.ok(bmwWrongBody.rejected?.reasons.some((reason) => reason.includes("код кузова")));
+
 const haval = normalizeDecodedVehicleForTest(vehicle({
   makeRaw: "HAVAL", modelRaw: "Jolion", generationRaw: "I", year: 2020,
   engineSeries: "GW4G15K", engineVolumeCc: 1497, powerHp: 143,
