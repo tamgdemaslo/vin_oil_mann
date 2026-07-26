@@ -121,7 +121,7 @@ export default function AIAssistantClient() {
     return () => window.clearInterval(timer);
   }, [activeThreadId, loadThread, working]);
 
-  useEffect(() => { messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [data?.messages.length, working]);
+  useEffect(() => { messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [data?.messages?.length, working]);
 
   const createThread = useCallback(async () => {
     setError(null);
@@ -200,6 +200,9 @@ export default function AIAssistantClient() {
   }, [activeThreadId, loadThread]);
 
   const sourceList = useMemo(() => data?.sources ?? [], [data?.sources]);
+  const messages = data?.messages ?? [];
+  const quotes = data?.quotes ?? [];
+  const toolCalls = data?.toolCalls ?? [];
 
   return (
     <main className="eco-page eco-page--wide eco-aiw-page">
@@ -229,10 +232,10 @@ export default function AIAssistantClient() {
           <div className="eco-aiw-messages">
             {loading && <div className="eco-aiw-loading"><LoaderCircle size={19} /> Загружаем рабочее пространство…</div>}
             {!loading && !activeThreadId && <div className="eco-aiw-welcome"><Bot size={28} /><h2>Задайте рабочий вопрос</h2><p>Помощник сам выберет нужные проверки, но сохранит их источники и журнал инструментов.</p></div>}
-            {!loading && activeThreadId && !data?.messages.length && <div className="eco-aiw-welcome"><FileSearch size={28} /><h2>Новый внутренний диалог</h2><p>Например, найдите клиентскую историю, проверьте артикул, определите автомобиль или соберите предварительный расчёт.</p><div className="eco-aiw-starters">{starterPrompts.map((item) => <button key={item} type="button" onClick={() => setDraft(item)}>{item}<ChevronRight size={15} /></button>)}</div></div>}
-            {data?.messages.map((message) => {
+            {!loading && activeThreadId && messages.length === 0 && <div className="eco-aiw-welcome"><FileSearch size={28} /><h2>Новый внутренний диалог</h2><p>Например, найдите клиентскую историю, проверьте артикул, определите автомобиль или соберите предварительный расчёт.</p><div className="eco-aiw-starters">{starterPrompts.map((item) => <button key={item} type="button" onClick={() => setDraft(item)}>{item}<ChevronRight size={15} /></button>)}</div></div>}
+            {messages.map((message) => {
               const quoteIds = quoteIdsForMessage(message);
-              const linkedQuotes = quoteIds.map((id) => data.quotes.find((quote) => quote.id === id)).filter((quote): quote is Quote => Boolean(quote));
+              const linkedQuotes = quoteIds.map((id) => quotes.find((quote) => quote.id === id)).filter((quote): quote is Quote => Boolean(quote));
               const isClientMessage = attachmentKind(message) === "client_message" && Boolean(clientQuoteId(message));
               const isMissingQuote = attachmentKind(message) === "missing_quote";
               return <article key={message.id} className={`eco-aiw-message is-${message.role}`}>
@@ -264,7 +267,7 @@ export default function AIAssistantClient() {
 
         <aside className="eco-aiw-evidence">
           <section><div className="eco-aiw-evidence__title"><Wrench size={16} /><strong>Trace исследования</strong></div>{data?.latestRun ? <div className={`eco-aiw-run is-${data.latestRun.status}`}><strong>{runLabel(data.latestRun)}</strong><span>{data.latestRun.model} · reasoning {data.latestRun.reasoning}</span>{data.latestRun.durationMs != null && <small>{(data.latestRun.durationMs / 1000).toFixed(1)} с</small>}{data.latestRun.errorMessage && <em>{data.latestRun.errorMessage}</em>}</div> : <p className="eco-aiw-side-empty">Запусков пока нет.</p>}
-            <div className="eco-aiw-tool-list">{data?.toolCalls.map((call) => <details key={call.id}><summary><span className={`eco-aiw-tool-dot is-${call.status}`} />{toolLabel(call.toolName)}<small>{call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)} с` : call.status}</small></summary>{call.errorMessage ? <p className="eco-aiw-tool-error">{call.errorMessage}</p> : call.resultSummary ? <pre>{JSON.stringify(call.resultSummary, null, 2)}</pre> : null}</details>)}</div>
+            <div className="eco-aiw-tool-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`eco-aiw-tool-dot is-${call.status}`} />{toolLabel(call.toolName)}<small>{call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)} с` : call.status}</small></summary>{call.errorMessage ? <p className="eco-aiw-tool-error">{call.errorMessage}</p> : call.resultSummary ? <pre>{JSON.stringify(call.resultSummary, null, 2)}</pre> : null}</details>)}</div>
           </section>
           <section><div className="eco-aiw-evidence__title"><ExternalLink size={16} /><strong>Источники</strong><span>{sourceList.length}</span></div>{sourceList.length ? <div className="eco-aiw-source-list">{sourceList.map((source) => <div key={source.id} className="eco-aiw-source"><span>{source.sourceType === "web" ? "WEB" : source.sourceType.toUpperCase()}</span><div><strong>{source.title || "Источник"}</strong>{source.excerpt && <small>{source.excerpt}</small>}{source.url && <a href={source.url} target="_blank" rel="noreferrer">Открыть <ExternalLink size={12} /></a>}</div></div>)}</div> : <p className="eco-aiw-side-empty">Источники появятся после поиска или проверки.</p>}</section>
           <p className="eco-aiw-audit-note">Журнал показывает результаты проверок и ссылки, но не раскрывает внутренние рассуждения модели.</p>

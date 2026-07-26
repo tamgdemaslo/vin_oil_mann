@@ -192,7 +192,11 @@ function historyInput(messages: Array<{ role: string; content: string }>) {
 }
 
 function previousResponseError(error: unknown) {
-  return /previous_response_id|not found|expired|reasoning/i.test(error instanceof Error ? error.message : String(error));
+  return /previous_response_id|not found|expired|reasoning|no tool output found for function call/i.test(error instanceof Error ? error.message : String(error));
+}
+
+function functionCalls(response: any) {
+  return (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "function_call");
 }
 
 async function createInitialResponse(client: OpenAI, args: { lastResponseId: string | null; message: string; history: Array<{ role: string; content: string }>; instructions: string; model: string; reasoning: string }) {
@@ -378,7 +382,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     responses.push(response);
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
       if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
-      const calls = (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "function_call");
+      const calls = functionCalls(response);
       if (!calls.length) break;
       const outputs: Array<Record<string, unknown>> = [];
       for (const call of calls) {
@@ -386,6 +390,8 @@ export async function runAssistantThread(input: { threadId: string; organization
         let argumentsValue: unknown = {};
         try { argumentsValue = JSON.parse(text(call.arguments, 10_000) || "{}"); } catch { argumentsValue = {}; }
         const toolName = text(call.name, 120);
+        const callId = text(call.call_id, 240);
+        if (!callId) throw new Error(`OpenAI вернул вызов инструмента «${toolName || "без имени"}» без call_id`);
         const audit = await prisma.aIAssistantToolCall.create({ data: { runId: run.id, organizationId: input.organizationId, toolName, argumentsJson: json(mask(argumentsValue)) } });
         const toolStartedAt = Date.now();
         try {
@@ -407,17 +413,18 @@ export async function runAssistantThread(input: { threadId: string; organization
           const summary = mask(resultForModel) as Prisma.InputJsonValue;
           await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: summary, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
           toolSummaries.push({ toolName, status: "completed", durationMs: Date.now() - toolStartedAt, result: summary });
-          outputs.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(resultForModel) });
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(resultForModel) });
         } catch (error) {
           const errorMessage = text(error instanceof Error ? error.message : String(error), 800) || "Инструмент недоступен";
           await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
           toolSummaries.push({ toolName, status: "failed", error: errorMessage });
-          outputs.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ error: errorMessage }) });
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage }) });
         }
       }
       response = await continueResponse(client, { previousResponseId: response.id, outputs, instructions, model: config.model, reasoning: config.reasoning });
       responses.push(response);
     }
+    if (functionCalls(response).length) throw new Error("ИИ-помощник превысил лимит шагов инструментов; незавершённый ответ не будет использован в следующем запросе");
     if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
     const answer = outputText(response) || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";
     const citations = responses.flatMap(citationsFromResponse).filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
