@@ -26,6 +26,9 @@ function text(value: unknown, max = 12_000) {
 function publicRunError(error: unknown) {
   const message = text(error instanceof Error ? error.message : String(error), 1_200);
   if (/connection error|fetch failed|econnrefused|enotfound|network/i.test(message)) {
+    if (process.env.OPENAI_PROXY_URL?.trim()) {
+      return "Не удалось подключиться к OpenAI через защищённый прокси сервера. Проверьте состояние WireGuard-подключения на Selectel и повторите попытку после его восстановления.";
+    }
     return "Не удалось подключиться к OpenAI. Проверьте исходящее HTTPS-подключение сервера и доступность API; повторите попытку после восстановления соединения.";
   }
   if (/timeout|timed out/i.test(message)) {
@@ -350,7 +353,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     throw new Error(error);
   }
   const history = await prisma.aIAssistantMessage.findMany({ where: { threadId: thread.id, organizationId: input.organizationId }, orderBy: { createdAt: "asc" }, select: { role: true, content: true } });
-  const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim(), { timeout: config.timeoutMs, maxRetries: 1 });
+  const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim(), { timeout: config.timeoutMs, maxRetries: 0 });
   const instructions = workspacePrompt(input.actor, input.organizationId);
   const toolSources: AssistantToolSource[] = [];
   const toolSummaries: Array<Record<string, unknown>> = [];

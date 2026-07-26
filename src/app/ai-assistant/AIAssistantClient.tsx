@@ -11,6 +11,7 @@ type Run = { id: string; status: string; model: string; reasoning: string; error
 type Source = { id: string; sourceType: string; title: string | null; url: string | null; excerpt: string | null; createdAt: string };
 type ToolCall = { id: string; toolName: string; status: string; errorMessage: string | null; durationMs: number | null; resultSummary: unknown; startedAt: string };
 type ThreadData = { thread: Thread | null; messages: Message[]; latestRun: Run; sources: Source[]; toolCalls: ToolCall[]; quotes: Quote[] };
+type OpenAIConnectionCheck = { ok: boolean; proxyConfigured: boolean; status?: number; timeoutMs: number; error?: string };
 
 const starterPrompts = [
   "Сделай расчёт замены масла в АКПП по VIN и подготовь текст клиенту",
@@ -82,6 +83,8 @@ export default function AIAssistantClient() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientPreview, setClientPreview] = useState<string | null>(null);
+  const [connectionCheck, setConnectionCheck] = useState<OpenAIConnectionCheck | null>(null);
+  const [checkingConnection, setCheckingConnection] = useState(false);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
   const loadThreads = useCallback(async () => {
@@ -199,6 +202,21 @@ export default function AIAssistantClient() {
     } catch { setError("Не удалось остановить текущую проверку"); }
   }, [activeThreadId, loadThread]);
 
+  const checkOpenAIConnection = useCallback(async () => {
+    setCheckingConnection(true);
+    setConnectionCheck(null);
+    try {
+      const response = await fetch("/api/ai-assistant/network-check", { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as OpenAIConnectionCheck | null;
+      if (!response.ok || !payload) throw new Error("Не удалось проверить соединение");
+      setConnectionCheck(payload);
+    } catch (reason) {
+      setConnectionCheck({ ok: false, proxyConfigured: false, timeoutMs: 8_000, error: reason instanceof Error ? reason.message : "Не удалось проверить соединение" });
+    } finally {
+      setCheckingConnection(false);
+    }
+  }, []);
+
   const sourceList = useMemo(() => data?.sources ?? [], [data?.sources]);
   const messages = data?.messages ?? [];
   const quotes = data?.quotes ?? [];
@@ -267,6 +285,7 @@ export default function AIAssistantClient() {
 
         <aside className="eco-aiw-evidence">
           <section><div className="eco-aiw-evidence__title"><Wrench size={16} /><strong>Trace исследования</strong></div>{data?.latestRun ? <div className={`eco-aiw-run is-${data.latestRun.status}`}><strong>{runLabel(data.latestRun)}</strong><span>{data.latestRun.model} · reasoning {data.latestRun.reasoning}</span>{data.latestRun.durationMs != null && <small>{(data.latestRun.durationMs / 1000).toFixed(1)} с</small>}{data.latestRun.errorMessage && <em>{data.latestRun.errorMessage}</em>}</div> : <p className="eco-aiw-side-empty">Запусков пока нет.</p>}
+            <div className="eco-aiw-connection-check"><button type="button" onClick={() => void checkOpenAIConnection()} disabled={checkingConnection}>{checkingConnection ? <LoaderCircle size={14} /> : <Wrench size={14} />}{checkingConnection ? "Проверяем маршрут…" : "Проверить соединение OpenAI"}</button>{connectionCheck && <p className={connectionCheck.ok ? "is-ok" : "is-error"}>{connectionCheck.ok ? `HTTPS-маршрут ${connectionCheck.proxyConfigured ? "через WireGuard-прокси " : ""}доступен (HTTP ${connectionCheck.status}).` : connectionCheck.error}</p>}</div>
             <div className="eco-aiw-tool-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`eco-aiw-tool-dot is-${call.status}`} />{toolLabel(call.toolName)}<small>{call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)} с` : call.status}</small></summary>{call.errorMessage ? <p className="eco-aiw-tool-error">{call.errorMessage}</p> : call.resultSummary ? <pre>{JSON.stringify(call.resultSummary, null, 2)}</pre> : null}</details>)}</div>
           </section>
           <section><div className="eco-aiw-evidence__title"><ExternalLink size={16} /><strong>Источники</strong><span>{sourceList.length}</span></div>{sourceList.length ? <div className="eco-aiw-source-list">{sourceList.map((source) => <div key={source.id} className="eco-aiw-source"><span>{source.sourceType === "web" ? "WEB" : source.sourceType.toUpperCase()}</span><div><strong>{source.title || "Источник"}</strong>{source.excerpt && <small>{source.excerpt}</small>}{source.url && <a href={source.url} target="_blank" rel="noreferrer">Открыть <ExternalLink size={12} /></a>}</div></div>)}</div> : <p className="eco-aiw-side-empty">Источники появятся после поиска или проверки.</p>}</section>
