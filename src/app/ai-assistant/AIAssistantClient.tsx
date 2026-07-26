@@ -7,7 +7,7 @@ type Thread = { id: string; title: string; createdById: string; lastMessageAt: s
 type Message = { id: string; role: "user" | "assistant"; content: string; citationsJson: Citation[]; attachmentsJson: unknown; createdAt: string; runId: string | null };
 type Citation = { title: string | null; url: string };
 type Quote = { id: string; status: string; vehicleDisplayName: string | null; serviceName: string | null; selectedScenario: string | null; appliedRuleId: string | null; appliedRuleSnapshotJson: unknown; includedItemsJson: unknown; optionalItemsJson: unknown; baseTotalCents: number; maximumTotalCents: number | null; assumptionsJson: unknown; internalWarningsJson: unknown; customerSafeWarningsJson: unknown; validUntil: string | null; isSelected: boolean; createdAt: string };
-type Run = { id: string; status: string; model: string; reasoning: string; errorMessage: string | null; durationMs: number | null; startedAt: string; completedAt: string | null; cancelledAt: string | null } | null;
+type Run = { id: string; status: string; model: string; reasoning: string; errorMessage: string | null; inputTokens: number | null; outputTokens: number | null; durationMs: number | null; startedAt: string; completedAt: string | null; cancelledAt: string | null } | null;
 type Source = { id: string; sourceType: string; title: string | null; url: string | null; excerpt: string | null; createdAt: string };
 type ToolCall = { id: string; toolName: string; status: string; errorMessage: string | null; durationMs: number | null; resultSummary: unknown; startedAt: string };
 type ThreadData = { thread: Thread | null; messages: Message[]; latestRun: Run; sources: Source[]; toolCalls: ToolCall[]; quotes: Quote[] };
@@ -72,6 +72,10 @@ function clientQuoteId(message: Message) {
 
 function formatQuotePrice(cents: number) {
   return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.round(cents / 100 / 100) * 100)} ₽`;
+}
+
+function formatTokens(value: number) {
+  return new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 export default function AIAssistantClient() {
@@ -284,7 +288,7 @@ export default function AIAssistantClient() {
         </section>
 
         <aside className="eco-aiw-evidence">
-          <section><div className="eco-aiw-evidence__title"><Wrench size={16} /><strong>Trace исследования</strong></div>{data?.latestRun ? <div className={`eco-aiw-run is-${data.latestRun.status}`}><strong>{runLabel(data.latestRun)}</strong><span>{data.latestRun.model} · reasoning {data.latestRun.reasoning}</span>{data.latestRun.durationMs != null && <small>{(data.latestRun.durationMs / 1000).toFixed(1)} с</small>}{data.latestRun.errorMessage && <em>{data.latestRun.errorMessage}</em>}</div> : <p className="eco-aiw-side-empty">Запусков пока нет.</p>}
+          <section><div className="eco-aiw-evidence__title"><Wrench size={16} /><strong>Trace исследования</strong></div>{data?.latestRun ? <div className={`eco-aiw-run is-${data.latestRun.status}`}><strong>{runLabel(data.latestRun)}</strong><span>{data.latestRun.model} · reasoning {data.latestRun.reasoning}</span>{data.latestRun.durationMs != null && <small>{(data.latestRun.durationMs / 1000).toFixed(1)} с</small>}{data.latestRun.inputTokens != null || data.latestRun.outputTokens != null ? <small>Токены: {formatTokens(data.latestRun.inputTokens ?? 0)} вход · {formatTokens(data.latestRun.outputTokens ?? 0)} выход</small> : null}{data.latestRun.errorMessage && <em>{data.latestRun.errorMessage}</em>}</div> : <p className="eco-aiw-side-empty">Запусков пока нет.</p>}
             <div className="eco-aiw-connection-check"><button type="button" onClick={() => void checkOpenAIConnection()} disabled={checkingConnection}>{checkingConnection ? <LoaderCircle size={14} /> : <Wrench size={14} />}{checkingConnection ? "Проверяем маршрут…" : "Проверить соединение OpenAI"}</button>{connectionCheck && <p className={connectionCheck.ok ? "is-ok" : "is-error"}>{connectionCheck.ok ? `HTTPS-маршрут ${connectionCheck.proxyConfigured ? "через WireGuard-прокси " : ""}доступен (HTTP ${connectionCheck.status}).` : connectionCheck.error}</p>}</div>
             <div className="eco-aiw-tool-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`eco-aiw-tool-dot is-${call.status}`} />{toolLabel(call.toolName)}<small>{call.durationMs != null ? `${(call.durationMs / 1000).toFixed(1)} с` : call.status}</small></summary>{call.errorMessage ? <p className="eco-aiw-tool-error">{call.errorMessage}</p> : call.resultSummary ? <pre>{JSON.stringify(call.resultSummary, null, 2)}</pre> : null}</details>)}</div>
           </section>

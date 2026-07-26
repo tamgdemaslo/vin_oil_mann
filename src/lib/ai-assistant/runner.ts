@@ -8,7 +8,9 @@ import { assistantFunctionTools, executeAssistantTool, safeAssistantJson, type A
 import { createOpenAIClient } from "@/lib/openai-client";
 
 const MAX_MESSAGE_CHARS = 12_000;
-const MAX_TOOL_TURNS = 12;
+// Six turns preserve room for independent catalogue, MANN, ROSSKO and quote checks
+// while preventing a single request from repeatedly re-running the same evidence.
+const MAX_TOOL_TURNS = 6;
 const TECHNICAL_REQUEST_RE = /(акпп|автоматическ\S*\s*(?:короб|трансмисс)|вариатор|\bcvt\b|\bdsg\b|мкпп|механическ\S*\s*(?:короб|трансмисс)|редуктор|раздатк|haldex|халдекс|трансмиссион\S*|\batf\b|двигател\S*|моторн\S*\s*масл|масл\S*\s*(?:двигател|мотор|короб|акпп|трансмисс)|поддон|гидроблок|допуск|вязкост|объ[её]м|фильтр|сервисн\S*\s*комплект|\boem\b|оригинальн\S*\s*номер|техническ\S*\s*(?:подбор|расч))/i;
 type AssistantActor = { id: string; name: string; role: string };
 type Citation = { title: string | null; url: string; startIndex?: number | null; endIndex?: number | null };
@@ -245,7 +247,9 @@ async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string
       instructions: input.instructions,
       reasoning: { effort: input.reasoning },
       text: { verbosity: "high" },
-      tools: [{ type: "web_search", search_context_size: "high", return_token_budget: "unlimited" }],
+      // The default return budget is sufficient for a service estimate. Unlimited
+      // research is reserved for a deliberately separate, high-effort workflow.
+      tools: [{ type: "web_search", search_context_size: "high" }],
       tool_choice: "required",
       include: ["web_search_call.action.sources"],
       store: true,
@@ -321,7 +325,7 @@ export async function getAssistantThread(threadId: string, organizationId: strin
   const [thread, messages, latestRun, sources, toolCalls, quotes] = await Promise.all([
     prisma.aIAssistantThread.findFirst({ where: { id: threadId, organizationId }, select: { id: true, title: true, createdById: true, status: true, lastMessageAt: true, createdAt: true, updatedAt: true } }),
     prisma.aIAssistantMessage.findMany({ where: { threadId, organizationId }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, role: true, content: true, citationsJson: true, attachmentsJson: true, runId: true, createdById: true, createdAt: true } }),
-    prisma.aIAssistantRun.findFirst({ where: { threadId, organizationId }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, model: true, reasoning: true, errorMessage: true, durationMs: true, startedAt: true, completedAt: true, cancelledAt: true, toolSummaryJson: true } }),
+    prisma.aIAssistantRun.findFirst({ where: { threadId, organizationId }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, model: true, reasoning: true, errorMessage: true, inputTokens: true, outputTokens: true, durationMs: true, startedAt: true, completedAt: true, cancelledAt: true, toolSummaryJson: true } }),
     prisma.aIAssistantSource.findMany({ where: { run: { threadId, organizationId } }, orderBy: { createdAt: "desc" }, take: 80, select: { id: true, messageId: true, sourceType: true, title: true, url: true, excerpt: true, metadataJson: true, createdAt: true } }),
     prisma.aIAssistantToolCall.findMany({ where: { run: { threadId, organizationId } }, orderBy: { startedAt: "desc" }, take: 40, select: { id: true, runId: true, toolName: true, status: true, argumentsJson: true, resultSummary: true, errorMessage: true, durationMs: true, startedAt: true, completedAt: true } }),
     prisma.aIAssistantQuote.findMany({ where: { threadId, organizationId }, orderBy: [{ isSelected: "desc" }, { createdAt: "desc" }], take: 12, select: { id: true, status: true, vehicleDisplayName: true, serviceName: true, selectedScenario: true, appliedRuleId: true, appliedRuleSnapshotJson: true, includedItemsJson: true, optionalItemsJson: true, baseTotalCents: true, maximumTotalCents: true, assumptionsJson: true, internalWarningsJson: true, customerSafeWarningsJson: true, validUntil: true, isSelected: true, createdAt: true } }),
