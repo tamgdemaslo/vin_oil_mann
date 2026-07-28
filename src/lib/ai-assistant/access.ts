@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getMessengerOrganizationIdForUser } from "@/lib/messenger/messenger-tenant";
+import { branchErrorResponse, requireBranchContext } from "@/lib/branch-context";
 
 /** The first release is deliberately employee-only. */
 export async function requireAIAssistantAccess() {
@@ -9,11 +9,19 @@ export async function requireAIAssistantAccess() {
   if (session.user.role !== "owner" && session.user.role !== "admin") {
     return { response: NextResponse.json({ error: "ИИ-помощник доступен владельцу и администраторам" }, { status: 403 }) } as const;
   }
-  return {
-    session,
-    organizationId: getMessengerOrganizationIdForUser(session.user),
-    actorId: session.user.login,
-  } as const;
+  try {
+    const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+    return {
+      session,
+      branchId: branch.branchId!,
+      branchName: branch.branch?.shortName ?? "Филиал",
+      organizationId: branch.organizationId!,
+      actorId: session.user.login,
+    } as const;
+  } catch (error) {
+    const result = branchErrorResponse(error);
+    return { response: NextResponse.json({ error: result.error, code: result.code }, { status: result.status }) } as const;
+  }
 }
 
 export function aiAssistantApiError(error: unknown) {

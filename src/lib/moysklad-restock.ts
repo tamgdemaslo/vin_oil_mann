@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { toServiceDateInput } from "@/lib/date-time";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export type RestockCatalogEntry = {
   id: string;
@@ -153,23 +154,25 @@ export async function fetchProductCatalog(): Promise<RestockCatalog> {
   return idx;
 }
 
-let catalogCache: { at: number; map: RestockCatalog } | null = null;
+const catalogCacheByBranch = new Map<string, { at: number; map: RestockCatalog }>();
 const CATALOG_TTL_MS = Math.max(30_000, parseInt(process.env.RESTOCK_CATALOG_CACHE_MS ?? "120000", 10) || 120_000);
 
 export function clearRestockCatalogCache(): void {
-  catalogCache = null;
+  catalogCacheByBranch.delete(getScopedBranchId());
 }
 
 export async function getProductCatalogCached(refresh: boolean): Promise<RestockCatalog> {
   if (refresh) {
     clearRestockCatalogCache();
   }
+  const branchId = getScopedBranchId();
+  const catalogCache = catalogCacheByBranch.get(branchId);
   const now = Date.now();
   if (catalogCache && now - catalogCache.at < CATALOG_TTL_MS) {
     return catalogCache.map;
   }
   const map = await fetchProductCatalog();
-  catalogCache = { at: Date.now(), map };
+  catalogCacheByBranch.set(branchId, { at: Date.now(), map });
   return map;
 }
 

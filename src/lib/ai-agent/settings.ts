@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { AI_SERVICE_TYPES, type AIAgentMode, type AIAgentSettings, type AIAgentTimeoutRules, type AICalculationRules, type AIHandoffRules, type AIRosskoMarkupRule } from "./types";
 
 export const DEFAULT_CALCULATION_RULES: AICalculationRules = {
@@ -163,7 +164,7 @@ export function normalizeAgentSettings(row: Awaited<ReturnType<typeof prisma.aIA
 
 export async function getAgentSettings(organizationId: string) {
   const row = await prisma.aIAgentSetting.upsert({
-    where: { organizationId },
+    where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId } },
     update: {},
     create: { organizationId },
   });

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 const LEGACY_MANN_EXPECTED_COUNTS = {
   applicationRows: 24502,
@@ -1031,6 +1032,7 @@ export async function matchMannArticlesToLocalProducts(params: {
   organizationId?: string | null;
   warehouseId?: string | null;
 }): Promise<MannArticleMatchResult[]> {
+  const { branchId } = requireSingleBranchSqlContext();
   const inputArticles = params.mannArticles
     .map((item): MatchInputArticle => typeof item === "string" ? { mannArticle: item } : item)
     .filter((item) => item.mannArticle?.trim());
@@ -1043,7 +1045,7 @@ export async function matchMannArticlesToLocalProducts(params: {
   if (normalizedArticles.length === 0) return [];
 
   const store = params.warehouseId
-    ? await prisma.localStore.findFirst({ where: { OR: [{ id: params.warehouseId }, { moyskladId: params.warehouseId }] }, select: { id: true } })
+    ? await prisma.localStore.findFirst({ where: { branchId, OR: [{ id: params.warehouseId }, { moyskladId: params.warehouseId }] }, select: { id: true } })
     : null;
   const stockInclude = { where: store?.id ? { storeId: store.id } : undefined, take: store?.id ? 1 : 5 };
 
@@ -1055,7 +1057,8 @@ export async function matchMannArticlesToLocalProducts(params: {
       ? await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id
           FROM local_products
-          WHERE archived = false
+          WHERE branch_id = ${branchId}
+            AND archived = false
             AND entity_type <> 'service'
             AND (
               regexp_replace(upper(COALESCE(oem_parts, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}

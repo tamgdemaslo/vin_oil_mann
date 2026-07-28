@@ -20,6 +20,7 @@ type DemandListData = {
 };
 
 type DemandListParams = {
+  branchId: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -38,6 +39,7 @@ function cacheKey(params: Required<DemandListParams>): string {
 
 function normalizeParams(params: DemandListParams): Required<DemandListParams> {
   return {
+    branchId: params.branchId,
     search: params.search?.trim() ?? "",
     limit: Math.min(100, Math.max(1, params.limit ?? 50)),
     offset: Math.max(0, params.offset ?? 0),

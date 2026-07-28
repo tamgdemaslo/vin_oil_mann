@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processClientCaseDeadlineNotifications } from "@/lib/crm-deadline-notifications";
+import { runForActiveBranches } from "@/lib/branch-workers";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,8 @@ export async function GET(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Недостаточно прав" }, { status: 401 });
   }
-  const result = await processClientCaseDeadlineNotifications();
-  return NextResponse.json({ ok: true, ...result });
+  const branches = await runForActiveBranches(() => processClientCaseDeadlineNotifications());
+  return NextResponse.json({ ok: branches.every((branch) => branch.ok), branches });
 }
 
 export async function POST(request: Request) {

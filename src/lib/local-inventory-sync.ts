@@ -6,6 +6,7 @@ import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-f
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   listRawPhonesFromCounterparty,
   normalizePhoneKey,
@@ -180,8 +181,12 @@ function buildIdMap<T extends { id: string; moyskladId: string | null }>(rows: T
   return new Map(rows.flatMap((row) => (row.moyskladId ? [[row.moyskladId, row.id] as const] : [])));
 }
 
-let activeSyncPromise: Promise<LocalInventorySyncStatus> | null = null;
-let runtimeStatus: LocalInventorySyncStatus = createDefaultStatus();
+type BranchSyncRuntime = {
+  activePromise: Promise<LocalInventorySyncStatus> | null;
+  status: LocalInventorySyncStatus;
+};
+
+const branchSyncRuntime = new Map<string, BranchSyncRuntime>();
 
 function createDefaultStatus(): LocalInventorySyncStatus {
   return {
@@ -201,11 +206,21 @@ function createDefaultStatus(): LocalInventorySyncStatus {
   };
 }
 
+function getBranchSyncRuntime(branchId = getScopedBranchId()): BranchSyncRuntime {
+  const existing = branchSyncRuntime.get(branchId);
+  if (existing) return existing;
+  const created = { activePromise: null, status: createDefaultStatus() };
+  branchSyncRuntime.set(branchId, created);
+  return created;
+}
+
 function setStatus(patch: Partial<LocalInventorySyncStatus>) {
-  runtimeStatus = { ...runtimeStatus, ...patch };
+  const runtime = getBranchSyncRuntime();
+  runtime.status = { ...runtime.status, ...patch };
 }
 
 function countersFromStatus(): SyncCounters {
+  const runtimeStatus = getBranchSyncRuntime().status;
   return {
     productsSynced: runtimeStatus.productsSynced,
     servicesSynced: runtimeStatus.servicesSynced,
@@ -217,9 +232,10 @@ function countersFromStatus(): SyncCounters {
 }
 
 function mapStateRowToStatus(
-  row: Awaited<ReturnType<typeof prisma.localInventorySyncState.findUnique>>
+  row: Awaited<ReturnType<typeof prisma.localInventorySyncState.findUnique>>,
+  runtime: BranchSyncRuntime
 ): LocalInventorySyncStatus {
-  if (!row) return activeSyncPromise ? { ...runtimeStatus } : createDefaultStatus();
+  if (!row) return runtime.activePromise ? { ...runtime.status } : createDefaultStatus();
   const phase = (
     ["idle", "stores", "products", "counterparties", "stock", "demands", "done", "error"] as const
   ).includes(row.syncPhase as LocalInventorySyncPhase)
@@ -243,10 +259,13 @@ function mapStateRowToStatus(
 }
 
 async function persistStatus(params?: { lastSyncedAt?: Date | null; lastError?: string | null }) {
+  const branchId = getScopedBranchId();
+  const runtimeStatus = getBranchSyncRuntime(branchId).status;
   const counters = countersFromStatus();
   await prisma.localInventorySyncState.upsert({
-    where: { id: SYNC_STATE_ID },
+    where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
     create: {
+      branchId,
       id: SYNC_STATE_ID,
       lastSyncedAt: params?.lastSyncedAt ?? null,
       lastError: params?.lastError ?? null,
@@ -458,7 +477,7 @@ async function syncStores(limit?: number | null): Promise<number> {
     };
     await withDbRetry(() =>
       prisma.localStore.upsert({
-        where: { moyskladId: row.id },
+        where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: row.id } },
         create: { moyskladId: row.id, ...payload },
         update: payload,
       })
@@ -596,7 +615,7 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
       };
       await withDbRetry(() =>
         prisma.localProduct.upsert({
-          where: { moyskladId: row.id },
+          where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: row.id } },
           create: { moyskladId: row.id, ...payload },
           update: payload,
         })
@@ -706,7 +725,7 @@ async function syncCounterparties(limit?: number | null): Promise<number> {
     };
     await withDbRetry(() =>
       prisma.localCounterparty.upsert({
-        where: { moyskladId: row.id },
+        where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: row.id } },
         create: { moyskladId: row.id, ...payload },
         update: payload,
       })
@@ -801,10 +820,10 @@ async function upsertDemand(row: DemandListRow, cache?: DemandLookupCache): Prom
     ? await withDbRetry(() =>
         Promise.all([
           agentMoyskladId
-            ? prisma.localCounterparty.findUnique({ where: { moyskladId: agentMoyskladId }, select: { id: true } })
+            ? prisma.localCounterparty.findUnique({ where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: agentMoyskladId } }, select: { id: true } })
             : Promise.resolve(null),
           storeMoyskladId
-            ? prisma.localStore.findUnique({ where: { moyskladId: storeMoyskladId }, select: { id: true } })
+            ? prisma.localStore.findUnique({ where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: storeMoyskladId } }, select: { id: true } })
             : Promise.resolve(null),
         ])
       )
@@ -832,7 +851,7 @@ async function upsertDemand(row: DemandListRow, cache?: DemandLookupCache): Prom
 
   const demand = await withDbRetry(() =>
     prisma.localDemand.upsert({
-      where: { moyskladId: row.id },
+      where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: row.id } },
       create: { moyskladId: row.id, ...payload },
       update: payload,
       select: { id: true },
@@ -943,47 +962,53 @@ async function syncDemands(options: { limit?: number | null; full?: boolean }): 
 }
 
 export async function getLocalInventorySyncStatus(): Promise<LocalInventorySyncStatus> {
-  if (activeSyncPromise) return { ...runtimeStatus };
-  const row = await prisma.localInventorySyncState.findUnique({ where: { id: SYNC_STATE_ID } });
-  return mapStateRowToStatus(row);
+  const branchId = getScopedBranchId();
+  const runtime = getBranchSyncRuntime(branchId);
+  if (runtime.activePromise) return { ...runtime.status };
+  const row = await prisma.localInventorySyncState.findUnique({ where: { branchId_id: { branchId, id: SYNC_STATE_ID } } });
+  return mapStateRowToStatus(row, runtime);
 }
 
 export async function startLocalInventorySync(
   options: LocalInventorySyncOptions = {}
 ): Promise<{ started: boolean; status: LocalInventorySyncStatus }> {
-  if (activeSyncPromise) {
-    return { started: false, status: { ...runtimeStatus } };
+  const branchId = getScopedBranchId();
+  const runtime = getBranchSyncRuntime(branchId);
+  if (runtime.activePromise) {
+    return { started: false, status: { ...runtime.status } };
   }
 
-  activeSyncPromise = runLocalInventorySync(options).finally(() => {
-    activeSyncPromise = null;
+  runtime.activePromise = runLocalInventorySync(options).finally(() => {
+    getBranchSyncRuntime(branchId).activePromise = null;
   });
 
-  return { started: true, status: { ...runtimeStatus } };
+  return { started: true, status: { ...runtime.status } };
 }
 
 export async function waitForLocalInventorySync(): Promise<LocalInventorySyncStatus> {
-  return activeSyncPromise ? activeSyncPromise : getLocalInventorySyncStatus();
+  const runtime = getBranchSyncRuntime();
+  return runtime.activePromise ?? getLocalInventorySyncStatus();
 }
 
 async function runLocalInventorySync(options: LocalInventorySyncOptions): Promise<LocalInventorySyncStatus> {
+  const runtime = getBranchSyncRuntime();
   if (!isMoySkladSyncEnabled()) {
     const error = moyskladDisabledMessage("sync");
     setStatus({ ...createDefaultStatus(), phase: "error", error, message: error });
     await persistStatus({ lastError: error });
-    return { ...runtimeStatus };
+    return { ...runtime.status };
   }
 
-  if (!getMoySkladHeaders()) {
+  if (!(await getMoySkladHeaders())) {
     const error = "МойСклад не настроен: нужны MOYSKLAD_TOKEN или MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD";
     setStatus({ ...createDefaultStatus(), phase: "error", error, message: error });
     await persistStatus({ lastError: error });
-    return { ...runtimeStatus };
+    return { ...runtime.status };
   }
 
   const startedAt = new Date();
   const fullDemands = Boolean(options.fullDemands);
-  runtimeStatus = {
+  runtime.status = {
     ...createDefaultStatus(),
     isRunning: true,
     mode: fullDemands ? "full" : "snapshot",
@@ -1042,7 +1067,7 @@ async function runLocalInventorySync(options: LocalInventorySyncOptions): Promis
       error: null,
     });
     await persistStatus({ lastSyncedAt: new Date(), lastError: null });
-    return { ...runtimeStatus };
+    return { ...runtime.status };
   } catch (e) {
     const error = e instanceof Error ? e.message : "Ошибка импорта локального складского зеркала";
     setStatus({
@@ -1053,6 +1078,6 @@ async function runLocalInventorySync(options: LocalInventorySyncOptions): Promis
       error,
     });
     await persistStatus({ lastError: error });
-    return { ...runtimeStatus };
+    return { ...runtime.status };
   }
 }

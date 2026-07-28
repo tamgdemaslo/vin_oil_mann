@@ -4,6 +4,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { aiAgentApiError, requireAIAgentAccess } from "@/lib/ai-agent/access";
 import { getAgentSettings, settingsToPublicJson } from "@/lib/ai-agent/settings";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { isBranchIntegrationConfigured } from "@/lib/branch-integration-credentials";
 
 const moneyRule = z.number().int().min(0).max(100_000_000);
 const settingsSchema = z.object({
@@ -88,7 +90,18 @@ export async function GET() {
   if ("response" in access) return access.response;
   try {
     const settings = await getAgentSettings(access.organizationId);
-    return NextResponse.json({ settings: settingsToPublicJson(settings), environment: { openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()), yclientsConfigured: Boolean(process.env.YCLIENTS_PARTNER_TOKEN?.trim() && process.env.YCLIENTS_AI_SERVICE_ID?.trim() && process.env.YCLIENTS_AI_STAFF_ID?.trim()), rosskoConfigured: Boolean(process.env.ROSSKO_KEY1?.trim() && process.env.ROSSKO_KEY2?.trim()) } });
+    const [yclientsConfigured, rosskoConfigured] = await Promise.all([
+      isBranchIntegrationConfigured("yclients", ["companyId", "partnerToken", "serviceId", "staffId"]),
+      isBranchIntegrationConfigured("rossko", ["key1", "key2"]),
+    ]);
+    return NextResponse.json({
+      settings: settingsToPublicJson(settings),
+      environment: {
+        openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+        yclientsConfigured,
+        rosskoConfigured,
+      },
+    });
   } catch (error) {
     return aiAgentApiError(error);
   }
@@ -120,7 +133,7 @@ export async function PUT(request: Request) {
       updatedById: access.actorId,
     };
     await prisma.aIAgentSetting.upsert({
-      where: { organizationId: access.organizationId },
+      where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId: access.organizationId } },
       update: data,
       create: { organizationId: access.organizationId, createdById: access.actorId, ...plain, ...jsonFields, updatedById: access.actorId },
     });

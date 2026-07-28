@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { defaultNextActionForCaseStatus, isClientCaseClosedStatus, normalizeClientCaseStatus, type ClientCaseAction, type ClientCaseStatus } from "@/lib/client-case-shared";
 import { getCrmStageBySortOrder } from "@/lib/crm";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 type EventInput = {
   caseId: string;
@@ -58,10 +59,12 @@ async function stageIdForStatus(status: ClientCaseStatus) {
 }
 
 async function acknowledgeActiveReminders(caseId: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   await prisma.$executeRaw`
     UPDATE client_case_notification_log
     SET acknowledged_at = COALESCE(acknowledged_at, now())
     WHERE case_id = ${caseId}
+      AND branch_id = ${branchId}
       AND acknowledged_at IS NULL
   `;
 }

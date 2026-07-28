@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (!access.ok) return access.response;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Передайте отгрузку и найденный автомобиль" }, { status: 400 });
-  const shipment = await prisma.localDemand.findUnique({ select: { id: true, applicable: true, organizationId: true, attributes: true }, where: { id: parsed.data.shipmentId } });
+  const shipment = await prisma.localDemand.findUnique({ select: { id: true, branchId: true, applicable: true, organizationId: true, attributes: true }, where: { id: parsed.data.shipmentId } });
   if (!shipment) return NextResponse.json({ error: "Отгрузка не найдена" }, { status: 404 });
   if (shipment.applicable) return NextResponse.json({ error: "Проведённую отгрузку нельзя изменить напрямую" }, { status: 400 });
   if (parsed.data.organizationId && shipment.organizationId && parsed.data.organizationId !== shipment.organizationId) {
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
   const organizationId = shipment.organizationId ?? parsed.data.organizationId ?? "default";
   await prisma.$executeRaw`
     INSERT INTO integration_audit_logs
-      (id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
+      (id, branch_id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, ${"tronk"}, ${null}, ${access.session.user.login}, ${"vehicle_lookup.apply_to_shipment"}, ${"ok"}, ${null},
+      (${crypto.randomUUID()}, ${shipment.branchId}, ${organizationId}, ${"tronk"}, ${null}, ${access.session.user.login}, ${"vehicle_lookup.apply_to_shipment"}, ${"ok"}, ${null},
        ${JSON.stringify({ shipmentId: shipment.id, changed, strategy: parsed.data.strategy, sourceMethods: parsed.data.vehicle.sourceMethods })}::jsonb, now())
   `.catch(() => undefined);
   return NextResponse.json({ ok: true, changed });

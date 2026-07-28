@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getBranchContext } from "@/lib/branch-context";
 
 export const DEFAULT_CRM_STAGES = [
   { name: "Нужно рассчитать", sortOrder: 10, color: "amber" },
@@ -13,16 +14,24 @@ export const DEFAULT_CRM_STAGES = [
   { name: "Закрыто", sortOrder: 100, color: "emerald" },
 ] as const;
 
-export async function ensureDefaultCrmStages() {
-  const legacyClosedStage = await prisma.crmStage.findUnique({ where: { sortOrder: 80 } });
+async function currentBranchId(branchId?: string) {
+  if (branchId) return branchId;
+  const resolved = (await getBranchContext({ requireActive: true }))?.branchId;
+  if (!resolved) throw new Error("Для CRM нужен активный филиал");
+  return resolved;
+}
+
+export async function ensureDefaultCrmStages(branchId?: string) {
+  const scopedBranchId = await currentBranchId(branchId);
+  const legacyClosedStage = await prisma.crmStage.findUnique({ where: { branchId_sortOrder: { branchId: scopedBranchId, sortOrder: 80 } } });
   if (legacyClosedStage?.name.toLowerCase().includes("закры")) {
     const closedStage = await prisma.crmStage.upsert({
-      where: { sortOrder: 100 },
+      where: { branchId_sortOrder: { branchId: scopedBranchId, sortOrder: 100 } },
       update: { name: "Закрыто", color: "emerald" },
-      create: { name: "Закрыто", sortOrder: 100, color: "emerald" },
+      create: { branchId: scopedBranchId, name: "Закрыто", sortOrder: 100, color: "emerald" },
     });
     await prisma.crmDeal.updateMany({
-      where: { stageId: legacyClosedStage.id, status: { not: "open" } },
+      where: { branchId: scopedBranchId, stageId: legacyClosedStage.id, status: { not: "open" } },
       data: { stageId: closedStage.id },
     });
   }
@@ -30,23 +39,25 @@ export async function ensureDefaultCrmStages() {
   await prisma.$transaction(
     DEFAULT_CRM_STAGES.map((stage) =>
       prisma.crmStage.upsert({
-        where: { sortOrder: stage.sortOrder },
+        where: { branchId_sortOrder: { branchId: scopedBranchId, sortOrder: stage.sortOrder } },
         update: {
           name: stage.name,
           color: stage.color,
         },
-        create: stage,
+        create: { ...stage, branchId: scopedBranchId },
       })
     )
   );
 }
 
-export async function getFirstCrmStage() {
-  await ensureDefaultCrmStages();
-  return prisma.crmStage.findFirst({ orderBy: { sortOrder: "asc" } });
+export async function getFirstCrmStage(branchId?: string) {
+  const scopedBranchId = await currentBranchId(branchId);
+  await ensureDefaultCrmStages(scopedBranchId);
+  return prisma.crmStage.findFirst({ where: { branchId: scopedBranchId }, orderBy: { sortOrder: "asc" } });
 }
 
-export async function getCrmStageBySortOrder(sortOrder: number) {
-  await ensureDefaultCrmStages();
-  return prisma.crmStage.findUnique({ where: { sortOrder } });
+export async function getCrmStageBySortOrder(sortOrder: number, branchId?: string) {
+  const scopedBranchId = await currentBranchId(branchId);
+  await ensureDefaultCrmStages(scopedBranchId);
+  return prisma.crmStage.findUnique({ where: { branchId_sortOrder: { branchId: scopedBranchId, sortOrder } } });
 }

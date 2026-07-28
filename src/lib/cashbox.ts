@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { getSession, type User } from "./auth";
 import { SERVICE_TIME_ZONE, toServiceDateInput } from "./date-time";
 import { prisma } from "./db";
+import { requireBranchContext } from "./branch-context";
 import {
   cancelCashExpenseOrder,
   cashExpenseOrderToOperation,
@@ -359,17 +360,25 @@ export function assertOwner(user: User) {
   }
 }
 
+async function activeCashBranchId(): Promise<string> {
+  const context = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!context.branchId) throw new Error("Активный филиал не выбран");
+  return context.branchId;
+}
+
 async function findCurrentShiftRow(): Promise<CashShiftRow | null> {
   await ensureLegacyCashboxImported();
+  const branchId = await activeCashBranchId();
   return prisma.cashShift.findFirst({
-    where: { status: "open" },
+    where: { branchId, status: "open" },
     orderBy: [{ openedAt: "desc" }],
   });
 }
 
 async function findShiftRowById(id: string): Promise<CashShiftRow | null> {
   await ensureLegacyCashboxImported();
-  return prisma.cashShift.findUnique({ where: { id } });
+  const branchId = await activeCashBranchId();
+  return prisma.cashShift.findFirst({ where: { id, branchId } });
 }
 
 export async function getCurrentShift(): Promise<CashShift | null> {
@@ -379,7 +388,9 @@ export async function getCurrentShift(): Promise<CashShift | null> {
 
 export async function listShifts(limit = 50): Promise<CashShift[]> {
   await ensureLegacyCashboxImported();
+  const branchId = await activeCashBranchId();
   const shifts = await prisma.cashShift.findMany({
+    where: { branchId },
     orderBy: [{ openedAt: "desc" }],
     take: Math.min(200, Math.max(1, limit)),
   });
@@ -391,6 +402,9 @@ export async function listOperationsForShift(
   options: ListOperationsOptions = {}
 ): Promise<CashOperation[]> {
   await ensureLegacyCashboxImported();
+  const branchId = await activeCashBranchId();
+  const shift = await prisma.cashShift.findFirst({ where: { id: shiftId, branchId }, select: { id: true } });
+  if (!shift) throw new Error("Кассовая смена не найдена в активном филиале");
   const legacyState = readLegacyState();
   const fileOperations = legacyState.operations
     .filter((op) => op.shiftId === shiftId)
@@ -401,7 +415,7 @@ export async function listOperationsForShift(
         : op
     );
   const withdrawals = await prisma.cashWithdrawal.findMany({
-    where: { shiftId },
+    where: { branchId, shiftId },
     orderBy: [{ createdAt: "asc" }],
   });
   let localExpenses: CashOperation[] = [];
@@ -449,9 +463,10 @@ export async function openShift(openingCash: number): Promise<CashShift> {
   assertOwnerOrAdmin(user);
 
   await ensureLegacyCashboxImported();
+  const branchId = await activeCashBranchId();
   const serviceDate = getTodayServiceDate();
   const existingOpenShift = await prisma.cashShift.findFirst({
-    where: { status: "open" },
+    where: { branchId, status: "open" },
     orderBy: [{ openedAt: "desc" }],
   });
   if (existingOpenShift) {
@@ -462,7 +477,7 @@ export async function openShift(openingCash: number): Promise<CashShift> {
     );
   }
   const existingForServiceDate = await prisma.cashShift.findUnique({
-    where: { serviceDate },
+    where: { branchId_serviceDate: { branchId, serviceDate } },
     select: { id: true },
   });
   if (existingForServiceDate) {
@@ -475,6 +490,7 @@ export async function openShift(openingCash: number): Promise<CashShift> {
     const shift = await prisma.cashShift.create({
       data: {
         id: generateId("shift"),
+        branchId,
         serviceDate,
         timezone: DEFAULT_TIMEZONE,
         status: "open",
@@ -513,6 +529,7 @@ export async function addWithdrawal(params: {
   const op = await prisma.cashWithdrawal.create({
     data: {
       id: generateId("op"),
+      branchId: shift.branchId,
       shiftId: shift.id,
       amountCents: centsFromRub(params.amount),
       reason: params.reason.trim(),

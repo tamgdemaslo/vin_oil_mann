@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getLocalAdminCounterparty } from "@/lib/local-inventory-admin";
+import { requireBranchApi } from "@/lib/branch-api";
 import {
   createClientTelegramLinkToken,
   getClientTelegramStatus,
@@ -12,11 +13,13 @@ export const dynamic = "force-dynamic";
 async function requireSession() {
   const session = await getSession();
   if (!session) return { response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
-  return { session };
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return { response: branchAccess.response };
+  return { session, branchId: branchAccess.context.branchId! };
 }
 
-async function requireCounterparty(id: string) {
-  const result = await getLocalAdminCounterparty(id);
+async function requireCounterparty(id: string, branchId: string) {
+  const result = await getLocalAdminCounterparty(id, branchId);
   if (!result.ok) {
     return { response: NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 }) };
   }
@@ -41,7 +44,7 @@ export async function GET(
   const auth = await requireSession();
   if ("response" in auth) return auth.response;
   const { id } = await params;
-  const gate = await requireCounterparty(id);
+  const gate = await requireCounterparty(id, auth.branchId);
   if ("response" in gate) return gate.response;
   try {
     return NextResponse.json({ telegram: await getClientTelegramStatus(gate.counterparty.id) });
@@ -57,7 +60,7 @@ export async function POST(
   const auth = await requireSession();
   if ("response" in auth) return auth.response;
   const { id } = await params;
-  const gate = await requireCounterparty(id);
+  const gate = await requireCounterparty(id, auth.branchId);
   if ("response" in gate) return gate.response;
 
   try {

@@ -6,6 +6,7 @@ import { getActiveTelegramUserAccount, resolveTelegramUserPeerByPhone } from "./
 import { sendMessage } from "./messenger-gateway";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export type ContactEntityType =
   | "client"
@@ -156,9 +157,9 @@ async function writeAudit(input: {
 }) {
   await prisma.$executeRaw`
     INSERT INTO integration_audit_logs
-      (id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
+      (id, branch_id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${input.organizationId}, 'telegram', ${input.messengerAccountId ?? null},
+      (${crypto.randomUUID()}, ${getScopedBranchId()}, ${input.organizationId}, 'telegram', ${input.messengerAccountId ?? null},
        ${input.actorId ?? null}, ${input.action}, ${input.status ?? "ok"}, ${input.message ?? null},
        ${JSON.stringify(input.metadata ?? {})}::jsonb, now())
   `;
@@ -192,6 +193,7 @@ async function findIdentity(organizationId: string, input: ContactActionInput, c
       linked_at AS "linkedAt"
     FROM communication_identities
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
       AND channel = 'telegram'
       AND status <> 'UNLINKED'
       AND (
@@ -222,6 +224,7 @@ async function findConversation(organizationId: string, input: ContactActionInpu
       last_message_at AS "lastMessageAt"
     FROM messenger_conversations
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
       AND channel = 'telegram'
       AND status <> 'archived'
       AND (
@@ -246,6 +249,7 @@ async function assertNoIdentityConflict(input: {
     SELECT id, client_id AS "clientId", supplier_id AS "supplierId", display_name AS "displayName"
     FROM communication_identities
     WHERE organization_id = ${input.organizationId}
+      AND branch_id = ${getScopedBranchId()}
       AND channel = 'telegram'
       AND messenger_account_id = ${input.messengerAccountId}
       AND external_user_id = ${input.externalUserId}
@@ -277,15 +281,15 @@ async function upsertContactIdentity(input: {
 }) {
   await prisma.$executeRaw`
     INSERT INTO communication_identities
-      (id, organization_id, channel, messenger_account_id, external_user_id, external_conversation_id,
+      (id, branch_id, organization_id, channel, messenger_account_id, external_user_id, external_conversation_id,
        username, display_name, phone_normalized, entity_type, client_id, supplier_id, status,
        match_source, linked_by_id, linked_at, verified_at, metadata_json, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${input.organizationId}, 'telegram', ${input.accountId}, ${input.externalUserId}, ${input.externalConversationId},
+      (${crypto.randomUUID()}, ${getScopedBranchId()}, ${input.organizationId}, 'telegram', ${input.accountId}, ${input.externalUserId}, ${input.externalConversationId},
        ${input.username ?? null}, ${input.displayName}, ${input.phoneNormalized}, ${input.entityType},
        ${input.clientId ?? null}, ${input.supplierId ?? null}, 'CONFIRMED', ${input.matchSource},
        ${input.actorId ?? null}, now(), now(), ${JSON.stringify({ source: "contact_action" })}::jsonb, now(), now())
-    ON CONFLICT (organization_id, messenger_account_id, external_user_id)
+    ON CONFLICT (branch_id, organization_id, messenger_account_id, external_user_id)
     DO UPDATE SET
       external_conversation_id = EXCLUDED.external_conversation_id,
       username = COALESCE(EXCLUDED.username, communication_identities.username),
@@ -315,11 +319,11 @@ async function linkConversationEntities(input: {
   if (input.counterpartyId) {
     await prisma.$executeRaw`
       INSERT INTO conversation_entity_links
-        (id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
+        (id, branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
       VALUES
-        (${crypto.randomUUID()}, ${input.organizationId}, ${input.conversationId}, ${input.entityType}, ${input.counterpartyId},
+        (${crypto.randomUUID()}, ${getScopedBranchId()}, ${input.organizationId}, ${input.conversationId}, ${input.entityType}, ${input.counterpartyId},
          'PRIMARY', ${input.actorId ?? null}, ${JSON.stringify({ displayName: input.displayName ?? null })}::jsonb, now())
-      ON CONFLICT (organization_id, conversation_id, entity_type, entity_id, relation_type)
+      ON CONFLICT (branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type)
       DO UPDATE SET metadata_json = EXCLUDED.metadata_json
     `;
   }
@@ -339,11 +343,11 @@ async function linkConversationEntities(input: {
     seen.add(key);
     await prisma.$executeRaw`
       INSERT INTO conversation_entity_links
-        (id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
+        (id, branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
       VALUES
-        (${crypto.randomUUID()}, ${input.organizationId}, ${input.conversationId}, ${type}, ${id},
+        (${crypto.randomUUID()}, ${getScopedBranchId()}, ${input.organizationId}, ${input.conversationId}, ${type}, ${id},
          'CONTEXT', ${input.actorId ?? null}, ${JSON.stringify(input.context ?? {})}::jsonb, now())
-      ON CONFLICT (organization_id, conversation_id, entity_type, entity_id, relation_type)
+      ON CONFLICT (branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type)
       DO UPDATE SET metadata_json = EXCLUDED.metadata_json
     `;
   }
@@ -468,6 +472,7 @@ export async function startContactConversation(input: ContactActionInput, actor?
         updated_at = now()
     WHERE id = ${resolved.conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
   `;
   await upsertContactIdentity({
     organizationId,

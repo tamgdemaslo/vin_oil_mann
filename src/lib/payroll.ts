@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getShiftRateCents } from "@/lib/shifts";
 import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   calculatePieceworkAmountCents,
   extractMoyskladEntityId,
@@ -191,6 +192,7 @@ async function fetchLocalDemandsWithPositions(
 
 async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Promise<CashoutRow[]> {
   try {
+    const branchId = getScopedBranchId();
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -225,6 +227,9 @@ async function fetchLocalPayrollCashouts(dateFrom: string, dateTo: string): Prom
       LEFT JOIN cash_expense_items item ON item.id = ceo.expense_item_id
       WHERE ceo.expense_date >= ${dateFrom}
         AND ceo.expense_date <= ${dateTo}
+        AND ceo.branch_id = ${branchId}
+        AND (cp.id IS NULL OR cp.branch_id = ${branchId})
+        AND (item.id IS NULL OR item.branch_id = ${branchId})
         AND ceo.status = 'posted'
         AND (ceo.source_type IS NULL OR ceo.source_type <> 'PAYROLL_PAYMENT')
       ORDER BY ceo.expense_date ASC
@@ -811,6 +816,7 @@ export async function getCachedPayrollSummary(params: {
   targetLogin?: string;
 }): Promise<PayrollSummary> {
   const key = JSON.stringify({
+    branchId: getScopedBranchId(),
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
     targetLogin: params.targetLogin ?? "",

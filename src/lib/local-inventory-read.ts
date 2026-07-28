@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type MoySkladMeta = {
   href: string;
@@ -24,6 +25,7 @@ type LocalProductSearchParams = {
 
 type ProductAttribute = { id?: string; name?: string; value?: unknown; meta?: { href?: string } };
 type LocalDemandListParams = {
+  branchId: string;
   search?: string;
   counterparty?: string;
   plate?: string;
@@ -117,6 +119,7 @@ function normalizedLookupTerms(values: Array<string | undefined>): string[] {
 }
 
 async function findNormalizedProductIds(values: Array<string | undefined>): Promise<string[]> {
+  const branchId = getScopedBranchId();
   const terms = normalizedLookupTerms(values);
   if (terms.length === 0) return [];
   const predicates = terms.map((term) => Prisma.sql`
@@ -126,7 +129,8 @@ async function findNormalizedProductIds(values: Array<string | undefined>): Prom
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id
     FROM local_products
-    WHERE archived = false
+    WHERE branch_id = ${branchId}
+      AND archived = false
       AND (${Prisma.join(predicates, " OR ")})
     LIMIT 1000
   `);
@@ -692,7 +696,7 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
       },
     });
   }
-  const where = and.length > 0 ? { AND: and } : {};
+  const where = { branchId: params.branchId, ...(and.length > 0 ? { AND: and } : {}) };
 
   if (!needsPostFilter) {
     const [total, rows] = await Promise.all([

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 const LOOKUP_STOCK_CACHE_TTL_MS = Math.max(
   30_000,
@@ -19,8 +20,20 @@ type StockCache = {
   byProductId: Map<string, { stockByStore?: StockByStoreEntry[] }>;
 };
 
-let stockByStoreReportCache: StockCache | null = null;
-let stockByStoreReportInFlight: Promise<StockCache> | null = null;
+type BranchStockCache = {
+  cache: StockCache | null;
+  inFlight: Promise<StockCache> | null;
+};
+
+const stockCacheByBranch = new Map<string, BranchStockCache>();
+
+function getBranchStockCache(branchId = getScopedBranchId()): BranchStockCache {
+  const existing = stockCacheByBranch.get(branchId);
+  if (existing) return existing;
+  const created = { cache: null, inFlight: null };
+  stockCacheByBranch.set(branchId, created);
+  return created;
+}
 
 function extractProductIdFromHref(href?: string): string | null {
   const source = (href ?? "").split("?", 1)[0].replace(/\/$/, "");
@@ -109,17 +122,19 @@ async function loadStockByStoreCache(): Promise<StockCache> {
 }
 
 export async function refreshMoySkladStockCache(): Promise<StockReportRow[]> {
-  if (stockByStoreReportInFlight) return (await stockByStoreReportInFlight).rows;
-  stockByStoreReportInFlight = (async () => {
+  const branchId = getScopedBranchId();
+  const state = getBranchStockCache(branchId);
+  if (state.inFlight) return (await state.inFlight).rows;
+  state.inFlight = (async () => {
     try {
       const cache = await loadStockByStoreCache();
-      stockByStoreReportCache = cache;
+      state.cache = cache;
       return cache;
     } finally {
-      stockByStoreReportInFlight = null;
+      getBranchStockCache(branchId).inFlight = null;
     }
   })();
-  return (await stockByStoreReportInFlight).rows;
+  return (await state.inFlight).rows;
 }
 
 export function startMoySkladStockWarmup(reason = "manual"): void {
@@ -133,20 +148,22 @@ export function startMoySkladStockWarmup(reason = "manual"): void {
 }
 
 export async function getCachedStockByStoreRows(): Promise<StockReportRow[]> {
-  if (stockByStoreReportInFlight) return (await stockByStoreReportInFlight).rows;
-  if (stockByStoreReportCache && Date.now() - stockByStoreReportCache.at <= LOOKUP_STOCK_CACHE_TTL_MS) {
-    return stockByStoreReportCache.rows;
+  const state = getBranchStockCache();
+  if (state.inFlight) return (await state.inFlight).rows;
+  if (state.cache && Date.now() - state.cache.at <= LOOKUP_STOCK_CACHE_TTL_MS) {
+    return state.cache.rows;
   }
   return refreshMoySkladStockCache();
 }
 
 export async function getCachedStockByProductIdMap(): Promise<Map<string, { stockByStore?: StockByStoreEntry[] }>> {
-  if (stockByStoreReportInFlight) return (await stockByStoreReportInFlight).byProductId;
-  if (stockByStoreReportCache && Date.now() - stockByStoreReportCache.at <= LOOKUP_STOCK_CACHE_TTL_MS) {
-    return stockByStoreReportCache.byProductId;
+  const state = getBranchStockCache();
+  if (state.inFlight) return (await state.inFlight).byProductId;
+  if (state.cache && Date.now() - state.cache.at <= LOOKUP_STOCK_CACHE_TTL_MS) {
+    return state.cache.byProductId;
   }
   await refreshMoySkladStockCache();
-  return stockByStoreReportCache?.byProductId ?? new Map();
+  return state.cache?.byProductId ?? new Map();
 }
 
 export async function getDirectStockByProductId(productId: string): Promise<StockByStoreEntry[]> {

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import type { MessageTemplate, MessengerChannel } from "./messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type TemplateRow = {
   id: string;
@@ -92,6 +93,7 @@ export async function listMessageTemplates(): Promise<MessageTemplate[]> {
   try {
     await ensureMessengerIntegrationCoreSchema();
     const organizationId = getMessengerOrganizationId();
+    const branchId = getScopedBranchId();
     const rows = await prisma.$queryRaw<TemplateRow[]>`
       SELECT
         id,
@@ -105,6 +107,7 @@ export async function listMessageTemplates(): Promise<MessageTemplate[]> {
         updated_at AS "updatedAt"
       FROM messenger_templates
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
         AND is_active = true
       ORDER BY title ASC
     `;

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   normalizeProductMarkingMode,
   normalizeProductMarkingSettings,
@@ -654,6 +655,7 @@ function normalizedCatalogLookupTerms(tokens: CatalogSearchToken[], params: Cata
 }
 
 async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], params: CatalogSearchParams): Promise<string[]> {
+  const branchId = getScopedBranchId();
   const terms = normalizedCatalogLookupTerms(tokens, params);
   if (terms.length === 0) return [];
   const predicates = terms.map((term) => Prisma.sql`
@@ -663,7 +665,8 @@ async function findNormalizedCatalogCandidateIds(tokens: CatalogSearchToken[], p
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id
     FROM local_products
-    WHERE ${Prisma.join(predicates, " OR ")}
+    WHERE branch_id = ${branchId}
+      AND (${Prisma.join(predicates, " OR ")})
     LIMIT 1000
   `);
   return rows.map((row) => row.id);
@@ -676,12 +679,14 @@ function strictNameOemTerm(value: unknown): string {
 }
 
 async function findStrictNameOemCandidateIds(value: unknown): Promise<string[]> {
+  const branchId = getScopedBranchId();
   const term = strictNameOemTerm(value);
   if (!term) return [];
   const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id
     FROM local_products
-    WHERE (
+    WHERE branch_id = ${branchId}
+      AND (
       regexp_replace(replace(lower(COALESCE(name, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
       OR regexp_replace(replace(lower(COALESCE(oem_parts, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') LIKE ${`%${term}%`}
     )

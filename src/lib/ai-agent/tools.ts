@@ -906,7 +906,7 @@ export const rosskoSearchTool = tool({
     withToolAudit(context, "rossko_search", { article, brand, partType }, async () => {
       const ctx = requireContext(context);
       if (!ctx.settings.rosskoSearchEnabled) return { enabled: false, offers: [], reason: "Поиск ROSSKO отключён в настройках" };
-      const cfg = rosskoConfig();
+      const cfg = await rosskoConfig();
       let deliveryId = cfg.deliveryId || "";
       let addressId = cfg.addressId || "";
       if (!deliveryId || !addressId) {
@@ -1523,21 +1523,30 @@ export const handoffToHumanTool = tool({
         }
       }
       const conversation = await getConversationContext(ctx.conversationId);
+      const branch = await prisma.branch.findFirst({
+        where: {
+          status: "active",
+          OR: [{ id: ctx.organizationId }, { legacyOrganizationId: ctx.organizationId }],
+        },
+        select: { id: true },
+      });
+      if (!branch) throw new Error("Для организации AI-агента не настроен филиал");
       const products = productIds.length
-        ? await prisma.localProduct.findMany({ where: { id: { in: productIds } }, select: { id: true, name: true, article: true, salePriceCents: true } })
+        ? await prisma.localProduct.findMany({ where: { branchId: branch.id, id: { in: productIds } }, select: { id: true, name: true, article: true, salePriceCents: true } })
         : [];
       const handoff = await prisma.aIAgentHandoff.create({
         data: { organizationId: ctx.organizationId, runId: ctx.runId, conversationId: ctx.conversationId, reasonCode, reason, summary, collectedDataJson: json(collectedData), productsJson: json(products), quoteId },
       });
-      const stage = await getFirstCrmStage();
+      const stage = await getFirstCrmStage(branch.id);
       if (!stage) throw new Error("Не найдена стадия CRM для передачи сотруднику");
       const unresolvedItemType = currentState.unresolvedItems[0] || reasonCode;
       const caseKey = `ai-review:${ctx.conversationId}:${ctx.runId}:${unresolvedItemType}`;
       const caseTitle = `Проверка агента: ${reason.slice(0, 120)}`;
       const caseRecord = await prisma.crmDeal.upsert({
-        where: { caseKey },
+        where: { branchId_caseKey: { branchId: branch.id, caseKey } },
         update: { notes: summary, nextAction: reason, nextActionAt: new Date(), nextContactAt: new Date(), status: "open" },
         create: {
+          branchId: branch.id,
           organizationId: ctx.organizationId,
           title: caseTitle,
           customerName: conversation.client?.name || null,

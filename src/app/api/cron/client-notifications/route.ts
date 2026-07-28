@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runClientNotificationsWorkerOnce } from "@/lib/client-notifications/worker";
+import { runForActiveBranches } from "@/lib/branch-workers";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,8 @@ export async function GET(request: Request) {
   if (!cronAuthorized(request)) {
     return NextResponse.json({ error: "Недостаточно прав" }, { status: 401 });
   }
-  return NextResponse.json(await runClientNotificationsWorkerOnce(50));
+  const branches = await runForActiveBranches(() => runClientNotificationsWorkerOnce(50));
+  return NextResponse.json({ ok: branches.every((branch) => branch.ok), branches });
 }
 
 export async function POST(request: Request) {

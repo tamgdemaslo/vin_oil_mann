@@ -55,7 +55,7 @@ export const assistantFunctionTools = [
   {
     type: "function",
     name: "search_local_catalog",
-    description: "Найти товары или услуги локального каталога по названию, артикулу, OEM или MANN-артикулу. Возвращает розничные цены и остатки, без себестоимости.",
+    description: "Найти товары или услуги локального каталога по названию, артикулу, OEM, MANN-артикулу или техническим характеристикам: ATF, допускам производителя, SAE, API, ACEA и ILSAC. Возвращает розничные цены и остатки, без себестоимости.",
     parameters: { type: "object", additionalProperties: false, required: ["query"], properties: { query: { type: "string", minLength: 2, maxLength: 160 }, entityType: { type: "string", enum: ["product", "service", "all"] }, limit: { type: "integer", minimum: 1, maximum: 20 } } },
   },
   {
@@ -161,6 +161,102 @@ function rosskoRetailPriceCents(purchaseCents: number | null) {
   return rule ? Math.round(purchaseCents * (1 + rule.marginPercent / 100)) : null;
 }
 
+function catalogSearchFields(value: string): Prisma.LocalProductWhereInput[] {
+  return [
+    { name: { contains: value, mode: "insensitive" } },
+    { article: { contains: value, mode: "insensitive" } },
+    { code: { contains: value, mode: "insensitive" } },
+    { externalCode: { contains: value, mode: "insensitive" } },
+    { brand: { contains: value, mode: "insensitive" } },
+    { oem: { contains: value, mode: "insensitive" } },
+    { oemParts: { contains: value, mode: "insensitive" } },
+    { atf: { contains: value, mode: "insensitive" } },
+    { oemAtf: { contains: value, mode: "insensitive" } },
+    { sae: { contains: value, mode: "insensitive" } },
+    { apiSpec: { contains: value, mode: "insensitive" } },
+    { acea: { contains: value, mode: "insensitive" } },
+    { aceaExtra: { contains: value, mode: "insensitive" } },
+    { ilsac: { contains: value, mode: "insensitive" } },
+    { searchText: { contains: value, mode: "insensitive" } },
+  ];
+}
+
+function normalizeCatalogSearch(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[ёЁ]/g, "е")
+    .toLocaleLowerCase("ru-RU")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function catalogSearchTokens(query: string) {
+  return [...new Set(normalizeCatalogSearch(query).split(" ").filter((token) => token.length >= 2))].slice(0, 10);
+}
+
+function catalogSearchWhere(query: string): Prisma.LocalProductWhereInput {
+  const normalized = normalizeCatalogSearch(query);
+  const tokens = catalogSearchTokens(query);
+  const alternatives: Prisma.LocalProductWhereInput[] = [
+    ...catalogSearchFields(query),
+    ...(normalized && normalized !== query.toLocaleLowerCase("ru-RU") ? catalogSearchFields(normalized) : []),
+  ];
+  if (tokens.length > 1) {
+    alternatives.push({ AND: tokens.map((token) => ({ OR: catalogSearchFields(token) })) });
+  }
+  return { OR: alternatives };
+}
+
+type CatalogRankRow = {
+  name: string;
+  article: string | null;
+  code: string | null;
+  brand: string | null;
+  oem: string | null;
+  oemParts: string | null;
+  atf: string | null;
+  oemAtf: string | null;
+  sae: string | null;
+  acea: string | null;
+  aceaExtra: string | null;
+  apiSpec: string | null;
+  ilsac: string | null;
+  searchText: string;
+};
+
+function catalogMatchScore(product: CatalogRankRow, query: string) {
+  const tokens = catalogSearchTokens(query);
+  const technical = normalizeCatalogSearch([product.atf, product.oemAtf, product.oem, product.sae, product.acea, product.aceaExtra, product.apiSpec, product.ilsac].filter(Boolean).join(" "));
+  const identity = normalizeCatalogSearch([product.name, product.article, product.code, product.brand, product.oemParts].filter(Boolean).join(" "));
+  const all = `${identity} ${normalizeCatalogSearch(product.searchText)}`;
+  const normalizedQuery = normalizeCatalogSearch(query);
+  const numericSpecification = tokens.filter((token) => /^\d+$/.test(token)).join("");
+  const compactTechnical = technical.replace(/\s+/g, "");
+  let score = 0;
+  if (normalizedQuery && identity.includes(normalizedQuery)) score += 500;
+  if (tokens.length && tokens.every((token) => technical.includes(token))) score += 1_000;
+  if (numericSpecification.length >= 4 && compactTechnical.includes(numericSpecification)) score += 700;
+  score += tokens.filter((token) => technical.includes(token)).length * 80;
+  score += tokens.filter((token) => identity.includes(token)).length * 30;
+  score += tokens.filter((token) => all.includes(token)).length * 5;
+  return score;
+}
+
+function catalogFieldExcerpt(value: string | null, query: string, max = 700) {
+  const source = String(value ?? "").trim();
+  if (!source || source.length <= max) return source || null;
+  const candidates = [
+    ...query.match(/\d+(?:[.\-/]\d+)+/g) ?? [],
+    ...catalogSearchTokens(query).sort((left, right) => right.length - left.length),
+  ];
+  const lower = source.toLocaleLowerCase("ru-RU");
+  const foundAt = candidates.map((candidate) => lower.indexOf(candidate.toLocaleLowerCase("ru-RU"))).find((index) => index >= 0) ?? 0;
+  const start = Math.max(0, foundAt - Math.floor(max / 3));
+  const end = Math.min(source.length, start + max);
+  return `${start > 0 ? "…" : ""}${source.slice(start, end)}${end < source.length ? "…" : ""}`;
+}
+
 async function searchCatalog(args: Record<string, unknown>): Promise<AssistantToolResult> {
   const query = text(args.query, 160);
   const entityType = text(args.entityType, 20) || "all";
@@ -169,22 +265,16 @@ async function searchCatalog(args: Record<string, unknown>): Promise<AssistantTo
     where: {
       archived: false,
       ...(entityType === "all" ? {} : { entityType }),
-      OR: [
-        { name: { contains: query, mode: "insensitive" } },
-        { article: { contains: query, mode: "insensitive" } },
-        { code: { contains: query, mode: "insensitive" } },
-        { externalCode: { contains: query, mode: "insensitive" } },
-        { brand: { contains: query, mode: "insensitive" } },
-        { oem: { contains: query, mode: "insensitive" } },
-        { oemParts: { contains: query, mode: "insensitive" } },
-        { searchText: { contains: query.toLowerCase(), mode: "insensitive" } },
-      ],
+      ...catalogSearchWhere(query),
     },
-    select: { id: true, entityType: true, name: true, article: true, code: true, brand: true, sae: true, oem: true, oemParts: true, packageVolume: true, salePriceCents: true, stockBalances: { select: { quantity: true, reserve: true, available: true, store: { select: { name: true } } } } },
-    take: limit,
+    select: { id: true, entityType: true, name: true, article: true, code: true, brand: true, sae: true, oem: true, oemParts: true, atf: true, oemAtf: true, acea: true, aceaExtra: true, apiSpec: true, ilsac: true, packageVolume: true, salePriceCents: true, searchText: true, stockBalances: { select: { quantity: true, reserve: true, available: true, store: { select: { name: true } } } } },
+    take: Math.min(100, Math.max(20, limit * 5)),
     orderBy: [{ name: "asc" }],
   });
-  const compact = products.map((product) => ({
+  const compact = products
+    .sort((left, right) => catalogMatchScore(right, query) - catalogMatchScore(left, query) || left.name.localeCompare(right.name, "ru"))
+    .slice(0, limit)
+    .map((product) => ({
     id: product.id,
     type: product.entityType,
     name: product.name,
@@ -194,6 +284,12 @@ async function searchCatalog(args: Record<string, unknown>): Promise<AssistantTo
     sae: product.sae,
     oem: product.oem,
     oemParts: product.oemParts,
+    atf: catalogFieldExcerpt(product.atf, query),
+    manufacturerApprovals: catalogFieldExcerpt(product.oemAtf, query),
+    acea: product.acea,
+    aceaExtra: product.aceaExtra,
+    api: product.apiSpec,
+    ilsac: product.ilsac,
     packageVolume: product.packageVolume,
     retailPriceCents: product.salePriceCents,
     retailPriceRub: product.salePriceCents / 100,
@@ -285,7 +381,7 @@ async function stock(args: Record<string, unknown>) {
 async function rossko(args: Record<string, unknown>) {
   const article = text(args.article, 80);
   const brand = text(args.brand, 80);
-  const config = rosskoConfig();
+  const config = await rosskoConfig();
   let deliveryId = config.deliveryId || "";
   let addressId = config.addressId || "";
   if (!deliveryId || !addressId) {

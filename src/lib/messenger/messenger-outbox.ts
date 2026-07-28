@@ -8,6 +8,7 @@ import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./channels/types";
 import type { MessageOutbox, MessengerChannel } from "./messenger-types";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 type OutboxRow = {
   id: string;
@@ -84,18 +85,19 @@ export async function enqueueMessageOutbox(input: {
   assertMessengerOutboundTextSafe(input.text);
   const id = crypto.randomUUID();
   const organizationId = input.organizationId ?? getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   if (input.idempotencyKey) {
     const existing = await prisma.messengerOutbox.findFirst({
-      where: { organizationId, idempotencyKey: input.idempotencyKey },
+      where: { branchId, organizationId, idempotencyKey: input.idempotencyKey },
     });
     if (existing) return toOutbox(existing as unknown as OutboxRow);
   }
   const rows = await prisma.$queryRaw<OutboxRow[]>`
     INSERT INTO messenger_outbox
-      (id, organization_id, messenger_account_id, channel, conversation_id, message_id, connection_id, recipient_external_chat_id, message_type, text, attachments_json,
+      (id, branch_id, organization_id, messenger_account_id, channel, conversation_id, message_id, connection_id, recipient_external_chat_id, message_type, text, attachments_json,
        template_key, template_vars_json, idempotency_key, status, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.channel}, ${input.conversationId}, ${input.messageId ?? null}, ${input.connectionId ?? null}, ${input.recipientExternalChatId},
+      (${id}, ${branchId}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.channel}, ${input.conversationId}, ${input.messageId ?? null}, ${input.connectionId ?? null}, ${input.recipientExternalChatId},
        ${input.messageType ?? "text"}, ${input.text}, ${JSON.stringify(input.attachmentsJson ?? [])}::jsonb, ${input.templateKey ?? null}, ${input.templateVarsJson ? JSON.stringify(input.templateVarsJson) : null}::jsonb, ${input.idempotencyKey ?? null}, 'queued', now(), now())
     RETURNING
       id,
@@ -136,11 +138,13 @@ function retryDelayAt(errorCode: string | null, error: string) {
 
 export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageOutbox> {
   await ensureMessengerIntegrationCoreSchema();
+  const { branchId } = requireSingleBranchSqlContext();
   const adapter = adapters[outbox.channel] ?? mockChannelAdapter;
   await prisma.$executeRaw`
     UPDATE messenger_outbox
     SET status = 'processing', attempts = attempts + 1, last_attempt_at = now(), updated_at = now()
     WHERE id = ${outbox.id}
+      AND branch_id = ${branchId}
   `;
   let result: ChannelSendResult;
   try {
@@ -160,6 +164,7 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
           error_message = NULL,
           updated_at = now()
       WHERE id = ${outbox.id}
+        AND branch_id = ${branchId}
       RETURNING
         id,
         organization_id AS "organizationId",
@@ -194,6 +199,7 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
             updated_at = now()
       WHERE id = ${outbox.messageId}
         AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+        AND branch_id = ${branchId}
       `;
     }
     return toOutbox(rows[0]);
@@ -208,6 +214,7 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
         next_attempt_at = ${nextAttemptAt},
         updated_at = now()
     WHERE id = ${outbox.id}
+      AND branch_id = ${branchId}
     RETURNING
       id,
       organization_id AS "organizationId",
@@ -240,6 +247,7 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
           updated_at = now()
       WHERE id = ${outbox.messageId}
         AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+        AND branch_id = ${branchId}
     `;
   }
   return toOutbox(rows[0]);
@@ -248,6 +256,7 @@ export async function processOutboxItem(outbox: MessageOutbox): Promise<MessageO
 export async function retryMessageOutbox(input: { conversationId: string; messageId: string }): Promise<MessageOutbox> {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<OutboxRow[]>`
     UPDATE messenger_outbox
     SET status = 'queued',
@@ -258,6 +267,7 @@ export async function retryMessageOutbox(input: { conversationId: string; messag
     WHERE message_id = ${input.messageId}
       AND conversation_id = ${input.conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
     RETURNING
       id,
       organization_id AS "organizationId",
@@ -293,12 +303,14 @@ export async function retryMessageOutbox(input: { conversationId: string; messag
     WHERE id = ${input.messageId}
       AND conversation_id = ${input.conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
   `;
   return processOutboxItem(toOutbox(rows[0]));
 }
 
 export async function processPendingOutbox(limit = 20) {
   await ensureMessengerIntegrationCoreSchema();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<OutboxRow[]>`
     SELECT
       id,
@@ -323,8 +335,9 @@ export async function processPendingOutbox(limit = 20) {
       created_at AS "createdAt",
       updated_at AS "updatedAt"
     FROM messenger_outbox
-    WHERE status = 'queued'
-       OR (status = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 5)
+    WHERE branch_id = ${branchId}
+      AND (status = 'queued'
+       OR (status = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 5))
     ORDER BY created_at ASC
     LIMIT ${limit}
   `;

@@ -5,12 +5,14 @@ import { getMessengerOrganizationId } from "./messenger-tenant";
 import { messengerStorageStatus } from "./messenger-storage";
 import { isPhotoAttachmentType, normalizeMessengerAttachment, normalizeMessengerAttachmentType } from "./messenger-attachment-normalization";
 import type { Attachment } from "./messenger-types";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 type MediaJobOperation = "download" | "upload" | "thumbnail" | "backfill";
 type MediaJobStatus = "queued" | "processing" | "completed" | "failed";
 
 type MediaJobRow = {
   id: string;
+  branchId: string;
   organizationId: string;
   messengerAccountId: string | null;
   attachmentId: string;
@@ -110,6 +112,7 @@ function toAttachment(row: AttachmentProjectionRow): Attachment {
 
 export async function listMessageAttachmentProjection(messageId: string): Promise<Attachment[]> {
   await ensureMessengerIntegrationCoreSchema();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<AttachmentProjectionRow[]>`
     SELECT
       id,
@@ -132,12 +135,14 @@ export async function listMessageAttachmentProjection(messageId: string): Promis
     FROM messenger_attachments
     WHERE message_id = ${messageId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${branchId}
     ORDER BY created_at ASC, id ASC
   `;
   return rows.map(toAttachment);
 }
 
 export async function refreshMessageAttachmentsJson(messageId: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   const attachments = await listMessageAttachmentProjection(messageId);
   await prisma.$executeRaw`
     UPDATE messenger_messages
@@ -145,6 +150,7 @@ export async function refreshMessageAttachmentsJson(messageId: string) {
         updated_at = now()
     WHERE id = ${messageId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${branchId}
   `;
   return attachments;
 }
@@ -157,10 +163,12 @@ export async function enqueueMessengerMediaJob(input: {
 }) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = input.organizationId ?? getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const existing = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM messenger_media_jobs
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND attachment_id = ${input.attachmentId}
       AND operation = ${input.operation}
       AND status IN ('queued', 'processing')
@@ -173,9 +181,9 @@ export async function enqueueMessengerMediaJob(input: {
   const id = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO messenger_media_jobs
-      (id, organization_id, messenger_account_id, attachment_id, operation, status, created_at, updated_at)
+      (id, branch_id, organization_id, messenger_account_id, attachment_id, operation, status, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.attachmentId}, ${input.operation}, 'queued', now(), now())
+      (${id}, ${branchId}, ${organizationId}, ${input.messengerAccountId ?? null}, ${input.attachmentId}, ${input.operation}, 'queued', now(), now())
   `;
   kickMessengerMediaWorker();
   return id;
@@ -184,11 +192,13 @@ export async function enqueueMessengerMediaJob(input: {
 async function claimMessengerMediaJobs(limit: number, workerId: string) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   return prisma.$queryRaw<MediaJobRow[]>`
     WITH next_jobs AS (
       SELECT id
       FROM messenger_media_jobs
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
         AND (
           status = 'queued'
           OR (status = 'processing' AND locked_at < now() - interval '10 minutes')
@@ -207,8 +217,10 @@ async function claimMessengerMediaJobs(limit: number, workerId: string) {
         updated_at = now()
     FROM next_jobs
     WHERE mj.id = next_jobs.id
+      AND mj.branch_id = ${branchId}
     RETURNING
       mj.id,
+      mj.branch_id AS "branchId",
       mj.organization_id AS "organizationId",
       mj.messenger_account_id AS "messengerAccountId",
       mj.attachment_id AS "attachmentId",
@@ -235,6 +247,7 @@ async function completeJob(job: MediaJobRow) {
         error_message = NULL,
         updated_at = now()
     WHERE id = ${job.id}
+      AND branch_id = ${job.branchId}
   `;
 }
 
@@ -252,6 +265,7 @@ async function failJob(job: MediaJobRow, error: unknown) {
         error_message = ${message.slice(0, 1000)},
         updated_at = now()
     WHERE id = ${job.id}
+      AND branch_id = ${job.branchId}
   `;
   await prisma.$executeRaw`
     UPDATE messenger_attachments
@@ -264,12 +278,14 @@ async function failJob(job: MediaJobRow, error: unknown) {
         updated_at = now()
     WHERE id = ${job.attachmentId}
       AND organization_id = ${job.organizationId}
+      AND branch_id = ${job.branchId}
   `;
   const rows = await prisma.$queryRaw<Array<{ messageId: string }>>`
     SELECT message_id AS "messageId"
     FROM messenger_attachments
     WHERE id = ${job.attachmentId}
       AND organization_id = ${job.organizationId}
+      AND branch_id = ${job.branchId}
     LIMIT 1
   `;
   if (rows[0]?.messageId) await refreshMessageAttachmentsJson(rows[0].messageId).catch(() => {});
@@ -287,6 +303,7 @@ async function processJob(job: MediaJobRow) {
       FROM messenger_attachments
       WHERE id = ${job.attachmentId}
         AND organization_id = ${job.organizationId}
+        AND branch_id = ${job.branchId}
       LIMIT 1
     `;
     if (rows[0]?.messageId) await refreshMessageAttachmentsJson(rows[0].messageId);
@@ -341,6 +358,7 @@ export function kickMessengerMediaWorker() {
 export async function repairMessengerAttachmentMetadata(limit = 500) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<
     Array<{
       id: string;
@@ -360,6 +378,7 @@ export async function repairMessengerAttachmentMetadata(limit = 500) {
       metadata_json AS "metadataJson"
     FROM messenger_attachments
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND (
         type IN ('image', 'file', 'document', 'audio')
         OR name IS NULL
@@ -389,6 +408,7 @@ export async function repairMessengerAttachmentMetadata(limit = 500) {
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     repaired += 1;
     refreshed.add(row.messageId);

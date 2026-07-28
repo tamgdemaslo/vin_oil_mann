@@ -15,6 +15,7 @@ import { listMessageTemplates } from "./messenger-templates";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { assertMessengerOutboundTextSafe } from "./messenger-security";
 import { getMessengerOrganizationId } from "./messenger-tenant";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 import { normalizeAttachmentList } from "./messenger-attachment-normalization";
 import type {
   Conversation,
@@ -190,12 +191,17 @@ function mockConversationById(id: string) {
   return mockGatewayConversations.find((conversation) => conversation.id === id) ?? null;
 }
 
+function messengerBranchId() {
+  return requireSingleBranchSqlContext().branchId;
+}
+
 async function messengerAccountIdForConversation(conversationId: string) {
   const rows = await prisma.$queryRaw<Array<{ messengerAccountId: string | null }>>`
     SELECT messenger_account_id AS "messengerAccountId"
     FROM messenger_conversations
     WHERE id = ${conversationId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
     LIMIT 1
   `;
   return rows[0]?.messengerAccountId ?? null;
@@ -208,6 +214,7 @@ async function messengerAccountMode(accountId: string | null | undefined) {
     FROM messenger_accounts
     WHERE id = ${accountId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
     LIMIT 1
   `;
   return rows[0]?.mode ?? null;
@@ -356,6 +363,7 @@ export async function listConversations(params: MessengerListParams = {}) {
       FROM messenger_conversations
       WHERE
         organization_id = ${organizationId}
+        AND branch_id = ${messengerBranchId()}
         AND
         (${channel}::text IS NULL OR channel = ${channel})
         AND status <> 'archived'
@@ -366,6 +374,7 @@ export async function listConversations(params: MessengerListParams = {}) {
             FROM messenger_accounts ma
             WHERE ma.id = messenger_conversations.messenger_account_id
               AND ma.organization_id = ${organizationId}
+              AND ma.branch_id = ${messengerBranchId()}
               AND ma.channel = 'telegram'
               AND ma.mode = 'user_session'
               AND ma.is_active = true
@@ -433,6 +442,7 @@ export async function getConversation(id: string): Promise<Conversation | null> 
     FROM messenger_conversations
     WHERE id = ${id}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
     LIMIT 1
   `;
   return rows[0] ? toConversation(rows[0]) : null;
@@ -462,6 +472,7 @@ export async function listMessages(conversationId: string): Promise<Message[]> {
     FROM messenger_messages
     WHERE conversation_id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
     ORDER BY created_at ASC
     LIMIT 500
   `;
@@ -477,6 +488,7 @@ export async function markConversationRead(conversationId: string) {
     SET unread_count = 0, status = 'open', updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
   `;
   return { ok: true };
 }
@@ -491,6 +503,7 @@ export async function archiveConversation(conversationId: string, archived = tru
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
   `;
   return getConversation(conversationId);
 }
@@ -508,6 +521,7 @@ export async function setConversationPinned(conversationId: string, pinned?: boo
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
   `;
   return getConversation(conversationId);
 }
@@ -525,6 +539,7 @@ export async function setConversationImportant(conversationId: string, important
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
   `;
   return getConversation(conversationId);
 }
@@ -541,6 +556,7 @@ export async function linkConversationClient(conversationId: string, clientId: s
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${messengerBranchId()}
   `;
   return getConversation(conversationId);
 }
@@ -558,13 +574,14 @@ export async function unlinkConversationClient(conversationId: string) {
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
   `;
   const messageId = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${messageId}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
+      (${messageId}, ${messengerBranchId()}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
        ${"Клиент отвязан от диалога. Переписка и связанные документы сохранены."}, '[]'::jsonb, 'read', now(), now())
   `;
   return getConversation(conversationId);
@@ -585,12 +602,13 @@ export async function createCaseFromConversation(conversationId: string, input: 
     SET related_case_id = COALESCE(related_case_id, ${caseId}), status = 'open', updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
   `;
   await prisma.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${messageId}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
+      (${messageId}, ${messengerBranchId()}, ${organizationId}, ${conversationId}, ${conversation.messengerAccountId ?? null}, ${conversation.channel}, 'system', 'system',
        ${`Создано дело клиента: ${input.title || conversation.title}`}, '[]'::jsonb, 'read', now(), now())
   `;
   return { id: caseId, conversationId, title: input.title || conversation.title };
@@ -623,7 +641,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const organizationId = conversation.organizationId ?? getMessengerOrganizationId();
   if (input.idempotencyKey) {
     const existing = await prisma.messengerOutbox.findFirst({
-      where: { organizationId, idempotencyKey: input.idempotencyKey },
+      where: { branchId: messengerBranchId(), organizationId, idempotencyKey: input.idempotencyKey },
       include: { message: true },
     });
     if (existing?.message) {
@@ -640,9 +658,9 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     : telegramVarsFromSendInput({ ...input, linkButton: undefined });
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${messageId}, ${organizationId}, ${conversation.id}, ${messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
+      (${messageId}, ${messengerBranchId()}, ${organizationId}, ${conversation.id}, ${messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
        ${textForSend}, '[]'::jsonb, 'queued', now(), now())
     RETURNING
       id,
@@ -666,6 +684,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     SET last_message_text = ${textForSend}, last_message_at = now(), status = 'open', unread_count = 0, updated_at = now()
     WHERE id = ${conversation.id}
       AND organization_id = ${organizationId}
+      AND branch_id = ${messengerBranchId()}
   `;
   const outbox = await enqueueMessageOutbox({
     organizationId,
@@ -695,11 +714,11 @@ async function upsertConnectionFromIncoming(event: IncomingMessageEvent) {
   const organizationId = getMessengerOrganizationId();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_connections
-      (id, organization_id, channel, type, external_user_id, external_chat_id, display_name, avatar_url, is_active, last_seen_at, raw_json, updated_at)
+      (id, branch_id, organization_id, channel, type, external_user_id, external_chat_id, display_name, avatar_url, is_active, last_seen_at, raw_json, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${event.channel}, 'unknown', ${event.externalUserId ?? null}, ${event.externalConversationId},
+      (${id}, ${messengerBranchId()}, ${organizationId}, ${event.channel}, 'unknown', ${event.externalUserId ?? null}, ${event.externalConversationId},
        ${event.participantName}, ${event.participantAvatar ?? null}, true, ${event.createdAt}, ${JSON.stringify(event.raw)}::jsonb, now())
-    ON CONFLICT (channel, external_chat_id)
+    ON CONFLICT (branch_id, channel, external_chat_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       external_user_id = COALESCE(EXCLUDED.external_user_id, messenger_connections.external_user_id),
@@ -720,13 +739,13 @@ async function upsertConversationFromIncoming(event: IncomingMessageEvent): Prom
   const connectionId = await upsertConnectionFromIncoming(event);
   const rows = await prisma.$queryRaw<ConversationRow[]>`
     INSERT INTO messenger_conversations
-      (id, organization_id, channel, external_conversation_id, connection_id, title, participant_name, participant_avatar_url,
+      (id, branch_id, organization_id, channel, external_conversation_id, connection_id, title, participant_name, participant_avatar_url,
        last_message_text, last_message_at, unread_count, status, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${event.channel}, ${event.externalConversationId}, ${connectionId},
+      (${id}, ${messengerBranchId()}, ${organizationId}, ${event.channel}, ${event.externalConversationId}, ${connectionId},
        ${event.participantName}, ${event.participantName}, ${event.participantAvatar ?? null},
        ${event.text}, ${event.createdAt}, 1, 'open', now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       connection_id = COALESCE(EXCLUDED.connection_id, messenger_conversations.connection_id),
@@ -770,11 +789,11 @@ async function insertIncomingMessage(conversation: Conversation, event: Incoming
   const organizationId = conversation.organizationId ?? getMessengerOrganizationId();
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, author_id, text, attachments_json, status, raw_json, received_at, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, author_id, text, attachments_json, status, raw_json, received_at, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${conversation.id}, ${conversation.messengerAccountId ?? null}, ${event.channel}, ${event.channelMessageId ?? null}, 'inbound',
+      (${id}, ${messengerBranchId()}, ${organizationId}, ${conversation.id}, ${conversation.messengerAccountId ?? null}, ${event.channel}, ${event.channelMessageId ?? null}, 'inbound',
        'client', ${event.participantName}, ${event.text}, '[]'::jsonb, 'delivered', ${JSON.stringify(event.raw)}::jsonb, ${event.createdAt}, ${event.createdAt}, ${event.createdAt})
-    ON CONFLICT (channel, external_message_id)
+    ON CONFLICT (branch_id, channel, external_message_id)
     WHERE external_message_id IS NOT NULL
     DO NOTHING
     RETURNING
@@ -826,12 +845,13 @@ function externalUpdateIdFromPayload(channel: MessengerChannel, payload: unknown
 async function saveWebhookEvent(channel: MessengerChannel, externalUpdateId: string, rawJson: Record<string, unknown>) {
   const id = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_webhook_events
-      (id, organization_id, channel, external_update_id, raw_json)
+      (id, branch_id, organization_id, channel, external_update_id, raw_json)
     VALUES
-      (${id}, ${organizationId}, ${channel}, ${externalUpdateId}, ${JSON.stringify(rawJson)}::jsonb)
-    ON CONFLICT (channel, external_update_id) DO NOTHING
+      (${id}, ${branchId}, ${organizationId}, ${channel}, ${externalUpdateId}, ${JSON.stringify(rawJson)}::jsonb)
+    ON CONFLICT (branch_id, channel, external_update_id) DO NOTHING
     RETURNING id
   `;
   return rows[0]?.id ? { id: rows[0].id, duplicate: false } : { id: null, duplicate: true };
@@ -839,10 +859,12 @@ async function saveWebhookEvent(channel: MessengerChannel, externalUpdateId: str
 
 async function finishWebhookEvent(webhookId: string | null, error?: string | null) {
   if (!webhookId) return;
+  const { branchId } = requireSingleBranchSqlContext();
   await prisma.$executeRaw`
     UPDATE messenger_webhook_events
     SET processed_at = now(), error = ${error ?? null}
     WHERE id = ${webhookId}
+      AND branch_id = ${branchId}
   `;
 }
 
@@ -902,6 +924,7 @@ async function handleTelegramCommand(command: "/start" | "/help" | "/stop" | "/s
       UPDATE messenger_connections
       SET is_active = true, blocked_at = NULL, last_seen_at = now(), updated_at = now()
       WHERE organization_id = ${getMessengerOrganizationId()}
+        AND branch_id = ${messengerBranchId()}
         AND channel = ${event.channel}
         AND external_chat_id = ${event.externalConversationId}
     `;
@@ -910,6 +933,7 @@ async function handleTelegramCommand(command: "/start" | "/help" | "/stop" | "/s
       SET status = 'open', updated_at = now()
       WHERE id = ${conversation.id}
         AND organization_id = ${conversation.organizationId ?? getMessengerOrganizationId()}
+        AND branch_id = ${messengerBranchId()}
     `;
     return sendMessage({
       conversationId: conversation.id,
@@ -934,6 +958,7 @@ async function handleTelegramCommand(command: "/start" | "/help" | "/stop" | "/s
       UPDATE messenger_connections
       SET is_active = false, blocked_at = now(), updated_at = now()
       WHERE organization_id = ${getMessengerOrganizationId()}
+        AND branch_id = ${messengerBranchId()}
         AND channel = ${event.channel}
         AND external_chat_id = ${event.externalConversationId}
     `;
@@ -942,6 +967,7 @@ async function handleTelegramCommand(command: "/start" | "/help" | "/stop" | "/s
       SET status = 'blocked', updated_at = now()
       WHERE id = ${conversation.id}
         AND organization_id = ${conversation.organizationId ?? getMessengerOrganizationId()}
+        AND branch_id = ${messengerBranchId()}
     `;
     return result;
   }
@@ -956,12 +982,13 @@ export async function ingestIncomingEvent(event: IncomingMessageEvent) {
   await ensureMessengerIntegrationCoreSchema();
   const webhookId = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const inserted = await prisma.$executeRaw`
     INSERT INTO messenger_webhook_events
-      (id, organization_id, channel, external_update_id, raw_json)
+      (id, branch_id, organization_id, channel, external_update_id, raw_json)
     VALUES
-      (${webhookId}, ${organizationId}, ${event.channel}, ${event.externalEventId}, ${JSON.stringify({ eventType: event.eventType, ...event.raw })}::jsonb)
-    ON CONFLICT (channel, external_update_id) DO NOTHING
+      (${webhookId}, ${branchId}, ${organizationId}, ${event.channel}, ${event.externalEventId}, ${JSON.stringify({ eventType: event.eventType, ...event.raw })}::jsonb)
+    ON CONFLICT (branch_id, channel, external_update_id) DO NOTHING
   `;
   if (!inserted) return { ok: true, duplicate: true };
   try {
@@ -979,6 +1006,7 @@ export async function ingestIncomingEvent(event: IncomingMessageEvent) {
       UPDATE messenger_webhook_events
       SET processed_at = now(), error = NULL
       WHERE id = ${webhookId}
+        AND branch_id = ${branchId}
     `;
     return { ok: true, conversation, message };
   } catch (error) {
@@ -986,6 +1014,7 @@ export async function ingestIncomingEvent(event: IncomingMessageEvent) {
       UPDATE messenger_webhook_events
       SET processed_at = now(), error = ${error instanceof Error ? error.message : "messenger ingest failed"}
       WHERE id = ${webhookId}
+        AND branch_id = ${branchId}
     `;
     throw error;
   }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export type DemandAttributeMeta = {
   id: string;
@@ -53,12 +54,13 @@ export async function ensureDemandAttributeMetadata(): Promise<
   | { ok: true; attributes: DemandAttributeMeta[] }
   | { ok: false; error: string; attributes: DemandAttributeMeta[] }
 > {
+  const branchId = getScopedBranchId();
   try {
     for (const attr of DEFAULT_DEMAND_ATTRIBUTES) {
       await prisma.demandAttributeDefinition.upsert({
-        where: { name: attr.name },
+        where: { branchId_name: { branchId, name: attr.name } },
         update: attr,
-        create: attr,
+        create: { ...attr, branchId },
       });
     }
 

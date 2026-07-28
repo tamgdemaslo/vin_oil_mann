@@ -7,6 +7,7 @@ import {
   stringValue,
   type AppointmentLike,
 } from "@/lib/appointment-shipment-reconcile";
+import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 
 type YclientsStaff = {
   id?: string | number;
@@ -14,15 +15,9 @@ type YclientsStaff = {
   bookable?: boolean;
 };
 
-const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
-const YCLIENTS_COMPANY_ID = process.env.YCLIENTS_COMPANY_ID ?? "9354";
-const YCLIENTS_PARTNER_TOKEN = process.env.YCLIENTS_PARTNER_TOKEN ?? "mz5bf2yp97nbs4s45e9j";
-const YCLIENTS_USER_TOKEN = process.env.YCLIENTS_USER_TOKEN?.trim() ?? "";
-const YCLIENTS_USER_LOGIN = process.env.YCLIENTS_USER_LOGIN?.trim() ?? "";
-const YCLIENTS_USER_PASSWORD = process.env.YCLIENTS_USER_PASSWORD?.trim() ?? "";
 const YCLIENTS_USER_TOKEN_TTL_MS = 50 * 60 * 1000;
 
-let yclientsRuntimeUserToken: { token: string; at: number } | null = null;
+const yclientsRuntimeUserTokens = new Map<string, { token: string; at: number }>();
 
 function extractYclientsUserToken(data: unknown): string | null {
   const record = asRecord(data);
@@ -32,18 +27,17 @@ function extractYclientsUserToken(data: unknown): string | null {
   return nested || null;
 }
 
-async function fetchYclientsUserToken() {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner || !YCLIENTS_USER_LOGIN || !YCLIENTS_USER_PASSWORD) return null;
+async function fetchYclientsUserToken(config: YclientsBranchConfig) {
+  if (!config.userLogin || !config.userPassword) return null;
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}/auth`, {
+    const res = await fetch(`${config.apiBase}/auth`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${partner}`,
+        Authorization: `Bearer ${config.partnerToken}`,
         Accept: "application/vnd.yclients.v2+json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ login: YCLIENTS_USER_LOGIN, password: YCLIENTS_USER_PASSWORD }),
+      body: JSON.stringify({ login: config.userLogin, password: config.userPassword }),
       cache: "no-store",
     });
     const data = await res.json().catch(() => ({}));
@@ -54,28 +48,27 @@ async function fetchYclientsUserToken() {
   }
 }
 
-async function resolveYclientsAuthHeader(needsUserToken: boolean) {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return null;
-  if (!needsUserToken) return `Bearer ${partner}`;
-  if (YCLIENTS_USER_TOKEN) return `Bearer ${partner}, User ${YCLIENTS_USER_TOKEN}`;
+async function resolveYclientsAuthHeader(config: YclientsBranchConfig, needsUserToken: boolean) {
+  if (!needsUserToken) return `Bearer ${config.partnerToken}`;
+  if (config.userToken) return `Bearer ${config.partnerToken}, User ${config.userToken}`;
+  const cached = yclientsRuntimeUserTokens.get(config.branchId);
   if (
-    yclientsRuntimeUserToken?.token &&
-    Date.now() - yclientsRuntimeUserToken.at <= YCLIENTS_USER_TOKEN_TTL_MS
+    cached?.token &&
+    Date.now() - cached.at <= YCLIENTS_USER_TOKEN_TTL_MS
   ) {
-    return `Bearer ${partner}, User ${yclientsRuntimeUserToken.token}`;
+    return `Bearer ${config.partnerToken}, User ${cached.token}`;
   }
-  const token = await fetchYclientsUserToken();
+  const token = await fetchYclientsUserToken(config);
   if (!token) return null;
-  yclientsRuntimeUserToken = { token, at: Date.now() };
-  return `Bearer ${partner}, User ${token}`;
+  yclientsRuntimeUserTokens.set(config.branchId, { token, at: Date.now() });
+  return `Bearer ${config.partnerToken}, User ${token}`;
 }
 
-async function yclientsData(path: string, needsUserToken: boolean) {
-  const auth = await resolveYclientsAuthHeader(needsUserToken);
+async function yclientsData(config: YclientsBranchConfig, path: string, needsUserToken: boolean) {
+  const auth = await resolveYclientsAuthHeader(config, needsUserToken);
   if (!auth) return null;
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}${path}`, {
+    const res = await fetch(`${config.apiBase}${path}`, {
       headers: {
         Authorization: auth,
         Accept: "application/vnd.yclients.v2+json",
@@ -91,7 +84,8 @@ async function yclientsData(path: string, needsUserToken: boolean) {
 }
 
 export async function listYclientsAppointmentsForDate(date: string): Promise<AppointmentLike[]> {
-  const staffJson = await yclientsData(`/book_staff/${YCLIENTS_COMPANY_ID}`, false);
+  const config = await getYclientsBranchConfig();
+  const staffJson = await yclientsData(config, `/book_staff/${config.companyId}`, false);
   const staffRows = arrayValue<YclientsStaff>(asRecord(staffJson).data);
   const bookable = staffRows.filter((staff) => staff.bookable !== false);
   const staffIds = (bookable.length ? bookable : staffRows)
@@ -109,7 +103,7 @@ export async function listYclientsAppointmentsForDate(date: string): Promise<App
         end_date: date,
         staff_id: staffId,
       });
-      const data = await yclientsData(`/records/${YCLIENTS_COMPANY_ID}?${params.toString()}`, true);
+      const data = await yclientsData(config, `/records/${config.companyId}?${params.toString()}`, true);
       return arrayValue<AppointmentLike>(asRecord(data).data).map((record) => ({
         ...record,
         id: stringValue(record.id),
@@ -133,4 +127,3 @@ export async function listAppointmentRowsForDate(date: string): Promise<Appointm
     .filter((item) => appointmentServiceDate(item) === date)
     .sort((a, b) => (appointmentDateTime(a)?.getTime() ?? 0) - (appointmentDateTime(b)?.getTime() ?? 0));
 }
-

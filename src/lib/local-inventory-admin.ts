@@ -1435,9 +1435,10 @@ export function invalidateWarehouseReadCaches() {
   invalidateLocalInventoryFinanceCache();
 }
 
-export async function listLocalProductGroups(options: { includeArchived?: boolean } = {}) {
+export async function listLocalProductGroups(options: { branchId: string; includeArchived?: boolean }) {
   const rows = await prisma.localProduct.findMany({
     where: {
+      branchId: options.branchId,
       ...(options.includeArchived ? {} : { archived: false }),
       AND: [
         { groupPath: { not: null } },
@@ -1453,8 +1454,8 @@ export async function listLocalProductGroups(options: { includeArchived?: boolea
     .sort((a, b) => ruCollator.compare(a, b));
 }
 
-async function getProductRowsForAdmin(includeArchived?: boolean) {
-  const key = includeArchived ? "all" : "active";
+async function getProductRowsForAdmin(branchId: string, includeArchived?: boolean) {
+  const key = `${branchId}:${includeArchived ? "all" : "active"}`;
   const now = Date.now();
   if (productAdminCache.rows?.key === key && productAdminCache.rows.expiresAt > now) {
     return productAdminCache.rows.rows;
@@ -1462,11 +1463,12 @@ async function getProductRowsForAdmin(includeArchived?: boolean) {
 
   const [products, balances] = await Promise.all([
     prisma.localProduct.findMany({
-      where: includeArchived ? {} : { archived: false },
+      where: { branchId, ...(includeArchived ? {} : { archived: false }) },
       select: productListIndexSelect,
       orderBy: [{ name: "asc" }],
     }),
     prisma.localStockBalance.findMany({
+      where: { branchId },
       select: {
         productId: true,
         quantity: true,
@@ -1486,9 +1488,9 @@ async function getProductRowsForAdmin(includeArchived?: boolean) {
   return rows;
 }
 
-export async function getLocalAdminProduct(id: string) {
+export async function getLocalAdminProduct(id: string, branchId: string) {
   const product = await prisma.localProduct.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { branchId, OR: [{ id }, { moyskladId: id }] },
     include: productWithStockInclude,
   });
   if (!product) return null;
@@ -1967,12 +1969,13 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
   };
 }
 
-async function getDemandSnapshotCounterpartyRows(existingRows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
+async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
   const builders = new Map<string, SnapshotCounterpartyBuilder>();
 
   try {
     const demands = await prisma.localDemand.findMany({
       where: {
+        branchId,
         OR: [
           { agentMoyskladId: { not: null } },
           { agentNameSnapshot: { not: null } },
@@ -2103,7 +2106,7 @@ function demandVehicleInfo(attributes: unknown) {
   return { plate, vin, model, year, label };
 }
 
-async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
+async function buildCounterpartyActivity(branchId: string, rows: CounterpartyListRow[]) {
   const ids = [...new Set(rows.map((row) => row.id).filter((id) => !supplierSnapshotNameFromId(id)))];
   const byId = new Map<string, ActivityBuilder>();
   for (const id of ids) {
@@ -2112,7 +2115,7 @@ async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
   if (ids.length === 0) return byId;
 
   const demands = await prisma.localDemand.findMany({
-    where: { counterpartyId: { in: ids } },
+    where: { branchId, counterpartyId: { in: ids } },
     select: {
       counterpartyId: true,
       id: true,
@@ -2171,8 +2174,8 @@ async function buildCounterpartyActivity(rows: CounterpartyListRow[]) {
   return byId;
 }
 
-async function enrichCounterpartyRows(rows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
-  const activityById = await buildCounterpartyActivity(rows);
+async function enrichCounterpartyRows(branchId: string, rows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
+  const activityById = await buildCounterpartyActivity(branchId, rows);
   return rows.map((row) => {
     const activity = activityById.get(row.id) ?? ({ ...emptyCounterpartyActivity(), vehicleKeys: new Set<string>(), searchParts: [] } as ActivityBuilder);
     const storedVehicleLabel = row.vehicleLabel || compactCounterpartyVehicleLabel(row);
@@ -2235,7 +2238,7 @@ function counterpartyStats(rows: CounterpartyListRow[]) {
   };
 }
 
-async function fastCounterpartyStats() {
+async function fastCounterpartyStats(branchId: string) {
   const requisitesMissing: Prisma.LocalCounterpartyWhereInput = {
     AND: [
       { OR: [{ legalTitle: null }, { legalTitle: "" }] },
@@ -2252,12 +2255,12 @@ async function fastCounterpartyStats() {
     ],
   };
   const [total, active, archived, individuals, noPhone, noRequisites] = await Promise.all([
-    prisma.localCounterparty.count(),
-    prisma.localCounterparty.count({ where: { archived: false } }),
-    prisma.localCounterparty.count({ where: { archived: true } }),
-    prisma.localCounterparty.count({ where: { companyType: "individual" } }),
-    prisma.localCounterparty.count({ where: { AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
-    prisma.localCounterparty.count({ where: { AND: [{ archived: false }, requisitesMissing] } }),
+    prisma.localCounterparty.count({ where: { branchId } }),
+    prisma.localCounterparty.count({ where: { branchId, archived: false } }),
+    prisma.localCounterparty.count({ where: { branchId, archived: true } }),
+    prisma.localCounterparty.count({ where: { branchId, companyType: "individual" } }),
+    prisma.localCounterparty.count({ where: { branchId, AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
+    prisma.localCounterparty.count({ where: { branchId, AND: [{ archived: false }, requisitesMissing] } }),
   ]);
   return {
     total,
@@ -2271,6 +2274,7 @@ async function fastCounterpartyStats() {
 }
 
 export async function listLocalAdminProducts(params: {
+  branchId: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -2305,7 +2309,7 @@ export async function listLocalAdminProducts(params: {
     stock: normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
   };
-  const allRows = await getProductRowsForAdmin(params.includeArchived);
+  const allRows = await getProductRowsForAdmin(params.branchId, params.includeArchived);
   const searchRows = allRows.filter((row) => rowMatchesSearch(row, searchQuery));
   const facets = buildProductFacets(searchRows, filterParams);
   const filteredProducts = searchRows
@@ -2316,7 +2320,7 @@ export async function listLocalAdminProducts(params: {
   const pageIds = pageRows.map((row) => row.id);
   const fullPageProducts = pageIds.length
     ? await prisma.localProduct.findMany({
-        where: { id: { in: pageIds } },
+        where: { branchId: params.branchId, id: { in: pageIds } },
         include: productWithStockInclude,
       })
     : [];
@@ -2549,7 +2553,7 @@ export async function listLocalRestockNeeds(params: {
   return value;
 }
 
-export async function createLocalAdminProduct(body: ProductInput, actor?: ActingUser | null) {
+export async function createLocalAdminProduct(body: ProductInput, actor: ActingUser | null | undefined, branchId: string) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите название товара" };
   const entityType = body.entityType?.trim() || "product";
@@ -2592,6 +2596,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor?: Acting
   const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
   const product = await prisma.localProduct.create({
     data: {
+      branchId,
       name,
       entityType,
       article,
@@ -2698,8 +2703,8 @@ export async function createLocalAdminProduct(body: ProductInput, actor?: Acting
   return { ok: true as const, product: mapProduct(product) };
 }
 
-export async function updateLocalAdminProduct(id: string, body: ProductInput, actor?: ActingUser | null) {
-  const current = await prisma.localProduct.findFirst({ where: { OR: [{ id }, { moyskladId: id }] } });
+export async function updateLocalAdminProduct(id: string, body: ProductInput, actor: ActingUser | null | undefined, branchId: string) {
+  const current = await prisma.localProduct.findFirst({ where: { branchId, OR: [{ id }, { moyskladId: id }] } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите название товара" };
@@ -2911,15 +2916,15 @@ export function invalidateCounterpartyRows() {
   counterpartyAdminCache.rows = null;
 }
 
-async function getCounterpartyRowsForAdmin(includeArchived?: boolean) {
-  const key = includeArchived ? "all" : "active";
+async function getCounterpartyRowsForAdmin(branchId: string, includeArchived?: boolean) {
+  const key = `${branchId}:${includeArchived ? "all" : "active"}`;
   const now = Date.now();
   if (counterpartyAdminCache.rows?.key === key && counterpartyAdminCache.rows.expiresAt > now) {
     return counterpartyAdminCache.rows.rows;
   }
 
   const counterparties = await prisma.localCounterparty.findMany({
-    where: includeArchived ? {} : { archived: false },
+    where: { branchId, ...(includeArchived ? {} : { archived: false }) },
     orderBy: [{ name: "asc" }],
   });
   const rows = counterparties.map(mapCounterparty);
@@ -2927,9 +2932,9 @@ async function getCounterpartyRowsForAdmin(includeArchived?: boolean) {
   return rows;
 }
 
-async function getSupplierCounterpartyRows(existingRows: CounterpartyListRow[], includeArchived?: boolean) {
+async function getSupplierCounterpartyRows(branchId: string, existingRows: CounterpartyListRow[], includeArchived?: boolean) {
   const existingNames = new Set(existingRows.map((row) => normalizeSearchText(row.name)).filter(Boolean));
-  return uniqueSorted((await getProductRowsForAdmin(includeArchived)).map((product) => product.supplierName), 1_000)
+  return uniqueSorted((await getProductRowsForAdmin(branchId, includeArchived)).map((product) => product.supplierName), 1_000)
     .filter((name) => !existingNames.has(normalizeSearchText(name)))
     .map(mapSupplierNameCounterparty);
 }
@@ -3025,6 +3030,7 @@ function compareCounterparties(
 }
 
 export async function listLocalAdminCounterparties(params: {
+  branchId: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -3048,6 +3054,7 @@ export async function listLocalAdminCounterparties(params: {
   const sort = normalizeCounterpartySort(params.sort);
   const direction = normalizeSortDirection(params.direction);
   const where: Prisma.LocalCounterpartyWhereInput = {
+    branchId: params.branchId,
     ...(status === "active" ? { archived: false } : status === "archive" ? { archived: true } : {}),
     ...(type === "individual" ? { companyType: "individual" } : type === "company" ? { NOT: { companyType: "individual" } } : {}),
     ...(phone === "with"
@@ -3079,9 +3086,9 @@ export async function listLocalAdminCounterparties(params: {
       skip: offset,
       take: limit,
     }),
-    fastCounterpartyStats(),
+    fastCounterpartyStats(params.branchId),
   ]);
-  let filteredCounterparties = await enrichCounterpartyRows(baseRows.map(mapCounterparty));
+  let filteredCounterparties = await enrichCounterpartyRows(params.branchId, baseRows.map(mapCounterparty));
   if (requisites === "with") filteredCounterparties = filteredCounterparties.filter(hasCounterpartyRequisites);
   if (requisites === "without") filteredCounterparties = filteredCounterparties.filter((row) => !hasCounterpartyRequisites(row));
   if (shipments === "with") filteredCounterparties = filteredCounterparties.filter((row) => row.demandCount > 0);
@@ -3093,22 +3100,23 @@ export async function listLocalAdminCounterparties(params: {
   };
 }
 
-export async function getLocalAdminCounterparty(id: string) {
+export async function getLocalAdminCounterparty(id: string, branchId: string) {
   const cleanId = id.trim();
   if (!cleanId) return { ok: false as const, error: "id не указан", notFound: true as const };
   const counterparty = await prisma.localCounterparty.findFirst({
     where: {
+      branchId,
       OR: [{ id: cleanId }, { moyskladId: cleanId }],
     },
   });
   if (!counterparty) {
     return { ok: false as const, error: "Контрагент не найден", notFound: true as const };
   }
-  const [row] = await enrichCounterpartyRows([mapCounterparty(counterparty)]);
+  const [row] = await enrichCounterpartyRows(branchId, [mapCounterparty(counterparty)]);
   return { ok: true as const, counterparty: row };
 }
 
-export async function createLocalAdminCounterparty(body: CounterpartyInput) {
+export async function createLocalAdminCounterparty(body: CounterpartyInput, branchId: string) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
   const phone = body.phone?.trim() || null;
@@ -3152,6 +3160,7 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput) {
   };
   const counterparty = await prisma.localCounterparty.create({
     data: {
+      branchId,
       name,
       phone,
       email,
@@ -3218,8 +3227,8 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput) {
   return { ok: true as const, counterparty: mapCounterparty(counterparty) };
 }
 
-export async function updateLocalAdminCounterparty(id: string, body: CounterpartyInput) {
-  const current = await prisma.localCounterparty.findFirst({ where: { OR: [{ id }, { moyskladId: id }] } });
+export async function updateLocalAdminCounterparty(id: string, body: CounterpartyInput, branchId: string) {
+  const current = await prisma.localCounterparty.findFirst({ where: { branchId, OR: [{ id }, { moyskladId: id }] } });
   if (!current) return { ok: false as const, error: "Контрагент не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };

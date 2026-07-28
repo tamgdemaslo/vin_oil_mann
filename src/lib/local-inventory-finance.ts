@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type DocumentTypeFilter = "all" | "sale" | "receipt" | "writeoff";
 
@@ -309,6 +310,7 @@ function addIssue(issues: FinanceIssue[], issue: FinanceIssue) {
 }
 
 export async function getLocalInventoryFinance(params: FinanceParams = {}): Promise<LocalInventoryFinanceResult> {
+  const branchId = getScopedBranchId();
   const defaults = defaultDateRange();
   const dateFrom = normalizeDate(params.dateFrom, defaults.dateFrom);
   const dateTo = normalizeDate(params.dateTo, defaults.dateTo);
@@ -317,7 +319,7 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
   const documentType = normalizeDocumentType(params.documentType);
   const applicableOnly = params.applicableOnly !== false;
   const includeWriteoffs = params.includeWriteoffs !== false;
-  const cacheKey = JSON.stringify({ dateFrom, dateTo, organizationId, storeId, documentType, applicableOnly, includeWriteoffs });
+  const cacheKey = JSON.stringify({ branchId, dateFrom, dateTo, organizationId, storeId, documentType, applicableOnly, includeWriteoffs });
   const now = Date.now();
   if (financeCache.entry?.key === cacheKey && financeCache.entry.expiresAt > now) {
     return financeCache.entry.value;

@@ -4,6 +4,7 @@ import {
   type ComputedPositionForProfit,
 } from "@/lib/customer-analytics-profit";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { CustomerAnalyticsResolvedSettings } from "@/lib/customer-analytics-settings";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -1034,6 +1035,7 @@ export async function loadCustomerAnalyticsPayload(params: {
   settings: CustomerAnalyticsResolvedSettings;
 }): Promise<CustomerAnalyticsPayload> {
   const { dateFrom, dateTo, serviceIds, settings } = params;
+  const branchId = getScopedBranchId();
   const serviceIdSet = new Set(serviceIds.filter(Boolean));
   const todayYmd = getAnalyticsTodayYmd();
 
@@ -1049,8 +1051,8 @@ export async function loadCustomerAnalyticsPayload(params: {
       orderBy: { updatedAt: "desc" },
     }),
     loadCrmDealsForAnalytics(),
-    prisma.localInventorySyncState.findUnique({ where: { id: "default" } }).catch(() => null),
-    prisma.moySkladAnalyticsSyncState.findUnique({ where: { id: "default" } }).catch(() => null),
+    prisma.localInventorySyncState.findUnique({ where: { branchId_id: { branchId, id: "default" } } }).catch(() => null),
+    prisma.moySkladAnalyticsSyncState.findUnique({ where: { branchId_id: { branchId, id: "default" } } }).catch(() => null),
   ]);
 
   const accumulators = buildAccumulators({ counterparties, demands, crmDeals });

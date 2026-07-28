@@ -10,6 +10,7 @@ import {
   setDefaultOpenAIClient,
 } from "@openai/agents";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { sendMessage } from "@/lib/messenger/messenger-gateway";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
 import { assertSafeAgentOutput, containsPromptInjection, maskPersonalData } from "./security";
@@ -749,7 +750,7 @@ async function ensureAgentSession(organizationId: string, conversationId: string
   const context = await getConversationContext(conversationId);
   if (context.organizationId !== organizationId) throw new Error("Диалог другой организации");
   return prisma.aIAgentSession.upsert({
-    where: { organizationId_conversationId: { organizationId, conversationId } },
+    where: { branchId_organizationId_conversationId: { branchId: getScopedBranchId(), organizationId, conversationId } },
     update: {
       clientId: context.client?.id,
       counterpartyId: context.client?.id,

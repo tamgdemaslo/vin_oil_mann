@@ -7,6 +7,7 @@ import { canAccessCrm } from "@/lib/crm-access";
 import { notifyClientCaseTaskAssigned } from "@/lib/crm-deadline-notifications";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 type Meta = { href: string; type: string; mediaType: string };
 type CounterpartyInput = { id?: unknown; name?: unknown; meta?: { href?: unknown; type?: unknown; mediaType?: unknown } };
@@ -224,7 +225,9 @@ function dealTaskTitle(deal: { title: string } & Record<string, unknown>) {
 }
 
 async function loadStagesWithDeals() {
+  const { branchId } = requireSingleBranchSqlContext();
   return prisma.crmStage.findMany({
+    where: { branchId },
     orderBy: { sortOrder: "asc" },
     include: {
       deals: {
@@ -235,7 +238,8 @@ async function loadStagesWithDeals() {
 }
 
 async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
-  const stages = await prisma.crmStage.findMany({ orderBy: { sortOrder: "asc" } });
+  const { branchId } = requireSingleBranchSqlContext();
+  const stages = await prisma.crmStage.findMany({ where: { branchId }, orderBy: { sortOrder: "asc" } });
   const deals = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT
       id,
@@ -266,6 +270,7 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
       created_at AS "createdAt",
       updated_at AS "updatedAt"
     FROM crm_deals
+    WHERE branch_id = ${branchId}
     ORDER BY next_contact_at ASC NULLS LAST, updated_at DESC
   `;
   const dealsByStage = new Map<string, Array<Record<string, unknown>>>();

@@ -3,10 +3,13 @@ import { getSession } from "@/lib/auth";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { createLocalDemand } from "@/lib/local-demand-write";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
+import { requireBranchApi } from "@/lib/branch-api";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const search = request.nextUrl.searchParams.get("search") ?? "";
   const counterparty = request.nextUrl.searchParams.get("counterparty") ?? "";
@@ -17,12 +20,14 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "50", 10) || 50);
   const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
 
-  return NextResponse.json(await loadLocalDemandList({ search, counterparty, plate, phone, dateFrom, dateTo, limit, offset }));
+  return NextResponse.json(await loadLocalDemandList({ branchId: branchAccess.context.branchId!, search, counterparty, plate, phone, dateFrom, dateTo, limit, offset }));
 }
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   let body: CreateDemandBody;
   try {
@@ -37,7 +42,11 @@ export async function POST(request: NextRequest) {
 
   let created;
   try {
-    created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
+    created = await createLocalDemand(body, {
+      ecoUserName: session.user.name || session.user.login,
+      branchId: branchAccess.context.branchId!,
+      organizationId: branchAccess.context.organizationId!,
+    });
   } catch (error) {
     console.error("[api/demands] create failed", error);
     return NextResponse.json(

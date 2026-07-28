@@ -4,6 +4,7 @@ import { clientCaseStatusLabel, defaultNextActionForCaseStatus } from "@/lib/cli
 import { getFirstCrmStage } from "@/lib/crm";
 import { ClientApiError, createClientAppointment, listClientAppointments } from "@/lib/client-site-api";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { buildDiagnosticReportMessage } from "@/lib/diagnostic-report-message";
 import { syncDiagnosticVehicleFromShipment } from "@/lib/diagnostic-vehicle-sync";
@@ -163,6 +164,10 @@ const APPOINTMENT_LINK_TYPE = "APPOINTMENT";
 const SHIPMENT_LINK_TYPE = "SHIPMENT";
 const TASK_LINK_TYPE = "TASK";
 
+function contextBranchId() {
+  return getScopedBranchId();
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -275,6 +280,7 @@ async function loadConversationRow(conversationId: string): Promise<Conversation
     FROM messenger_conversations
     WHERE id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${contextBranchId()}
     LIMIT 1
   `;
   return rows[0] ?? null;
@@ -301,6 +307,7 @@ async function loadIdentity(row: ConversationContextRow) {
       employee_id AS "employeeId"
     FROM communication_identities
     WHERE organization_id = ${row.organizationId}
+      AND branch_id = ${contextBranchId()}
       AND messenger_account_id = ${row.messengerAccountId}
       AND external_user_id = ${row.externalUserId}
     LIMIT 1
@@ -323,9 +330,9 @@ async function insertAudit(
 ) {
   await db.$executeRaw`
     INSERT INTO integration_audit_logs
-      (id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
+      (id, branch_id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${input.organizationId}, ${input.channel ?? "telegram"}, ${input.accountId ?? null},
+      (${crypto.randomUUID()}, ${contextBranchId()}, ${input.organizationId}, ${input.channel ?? "telegram"}, ${input.accountId ?? null},
        ${input.actorId ?? null}, ${input.action}, ${input.status ?? "ok"}, ${input.message ?? null}, ${JSON.stringify(input.metadata ?? {})}::jsonb, now())
   `;
 }
@@ -333,9 +340,9 @@ async function insertAudit(
 async function insertSystemMessage(db: DbRunner, row: ConversationContextRow, text: string) {
   await db.$executeRaw`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${row.organizationId}, ${row.id}, ${row.messengerAccountId}, ${row.channel},
+      (${crypto.randomUUID()}, ${contextBranchId()}, ${row.organizationId}, ${row.id}, ${row.messengerAccountId}, ${row.channel},
        'system', 'system', ${text}, '[]'::jsonb, 'read', now(), now())
   `;
 }
@@ -354,11 +361,11 @@ async function upsertEntityLink(
 ) {
   await db.$executeRaw`
     INSERT INTO conversation_entity_links
-      (id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
+      (id, branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type, created_by_id, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${input.organizationId}, ${input.conversationId}, ${input.entityType}, ${input.entityId},
+      (${crypto.randomUUID()}, ${contextBranchId()}, ${input.organizationId}, ${input.conversationId}, ${input.entityType}, ${input.entityId},
        ${input.relationType ?? "RELATED"}, ${input.actorId ?? null}, ${JSON.stringify(input.metadata ?? {})}::jsonb, now())
-    ON CONFLICT (organization_id, conversation_id, entity_type, entity_id, relation_type)
+    ON CONFLICT (branch_id, organization_id, conversation_id, entity_type, entity_id, relation_type)
     DO UPDATE SET metadata_json = EXCLUDED.metadata_json
   `;
 }
@@ -367,6 +374,7 @@ async function deletePrimaryLinks(db: DbRunner, organizationId: string, conversa
   await db.$executeRaw`
     DELETE FROM conversation_entity_links
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${contextBranchId()}
       AND conversation_id = ${conversationId}
       AND entity_type = ${entityType}
       AND relation_type = 'PRIMARY'
@@ -390,15 +398,15 @@ async function upsertCommunicationIdentity(
   if (!row.messengerAccountId || !row.externalUserId) return;
   await db.$executeRaw`
     INSERT INTO communication_identities
-      (id, organization_id, channel, messenger_account_id, external_user_id, external_conversation_id,
+      (id, branch_id, organization_id, channel, messenger_account_id, external_user_id, external_conversation_id,
        username, display_name, phone_normalized, entity_type, client_id, supplier_id, employee_id, status,
        match_source, linked_by_id, linked_at, verified_at, metadata_json, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${row.organizationId}, ${row.channel}, ${row.messengerAccountId}, ${row.externalUserId}, ${row.externalConversationId},
+      (${crypto.randomUUID()}, ${contextBranchId()}, ${row.organizationId}, ${row.channel}, ${row.messengerAccountId}, ${row.externalUserId}, ${row.externalConversationId},
        ${row.participantUsername}, ${row.participantName || row.title}, ${normalizePhoneKey(row.participantPhone)}, ${input.entityType},
        ${input.clientId ?? null}, ${input.supplierId ?? null}, ${input.employeeId ?? null}, ${input.status ?? "CONFIRMED"},
        ${input.matchSource ?? "MANUAL"}, ${input.actorId ?? null}, now(), now(), ${JSON.stringify(input.metadata ?? {})}::jsonb, now(), now())
-    ON CONFLICT (organization_id, messenger_account_id, external_user_id)
+    ON CONFLICT (branch_id, organization_id, messenger_account_id, external_user_id)
     DO UPDATE SET
       external_conversation_id = EXCLUDED.external_conversation_id,
       username = EXCLUDED.username,
@@ -460,6 +468,7 @@ async function loadContextLinks(organizationId: string, conversationId: string) 
       created_at AS "createdAt"
     FROM conversation_entity_links
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${contextBranchId()}
       AND conversation_id = ${conversationId}
     ORDER BY created_at DESC
   `;
@@ -765,6 +774,7 @@ export async function linkClientToConversation(
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertCommunicationIdentity(tx, row, {
       entityType: "CLIENT",
@@ -869,6 +879,7 @@ export async function createAndLinkClient(
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertCommunicationIdentity(tx, row, {
       entityType: "CLIENT",
@@ -921,6 +932,7 @@ export async function unlinkClientFromConversation(conversationId: string, actor
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await deletePrimaryLinks(tx, row.organizationId, row.id, CLIENT_LINK_TYPE);
     if (row.messengerAccountId && row.externalUserId) {
@@ -931,6 +943,7 @@ export async function unlinkClientFromConversation(conversationId: string, actor
             entity_type = 'OTHER',
             updated_at = now()
         WHERE organization_id = ${row.organizationId}
+          AND branch_id = ${contextBranchId()}
           AND messenger_account_id = ${row.messengerAccountId}
           AND external_user_id = ${row.externalUserId}
       `;
@@ -964,6 +977,7 @@ export async function classifyConversation(
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertCommunicationIdentity(tx, row, {
       entityType,
@@ -1071,6 +1085,7 @@ export async function createCaseForConversation(
           updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertEntityLink(tx, {
       organizationId: row.organizationId,
@@ -1110,6 +1125,7 @@ export async function linkCaseToConversation(
       SET related_case_id = ${deal.id}, updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertEntityLink(tx, {
       organizationId: row.organizationId,
@@ -1158,6 +1174,7 @@ export async function createAppointmentForConversation(
         SET related_appointment_id = ${appointment.id}, updated_at = now()
         WHERE id = ${row.id}
           AND organization_id = ${row.organizationId}
+          AND branch_id = ${contextBranchId()}
       `;
       await upsertEntityLink(tx, {
         organizationId: row.organizationId,
@@ -1227,6 +1244,7 @@ export async function createShipmentForConversation(
       SET related_shipment_id = ${created.id}, updated_at = now()
       WHERE id = ${row.id}
         AND organization_id = ${row.organizationId}
+        AND branch_id = ${contextBranchId()}
     `;
     await upsertEntityLink(tx, {
       organizationId: row.organizationId,

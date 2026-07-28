@@ -5,6 +5,7 @@ import { isMoySkladSyncEnabled, moyskladDisabledMessage } from "@/lib/moysklad-f
 import { getMoySkladHeaders, moyskladFetchWithRetry } from "@/lib/moysklad";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
 import { listRawPhonesFromCounterparty, pickNormalizedPhoneFromCounterparty } from "@/lib/phone-normalize";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 const SYNC_STATE_ID = "default";
 const PAGE_LIMIT = 500;
@@ -50,18 +51,29 @@ function createDefaultSyncStatus(): CustomerAnalyticsSyncStatus {
   };
 }
 
-let runtimeSyncStatus: CustomerAnalyticsSyncStatus = createDefaultSyncStatus();
-let activeSyncPromise:
-  | Promise<SyncCustomerAnalyticsResult | SyncCustomerAnalyticsError>
-  | null = null;
-let lastPersistedSyncStatusAt = 0;
+type BranchAnalyticsSyncRuntime = {
+  status: CustomerAnalyticsSyncStatus;
+  activePromise: Promise<SyncCustomerAnalyticsResult | SyncCustomerAnalyticsError> | null;
+  lastPersistedAt: number;
+};
+
+const branchAnalyticsSyncRuntime = new Map<string, BranchAnalyticsSyncRuntime>();
+
+function getBranchAnalyticsSyncRuntime(branchId = getScopedBranchId()): BranchAnalyticsSyncRuntime {
+  const existing = branchAnalyticsSyncRuntime.get(branchId);
+  if (existing) return existing;
+  const created = { status: createDefaultSyncStatus(), activePromise: null, lastPersistedAt: 0 };
+  branchAnalyticsSyncRuntime.set(branchId, created);
+  return created;
+}
 
 function setRuntimeSyncStatus(patch: Partial<CustomerAnalyticsSyncStatus>) {
-  runtimeSyncStatus = { ...runtimeSyncStatus, ...patch };
+  const runtime = getBranchAnalyticsSyncRuntime();
+  runtime.status = { ...runtime.status, ...patch };
 }
 
 export function getCustomerAnalyticsSyncStatus(): CustomerAnalyticsSyncStatus {
-  return { ...runtimeSyncStatus };
+  return { ...getBranchAnalyticsSyncRuntime().status };
 }
 
 type SyncStateRow = Awaited<ReturnType<typeof prisma.moySkladAnalyticsSyncState.findUnique>>;
@@ -71,11 +83,14 @@ async function persistRuntimeSyncStatus(params?: {
   lastError?: string | null;
   demandsSynced?: number;
 }) {
+  const branchId = getScopedBranchId();
+  const runtimeSyncStatus = getBranchAnalyticsSyncRuntime(branchId).status;
   const heartbeatAt = new Date();
   await prismaWithRetry(() =>
     prisma.moySkladAnalyticsSyncState.upsert({
-      where: { id: SYNC_STATE_ID },
+      where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
       create: {
+        branchId,
         id: SYNC_STATE_ID,
         lastSyncedAt: params?.lastSyncedAt ?? null,
         lastError: params?.lastError ?? null,
@@ -115,9 +130,10 @@ async function persistRuntimeSyncStatus(params?: {
 }
 
 async function maybePersistRuntimeSyncStatus(force = false) {
+  const runtime = getBranchAnalyticsSyncRuntime();
   const now = Date.now();
-  if (!force && now - lastPersistedSyncStatusAt < STATUS_PERSIST_MIN_INTERVAL_MS) return;
-  lastPersistedSyncStatusAt = now;
+  if (!force && now - runtime.lastPersistedAt < STATUS_PERSIST_MIN_INTERVAL_MS) return;
+  runtime.lastPersistedAt = now;
   await persistRuntimeSyncStatus();
 }
 
@@ -157,18 +173,20 @@ function isPersistedSyncStatusStale(row: SyncStateRow): boolean {
 }
 
 export async function getPersistedCustomerAnalyticsSyncStatus(): Promise<CustomerAnalyticsSyncStatus> {
+  const branchId = getScopedBranchId();
+  const runtime = getBranchAnalyticsSyncRuntime(branchId);
   const row = await prismaWithRetry(() =>
     prisma.moySkladAnalyticsSyncState.findUnique({
-      where: { id: SYNC_STATE_ID },
+      where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
     })
   );
-  if (!row) return activeSyncPromise ? getCustomerAnalyticsSyncStatus() : createDefaultSyncStatus();
+  if (!row) return runtime.activePromise ? getCustomerAnalyticsSyncStatus() : createDefaultSyncStatus();
 
-  if (!activeSyncPromise && isPersistedSyncStatusStale(row)) {
+  if (!runtime.activePromise && isPersistedSyncStatusStale(row)) {
     const interruptedMessage = "Синхронизация была прервана: сервер был перезапущен или задача остановилась.";
     const fixed = await prismaWithRetry(() =>
       prisma.moySkladAnalyticsSyncState.update({
-        where: { id: SYNC_STATE_ID },
+        where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
         data: {
           syncRunning: false,
           syncPhase: "error",
@@ -181,7 +199,7 @@ export async function getPersistedCustomerAnalyticsSyncStatus(): Promise<Custome
     return mapRowToSyncStatus(fixed);
   }
 
-  if (activeSyncPromise) {
+  if (runtime.activePromise) {
     return getCustomerAnalyticsSyncStatus();
   }
 
@@ -502,11 +520,13 @@ async function runCustomerAnalyticsSync(options?: {
 }): Promise<
   SyncCustomerAnalyticsResult | SyncCustomerAnalyticsError
 > {
+  const branchId = getScopedBranchId();
+  const runtime = getBranchAnalyticsSyncRuntime(branchId);
   if (!isMoySkladSyncEnabled()) {
     return { ok: false, error: moyskladDisabledMessage("sync") };
   }
 
-  if (!getMoySkladHeaders()) {
+  if (!(await getMoySkladHeaders())) {
     return { ok: false, error: "МойСклад не настроен" };
   }
 
@@ -515,8 +535,8 @@ async function runCustomerAnalyticsSync(options?: {
 
   await prismaWithRetry(() =>
     prisma.moySkladAnalyticsSyncState.upsert({
-      where: { id: SYNC_STATE_ID },
-      create: { id: SYNC_STATE_ID, syncRunning: false },
+      where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
+      create: { branchId, id: SYNC_STATE_ID, syncRunning: false },
       update: {},
     })
   );
@@ -524,7 +544,7 @@ async function runCustomerAnalyticsSync(options?: {
   try {
     const syncState = await prismaWithRetry(() =>
       prisma.moySkladAnalyticsSyncState.findUnique({
-        where: { id: SYNC_STATE_ID },
+        where: { branchId_id: { branchId, id: SYNC_STATE_ID } },
       })
     );
     const startedAt = new Date();
@@ -546,7 +566,7 @@ async function runCustomerAnalyticsSync(options?: {
     const resumeOffset = resumeFull ? syncState?.syncProcessedDemands ?? 0 : 0;
     totalProcessed = resumeOffset;
 
-    runtimeSyncStatus = {
+    runtime.status = {
       isRunning: true,
       mode,
       phase: mode === "full" ? "syncing" : "scanning",
@@ -824,11 +844,13 @@ export function startCustomerAnalyticsSync(options?: {
   started: boolean;
   status: CustomerAnalyticsSyncStatus;
 } {
-  if (activeSyncPromise) {
+  const branchId = getScopedBranchId();
+  const runtime = getBranchAnalyticsSyncRuntime(branchId);
+  if (runtime.activePromise) {
     return { started: false, status: getCustomerAnalyticsSyncStatus() };
   }
-  activeSyncPromise = runCustomerAnalyticsSync(options).finally(() => {
-    activeSyncPromise = null;
+  runtime.activePromise = runCustomerAnalyticsSync(options).finally(() => {
+    getBranchAnalyticsSyncRuntime(branchId).activePromise = null;
   });
   return { started: true, status: getCustomerAnalyticsSyncStatus() };
 }

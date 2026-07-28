@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 
 type VariantJson = {
@@ -75,7 +76,7 @@ export async function POST(
 
         const stock = demand.storeId
           ? await tx.localStockBalance.findUnique({
-              where: { productId_storeId: { productId: product.id, storeId: demand.storeId } },
+              where: { branchId_productId_storeId: { branchId: getScopedBranchId(), productId: product.id, storeId: demand.storeId } },
             })
           : null;
 

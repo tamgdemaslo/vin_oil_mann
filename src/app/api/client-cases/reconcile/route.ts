@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { processClientCaseWorkflowTransitions } from "@/lib/client-case-workflow";
 import { canAccessCrm } from "@/lib/crm-access";
 import { prisma } from "@/lib/db";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 async function requireCrmSession() {
   const session = await getSession();
@@ -14,6 +15,7 @@ async function requireCrmSession() {
 export async function POST() {
   const accessError = await requireCrmSession();
   if (accessError) return accessError;
+  const { branchId } = requireSingleBranchSqlContext();
   const transitions = await processClientCaseWorkflowTransitions();
   const reconciled = await prisma.$executeRaw`
     UPDATE crm_deals
@@ -22,6 +24,7 @@ export async function POST() {
     WHERE status = 'open'
       AND next_action_at IS NULL
       AND next_contact_at IS NOT NULL
+      AND branch_id = ${branchId}
   `;
   return NextResponse.json({ ok: true, transitions, reconciled });
 }

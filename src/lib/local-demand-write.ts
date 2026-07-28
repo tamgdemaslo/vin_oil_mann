@@ -4,6 +4,7 @@ import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
 import { syncActiveDiagnosticVehiclesForShipment } from "@/lib/diagnostic-vehicle-sync";
 import { prisma } from "@/lib/db";
+import { getBranchContext } from "@/lib/branch-context";
 import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
@@ -43,6 +44,40 @@ type UpdateDemandBody = {
 };
 
 type ShipmentActor = Pick<User, "login" | "name" | "role">;
+
+async function resolveDemandBranchScope(branchId?: string, organizationId?: string) {
+  let branch = branchId
+    ? await prisma.branch.findFirst({ where: { id: branchId, status: "active" } })
+    : null;
+
+  if (!branch && organizationId) {
+    branch = await prisma.branch.findFirst({
+      where: {
+        status: "active",
+        OR: [{ id: organizationId }, { legacyOrganizationId: organizationId }],
+      },
+    });
+  }
+
+  if (!branch) {
+    const context = await getBranchContext();
+    if (context?.branchId) {
+      branch = await prisma.branch.findFirst({
+        where: { id: context.branchId, status: "active" },
+      });
+    }
+  }
+
+  if (!branch?.legacyOrganizationId) {
+    throw new Error("Активный филиал или его юридическое лицо не настроены");
+  }
+
+  if (organizationId && organizationId !== branch.legacyOrganizationId && organizationId !== branch.id) {
+    throw new Error("Организация не относится к активному филиалу");
+  }
+
+  return { branchId: branch.id, organizationId: branch.legacyOrganizationId };
+}
 
 export type ReopenDemandBody = {
   reasonCode?: string;
@@ -359,8 +394,11 @@ async function createShipmentRevision(
     actor?: ShipmentActor | null;
   }
 ) {
+  const shipment = await tx.localDemand.findUnique({ where: { id: params.shipmentId }, select: { branchId: true } });
+  if (!shipment) throw new Error("Отгрузка для ревизии не найдена");
   await tx.shipmentRevision.create({
     data: {
+      branchId: shipment.branchId,
       shipmentId: params.shipmentId,
       revisionNumber: params.revisionNumber,
       eventType: params.eventType,
@@ -678,9 +716,9 @@ async function applyStockMovements(
   }
 }
 
-async function findLocalDemand(id: string) {
+async function findLocalDemand(id: string, branchId: string) {
   return prisma.localDemand.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { branchId, OR: [{ id }, { moyskladId: id }] },
     include: { positions: true, counterparty: true, store: true, organization: true },
   });
 }
@@ -1111,20 +1149,26 @@ export async function linkLocalDemandToAppointment(
 
 export async function createLocalDemand(
   body: CreateDemandBody,
-  options?: { ecoUserName?: string }
+  options: { ecoUserName?: string; branchId?: string; organizationId?: string } = {}
 ): Promise<{ ok: true; id: string; name: string; href: string } | { ok: false; error: string }> {
+  let scope: { branchId: string; organizationId: string };
+  try {
+    scope = await resolveDemandBranchScope(options.branchId, options.organizationId);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось определить филиал" };
+  }
   const storeMoyskladId = entityIdFromMeta(body.store?.meta);
   const agentMoyskladId = entityIdFromMeta(body.agent?.meta);
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
   const [store, counterparty, organization] = await Promise.all([
     storeMoyskladId
-      ? prisma.localStore.findFirst({ where: { OR: [{ id: storeMoyskladId }, { moyskladId: storeMoyskladId }] } })
+      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeMoyskladId }, { moyskladId: storeMoyskladId }] } })
       : null,
     agentMoyskladId
-      ? prisma.localCounterparty.findFirst({ where: { OR: [{ id: agentMoyskladId }, { moyskladId: agentMoyskladId }] } })
+      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentMoyskladId }, { moyskladId: agentMoyskladId }] } })
       : null,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
       : null,
   ]);
 
@@ -1157,6 +1201,7 @@ export async function createLocalDemand(
       };
       const created = await tx.localDemand.create({
         data: {
+          branchId: scope.branchId,
           name,
           moyskladHref: null,
           momentAt,
@@ -1239,9 +1284,12 @@ export async function createLocalDemand(
 export async function updateLocalDemand(
   id: string,
   body: UpdateDemandBody,
-  actor?: ShipmentActor | null
+  actor: ShipmentActor | null | undefined,
+  branchId?: string,
+  organizationId?: string
 ): Promise<{ ok: true; id: string; name: string; applicable: boolean; description: string } | { ok: false; error: string; notFound?: boolean }> {
-  const current = await findLocalDemand(id);
+  const scope = await resolveDemandBranchScope(branchId, organizationId);
+  const current = await findLocalDemand(id, scope.branchId);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
   if (current.applicable) {
     return {
@@ -1255,13 +1303,13 @@ export async function updateLocalDemand(
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
   const [nextStore, nextCounterparty, nextOrganization] = await Promise.all([
     storeLookupId
-      ? prisma.localStore.findFirst({ where: { OR: [{ id: storeLookupId }, { moyskladId: storeLookupId }] } })
+      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeLookupId }, { moyskladId: storeLookupId }] } })
       : current.store,
     agentLookupId
-      ? prisma.localCounterparty.findFirst({ where: { OR: [{ id: agentLookupId }, { moyskladId: agentLookupId }] } })
+      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentLookupId }, { moyskladId: agentLookupId }] } })
       : current.counterparty,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
       : current.organization,
   ]);
 
@@ -1481,7 +1529,8 @@ function isBlockingClosingStatus(status: string | null | undefined): boolean {
 
 export async function getLocalDemandReopenCheck(
   id: string,
-  actor?: ShipmentActor | null
+  actor?: ShipmentActor | null,
+  branchId?: string
 ): Promise<
   | {
       ok: true;
@@ -1500,7 +1549,8 @@ export async function getLocalDemandReopenCheck(
     }
   | { ok: false; error: string; notFound?: boolean }
 > {
-  const current = await findLocalDemand(id);
+  const scope = await resolveDemandBranchScope(branchId);
+  const current = await findLocalDemand(id, scope.branchId);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
 
   const blockers: string[] = [];
@@ -1674,11 +1724,12 @@ export async function reopenLocalDemand(
   }
 }
 
-export async function listLocalDemandRevisions(id: string): Promise<
+export async function listLocalDemandRevisions(id: string, branchId?: string): Promise<
   | { ok: true; rows: { id: string; revisionNumber: number; eventType: string; statusBefore: string | null; statusAfter: string | null; reason: string | null; reasonCode: string | null; createdByName: string | null; createdAt: string }[] }
   | { ok: false; error: string; notFound?: boolean }
 > {
-  const current = await findLocalDemand(id);
+  const scope = await resolveDemandBranchScope(branchId);
+  const current = await findLocalDemand(id, scope.branchId);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
   const rows = await prisma.shipmentRevision.findMany({
     where: { shipmentId: current.id },
@@ -1705,9 +1756,11 @@ export async function listLocalDemandRevisions(id: string): Promise<
 }
 
 export async function deleteLocalDemand(
-  id: string
+  id: string,
+  branchId?: string
 ): Promise<{ ok: true } | { ok: false; error: string; notFound?: boolean }> {
-  const current = await findLocalDemand(id);
+  const scope = await resolveDemandBranchScope(branchId);
+  const current = await findLocalDemand(id, scope.branchId);
   if (!current) return { ok: false, error: "Локальная отгрузка не найдена", notFound: true };
   if (current.applicable) {
     return { ok: false, error: "Проведённую отгрузку нельзя удалить напрямую. Сначала верните документ в черновик или используйте сценарий отмены." };
@@ -1724,10 +1777,12 @@ export async function deleteLocalDemand(
 }
 
 export async function loadLocalDemandDetailPayload(
-  id: string
+  id: string,
+  branchId?: string
 ): Promise<{ ok: true; data: DemandDetailPayload } | { ok: false; error: string; notFound?: boolean }> {
+  const scope = await resolveDemandBranchScope(branchId);
   const demand = await prisma.localDemand.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { branchId: scope.branchId, OR: [{ id }, { moyskladId: id }] },
     include: {
       counterparty: true,
       store: true,

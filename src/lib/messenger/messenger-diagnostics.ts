@@ -13,6 +13,7 @@ import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { assertMessengerOutboundTextSafe } from "./messenger-security";
 import { listMessageTemplates } from "./messenger-templates";
 import { getMessengerOrganizationId } from "./messenger-tenant";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 import type { MessageOutbox } from "./messenger-types";
 
 type DiagnosticSource = "legacy" | "map";
@@ -171,6 +172,7 @@ async function resolveMapDiagnostic(request: NextRequest, diagnosticId: string):
 
 async function findTelegramConnection(clientId: string) {
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<TelegramConnectionRow[]>`
     SELECT
       id,
@@ -178,6 +180,7 @@ async function findTelegramConnection(clientId: string) {
       display_name AS "displayName"
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND channel = 'telegram'
       AND type = 'client'
       AND client_id = ${clientId}
@@ -192,15 +195,16 @@ async function findTelegramConnection(clientId: string) {
 async function upsertTelegramConversation(target: DiagnosticReportTarget, connection: TelegramConnectionRow, text: string) {
   const id = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const title = `Диагностика · ${target.vehicleName}`;
   const rows = await prisma.$queryRaw<ConversationIdRow[]>`
     INSERT INTO messenger_conversations
-      (id, organization_id, channel, external_conversation_id, connection_id, client_id, title, participant_name, participant_phone,
+      (id, branch_id, organization_id, channel, external_conversation_id, connection_id, client_id, title, participant_name, participant_phone,
        status, unread_count, last_message_text, last_message_at, related_diagnostic_id, related_shipment_id, updated_at)
     VALUES
-      (${id}, ${organizationId}, 'telegram', ${connection.externalChatId}, ${connection.id}, ${target.clientId}, ${title}, ${target.clientName},
+      (${id}, ${branchId}, ${organizationId}, 'telegram', ${connection.externalChatId}, ${connection.id}, ${target.clientId}, ${title}, ${target.clientName},
        ${target.clientPhone}, 'open', 0, ${text}, now(), ${target.diagnosticId}, ${target.shipmentId}, now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       connection_id = EXCLUDED.connection_id,
@@ -222,22 +226,25 @@ async function upsertTelegramConversation(target: DiagnosticReportTarget, connec
 async function insertDiagnosticReportMessage(conversationId: string, text: string) {
   const id = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<MessageRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${conversationId}, 'telegram', 'outbound', 'employee', ${text}, '[]'::jsonb, 'queued', now(), now())
+      (${id}, ${branchId}, ${organizationId}, ${conversationId}, 'telegram', 'outbound', 'employee', ${text}, '[]'::jsonb, 'queued', now(), now())
     RETURNING id
   `;
   return rows[0]?.id ?? id;
 }
 
 async function markReportSent(source: DiagnosticSource, diagnosticId: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   if (source === "map") {
     await prisma.$executeRaw`
       UPDATE diagnostic_map_sessions
       SET report_sent_at = now(), updated_at = now()
       WHERE id = ${diagnosticId}
+        AND branch_id = ${branchId}
     `;
     return;
   }
@@ -245,6 +252,7 @@ async function markReportSent(source: DiagnosticSource, diagnosticId: string) {
     UPDATE diagnostics
     SET client_report_sent_at = now(), updated_at = now()
     WHERE id = ${diagnosticId}
+      AND branch_id = ${branchId}
   `;
 }
 

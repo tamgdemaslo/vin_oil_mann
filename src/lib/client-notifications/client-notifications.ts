@@ -21,6 +21,7 @@ import { startContactConversation } from "@/lib/messenger/messenger-contact-acti
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 export type ClientNotificationEventType =
   | "appointment_client_created"
@@ -801,6 +802,7 @@ async function loadClientNotificationSettingsInternal(organizationId = getMessen
       updated_at AS "updatedAt"
     FROM notification_settings
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
     ORDER BY updated_at DESC
     LIMIT 1
   `;
@@ -885,222 +887,18 @@ function mapLog(row: NotificationLogRow) {
 
 export async function ensureClientNotificationsSchema() {
   if (!schemaState.__clientNotificationsSchemaPromise) {
-    schemaState.__clientNotificationsSchemaPromise = (async () => {
-      await ensureMessengerIntegrationCoreSchema();
-      const organizationId = getMessengerOrganizationId();
-
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS notification_templates (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          name TEXT NOT NULL,
-          event_type TEXT NOT NULL,
-          channel TEXT NOT NULL,
-          body TEXT NOT NULL,
-          is_active BOOLEAN NOT NULL DEFAULT true,
-          branch_id TEXT,
-          status TEXT NOT NULL DEFAULT 'active',
-          metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS notification_rules (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          event_type TEXT NOT NULL,
-          enabled BOOLEAN NOT NULL DEFAULT true,
-          channel TEXT NOT NULL,
-          template_id TEXT NOT NULL,
-          timing_type TEXT NOT NULL DEFAULT 'immediate',
-          offset_minutes INTEGER,
-          conditions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          branch_id TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS notification_jobs (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          event_type TEXT NOT NULL,
-          channel TEXT NOT NULL,
-          client_id TEXT,
-          appointment_id TEXT,
-          diagnostic_report_id TEXT,
-          template_id TEXT NOT NULL,
-          scheduled_at TIMESTAMPTZ NOT NULL,
-          status TEXT NOT NULL DEFAULT 'scheduled',
-          idempotency_key TEXT NOT NULL,
-          payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          error_message TEXT,
-          attempts INTEGER NOT NULL DEFAULT 0,
-          next_attempt_at TIMESTAMPTZ,
-          sent_at TIMESTAMPTZ,
-          provider_message_id TEXT,
-          messenger_message_id TEXT,
-          messenger_outbox_id TEXT,
-          conversation_id TEXT,
-          branch_id TEXT,
-          initiated_by_id TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS notification_logs (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          notification_job_id TEXT,
-          event_type TEXT NOT NULL,
-          channel TEXT NOT NULL,
-          client_id TEXT,
-          appointment_id TEXT,
-          diagnostic_report_id TEXT,
-          template_id TEXT,
-          status TEXT NOT NULL,
-          rendered_message TEXT,
-          error_message TEXT,
-          provider_message_id TEXT,
-          initiated_by_id TEXT,
-          metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS client_notification_preferences (
-          client_id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          telegram_enabled BOOLEAN NOT NULL DEFAULT true,
-          consent_status TEXT NOT NULL DEFAULT 'unknown',
-          consent_source TEXT,
-          consent_at TIMESTAMPTZ,
-          unsubscribed_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS notification_settings (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          settings_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-
-      await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS notification_jobs_org_idempotency_uidx ON notification_jobs(organization_id, idempotency_key)`;
-      await prisma.$executeRaw`CREATE UNIQUE INDEX IF NOT EXISTS notification_settings_org_uidx ON notification_settings(organization_id)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_templates_org_event_idx ON notification_templates(organization_id, event_type, channel, is_active)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_rules_org_event_idx ON notification_rules(organization_id, event_type, enabled)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_jobs_org_status_idx ON notification_jobs(organization_id, status, scheduled_at)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_jobs_appointment_idx ON notification_jobs(appointment_id)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_jobs_diagnostic_idx ON notification_jobs(diagnostic_report_id)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_logs_org_created_idx ON notification_logs(organization_id, created_at DESC)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_logs_org_event_idx ON notification_logs(organization_id, event_type)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS notification_logs_org_status_idx ON notification_logs(organization_id, status)`;
-      await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS client_notification_preferences_org_idx ON client_notification_preferences(organization_id, telegram_enabled, consent_status)`;
-      await prisma.$executeRaw`
-        INSERT INTO notification_settings
-          (id, organization_id, settings_json, created_at, updated_at)
-        VALUES
-          (${`${organizationId}:settings:client-notifications`}, ${organizationId}, ${json(defaultClientNotificationSettings)}::jsonb, now(), now())
-        ON CONFLICT (organization_id) DO UPDATE
-        SET settings_json = ${json(defaultClientNotificationSettings)}::jsonb || notification_settings.settings_json,
-            updated_at = notification_settings.updated_at
-      `;
-
-      for (const template of defaultTemplates) {
-        const metadata = { systemDefault: true, key: template.key, defaultVersion: 6, variables: extractTemplateVariables(template.body) };
-        await prisma.$executeRaw`
-          INSERT INTO notification_templates
-            (id, organization_id, name, event_type, channel, body, is_active, status, metadata_json, created_at, updated_at)
-          VALUES
-            (${orgScopedId(organizationId, "tpl", template.key)}, ${organizationId}, ${template.name}, ${template.eventType},
-             'telegram', ${template.body}, ${template.active ?? true}, 'active',
-             ${json(metadata)}::jsonb, now(), now())
-          ON CONFLICT (id) DO NOTHING
-        `;
-        await prisma.$executeRaw`
-          UPDATE notification_templates
-          SET name = ${template.name},
-              event_type = ${template.eventType},
-              body = ${template.body},
-              is_active = ${template.active ?? true},
-              metadata_json = metadata_json || ${json(metadata)}::jsonb,
-              updated_at = now()
-          WHERE id = ${orgScopedId(organizationId, "tpl", template.key)}
-            AND organization_id = ${organizationId}
-            AND metadata_json->>'systemDefault' = 'true'
-            AND (
-              (
-                COALESCE(metadata_json->>'updatedFromSettings', 'false') <> 'true'
-                AND COALESCE(metadata_json->>'defaultVersion', '0') <> '6'
-              )
-              OR body = ${legacyDiagnosticReadyTemplateBody}
-              OR body LIKE '%{car}%'
-              OR body LIKE '%{{car%'
-              OR body LIKE '%Администратор записал вас%'
-              OR body LIKE '%Мы отметили ваш приезд%'
-              OR body LIKE '%Яндекс.Карты:%'
-              OR body LIKE '%Оставить отзыв:%'
-            )
-        `;
-      }
-
-      for (const rule of defaultRuleSpecs) {
-        await prisma.$executeRaw`
-          INSERT INTO notification_rules
-            (id, organization_id, event_type, enabled, channel, template_id, timing_type, offset_minutes, conditions_json, created_at, updated_at)
-          VALUES
-            (${orgScopedId(organizationId, "rule", rule.key)}, ${organizationId}, ${rule.eventType}, ${rule.enabled}, 'telegram',
-             ${orgScopedId(organizationId, "tpl", rule.templateKey)}, ${rule.timingType}, ${rule.offsetMinutes ?? null},
-             ${json(rule.conditions ?? defaultConditions)}::jsonb, now(), now())
-          ON CONFLICT (id) DO NOTHING
-        `;
-      }
-      await prisma.$executeRaw`
-        UPDATE notification_rules
-        SET enabled = true,
-            conditions_json = ${json({ ...defaultConditions, arrivalStatuses: ["arrived"] })}::jsonb,
-            updated_at = now()
-        WHERE organization_id = ${organizationId}
-          AND id = ${orgScopedId(organizationId, "rule", "client-arrived")}
-          AND event_type = 'client_arrived'
-      `;
-      await prisma.$executeRaw`
-        UPDATE notification_rules
-        SET enabled = false,
-            timing_type = 'immediate',
-            offset_minutes = NULL,
-            conditions_json = ${json(defaultConditions)}::jsonb,
-            updated_at = now()
-        WHERE organization_id = ${organizationId}
-          AND id = ${orgScopedId(organizationId, "rule", "visit-completed")}
-          AND event_type = 'visit_completed'
-          AND template_id = ${orgScopedId(organizationId, "tpl", "visit-review")}
-      `;
-      await prisma.$executeRaw`
-        UPDATE notification_rules
-        SET enabled = true,
-            timing_type = 'delayed_after_event',
-            offset_minutes = COALESCE(NULLIF((conditions_json->>'reviewDelayMinutes')::integer, 0), 360),
-            conditions_json = ${json({ ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true })}::jsonb || conditions_json,
-            updated_at = now()
-        WHERE organization_id = ${organizationId}
-          AND id = ${orgScopedId(organizationId, "rule", "review-after-visit")}
-          AND event_type = 'review_after_visit'
-      `;
-      await repairLegacyCarTemplateErrorJobs(organizationId);
-    })().catch((error) => {
+    // Runtime schema mutation/backfill is forbidden. The reviewed Prisma
+    // migration owns table creation and default seed data.
+    schemaState.__clientNotificationsSchemaPromise = ensureMessengerIntegrationCoreSchema().catch((error) => {
       schemaState.__clientNotificationsSchemaPromise = null;
       throw error;
     });
   }
   await schemaState.__clientNotificationsSchemaPromise;
+}
+
+function activeNotificationBranchId() {
+  return requireSingleBranchSqlContext().branchId;
 }
 
 async function loadTemplate(templateId: string) {
@@ -1121,6 +919,7 @@ async function loadTemplate(templateId: string) {
       updated_at AS "updatedAt"
     FROM notification_templates
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${templateId}
     LIMIT 1
   `;
@@ -1244,6 +1043,7 @@ async function rerenderNotificationJobWithCurrentTemplate(job: NotificationJobRo
         error_message = NULL,
         updated_at = now()
     WHERE organization_id = ${job.organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${job.id}
   `;
   return { ok: true as const, payload: nextPayload, renderedMessage: render.text };
@@ -1278,6 +1078,7 @@ async function repairLegacyCarTemplateErrorJobs(organizationId: string) {
       updated_at AS "updatedAt"
     FROM notification_jobs
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND status = 'template_error'
       AND (
         COALESCE(error_message, '') ILIKE '%car%'
@@ -1299,6 +1100,7 @@ async function repairLegacyCarTemplateErrorJobs(organizationId: string) {
           error_message = NULL,
           updated_at = now()
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${activeNotificationBranchId()}
         AND id = ${job.id}
         AND status = 'template_error'
     `;
@@ -1726,12 +1528,13 @@ export async function previewNotificationTemplate(templateIdOrBody: string, cont
 }
 
 async function resolveLocalCounterparty(clientId: string | null, phone: string | null) {
+  const { branchId } = requireSingleBranchSqlContext();
   if (clientId) {
     const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
       SELECT id, name, phone, normalized_phone AS "normalizedPhone"
       FROM local_counterparties
-      WHERE id = ${clientId}
-         OR moysklad_id = ${clientId}
+      WHERE branch_id = ${branchId}
+        AND (id = ${clientId} OR moysklad_id = ${clientId})
       ORDER BY CASE WHEN id = ${clientId} THEN 0 ELSE 1 END, updated_at DESC
       LIMIT 1
     `;
@@ -1741,7 +1544,8 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
   const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
     SELECT id, name, phone, normalized_phone AS "normalizedPhone"
     FROM local_counterparties
-    WHERE normalized_phone = ${phone}
+    WHERE branch_id = ${branchId}
+      AND (normalized_phone = ${phone}
        OR regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ${phone}
        OR (
          length(${phone}::text) >= 10
@@ -1749,7 +1553,7 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
            right(COALESCE(normalized_phone, ''), 10) = right(${phone}::text, 10)
            OR right(regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = right(${phone}::text, 10)
          )
-       )
+       ))
     ORDER BY updated_at DESC
     LIMIT 1
   `;
@@ -1786,6 +1590,7 @@ async function findTelegramConnectionTarget(clientId: string | null, phone: stri
       client_id AS "clientId"
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND channel = 'telegram'
       AND type = 'client'
       AND is_active = true
@@ -1824,14 +1629,14 @@ async function upsertTelegramConversationFromConnection(input: {
   const messengerAccountId = messengerAccountIdFromExternalChatId(input.connection.externalChatId);
   const rows = await prisma.$queryRaw<ConversationTarget[]>`
     INSERT INTO messenger_conversations
-      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, connection_id, client_id,
+      (id, branch_id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, connection_id, client_id,
        title, participant_name, participant_phone, status, unread_count, last_message_text, last_message_at,
        related_diagnostic_id, related_appointment_id, related_shipment_id, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${messengerAccountId}, 'telegram', ${input.connection.externalChatId}, ${input.connection.externalChatId},
+      (${id}, ${activeNotificationBranchId()}, ${organizationId}, ${messengerAccountId}, 'telegram', ${input.connection.externalChatId}, ${input.connection.externalChatId},
        ${input.connection.id}, ${input.clientId}, ${title}, ${title}, ${input.clientPhone ?? input.connection.phone}, 'open', 0, '', now(),
        ${input.diagnosticReportId ?? null}, ${input.appointmentId ?? null}, ${stringValue(input.payload?.shipmentId) || null}, now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       messenger_account_id = COALESCE(EXCLUDED.messenger_account_id, messenger_conversations.messenger_account_id),
@@ -1877,6 +1682,7 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
     FROM messenger_conversations mc
     LEFT JOIN communication_identities ci
       ON ci.organization_id = mc.organization_id
+      AND ci.branch_id = ${activeNotificationBranchId()}
       AND ci.channel = 'telegram'
       AND ci.status <> 'UNLINKED'
       AND (
@@ -1884,10 +1690,13 @@ async function findTelegramConversation(input: NotificationEventContext): Promis
         OR (ci.external_user_id IS NOT NULL AND ci.external_user_id = mc.external_user_id)
       )
     LEFT JOIN local_counterparties conversation_client
-      ON conversation_client.id = mc.client_id OR conversation_client.moysklad_id = mc.client_id
+      ON conversation_client.branch_id = ${activeNotificationBranchId()}
+      AND (conversation_client.id = mc.client_id OR conversation_client.moysklad_id = mc.client_id)
     LEFT JOIN local_counterparties conversation_supplier
-      ON conversation_supplier.id = mc.supplier_id OR conversation_supplier.moysklad_id = mc.supplier_id
+      ON conversation_supplier.branch_id = ${activeNotificationBranchId()}
+      AND (conversation_supplier.id = mc.supplier_id OR conversation_supplier.moysklad_id = mc.supplier_id)
     WHERE mc.organization_id = ${organizationId}
+      AND mc.branch_id = ${activeNotificationBranchId()}
       AND mc.channel = 'telegram'
       AND mc.status <> 'archived'
       AND (
@@ -2075,10 +1884,10 @@ async function writeNotificationLog(input: {
   const organizationId = getMessengerOrganizationId();
   await prisma.$executeRaw`
     INSERT INTO notification_logs
-      (id, organization_id, notification_job_id, event_type, channel, client_id, appointment_id, diagnostic_report_id,
+      (id, branch_id, organization_id, notification_job_id, event_type, channel, client_id, appointment_id, diagnostic_report_id,
        template_id, status, rendered_message, error_message, provider_message_id, initiated_by_id, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, ${input.job?.id ?? null}, ${input.eventType}, ${input.channel ?? input.job?.channel ?? "telegram"},
+      (${crypto.randomUUID()}, ${activeNotificationBranchId()}, ${organizationId}, ${input.job?.id ?? null}, ${input.eventType}, ${input.channel ?? input.job?.channel ?? "telegram"},
        ${input.clientId ?? input.job?.clientId ?? null}, ${input.appointmentId ?? input.job?.appointmentId ?? null},
        ${input.diagnosticReportId ?? input.job?.diagnosticReportId ?? null}, ${input.templateId ?? input.job?.templateId ?? null},
        ${input.status}, ${input.renderedMessage ?? null}, ${input.errorMessage ?? null}, ${input.providerMessageId ?? null},
@@ -2310,8 +2119,8 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
     VALUES
       (${id}, ${organizationId}, ${effectiveRule.eventType}, ${effectiveRule.channel}, ${clientId}, ${nullableString(effectiveInput.appointmentId)},
        ${nullableString(effectiveInput.diagnosticReportId)}, ${template.id}, ${scheduledAt}, ${status}, ${key}, ${json(payload)}::jsonb,
-       ${errorMessage}, ${effectiveInput.branchId ?? effectiveRule.branchId ?? null}, ${nullableString(effectiveInput.initiatedById)}, now(), now())
-    ON CONFLICT (organization_id, idempotency_key) DO NOTHING
+       ${errorMessage}, ${activeNotificationBranchId()}, ${nullableString(effectiveInput.initiatedById)}, now(), now())
+    ON CONFLICT (branch_id, organization_id, idempotency_key) DO NOTHING
     RETURNING id
   `;
 
@@ -2420,6 +2229,7 @@ export async function processDueClientNotificationJobs(limit = 20) {
       updated_at AS "updatedAt"
     FROM notification_jobs
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND (
         (status IN ('scheduled', 'queued') AND scheduled_at <= now())
         OR (status = 'error' AND next_attempt_at IS NOT NULL AND next_attempt_at <= now() AND attempts < 3)
@@ -2468,6 +2278,7 @@ async function finishJob(
         updated_at = now()
     WHERE id = ${job.id}
       AND organization_id = ${job.organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
   `;
   await writeNotificationLog({
     job,
@@ -2529,6 +2340,7 @@ async function processClientNotificationJob(job: NotificationJobRow) {
         updated_at = now()
     WHERE id = ${job.id}
       AND organization_id = ${job.organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
   `;
 
   const target = await findTelegramConversation({
@@ -2649,6 +2461,7 @@ export async function cancelAppointmentScheduledNotifications(appointmentId: str
         error_message = ${reason},
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND appointment_id = ${appointmentId}
       AND event_type = 'appointment_reminder'
       AND status IN ('scheduled', 'queued')
@@ -2708,6 +2521,7 @@ export async function appointmentCreationNotificationExists(appointmentId: strin
     SELECT true AS "exists"
     FROM notification_jobs
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND appointment_id = ${id}
       AND event_type IN ('appointment_client_created', 'appointment_admin_created')
     LIMIT 1
@@ -2744,6 +2558,7 @@ export async function handleAppointmentCancelled(appointmentId: string) {
 }
 
 async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: string, source?: "map" | "legacy") {
+  const { branchId } = requireSingleBranchSqlContext();
   if (source !== "legacy") {
     const mapRows = await prisma.$queryRaw<
       Array<{
@@ -2780,6 +2595,7 @@ async function resolveDiagnosticTarget(request: NextRequest, diagnosticId: strin
       attention_count AS "warningCount"
     FROM diagnostic_map_sessions
     WHERE id = ${diagnosticId}
+      AND branch_id = ${branchId}
     LIMIT 1
   `;
     const map = mapRows[0];
@@ -2867,6 +2683,7 @@ async function requeueDiagnosticNotificationJobs(target: NotificationEventContex
         attempts = 0,
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND event_type = 'diagnostic_sent'
       AND diagnostic_report_id = ${diagnosticReportId}
       AND (${nullableString(target.clientId)}::text IS NULL OR client_id = ${nullableString(target.clientId)})
@@ -2927,11 +2744,13 @@ export async function handleDiagnosticReportSent(input: {
 }
 
 export async function markDiagnosticReportSent(source: "map" | "legacy", diagnosticId: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   if (source === "map") {
     await prisma.$executeRaw`
       UPDATE diagnostic_map_sessions
       SET report_sent_at = now(), updated_at = now()
       WHERE id = ${diagnosticId}
+        AND branch_id = ${branchId}
     `;
     return;
   }
@@ -2939,6 +2758,7 @@ export async function markDiagnosticReportSent(source: "map" | "legacy", diagnos
     UPDATE diagnostics
     SET client_report_sent_at = now(), updated_at = now()
     WHERE id = ${diagnosticId}
+      AND branch_id = ${branchId}
   `;
 }
 
@@ -2950,10 +2770,10 @@ export async function updateClientNotificationSettings(input: Partial<ClientNoti
   const reviewDelayMinutes = Math.max(0, next.reviewDelayHours * 60);
   const rows = await prisma.$queryRaw<NotificationSettingsRow[]>`
     INSERT INTO notification_settings
-      (id, organization_id, settings_json, created_at, updated_at)
+      (id, branch_id, organization_id, settings_json, created_at, updated_at)
     VALUES
-      (${`${organizationId}:settings:client-notifications`}, ${organizationId}, ${json(next)}::jsonb, now(), now())
-    ON CONFLICT (organization_id) DO UPDATE
+      (${`${activeNotificationBranchId()}:${organizationId}:settings:client-notifications`}, ${activeNotificationBranchId()}, ${organizationId}, ${json(next)}::jsonb, now(), now())
+    ON CONFLICT (branch_id, organization_id) DO UPDATE
     SET settings_json = ${json(next)}::jsonb,
         updated_at = now()
     RETURNING id, organization_id AS "organizationId", settings_json AS "settingsJson", created_at AS "createdAt", updated_at AS "updatedAt"
@@ -2966,6 +2786,7 @@ export async function updateClientNotificationSettings(input: Partial<ClientNoti
         conditions_json = conditions_json || ${json({ reviewDelayMinutes, requireReviewLink: true })}::jsonb,
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND event_type = 'review_after_visit'
       AND id = ${orgScopedId(organizationId, "rule", "review-after-visit")}
   `;
@@ -2981,6 +2802,7 @@ export async function listClientNotificationSettings() {
              branch_id AS "branchId", status, metadata_json AS "metadataJson", created_at AS "createdAt", updated_at AS "updatedAt"
       FROM notification_templates
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${activeNotificationBranchId()}
       ORDER BY event_type ASC, name ASC
     `,
     prisma.$queryRaw<NotificationRuleRow[]>`
@@ -2989,6 +2811,7 @@ export async function listClientNotificationSettings() {
              branch_id AS "branchId", created_at AS "createdAt", updated_at AS "updatedAt"
       FROM notification_rules
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${activeNotificationBranchId()}
       ORDER BY event_type ASC, offset_minutes NULLS LAST, created_at ASC
     `,
     prisma.$queryRaw<NotificationLogRow[]>`
@@ -2999,6 +2822,7 @@ export async function listClientNotificationSettings() {
              created_at AS "createdAt"
       FROM notification_logs
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${activeNotificationBranchId()}
       ORDER BY created_at DESC
       LIMIT 120
     `,
@@ -3012,6 +2836,7 @@ export async function listClientNotificationSettings() {
              initiated_by_id AS "initiatedById", created_at AS "createdAt", updated_at AS "updatedAt"
       FROM notification_jobs
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${activeNotificationBranchId()}
       ORDER BY created_at DESC
       LIMIT 80
     `,
@@ -3078,6 +2903,7 @@ export async function updateNotificationRule(input: {
         conditions_json = COALESCE(${input.conditions ? json(input.conditions) : null}::jsonb, conditions_json),
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${input.id}
     RETURNING id, organization_id AS "organizationId", event_type AS "eventType", enabled, channel, template_id AS "templateId",
               timing_type AS "timingType", offset_minutes AS "offsetMinutes", conditions_json AS "conditionsJson",
@@ -3093,9 +2919,9 @@ export async function createReminderRule(input: { offsetMinutes: number; templat
   const id = `${organizationId}:rule:appointment-reminder-${Math.max(1, Math.trunc(input.offsetMinutes))}m-${crypto.randomUUID().slice(0, 8)}`;
   const rows = await prisma.$queryRaw<NotificationRuleRow[]>`
     INSERT INTO notification_rules
-      (id, organization_id, event_type, enabled, channel, template_id, timing_type, offset_minutes, conditions_json, created_at, updated_at)
+      (id, branch_id, organization_id, event_type, enabled, channel, template_id, timing_type, offset_minutes, conditions_json, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, 'appointment_reminder', true, 'telegram', ${templateId}, 'before_appointment',
+      (${id}, ${activeNotificationBranchId()}, ${organizationId}, 'appointment_reminder', true, 'telegram', ${templateId}, 'before_appointment',
        ${Math.max(1, Math.trunc(input.offsetMinutes))}, ${json({ ...defaultConditions, doNotSendAtNight: true })}::jsonb, now(), now())
     RETURNING id, organization_id AS "organizationId", event_type AS "eventType", enabled, channel, template_id AS "templateId",
               timing_type AS "timingType", offset_minutes AS "offsetMinutes", conditions_json AS "conditionsJson",
@@ -3110,6 +2936,7 @@ export async function deleteNotificationRule(id: string) {
   await prisma.$executeRaw`
     DELETE FROM notification_rules
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${id}
       AND event_type = 'appointment_reminder'
   `;
@@ -3149,6 +2976,7 @@ export async function updateNotificationTemplate(input: {
         metadata_json = CASE WHEN ${metadata ? json(metadata) : null}::jsonb IS NULL THEN metadata_json ELSE metadata_json || ${metadata ? json(metadata) : null}::jsonb END,
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${input.id}
     RETURNING id, organization_id AS "organizationId", name, event_type AS "eventType", channel, body, is_active AS "isActive",
               branch_id AS "branchId", status, metadata_json AS "metadataJson", created_at AS "createdAt", updated_at AS "updatedAt"
@@ -3205,6 +3033,7 @@ export async function retryNotificationJob(id: string) {
         error_message = NULL,
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${activeNotificationBranchId()}
       AND id = ${id}
       AND status IN ('error', 'client_not_connected', 'no_consent', 'skipped', 'sending', 'template_error')
   `;

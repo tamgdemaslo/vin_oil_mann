@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { requireBranchContext } from "@/lib/branch-context";
 import type { User } from "@/lib/auth";
 
 export type CashExpenseOrderStatus = "draft" | "posted" | "cancelled";
@@ -148,7 +149,11 @@ function userRole(value?: string | null): User["role"] {
   return "admin";
 }
 
-async function resolveExpenseItem(params: {
+async function activeBranchId() {
+  return (await requireBranchContext()).branchId!;
+}
+
+async function resolveExpenseItem(branchId: string, params: {
   expenseItemId?: string;
   expenseItemName?: string;
   expenseItemMetaHref?: string;
@@ -160,7 +165,7 @@ async function resolveExpenseItem(params: {
 
   if (id) {
     const found = await prisma.cashExpenseItem.findFirst({
-      where: { OR: [{ id }, { moyskladId: id }] },
+      where: { branchId, OR: [{ id }, { moyskladId: id }] },
     });
     if (found) return found;
   }
@@ -170,8 +175,9 @@ async function resolveExpenseItem(params: {
   }
 
   return prisma.cashExpenseItem.upsert({
-    where: { name },
+    where: { branchId_name: { branchId, name } },
     create: {
+      branchId,
       name,
       source: legacyHref(params.expenseItemMetaHref) ? "moysklad_import" : "local",
       moyskladHref: legacyHref(params.expenseItemMetaHref),
@@ -183,22 +189,22 @@ async function resolveExpenseItem(params: {
   });
 }
 
-async function resolveCounterparty(params: { counterpartyId?: string; counterpartyMetaHref?: string }) {
+async function resolveCounterparty(branchId: string, params: { counterpartyId?: string; counterpartyMetaHref?: string }) {
   const id =
     normalizeNullable(params.counterpartyId) ??
     localReferenceId(params.counterpartyMetaHref, "counterparty");
   if (!id) return null;
   return prisma.localCounterparty.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { branchId, OR: [{ id }, { moyskladId: id }] },
     select: { id: true, name: true, moyskladHref: true },
   });
 }
 
-async function generateCashExpenseNumber(attempt = 0): Promise<string> {
+async function generateCashExpenseNumber(branchId: string, attempt = 0): Promise<string> {
   const ymd = toServiceDateInput(new Date()).replaceAll("-", "");
   const prefix = `РКО-${ymd}`;
   const count = await prisma.cashExpenseOrder.count({
-    where: { number: { startsWith: prefix } },
+    where: { branchId, number: { startsWith: prefix } },
   });
   return `${prefix}-${String(count + attempt + 1).padStart(4, "0")}`;
 }
@@ -207,15 +213,16 @@ function isUniqueConstraintError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-export async function ensureDefaultCashExpenseItems() {
-  const count = await prisma.cashExpenseItem.count();
+export async function ensureDefaultCashExpenseItems(branchId?: string) {
+  branchId ??= await activeBranchId();
+  const count = await prisma.cashExpenseItem.count({ where: { branchId } });
   if (count > 0) return;
 
   await prisma.$transaction(
     DEFAULT_EXPENSE_ITEM_NAMES.map((name) =>
       prisma.cashExpenseItem.upsert({
-        where: { name },
-        create: { name, source: "local" },
+        where: { branchId_name: { branchId, name } },
+        create: { branchId, name, source: "local" },
         update: { isActive: true },
       })
     )
@@ -223,13 +230,15 @@ export async function ensureDefaultCashExpenseItems() {
 }
 
 export async function listCashExpenseItems(params: { search?: string; limit?: number } = {}) {
-  await ensureDefaultCashExpenseItems();
+  const branchId = await activeBranchId();
+  await ensureDefaultCashExpenseItems(branchId);
 
   const search = params.search?.trim();
   const limit = Math.min(1000, Math.max(1, params.limit ?? 200));
 
   return prisma.cashExpenseItem.findMany({
     where: {
+      branchId,
       isActive: true,
       ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
     },
@@ -242,6 +251,7 @@ export async function createCashExpenseOrder(
   params: CashExpenseOrderMutationParams,
   user: User
 ): Promise<CashExpenseOrderRow> {
+  const branchId = await activeBranchId();
   const status = normalizeStatus(params.status);
   if (status === "cancelled") {
     throw new Error("Нельзя создать уже отменённый расходный ордер");
@@ -249,8 +259,8 @@ export async function createCashExpenseOrder(
 
   const amountCents = centsFromAmount(params.amount);
   const expenseDate = normalizeExpenseDate(params.expenseDate);
-  const expenseItem = await resolveExpenseItem(params);
-  const counterparty = await resolveCounterparty(params);
+  const expenseItem = await resolveExpenseItem(branchId, params);
+  const counterparty = await resolveCounterparty(branchId, params);
   const counterpartyName = normalizeNullable(params.counterpartyName) ?? counterparty?.name;
   if (!counterpartyName) {
     throw new Error("Выберите контрагента");
@@ -260,10 +270,11 @@ export async function createCashExpenseOrder(
   const now = new Date();
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const number = await generateCashExpenseNumber(attempt);
+    const number = await generateCashExpenseNumber(branchId, attempt);
     try {
       return await prisma.cashExpenseOrder.create({
         data: {
+          branchId,
           shiftId: params.shiftId,
           organizationId: normalizeNullable(params.organizationId),
           warehouseId: normalizeNullable(params.warehouseId),
@@ -303,7 +314,8 @@ export async function createCashExpenseOrder(
 }
 
 export async function getCashExpenseOrder(id: string): Promise<CashExpenseOrderRow | null> {
-  return prisma.cashExpenseOrder.findUnique({ where: { id }, include: orderInclude });
+  const branchId = await activeBranchId();
+  return prisma.cashExpenseOrder.findFirst({ where: { id, branchId }, include: orderInclude });
 }
 
 export async function updateCashExpenseOrderDraft(
@@ -319,7 +331,7 @@ export async function updateCashExpenseOrderDraft(
 
   const expenseItem =
     params.expenseItemId || params.expenseItemName || params.expenseItemMetaHref
-      ? await resolveExpenseItem({
+      ? await resolveExpenseItem(current.branchId, {
           expenseItemId: params.expenseItemId ?? current.expenseItemId ?? undefined,
           expenseItemName: params.expenseItemName ?? current.expenseItemName,
           expenseItemMetaHref: params.expenseItemMetaHref ?? current.moyskladExpenseItemHref ?? undefined,
@@ -327,7 +339,7 @@ export async function updateCashExpenseOrderDraft(
       : null;
   const counterparty =
     params.counterpartyId || params.counterpartyMetaHref
-      ? await resolveCounterparty({
+      ? await resolveCounterparty(current.branchId, {
           counterpartyId: params.counterpartyId ?? current.counterpartyId ?? undefined,
           counterpartyMetaHref: params.counterpartyMetaHref ?? current.moyskladCounterpartyHref ?? undefined,
         })
@@ -411,6 +423,7 @@ export async function cancelCashExpenseOrder(
 }
 
 export async function listCashExpenseOrders(params: CashExpenseOrderListParams = {}) {
+  const branchId = await activeBranchId();
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
   const offset = Math.max(0, params.offset ?? 0);
   const search = params.search?.trim();
@@ -420,6 +433,7 @@ export async function listCashExpenseOrders(params: CashExpenseOrderListParams =
     params.paymentType && params.paymentType !== "all" ? normalizePaymentType(params.paymentType) : null;
 
   const where: Prisma.CashExpenseOrderWhereInput = {
+    branchId,
     ...(status ? { status } : {}),
     ...(source ? { source } : {}),
     ...(paymentType ? { paymentType } : {}),
@@ -455,7 +469,7 @@ export async function listCashExpenseOrderOperationsForShift(
   shiftId: string
 ): Promise<CashExpenseOrderOperation[]> {
   const rows = await prisma.cashExpenseOrder.findMany({
-    where: { shiftId },
+    where: { branchId: await activeBranchId(), shiftId },
     include: orderInclude,
     orderBy: [{ createdAt: "asc" }],
   });

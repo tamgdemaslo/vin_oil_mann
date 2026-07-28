@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
 import { getLocalAdminCounterparty, updateLocalAdminCounterparty } from "@/lib/local-inventory-admin";
 
 export async function GET(
@@ -8,11 +9,13 @@ export async function GET(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const result = await getLocalAdminCounterparty(id);
+  const result = await getLocalAdminCounterparty(id, branchAccess.context.branchId!);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }
@@ -25,6 +28,8 @@ export async function PUT(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
@@ -36,7 +41,7 @@ export async function PUT(
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const result = await updateLocalAdminCounterparty(id, body as Parameters<typeof updateLocalAdminCounterparty>[1]);
+  const result = await updateLocalAdminCounterparty(id, body as Parameters<typeof updateLocalAdminCounterparty>[1], branchAccess.context.branchId!);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }
@@ -49,11 +54,13 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const result = await updateLocalAdminCounterparty(id, { archived: true });
+  const result = await updateLocalAdminCounterparty(id, { archived: true }, branchAccess.context.branchId!);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type MessengerStorageConfig = {
   enabled: boolean;
@@ -326,7 +327,7 @@ export function safeStorageFileName(name: string, fallback = "file") {
 }
 
 export function messengerObjectKey(parts: Array<string | number | null | undefined>, fileName: string) {
-  const cleanParts = parts
+  const cleanParts = ["branches", getScopedBranchId(), ...parts]
     .map((part) => String(part ?? "").trim())
     .filter(Boolean)
     .map((part) => safeStorageFileName(part, "part"));

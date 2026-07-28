@@ -3,6 +3,7 @@ import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "l
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireBranchContext } from "@/lib/branch-context";
 import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
 import { ShipmentListRow } from "./ShipmentListRow";
@@ -142,6 +143,7 @@ function counterpartyIdFromDemand(row: DemandRow): string | null {
 }
 
 async function loadShipmentList(opts: {
+  branchId: string;
   search: string;
   counterparty: string;
   plate: string;
@@ -321,6 +323,8 @@ export default async function ShipmentListPage({
   }>;
 }) {
   await requireActiveShiftAccess("/shipment");
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId) throw new Error("Активный филиал не выбран");
 
   const sp = await searchParams;
   const search = (sp.search ?? "").trim();
@@ -335,7 +339,7 @@ export default async function ShipmentListPage({
   const quickYears = [currentYear, currentYear - 1, currentYear - 2];
   const hasFilters = Boolean(search || counterparty || plate || phone || dateFrom || dateTo || offset > 0);
 
-  const result = await loadShipmentList({ search, counterparty, plate, phone, dateFrom, dateTo, offset, limit });
+  const result = await loadShipmentList({ branchId: branch.branchId, search, counterparty, plate, phone, dateFrom, dateTo, offset, limit });
   const sourceLabel = "Отгрузки из локальной БД";
   const rows = result.ok ? result.data.rows ?? [] : [];
   const postedCount = rows.filter((row) => row.applicable).length;

@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { canonicalizeLogin, getUsersFromEnv, type User } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireBranchContext } from "@/lib/branch-context";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 export const DEFAULT_PAYROLL_SETTLEMENT_ORG_ID = "default";
 
@@ -190,13 +192,14 @@ function isUniqueConstraintError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-async function generatePayrollCashExpenseNumber(tx: Prisma.TransactionClient, operationDate: string, attempt = 0) {
+async function generatePayrollCashExpenseNumber(tx: Prisma.TransactionClient, branchId: string, operationDate: string, attempt = 0) {
   const prefix = `РКО-${operationDate.replaceAll("-", "")}`;
-  const count = await tx.cashExpenseOrder.count({ where: { number: { startsWith: prefix } } });
+  const count = await tx.cashExpenseOrder.count({ where: { branchId, number: { startsWith: prefix } } });
   return `${prefix}-${String(count + attempt + 1).padStart(4, "0")}`;
 }
 
 async function findAdjustmentById(id: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<RawAdjustmentRow[]>`
     SELECT
       id,
@@ -221,12 +224,14 @@ async function findAdjustmentById(id: string) {
       reversed_at AS "reversedAt"
     FROM payroll_adjustments
     WHERE id = ${id}
+      AND branch_id = ${branchId}
     LIMIT 1
   `;
   return rows[0] ? mapAdjustment(rows[0]) : null;
 }
 
 async function findPaymentById(id: string) {
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<RawPaymentRow[]>`
     SELECT
       p.id,
@@ -254,6 +259,7 @@ async function findPaymentById(id: string) {
     FROM payroll_payments p
     LEFT JOIN cash_expense_orders c ON c.id = p.cash_order_id
     WHERE p.id = ${id}
+      AND p.branch_id = ${branchId}
     LIMIT 1
   `;
   return rows[0] ? mapPayment(rows[0]) : null;
@@ -267,6 +273,7 @@ export async function listPayrollAdjustments(params: {
   includeInactive?: boolean;
   limit?: number;
 } = {}): Promise<PayrollAdjustmentRecord[]> {
+  const { branchId } = requireSingleBranchSqlContext();
   const organizationId = params.organizationId ?? DEFAULT_PAYROLL_SETTLEMENT_ORG_ID;
   const employeeLogin = params.employeeLogin ? normalizePayrollLogin(params.employeeLogin) : null;
   const dateFrom = params.dateFrom ?? null;
@@ -298,6 +305,7 @@ export async function listPayrollAdjustments(params: {
         reversed_at AS "reversedAt"
       FROM payroll_adjustments
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
         AND (${dateFrom}::text IS NULL OR period_to >= ${dateFrom})
         AND (${dateTo}::text IS NULL OR period_from <= ${dateTo})
         AND (${employeeLogin}::text IS NULL OR employee_id = ${employeeLogin})
@@ -320,6 +328,7 @@ export async function listPayrollPayments(params: {
   includeInactive?: boolean;
   limit?: number;
 } = {}): Promise<PayrollPaymentRecord[]> {
+  const { branchId } = requireSingleBranchSqlContext();
   const organizationId = params.organizationId ?? DEFAULT_PAYROLL_SETTLEMENT_ORG_ID;
   const employeeLogin = params.employeeLogin ? normalizePayrollLogin(params.employeeLogin) : null;
   const dateFrom = params.dateFrom ?? null;
@@ -354,6 +363,7 @@ export async function listPayrollPayments(params: {
       FROM payroll_payments p
       LEFT JOIN cash_expense_orders c ON c.id = p.cash_order_id
       WHERE p.organization_id = ${organizationId}
+        AND p.branch_id = ${branchId}
         AND (${dateFrom}::text IS NULL OR p.period_to >= ${dateFrom})
         AND (${dateTo}::text IS NULL OR p.period_from <= ${dateTo})
         AND (${employeeLogin}::text IS NULL OR p.employee_id = ${employeeLogin})
@@ -385,6 +395,7 @@ export async function createPayrollAdjustment(params: {
   createdByName?: string | null;
   createdByRole?: User["role"] | null;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   assertDate(params.periodFrom, "Дата начала периода");
   assertDate(params.periodTo, "Дата конца периода");
   assertDate(params.operationDate, "Дата операции");
@@ -401,6 +412,7 @@ export async function createPayrollAdjustment(params: {
   await prisma.$executeRaw`
     INSERT INTO payroll_adjustments (
       id,
+      branch_id,
       organization_id,
       employee_id,
       payroll_period_id,
@@ -418,6 +430,7 @@ export async function createPayrollAdjustment(params: {
     )
     VALUES (
       ${id},
+      ${branchId},
       ${organizationId},
       ${employeeId},
       ${params.payrollPeriodId ?? null},
@@ -452,6 +465,7 @@ export async function reversePayrollAdjustment(params: {
   reversedByLogin: string;
   comment?: string | null;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const existing = await findAdjustmentById(params.id);
   if (!existing) throw new Error("Корректировка не найдена");
   if (existing.status !== "ACTIVE" || existing.reversedAt) throw new Error("Корректировка уже отменена или закрыта");
@@ -467,10 +481,12 @@ export async function reversePayrollAdjustment(params: {
           reversed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ${existing.id}
+        AND branch_id = ${branchId}
     `;
     await tx.$executeRaw`
       INSERT INTO payroll_adjustments (
         id,
+        branch_id,
         organization_id,
         employee_id,
         payroll_period_id,
@@ -489,6 +505,7 @@ export async function reversePayrollAdjustment(params: {
       )
       VALUES (
         ${reversalId},
+        ${branchId},
         ${existing.organizationId},
         ${existing.employeeId},
         ${existing.payrollPeriodId},
@@ -536,6 +553,9 @@ export async function createPayrollPayment(params: {
   createdByName?: string | null;
   createdByRole?: User["role"] | null;
 }) {
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId) throw new Error("Активный филиал не выбран");
+  const branchId = branch.branchId;
   assertDate(params.periodFrom, "Дата начала периода");
   assertDate(params.periodTo, "Дата конца периода");
   assertDate(params.operationDate, "Дата выплаты");
@@ -558,7 +578,7 @@ export async function createPayrollPayment(params: {
   await prisma.$transaction(async (tx) => {
     if (paymentMethod === "CASH") {
       const shift = await tx.cashShift.findFirst({
-        where: { status: "open" },
+        where: { branchId, status: "open" },
         orderBy: { openedAt: "desc" },
         select: { id: true },
       });
@@ -568,18 +588,19 @@ export async function createPayrollPayment(params: {
 
       const title = operationTitle(operationType);
       const expenseItem = await tx.cashExpenseItem.upsert({
-        where: { name: title },
-        create: { name: title, source: "payroll" },
+        where: { branchId_name: { branchId, name: title } },
+        create: { branchId, name: title, source: "payroll" },
         update: { isActive: true },
       });
       const paymentPurpose = `${title}: ${employeeName}, период ${params.periodFrom} - ${params.periodTo}`;
       const now = new Date();
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const number = await generatePayrollCashExpenseNumber(tx, params.operationDate, attempt);
+        const number = await generatePayrollCashExpenseNumber(tx, branchId, params.operationDate, attempt);
         try {
           const order = await tx.cashExpenseOrder.create({
             data: {
+              branchId,
               shiftId: shift.id,
               organizationId: organizationId === DEFAULT_PAYROLL_SETTLEMENT_ORG_ID ? null : organizationId,
               number,
@@ -616,6 +637,7 @@ export async function createPayrollPayment(params: {
     await tx.$executeRaw`
       INSERT INTO payroll_payments (
         id,
+        branch_id,
         organization_id,
         employee_id,
         payroll_period_id,
@@ -632,6 +654,7 @@ export async function createPayrollPayment(params: {
       )
       VALUES (
         ${id},
+        ${branchId},
         ${organizationId},
         ${employeeId},
         ${params.payrollPeriodId ?? null},
@@ -658,6 +681,7 @@ export async function createPayrollPayment(params: {
             payroll_period_from = ${params.periodFrom},
             payroll_period_to = ${params.periodTo}
         WHERE id = ${cashOrderId}
+          AND branch_id = ${branchId}
       `;
     }
   });
@@ -679,6 +703,7 @@ export async function reversePayrollPayment(params: {
   reversedByLogin: string;
   comment?: string | null;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const existing = await findPaymentById(params.id);
   if (!existing) throw new Error("Выплата не найдена");
   if (existing.status !== "ACTIVE") throw new Error("Выплата уже отменена или закрыта");
@@ -693,11 +718,12 @@ export async function reversePayrollPayment(params: {
           updated_at = CURRENT_TIMESTAMP,
           comment = COALESCE(${params.comment?.trim() || null}, comment)
       WHERE id = ${existing.id}
+        AND branch_id = ${branchId}
     `;
 
     if (existing.cashOrderId) {
-      await tx.cashExpenseOrder.update({
-        where: { id: existing.cashOrderId },
+      await tx.cashExpenseOrder.updateMany({
+        where: { id: existing.cashOrderId, branchId },
         data: {
           status: "cancelled",
           cancelledAt: new Date(),

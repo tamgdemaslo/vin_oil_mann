@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchContext } from "@/lib/branch-context";
 import {
   acknowledgeClientCaseNotification,
   closeClientCaseFromNotification,
@@ -35,9 +36,11 @@ function countsByUrgency(items: Awaited<ReturnType<typeof listClientCaseNotifica
 export async function GET() {
   const access = await requireSession();
   if (access.response) return access.response;
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId) return NextResponse.json({ error: "Выберите филиал" }, { status: 409 });
 
   await processClientCaseDeadlineNotifications();
-  const items = await listClientCaseNotificationsForUser(access.session!.user.login);
+  const items = await listClientCaseNotificationsForUser(access.session!.user.login, branch.branchId);
   return NextResponse.json({
     config: getCrmNotificationConfig(),
     notifications: items,
@@ -48,6 +51,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const access = await requireSession();
   if (access.response) return access.response;
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId) return NextResponse.json({ error: "Выберите филиал" }, { status: 409 });
+  const branchId = branch.branchId;
   const userId = access.session!.user.login;
   const body = await request.json().catch(() => ({}));
   const action = typeof body.action === "string" ? body.action : "";
@@ -56,20 +62,20 @@ export async function POST(request: NextRequest) {
 
   if (action === "acknowledge") {
     if (!notificationId) return NextResponse.json({ error: "notificationId не задан" }, { status: 400 });
-    await acknowledgeClientCaseNotification(notificationId, userId);
+    await acknowledgeClientCaseNotification(notificationId, userId, branchId);
     return NextResponse.json({ ok: true });
   }
 
   if (action === "snooze") {
     if (!caseId) return NextResponse.json({ error: "caseId не задан" }, { status: 400 });
     const minutes = Number(body.minutes);
-    const snoozedUntil = await snoozeClientCase(caseId, userId, Number.isFinite(minutes) ? minutes : 15);
+    const snoozedUntil = await snoozeClientCase(caseId, userId, Number.isFinite(minutes) ? minutes : 15, branchId);
     return NextResponse.json({ ok: true, snoozedUntil: snoozedUntil.toISOString() });
   }
 
   if (action === "close") {
     if (!caseId) return NextResponse.json({ error: "caseId не задан" }, { status: 400 });
-    await closeClientCaseFromNotification(caseId);
+    await closeClientCaseFromNotification(caseId, branchId);
     return NextResponse.json({ ok: true });
   }
 
@@ -77,7 +83,7 @@ export async function POST(request: NextRequest) {
     if (!caseId) return NextResponse.json({ error: "caseId не задан" }, { status: 400 });
     const type = typeof body.type === "string" ? (body.type as ClientCaseNotificationType) : "deadline_soon";
     const status = body.status === "failed" ? "failed" : body.status === "skipped" ? "skipped" : "sent";
-    await logBrowserPush(caseId, userId, type, status, typeof body.errorMessage === "string" ? body.errorMessage : null);
+    await logBrowserPush(caseId, userId, type, status, typeof body.errorMessage === "string" ? body.errorMessage : null, branchId);
     return NextResponse.json({ ok: true });
   }
 

@@ -11,11 +11,13 @@ const MAX_MESSAGE_CHARS = 12_000;
 // Six turns preserve room for independent catalogue, MANN, ROSSKO and quote checks
 // while preventing a single request from repeatedly re-running the same evidence.
 const MAX_TOOL_TURNS = 6;
+const TECHNICAL_RESEARCH_TIMEOUT_MS = 75_000;
+const TECHNICAL_RESEARCH_INSTRUCTIONS = "Ты выполняешь только краткое техническое web-исследование для внутреннего расчёта автосервиса. Используй web search, отдавай приоритет официальным документам, OEM и каталогам производителей агрегатов и жидкостей. Не считай цены, не вызывай внутренние инструменты и не повторяй общие правила работы помощника.";
 const TECHNICAL_REQUEST_RE = /(акпп|автоматическ\S*\s*(?:короб|трансмисс)|вариатор|\bcvt\b|\bdsg\b|мкпп|механическ\S*\s*(?:короб|трансмисс)|редуктор|раздатк|haldex|халдекс|трансмиссион\S*|\batf\b|двигател\S*|моторн\S*\s*масл|масл\S*\s*(?:двигател|мотор|короб|акпп|трансмисс)|поддон|гидроблок|допуск|вязкост|объ[её]м|фильтр|сервисн\S*\s*комплект|\boem\b|оригинальн\S*\s*номер|техническ\S*\s*(?:подбор|расч))/i;
 type AssistantActor = { id: string; name: string; role: string };
 type Citation = { title: string | null; url: string; startIndex?: number | null; endIndex?: number | null };
 type PersistedSource = AssistantToolSource | { sourceType: "web"; title: string; url?: string | null; excerpt?: string | null; metadata?: Record<string, unknown> };
-type MandatoryResearch = { response: any | null; error: string | null; summary: Record<string, unknown>; sources: PersistedSource[] };
+type MandatoryResearch = { response: any | null; error: string | null; summary: Record<string, unknown>; sources: PersistedSource[]; connectionFailure: boolean; connectionError: string | null };
 
 function json(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
@@ -162,11 +164,11 @@ function webSearchTrace(response: any) {
 }
 
 function technicalResearchPrompt(message: string, history: Array<{ role: string; content: string }>, internalContext?: unknown) {
-  const context = history.slice(-8).map((item) => `${item.role === "assistant" ? "Помощник" : "Сотрудник"}: ${text(item.content, 2_000)}`).join("\n");
-  const internal = internalContext ? text(JSON.stringify(internalContext), 9_000) : "";
+  const context = history.slice(-4).map((item) => `${item.role === "assistant" ? "Помощник" : "Сотрудник"}: ${text(item.content, 1_000)}`).join("\n");
+  const internal = internalContext ? text(JSON.stringify(internalContext), 5_000) : "";
   return [
-    "Выполни обязательное глубокое интернет-исследование для внутреннего автосервисного расчёта. Реально используй web search до вывода; не отвечай по памяти.",
-    "Сначала установи автомобиль и сформируй список технических вопросов. Затем ищи официальные документы, OEM-каталоги, каталоги производителя агрегата и жидкости, каталоги фильтров, TecDoc/проверенные каталоги и практические источники как дополнительную проверку.",
+    "Выполни целевое интернет-исследование для внутреннего автосервисного расчёта. Реально используй web search до вывода; не отвечай по памяти. Ограничься шестью наиболее полезными поисковыми запросами.",
+    "Исследуй только агрегаты и работы, названные сотрудником. Сначала установи автомобиль и список технических вопросов. Затем ищи официальные документы, OEM-каталоги, каталоги производителя агрегата и жидкости, каталоги фильтров и проверенные технические источники.",
     "Если точный код агрегата или OE-номер не найден, не прекращай исследование: проверь наиболее вероятную ветку по VIN, модели, двигателю, году, приводу, рынку и доступным каталогам. Отделяй подтверждённое от рабочего допущения и финальной проверки.",
     "Для трансмиссии собери, насколько доступно: тип/семейство агрегата, жидкость, полный/сливной/сервисный объём, поддон или фильтр, прокладку, крепёж, пробки и уплотнения, температуру/процедуру уровня и допустимые способы обслуживания.",
     "Верни компактное исследовательское досье с ссылками, которое следующий этап использует для поиска товаров и расчёта. Не проси подтверждения и не перекладывай поиск кода на сотрудника.",
@@ -200,12 +202,28 @@ function previousResponseError(error: unknown) {
   return /previous_response_id|not found|expired|reasoning|no tool output found for function call/i.test(error instanceof Error ? error.message : String(error));
 }
 
+function toolReasoning(reasoning: string) {
+  return ["xhigh", "max"].includes(reasoning) ? "high" : reasoning;
+}
+
+function researchReasoning(reasoning: string) {
+  return ["high", "xhigh", "max"].includes(reasoning) ? "medium" : reasoning;
+}
+
 function functionCalls(response: any) {
   return (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "function_call");
 }
 
-async function createInitialResponse(client: OpenAI, args: { lastResponseId: string | null; message: string; history: Array<{ role: string; content: string }>; instructions: string; model: string; reasoning: string }) {
-  const request = { model: args.model, instructions: args.instructions, reasoning: { effort: args.reasoning }, text: { verbosity: "high" }, tools: [{ type: "web_search", search_context_size: "high" }, ...assistantFunctionTools], include: ["web_search_call.action.sources"], store: true };
+async function createInitialResponse(client: OpenAI, args: { lastResponseId: string | null; message: string; history: Array<{ role: string; content: string }>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean }) {
+  const request = {
+    model: args.model,
+    instructions: args.instructions,
+    reasoning: { effort: args.reasoning },
+    text: { verbosity: "high" },
+    tools: [...(args.allowWebSearch ? [{ type: "web_search", search_context_size: "high" }] : []), ...assistantFunctionTools],
+    ...(args.allowWebSearch ? { include: ["web_search_call.action.sources"] } : {}),
+    store: true,
+  };
   if (args.lastResponseId) {
     try { return await client.responses.create({ ...request, previous_response_id: args.lastResponseId, input: args.message } as never) as any; } catch (error) { if (!previousResponseError(error)) throw error; }
   }
@@ -216,19 +234,40 @@ async function continueAfterTechnicalResearch(client: OpenAI, args: { previousRe
   return client.responses.create({
     model: args.model,
     instructions: args.instructions,
-    reasoning: { effort: args.reasoning },
+    reasoning: { effort: toolReasoning(args.reasoning) },
     text: { verbosity: "high" },
-    tools: [{ type: "web_search", search_context_size: "high" }, ...assistantFunctionTools],
+    tools: [...assistantFunctionTools],
     tool_choice: { type: "function", name: "search_local_catalog" },
-    include: ["web_search_call.action.sources"],
     store: true,
     previous_response_id: args.previousResponseId,
     input: "Продолжи на основе обязательного исследования: используй локальные инструменты, найди товары, работу и ROSSKO при отсутствии, собери полезный предварительный расчёт. Не повторяй исследование дословно и не проси разрешения на него.",
   } as never) as Promise<any>;
 }
 
-async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string }) {
-  return client.responses.create({ model: args.model, instructions: args.instructions, reasoning: { effort: args.reasoning }, text: { verbosity: "high" }, tools: [{ type: "web_search", search_context_size: "high" }, ...assistantFunctionTools], include: ["web_search_call.action.sources"], store: true, previous_response_id: args.previousResponseId, input: args.outputs } as never) as Promise<any>;
+async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean }) {
+  return client.responses.create({
+    model: args.model,
+    instructions: args.instructions,
+    reasoning: { effort: toolReasoning(args.reasoning) },
+    text: { verbosity: "high" },
+    tools: [...(args.allowWebSearch ? [{ type: "web_search", search_context_size: "high" }] : []), ...assistantFunctionTools],
+    ...(args.allowWebSearch ? { include: ["web_search_call.action.sources"] } : {}),
+    store: true,
+    previous_response_id: args.previousResponseId,
+    input: args.outputs,
+  } as never) as Promise<any>;
+}
+
+async function finalizeAfterQuote(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string }) {
+  return client.responses.create({
+    model: args.model,
+    instructions: `${args.instructions}\n\nРасчёт уже сохранён инструментом. Больше не вызывай инструменты. Сформируй итоговый внутренний ответ сотруднику: технический сценарий, состав и стоимость расчёта, подтверждённые данные, допущения, требующие финальной проверки пункты и короткий безопасный текст клиенту, если он был запрошен.`,
+    reasoning: { effort: args.reasoning },
+    text: { verbosity: "high" },
+    store: true,
+    previous_response_id: args.previousResponseId,
+    input: args.outputs,
+  } as never) as Promise<any>;
 }
 
 async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string; organizationId: string; message: string; history: Array<{ role: string; content: string }>; internalContext?: unknown; instructions: string; model: string; reasoning: string }): Promise<MandatoryResearch> {
@@ -244,31 +283,36 @@ async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string
   try {
     const response = await input.client.responses.create({
       model: input.model,
-      instructions: input.instructions,
-      reasoning: { effort: input.reasoning },
-      text: { verbosity: "high" },
+      instructions: TECHNICAL_RESEARCH_INSTRUCTIONS,
+      // Research only has to collect and summarize reliable sources. Capping this
+      // preparatory pass keeps web search responsive; the final estimate still
+      // uses the configured (typically max) reasoning effort below.
+      reasoning: { effort: researchReasoning(input.reasoning) },
+      text: { verbosity: "low" },
       // The default return budget is sufficient for a service estimate. Unlimited
       // research is reserved for a deliberately separate, high-effort workflow.
-      tools: [{ type: "web_search", search_context_size: "high" }],
+      tools: [{ type: "web_search", search_context_size: "medium" }],
       tool_choice: "required",
       include: ["web_search_call.action.sources"],
       store: true,
       input: technicalResearchPrompt(input.message, input.history, input.internalContext),
-    } as never) as any;
+    } as never, { timeout: TECHNICAL_RESEARCH_TIMEOUT_MS }) as any;
     const trace = webSearchTrace(response);
     const sources = sourcesFromResponse(response, []);
     const summary = { ...trace, sourceCount: sources.length, workflow: "mandatory_technical_research" };
     if (!trace.webSearchCalls) {
       const error = "Интернет-поиск не был запущен или недоступен. Проверьте подключение инструмента.";
       await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage: error, resultSummary: json(summary), durationMs: Date.now() - startedAt, completedAt: new Date() } });
-      return { response: null, error, summary, sources };
+      return { response: null, error, summary, sources, connectionFailure: false, connectionError: null };
     }
     await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: json(summary), durationMs: Date.now() - startedAt, completedAt: new Date() } });
-    return { response, error: null, summary, sources };
+    return { response, error: null, summary, sources, connectionFailure: false, connectionError: null };
   } catch (reason) {
     const error = "Интернет-поиск не запустился. Проверьте подключение инструмента.";
-    await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage: text(reason instanceof Error ? reason.message : String(reason), 800) || error, resultSummary: json({ workflow: "mandatory_technical_research", webSearchCalls: 0 }), durationMs: Date.now() - startedAt, completedAt: new Date() } });
-    return { response: null, error, summary: { workflow: "mandatory_technical_research", webSearchCalls: 0 }, sources: [] };
+    const connectionError = text(reason instanceof Error ? reason.message : String(reason), 800) || error;
+    const connectionFailure = /connection error|fetch failed|econnrefused|enotfound|network|timeout|timed out/i.test(connectionError);
+    await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage: connectionError, resultSummary: json({ workflow: "mandatory_technical_research", webSearchCalls: 0 }), durationMs: Date.now() - startedAt, completedAt: new Date() } });
+    return { response: null, error, summary: { workflow: "mandatory_technical_research", webSearchCalls: 0 }, sources: [], connectionFailure, connectionError };
   }
 }
 
@@ -385,6 +429,7 @@ export async function runAssistantThread(input: { threadId: string; organization
           instructions,
           model: config.model,
           reasoning: config.reasoning,
+          allowWebSearch: !technicalRequest,
         });
     responses.push(response);
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
@@ -392,6 +437,7 @@ export async function runAssistantThread(input: { threadId: string; organization
       const calls = functionCalls(response);
       if (!calls.length) break;
       const outputs: Array<Record<string, unknown>> = [];
+      let quoteCompletedThisTurn = false;
       for (const call of calls) {
         if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
         let argumentsValue: unknown = {};
@@ -415,6 +461,7 @@ export async function runAssistantThread(input: { threadId: string; organization
               preview: executed.result,
             });
             savedQuoteIds.push(quote.id);
+            quoteCompletedThisTurn = true;
             resultForModel = { ...executed.result, quoteId: quote.id, quoteStatus: quote.status, quoteSaved: true };
           }
           const summary = mask(resultForModel) as Prisma.InputJsonValue;
@@ -428,8 +475,11 @@ export async function runAssistantThread(input: { threadId: string; organization
           outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage }) });
         }
       }
-      response = await continueResponse(client, { previousResponseId: response.id, outputs, instructions, model: config.model, reasoning: config.reasoning });
+      response = quoteCompletedThisTurn
+        ? await finalizeAfterQuote(client, { previousResponseId: response.id, outputs, instructions, model: config.model, reasoning: config.reasoning })
+        : await continueResponse(client, { previousResponseId: response.id, outputs, instructions, model: config.model, reasoning: config.reasoning, allowWebSearch: !technicalRequest });
       responses.push(response);
+      if (quoteCompletedThisTurn) break;
     }
     if (functionCalls(response).length) throw new Error("ИИ-помощник превысил лимит шагов инструментов; незавершённый ответ не будет использован в следующем запросе");
     if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };

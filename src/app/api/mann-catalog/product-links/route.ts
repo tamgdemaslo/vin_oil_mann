@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { normalizeMannArticle } from "@/lib/mann-catalog";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type Body = {
   productId?: string;
@@ -29,7 +30,8 @@ export async function POST(request: NextRequest) {
   const organizationId = body?.organizationId?.trim() || "default";
   const link = await prisma.productMannLink.upsert({
     where: {
-      organizationId_productId_mannArticleNormalized: {
+      branchId_organizationId_productId_mannArticleNormalized: {
+        branchId: getScopedBranchId(),
         organizationId,
         productId,
         mannArticleNormalized,

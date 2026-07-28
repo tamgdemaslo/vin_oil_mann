@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { DiagnosticBlock, DiagnosticPositionStatus } from "@prisma/client";
 import { tagLabelsForNode } from "@/data/diagnostic-catalog";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 import { mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
 import { updateDiagnosticSummaryCounts } from "@/lib/diagnostic-regenerate-offers";
@@ -40,7 +41,7 @@ export async function PUT(
   }
 
   const existing = await prisma.diagnosticPosition.findUnique({
-    where: { diagnosticId_node: { diagnosticId, node } },
+    where: { branchId_diagnosticId_node: { branchId: getScopedBranchId(), diagnosticId, node } },
     include: { photos: true },
   });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
 import {
   canManageWarehouseMarking,
   getLocalAdminProduct,
@@ -13,11 +14,13 @@ export async function GET(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const product = await getLocalAdminProduct(id);
+  const product = await getLocalAdminProduct(id, branchAccess.context.branchId!);
   if (!product) return NextResponse.json({ error: "Товар не найден" }, { status: 404 });
   return NextResponse.json(product);
 }
@@ -28,6 +31,8 @@ export async function PUT(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
@@ -43,7 +48,7 @@ export async function PUT(
     return NextResponse.json({ error: "Недостаточно прав для изменения настроек маркировки" }, { status: 403 });
   }
 
-  const result = await updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], session.user);
+  const result = await updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], session.user, branchAccess.context.branchId!);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }
@@ -56,11 +61,13 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  const result = await updateLocalAdminProduct(id, { archived: true }, session.user);
+  const result = await updateLocalAdminProduct(id, { archived: true }, session.user, branchAccess.context.branchId!);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
   }

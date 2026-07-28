@@ -3,6 +3,7 @@ import { getUsersFromEnv, type User } from "@/lib/auth";
 import { processClientCaseWorkflowTransitions } from "@/lib/client-case-workflow";
 import { prisma } from "@/lib/db";
 import { sendEmployeeTelegramTemplate } from "@/lib/messenger/messenger-employee-notifications";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export type ClientCaseNotificationType = "deadline_soon" | "due_now" | "overdue_repeat" | "task_assigned" | "today_summary";
 export type ClientCaseNotificationChannel = "in_app" | "browser_push" | "telegram";
@@ -11,6 +12,7 @@ export type ClientCaseNotificationUrgency = "overdue" | "next_hour" | "today" | 
 
 type CrmCaseRow = {
   id: string;
+  branchId: string;
   title: string;
   customerName: string | null;
   phoneNormalized: string | null;
@@ -162,9 +164,11 @@ function notificationUrgency(row: CrmCaseRow, type: ClientCaseNotificationType, 
 }
 
 async function loadActiveCases(now: Date): Promise<CrmCaseRow[]> {
+  const branchId = getScopedBranchId();
   return prisma.$queryRaw<CrmCaseRow[]>`
     SELECT
       d.id,
+      d.branch_id AS "branchId",
       d.title,
       d.customer_name AS "customerName",
       d.phone_normalized AS "phoneNormalized",
@@ -177,6 +181,8 @@ async function loadActiveCases(now: Date): Promise<CrmCaseRow[]> {
     FROM crm_deals d
     LEFT JOIN crm_stages s ON s.id = d.stage_id
     WHERE COALESCE(d.next_action_at, d.next_contact_at) IS NOT NULL
+      AND d.branch_id = ${branchId}
+      AND (s.id IS NULL OR s.branch_id = ${branchId})
       AND (d.snooze_until IS NULL OR d.snooze_until <= ${now})
       AND d.status = 'open'
     ORDER BY COALESCE(d.next_action_at, d.next_contact_at) ASC
@@ -184,7 +190,7 @@ async function loadActiveCases(now: Date): Promise<CrmCaseRow[]> {
   `;
 }
 
-async function loadRecentLog(caseId: string, userId: string, type: ClientCaseNotificationType, channel: ClientCaseNotificationChannel) {
+async function loadRecentLog(caseId: string, userId: string, type: ClientCaseNotificationType, channel: ClientCaseNotificationChannel, branchId: string) {
   const rows = await prisma.$queryRaw<NotificationLogRow[]>`
     SELECT
       id,
@@ -199,6 +205,7 @@ async function loadRecentLog(caseId: string, userId: string, type: ClientCaseNot
       error_message AS "errorMessage"
     FROM client_case_notification_log
     WHERE case_id = ${caseId}
+      AND branch_id = ${branchId}
       AND user_id = ${userId}
       AND type = ${type}
       AND channel = ${channel}
@@ -209,7 +216,7 @@ async function loadRecentLog(caseId: string, userId: string, type: ClientCaseNot
   return rows[0] ?? null;
 }
 
-async function loadActiveInAppLog(caseId: string, userId: string) {
+async function loadActiveInAppLog(caseId: string, userId: string, branchId: string) {
   const rows = await prisma.$queryRaw<NotificationLogRow[]>`
     SELECT
       id,
@@ -224,6 +231,7 @@ async function loadActiveInAppLog(caseId: string, userId: string) {
       error_message AS "errorMessage"
     FROM client_case_notification_log
     WHERE case_id = ${caseId}
+      AND branch_id = ${branchId}
       AND user_id = ${userId}
       AND channel = 'in_app'
       AND status = 'sent'
@@ -234,7 +242,7 @@ async function loadActiveInAppLog(caseId: string, userId: string) {
   return rows[0] ?? null;
 }
 
-async function updateActiveInAppLog(logId: string, type: ClientCaseNotificationType) {
+async function updateActiveInAppLog(logId: string, type: ClientCaseNotificationType, branchId: string) {
   await prisma.$executeRaw`
     UPDATE client_case_notification_log
     SET type = ${type},
@@ -242,11 +250,13 @@ async function updateActiveInAppLog(logId: string, type: ClientCaseNotificationT
         status = 'sent',
         error_message = NULL
     WHERE id = ${logId}
+      AND branch_id = ${branchId}
   `;
 }
 
 async function writeLog(input: {
   caseId: string;
+  branchId: string;
   userId: string;
   type: ClientCaseNotificationType;
   channel: ClientCaseNotificationChannel;
@@ -257,9 +267,9 @@ async function writeLog(input: {
   const id = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO client_case_notification_log
-      (id, case_id, user_id, type, channel, sent_at, status, error_message, snoozed_until)
+      (id, branch_id, case_id, user_id, type, channel, sent_at, status, error_message, snoozed_until)
     VALUES
-      (${id}, ${input.caseId}, ${input.userId}, ${input.type}, ${input.channel}, now(), ${input.status}, ${input.errorMessage ?? null}, ${input.snoozedUntil ?? null})
+      (${id}, ${input.branchId}, ${input.caseId}, ${input.userId}, ${input.type}, ${input.channel}, now(), ${input.status}, ${input.errorMessage ?? null}, ${input.snoozedUntil ?? null})
   `;
 }
 
@@ -332,8 +342,11 @@ export async function notifyClientCaseTaskAssigned(input: {
     },
   });
   const status = result.ok ? (result.status === "failed" ? "failed" as const : "sent" as const) : result.status;
+  const deal = await prisma.crmDeal.findUnique({ where: { id: input.caseId }, select: { branchId: true } });
+  if (!deal) return { status: "skipped" as const, error: "Дело клиента не найдено" };
   await writeLog({
     caseId: input.caseId,
+    branchId: deal.branchId,
     userId: employeeId,
     type: "task_assigned",
     channel: "telegram",
@@ -358,7 +371,7 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
     if (!type) continue;
     const recipients = await recipientsForCase(row, type, users);
     for (const userId of recipients) {
-      const active = await loadActiveInAppLog(row.id, userId);
+      const active = await loadActiveInAppLog(row.id, userId, row.branchId);
       if (active) {
         const elapsed = now.getTime() - active.sentAt.getTime();
         const limit = config.repeatMinutes * 60_000;
@@ -366,11 +379,11 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
           skipped += 1;
           continue;
         }
-        await updateActiveInAppLog(active.id, type);
+        await updateActiveInAppLog(active.id, type, row.branchId);
         sent += 1;
         continue;
       }
-      const recent = await loadRecentLog(row.id, userId, type, "in_app");
+      const recent = await loadRecentLog(row.id, userId, type, "in_app", row.branchId);
       if (recent) {
         const elapsed = now.getTime() - recent.sentAt.getTime();
         const limit = config.repeatMinutes * 60_000;
@@ -379,13 +392,14 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
           continue;
         }
       }
-      await writeLog({ caseId: row.id, userId, type, channel: "in_app", status: "sent" });
+      await writeLog({ caseId: row.id, branchId: row.branchId, userId, type, channel: "in_app", status: "sent" });
       sent += 1;
 
       if (config.telegramEnabled && type === "overdue_repeat") {
         const result = await sendCaseOverdueTelegram(userId, row, now);
         await writeLog({
           caseId: row.id,
+          branchId: row.branchId,
           userId,
           type,
           channel: "telegram",
@@ -400,10 +414,11 @@ export async function processClientCaseDeadlineNotifications(now = new Date()) {
   return { sent, skipped, failed, transitions };
 }
 
-export async function listClientCaseNotificationsForUser(userId: string, now = new Date()): Promise<ClientCaseNotificationItem[]> {
+export async function listClientCaseNotificationsForUser(userId: string, branchId: string, now = new Date()): Promise<ClientCaseNotificationItem[]> {
   const rows = await prisma.$queryRaw<
     Array<{
       logId: string;
+      branchId: string;
       caseId: string;
       userId: string;
       type: ClientCaseNotificationType;
@@ -423,6 +438,7 @@ export async function listClientCaseNotificationsForUser(userId: string, now = n
   >`
     SELECT DISTINCT ON (l.case_id, l.type)
       l.id AS "logId",
+      l.branch_id AS "branchId",
       l.case_id AS "caseId",
       l.user_id AS "userId",
       l.type,
@@ -442,6 +458,8 @@ export async function listClientCaseNotificationsForUser(userId: string, now = n
     JOIN crm_deals d ON d.id = l.case_id
     LEFT JOIN crm_stages s ON s.id = d.stage_id
     WHERE l.user_id = ${userId}
+      AND l.branch_id = ${branchId}
+      AND d.branch_id = ${branchId}
       AND l.channel = 'in_app'
       AND l.status = 'sent'
       AND (l.acknowledged_at IS NULL OR COALESCE(d.next_action_at, d.next_contact_at) < ${now})
@@ -488,15 +506,15 @@ function urgencySort(urgency: ClientCaseNotificationUrgency) {
   return 3;
 }
 
-export async function acknowledgeClientCaseNotification(logId: string, userId: string) {
+export async function acknowledgeClientCaseNotification(logId: string, userId: string, branchId: string) {
   await prisma.$executeRaw`
     UPDATE client_case_notification_log
     SET acknowledged_at = now()
-    WHERE id = ${logId} AND user_id = ${userId}
+    WHERE id = ${logId} AND user_id = ${userId} AND branch_id = ${branchId}
   `;
 }
 
-export async function snoozeClientCase(caseId: string, userId: string, minutes: number) {
+export async function snoozeClientCase(caseId: string, userId: string, minutes: number, branchId: string) {
   const snoozedUntil = new Date(Date.now() + Math.max(1, minutes) * 60_000);
   await prisma.$transaction([
     prisma.$executeRaw`
@@ -506,18 +524,18 @@ export async function snoozeClientCase(caseId: string, userId: string, minutes: 
           next_contact_at = ${snoozedUntil},
           case_status = 'postponed',
           updated_at = now()
-      WHERE id = ${caseId}
+      WHERE id = ${caseId} AND branch_id = ${branchId}
     `,
     prisma.$executeRaw`
       UPDATE client_case_notification_log
       SET acknowledged_at = now(), snoozed_until = ${snoozedUntil}
-      WHERE case_id = ${caseId} AND user_id = ${userId} AND acknowledged_at IS NULL
+      WHERE case_id = ${caseId} AND user_id = ${userId} AND branch_id = ${branchId} AND acknowledged_at IS NULL
     `,
   ]);
   return snoozedUntil;
 }
 
-export async function closeClientCaseFromNotification(caseId: string) {
+export async function closeClientCaseFromNotification(caseId: string, branchId: string) {
   await prisma.$executeRaw`
     UPDATE crm_deals
     SET status = 'won',
@@ -528,10 +546,10 @@ export async function closeClientCaseFromNotification(caseId: string) {
         closed_at = COALESCE(closed_at, now()),
         close_reason = COALESCE(close_reason, 'закрыто из уведомления'),
         updated_at = now()
-    WHERE id = ${caseId}
+    WHERE id = ${caseId} AND branch_id = ${branchId}
   `;
 }
 
-export async function logBrowserPush(caseId: string, userId: string, type: ClientCaseNotificationType, status: ClientCaseNotificationStatus, errorMessage?: string | null) {
-  await writeLog({ caseId, userId, type, channel: "browser_push", status, errorMessage });
+export async function logBrowserPush(caseId: string, userId: string, type: ClientCaseNotificationType, status: ClientCaseNotificationStatus, errorMessage: string | null | undefined, branchId: string) {
+  await writeLog({ caseId, branchId, userId, type, channel: "browser_push", status, errorMessage });
 }

@@ -3,6 +3,8 @@ import {
   syncRecentYclientsRecordNotifications,
   type YclientsRecordNotificationSyncResult,
 } from "@/lib/yclients/record-notifications";
+import { runForActiveBranches } from "@/lib/branch-workers";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const MIN_INTERVAL_MS = 30_000;
@@ -29,12 +31,17 @@ type WorkerResult =
     };
 
 const workerState = globalThis as typeof globalThis & {
-  __clientNotificationsWorker?: WorkerState;
+  __clientNotificationsWorkers?: Map<string, WorkerState>;
 };
 
 function state() {
-  workerState.__clientNotificationsWorker ??= {};
-  return workerState.__clientNotificationsWorker;
+  workerState.__clientNotificationsWorkers ??= new Map();
+  const branchId = getScopedBranchId();
+  const existing = workerState.__clientNotificationsWorkers.get(branchId);
+  if (existing) return existing;
+  const created: WorkerState = {};
+  workerState.__clientNotificationsWorkers.set(branchId, created);
+  return created;
 }
 
 function workerIntervalMs() {
@@ -56,15 +63,13 @@ function isBuildProcess() {
 function workerEnabled() {
   if (process.env.CLIENT_NOTIFICATIONS_WORKER_DISABLED === "1") return false;
   if (isBuildProcess()) return false;
-  if (process.env.CLIENT_NOTIFICATIONS_WORKER_ENABLED === "1") return true;
-  return Boolean(
-    process.env.RAILWAY_SERVICE_ID ||
-      process.env.RAILWAY_ENVIRONMENT_ID ||
-      process.env.RAILWAY_PROJECT_ID
-  );
+  return process.env.CLIENT_NOTIFICATIONS_WORKER_ENABLED === "1";
 }
 
-export async function runClientNotificationsWorkerOnce(limit = 50): Promise<WorkerResult> {
+export async function runClientNotificationsWorkerOnce(
+  limit = 50,
+  options: { syncYclients?: boolean } = {}
+): Promise<WorkerResult> {
   const current = state();
   if (current.running) {
     return {
@@ -78,10 +83,13 @@ export async function runClientNotificationsWorkerOnce(limit = 50): Promise<Work
 
   current.running = true;
   try {
-    const yclientsSync = await syncRecentYclientsRecordNotifications().catch((error) => ({
-      ok: false as const,
-      error: error instanceof Error ? error.message : "Не удалось проверить свежие записи YCLIENTS",
-    }));
+    const syncYclients = options.syncYclients ?? true;
+    const yclientsSync = !syncYclients
+      ? { ok: false as const, error: "YCLIENTS не настроен для этого филиала" }
+      : await syncRecentYclientsRecordNotifications().catch((error) => ({
+          ok: false as const,
+          error: error instanceof Error ? error.message : "Не удалось проверить свежие записи YCLIENTS",
+        }));
     const processed = await processDueClientNotificationJobs(limit);
     return { ok: true, yclientsSync, processed, count: processed.length };
   } finally {
@@ -95,7 +103,7 @@ export function startClientNotificationsWorker() {
   current.started = true;
 
   const tick = () => {
-    runClientNotificationsWorkerOnce().catch((error) => {
+    runForActiveBranches(() => runClientNotificationsWorkerOnce(50)).catch((error) => {
       console.warn("[client-notifications/worker]", error);
     });
   };

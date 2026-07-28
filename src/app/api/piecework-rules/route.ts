@@ -9,6 +9,7 @@ import {
   listPieceworkRules,
 } from "@/lib/piecework-rules";
 import { logChange } from "@/lib/change-log";
+import { requireBranchApi } from "@/lib/branch-api";
 
 function isRole(value: string): value is PieceworkRole {
   return value === "master" || value === "admin";
@@ -28,8 +29,10 @@ export async function GET() {
   if (session.user.role !== "owner") {
     return NextResponse.json({ error: "Только владелец может смотреть правила" }, { status: 403 });
   }
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
-  const rules = await listPieceworkRules();
+  const rules = await listPieceworkRules(branchAccess.context.branchId!);
   return NextResponse.json({ rules });
 }
 
@@ -39,6 +42,9 @@ export async function POST(request: NextRequest) {
   if (session.user.role !== "owner") {
     return NextResponse.json({ error: "Только владелец может менять правила" }, { status: 403 });
   }
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
+  const branchId = branchAccess.context.branchId!;
 
   const body = await request.json();
   const targetType = typeof body.targetType === "string" ? body.targetType.trim() : "";
@@ -77,7 +83,8 @@ export async function POST(request: NextRequest) {
 
   const existing = await prisma.pieceworkRule.findUnique({
     where: {
-      targetType_targetId_role: {
+      branchId_targetType_targetId_role: {
+        branchId,
         targetType,
         targetId,
         role,
@@ -89,6 +96,7 @@ export async function POST(request: NextRequest) {
     ? await prisma.pieceworkRule.update({
         where: { id: existing.id },
         data: {
+          branchId,
           targetName,
           mode,
           fixedCents: mode === "fixed" ? fixedCents : null,
@@ -97,6 +105,7 @@ export async function POST(request: NextRequest) {
       })
     : await prisma.pieceworkRule.create({
         data: {
+          branchId,
           targetType,
           targetId,
           targetName,

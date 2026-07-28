@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { canonicalizeLogin } from "@/lib/auth";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 export const DEFAULT_PAYROLL_ORG_ID = "default";
 
@@ -249,10 +250,12 @@ export async function createPayrollGoal(params: {
   createdByLogin: string;
   organizationId?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const id = randomUUID();
   await prisma.$executeRaw`
     INSERT INTO payroll_goals (
       id,
+      branch_id,
       organization_id,
       employee_id,
       role,
@@ -269,6 +272,7 @@ export async function createPayrollGoal(params: {
     )
     VALUES (
       ${id},
+      ${branchId},
       ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID},
       ${params.employeeLogin ? canonicalizeLogin(params.employeeLogin) : null},
       ${params.role ?? null},
@@ -296,6 +300,7 @@ export async function updatePayrollGoal(params: {
   endsAt?: string;
   status?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const hasBaselineValue = Object.prototype.hasOwnProperty.call(params, "baselineValue");
   const hasStretchValue = Object.prototype.hasOwnProperty.call(params, "stretchValue");
   await prisma.$executeRaw`
@@ -309,6 +314,7 @@ export async function updatePayrollGoal(params: {
       status = COALESCE(${params.status ?? null}, status),
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ${params.id}
+      AND branch_id = ${branchId}
   `;
 }
 
@@ -410,10 +416,12 @@ export async function createEmployeeRecognition(params: {
   sourceId?: string | null;
   organizationId?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const id = randomUUID();
   await prisma.$executeRaw`
     INSERT INTO employee_recognitions (
       id,
+      branch_id,
       organization_id,
       employee_id,
       author_id,
@@ -426,6 +434,7 @@ export async function createEmployeeRecognition(params: {
     )
     VALUES (
       ${id},
+      ${branchId},
       ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID},
       ${canonicalizeLogin(params.employeeLogin)},
       ${canonicalizeLogin(params.authorLogin)},
@@ -445,6 +454,7 @@ export async function getMotivationSettings(params: {
   organizationId?: string;
 }): Promise<MotivationSettingsRecord | null> {
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const employeeLogin = params.employeeLogin ? canonicalizeLogin(params.employeeLogin) : null;
     const rows = await prisma.$queryRaw<
       Array<{
@@ -475,6 +485,7 @@ export async function getMotivationSettings(params: {
         updated_at AS "updatedAt"
       FROM employee_motivation_settings
       WHERE organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
+        AND branch_id = ${branchId}
         AND (employee_id = ${employeeLogin} OR (${employeeLogin} IS NULL AND employee_id IS NULL))
       ORDER BY employee_id NULLS LAST
       LIMIT 1
@@ -498,6 +509,7 @@ export async function upsertMotivationSettings(params: {
   notificationsJson?: unknown;
   organizationId?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const id = randomUUID();
   const employeeLogin = params.employeeLogin ? canonicalizeLogin(params.employeeLogin) : null;
   const organizationId = params.organizationId ?? DEFAULT_PAYROLL_ORG_ID;
@@ -522,6 +534,7 @@ export async function upsertMotivationSettings(params: {
         notifications_json = CAST(${notificationsJson} AS jsonb),
         updated_at = CURRENT_TIMESTAMP
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
         AND employee_id IS NULL
     `;
     if (updated > 0) return;
@@ -530,6 +543,7 @@ export async function upsertMotivationSettings(params: {
   await prisma.$executeRaw`
     INSERT INTO employee_motivation_settings (
       id,
+      branch_id,
       organization_id,
       employee_id,
       show_forecast,
@@ -542,6 +556,7 @@ export async function upsertMotivationSettings(params: {
     )
     VALUES (
       ${id},
+      ${branchId},
       ${organizationId},
       ${employeeLogin},
       ${showForecast},
@@ -552,7 +567,7 @@ export async function upsertMotivationSettings(params: {
       ${showRecognition},
       CAST(${notificationsJson} AS jsonb)
     )
-    ON CONFLICT (organization_id, employee_id)
+    ON CONFLICT (branch_id, employee_id)
     DO UPDATE SET
       show_forecast = EXCLUDED.show_forecast,
       show_goals = EXCLUDED.show_goals,

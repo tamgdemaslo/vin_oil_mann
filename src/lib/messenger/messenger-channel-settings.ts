@@ -4,6 +4,7 @@ import { decryptIntegrationSecret, encryptedIntegrationSecretJson } from "./mess
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import type { MessengerConnectionStatus } from "./messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type ChannelSettingRow = {
   channel: string;
@@ -108,6 +109,7 @@ function mergeWithEnvAndCredentials(row: ChannelSettingRow | null, credentials: 
 
 async function readTelegramCredentials() {
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<CredentialRow[]>`
     SELECT
       id,
@@ -115,6 +117,7 @@ async function readTelegramCredentials() {
       encrypted_value AS "encryptedValue"
     FROM integration_credentials
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND channel = 'telegram'
       AND key IN ('botToken', 'webhookSecret')
     ORDER BY rotated_at DESC NULLS LAST, updated_at DESC, created_at DESC
@@ -129,10 +132,12 @@ async function readTelegramCredentials() {
 
 async function upsertTelegramCredential(key: "botToken" | "webhookSecret", value: string, updatedById?: string | null) {
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id
     FROM integration_credentials
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND channel = 'telegram'
       AND key = ${key}
     ORDER BY updated_at DESC, created_at DESC
@@ -149,14 +154,15 @@ async function upsertTelegramCredential(key: "botToken" | "webhookSecret", value
           updated_at = now()
       WHERE id = ${existingId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     return;
   }
   await prisma.$executeRaw`
     INSERT INTO integration_credentials
-      (id, organization_id, channel, key, encrypted_value, metadata_json, created_by_id, rotated_at, created_at, updated_at)
+      (id, branch_id, organization_id, channel, key, encrypted_value, metadata_json, created_by_id, rotated_at, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, 'telegram', ${key}, ${encryptedValue}::jsonb,
+      (${crypto.randomUUID()}, ${branchId}, ${organizationId}, 'telegram', ${key}, ${encryptedValue}::jsonb,
        jsonb_build_object('source', 'legacy_bot_settings'), ${updatedById ?? null}, now(), now(), now())
   `;
 }
@@ -165,6 +171,7 @@ export async function getTelegramStoredSettings(): Promise<TelegramStoredSetting
   try {
     await ensureMessengerIntegrationCoreSchema();
     const organizationId = getMessengerOrganizationId();
+    const branchId = getScopedBranchId();
     const rows = await prisma.$queryRaw<ChannelSettingRow[]>`
       SELECT
         channel,
@@ -175,6 +182,7 @@ export async function getTelegramStoredSettings(): Promise<TelegramStoredSetting
         updated_at AS "updatedAt"
       FROM messenger_channel_settings
       WHERE organization_id = ${organizationId}
+        AND branch_id = ${branchId}
         AND channel = 'telegram'
       LIMIT 1
     `;
@@ -196,6 +204,7 @@ export async function updateTelegramStoredSettings(input: {
 }) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const current = await getTelegramStoredSettings();
   const nextConfig = {
     botUsername: input.botUsername === undefined ? current.botUsername : stringValue(input.botUsername),
@@ -214,11 +223,11 @@ export async function updateTelegramStoredSettings(input: {
 
   const rows = await prisma.$queryRaw<ChannelSettingRow[]>`
     INSERT INTO messenger_channel_settings
-      (id, organization_id, channel, enabled, config_json, secrets_json, created_by_id, updated_by_id, created_at, updated_at)
+      (id, branch_id, organization_id, channel, enabled, config_json, secrets_json, created_by_id, updated_by_id, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, 'telegram', ${input.enabled ?? current.enabled}, ${JSON.stringify(nextConfig)}::jsonb,
+      (${crypto.randomUUID()}, ${branchId}, ${organizationId}, 'telegram', ${input.enabled ?? current.enabled}, ${JSON.stringify(nextConfig)}::jsonb,
        '{}'::jsonb, ${input.updatedById ?? null}, ${input.updatedById ?? null}, now(), now())
-    ON CONFLICT (channel)
+    ON CONFLICT (branch_id, channel)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       enabled = EXCLUDED.enabled,

@@ -3,6 +3,7 @@ import { canonicalizeLogin, getUsersFromEnv } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getCachedPayrollSummary, type PayrollSummary } from "@/lib/payroll";
 import { listPayrollAdjustments } from "@/lib/payroll-settlements";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 export const DEFAULT_PAYROLL_ORG_ID = "default";
 
@@ -393,6 +394,7 @@ export async function closePayrollPeriod(params: {
   closedByLogin: string;
   organizationId?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const existing = await getPayrollPeriodByRange(params);
   if (existing) return { period: existing, created: false };
 
@@ -481,6 +483,7 @@ export async function closePayrollPeriod(params: {
     await tx.$executeRaw`
       INSERT INTO payroll_periods (
         id,
+        branch_id,
         organization_id,
         date_from,
         date_to,
@@ -494,6 +497,7 @@ export async function closePayrollPeriod(params: {
       )
       VALUES (
         ${periodId},
+        ${branchId},
         ${organizationId},
         ${params.dateFrom},
         ${params.dateTo},
@@ -511,6 +515,7 @@ export async function closePayrollPeriod(params: {
       await tx.$executeRaw`
         INSERT INTO payroll_period_employees (
           id,
+          branch_id,
           period_id,
           employee_login,
           employee_name,
@@ -527,6 +532,7 @@ export async function closePayrollPeriod(params: {
         )
         VALUES (
           ${employee.id},
+          ${branchId},
           ${employee.periodId},
           ${employee.employeeLogin},
           ${employee.employeeName},
@@ -548,6 +554,7 @@ export async function closePayrollPeriod(params: {
       await tx.$executeRaw`
         INSERT INTO payroll_accrual_lines (
           id,
+          branch_id,
           period_id,
           employee_login,
           line_type,
@@ -562,6 +569,7 @@ export async function closePayrollPeriod(params: {
         )
         VALUES (
           ${line.id},
+          ${branchId},
           ${line.periodId},
           ${line.employeeLogin},
           ${line.lineType},

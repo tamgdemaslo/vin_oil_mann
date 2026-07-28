@@ -12,7 +12,10 @@ export async function GET() {
   if ("response" in access) return access.response;
   try {
     const threads = await listAssistantThreads(access.organizationId);
-    return NextResponse.json({ threads });
+    return NextResponse.json({
+      threads,
+      branch: { id: access.branchId, name: access.branchName },
+    });
   } catch (error) {
     return aiAssistantApiError(error);
   }

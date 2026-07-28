@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 import { getOilLineBaseName, parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { normalizeSAE, normalizeOEM, normalizeACEA, normalizeAPI } from "@/lib/oil-normalizer";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type {
   VinDecodeResponse,
   OilRequirements,
@@ -16,9 +17,20 @@ const OIL_PRODUCTS_CACHE_TTL_MS = Math.max(
   60_000,
   parseInt(process.env.MOYSKLAD_LOOKUP_OIL_CACHE_MS ?? "1800000", 10) || 1_800_000
 );
-let oilProductsCache: { at: number; products: OilProduct[] } | null = null;
-let oilProductsInFlight: Promise<OilProduct[]> | null = null;
+type BranchOilProductsCache = {
+  snapshot: { at: number; products: OilProduct[] } | null;
+  inFlight: Promise<OilProduct[]> | null;
+};
+const oilProductsCacheByBranch = new Map<string, BranchOilProductsCache>();
 const oilCandidatesCache = new Map<string, { at: number; products: OilProduct[] }>();
+
+function getBranchOilProductsCache(branchId = getScopedBranchId()): BranchOilProductsCache {
+  const existing = oilProductsCacheByBranch.get(branchId);
+  if (existing) return existing;
+  const created = { snapshot: null, inFlight: null };
+  oilProductsCacheByBranch.set(branchId, created);
+  return created;
+}
 
 function getCacheKey(vin: string, market?: string): string {
   return `${vin.toUpperCase()}|${(market ?? "").trim()}`;
@@ -268,8 +280,9 @@ function cloneOilProducts(products: OilProduct[]): OilProduct[] {
 }
 
 function getCachedOilProductsSnapshot(): OilProduct[] | null {
-  if (!oilProductsCache || Date.now() - oilProductsCache.at > OIL_PRODUCTS_CACHE_TTL_MS) return null;
-  return cloneOilProducts(oilProductsCache.products);
+  const snapshot = getBranchOilProductsCache().snapshot;
+  if (!snapshot || Date.now() - snapshot.at > OIL_PRODUCTS_CACHE_TTL_MS) return null;
+  return cloneOilProducts(snapshot.products);
 }
 
 export function warmOilProductsCache(): Promise<OilProduct[]> {
@@ -281,15 +294,17 @@ export async function fetchOilProductsFromMoySklad(
   limit = 200,
   options?: { forceRefresh?: boolean }
 ): Promise<OilProduct[]> {
+  const branchId = getScopedBranchId();
+  const branchCache = getBranchOilProductsCache(branchId);
   const cached = options?.forceRefresh ? null : getCachedOilProductsSnapshot();
   if (cached) return cached;
-  if (oilProductsInFlight) return cloneOilProducts(await oilProductsInFlight);
+  if (branchCache.inFlight) return cloneOilProducts(await branchCache.inFlight);
 
-  oilProductsInFlight = loadOilProductsFromLocalDb(limit).finally(() => {
-    oilProductsInFlight = null;
+  branchCache.inFlight = loadOilProductsFromLocalDb(limit).finally(() => {
+    getBranchOilProductsCache(branchId).inFlight = null;
   });
-  const products = await oilProductsInFlight;
-  oilProductsCache = { at: Date.now(), products: cloneOilProducts(products) };
+  const products = await branchCache.inFlight;
+  branchCache.snapshot = { at: Date.now(), products: cloneOilProducts(products) };
   return cloneOilProducts(products);
 }
 
@@ -392,6 +407,7 @@ export async function fetchOilCandidatesByRequirements(requirements: OilRequirem
   if (warmCatalog) return warmCatalog;
 
   const cacheKey = JSON.stringify({
+    branchId: getScopedBranchId(),
     sae: requirements.sae_viscosities ?? [],
     oem: requirements.oem_approvals ?? [],
     acea: requirements.acea ?? [],
