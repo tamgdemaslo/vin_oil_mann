@@ -58,10 +58,21 @@ type NotificationCounts = {
   info: number;
 };
 
-type ShellOrganization = {
+type ShellBranch = {
   id: string;
   name: string;
-  isDefault?: boolean;
+  shortName: string;
+  status: string;
+};
+
+type ShellBranchContext = {
+  mode: "branch" | "all";
+  activeBranchId: string;
+  activeBranch: ShellBranch | null;
+  branches: ShellBranch[];
+  groupRole: string | null;
+  branchRole: string | null;
+  canManageBranches: boolean;
 };
 
 type DeadlineNotification = {
@@ -100,8 +111,6 @@ type PlatformNavSection = {
 };
 
 const SHIFT_EVENT = "eco-shift-changed";
-const ORGANIZATION_EVENT = "eco-organization-changed";
-const ORGANIZATION_STORAGE_KEY = "eco-current-organization-id";
 
 function isActivePath(pathname: string, href: string) {
   const cleanHref = href.split("#")[0] || "/";
@@ -166,8 +175,10 @@ export default function PlatformShell() {
   const [permissions, setPermissions] = useState<PlatformPermissions>({});
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
-  const [organizations, setOrganizations] = useState<ShellOrganization[]>([]);
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState("");
+  const [branches, setBranches] = useState<ShellBranch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [canViewAllBranches, setCanViewAllBranches] = useState(false);
+  const [branchSwitching, setBranchSwitching] = useState(false);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
   const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
   const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
@@ -192,15 +203,15 @@ export default function PlatformShell() {
           fetch("/api/cash", { cache: "no-store" }),
           fetch("/api/dashboard/operations", { cache: "no-store" }),
         ]);
-        const sessionData = await safeReadJson<{ user?: PlatformUser; permissions?: PlatformPermissions }>(sessionRes);
-        const organizationsRes = sessionData?.user ? await fetch("/api/moysklad/organizations", { cache: "no-store" }) : null;
+        const sessionData = await safeReadJson<{
+          user?: PlatformUser;
+          permissions?: PlatformPermissions;
+          branchContext?: ShellBranchContext | null;
+        }>(sessionRes);
         const shiftData = shiftRes.ok ? (await safeReadJson<NonNullable<CurrentShift>>(shiftRes)) ?? null : null;
         const cashData = cashRes.ok ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null : null;
         const dashboardData = dashboardRes.ok
           ? (await safeReadJson<{ notificationCounts?: NotificationCounts }>(dashboardRes)) ?? null
-          : null;
-        const organizationsData = organizationsRes?.ok
-          ? (await safeReadJson<{ organizations?: ShellOrganization[] }>(organizationsRes)) ?? null
           : null;
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
@@ -208,18 +219,10 @@ export default function PlatformShell() {
         setCurrentShift(shiftData);
         setCurrentCashShift(cashData?.shift ?? null);
         setNotificationCounts(dashboardData?.notificationCounts ?? null);
-        const nextOrganizations = organizationsData?.organizations ?? [];
-        setOrganizations(nextOrganizations);
-        if (nextOrganizations.length > 0) {
-          const stored = window.localStorage.getItem(ORGANIZATION_STORAGE_KEY);
-          const selected = nextOrganizations.find((organization) => organization.id === stored)
-            ?? nextOrganizations.find((organization) => organization.isDefault)
-            ?? nextOrganizations[0];
-          setSelectedOrganizationId(selected.id);
-          window.localStorage.setItem(ORGANIZATION_STORAGE_KEY, selected.id);
-        } else {
-          setSelectedOrganizationId("");
-        }
+        const branchContext = sessionData?.branchContext ?? null;
+        setBranches(branchContext?.branches ?? []);
+        setSelectedBranchId(branchContext?.activeBranchId ?? "");
+        setCanViewAllBranches(Boolean(branchContext?.groupRole));
       } catch {
         if (cancelled) return;
         setUser(null);
@@ -227,8 +230,9 @@ export default function PlatformShell() {
         setCurrentShift(null);
         setCurrentCashShift(null);
         setNotificationCounts(null);
-        setOrganizations([]);
-        setSelectedOrganizationId("");
+        setBranches([]);
+        setSelectedBranchId("");
+        setCanViewAllBranches(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -309,15 +313,6 @@ export default function PlatformShell() {
   }, [pathname]);
 
   useEffect(() => {
-    function handleOrganizationChanged(event: Event) {
-      const id = (event as CustomEvent<{ organizationId?: string }>).detail?.organizationId;
-      if (id) setSelectedOrganizationId(id);
-    }
-    window.addEventListener(ORGANIZATION_EVENT, handleOrganizationChanged);
-    return () => window.removeEventListener(ORGANIZATION_EVENT, handleOrganizationChanged);
-  }, []);
-
-  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target;
       if (!(target instanceof Node)) return;
@@ -334,7 +329,9 @@ export default function PlatformShell() {
 
   const needsShift = !!user && (user.role === "admin" || user.role === "master");
   const hasAnyActiveShift = !!currentShift || currentCashShift?.status === "open";
+  const allBranchesMode = selectedBranchId === "all";
   const locked = needsShift && !hasAnyActiveShift;
+  const operationalLocked = locked || allBranchesMode;
   const canAccessCash = user?.role === "owner" || user?.role === "admin";
   const canAccessCrm = user?.role === "owner" || user?.role === "admin";
   const canManageIntegrations = user?.role === "owner" || user?.role === "admin";
@@ -345,10 +342,12 @@ export default function PlatformShell() {
     () => [
       {
         id: "home",
-        href: "/",
+        href: allBranchesMode ? "/owner" : "/",
         label: "Главная",
         icon: Home,
-        items: [{ href: "/", label: "Сводка", description: "Статус смены и быстрый старт." }],
+        items: allBranchesMode
+          ? [{ href: "/owner", label: "Все филиалы", description: "Агрегированная сводка без операционных действий." }]
+          : [{ href: "/", label: "Сводка", description: "Статус смены и быстрый старт." }],
       },
       {
         id: "operations",
@@ -356,8 +355,8 @@ export default function PlatformShell() {
         label: "Операции",
         icon: BriefcaseBusiness,
         items: [
-          { href: "/shipment", label: "Все отгрузки", description: "Журнал и поиск документов.", disabled: locked },
-          { href: "/shipment/new", label: "Новая отгрузка", description: "Создание документа.", disabled: locked },
+          { href: "/shipment", label: "Все отгрузки", description: "Журнал и поиск документов.", disabled: operationalLocked },
+          { href: "/shipment/new", label: "Новая отгрузка", description: "Создание документа.", disabled: operationalLocked },
         ],
       },
       {
@@ -366,12 +365,12 @@ export default function PlatformShell() {
         label: "Склад",
         icon: Warehouse,
         items: [
-          { href: "/inventory/products", label: "Товары", description: "Карточки, остатки и фото.", disabled: locked },
-          { href: "/warehouse/product-analytics", label: "Аналитика товаров", description: "Продажи, маржа и неликвид.", disabled: locked || !canViewWarehouseAnalytics },
-          { href: "/warehouse/inventory", label: "Инвентаризация", description: "Сверка фактических остатков.", disabled: locked },
-          { href: "/inventory/receipts", label: "Приёмка", description: "Поступления на локальный склад.", disabled: locked },
-          { href: "/inventory/writeoffs", label: "Корректировки", description: "Списания и технические корректировки.", disabled: locked },
-          { href: "/inventory/restock", label: "Пополнение", description: "Дефицит и заказ поставщикам.", disabled: locked },
+          { href: "/inventory/products", label: "Товары", description: "Карточки, остатки и фото.", disabled: operationalLocked },
+          { href: "/warehouse/product-analytics", label: "Аналитика товаров", description: "Продажи, маржа и неликвид.", disabled: operationalLocked || !canViewWarehouseAnalytics },
+          { href: "/warehouse/inventory", label: "Инвентаризация", description: "Сверка фактических остатков.", disabled: operationalLocked },
+          { href: "/inventory/receipts", label: "Приёмка", description: "Поступления на локальный склад.", disabled: operationalLocked },
+          { href: "/inventory/writeoffs", label: "Корректировки", description: "Списания и технические корректировки.", disabled: operationalLocked },
+          { href: "/inventory/restock", label: "Пополнение", description: "Дефицит и заказ поставщикам.", disabled: operationalLocked },
         ],
       },
       {
@@ -380,11 +379,11 @@ export default function PlatformShell() {
         label: "Финансы",
         icon: CircleDollarSign,
         items: [
-          { href: "/finance", label: "Финансовый центр", description: "P&L, cashflow, расходы, план/факт.", disabled: locked },
-          { href: "/cash", label: "Касса", description: "Кассовая смена, расходы и закрытие.", disabled: locked || !canAccessCash },
-          { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: locked },
-          { href: "/finance/profit", label: "Цены и прибыль", description: "Детализация по товарам и документам.", disabled: locked },
-          { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: locked },
+          { href: "/finance", label: "Финансовый центр", description: "P&L, cashflow, расходы, план/факт.", disabled: operationalLocked },
+          { href: "/cash", label: "Касса", description: "Кассовая смена, расходы и закрытие.", disabled: operationalLocked || !canAccessCash },
+          { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: operationalLocked },
+          { href: "/finance/profit", label: "Цены и прибыль", description: "Детализация по товарам и документам.", disabled: operationalLocked },
+          { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: operationalLocked },
         ],
       },
       {
@@ -393,10 +392,10 @@ export default function PlatformShell() {
         label: "CRM",
         icon: CalendarDays,
         items: [
-          { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: !canAccessCrm },
-          { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: !canAccessCrm },
-          { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: locked || !canAccessCash },
-          { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: locked },
+          { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: operationalLocked || !canAccessCrm },
+          { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: operationalLocked || !canAccessCrm },
+          { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: operationalLocked || !canAccessCash },
+          { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: operationalLocked },
         ],
       },
       ...(canAccessCrm
@@ -406,7 +405,7 @@ export default function PlatformShell() {
             label: "ИИ-помощник",
             icon: Bot,
             items: [
-              { href: "/ai-assistant", label: "Рабочий чат", description: "Внутренний поиск и расчёты без действий от имени клиента." },
+              { href: "/ai-assistant", label: "Рабочий чат", description: "Внутренний поиск и расчёты без действий от имени клиента.", disabled: allBranchesMode },
               { href: "/cabinet/ai-assistant", label: "Настройки", description: "Доступ и границы внутреннего режима." },
             ],
           }]
@@ -419,9 +418,9 @@ export default function PlatformShell() {
         items: [
           { href: "/cabinet", label: "Профиль", description: "Смена пароля и личный блок." },
           {
-            href: "/cabinet/organizations",
-            label: "Организации",
-            description: "Реквизиты и основной контекст.",
+            href: "/cabinet/branches",
+            label: "Филиалы",
+            description: "Точки, реквизиты и доступ сотрудников.",
             disabled: !canManageOrganizations,
           },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
@@ -441,7 +440,7 @@ export default function PlatformShell() {
         ],
       },
     ],
-    [canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, locked]
+    [allBranchesMode, canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, operationalLocked]
   );
 
   async function handleLogout() {
@@ -450,10 +449,26 @@ export default function PlatformShell() {
     window.location.href = "/login";
   }
 
-  function handleOrganizationChange(id: string) {
-    setSelectedOrganizationId(id);
-    window.localStorage.setItem(ORGANIZATION_STORAGE_KEY, id);
-    window.dispatchEvent(new CustomEvent(ORGANIZATION_EVENT, { detail: { organizationId: id } }));
+  async function handleBranchChange(id: string) {
+    if (!id || id === selectedBranchId || branchSwitching) return;
+    if (hasAnyActiveShift && !window.confirm("У вас есть незакрытая смена. Всё равно переключить филиал?")) return;
+    setBranchSwitching(true);
+    try {
+      const response = await fetch("/api/session/active-branch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branchId: id }),
+      });
+      if (!response.ok) {
+        const payload = await safeReadJson<{ error?: string }>(response);
+        window.alert(payload?.error ?? "Не удалось переключить филиал");
+        return;
+      }
+      setSelectedBranchId(id);
+      window.location.href = id === "all" ? "/owner" : pathname;
+    } finally {
+      setBranchSwitching(false);
+    }
   }
 
   async function handleDeadlineAction(action: "acknowledge" | "snooze" | "close", minutes?: number) {
@@ -490,6 +505,9 @@ export default function PlatformShell() {
         : `Кассовая смена активна${formatTime(currentCashShift?.openedAt) ? ` с ${formatTime(currentCashShift?.openedAt)}` : ""}`
       : "Смена не начата";
   const context = routeContext(pathname);
+  const activeBranchLabel = selectedBranchId === "all"
+    ? "Все филиалы"
+    : branches.find((branch) => branch.id === selectedBranchId)?.shortName ?? "Филиал не выбран";
 
   return (
     <div ref={shellRef} className="platform-shell">
@@ -566,16 +584,25 @@ export default function PlatformShell() {
             <span className="platform-shell__loading">Загрузка...</span>
           ) : user ? (
             <>
-              {organizations.length > 1 && (
-                <label className="platform-shell__org-switch" title="Текущая организация">
+              {branches.length > 0 && (
+                <label className={`platform-shell__org-switch ${selectedBranchId === "all" ? "is-all" : ""}`} title="Активный филиал">
                   <Building2 aria-hidden className="eco-icon" />
-                  <select value={selectedOrganizationId} onChange={(event) => handleOrganizationChange(event.target.value)}>
-                    {organizations.map((organization) => (
-                      <option key={organization.id} value={organization.id}>
-                        {organization.name}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="platform-shell__branch-copy">
+                    <small>Филиал</small>
+                    <select
+                      value={selectedBranchId}
+                      onChange={(event) => void handleBranchChange(event.target.value)}
+                      disabled={branchSwitching}
+                      aria-label="Активный филиал"
+                    >
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>
+                          {branch.shortName}{branch.status === "archived" ? " · архив" : ""}
+                        </option>
+                      ))}
+                      {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
+                    </select>
+                  </span>
                 </label>
               )}
               <div className="platform-shell__search" aria-hidden>
@@ -601,7 +628,7 @@ export default function PlatformShell() {
                   <span className="platform-shell__avatar">{userInitials(user)}</span>
                   <span className="platform-shell__profile-copy">
                     <strong>{compactUserName(user)}</strong>
-                    <small>{roleLabel(user.role)}</small>
+                    <small>{roleLabel(user.role)} · {activeBranchLabel}</small>
                   </span>
                   <ChevronDown aria-hidden className="eco-icon platform-shell__chevron" />
                 </button>
@@ -634,6 +661,21 @@ export default function PlatformShell() {
 
       {user && mobileOpen && (
         <nav className="platform-shell__mobile-panel" aria-label="Мобильная навигация">
+          {branches.length > 0 && (
+            <label className="platform-shell__mobile-branch">
+              <span>Активный филиал</span>
+              <select
+                value={selectedBranchId}
+                onChange={(event) => void handleBranchChange(event.target.value)}
+                disabled={branchSwitching}
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>{branch.shortName}</option>
+                ))}
+                {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
+              </select>
+            </label>
+          )}
           {navSections.flatMap((section) =>
             section.items.map((item) => (
               <Link
@@ -663,17 +705,15 @@ export default function PlatformShell() {
             <span className="l-meta">{context.label}</span>
             <strong>{context.value}</strong>
           </div>
-          {organizations.length === 1 && (
-            <>
-              <span className="platform-shell__sub-sep" />
-              <div className="platform-shell__sub-context">
-                <span className="l-meta">Организация:</span>
-                <strong>{organizations[0].name}</strong>
-              </div>
-            </>
-          )}
+          <span className="platform-shell__sub-sep" />
+          <div className={`platform-shell__sub-context ${allBranchesMode ? "is-all-branches" : ""}`}>
+            <span className="l-meta">Филиал:</span>
+            <strong>{activeBranchLabel}</strong>
+          </div>
           <div className="grow" />
-          {locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после начала смены.</span>}
+          {allBranchesMode
+            ? <span className="platform-shell__lock-note">Обзор без создания операционных документов.</span>
+            : locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после начала смены.</span>}
           <span className="platform-shell__version">internal · live data</span>
         </div>
       )}

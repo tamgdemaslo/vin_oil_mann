@@ -10,8 +10,229 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- Филиальная архитектура ---
+
+model BusinessGroup {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branches               Branch[]
+  memberships            BusinessGroupMembership[]
+  integrationCredentials IntegrationCredential[]
+
+  @@index([status])
+  @@map("business_groups")
+}
+
+/// Глобальная учётная запись. На переходном этапе login синхронизируется с AUTH_USERS.
+model User {
+  id                 String   @id @default(cuid())
+  login              String   @unique
+  name               String
+  authRole           String   @default("admin") @map("auth_role")
+  status             String   @default("active")
+  lastActiveBranchId String?  @map("last_active_branch_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  branchMemberships BranchMembership[]
+  groupMemberships  BusinessGroupMembership[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Branch {
+  id                   String        @id @default(cuid())
+  businessGroupId      String        @map("business_group_id")
+  businessGroup        BusinessGroup @relation(fields: [businessGroupId], references: [id], onDelete: Restrict)
+  name                 String
+  shortName            String        @map("short_name")
+  slug                 String
+  status               String        @default("active")
+  address              String?       @db.Text
+  timezone             String        @default("Europe/Kaliningrad")
+  phone                String?
+  email                String?
+  telegramUsername     String?       @map("telegram_username")
+  legalEntityName      String?       @map("legal_entity_name")
+  legalEntityType      String?       @map("legal_entity_type")
+  inn                  String?
+  ogrn                 String?
+  bankDetailsJson      Json?         @map("bank_details_json")
+  openingDate          DateTime?     @map("opening_date") @db.Date
+  legacyOrganizationId String?       @unique @map("legacy_organization_id")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  memberships            BranchMembership[]
+  legalEntities          BranchLegalEntity[]
+  communication          BranchCommunicationSettings?
+  telegramIntegration    BranchTelegramIntegration?
+  stockTransfersOut      BranchStockTransfer[]        @relation("StockTransferSource")
+  stockTransfersIn       BranchStockTransfer[]        @relation("StockTransferDestination")
+  integrationCredentials IntegrationCredential[]
+
+  @@unique([businessGroupId, slug])
+  @@index([businessGroupId, status])
+  @@map("branches")
+}
+
+model BranchMembership {
+  id              String    @id @default(cuid())
+  branchId        String    @map("branch_id")
+  branch          Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  userId          String    @map("user_id")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId          String    @map("role_id")
+  status          String    @default("active")
+  isDefaultBranch Boolean   @default(false) @map("is_default_branch")
+  position        String?
+  employmentStart DateTime? @map("employment_start") @db.Date
+  paySettingsJson Json?     @map("pay_settings_json")
+  scheduleJson    Json?     @map("schedule_json")
+  permissionsJson Json?     @map("permissions_json")
+  joinedAt        DateTime  @default(now()) @map("joined_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([branchId, userId])
+  @@index([userId, status])
+  @@index([branchId, status])
+  @@map("branch_memberships")
+}
+
+model BusinessGroupMembership {
+  id              String        @id @default(cuid())
+  businessGroupId String        @map("business_group_id")
+  businessGroup   BusinessGroup @relation(fields: [businessGroupId], references: [id], onDelete: Cascade)
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role            String
+  status          String        @default("active")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@unique([businessGroupId, userId])
+  @@index([userId, status])
+  @@map("business_group_memberships")
+}
+
+model BranchLegalEntity {
+  id                   String   @id @default(cuid())
+  branchId             String   @map("branch_id")
+  branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name                 String
+  entityType           String   @map("entity_type")
+  inn                  String?
+  kpp                  String?
+  ogrn                 String?
+  ogrnip               String?
+  legalAddress         String?  @map("legal_address") @db.Text
+  bankDetailsJson      Json?    @map("bank_details_json")
+  documentSettingsJson Json?    @map("document_settings_json")
+  isPrimary            Boolean  @default(false) @map("is_primary")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@unique([branchId, inn])
+  @@index([branchId, isPrimary])
+  @@map("branch_legal_entities")
+}
+
+model BranchCommunicationSettings {
+  id                   String   @id @default(cuid())
+  branchId             String   @unique @map("branch_id")
+  branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  primaryPhone         String   @map("primary_phone")
+  secondaryPhone       String?  @map("secondary_phone")
+  whatsapp             String?
+  telegram             String?
+  email                String?
+  callbackSettingsJson Json?    @map("callback_settings_json")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("branch_communication_settings")
+}
+
+model BranchTelegramIntegration {
+  id                String    @id @default(cuid())
+  branchId          String    @unique @map("branch_id")
+  branch            Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  phoneNumberMasked String?   @map("phone_number_masked")
+  sessionEncrypted  String?   @map("session_encrypted") @db.Text
+  status            String    @default("disconnected")
+  telegramUserId    String?   @map("telegram_user_id")
+  telegramUsername  String?   @map("telegram_username")
+  connectedAt       DateTime? @map("connected_at")
+  lastSyncAt        DateTime? @map("last_sync_at")
+  errorCode         String?   @map("error_code")
+  settingsJson      Json?     @map("settings_json")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("branch_telegram_integrations")
+}
+
+model BranchAuditLog {
+  id              String   @id @default(cuid())
+  businessGroupId String?  @map("business_group_id")
+  branchId        String?  @map("branch_id")
+  userId          String?  @map("user_id")
+  action          String
+  entityType      String   @map("entity_type")
+  entityId        String?  @map("entity_id")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([businessGroupId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([userId, createdAt])
+  @@map("branch_audit_logs")
+}
+
+model BranchStockTransfer {
+  id                  String    @id @default(cuid())
+  sourceBranchId      String    @map("source_branch_id")
+  sourceBranch        Branch    @relation("StockTransferSource", fields: [sourceBranchId], references: [id], onDelete: Restrict)
+  destinationBranchId String    @map("destination_branch_id")
+  destinationBranch   Branch    @relation("StockTransferDestination", fields: [destinationBranchId], references: [id], onDelete: Restrict)
+  status              String    @default("draft")
+  createdById         String    @map("created_by_id")
+  approvedById        String?   @map("approved_by_id")
+  shippedAt           DateTime? @map("shipped_at")
+  receivedAt          DateTime? @map("received_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  items BranchStockTransferItem[]
+
+  @@index([sourceBranchId, status])
+  @@index([destinationBranchId, status])
+  @@map("branch_stock_transfers")
+}
+
+model BranchStockTransferItem {
+  id         String              @id @default(cuid())
+  transferId String              @map("transfer_id")
+  transfer   BranchStockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  productId  String              @map("product_id")
+  quantity   Decimal             @db.Decimal(14, 3)
+  metadata   Json?
+
+  @@index([transferId])
+  @@map("branch_stock_transfer_items")
+}
+
 model Shift {
   id                   String    @id @default(cuid())
+  branchId             String    @default("branch-main") @map("branch_id")
   userLogin            String
   shiftDate            String // YYYY-MM-DD (локальный день смены)
   startedAt            DateTime  @map("started_at")
@@ -21,21 +242,25 @@ model Shift {
   latePenaltyCents     Int?      @map("late_penalty_cents")
   unclosedPenaltyCents Int?      @map("unclosed_penalty_cents")
 
-  @@unique([userLogin, shiftDate])
+  @@unique([branchId, userLogin, shiftDate])
+  @@index([branchId, startedAt])
   @@map("shifts")
 }
 
 model ShiftRate {
   id            String @id @default(cuid())
+  branchId      String @default("branch-main") @map("branch_id")
   userLogin     String @map("user_login")
   amountCents   Int    @map("amount_cents")
   effectiveFrom String @map("effective_from") // YYYY-MM-DD, новая ставка только на будущие смены
 
+  @@index([branchId, userLogin])
   @@map("shift_rates")
 }
 
 model PieceworkRule {
   id                 String   @id @default(cuid())
+  branchId           String   @default("branch-main") @map("branch_id")
   targetType         String   @map("target_type") // service | product_group
   targetId           String   @map("target_id")
   targetName         String   @map("target_name")
@@ -46,12 +271,13 @@ model PieceworkRule {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  @@unique([targetType, targetId, role])
+  @@unique([branchId, targetType, targetId, role])
   @@map("piecework_rules")
 }
 
 model BonusPenalty {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   userLogin      String   @map("user_login")
   date           String // YYYY-MM-DD
   amountCents    Int      @map("amount_cents") // бонус > 0, штраф < 0
@@ -60,11 +286,13 @@ model BonusPenalty {
   createdByLogin String   @map("created_by_login")
   createdAt      DateTime @default(now()) @map("created_at")
 
+  @@index([branchId, userLogin, date])
   @@map("bonus_penalties")
 }
 
 model PayrollAdjustment {
   id              String    @id @default(cuid())
+  branchId        String    @default("branch-main") @map("branch_id")
   organizationId  String    @default("default") @map("organization_id")
   employeeId      String    @map("employee_id")
   payrollPeriodId String?   @map("payroll_period_id")
@@ -85,6 +313,7 @@ model PayrollAdjustment {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   reversedAt      DateTime? @map("reversed_at")
 
+  @@index([branchId, employeeId])
   @@index([organizationId, employeeId])
   @@index([organizationId, periodFrom, periodTo])
   @@index([status])
@@ -95,6 +324,7 @@ model PayrollAdjustment {
 
 model PayrollPayment {
   id              String    @id @default(cuid())
+  branchId        String    @default("branch-main") @map("branch_id")
   organizationId  String    @default("default") @map("organization_id")
   employeeId      String    @map("employee_id")
   payrollPeriodId String?   @map("payroll_period_id")
@@ -115,6 +345,7 @@ model PayrollPayment {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   reversedAt      DateTime? @map("reversed_at")
 
+  @@index([branchId, employeeId])
   @@index([organizationId, employeeId])
   @@index([organizationId, periodFrom, periodTo])
   @@index([cashOrderId])
@@ -125,6 +356,7 @@ model PayrollPayment {
 
 model ChangeLog {
   id               String   @id @default(cuid())
+  branchId         String   @default("branch-main") @map("branch_id")
   entityType       String   @map("entity_type")
   entityId         String   @map("entity_id")
   action           String // create | update | delete
@@ -133,23 +365,26 @@ model ChangeLog {
   performedByLogin String   @map("performed_by_login")
   createdAt        DateTime @default(now()) @map("created_at")
 
+  @@index([branchId, createdAt])
   @@map("change_logs")
 }
 
 // Назначенные владельцем рабочие дни сотрудника (график)
 model ScheduledWorkingDay {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   userLogin      String   @map("user_login")
   date           String // YYYY-MM-DD
   createdByLogin String   @map("created_by_login")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  @@unique([userLogin, date])
+  @@unique([branchId, userLogin, date])
   @@map("scheduled_working_days")
 }
 
 model PayrollGoal {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   employeeLogin  String?  @map("employee_id")
   role           String?
@@ -174,6 +409,7 @@ model PayrollGoal {
 
 model PayrollAchievementDefinition {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   key            String
   title          String
@@ -187,12 +423,14 @@ model PayrollAchievementDefinition {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  @@unique([organizationId, key])
+  @@unique([branchId, key])
+  @@index([organizationId, key])
   @@map("payroll_achievement_definitions")
 }
 
 model PayrollAchievementAward {
   id             String    @id @default(cuid())
+  branchId       String    @default("branch-main") @map("branch_id")
   organizationId String    @default("default") @map("organization_id")
   definitionId   String    @map("definition_id")
   employeeLogin  String    @map("employee_id")
@@ -208,6 +446,7 @@ model PayrollAchievementAward {
 
 model EmployeeRecognition {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   employeeLogin  String   @map("employee_id")
   authorLogin    String   @map("author_id")
@@ -226,6 +465,7 @@ model EmployeeRecognition {
 
 model PayrollTeamGoal {
   id              String   @id @default(cuid())
+  branchId        String   @default("branch-main") @map("branch_id")
   organizationId  String   @default("default") @map("organization_id")
   teamKey         String   @map("team_key")
   employeeIdsJson Json     @map("employee_ids_json")
@@ -244,6 +484,7 @@ model PayrollTeamGoal {
 
 model EmployeeMotivationSettings {
   id                String   @id @default(cuid())
+  branchId          String   @default("branch-main") @map("branch_id")
   organizationId    String   @default("default") @map("organization_id")
   employeeLogin     String?  @map("employee_id")
   showForecast      Boolean  @default(true) @map("show_forecast")
@@ -255,12 +496,14 @@ model EmployeeMotivationSettings {
   notificationsJson Json     @default("{}") @map("notifications_json")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  @@unique([organizationId, employeeLogin])
+  @@unique([branchId, employeeLogin])
+  @@index([organizationId, employeeLogin])
   @@map("employee_motivation_settings")
 }
 
 model PayrollPeriod {
   id                  String   @id @default(cuid())
+  branchId            String   @default("branch-main") @map("branch_id")
   organizationId      String   @default("default") @map("organization_id")
   dateFrom            String   @map("date_from")
   dateTo              String   @map("date_to")
@@ -275,7 +518,12 @@ model PayrollPeriod {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  @@unique([organizationId, dateFrom, dateTo])
+  employees    PayrollPeriodEmployee[]
+  accrualLines PayrollAccrualLine[]
+
+  @@unique([branchId, dateFrom, dateTo])
+  @@unique([branchId, id])
+  @@index([organizationId, dateFrom, dateTo])
   @@index([organizationId, status])
   @@index([closedAt])
   @@map("payroll_periods")
@@ -283,7 +531,9 @@ model PayrollPeriod {
 
 model PayrollPeriodEmployee {
   id               String   @id @default(cuid())
+  branchId         String   @default("branch-main") @map("branch_id")
   periodId         String   @map("period_id")
+  period           PayrollPeriod @relation(fields: [branchId, periodId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   employeeLogin    String   @map("employee_login")
   employeeName     String   @map("employee_name")
   employeeRole     String   @map("employee_role")
@@ -298,7 +548,7 @@ model PayrollPeriodEmployee {
   snapshotJson     Json     @map("snapshot_json")
   createdAt        DateTime @default(now()) @map("created_at")
 
-  @@unique([periodId, employeeLogin])
+  @@unique([branchId, periodId, employeeLogin])
   @@index([employeeLogin])
   @@index([periodId])
   @@map("payroll_period_employees")
@@ -306,7 +556,9 @@ model PayrollPeriodEmployee {
 
 model PayrollAccrualLine {
   id               String   @id @default(cuid())
+  branchId         String   @default("branch-main") @map("branch_id")
   periodId         String   @map("period_id")
+  period           PayrollPeriod @relation(fields: [branchId, periodId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   employeeLogin    String   @map("employee_login")
   lineType         String   @map("line_type")
   sourceType       String   @map("source_type")
@@ -336,6 +588,7 @@ model AuthPassword {
 
 /// Слепок отгрузок МойСклад для аналитики по клиентам (только applicable)
 model MoySkladDemandSync {
+  branchId          String   @default("branch-main") @map("branch_id")
   id                String   @id
   documentDate      String   @map("document_date")
   momentAt          DateTime @map("moment_at")
@@ -363,11 +616,13 @@ model MoySkladDemandSync {
   @@index([normalizedPhone])
   @@index([documentDate])
   @@index([momentAt])
+  @@index([branchId])
   @@map("moysklad_demand_sync")
 }
 
 /// Позиции отгрузки для сегментации по услугам и расчёта себестоимости
 model MoySkladDemandPositionSync {
+  branchId             String             @default("branch-main") @map("branch_id")
   id                   String             @id
   demandId             String             @map("demand_id")
   demand               MoySkladDemandSync @relation(fields: [demandId], references: [id], onDelete: Cascade)
@@ -382,12 +637,14 @@ model MoySkladDemandPositionSync {
 
   @@index([demandId])
   @@index([assortmentType, assortmentId])
+  @@index([branchId])
   @@map("moysklad_demand_position_sync")
 }
 
 /// Состояние синхронизации (одна строка)
 model MoySkladAnalyticsSyncState {
-  id                   String    @id
+  branchId             String    @default("branch-main") @map("branch_id")
+  id                   String
   updatedAt            DateTime  @updatedAt @map("updated_at")
   lastSyncedAt         DateTime? @map("last_synced_at")
   lastError            String?   @map("last_error") @db.Text
@@ -405,54 +662,64 @@ model MoySkladAnalyticsSyncState {
   syncLastDemandName   String?   @map("sync_last_demand_name")
   syncMessage          String?   @map("sync_message") @db.Text
 
+  @@id([branchId, id])
+  @@index([branchId])
   @@map("moysklad_analytics_sync_state")
 }
 
 /// Пороги статусов аналитики (singleton id = default)
 model CustomerAnalyticsSettings {
-  id                    String @id @default("default")
+  branchId              String @default("branch-main") @map("branch_id")
+  id                    String @default("default")
   inactiveDaysThreshold Int    @default(90) @map("inactive_days_threshold")
   regularVisitThreshold Int    @default(3) @map("regular_visit_threshold")
   vipThresholdCents     Int?   @map("vip_threshold_cents")
   vipMetric             String @default("revenue") @map("vip_metric")
   vipWindow             String @default("all") @map("vip_window")
 
+  @@id([branchId, id])
+  @@index([branchId])
   @@map("customer_analytics_settings")
 }
 
 model VinLookupCache {
-  vin       String   @id @db.Text
+  branchId  String   @default("branch-main") @map("branch_id")
+  vin       String   @db.Text
   payload   Json
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
 
+  @@id([branchId, vin])
   @@index([expiresAt], map: "vin_lookup_cache_expires_at_idx")
+  @@index([branchId])
   @@map("vin_lookup_cache")
 }
 
 /// Кэш платных запросов к TRONK. Сырые ответы хранятся только в зашифрованном виде.
 model VehicleLookupCache {
-  id                    String   @id @default(cuid())
-  organizationId        String   @default("default") @map("organization_id")
-  inputType             String   @map("input_type")
-  normalizedInputHash   String   @map("normalized_input_hash")
-  maskedInput           String   @map("masked_input")
+  id                    String    @id @default(cuid())
+  branchId              String    @default("branch-main") @map("branch_id")
+  organizationId        String    @default("default") @map("organization_id")
+  inputType             String    @map("input_type")
+  normalizedInputHash   String    @map("normalized_input_hash")
+  maskedInput           String    @map("masked_input")
   method                String
   status                String
-  rawResponseEncrypted  String?  @map("raw_response_encrypted") @db.Text
-  normalizedVehicleJson Json?    @map("normalized_vehicle_json")
-  requestedAt           DateTime @default(now()) @map("requested_at")
+  rawResponseEncrypted  String?   @map("raw_response_encrypted") @db.Text
+  normalizedVehicleJson Json?     @map("normalized_vehicle_json")
+  requestedAt           DateTime  @default(now()) @map("requested_at")
   completedAt           DateTime? @map("completed_at")
-  expiresAt             DateTime @map("expires_at")
-  costCents             Int      @default(0) @map("cost_cents")
-  errorCode             String?  @map("error_code")
-  errorMessage          String?  @map("error_message") @db.Text
-  providerRequestId     String?  @map("provider_request_id")
-  sourceVersion         String?  @map("source_version")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  expiresAt             DateTime  @map("expires_at")
+  costCents             Int       @default(0) @map("cost_cents")
+  errorCode             String?   @map("error_code")
+  errorMessage          String?   @map("error_message") @db.Text
+  providerRequestId     String?   @map("provider_request_id")
+  sourceVersion         String?   @map("source_version")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
+  @@index([branchId, inputType, normalizedInputHash, method, expiresAt])
   @@index([organizationId, inputType, normalizedInputHash, method, expiresAt])
   @@index([expiresAt])
   @@map("vehicle_lookup_cache")
@@ -460,29 +727,31 @@ model VehicleLookupCache {
 
 /// Подтвержденная человеком связка нормализованного автомобиля и строки применяемости MANN.
 model VehicleMannMapping {
-  id                String   @id @default(cuid())
-  organizationId    String   @default("default") @map("organization_id")
-  normalizedMake    String   @map("normalized_make")
-  normalizedModel   String   @map("normalized_model")
-  normalizedGeneration String? @map("normalized_generation")
-  bodyCodesJson     Json     @default("[]") @map("body_codes_json")
-  yearFrom          Int?     @map("year_from")
-  yearTo            Int?     @map("year_to")
-  engineCode        String?  @map("engine_code")
-  engineFamily      String?  @map("engine_family")
-  engineVolumeCc    Int?     @map("engine_volume_cc")
-  powerKw           Int?     @map("power_kw")
-  powerHp           Int?     @map("power_hp")
-  fuelType          String?  @map("fuel_type")
-  driveType         String?  @map("drive_type")
-  transmissionType  String?  @map("transmission_type")
-  mannApplicationId String   @map("mann_application_id")
-  source            String   @default("manual")
-  confidence        String   @default("high")
-  confirmedById     String?  @map("confirmed_by_id")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  branchId             String   @default("branch-main") @map("branch_id")
+  organizationId       String   @default("default") @map("organization_id")
+  normalizedMake       String   @map("normalized_make")
+  normalizedModel      String   @map("normalized_model")
+  normalizedGeneration String?  @map("normalized_generation")
+  bodyCodesJson        Json     @default("[]") @map("body_codes_json")
+  yearFrom             Int?     @map("year_from")
+  yearTo               Int?     @map("year_to")
+  engineCode           String?  @map("engine_code")
+  engineFamily         String?  @map("engine_family")
+  engineVolumeCc       Int?     @map("engine_volume_cc")
+  powerKw              Int?     @map("power_kw")
+  powerHp              Int?     @map("power_hp")
+  fuelType             String?  @map("fuel_type")
+  driveType            String?  @map("drive_type")
+  transmissionType     String?  @map("transmission_type")
+  mannApplicationId    String   @map("mann_application_id")
+  source               String   @default("manual")
+  confidence           String   @default("high")
+  confirmedById        String?  @map("confirmed_by_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
+  @@index([branchId, normalizedMake, normalizedModel])
   @@index([organizationId, normalizedMake, normalizedModel])
   @@index([mannApplicationId])
   @@map("vehicle_mann_mappings")
@@ -508,6 +777,7 @@ model VehicleModelAlias {
 
 model CrmStage {
   id        String   @id @default(cuid())
+  branchId  String   @default("branch-main") @map("branch_id")
   name      String
   sortOrder Int      @map("sort_order")
   color     String?
@@ -516,12 +786,13 @@ model CrmStage {
 
   deals CrmDeal[]
 
-  @@unique([sortOrder])
+  @@unique([branchId, sortOrder])
   @@map("crm_stages")
 }
 
 model CrmDeal {
   id                       String    @id @default(cuid())
+  branchId                 String    @default("branch-main") @map("branch_id")
   organizationId           String?   @map("organization_id")
   title                    String
   customerName             String?   @map("customer_name")
@@ -547,7 +818,7 @@ model CrmDeal {
   caseStatus               String    @default("calculation_needed") @map("case_status")
   caseType                 String    @default("manual") @map("case_type")
   priority                 Int       @default(50)
-  caseKey                  String?   @unique @map("case_key")
+  caseKey                  String?   @map("case_key")
   suppliesNote             String?   @map("supplies_note") @db.Text
   suppliesSupplier         String?   @map("supplies_supplier")
   suppliesExpectedAt       DateTime? @map("supplies_expected_at")
@@ -569,6 +840,7 @@ model CrmDeal {
   notificationLogs ClientCaseNotificationLog[]
   events           ClientCaseEvent[]
 
+  @@unique([branchId, caseKey])
   @@index([phoneNormalized])
   @@index([moyskladCounterpartyId])
   @@index([conversationId])
@@ -586,11 +858,13 @@ model CrmDeal {
   @@index([snoozeUntil])
   @@index([stageId])
   @@index([status])
+  @@index([branchId, updatedAt])
   @@map("crm_deals")
 }
 
 model ClientCaseEvent {
   id         String   @id @default(cuid())
+  branchId   String   @default("branch-main") @map("branch_id")
   caseId     String   @map("case_id")
   actorLogin String?  @map("actor_login")
   eventType  String   @map("event_type")
@@ -608,6 +882,7 @@ model ClientCaseEvent {
 
 model ClientCaseNotificationLog {
   id             String    @id @default(cuid())
+  branchId       String    @default("branch-main") @map("branch_id")
   caseId         String    @map("case_id")
   userId         String    @map("user_id")
   type           String
@@ -629,6 +904,7 @@ model ClientCaseNotificationLog {
 
 model MessengerConnection {
   id               String    @id
+  branchId         String    @default("branch-main") @map("branch_id")
   organizationId   String    @default("default") @map("organization_id")
   channel          String
   type             String    @default("unknown")
@@ -652,7 +928,8 @@ model MessengerConnection {
   conversations MessengerConversation[]
   outbox        MessengerOutbox[]
 
-  @@unique([channel, externalChatId])
+  @@unique([branchId, channel, externalChatId])
+  @@unique([branchId, id])
   @@index([organizationId, channel])
   @@index([channel, externalUserId])
   @@index([channel])
@@ -661,11 +938,13 @@ model MessengerConnection {
   @@index([employeeId])
   @@index([supplierId])
   @@index([isActive])
+  @@index([branchId])
   @@map("messenger_connections")
 }
 
 model MessengerAccount {
   id                String    @id
+  branchId          String    @default("branch-main") @map("branch_id")
   organizationId    String    @default("default") @map("organization_id")
   channel           String
   mode              String
@@ -702,11 +981,14 @@ model MessengerAccount {
   @@index([organizationId, channel, mode, status])
   @@index([channel, mode])
   @@index([status])
+  @@index([branchId])
+  @@unique([branchId, id])
   @@map("messenger_accounts")
 }
 
 model TelegramUserSession {
   id                     String    @id
+  branchId               String    @default("branch-main") @map("branch_id")
   organizationId         String    @default("default") @map("organization_id")
   messengerAccountId     String    @map("messenger_account_id")
   phone                  String
@@ -729,16 +1011,18 @@ model TelegramUserSession {
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  messengerAccount MessengerAccount @relation(fields: [messengerAccountId], references: [id], onDelete: Cascade)
+  messengerAccount MessengerAccount @relation(fields: [branchId, messengerAccountId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([messengerAccountId])
+  @@unique([branchId, messengerAccountId])
   @@index([organizationId, messengerAccountId])
   @@index([status])
+  @@index([branchId])
   @@map("telegram_user_sessions")
 }
 
 model MessengerConversation {
   id                     String    @id
+  branchId               String    @default("branch-main") @map("branch_id")
   organizationId         String    @default("default") @map("organization_id")
   messengerAccountId     String?   @map("messenger_account_id")
   channel                String
@@ -776,12 +1060,13 @@ model MessengerConversation {
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  connection       MessengerConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
-  messengerAccount MessengerAccount?    @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  connection       MessengerConnection? @relation(fields: [branchId, connectionId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  messengerAccount MessengerAccount?    @relation(fields: [branchId, messengerAccountId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   messages         MessengerMessage[]
   outbox           MessengerOutbox[]
 
-  @@unique([channel, externalConversationId])
+  @@unique([branchId, channel, externalConversationId])
+  @@unique([branchId, id])
   @@index([organizationId, messengerAccountId, lastMessageAt])
   @@index([organizationId, channel, status])
   @@index([messengerAccountId])
@@ -797,11 +1082,13 @@ model MessengerConversation {
   @@index([relatedAppointmentId])
   @@index([relatedShipmentId])
   @@index([relatedDiagnosticId])
+  @@index([branchId])
   @@map("messenger_conversations")
 }
 
 model MessengerMessage {
   id                 String    @id
+  branchId           String    @default("branch-main") @map("branch_id")
   organizationId     String    @default("default") @map("organization_id")
   conversationId     String    @map("conversation_id")
   messengerAccountId String?   @map("messenger_account_id")
@@ -827,24 +1114,27 @@ model MessengerMessage {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  conversation     MessengerConversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  messengerAccount MessengerAccount?        @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  conversation     MessengerConversation    @relation(fields: [branchId, conversationId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  messengerAccount MessengerAccount?        @relation(fields: [branchId, messengerAccountId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   outbox           MessengerOutbox[]
   attachments      MessengerAttachment[]
   deliveryEvents   MessengerDeliveryEvent[]
 
-  @@unique([channel, externalMessageId])
+  @@unique([branchId, channel, externalMessageId])
+  @@unique([branchId, id])
   @@index([organizationId, conversationId, createdAt])
   @@index([organizationId, channel, externalMessageId])
   @@index([conversationId, createdAt])
   @@index([status])
   @@index([channel])
   @@index([authorType, authorId])
+  @@index([branchId])
   @@map("messenger_messages")
 }
 
 model MessengerOutbox {
   id                      String    @id
+  branchId                String    @default("branch-main") @map("branch_id")
   organizationId          String    @default("default") @map("organization_id")
   messengerAccountId      String?   @map("messenger_account_id")
   channel                 String
@@ -867,11 +1157,12 @@ model MessengerOutbox {
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  conversation     MessengerConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  message          MessengerMessage?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  connection       MessengerConnection?   @relation(fields: [connectionId], references: [id], onDelete: SetNull)
-  messengerAccount MessengerAccount?      @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  conversation     MessengerConversation? @relation(fields: [branchId, conversationId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  message          MessengerMessage?      @relation(fields: [branchId, messageId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  connection       MessengerConnection?   @relation(fields: [branchId, connectionId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  messengerAccount MessengerAccount?      @relation(fields: [branchId, messengerAccountId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@unique([branchId, organizationId, idempotencyKey])
   @@index([organizationId, status, nextAttemptAt])
   @@index([status, nextAttemptAt])
   @@index([messengerAccountId])
@@ -879,12 +1170,13 @@ model MessengerOutbox {
   @@index([messageId])
   @@index([connectionId])
   @@index([channel])
-  @@unique([organizationId, idempotencyKey])
+  @@index([branchId])
   @@map("messenger_outbox")
 }
 
 model MessengerWebhookEvent {
   id               String    @id
+  branchId         String    @default("branch-main") @map("branch_id")
   organizationId   String    @default("default") @map("organization_id")
   channel          String
   externalUpdateId String    @map("external_update_id")
@@ -893,17 +1185,19 @@ model MessengerWebhookEvent {
   error            String?   @db.Text
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([channel, externalUpdateId])
+  @@unique([branchId, channel, externalUpdateId])
   @@index([organizationId, channel, createdAt])
   @@index([channel, createdAt])
   @@index([processedAt])
+  @@index([branchId])
   @@map("messenger_webhook_events")
 }
 
 model MessengerTemplate {
   id             String   @id
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
-  key            String   @unique
+  key            String
   title          String
   channel        String?
   text           String   @db.Text
@@ -912,14 +1206,17 @@ model MessengerTemplate {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  @@unique([branchId, key])
   @@index([channel])
   @@index([organizationId, channel, isActive])
   @@index([isActive])
+  @@index([branchId])
   @@map("messenger_templates")
 }
 
 model MessengerLinkToken {
   id             String    @id
+  branchId       String    @default("branch-main") @map("branch_id")
   organizationId String    @default("default") @map("organization_id")
   token          String    @unique
   channel        String
@@ -937,13 +1234,15 @@ model MessengerLinkToken {
   @@index([clientId])
   @@index([employeeId])
   @@index([expiresAt])
+  @@index([branchId])
   @@map("messenger_link_tokens")
 }
 
 model MessengerChannelSetting {
   id             String   @id
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
-  channel        String   @unique
+  channel        String
   enabled        Boolean  @default(false)
   configJson     Json     @default("{}") @map("config_json")
   secretsJson    Json?    @map("secrets_json")
@@ -952,8 +1251,10 @@ model MessengerChannelSetting {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  @@unique([branchId, channel])
   @@index([enabled])
   @@index([organizationId, channel])
+  @@index([branchId])
   @@map("messenger_channel_settings")
 }
 
@@ -980,6 +1281,8 @@ model IntegrationProvider {
 
 model IntegrationCredential {
   id                 String    @id
+  branchId           String    @default("branch-main") @map("branch_id")
+  businessGroupId    String    @default("group-main") @map("business_group_id")
   organizationId     String    @default("default") @map("organization_id")
   providerId         String?   @map("provider_id")
   messengerAccountId String?   @map("messenger_account_id")
@@ -987,6 +1290,9 @@ model IntegrationCredential {
   key                String
   encryptedValue     Json      @map("encrypted_value")
   metadataJson       Json      @default("{}") @map("metadata_json")
+  status             String    @default("active")
+  lastValidatedAt    DateTime? @map("last_validated_at") @db.Timestamptz(6)
+  lastErrorCode      String?   @map("last_error_code")
   createdById        String?   @map("created_by_id")
   rotatedAt          DateTime? @map("rotated_at") @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -994,14 +1300,20 @@ model IntegrationCredential {
 
   provider         IntegrationProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
   messengerAccount MessengerAccount?    @relation(fields: [messengerAccountId], references: [id], onDelete: SetNull)
+  branch           Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  businessGroup    BusinessGroup        @relation(fields: [businessGroupId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, channel, messengerAccountId])
   @@index([providerId])
+  @@index([branchId])
+  @@index([businessGroupId, status])
+  @@index([branchId, channel, key, status])
   @@map("integration_credentials")
 }
 
 model IntegrationOnboardingSession {
   id                 String    @id
+  branchId           String    @default("branch-main") @map("branch_id")
   organizationId     String    @default("default") @map("organization_id")
   channel            String
   providerKey        String?   @map("provider_key")
@@ -1020,10 +1332,12 @@ model IntegrationOnboardingSession {
 
   @@index([organizationId, channel, status])
   @@index([messengerAccountId])
+  @@index([branchId])
   @@map("integration_onboarding_sessions")
 }
 
 model WebhookSubscription {
+  branchId               String    @default("branch-main") @map("branch_id")
   id                     String    @id
   organizationId         String    @default("default") @map("organization_id")
   providerId             String?   @map("provider_id")
@@ -1043,11 +1357,13 @@ model WebhookSubscription {
 
   @@index([organizationId, channel, status])
   @@index([messengerAccountId])
+  @@index([branchId])
   @@map("webhook_subscriptions")
 }
 
 model MessengerAttachment {
   id                   String    @id
+  branchId             String    @default("branch-main") @map("branch_id")
   organizationId       String    @default("default") @map("organization_id")
   messageId            String    @map("message_id")
   messengerAccountId   String?   @map("messenger_account_id")
@@ -1083,18 +1399,21 @@ model MessengerAttachment {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  message   MessengerMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message   MessengerMessage    @relation(fields: [branchId, messageId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   mediaJobs MessengerMediaJob[]
 
   @@index([messageId])
   @@index([organizationId, channel])
   @@index([organizationId, messengerAccountId, status])
   @@index([organizationId, channel, externalMessageId])
+  @@index([branchId])
+  @@unique([branchId, id])
   @@map("messenger_attachments")
 }
 
 model MessengerMediaJob {
   id                 String    @id
+  branchId           String    @default("branch-main") @map("branch_id")
   organizationId     String    @default("default") @map("organization_id")
   messengerAccountId String?   @map("messenger_account_id")
   attachmentId       String    @map("attachment_id")
@@ -1110,15 +1429,17 @@ model MessengerMediaJob {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  attachment MessengerAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  attachment MessengerAttachment @relation(fields: [branchId, attachmentId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([organizationId, status, nextAttemptAt, createdAt])
   @@index([attachmentId, operation, status])
+  @@index([branchId])
   @@map("messenger_media_jobs")
 }
 
 model MessengerDeliveryEvent {
   id              String   @id
+  branchId        String   @default("branch-main") @map("branch_id")
   organizationId  String   @default("default") @map("organization_id")
   messageId       String   @map("message_id")
   channel         String
@@ -1129,15 +1450,17 @@ model MessengerDeliveryEvent {
   occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  message MessengerMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message MessengerMessage @relation(fields: [branchId, messageId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   @@index([messageId])
   @@index([organizationId, channel, status])
+  @@index([branchId])
   @@map("messenger_delivery_events")
 }
 
 model MessengerSyncCursor {
   id                 String    @id
+  branchId           String    @default("branch-main") @map("branch_id")
   organizationId     String    @default("default") @map("organization_id")
   messengerAccountId String    @map("messenger_account_id")
   channel            String
@@ -1149,14 +1472,16 @@ model MessengerSyncCursor {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  messengerAccount MessengerAccount @relation(fields: [messengerAccountId], references: [id], onDelete: Cascade)
+  messengerAccount MessengerAccount @relation(fields: [branchId, messengerAccountId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
-  @@unique([organizationId, messengerAccountId, scope])
+  @@unique([branchId, organizationId, messengerAccountId, scope])
   @@index([channel])
+  @@index([branchId])
   @@map("messenger_sync_cursors")
 }
 
 model CommunicationConsent {
+  branchId       String    @default("branch-main") @map("branch_id")
   id             String    @id
   organizationId String    @default("default") @map("organization_id")
   channel        String
@@ -1174,6 +1499,7 @@ model CommunicationConsent {
 
   @@index([organizationId, channel, subjectType, subjectId])
   @@index([externalChatId])
+  @@index([branchId])
   @@map("communication_consents")
 }
 
@@ -1185,7 +1511,7 @@ model NotificationTemplate {
   channel        String
   body           String   @db.Text
   isActive       Boolean  @default(true) @map("is_active")
-  branchId       String?  @map("branch_id")
+  branchId       String   @default("branch-main") @map("branch_id")
   status         String   @default("active")
   metadataJson   Json     @default("{}") @map("metadata_json")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1206,7 +1532,7 @@ model NotificationRule {
   timingType     String   @default("immediate") @map("timing_type")
   offsetMinutes  Int?     @map("offset_minutes")
   conditionsJson Json     @default("{}") @map("conditions_json")
-  branchId       String?  @map("branch_id")
+  branchId       String   @default("branch-main") @map("branch_id")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1237,12 +1563,12 @@ model NotificationJob {
   messengerMessageId String?   @map("messenger_message_id")
   messengerOutboxId  String?   @map("messenger_outbox_id")
   conversationId     String?   @map("conversation_id")
-  branchId           String?   @map("branch_id")
+  branchId           String    @default("branch-main") @map("branch_id")
   initiatedById      String?   @map("initiated_by_id")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([organizationId, idempotencyKey])
+  @@unique([branchId, organizationId, idempotencyKey])
   @@index([organizationId, status, scheduledAt])
   @@index([organizationId, eventType])
   @@index([clientId])
@@ -1252,6 +1578,7 @@ model NotificationJob {
 }
 
 model NotificationLog {
+  branchId           String   @default("branch-main") @map("branch_id")
   id                 String   @id
   organizationId     String   @default("default") @map("organization_id")
   notificationJobId  String?  @map("notification_job_id")
@@ -1275,10 +1602,12 @@ model NotificationLog {
   @@index([clientId])
   @@index([appointmentId])
   @@index([diagnosticReportId])
+  @@index([branchId])
   @@map("notification_logs")
 }
 
 model ClientNotificationPreference {
+  branchId        String    @default("branch-main") @map("branch_id")
   clientId        String    @id @map("client_id")
   organizationId  String    @default("default") @map("organization_id")
   telegramEnabled Boolean   @default(true) @map("telegram_enabled")
@@ -1290,11 +1619,13 @@ model ClientNotificationPreference {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([organizationId, telegramEnabled, consentStatus])
+  @@index([branchId])
   @@map("client_notification_preferences")
 }
 
 model CommunicationIdentity {
   id                     String    @id
+  branchId               String    @default("branch-main") @map("branch_id")
   organizationId         String    @default("default") @map("organization_id")
   channel                String
   messengerAccountId     String    @map("messenger_account_id")
@@ -1316,15 +1647,17 @@ model CommunicationIdentity {
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([organizationId, messengerAccountId, externalUserId])
+  @@unique([branchId, organizationId, messengerAccountId, externalUserId])
   @@index([organizationId, channel, entityType, status])
   @@index([organizationId, clientId])
   @@index([phoneNormalized])
+  @@index([branchId])
   @@map("communication_identities")
 }
 
 model ConversationEntityLink {
   id             String   @id
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   conversationId String   @map("conversation_id")
   entityType     String   @map("entity_type")
@@ -1334,14 +1667,16 @@ model ConversationEntityLink {
   metadataJson   Json     @default("{}") @map("metadata_json")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([organizationId, conversationId, entityType, entityId, relationType])
+  @@unique([branchId, organizationId, conversationId, entityType, entityId, relationType])
   @@index([organizationId, conversationId, entityType])
   @@index([organizationId, entityType, entityId])
+  @@index([branchId])
   @@map("conversation_entity_links")
 }
 
 model IntegrationAuditLog {
   id                 String   @id
+  branchId           String   @default("branch-main") @map("branch_id")
   organizationId     String   @default("default") @map("organization_id")
   channel            String?
   messengerAccountId String?  @map("messenger_account_id")
@@ -1354,6 +1689,7 @@ model IntegrationAuditLog {
 
   @@index([organizationId, createdAt])
   @@index([channel, action])
+  @@index([branchId])
   @@map("integration_audit_logs")
 }
 
@@ -1382,6 +1718,7 @@ enum DiagnosticPositionStatus {
 
 model Diagnostic {
   id                 String  @id @default(uuid())
+  branchId           String  @default("branch-main") @map("branch_id")
   shipmentMoySkladId String? @map("shipment_moysklad_id")
   shipmentDraftId    String? @map("shipment_draft_id")
   agentMoySkladId    String? @map("agent_moysklad_id")
@@ -1415,13 +1752,15 @@ model Diagnostic {
   @@index([vin])
   @@index([agentMoySkladId])
   @@index([shipmentMoySkladId])
+  @@unique([branchId, id])
   @@map("diagnostics")
 }
 
 model DiagnosticPosition {
   id           String     @id @default(uuid())
+  branchId     String     @default("branch-main") @map("branch_id")
   diagnosticId String     @map("diagnostic_id")
-  diagnostic   Diagnostic @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+  diagnostic   Diagnostic @relation(fields: [branchId, diagnosticId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   block  DiagnosticBlock
   node   String
@@ -1438,15 +1777,18 @@ model DiagnosticPosition {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([branchId, diagnosticId, node])
   @@unique([diagnosticId, node])
+  @@unique([branchId, id])
   @@index([diagnosticId])
   @@map("diagnostic_positions")
 }
 
 model DiagnosticPhoto {
   id         String             @id @default(uuid())
+  branchId   String             @default("branch-main") @map("branch_id")
   positionId String             @map("position_id")
-  position   DiagnosticPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  position   DiagnosticPosition @relation(fields: [branchId, positionId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   filePath String  @map("file_path")
   caption  String?
@@ -1459,8 +1801,9 @@ model DiagnosticPhoto {
 
 model DiagnosticOffer {
   id           String     @id @default(uuid())
+  branchId     String     @default("branch-main") @map("branch_id")
   diagnosticId String     @map("diagnostic_id")
-  diagnostic   Diagnostic @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+  diagnostic   Diagnostic @relation(fields: [branchId, diagnosticId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   relatedPositionId    String? @map("related_position_id")
   offerKey             String  @map("offer_key")
@@ -1519,8 +1862,9 @@ enum DiagnosticMapActionKind {
 
 model DiagnosticMapSession {
   id       String       @id @default(cuid())
+  branchId String       @default("branch-main") @map("branch_id")
   demandId String?      @map("demand_id")
-  demand   LocalDemand? @relation(fields: [demandId], references: [id], onDelete: SetNull)
+  demand   LocalDemand? @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
   clientId    String? @map("client_id")
   clientName  String? @map("client_name")
@@ -1567,13 +1911,15 @@ model DiagnosticMapSession {
   @@index([clientId])
   @@index([vin])
   @@index([status])
+  @@unique([branchId, id])
   @@map("diagnostic_map_sessions")
 }
 
 model DiagnosticMapItem {
   id        String               @id @default(cuid())
+  branchId  String               @default("branch-main") @map("branch_id")
   sessionId String               @map("session_id")
-  session   DiagnosticMapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   DiagnosticMapSession @relation(fields: [branchId, sessionId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   blockCode       String @map("block_code")
   blockTitle      String @map("block_title")
@@ -1602,16 +1948,19 @@ model DiagnosticMapItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([branchId, sessionId, itemCode])
   @@unique([sessionId, itemCode])
+  @@unique([branchId, id])
   @@index([sessionId])
   @@index([status])
   @@map("diagnostic_map_items")
 }
 
 model DiagnosticMapPhoto {
-  id     String            @id @default(cuid())
-  itemId String            @map("item_id")
-  item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id       String            @id @default(cuid())
+  branchId String            @default("branch-main") @map("branch_id")
+  itemId   String            @map("item_id")
+  item     DiagnosticMapItem @relation(fields: [branchId, itemId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   filePath    String  @map("file_path")
   contentType String? @map("content_type")
@@ -1629,8 +1978,9 @@ model DiagnosticMapPhoto {
 
 model DiagnosticMapVehiclePhoto {
   id        String               @id @default(cuid())
+  branchId  String               @default("branch-main") @map("branch_id")
   sessionId String               @unique @map("session_id")
-  session   DiagnosticMapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   DiagnosticMapSession @relation(fields: [branchId, sessionId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   filePath    String  @map("file_path")
   contentType String? @map("content_type")
@@ -1643,13 +1993,15 @@ model DiagnosticMapVehiclePhoto {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([branchId, sessionId])
   @@map("diagnostic_map_vehicle_photos")
 }
 
 model DiagnosticMapRecommendationAction {
-  id     String            @id @default(cuid())
-  itemId String            @map("item_id")
-  item   DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id       String            @id @default(cuid())
+  branchId String            @default("branch-main") @map("branch_id")
+  itemId   String            @map("item_id")
+  item     DiagnosticMapItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   kind                  DiagnosticMapActionKind
   title                 String
@@ -1730,6 +2082,7 @@ model LocalOrganization {
 
 /// Доступ пользователя к организациям. userId сейчас хранит логин из AUTH_USERS.
 model OrganizationMember {
+  branchId        String            @default("branch-main") @map("branch_id")
   id              String            @id @default(cuid())
   organizationId  String            @map("organization_id")
   organization    LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1739,16 +2092,18 @@ model OrganizationMember {
   isDefault       Boolean           @default(false) @map("is_default")
   createdAt       DateTime          @default(now()) @map("created_at")
 
-  @@unique([organizationId, userId])
+  @@unique([branchId, organizationId, userId])
   @@index([userId])
   @@index([isDefault])
+  @@index([branchId])
   @@map("organization_members")
 }
 
 /// Справочник складов, импортированный из МойСклад и пригодный для дальнейшей локальной работы.
 model LocalStore {
   id             String             @id @default(cuid())
-  moyskladId     String?            @unique @map("moysklad_id")
+  branchId       String             @default("branch-main") @map("branch_id")
+  moyskladId     String?            @map("moysklad_id")
   moyskladHref   String?            @map("moysklad_href") @db.Text
   name           String
   organizationId String?            @map("organization_id")
@@ -1770,14 +2125,18 @@ model LocalStore {
   inventoryLocks         InventoryLock[]
 
   @@index([name])
+  @@index([branchId, archived])
   @@index([organizationId])
+  @@unique([branchId, moyskladId])
+  @@unique([branchId, id])
   @@map("local_stores")
 }
 
 /// Локальный справочник ассортимента: товары, услуги и модификации.
 model LocalProduct {
   id                        String    @id @default(cuid())
-  moyskladId                String?   @unique @map("moysklad_id")
+  branchId                  String    @default("branch-main") @map("branch_id")
+  moyskladId                String?   @map("moysklad_id")
   moyskladHref              String?   @map("moysklad_href") @db.Text
   entityType                String    @default("product") @map("entity_type")
   name                      String
@@ -1855,6 +2214,8 @@ model LocalProduct {
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
 
   @@index([entityType])
+  @@index([branchId, archived])
+  @@index([branchId, article])
   @@index([name])
   @@index([article])
   @@index([code])
@@ -1871,11 +2232,19 @@ model LocalProduct {
   @@index([markingConfiguredManually])
   @@index([salePriceCents])
   @@index([buyPriceCents])
+  @@unique([branchId, moyskladId])
+  @@unique([branchId, article])
+  @@unique([branchId, code])
+  @@unique([branchId, barcodeEan13])
+  @@unique([branchId, barcodeEan8])
+  @@unique([branchId, barcodeCode128])
+  @@unique([branchId, id])
   @@index([updatedAt])
   @@map("local_products")
 }
 
 model ProductMannLink {
+  branchId              String       @default("branch-main") @map("branch_id")
   id                    String       @id @default(cuid())
   organizationId        String       @default("default") @map("organization_id")
   productId             String       @map("product_id")
@@ -1888,14 +2257,17 @@ model ProductMannLink {
   createdAt             DateTime     @default(now()) @map("created_at")
   updatedAt             DateTime     @updatedAt @map("updated_at")
 
+  @@unique([branchId, organizationId, productId, mannArticleNormalized])
   @@unique([organizationId, productId, mannArticleNormalized])
   @@index([organizationId, mannArticleNormalized])
   @@index([productId])
   @@index([linkType])
+  @@index([branchId])
   @@map("product_mann_links")
 }
 
 model ProductMannPomanMigrationAudit {
+  branchId     String       @default("branch-main") @map("branch_id")
   id           String       @id @default(cuid())
   migrationKey String       @map("migration_key")
   productId    String       @map("product_id")
@@ -1905,8 +2277,9 @@ model ProductMannPomanMigrationAudit {
   newOemParts  String?      @map("new_oem_parts") @db.Text
   migratedAt   DateTime     @default(now()) @map("migrated_at")
 
-  @@unique([migrationKey, productId])
+  @@unique([branchId, migrationKey, productId])
   @@index([productId])
+  @@index([branchId])
   @@map("product_mann_poman_migration_audit")
 }
 
@@ -2177,6 +2550,7 @@ model MannFluidRequirementLink {
 }
 
 model ProductMarkingAuditLog {
+  branchId         String       @default("branch-main") @map("branch_id")
   id               String       @id @default(cuid())
   productId        String       @map("product_id")
   product          LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -2187,10 +2561,12 @@ model ProductMarkingAuditLog {
   createdAt        DateTime     @default(now()) @map("created_at")
 
   @@index([productId, createdAt])
+  @@index([branchId])
   @@map("product_marking_audit_logs")
 }
 
 model ProductImportJob {
+  branchId       String    @default("branch-main") @map("branch_id")
   id             String    @id @default(cuid())
   fileName       String    @map("file_name")
   mode           String
@@ -2211,10 +2587,12 @@ model ProductImportJob {
 
   @@index([createdAt])
   @@index([status])
+  @@index([branchId])
   @@map("product_import_jobs")
 }
 
 model ProductImportRow {
+  branchId          String           @default("branch-main") @map("branch_id")
   id                String           @id @default(cuid())
   jobId             String           @map("job_id")
   job               ProductImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -2231,13 +2609,15 @@ model ProductImportRow {
   @@index([jobId])
   @@index([matchedProductId])
   @@index([status])
+  @@index([branchId])
   @@map("product_import_rows")
 }
 
 model LocalProductPhoto {
+  branchId    String       @default("branch-main") @map("branch_id")
   id          String       @id @default(cuid())
   productId   String       @map("product_id")
-  product     LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product     LocalProduct @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   fileName    String?      @map("file_name")
   contentType String       @map("content_type")
   sizeBytes   Int          @map("size_bytes")
@@ -2245,16 +2625,18 @@ model LocalProductPhoto {
   createdAt   DateTime     @default(now()) @map("created_at")
 
   @@index([productId])
+  @@index([branchId])
   @@map("local_product_photos")
 }
 
 /// Локальные остатки ассортимента по складам.
 model LocalStockBalance {
   id        String       @id @default(cuid())
+  branchId  String       @default("branch-main") @map("branch_id")
   productId String       @map("product_id")
-  product   LocalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   LocalProduct @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   storeId   String       @map("store_id")
-  store     LocalStore   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store     LocalStore   @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
 
   quantity      Decimal  @default(0) @db.Decimal(14, 3)
   reserve       Decimal  @default(0) @db.Decimal(14, 3)
@@ -2263,6 +2645,7 @@ model LocalStockBalance {
   slotName      String?  @map("slot_name")
   syncedAt      DateTime @default(now()) @map("synced_at")
 
+  @@unique([branchId, productId, storeId])
   @@unique([productId, storeId])
   @@index([productId])
   @@index([storeId])
@@ -2273,7 +2656,8 @@ model LocalStockBalance {
 /// Локальный справочник контрагентов.
 model LocalCounterparty {
   id                   String    @id @default(cuid())
-  moyskladId           String?   @unique @map("moysklad_id")
+  branchId             String    @default("branch-main") @map("branch_id")
+  moyskladId           String?   @map("moysklad_id")
   moyskladHref         String?   @map("moysklad_href") @db.Text
   name                 String
   phone                String?
@@ -2312,15 +2696,21 @@ model LocalCounterparty {
   cashExpenseOrders  CashExpenseOrder[]
 
   @@index([name])
+  @@index([branchId, archived])
+  @@index([branchId, normalizedPhone])
   @@index([normalizedPhone])
   @@index([inn])
+  @@unique([branchId, moyskladId])
+  @@unique([branchId, normalizedPhone])
+  @@unique([branchId, id])
   @@map("local_counterparties")
 }
 
 /// Локальная кассовая смена. Источник истины для открытия/закрытия кассы.
 model CashShift {
   id               String   @id @default(cuid())
-  serviceDate      String   @unique @map("service_date")
+  branchId         String   @default("branch-main") @map("branch_id")
+  serviceDate      String   @map("service_date")
   timezone         String
   status           String   @default("open")
   openedAt         DateTime @map("opened_at")
@@ -2349,6 +2739,7 @@ model CashShift {
 
   withdrawals CashWithdrawal[]
 
+  @@unique([branchId, serviceDate])
   @@index([status])
   @@index([openedAt])
   @@index([closedAt])
@@ -2358,6 +2749,7 @@ model CashShift {
 /// Локальное изъятие наличных из кассы.
 model CashWithdrawal {
   id          String    @id @default(cuid())
+  branchId    String    @default("branch-main") @map("branch_id")
   shiftId     String    @map("shift_id")
   shift       CashShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   amountCents Int       @map("amount_cents")
@@ -2379,16 +2771,19 @@ model CashWithdrawal {
 /// Локальный справочник статей расхода для кассовых расходных ордеров.
 model CashExpenseItem {
   id           String   @id @default(cuid())
-  name         String   @unique
+  branchId     String   @default("branch-main") @map("branch_id")
+  name         String
   isActive     Boolean  @default(true) @map("is_active")
   source       String   @default("local")
-  moyskladId   String?  @unique @map("moysklad_id")
+  moyskladId   String?  @map("moysklad_id")
   moyskladHref String?  @map("moysklad_href") @db.Text
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   orders CashExpenseOrder[]
 
+  @@unique([branchId, name])
+  @@unique([branchId, moyskladId])
   @@index([isActive])
   @@index([source])
   @@map("cash_expense_items")
@@ -2397,13 +2792,14 @@ model CashExpenseItem {
 /// Локальный расходный ордер кассы. МойСклад-поля остаются nullable для импорта/синхронизации.
 model CashExpenseOrder {
   id             String             @id @default(cuid())
+  branchId       String             @default("branch-main") @map("branch_id")
   shiftId        String             @map("shift_id")
   organizationId String?            @map("organization_id")
   organization   LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   warehouseId    String?            @map("warehouse_id")
   warehouse      LocalStore?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
 
-  number      String @unique
+  number      String
   status      String @default("draft")
   amountCents Int    @map("amount_cents")
   currency    String @default("RUB")
@@ -2446,7 +2842,7 @@ model CashExpenseOrder {
   payrollPeriodId          String?   @map("payroll_period_id")
   payrollPeriodFrom        String?   @map("payroll_period_from")
   payrollPeriodTo          String?   @map("payroll_period_to")
-  moyskladId               String?   @unique @map("moysklad_id")
+  moyskladId               String?   @map("moysklad_id")
   moyskladHref             String?   @map("moysklad_href") @db.Text
   moyskladMetaHref         String?   @map("moysklad_meta_href") @db.Text
   externalCode             String?   @map("external_code")
@@ -2459,6 +2855,8 @@ model CashExpenseOrder {
 
   supplierInvoicePayments LocalSupplierInvoicePayment[]
 
+  @@unique([branchId, number])
+  @@unique([branchId, moyskladId])
   @@index([shiftId])
   @@index([status])
   @@index([expenseDate])
@@ -2478,7 +2876,8 @@ model CashExpenseOrder {
 /// Локальные отгрузки. На первом этапе это зеркало МойСклад, дальше станет рабочей сущностью.
 model LocalDemand {
   id           String   @id @default(cuid())
-  moyskladId   String?  @unique @map("moysklad_id")
+  branchId     String   @default("branch-main") @map("branch_id")
+  moyskladId   String?  @map("moysklad_id")
   moyskladHref String?  @map("moysklad_href") @db.Text
   name         String
   momentAt     DateTime @map("moment_at")
@@ -2488,12 +2887,12 @@ model LocalDemand {
   description  String?  @db.Text
 
   counterpartyId    String?            @map("counterparty_id")
-  counterparty      LocalCounterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  counterparty      LocalCounterparty? @relation(fields: [branchId, counterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   agentMoyskladId   String?            @map("agent_moysklad_id")
   agentNameSnapshot String?            @map("agent_name_snapshot")
 
   storeId           String?            @map("store_id")
-  store             LocalStore?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  store             LocalStore?        @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   storeMoyskladId   String?            @map("store_moysklad_id")
   storeNameSnapshot String?            @map("store_name_snapshot")
   organizationId    String?            @map("organization_id")
@@ -2512,7 +2911,11 @@ model LocalDemand {
   revisions              ShipmentRevision[]
   inventoryLedgerEntries InventoryLedgerEntry[]
 
+  @@unique([branchId, name])
+  @@unique([branchId, moyskladId])
+  @@unique([branchId, id])
   @@index([documentDate])
+  @@index([branchId, documentDate])
   @@index([momentAt])
   @@index([applicable])
   @@index([counterpartyId])
@@ -2525,8 +2928,9 @@ model LocalDemand {
 /// Журнал редакций отгрузки: создание, проведение, возврат в черновик, повторное проведение и правки.
 model ShipmentRevision {
   id                 String      @id @default(cuid())
+  branchId           String      @default("branch-main") @map("branch_id")
   shipmentId         String      @map("shipment_id")
-  shipment           LocalDemand @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipment           LocalDemand @relation(fields: [branchId, shipmentId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   revisionNumber     Int         @map("revision_number")
   eventType          String      @map("event_type")
   statusBefore       String?     @map("status_before")
@@ -2547,17 +2951,18 @@ model ShipmentRevision {
 
 /// Неизменяемый журнал складских движений по отгрузкам.
 model InventoryLedgerEntry {
+  branchId          String                  @default("branch-main") @map("branch_id")
   id                String                  @id @default(cuid())
   sourceType        String                  @map("source_type")
   sourceId          String                  @map("source_id")
   organizationId    String?                 @map("organization_id")
   organization      LocalOrganization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   shipmentId        String?                 @map("shipment_id")
-  shipment          LocalDemand?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  shipment          LocalDemand?            @relation(fields: [branchId, shipmentId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   productId         String?                 @map("product_id")
-  product           LocalProduct?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product           LocalProduct?           @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   storeId           String?                 @map("store_id")
-  store             LocalStore?             @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  store             LocalStore?             @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   cellId            String?                 @map("cell_id")
   batchId           String?                 @map("batch_id")
   movementType      String                  @map("movement_type")
@@ -2584,16 +2989,18 @@ model InventoryLedgerEntry {
   @@index([batchId])
   @@index([movementType])
   @@index([createdAt])
+  @@index([branchId])
   @@map("inventory_ledger_entries")
 }
 
 /// Документ инвентаризации: настройка, подсчёт, сверка и проведение.
 model InventorySession {
+  branchId                  String            @default("branch-main") @map("branch_id")
   id                        String            @id @default(cuid())
   organizationId            String            @map("organization_id")
   organization              LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   warehouseId               String            @map("warehouse_id")
-  warehouse                 LocalStore        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  warehouse                 LocalStore        @relation(fields: [branchId, warehouseId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   number                    String
   status                    String            @default("DRAFT")
   countMode                 String            @default("BLIND") @map("count_mode")
@@ -2638,25 +3045,28 @@ model InventorySession {
   movementLinks InventoryMovementLink[]
   auditLogs     InventoryAuditLog[]
 
-  @@unique([organizationId, number])
+  @@unique([branchId, organizationId, number])
+  @@unique([branchId, id])
   @@index([warehouseId])
   @@index([status])
   @@index([scopeType])
   @@index([snapshotAt])
   @@index([startedAt])
   @@index([postedAt])
+  @@index([branchId])
   @@map("inventory_sessions")
 }
 
 /// Строка инвентаризации по товару, складу, ячейке и партии.
 model InventoryLine {
+  branchId                  String           @default("branch-main") @map("branch_id")
   id                        String           @id @default(cuid())
   inventorySessionId        String           @map("inventory_session_id")
-  session                   InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
+  session                   InventorySession @relation(fields: [branchId, inventorySessionId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   productId                 String?          @map("product_id")
-  product                   LocalProduct?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product                   LocalProduct?    @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   warehouseId               String           @map("warehouse_id")
-  warehouse                 LocalStore       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  warehouse                 LocalStore       @relation(fields: [branchId, warehouseId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   cellId                    String?          @map("cell_id")
   batchId                   String?          @map("batch_id")
   unitId                    String?          @map("unit_id")
@@ -2701,14 +3111,17 @@ model InventoryLine {
   @@index([batchId])
   @@index([status])
   @@index([requiresRecount])
+  @@index([branchId])
+  @@unique([branchId, id])
   @@map("inventory_lines")
 }
 
 /// Неизменяемая история вводов фактического количества.
 model InventoryCountEntry {
+  branchId        String        @default("branch-main") @map("branch_id")
   id              String        @id @default(cuid())
   inventoryLineId String        @map("inventory_line_id")
-  line            InventoryLine @relation(fields: [inventoryLineId], references: [id], onDelete: Cascade)
+  line            InventoryLine @relation(fields: [branchId, inventoryLineId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   sequence        Int
   quantity        Decimal       @db.Decimal(14, 3)
   counterId       String?       @map("counter_id")
@@ -2717,18 +3130,20 @@ model InventoryCountEntry {
   source          String        @default("MANUAL")
   createdAt       DateTime      @default(now()) @map("created_at")
 
-  @@unique([inventoryLineId, sequence])
+  @@unique([branchId, inventoryLineId, sequence])
   @@index([inventoryLineId])
   @@index([counterId])
   @@index([source])
+  @@index([branchId])
   @@map("inventory_count_entries")
 }
 
 /// Вложения к строкам инвентаризации. storageKey должен указывать на постоянное object storage.
 model InventoryAttachment {
+  branchId        String        @default("branch-main") @map("branch_id")
   id              String        @id @default(cuid())
   inventoryLineId String        @map("inventory_line_id")
-  line            InventoryLine @relation(fields: [inventoryLineId], references: [id], onDelete: Cascade)
+  line            InventoryLine @relation(fields: [branchId, inventoryLineId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   type            String
   storageKey      String        @map("storage_key") @db.Text
   fileName        String        @map("file_name")
@@ -2739,11 +3154,13 @@ model InventoryAttachment {
 
   @@index([inventoryLineId])
   @@index([type])
+  @@index([branchId])
   @@map("inventory_attachments")
 }
 
 /// Связь строк инвентаризации с созданными складскими движениями и документами.
 model InventoryMovementLink {
+  branchId           String                @default("branch-main") @map("branch_id")
   id                 String                @id @default(cuid())
   inventorySessionId String                @map("inventory_session_id")
   session            InventorySession      @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
@@ -2759,11 +3176,13 @@ model InventoryMovementLink {
   @@index([inventoryLineId])
   @@index([ledgerEntryId])
   @@index([documentType, documentId])
+  @@index([branchId])
   @@map("inventory_movement_links")
 }
 
 /// Назначения сотрудников на области подсчёта.
 model InventoryAssignment {
+  branchId           String           @default("branch-main") @map("branch_id")
   id                 String           @id @default(cuid())
   inventorySessionId String           @map("inventory_session_id")
   session            InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
@@ -2776,11 +3195,13 @@ model InventoryAssignment {
   @@index([inventorySessionId])
   @@index([employeeId])
   @@index([status])
+  @@index([branchId])
   @@map("inventory_assignments")
 }
 
 /// Блокировка пересекающейся области активной инвентаризации.
 model InventoryLock {
+  branchId           String            @default("branch-main") @map("branch_id")
   id                 String            @id @default(cuid())
   organizationId     String            @map("organization_id")
   organization       LocalOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -2802,11 +3223,13 @@ model InventoryLock {
   @@index([cellId])
   @@index([inventorySessionId])
   @@index([releasedAt])
+  @@index([branchId])
   @@map("inventory_locks")
 }
 
 /// Будущие плановые инвентаризации: модель готова, автоматический планировщик добавляется отдельно.
 model InventorySchedule {
+  branchId       String   @default("branch-main") @map("branch_id")
   id             String   @id @default(cuid())
   organizationId String   @map("organization_id")
   warehouseId    String   @map("warehouse_id")
@@ -2822,11 +3245,13 @@ model InventorySchedule {
   @@index([organizationId, warehouseId])
   @@index([nextDate])
   @@index([active])
+  @@index([branchId])
   @@map("inventory_schedules")
 }
 
 /// Аудит действий по инвентаризации и изменениям строк.
 model InventoryAuditLog {
+  branchId           String           @default("branch-main") @map("branch_id")
   id                 String           @id @default(cuid())
   inventorySessionId String           @map("inventory_session_id")
   session            InventorySession @relation(fields: [inventorySessionId], references: [id], onDelete: Cascade)
@@ -2845,11 +3270,13 @@ model InventoryAuditLog {
   @@index([action])
   @@index([userId])
   @@index([createdAt])
+  @@index([branchId])
   @@map("inventory_audit_logs")
 }
 
 /// Snapshot закрывающего документа по отгрузке: печатные формы не меняются молча после выпуска.
 model ClosingDocument {
+  branchId                   String             @default("branch-main") @map("branch_id")
   id                         String             @id @default(cuid())
   organizationId             String?            @map("organization_id")
   organization               LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -2882,15 +3309,17 @@ model ClosingDocument {
   cancelledByName            String?            @map("cancelled_by_name")
   cancelReason               String?            @map("cancel_reason") @db.Text
 
-  @@unique([organizationId, type, number])
+  @@unique([branchId, organizationId, type, number])
   @@index([shipmentId])
   @@index([organizationId, type, documentDate])
   @@index([status])
+  @@index([branchId])
   @@map("closing_documents")
 }
 
 /// Годовые последовательности номеров закрывающих документов по организации и типу.
 model ClosingDocumentNumberSequence {
+  branchId       String   @default("branch-main") @map("branch_id")
   id             String   @id @default(cuid())
   organizationId String   @map("organization_id")
   type           String
@@ -2899,18 +3328,20 @@ model ClosingDocumentNumberSequence {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  @@unique([organizationId, type, year])
+  @@unique([branchId, organizationId, type, year])
+  @@index([branchId])
   @@map("closing_document_number_sequences")
 }
 
 /// Позиции локальной отгрузки.
 model LocalDemandPosition {
+  branchId             String        @default("branch-main") @map("branch_id")
   id                   String        @id @default(cuid())
   demandId             String        @map("demand_id")
-  demand               LocalDemand   @relation(fields: [demandId], references: [id], onDelete: Cascade)
-  moyskladPositionId   String?       @unique @map("moysklad_position_id")
+  demand               LocalDemand   @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  moyskladPositionId   String?       @map("moysklad_position_id")
   productId            String?       @map("product_id")
-  product              LocalProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product              LocalProduct? @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
   assortmentMoyskladId String?       @map("assortment_moysklad_id")
   assortmentType       String        @map("assortment_type")
   name                 String
@@ -2926,11 +3357,14 @@ model LocalDemandPosition {
   @@index([demandId])
   @@index([productId])
   @@index([assortmentType, assortmentMoyskladId])
+  @@index([branchId])
+  @@unique([branchId, moyskladPositionId])
   @@map("local_demand_positions")
 }
 
 /// Локальные определения дополнительных полей отгрузки.
 model DemandAttributeDefinition {
+  branchId  String   @default("branch-main") @map("branch_id")
   id        String   @id @default(cuid())
   name      String
   type      String   @default("string")
@@ -2940,13 +3374,15 @@ model DemandAttributeDefinition {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([name])
+  @@unique([branchId, name])
   @@index([order])
+  @@index([branchId])
   @@map("demand_attribute_definitions")
 }
 
 /// Локальные складские документы: приёмка, списание и будущие корректировки.
 model LocalInventoryDocument {
+  branchId                String   @default("branch-main") @map("branch_id")
   id                      String   @id @default(cuid())
   type                    String
   name                    String
@@ -2973,7 +3409,7 @@ model LocalInventoryDocument {
   createdByName    String?   @map("created_by_name")
   raw              Json?
   source           String    @default("local")
-  moyskladId       String?   @unique @map("moysklad_id")
+  moyskladId       String?   @map("moysklad_id")
   moyskladHref     String?   @map("moysklad_href") @db.Text
   moyskladMetaHref String?   @map("moysklad_meta_href") @db.Text
   externalCode     String?   @map("external_code")
@@ -3012,11 +3448,14 @@ model LocalInventoryDocument {
   @@index([syncStatus])
   @@index([isDeleted])
   @@index([correctionOfId])
+  @@index([branchId])
+  @@unique([branchId, moyskladId])
   @@map("local_inventory_documents")
 }
 
 /// История изменений локального складского документа.
 model LocalInventoryDocumentAuditLog {
+  branchId      String                 @default("branch-main") @map("branch_id")
   id            String                 @id @default(cuid())
   documentId    String                 @map("document_id")
   document      LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -3033,11 +3472,13 @@ model LocalInventoryDocumentAuditLog {
   @@index([documentId])
   @@index([action])
   @@index([createdAt])
+  @@index([branchId])
   @@map("local_inventory_document_audit_logs")
 }
 
 /// Позиции локального складского документа.
 model LocalInventoryDocumentPosition {
+  branchId           String                 @default("branch-main") @map("branch_id")
   id                 String                 @id @default(cuid())
   documentId         String                 @map("document_id")
   document           LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -3049,7 +3490,7 @@ model LocalInventoryDocumentPosition {
   slotName           String?                @map("slot_name")
   raw                Json?
   source             String                 @default("local")
-  moyskladPositionId String?                @unique @map("moysklad_position_id")
+  moyskladPositionId String?                @map("moysklad_position_id")
   moyskladHref       String?                @map("moysklad_href") @db.Text
   moyskladMetaHref   String?                @map("moysklad_meta_href") @db.Text
   externalCode       String?                @map("external_code")
@@ -3063,11 +3504,14 @@ model LocalInventoryDocumentPosition {
   @@index([externalCode])
   @@index([syncedAt])
   @@index([syncStatus])
+  @@index([branchId])
+  @@unique([branchId, moyskladPositionId])
   @@map("local_inventory_document_positions")
 }
 
 /// Локальный счёт поставщика, созданный из приёмки.
 model LocalSupplierInvoice {
+  branchId                 String                 @default("branch-main") @map("branch_id")
   id                       String                 @id @default(cuid())
   documentId               String                 @unique @map("document_id")
   document                 LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -3083,7 +3527,7 @@ model LocalSupplierInvoice {
   createdBy                String?                @map("created_by")
   counterpartyNameSnapshot String?                @map("counterparty_name_snapshot")
   raw                      Json?
-  moyskladId               String?                @unique @map("moysklad_id")
+  moyskladId               String?                @map("moysklad_id")
   moyskladHref             String?                @map("moysklad_href") @db.Text
   moyskladMetaHref         String?                @map("moysklad_meta_href") @db.Text
   externalCode             String?                @map("external_code")
@@ -3104,11 +3548,14 @@ model LocalSupplierInvoice {
   @@index([externalCode])
   @@index([syncedAt])
   @@index([syncStatus])
+  @@index([branchId])
+  @@unique([branchId, moyskladId])
   @@map("local_supplier_invoices")
 }
 
 /// История оплат локального счёта поставщика.
 model LocalSupplierInvoicePayment {
+  branchId           String               @default("branch-main") @map("branch_id")
   id                 String               @id @default(cuid())
   invoiceId          String               @map("invoice_id")
   invoice            LocalSupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -3123,7 +3570,7 @@ model LocalSupplierInvoicePayment {
   createdByName      String?              @map("created_by_name")
   raw                Json?
   source             String               @default("local")
-  moyskladId         String?              @unique @map("moysklad_id")
+  moyskladId         String?              @map("moysklad_id")
   moyskladHref       String?              @map("moysklad_href") @db.Text
   moyskladMetaHref   String?              @map("moysklad_meta_href") @db.Text
   externalCode       String?              @map("external_code")
@@ -3139,13 +3586,16 @@ model LocalSupplierInvoicePayment {
   @@index([externalCode])
   @@index([syncedAt])
   @@index([syncStatus])
+  @@index([branchId])
+  @@unique([branchId, moyskladId])
   @@map("local_supplier_invoice_payments")
 }
 
 /// Настройки подключения T-Bank T-API для безопасной оплаты счетов поставщиков.
 model TBankIntegration {
+  branchId                    String    @default("branch-main") @map("branch_id")
   id                          String    @id @default(cuid())
-  organizationId              String    @unique @default("default") @map("organization_id")
+  organizationId              String    @default("default") @map("organization_id")
   inn                         String?
   kpp                         String?
   tokenEncrypted              String?   @map("token_encrypted") @db.Text
@@ -3175,11 +3625,14 @@ model TBankIntegration {
   accounts TBankSettlementAccount[]
   payments SupplierInvoiceTBankPayment[]
 
+  @@index([branchId])
+  @@unique([branchId, organizationId])
   @@map("tbank_integrations")
 }
 
 /// Расчётные счета списания, полученные из T-Bank или добавленные вручную.
 model TBankSettlementAccount {
+  branchId               String           @default("branch-main") @map("branch_id")
   id                     String           @id @default(cuid())
   organizationId         String           @default("default") @map("organization_id")
   integrationId          String           @map("integration_id")
@@ -3197,14 +3650,16 @@ model TBankSettlementAccount {
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @updatedAt @map("updated_at")
 
-  @@unique([integrationId, accountNumberHash])
+  @@unique([branchId, integrationId, accountNumberHash])
   @@index([organizationId])
   @@index([integrationId])
+  @@index([branchId])
   @@map("tbank_settlement_accounts")
 }
 
 /// Попытки оплаты счёта поставщика через T-Bank T-API.
 model SupplierInvoiceTBankPayment {
+  branchId                 String               @default("branch-main") @map("branch_id")
   id                       String               @id @default(cuid())
   organizationId           String               @default("default") @map("organization_id")
   supplierInvoiceId        String               @map("supplier_invoice_id")
@@ -3216,7 +3671,7 @@ model SupplierInvoiceTBankPayment {
   tbankPaymentId           String?              @map("tbank_payment_id")
   tbankDocumentId          String?              @map("tbank_document_id")
   tbankRequestId           String?              @map("tbank_request_id")
-  idempotencyKey           String               @unique @map("idempotency_key")
+  idempotencyKey           String               @map("idempotency_key")
   attemptNumber            Int                  @default(1) @map("attempt_number")
   amountCents              Int                  @map("amount_cents")
   fromAccountNumberMasked  String?              @map("from_account_number_masked")
@@ -3253,14 +3708,17 @@ model SupplierInvoiceTBankPayment {
   @@index([supplierInvoiceId])
   @@index([tbankDocumentId])
   @@index([tbankPaymentId])
+  @@index([branchId])
+  @@unique([branchId, idempotencyKey])
   @@map("supplier_invoice_tbank_payments")
 }
 
 /// Входящие события T-Bank по статусам платежей.
 model TBankWebhookEvent {
+  branchId                      String                       @default("branch-main") @map("branch_id")
   id                            String                       @id @default(cuid())
   organizationId                String                       @default("default") @map("organization_id")
-  eventId                       String?                      @unique @map("event_id")
+  eventId                       String?                      @map("event_id")
   supplierInvoiceTBankPaymentId String?                      @map("supplier_invoice_tbank_payment_id")
   payment                       SupplierInvoiceTBankPayment? @relation(fields: [supplierInvoiceTBankPaymentId], references: [id], onDelete: SetNull)
   tbankDocumentId               String?                      @map("tbank_document_id")
@@ -3276,12 +3734,15 @@ model TBankWebhookEvent {
   @@index([supplierInvoiceTBankPaymentId])
   @@index([tbankDocumentId])
   @@index([tbankPaymentId])
+  @@index([branchId])
+  @@unique([branchId, eventId])
   @@map("tbank_webhook_events")
 }
 
 /// Состояние импорта локального складского зеркала.
 model LocalInventorySyncState {
-  id                   String    @id @default("default")
+  branchId             String    @default("branch-main") @map("branch_id")
+  id                   String    @default("default")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   lastSyncedAt         DateTime? @map("last_synced_at")
   lastError            String?   @map("last_error") @db.Text
@@ -3298,6 +3759,8 @@ model LocalInventorySyncState {
   syncFinishedAt       DateTime? @map("sync_finished_at")
   syncMessage          String?   @map("sync_message") @db.Text
 
+  @@id([branchId, id])
+  @@index([branchId])
   @@map("local_inventory_sync_state")
 }
 
@@ -3305,7 +3768,8 @@ model LocalInventorySyncState {
 /// а секреты поставщиков и OpenAI остаются только в переменных окружения.
 model AIAgentSetting {
   id                          String   @id @default(cuid())
-  organizationId              String   @unique @default("default") @map("organization_id")
+  branchId                    String   @default("branch-main") @map("branch_id")
+  organizationId              String   @default("default") @map("organization_id")
   enabled                     Boolean  @default(false)
   mode                        String   @default("observe")
   agentName                   String   @default("Там где масло") @map("agent_name")
@@ -3341,6 +3805,7 @@ model AIAgentSetting {
   updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([enabled, mode])
+  @@unique([branchId, organizationId])
   @@map("ai_agent_settings")
 }
 
@@ -3348,6 +3813,7 @@ model AIAgentSetting {
 /// а не восстанавливается из бесконечной истории Telegram.
 model AIAgentSession {
   id                   String    @id @default(cuid())
+  branchId             String    @default("branch-main") @map("branch_id")
   organizationId       String    @default("default") @map("organization_id")
   conversationId       String    @map("conversation_id")
   clientId             String?   @map("client_id")
@@ -3370,7 +3836,7 @@ model AIAgentSession {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@unique([organizationId, conversationId])
+  @@unique([branchId, organizationId, conversationId])
   @@index([organizationId, status, lastActivityAt])
   @@index([clientId])
   @@index([vehicleId])
@@ -3379,35 +3845,36 @@ model AIAgentSession {
 
 /// Сохраняемый детерминированный расчёт обслуживания.
 model AIServiceQuote {
-  id                   String    @id @default(cuid())
-  organizationId       String    @default("default") @map("organization_id")
-  conversationId       String    @map("conversation_id")
-  clientId             String?   @map("client_id")
-  vehicleId            String?   @map("vehicle_id")
-  appointmentId        String?   @map("appointment_id")
-  status               String    @default("draft")
-  serviceType          String    @map("service_type")
-  vehicleSnapshot      Json      @default("{}") @map("vehicle_snapshot")
-  requirementsSnapshot Json      @default("{}") @map("requirements_snapshot")
-  sourceEvidence       Json      @default("[]") @map("source_evidence")
-  localProductsSnapshot Json     @default("[]") @map("local_products_snapshot")
-  rosskoOffersSnapshot  Json     @default("[]") @map("rossko_offers_snapshot")
-  quoteOptions         Json      @default("[]") @map("quote_options")
-  selectedOption       Json?     @map("selected_option")
-  optionalItems        Json      @default("[]") @map("optional_items")
-  totalCents           Int?      @map("total_cents")
-  validUntil           DateTime? @map("valid_until") @db.Timestamptz(6)
-  requiresHumanApproval Boolean  @default(true) @map("requires_human_approval")
-  createdBy            String    @default("ai") @map("created_by")
-  approvedById         String?   @map("approved_by_id")
-  approvedAt           DateTime? @map("approved_at") @db.Timestamptz(6)
-  sentAt               DateTime? @map("sent_at") @db.Timestamptz(6)
-  draftShipmentId      String?   @map("draft_shipment_id")
-  customerText         String?   @map("customer_text") @db.Text
-  internalSummary      String?   @map("internal_summary") @db.Text
-  humanReviewReason    String?   @map("human_review_reason")
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                    String    @id @default(cuid())
+  branchId              String    @default("branch-main") @map("branch_id")
+  organizationId        String    @default("default") @map("organization_id")
+  conversationId        String    @map("conversation_id")
+  clientId              String?   @map("client_id")
+  vehicleId             String?   @map("vehicle_id")
+  appointmentId         String?   @map("appointment_id")
+  status                String    @default("draft")
+  serviceType           String    @map("service_type")
+  vehicleSnapshot       Json      @default("{}") @map("vehicle_snapshot")
+  requirementsSnapshot  Json      @default("{}") @map("requirements_snapshot")
+  sourceEvidence        Json      @default("[]") @map("source_evidence")
+  localProductsSnapshot Json      @default("[]") @map("local_products_snapshot")
+  rosskoOffersSnapshot  Json      @default("[]") @map("rossko_offers_snapshot")
+  quoteOptions          Json      @default("[]") @map("quote_options")
+  selectedOption        Json?     @map("selected_option")
+  optionalItems         Json      @default("[]") @map("optional_items")
+  totalCents            Int?      @map("total_cents")
+  validUntil            DateTime? @map("valid_until") @db.Timestamptz(6)
+  requiresHumanApproval Boolean   @default(true) @map("requires_human_approval")
+  createdBy             String    @default("ai") @map("created_by")
+  approvedById          String?   @map("approved_by_id")
+  approvedAt            DateTime? @map("approved_at") @db.Timestamptz(6)
+  sentAt                DateTime? @map("sent_at") @db.Timestamptz(6)
+  draftShipmentId       String?   @map("draft_shipment_id")
+  customerText          String?   @map("customer_text") @db.Text
+  internalSummary       String?   @map("internal_summary") @db.Text
+  humanReviewReason     String?   @map("human_review_reason")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([organizationId, conversationId, createdAt])
   @@index([clientId])
@@ -3419,23 +3886,24 @@ model AIServiceQuote {
 /// Проверяемые технические факты. Старые записи не перезаписываются: новая
 /// проверка создаёт новую версию, а истёкшие остаются частью аудита расчёта.
 model AIAgentTechnicalEvidence {
-  id              String   @id @default(cuid())
-  organizationId  String   @default("default") @map("organization_id")
-  vehicleKey      String   @map("vehicle_key")
-  vehicleSnapshot Json     @default("{}") @map("vehicle_snapshot")
+  id              String    @id @default(cuid())
+  branchId        String    @default("branch-main") @map("branch_id")
+  organizationId  String    @default("default") @map("organization_id")
+  vehicleKey      String    @map("vehicle_key")
+  vehicleSnapshot Json      @default("{}") @map("vehicle_snapshot")
   aggregate       String
-  factType        String   @map("fact_type")
-  facts           Json     @default("{}")
-  sourceName      String   @map("source_name")
-  sourceUrl       String   @map("source_url") @db.Text
-  sourceExcerpt   String?  @map("source_excerpt") @db.Text
-  confidence      Float    @default(0)
-  status          String   @default("verified")
-  catalogVersion  String?  @map("catalog_version")
-  verifiedAt      DateTime @default(now()) @map("verified_at") @db.Timestamptz(6)
+  factType        String    @map("fact_type")
+  facts           Json      @default("{}")
+  sourceName      String    @map("source_name")
+  sourceUrl       String    @map("source_url") @db.Text
+  sourceExcerpt   String?   @map("source_excerpt") @db.Text
+  confidence      Float     @default(0)
+  status          String    @default("verified")
+  catalogVersion  String?   @map("catalog_version")
+  verifiedAt      DateTime  @default(now()) @map("verified_at") @db.Timestamptz(6)
   validUntil      DateTime? @map("valid_until") @db.Timestamptz(6)
   invalidatedAt   DateTime? @map("invalidated_at") @db.Timestamptz(6)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([organizationId, vehicleKey, aggregate, factType, verifiedAt])
   @@index([organizationId, status, validUntil])
@@ -3445,6 +3913,7 @@ model AIAgentTechnicalEvidence {
 /// Выборочная обратная связь сотрудника по расчётам — основа контроля качества.
 model AIAgentQualityFeedback {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   quoteId        String   @map("quote_id")
   conversationId String   @map("conversation_id")
@@ -3459,52 +3928,54 @@ model AIAgentQualityFeedback {
 }
 
 model AIAgentRun {
-  id                  String    @id @default(cuid())
-  organizationId      String    @default("default") @map("organization_id")
-  conversationId      String    @map("conversation_id")
-  sessionId           String?   @map("session_id")
-  sourceMessageId     String?   @map("source_message_id")
-  triggerMessageId    String?   @map("trigger_message_id")
-  clientId            String?   @map("client_id")
-  vehicleId           String?   @map("vehicle_id")
-  quoteId             String?   @map("quote_id")
-  idempotencyKey      String?   @unique @map("idempotency_key")
-  outboundMessageId   String?   @map("outbound_message_id")
-  triggerType         String    @default("manual") @map("trigger_type")
-  mode                String
-  status              String    @default("queued")
-  currentStage        String?   @map("current_stage")
-  stageLabel          String?   @map("stage_label")
-  stageStartedAt      DateTime? @map("stage_started_at") @db.Timestamptz(6)
-  heartbeatAt         DateTime? @map("heartbeat_at") @db.Timestamptz(6)
-  intent              String?
-  model               String
-  promptVersion       String    @map("prompt_version")
-  inputTextMasked     String?   @map("input_text_masked") @db.Text
-  outputText          String?   @map("output_text") @db.Text
-  inputTokens         Int?      @map("input_tokens")
-  outputTokens        Int?      @map("output_tokens")
-  estimatedCostMicros Int?      @map("estimated_cost_micros")
-  durationMs          Int?      @map("duration_ms")
-  requiresHumanApproval Boolean @default(false) @map("requires_human_approval")
-  humanApprovalReason String?   @map("human_approval_reason")
-  lastToolName        String?   @map("last_tool_name")
-  lastToolStatus      String?   @map("last_tool_status")
-  completedStagesJson Json      @default("[]") @map("completed_stages_json")
-  collectedDataSummaryJson Json @default("{}") @map("collected_data_summary_json")
-  errorCode           String?   @map("error_code")
-  errorMessage        String?   @map("error_message") @db.Text
-  retryCount          Int       @default(0) @map("retry_count")
-  clientProgressMessageId String? @map("client_progress_message_id")
-  createdBy           String?   @map("created_by")
-  startedAt           DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
-  failedAt            DateTime? @map("failed_at") @db.Timestamptz(6)
-  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                       String    @id @default(cuid())
+  branchId                 String    @default("branch-main") @map("branch_id")
+  organizationId           String    @default("default") @map("organization_id")
+  conversationId           String    @map("conversation_id")
+  sessionId                String?   @map("session_id")
+  sourceMessageId          String?   @map("source_message_id")
+  triggerMessageId         String?   @map("trigger_message_id")
+  clientId                 String?   @map("client_id")
+  vehicleId                String?   @map("vehicle_id")
+  quoteId                  String?   @map("quote_id")
+  idempotencyKey           String?   @map("idempotency_key")
+  outboundMessageId        String?   @map("outbound_message_id")
+  triggerType              String    @default("manual") @map("trigger_type")
+  mode                     String
+  status                   String    @default("queued")
+  currentStage             String?   @map("current_stage")
+  stageLabel               String?   @map("stage_label")
+  stageStartedAt           DateTime? @map("stage_started_at") @db.Timestamptz(6)
+  heartbeatAt              DateTime? @map("heartbeat_at") @db.Timestamptz(6)
+  intent                   String?
+  model                    String
+  promptVersion            String    @map("prompt_version")
+  inputTextMasked          String?   @map("input_text_masked") @db.Text
+  outputText               String?   @map("output_text") @db.Text
+  inputTokens              Int?      @map("input_tokens")
+  outputTokens             Int?      @map("output_tokens")
+  estimatedCostMicros      Int?      @map("estimated_cost_micros")
+  durationMs               Int?      @map("duration_ms")
+  requiresHumanApproval    Boolean   @default(false) @map("requires_human_approval")
+  humanApprovalReason      String?   @map("human_approval_reason")
+  lastToolName             String?   @map("last_tool_name")
+  lastToolStatus           String?   @map("last_tool_status")
+  completedStagesJson      Json      @default("[]") @map("completed_stages_json")
+  collectedDataSummaryJson Json      @default("{}") @map("collected_data_summary_json")
+  errorCode                String?   @map("error_code")
+  errorMessage             String?   @map("error_message") @db.Text
+  retryCount               Int       @default(0) @map("retry_count")
+  clientProgressMessageId  String?   @map("client_progress_message_id")
+  createdBy                String?   @map("created_by")
+  startedAt                DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt              DateTime? @map("completed_at") @db.Timestamptz(6)
+  failedAt                 DateTime? @map("failed_at") @db.Timestamptz(6)
+  cancelledAt              DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([organizationId, sourceMessageId])
+  @@unique([branchId, idempotencyKey])
+  @@unique([branchId, organizationId, sourceMessageId])
   @@index([organizationId, conversationId, createdAt])
   @@index([organizationId, idempotencyKey])
   @@index([status, createdAt])
@@ -3516,6 +3987,7 @@ model AIAgentRun {
 /// никогда не внутреннюю цепочку рассуждений модели.
 model AIAgentRunEvent {
   id               String   @id @default(cuid())
+  branchId         String   @default("branch-main") @map("branch_id")
   runId            String   @map("run_id")
   eventType        String   @map("event_type")
   stage            String?
@@ -3535,6 +4007,7 @@ model AIAgentRunEvent {
 
 model AIAgentToolCall {
   id               String    @id @default(cuid())
+  branchId         String    @default("branch-main") @map("branch_id")
   organizationId   String    @default("default") @map("organization_id")
   runId            String    @map("run_id")
   conversationId   String    @map("conversation_id")
@@ -3556,6 +4029,7 @@ model AIAgentToolCall {
 
 model AIAgentDecision {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   runId          String   @map("run_id")
   conversationId String   @map("conversation_id")
@@ -3573,6 +4047,7 @@ model AIAgentDecision {
 
 model AIAgentHandoff {
   id                String    @id @default(cuid())
+  branchId          String    @default("branch-main") @map("branch_id")
   organizationId    String    @default("default") @map("organization_id")
   runId             String?   @map("run_id")
   conversationId    String    @map("conversation_id")
@@ -3595,6 +4070,7 @@ model AIAgentHandoff {
 
 model AIAgentSlotHold {
   id             String    @id @default(cuid())
+  branchId       String    @default("branch-main") @map("branch_id")
   organizationId String    @default("default") @map("organization_id")
   conversationId String    @map("conversation_id")
   quoteId        String?   @map("quote_id")
@@ -3615,6 +4091,7 @@ model AIAgentSlotHold {
 /// assistant thread by accident.
 model AIAssistantThread {
   id             String   @id @default(cuid())
+  branchId       String   @default("branch-main") @map("branch_id")
   organizationId String   @default("default") @map("organization_id")
   createdById    String   @map("created_by_id")
   title          String   @default("Новый разговор")
@@ -3636,6 +4113,7 @@ model AIAssistantThread {
 
 model AIAssistantMessage {
   id              String            @id @default(cuid())
+  branchId        String            @default("branch-main") @map("branch_id")
   threadId        String            @map("thread_id")
   thread          AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   organizationId  String            @default("default") @map("organization_id")
@@ -3654,6 +4132,7 @@ model AIAssistantMessage {
 
 model AIAssistantRun {
   id              String            @id @default(cuid())
+  branchId        String            @default("branch-main") @map("branch_id")
   threadId        String            @map("thread_id")
   thread          AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   organizationId  String            @default("default") @map("organization_id")
@@ -3685,6 +4164,7 @@ model AIAssistantRun {
 
 model AIAssistantToolCall {
   id             String         @id @default(cuid())
+  branchId       String         @default("branch-main") @map("branch_id")
   runId          String         @map("run_id")
   run            AIAssistantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   organizationId String         @default("default") @map("organization_id")
@@ -3704,6 +4184,7 @@ model AIAssistantToolCall {
 
 model AIAssistantSource {
   id             String         @id @default(cuid())
+  branchId       String         @default("branch-main") @map("branch_id")
   runId          String         @map("run_id")
   run            AIAssistantRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   messageId      String?        @map("message_id")
@@ -3726,6 +4207,7 @@ model AIAssistantSource {
 /// automatic customer delivery or accounting mutations.
 model AIAssistantQuote {
   id                       String            @id @default(cuid())
+  branchId                 String            @default("branch-main") @map("branch_id")
   organizationId           String            @default("default") @map("organization_id")
   threadId                 String            @map("thread_id")
   thread                   AIAssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
@@ -3762,29 +4244,30 @@ model AIAssistantQuote {
 /// independently from LocalProduct because a service-card price is not a
 /// reliable price for technically different procedures.
 model AIAssistantLaborPricingRule {
-  id                        String   @id @default(cuid())
-  organizationId            String   @default("default") @map("organization_id")
-  locationId                String   @default("dachnaya") @map("location_id")
-  serviceFamily             String   @map("service_family")
-  procedureType             String   @map("procedure_type")
-  transmissionConfiguration String?  @map("transmission_configuration")
-  materialsOwner            String?  @map("materials_owner")
+  id                        String    @id @default(cuid())
+  branchId                  String    @default("branch-main") @map("branch_id")
+  organizationId            String    @default("default") @map("organization_id")
+  locationId                String    @default("dachnaya") @map("location_id")
+  serviceFamily             String    @map("service_family")
+  procedureType             String    @map("procedure_type")
+  transmissionConfiguration String?   @map("transmission_configuration")
+  materialsOwner            String?   @map("materials_owner")
   /// Optional narrower scope has priority over generic scenario rules.
-  vehicleId                 String?  @map("vehicle_id")
-  aggregateCode             String?  @map("aggregate_code")
+  vehicleId                 String?   @map("vehicle_id")
+  aggregateCode             String?   @map("aggregate_code")
   name                      String
-  laborPriceCents           Int      @map("labor_price_cents")
-  priceFromCents            Int?     @map("price_from_cents")
-  priceToCents              Int?     @map("price_to_cents")
-  requiresHumanConfirmation Boolean  @default(false) @map("requires_human_confirmation")
-  active                    Boolean  @default(true)
-  effectiveFrom             DateTime @default(now()) @map("effective_from") @db.Timestamptz(6)
+  laborPriceCents           Int       @map("labor_price_cents")
+  priceFromCents            Int?      @map("price_from_cents")
+  priceToCents              Int?      @map("price_to_cents")
+  requiresHumanConfirmation Boolean   @default(false) @map("requires_human_confirmation")
+  active                    Boolean   @default(true)
+  effectiveFrom             DateTime  @default(now()) @map("effective_from") @db.Timestamptz(6)
   effectiveTo               DateTime? @map("effective_to") @db.Timestamptz(6)
-  comment                   String?  @db.Text
-  createdById               String?  @map("created_by_id")
-  updatedById               String?  @map("updated_by_id")
-  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  comment                   String?   @db.Text
+  createdById               String?   @map("created_by_id")
+  updatedById               String?   @map("updated_by_id")
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([organizationId, locationId, active, effectiveFrom, effectiveTo])
   @@index([organizationId, vehicleId, aggregateCode])
@@ -3797,6 +4280,7 @@ model AIAssistantLaborPricingRule {
 /// an amount that the assistant may use without asking an employee.
 model VehicleServiceComplexityRule {
   id              String   @id @default(cuid())
+  branchId        String   @default("branch-main") @map("branch_id")
   organizationId  String   @default("default") @map("organization_id")
   make            String
   model           String

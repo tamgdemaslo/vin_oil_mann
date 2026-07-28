@@ -6447,6 +6447,310 @@
   }
 }
 
+/* Branch owner surfaces */
+.eco-owner-dashboard,
+.eco-branches-page {
+  width: min(1440px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+  color: var(--eco-ink);
+}
+
+.eco-owner-dashboard__head,
+.eco-branches-page__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-owner-dashboard__head p,
+.eco-branches-page__head p {
+  margin: 0 0 5px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.eco-owner-dashboard__head h1,
+.eco-branches-page__head h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.eco-owner-dashboard__head span,
+.eco-branches-page__head span {
+  display: block;
+  max-width: 68ch;
+  margin-top: 7px;
+  color: var(--eco-ink-2);
+  font-size: 13px;
+}
+
+.eco-owner-dashboard__totals {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-owner-dashboard__totals > div {
+  flex: 1 1 220px;
+  padding: 22px 24px 22px 0;
+}
+
+.eco-owner-dashboard__totals span,
+.eco-owner-dashboard__attention span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-owner-dashboard__totals strong {
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-owner-dashboard__section {
+  margin-top: 30px;
+}
+
+.eco-owner-dashboard__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.eco-owner-dashboard__section-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.eco-owner-dashboard__section-head span {
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-owner-dashboard__table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--eco-line);
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-owner-dashboard table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.eco-owner-dashboard th,
+.eco-owner-dashboard td {
+  padding: 13px 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-owner-dashboard thead th {
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.eco-owner-dashboard th:first-child,
+.eco-owner-dashboard td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.eco-owner-dashboard tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.eco-owner-dashboard__status,
+.eco-branches-page__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--eco-muted);
+}
+
+.eco-owner-dashboard__status.is-active,
+.eco-branches-page__dot.is-active {
+  background: var(--eco-success, #16824b);
+}
+
+.eco-owner-dashboard .is-negative { color: var(--eco-danger); }
+.eco-owner-dashboard .is-positive { color: var(--eco-success, #126b42); }
+
+.eco-owner-dashboard__attention {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-top: 28px;
+  background: var(--eco-line);
+}
+
+.eco-owner-dashboard__attention > div {
+  flex: 1 1 210px;
+  padding: 16px;
+  background: var(--eco-surface);
+}
+
+.eco-owner-dashboard__attention strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-branches-page__error {
+  padding: 10px 12px;
+  color: var(--eco-danger);
+  background: color-mix(in srgb, var(--eco-danger) 8%, var(--eco-surface));
+  border: 1px solid color-mix(in srgb, var(--eco-danger) 30%, var(--eco-line));
+  border-radius: 6px;
+}
+
+.eco-branches-page__form {
+  display: grid;
+  gap: 14px;
+  margin: 22px 0;
+  padding: 18px;
+  background: var(--eco-surface-2);
+  border: 1px solid var(--eco-line);
+  border-radius: 8px;
+}
+
+.eco-branches-page__form > div,
+.eco-branches-page__form details > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.eco-branches-page__form label {
+  display: grid;
+  gap: 5px;
+  color: var(--eco-ink-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.eco-branches-page__form input {
+  min-height: 38px;
+  padding: 0 10px;
+  color: var(--eco-ink);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.eco-branches-page__form input:focus-visible {
+  outline: 2px solid var(--eco-focus, #155eef);
+  outline-offset: 2px;
+}
+
+.eco-branches-page__form summary {
+  margin-bottom: 12px;
+  cursor: pointer;
+  color: var(--eco-ink-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eco-branches-page__form footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--eco-line);
+}
+
+.eco-branches-page__form footer span {
+  max-width: 68ch;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-branches-page__list {
+  margin-top: 22px;
+  border-top: 1px solid var(--eco-line);
+}
+
+.eco-branches-page__list article {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1.4fr) minmax(160px, 1fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  border-bottom: 1px solid var(--eco-line);
+  font-size: 12px;
+}
+
+.eco-branches-page__list strong,
+.eco-branches-page__list small {
+  display: block;
+}
+
+.eco-branches-page__list small {
+  margin-top: 3px;
+  color: var(--eco-muted);
+}
+
+.eco-branches-page__list code {
+  color: var(--eco-ink-2);
+  font-size: 11px;
+}
+
+.eco-branches-page__status {
+  padding: 4px 8px;
+  background: var(--eco-surface-2);
+  border-radius: 999px;
+  color: var(--eco-ink-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .eco-owner-dashboard,
+  .eco-branches-page {
+    width: min(100% - 24px, 1440px);
+    padding-top: 18px;
+  }
+
+  .eco-owner-dashboard__head,
+  .eco-branches-page__head,
+  .eco-branches-page__form footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-branches-page__form > div,
+  .eco-branches-page__form details > div {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-branches-page__list article {
+    grid-template-columns: auto 1fr auto;
+    padding: 12px 0;
+  }
+
+  .eco-branches-page__list article > span:nth-of-type(2),
+  .eco-branches-page__list code {
+    display: none;
+  }
+}
+
 /* Pricing rules stay deliberately dense: this is an operational tariff table,
    not a dashboard. The editor is an adjacent work area on wide screens. */
 .eco-pricing { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(340px, .9fr); gap: 16px; align-items: start; }
@@ -9072,12 +9376,31 @@ body.antialiased {
   gap: 8px;
   min-width: 190px;
   max-width: 260px;
-  min-height: 34px;
-  padding: 0 8px;
+  min-height: 38px;
+  padding: 4px 8px;
   color: var(--eco-ink-2);
   background: var(--eco-surface);
   border: 1px solid var(--eco-line);
   border-radius: 4px;
+}
+
+.platform-shell__org-switch.is-all {
+  color: var(--eco-warning-ink, #6b4300);
+  background: var(--eco-warning-soft, #fff7df);
+  border-color: var(--eco-warning, #c27a00);
+}
+
+.platform-shell__branch-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.platform-shell__branch-copy > small {
+  color: var(--eco-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .platform-shell__org-switch select {
@@ -9089,6 +9412,39 @@ body.antialiased {
   font-size: 12px;
   font-weight: 700;
   outline: none;
+}
+
+.platform-shell__org-switch select:focus-visible,
+.platform-shell__mobile-branch select:focus-visible {
+  outline: 2px solid var(--eco-focus, #155eef);
+  outline-offset: 2px;
+}
+
+.platform-shell__mobile-branch {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  color: var(--eco-ink-2);
+  background: var(--eco-surface-2);
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.platform-shell__mobile-branch select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  color: var(--eco-ink);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line-strong, var(--eco-line));
+  border-radius: 4px;
+  font: inherit;
+}
+
+.platform-shell__sub-context.is-all-branches strong {
+  color: var(--eco-warning-ink, #6b4300);
 }
 
 .platform-shell__search {
