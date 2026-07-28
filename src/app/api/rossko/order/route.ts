@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       delivery_parts?: boolean;
       parts?: BodyPart[];
     };
-    const cfg = rosskoConfig();
+    const cfg = await rosskoConfig();
     let deliveryId = (cfg.deliveryId || body.delivery_id || "").trim();
     let addressId = (cfg.addressId || body.address_id || "").trim();
     let paymentId = (cfg.paymentId || body.payment_id || "").trim();

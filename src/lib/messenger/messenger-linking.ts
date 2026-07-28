@@ -4,6 +4,7 @@ import { getTelegramStoredSettings } from "./messenger-channel-settings";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import type { IncomingMessageEvent, MessengerChannel } from "./messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type LinkTokenRow = {
   id: string;
@@ -34,6 +35,10 @@ type ConnectionIdRow = {
 const DEFAULT_LINK_TTL_MINUTES = 60;
 const MAX_LINK_TTL_MINUTES = 24 * 60;
 
+function linkingBranchId() {
+  return getScopedBranchId();
+}
+
 function createTokenValue() {
   return crypto.randomBytes(24).toString("base64url");
 }
@@ -51,6 +56,7 @@ async function reserveLinkToken(row: LinkTokenRow) {
     SET used_at = now()
     WHERE id = ${row.id}
       AND organization_id = ${row.organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND used_at IS NULL
       AND expires_at > now()
     RETURNING id
@@ -91,6 +97,7 @@ export async function getClientTelegramStatus(clientId: string) {
       blocked_at AS "blockedAt"
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND type = 'client'
       AND client_id = ${clientId}
@@ -125,6 +132,7 @@ export async function getEmployeeTelegramStatus(employeeId: string) {
       blocked_at AS "blockedAt"
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND type = 'employee'
       AND employee_id = ${employeeId}
@@ -153,9 +161,9 @@ export async function createClientTelegramLinkToken(input: { clientId: string; c
   const id = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO messenger_link_tokens
-      (id, organization_id, token, channel, type, client_id, expires_at, created_by_id)
+      (id, branch_id, organization_id, token, channel, type, client_id, expires_at, created_by_id)
     VALUES
-      (${id}, ${organizationId}, ${token}, 'telegram', 'client', ${input.clientId}, ${expiresAt}, ${input.createdById ?? null})
+      (${id}, ${linkingBranchId()}, ${organizationId}, ${token}, 'telegram', 'client', ${input.clientId}, ${expiresAt}, ${input.createdById ?? null})
   `;
   const linkUrl = await telegramBotDeepLinkFromSettings(token, "client");
   return { id, token, expiresAt: expiresAt.toISOString(), linkUrl };
@@ -169,9 +177,9 @@ export async function createEmployeeTelegramLinkToken(input: { employeeId: strin
   const id = crypto.randomUUID();
   await prisma.$executeRaw`
     INSERT INTO messenger_link_tokens
-      (id, organization_id, token, channel, type, employee_id, expires_at, created_by_id)
+      (id, branch_id, organization_id, token, channel, type, employee_id, expires_at, created_by_id)
     VALUES
-      (${id}, ${organizationId}, ${token}, 'telegram', 'employee', ${input.employeeId}, ${expiresAt}, ${input.createdById ?? null})
+      (${id}, ${linkingBranchId()}, ${organizationId}, ${token}, 'telegram', 'employee', ${input.employeeId}, ${expiresAt}, ${input.createdById ?? null})
   `;
   const linkUrl = await telegramBotDeepLinkFromSettings(token, "employee");
   return { id, token, expiresAt: expiresAt.toISOString(), linkUrl };
@@ -194,6 +202,7 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
     FROM messenger_link_tokens
     WHERE token = ${token}
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
     LIMIT 1
   `;
@@ -216,6 +225,7 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
     SELECT id
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND external_chat_id = ${event.externalConversationId}
     LIMIT 1
@@ -224,6 +234,7 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
     SELECT id
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND type = 'client'
       AND client_id = ${row.clientId}
@@ -252,18 +263,19 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
           updated_at = now()
       WHERE id = ${linkedId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${linkingBranchId()}
       RETURNING id
     `;
     linkedId = linked[0]?.id ?? linkedId;
   } else {
     const linked = await prisma.$queryRaw<ConnectionIdRow[]>`
       INSERT INTO messenger_connections
-        (id, organization_id, channel, type, client_id, external_user_id, external_chat_id, external_username,
+        (id, branch_id, organization_id, channel, type, client_id, external_user_id, external_chat_id, external_username,
          display_name, is_active, linked_at, last_seen_at, blocked_at, raw_json, updated_at)
       VALUES
-        (${connectionId}, ${organizationId}, 'telegram', 'client', ${row.clientId}, ${event.externalUserId ?? null}, ${event.externalConversationId},
+        (${connectionId}, ${linkingBranchId()}, ${organizationId}, 'telegram', 'client', ${row.clientId}, ${event.externalUserId ?? null}, ${event.externalConversationId},
          ${event.externalUsername ?? null}, ${displayName}, true, now(), ${event.createdAt}, NULL, ${JSON.stringify(rawJson)}::jsonb, now())
-      ON CONFLICT (channel, external_chat_id)
+      ON CONFLICT (branch_id, channel, external_chat_id)
       DO UPDATE SET
         organization_id = EXCLUDED.organization_id,
         type = 'client',
@@ -288,6 +300,7 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
         updated_at = now()
     WHERE channel = 'telegram'
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND type = 'client'
       AND client_id = ${row.clientId}
       AND id <> ${linkedId}
@@ -301,6 +314,7 @@ export async function linkTelegramClientFromStartToken(token: string, event: Inc
         updated_at = now()
     WHERE channel = 'telegram'
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND external_conversation_id = ${event.externalConversationId}
   `;
 
@@ -324,6 +338,7 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
     FROM messenger_link_tokens
     WHERE token = ${token}
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
     LIMIT 1
   `;
@@ -346,6 +361,7 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
     SELECT id
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND external_chat_id = ${event.externalConversationId}
     LIMIT 1
@@ -354,6 +370,7 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
     SELECT id
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND channel = 'telegram'
       AND type = 'employee'
       AND employee_id = ${row.employeeId}
@@ -382,18 +399,19 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
           updated_at = now()
       WHERE id = ${linkedId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${linkingBranchId()}
       RETURNING id
     `;
     linkedId = linked[0]?.id ?? linkedId;
   } else {
     const linked = await prisma.$queryRaw<ConnectionIdRow[]>`
       INSERT INTO messenger_connections
-        (id, organization_id, channel, type, employee_id, external_user_id, external_chat_id, external_username,
+        (id, branch_id, organization_id, channel, type, employee_id, external_user_id, external_chat_id, external_username,
          display_name, is_active, linked_at, last_seen_at, blocked_at, raw_json, updated_at)
       VALUES
-        (${connectionId}, ${organizationId}, 'telegram', 'employee', ${row.employeeId}, ${event.externalUserId ?? null}, ${event.externalConversationId},
+        (${connectionId}, ${linkingBranchId()}, ${organizationId}, 'telegram', 'employee', ${row.employeeId}, ${event.externalUserId ?? null}, ${event.externalConversationId},
          ${event.externalUsername ?? null}, ${displayName}, true, now(), ${event.createdAt}, NULL, ${JSON.stringify(rawJson)}::jsonb, now())
-      ON CONFLICT (channel, external_chat_id)
+      ON CONFLICT (branch_id, channel, external_chat_id)
       DO UPDATE SET
         organization_id = EXCLUDED.organization_id,
         type = 'employee',
@@ -420,6 +438,7 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
         updated_at = now()
     WHERE channel = 'telegram'
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND type = 'employee'
       AND employee_id = ${row.employeeId}
       AND id <> ${linkedId}
@@ -434,6 +453,7 @@ export async function linkTelegramEmployeeFromStartToken(token: string, event: I
         updated_at = now()
     WHERE channel = 'telegram'
       AND organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
       AND external_conversation_id = ${event.externalConversationId}
   `;
 

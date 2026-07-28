@@ -14,6 +14,7 @@ import {
   safeStorageFileName,
 } from "../messenger-storage";
 import { getMessengerOrganizationId } from "../messenger-tenant";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
 
 type SecretPayload = {
@@ -482,116 +483,7 @@ function safeError(error: unknown, fallback = "Telegram user session failed") {
 
 async function ensureTelegramUserSchema() {
   if (!schemaEnsurePromise) {
-    schemaEnsurePromise = (async () => {
-      await ensureMessengerIntegrationCoreSchema();
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS messenger_accounts (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          channel TEXT NOT NULL,
-          mode TEXT NOT NULL,
-          display_name TEXT NOT NULL DEFAULT '',
-          phone TEXT,
-          username TEXT,
-          is_active BOOLEAN NOT NULL DEFAULT true,
-          status TEXT NOT NULL DEFAULT 'disconnected',
-          last_sync_at TIMESTAMPTZ,
-          error_message TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS telegram_user_sessions (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL DEFAULT 'default',
-          messenger_account_id TEXT,
-          phone TEXT NOT NULL,
-          api_id_encrypted JSONB,
-          api_hash_encrypted JSONB,
-          session_encrypted JSONB,
-          phone_code_hash_encrypted JSONB,
-          qr_token_encrypted JSONB,
-          qr_expires_at TIMESTAMPTZ,
-          auth_attempt_id TEXT,
-          auth_dc_id TEXT,
-          auth_delivery_type TEXT,
-          auth_next_type TEXT,
-          auth_timeout INTEGER,
-          auth_expires_at TIMESTAMPTZ,
-          status TEXT NOT NULL DEFAULT 'disconnected',
-          last_authorized_at TIMESTAMPTZ,
-          last_sync_at TIMESTAMPTZ,
-          error_message TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-      `;
-      await prisma.$executeRaw`
-        ALTER TABLE telegram_user_sessions
-          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
-          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT,
-          ADD COLUMN IF NOT EXISTS api_id_encrypted JSONB,
-          ADD COLUMN IF NOT EXISTS api_hash_encrypted JSONB,
-          ADD COLUMN IF NOT EXISTS session_encrypted JSONB,
-          ADD COLUMN IF NOT EXISTS phone_code_hash_encrypted JSONB,
-          ADD COLUMN IF NOT EXISTS qr_token_encrypted JSONB,
-          ADD COLUMN IF NOT EXISTS qr_expires_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS auth_attempt_id TEXT,
-          ADD COLUMN IF NOT EXISTS auth_dc_id TEXT,
-          ADD COLUMN IF NOT EXISTS auth_delivery_type TEXT,
-          ADD COLUMN IF NOT EXISTS auth_next_type TEXT,
-          ADD COLUMN IF NOT EXISTS auth_timeout INTEGER,
-          ADD COLUMN IF NOT EXISTS auth_expires_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS last_authorized_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS error_message TEXT,
-          ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      `;
-      await prisma.$executeRaw`
-        ALTER TABLE messenger_conversations
-          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
-          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT,
-          ADD COLUMN IF NOT EXISTS external_chat_id TEXT,
-          ADD COLUMN IF NOT EXISTS external_user_id TEXT,
-          ADD COLUMN IF NOT EXISTS participant_username TEXT
-      `;
-      await prisma.$executeRaw`
-        ALTER TABLE messenger_outbox
-          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
-          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT
-      `;
-      await prisma.$executeRaw`
-        ALTER TABLE messenger_messages
-          ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default',
-          ADD COLUMN IF NOT EXISTS messenger_account_id TEXT
-      `;
-      await prisma.$executeRaw`
-        CREATE UNIQUE INDEX IF NOT EXISTS telegram_user_sessions_account_uidx
-          ON telegram_user_sessions(messenger_account_id)
-      `;
-      await prisma.$executeRaw`
-        CREATE INDEX IF NOT EXISTS messenger_conversations_account_idx
-          ON messenger_conversations(messenger_account_id)
-      `;
-      await prisma.$executeRaw`
-        CREATE INDEX IF NOT EXISTS messenger_conversations_external_chat_idx
-          ON messenger_conversations(channel, external_chat_id)
-      `;
-      await prisma.$executeRaw`
-        CREATE UNIQUE INDEX IF NOT EXISTS messenger_conversations_channel_external_uidx
-          ON messenger_conversations(channel, external_conversation_id)
-      `;
-      await prisma.$executeRaw`
-        CREATE UNIQUE INDEX IF NOT EXISTS messenger_messages_channel_external_uidx
-          ON messenger_messages(channel, external_message_id)
-          WHERE external_message_id IS NOT NULL
-      `;
-      await prisma.$executeRaw`
-        CREATE INDEX IF NOT EXISTS messenger_outbox_account_idx
-          ON messenger_outbox(messenger_account_id)
-      `;
-    })().catch((error) => {
+    schemaEnsurePromise = ensureMessengerIntegrationCoreSchema().catch((error) => {
       schemaEnsurePromise = null;
       throw error;
     });
@@ -603,6 +495,7 @@ export async function listTelegramUserAccounts(): Promise<MessengerAccount[]> {
   try {
     await ensureTelegramUserSchema();
     const organizationId = getMessengerOrganizationId();
+    const branchId = getScopedBranchId();
     const rows = await prisma.$queryRaw<TelegramAccountRow[]>`
       SELECT
         ma.id,
@@ -620,8 +513,9 @@ export async function listTelegramUserAccounts(): Promise<MessengerAccount[]> {
         ma.updated_at AS "updatedAt",
         COUNT(mc.id)::int AS "conversationCount"
       FROM messenger_accounts ma
-      LEFT JOIN messenger_conversations mc ON mc.messenger_account_id = ma.id AND mc.organization_id = ma.organization_id
+      LEFT JOIN messenger_conversations mc ON mc.messenger_account_id = ma.id AND mc.organization_id = ma.organization_id AND mc.branch_id = ma.branch_id
       WHERE ma.organization_id = ${organizationId}
+        AND ma.branch_id = ${branchId}
         AND ma.channel = 'telegram'
         AND ma.mode = 'user_session'
       GROUP BY ma.id
@@ -642,6 +536,7 @@ export async function getActiveTelegramUserAccount() {
 async function getSessionByAccount(accountId: string) {
   await ensureTelegramUserSchema();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<TelegramSessionRow[]>`
     SELECT
       id,
@@ -666,6 +561,7 @@ async function getSessionByAccount(accountId: string) {
     FROM telegram_user_sessions
     WHERE messenger_account_id = ${accountId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
     LIMIT 1
   `;
   return rows[0] ?? null;
@@ -674,6 +570,7 @@ async function getSessionByAccount(accountId: string) {
 async function updateAccountStatus(accountId: string, status: MessengerAccountStatus, errorMessage?: string | null) {
   await ensureTelegramUserSchema();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   await prisma.$executeRaw`
     UPDATE messenger_accounts
     SET status = ${status},
@@ -684,6 +581,7 @@ async function updateAccountStatus(accountId: string, status: MessengerAccountSt
         updated_at = now()
     WHERE id = ${accountId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
   `;
   await prisma.$executeRaw`
     UPDATE telegram_user_sessions
@@ -692,6 +590,7 @@ async function updateAccountStatus(accountId: string, status: MessengerAccountSt
         updated_at = now()
     WHERE messenger_account_id = ${accountId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
   `;
 }
 
@@ -703,6 +602,7 @@ export async function startTelegramUserAuth(phoneInput: string) {
   if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
   await ensureTelegramUserSchema();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const attemptId = crypto.randomUUID();
   const accountId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
@@ -744,7 +644,7 @@ export async function startTelegramUserAuth(phoneInput: string) {
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM messenger_accounts
-      WHERE organization_id = ${organizationId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone}
+      WHERE organization_id = ${organizationId} AND branch_id = ${branchId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone}
       ORDER BY created_at DESC
       LIMIT 1
     `;
@@ -758,6 +658,7 @@ export async function startTelegramUserAuth(phoneInput: string) {
               error_message = NULL,
               updated_at = now()
           WHERE id = ${rows[0].id}
+            AND branch_id = ${branchId}
           RETURNING
             id,
             organization_id AS "organizationId",
@@ -775,9 +676,9 @@ export async function startTelegramUserAuth(phoneInput: string) {
         `
       : await prisma.$queryRaw<TelegramAccountRow[]>`
           INSERT INTO messenger_accounts
-            (id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
+            (id, branch_id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
           VALUES
-            (${accountId}, ${organizationId}, 'telegram', 'user_session', ${phone}, ${phone}, true, true, 'waiting_code',
+            (${accountId}, ${branchId}, ${organizationId}, 'telegram', 'user_session', ${phone}, ${phone}, true, true, 'waiting_code',
              ${JSON.stringify({ mode: "user_session", source: "telegram_user_auth" })}::jsonb, now(), now())
           RETURNING
             id,
@@ -798,10 +699,11 @@ export async function startTelegramUserAuth(phoneInput: string) {
     const actualAccountId = rows[0].id;
     await prisma.$executeRaw`
       DELETE FROM telegram_user_sessions
-      WHERE messenger_account_id IN (
+      WHERE branch_id = ${branchId}
+        AND messenger_account_id IN (
         SELECT id
         FROM messenger_accounts
-        WHERE organization_id = ${organizationId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone} AND id <> ${actualAccountId}
+        WHERE organization_id = ${organizationId} AND branch_id = ${branchId} AND channel = 'telegram' AND mode = 'user_session' AND phone = ${phone} AND id <> ${actualAccountId}
       )
     `;
     await prisma.$executeRaw`
@@ -812,18 +714,19 @@ export async function startTelegramUserAuth(phoneInput: string) {
           updated_at = now()
       WHERE channel = 'telegram' AND mode = 'user_session' AND phone = ${phone} AND id <> ${actualAccountId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     await prisma.$executeRaw`
       INSERT INTO telegram_user_sessions
-        (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, phone_code_hash_encrypted,
+        (id, branch_id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, phone_code_hash_encrypted,
          auth_attempt_id, auth_dc_id, auth_delivery_type, auth_next_type, auth_timeout, auth_expires_at,
          status, created_at, updated_at)
       VALUES
-        (${sessionId}, ${organizationId}, ${actualAccountId}, ${phone}, ${encryptedJson(String(apiId))}::jsonb, ${encryptedJson(apiHash)}::jsonb,
+        (${sessionId}, ${branchId}, ${organizationId}, ${actualAccountId}, ${phone}, ${encryptedJson(String(apiId))}::jsonb, ${encryptedJson(apiHash)}::jsonb,
          ${encryptedJson(sessionString)}::jsonb, ${encryptedJson(phoneCodeHash)}::jsonb,
          ${attemptId}, ${sessionDcId(client.session)}, ${codeDelivery.type}, ${codeDelivery.nextType}, ${codeDelivery.timeout}, ${authExpiresAt},
          'waiting_code', now(), now())
-      ON CONFLICT (messenger_account_id)
+      ON CONFLICT (branch_id, messenger_account_id)
       DO UPDATE SET
         phone = EXCLUDED.phone,
         api_id_encrypted = EXCLUDED.api_id_encrypted,
@@ -850,6 +753,7 @@ export async function startTelegramUserAuth(phoneInput: string) {
 }
 
 export async function resendTelegramUserCode(accountId: string) {
+  const branchId = getScopedBranchId();
   const session = await getSessionByAccount(accountId);
   if (!session) throw new Error("Telegram session не найдена. Запросите код заново.");
   const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
@@ -876,6 +780,7 @@ export async function resendTelegramUserCode(accountId: string) {
           error_message = NULL,
           updated_at = now()
       WHERE messenger_account_id = ${accountId}
+        AND branch_id = ${branchId}
     `;
     await prisma.$executeRaw`
       UPDATE messenger_accounts
@@ -884,6 +789,7 @@ export async function resendTelegramUserCode(accountId: string) {
           error_message = NULL,
           updated_at = now()
       WHERE id = ${accountId}
+        AND branch_id = ${branchId}
     `;
     return { ok: true as const, accountId, codeDelivery };
   } catch (error) {
@@ -982,11 +888,12 @@ type QrSessionInput = {
 async function createOrUpdateQrSession(input: QrSessionInput) {
   const display = input.phone ?? "Telegram QR";
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   await prisma.$executeRaw`
     INSERT INTO messenger_accounts
-      (id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
+      (id, branch_id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
     VALUES
-      (${input.accountId}, ${organizationId}, 'telegram', 'user_session', ${display}, ${input.phone}, true, true, 'waiting_qr',
+      (${input.accountId}, ${branchId}, ${organizationId}, 'telegram', 'user_session', ${display}, ${input.phone}, true, true, 'waiting_qr',
        ${JSON.stringify({ mode: "user_session", auth: "qr" })}::jsonb, now(), now())
     ON CONFLICT (id)
     DO UPDATE SET
@@ -1001,13 +908,13 @@ async function createOrUpdateQrSession(input: QrSessionInput) {
   `;
   await prisma.$executeRaw`
     INSERT INTO telegram_user_sessions
-      (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, qr_token_encrypted, qr_expires_at,
+      (id, branch_id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, qr_token_encrypted, qr_expires_at,
        auth_attempt_id, auth_dc_id, status, created_at, updated_at)
     VALUES
-      (${input.sessionId}, ${organizationId}, ${input.accountId}, ${input.phone ?? "qr"}, ${encryptedJson(String(configuredApiId()))}::jsonb,
+      (${input.sessionId}, ${branchId}, ${organizationId}, ${input.accountId}, ${input.phone ?? "qr"}, ${encryptedJson(String(configuredApiId()))}::jsonb,
        ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(input.sessionString)}::jsonb,
        ${encryptedJson(input.tokenBase64)}::jsonb, ${input.expiresAt}, ${input.attemptId}, NULL, 'waiting_qr', now(), now())
-    ON CONFLICT (messenger_account_id)
+    ON CONFLICT (branch_id, messenger_account_id)
     DO UPDATE SET
       phone = EXCLUDED.phone,
       api_id_encrypted = EXCLUDED.api_id_encrypted,
@@ -1108,6 +1015,7 @@ async function finalizeQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
     safeDisconnectTelegramClient(attempt.client);
   } catch (error) {
     if (isPasswordNeeded(error)) {
+      const branchId = getScopedBranchId();
       const nextSession = attempt.client.session?.save?.() ? String(attempt.client.session.save()) : "";
       await prisma.$executeRaw`
         UPDATE telegram_user_sessions
@@ -1116,6 +1024,7 @@ async function finalizeQrRuntimeAttempt(attempt: TelegramQrRuntimeAttempt) {
             error_message = NULL,
             updated_at = now()
         WHERE messenger_account_id = ${attempt.accountId}
+          AND branch_id = ${branchId}
       `;
       await updateAccountStatus(attempt.accountId, "waiting_password", null);
       attempt.status = "waiting_password";
@@ -1306,6 +1215,7 @@ export async function checkTelegramUserQrAuth(accountId: string) {
   } catch (error) {
     const message = safeError(error, "QR Telegram не подтверждён");
     if (isPasswordNeeded(error)) {
+      const branchId = getScopedBranchId();
       const nextSession = client.session?.save?.() ? String(client.session.save()) : sessionString;
       await prisma.$executeRaw`
         UPDATE telegram_user_sessions
@@ -1314,6 +1224,7 @@ export async function checkTelegramUserQrAuth(accountId: string) {
             error_message = NULL,
             updated_at = now()
         WHERE messenger_account_id = ${accountId}
+          AND branch_id = ${branchId}
       `;
       await updateAccountStatus(accountId, "waiting_password", null);
       safeDisconnectTelegramClient(client);
@@ -1477,11 +1388,13 @@ function userDisplayName(user: unknown, fallback: string) {
 async function saveAuthorizedTelegramSession(accountId: string, sessionString: string, fallbackPhone: string, user: unknown) {
   const phone = userField(user, "phone") ? `+${userField(user, "phone")?.replace(/^\+/, "")}` : fallbackPhone;
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const existingAccounts = phone
     ? await prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id
         FROM messenger_accounts
         WHERE organization_id = ${organizationId}
+          AND branch_id = ${branchId}
           AND channel = 'telegram'
           AND mode = 'user_session'
           AND phone = ${phone}
@@ -1495,11 +1408,13 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
       DELETE FROM telegram_user_sessions
       WHERE messenger_account_id = ${targetAccountId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     await prisma.$executeRaw`
       DELETE FROM telegram_user_sessions
       WHERE messenger_account_id = ${accountId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     await prisma.$executeRaw`
       UPDATE messenger_accounts
@@ -1512,17 +1427,18 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
           updated_at = now()
       WHERE id = ${accountId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
   }
   await prisma.$executeRaw`
     INSERT INTO telegram_user_sessions
-      (id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted,
+      (id, branch_id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted,
        qr_token_encrypted, qr_expires_at, status, last_authorized_at, error_message, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, ${targetAccountId}, ${phone}, ${encryptedJson(String(configuredApiId()))}::jsonb,
+      (${crypto.randomUUID()}, ${branchId}, ${organizationId}, ${targetAccountId}, ${phone}, ${encryptedJson(String(configuredApiId()))}::jsonb,
        ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(sessionString)}::jsonb,
        NULL, NULL, 'connected', now(), NULL, now(), now())
-    ON CONFLICT (messenger_account_id)
+    ON CONFLICT (branch_id, messenger_account_id)
     DO UPDATE SET
         phone = EXCLUDED.phone,
         api_id_encrypted = EXCLUDED.api_id_encrypted,
@@ -1550,6 +1466,7 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
         updated_at = now()
     WHERE id = ${targetAccountId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
     RETURNING
       id, organization_id AS "organizationId", channel, mode, display_name AS "displayName", phone, username, is_active AS "isActive", status,
       last_sync_at AS "lastSyncAt", error_message AS "errorMessage", created_at AS "createdAt", updated_at AS "updatedAt"
@@ -1561,6 +1478,7 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
         disconnected_at = now(),
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND channel = 'telegram'
       AND mode = 'user_session'
       AND id <> ${targetAccountId}
@@ -1578,6 +1496,7 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
 }
 
 export async function confirmTelegramUserCode(accountId: string, codeInput: string) {
+  const branchId = getScopedBranchId();
   const code = codeInput.trim().replace(/\s+/g, "");
   if (!code) throw new Error("Введите код Telegram.");
   const session = await getSessionByAccount(accountId);
@@ -1607,6 +1526,7 @@ export async function confirmTelegramUserCode(accountId: string, codeInput: stri
           error_message = ${isPasswordNeeded(error) ? null : safeError(error, "Код Telegram не принят")},
           updated_at = now()
       WHERE messenger_account_id = ${accountId}
+        AND branch_id = ${branchId}
     `;
     await updateAccountStatus(accountId, isPasswordNeeded(error) ? "waiting_password" : "error", isPasswordNeeded(error) ? null : safeError(error));
     if (isPasswordNeeded(error)) return { ok: true as const, needsPassword: true, accountId };
@@ -1956,12 +1876,12 @@ async function upsertAttachmentRows(input: {
     const telegramDcId = typeof telegram.dcId === "number" ? telegram.dcId : null;
     await prisma.$executeRaw`
       INSERT INTO messenger_attachments
-        (id, organization_id, messenger_account_id, conversation_id, message_id, channel, direction, external_attachment_id,
+        (id, branch_id, organization_id, messenger_account_id, conversation_id, message_id, channel, direction, external_attachment_id,
          external_file_id, external_document_id, external_message_id, external_peer_id, telegram_dc_id,
          type, url, name, size, mime_type, preview_url, metadata_json, status, original_storage_key, thumbnail_storage_key,
          caption, width, height, duration, updated_at)
       VALUES
-        (${attachment.id}, ${input.organizationId}, ${input.messengerAccountId}, ${input.conversationId}, ${input.messageId}, ${input.channel}, ${input.direction}, ${attachment.id},
+        (${attachment.id}, ${getScopedBranchId()}, ${input.organizationId}, ${input.messengerAccountId}, ${input.conversationId}, ${input.messageId}, ${input.channel}, ${input.direction}, ${attachment.id},
          ${externalFileId}, ${externalDocumentId}, ${input.externalMessageId}, ${input.externalPeerId}, ${telegramDcId},
          ${attachment.type},
          ${attachment.url ?? null}, ${attachment.name ?? null}, ${attachment.size ?? null}, ${attachment.mimeType ?? null}, ${attachment.previewUrl ?? null},
@@ -1997,12 +1917,14 @@ async function upsertAttachmentRows(input: {
 
 async function refreshTelegramDialogAvatar(conversationId: string, entity: unknown, client?: TelegramRuntimeClient) {
   if (!client?.downloadProfilePhoto || !entity) return;
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<Array<{ avatarUrl: string | null; avatarUpdatedAt: Date | null; avatarStatus: string | null }>>`
     SELECT participant_avatar_url AS "avatarUrl",
            avatar_updated_at AS "avatarUpdatedAt",
            avatar_status AS "avatarStatus"
     FROM messenger_conversations
     WHERE id = ${conversationId}
+      AND branch_id = ${branchId}
     LIMIT 1
   `;
   const current = rows[0];
@@ -2018,6 +1940,7 @@ async function refreshTelegramDialogAvatar(conversationId: string, entity: unkno
             avatar_updated_at = now(),
             updated_at = now()
         WHERE id = ${conversationId}
+          AND branch_id = ${branchId}
       `;
       return;
     }
@@ -2029,6 +1952,7 @@ async function refreshTelegramDialogAvatar(conversationId: string, entity: unkno
             avatar_updated_at = now(),
             updated_at = now()
         WHERE id = ${conversationId}
+          AND branch_id = ${branchId}
       `;
       return;
     }
@@ -2036,6 +1960,7 @@ async function refreshTelegramDialogAvatar(conversationId: string, entity: unkno
       SELECT organization_id AS "organizationId", messenger_account_id AS "messengerAccountId"
       FROM messenger_conversations
       WHERE id = ${conversationId}
+        AND branch_id = ${branchId}
       LIMIT 1
     `;
     const organizationId = conversationRows[0]?.organizationId ?? getMessengerOrganizationId();
@@ -2061,6 +1986,7 @@ async function refreshTelegramDialogAvatar(conversationId: string, entity: unkno
           avatar_error = NULL,
           updated_at = now()
       WHERE id = ${conversationId}
+        AND branch_id = ${branchId}
     `;
   } catch (error) {
     await prisma.$executeRaw`
@@ -2070,6 +1996,7 @@ async function refreshTelegramDialogAvatar(conversationId: string, entity: unkno
           avatar_updated_at = now(),
           updated_at = now()
       WHERE id = ${conversationId}
+        AND branch_id = ${branchId}
     `;
   }
 }
@@ -2094,14 +2021,14 @@ async function upsertTelegramDialog(account: MessengerAccount, dialog: TelegramD
   const telegramPeer = telegramPeerSnapshotFromDialog(dialog);
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_conversations
-      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id, external_participant_id, title,
+      (id, branch_id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id, external_participant_id, title,
        participant_name, participant_username, participant_phone, unread_count, last_message_text, last_message_at, status,
        metadata_json, created_at, updated_at)
     VALUES
-      (${conversationId}, ${organizationId}, ${account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId}, ${externalUserId},
+      (${conversationId}, ${getScopedBranchId()}, ${organizationId}, ${account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId}, ${externalUserId},
        ${title}, ${title}, ${entity.username ?? null}, ${entity.phone ?? null}, ${Number(dialog.unreadCount ?? 0)},
        ${lastText}, ${lastAt}, 'open', ${JSON.stringify({ source: "telegram_user_session", telegramPeer })}::jsonb, now(), now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       messenger_account_id = EXCLUDED.messenger_account_id,
@@ -2190,11 +2117,11 @@ async function upsertTelegramConversationFromUser(input: {
   const connectionId = crypto.randomUUID();
   const connectionRows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_connections
-      (id, organization_id, channel, type, external_user_id, external_chat_id, external_username, display_name, phone, is_active, last_seen_at, raw_json, updated_at)
+      (id, branch_id, organization_id, channel, type, external_user_id, external_chat_id, external_username, display_name, phone, is_active, last_seen_at, raw_json, updated_at)
     VALUES
-      (${connectionId}, ${organizationId}, 'telegram', 'unknown', ${externalUserId}, ${chatId}, ${username}, ${displayName},
+      (${connectionId}, ${getScopedBranchId()}, ${organizationId}, 'telegram', 'unknown', ${externalUserId}, ${chatId}, ${username}, ${displayName},
        ${input.phone}, true, now(), ${JSON.stringify({ source: input.source, user: telegramUserMetadata(input.user) })}::jsonb, now())
-    ON CONFLICT (channel, external_chat_id)
+    ON CONFLICT (branch_id, channel, external_chat_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       external_user_id = COALESCE(EXCLUDED.external_user_id, messenger_connections.external_user_id),
@@ -2210,14 +2137,14 @@ async function upsertTelegramConversationFromUser(input: {
   const conversationId = crypto.randomUUID();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_conversations
-      (id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id,
+      (id, branch_id, organization_id, messenger_account_id, channel, external_conversation_id, external_chat_id, external_user_id,
        external_participant_id, connection_id, title, participant_name, participant_username, participant_phone,
        unread_count, last_message_text, last_message_at, status, metadata_json, created_at, updated_at)
     VALUES
-      (${conversationId}, ${organizationId}, ${input.account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId},
+      (${conversationId}, ${getScopedBranchId()}, ${organizationId}, ${input.account.id}, 'telegram', ${externalConversationId}, ${chatId}, ${externalUserId},
        ${externalUserId}, ${connectionRows[0]?.id ?? null}, ${displayName}, ${displayName}, ${username}, ${input.phone},
        0, '', now(), 'open', ${JSON.stringify({ source: input.source, firstContact: true, telegramPeer })}::jsonb, now(), now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       messenger_account_id = EXCLUDED.messenger_account_id,
@@ -2330,6 +2257,7 @@ async function archiveSkippedTelegramConversations(accountId: string, externalCo
     SET status = 'archived',
         updated_at = now()
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
       AND messenger_account_id = ${accountId}
       AND channel = 'telegram'
       AND status <> 'archived'
@@ -2350,6 +2278,7 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
     SELECT organization_id AS "organizationId", messenger_account_id AS "messengerAccountId", external_chat_id AS "externalChatId"
     FROM messenger_conversations
     WHERE id = ${conversationId}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const organizationId = conversationRows[0]?.organizationId ?? getMessengerOrganizationId();
@@ -2364,14 +2293,14 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
   const direction = message.out ? "outbound" : "inbound";
   const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, message_type, text, attachments_json, status, raw_json,
+      (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, external_message_id, direction, author_type, message_type, text, attachments_json, status, raw_json,
        sent_at, received_at, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${organizationId}, ${conversationId}, ${messengerAccountId}, 'telegram', ${externalMessageId}, ${direction},
+      (${crypto.randomUUID()}, ${getScopedBranchId()}, ${organizationId}, ${conversationId}, ${messengerAccountId}, 'telegram', ${externalMessageId}, ${direction},
        ${message.out ? "employee" : "client"}, ${attachments.length ? attachments[0].type : "text"}, ${text}, ${JSON.stringify(attachments)}::jsonb,
        ${message.out ? "sent" : "received"}, ${JSON.stringify({ id: rawExternalMessageId, dedupeId: externalMessageId, hasMedia: Boolean(message.media) })}::jsonb,
        ${message.out ? createdAt : null}, ${message.out ? null : createdAt}, ${createdAt}, now())
-    ON CONFLICT (channel, external_message_id)
+    ON CONFLICT (branch_id, channel, external_message_id)
     WHERE external_message_id IS NOT NULL
     DO NOTHING
     RETURNING id
@@ -2383,6 +2312,7 @@ async function upsertTelegramMessage(conversationId: string, message: TelegramMe
         SELECT id
         FROM messenger_messages
         WHERE channel = 'telegram'
+          AND branch_id = ${getScopedBranchId()}
           AND external_message_id = ${externalMessageId}
           AND organization_id = ${organizationId}
         LIMIT 1
@@ -2490,12 +2420,14 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
         SET status = 'connected', last_sync_at = now(), error_message = NULL, updated_at = now()
         WHERE id = ${account.id}
           AND organization_id = ${organizationId}
+          AND branch_id = ${getScopedBranchId()}
       `;
       await prisma.$executeRaw`
         UPDATE telegram_user_sessions
         SET status = 'connected', last_sync_at = now(), error_message = NULL, updated_at = now()
         WHERE messenger_account_id = ${account.id}
           AND organization_id = ${organizationId}
+          AND branch_id = ${getScopedBranchId()}
       `;
       logSyncState("dialogs_saved", { accountId: account.id, dialogsFetched: dialogs.length, conversationCount, messageCount, skippedCount, archivedCount });
       processed.push({ accountId: account.id, ok: true, conversationCount, messageCount, skippedCount, archivedCount });
@@ -2630,6 +2562,7 @@ async function accountIdForOutbox(outbox: MessageOutbox) {
       FROM messenger_conversations
       WHERE id = ${outbox.conversationId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${getScopedBranchId()}
       LIMIT 1
     `;
     if (rows[0]?.messengerAccountId) return rows[0].messengerAccountId;
@@ -2764,6 +2697,7 @@ async function telegramConversationPeer(outbox: MessageOutbox): Promise<Telegram
       ON supplier.id = mc.supplier_id OR supplier.moysklad_id = mc.supplier_id
     WHERE mc.id = ${outbox.conversationId}
       AND mc.organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+      AND mc.branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const row = rows[0];
@@ -2795,6 +2729,7 @@ async function saveTelegramConversationPeer(conversationId: string | null | unde
         updated_at = now()
     WHERE id = ${conversationId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
   `;
 }
 
@@ -2880,12 +2815,14 @@ async function setAttachmentTerminalStatus(input: {
         updated_at = now()
     WHERE id = ${input.attachmentId}
       AND organization_id = ${input.organizationId}
+      AND branch_id = ${getScopedBranchId()}
   `;
   const rows = await prisma.$queryRaw<Array<{ messageId: string }>>`
     SELECT message_id AS "messageId"
     FROM messenger_attachments
     WHERE id = ${input.attachmentId}
       AND organization_id = ${input.organizationId}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   if (rows[0]?.messageId) await refreshMessageAttachmentsJson(rows[0].messageId);
@@ -2932,6 +2869,7 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
     JOIN messenger_conversations c ON c.id = m.conversation_id
     WHERE a.id = ${attachmentId}
       AND a.organization_id = ${organizationId}
+      AND a.branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const row = rows[0];
@@ -2967,6 +2905,7 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
         updated_at = now()
     WHERE id = ${attachmentId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
   `;
 
   const client = await getClient(sessionString);
@@ -3023,6 +2962,7 @@ export async function downloadTelegramAttachmentMedia(attachmentId: string) {
           updated_at = now()
       WHERE id = ${attachmentId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${getScopedBranchId()}
     `;
     await refreshMessageAttachmentsJson(row.messageId);
     return { ok: true as const, key, size: media.length };
@@ -3046,6 +2986,7 @@ export async function sendTelegramUserFile(outbox: MessageOutbox): Promise<Chann
     FROM messenger_attachments
     WHERE id = ${attachment.id}
       AND organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const stored = rows[0];
@@ -3082,6 +3023,7 @@ export async function disconnectTelegramUserAccount(accountId: string) {
         updated_at = now()
     WHERE messenger_account_id = ${accountId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
   `;
   return { ok: true as const };
 }

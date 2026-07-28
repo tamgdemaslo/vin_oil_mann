@@ -6,6 +6,7 @@ import { assertMessengerOutboundTextSafe } from "./messenger-security";
 import { listMessageTemplates } from "./messenger-templates";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import type { MessageOutbox } from "./messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type EmployeeTelegramConnectionRow = {
   id: string;
@@ -46,6 +47,7 @@ async function templateText(key: string, fallback: string) {
 
 async function findEmployeeTelegramConnection(employeeId: string) {
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<EmployeeTelegramConnectionRow[]>`
     SELECT
       id,
@@ -53,6 +55,7 @@ async function findEmployeeTelegramConnection(employeeId: string) {
       display_name AS "displayName"
     FROM messenger_connections
     WHERE organization_id = ${organizationId}
+      AND branch_id = ${branchId}
       AND channel = 'telegram'
       AND type = 'employee'
       AND employee_id = ${employeeId}
@@ -71,14 +74,15 @@ async function upsertEmployeeConversation(input: {
 }) {
   const id = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<ConversationIdRow[]>`
     INSERT INTO messenger_conversations
-      (id, organization_id, channel, external_conversation_id, connection_id, employee_id, title, participant_name,
+      (id, branch_id, organization_id, channel, external_conversation_id, connection_id, employee_id, title, participant_name,
        status, unread_count, last_message_text, last_message_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, 'telegram', ${input.connection.externalChatId}, ${input.connection.id}, ${input.employeeId},
+      (${id}, ${branchId}, ${organizationId}, 'telegram', ${input.connection.externalChatId}, ${input.connection.id}, ${input.employeeId},
        'Уведомления сотрудника', ${input.connection.displayName}, 'open', 0, ${input.text}, now(), now())
-    ON CONFLICT (channel, external_conversation_id)
+    ON CONFLICT (branch_id, channel, external_conversation_id)
     DO UPDATE SET
       organization_id = EXCLUDED.organization_id,
       connection_id = EXCLUDED.connection_id,
@@ -97,11 +101,12 @@ async function upsertEmployeeConversation(input: {
 async function insertEmployeeNotificationMessage(input: { conversationId: string; text: string }) {
   const id = crypto.randomUUID();
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<MessageIdRow[]>`
     INSERT INTO messenger_messages
-      (id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
+      (id, branch_id, organization_id, conversation_id, channel, direction, author_type, text, attachments_json, status, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${input.conversationId}, 'telegram', 'outbound', 'system', ${input.text}, '[]'::jsonb, 'queued', now(), now())
+      (${id}, ${branchId}, ${organizationId}, ${input.conversationId}, 'telegram', 'outbound', 'system', ${input.text}, '[]'::jsonb, 'queued', now(), now())
     RETURNING id
   `;
   return rows[0]?.id ?? id;

@@ -958,7 +958,7 @@ export default function RecordsPageClient() {
       if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки конфигурации филиала");
       const cfg = data?.data ?? {};
       const id = String(cfg.company_id ?? "").trim();
-      if (!id) throw new Error("Не задан YCLIENTS_COMPANY_ID в .env.local");
+      if (!id) throw new Error("YCLIENTS не настроен для активного филиала");
       setCompanyId(id);
       if (cfg.company_title) setCompanyTitle(String(cfg.company_title));
     } catch (e) {

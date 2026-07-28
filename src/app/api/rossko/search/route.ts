@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const cfg = rosskoConfig();
+    const cfg = await rosskoConfig();
     let deliveryId = (cfg.deliveryId || request.nextUrl.searchParams.get("delivery_id") || "").trim();
     let addressId = (cfg.addressId || request.nextUrl.searchParams.get("address_id") || "").trim();
 

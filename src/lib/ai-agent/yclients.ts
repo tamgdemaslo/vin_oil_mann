@@ -1,4 +1,5 @@
-const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
+import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -19,23 +20,15 @@ function clean(value: unknown) {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-function config() {
-  return {
-    companyId: process.env.YCLIENTS_COMPANY_ID?.trim() || "9354",
-    partnerToken: process.env.YCLIENTS_PARTNER_TOKEN?.trim() || "",
-    userToken: process.env.YCLIENTS_USER_TOKEN?.trim() || "",
-    serviceId: process.env.YCLIENTS_AI_SERVICE_ID?.trim() || "",
-    staffId: process.env.YCLIENTS_AI_STAFF_ID?.trim() || "",
-    branchAddress: process.env.YCLIENTS_AI_BRANCH_ADDRESS?.trim() || "Дачная, 6В",
-  };
-}
-
-async function requestJson(path: string, options?: { user?: boolean; method?: string; body?: unknown }) {
-  const cfg = config();
-  if (!cfg.partnerToken) throw new Error("YCLIENTS_PARTNER_TOKEN не задан");
-  if (options?.user && !cfg.userToken) throw new Error("YCLIENTS_USER_TOKEN не задан");
+async function requestJson(
+  cfg: YclientsBranchConfig,
+  path: string,
+  options?: { user?: boolean; method?: string; body?: unknown }
+) {
+  if ((options?.method ?? "GET").toUpperCase() !== "GET") assertExternalSideEffectAllowed("yclients_mutation");
+  if (options?.user && !cfg.userToken) throw new Error("Для филиала не настроен user token YCLIENTS");
   const authorization = options?.user ? `Bearer ${cfg.partnerToken}, User ${cfg.userToken}` : `Bearer ${cfg.partnerToken}`;
-  const response = await fetch(`${YCLIENTS_API_BASE}${path}`, {
+  const response = await fetch(`${cfg.apiBase}${path}`, {
     method: options?.method ?? "GET",
     headers: {
       Authorization: authorization,
@@ -136,14 +129,14 @@ export async function getYclientsAvailableSlots(input: {
   baseServiceDurationMinutes?: number;
   requestedDate?: string | null;
 }): Promise<AgentBookingSlot[]> {
-  const cfg = config();
+  const cfg = await getYclientsBranchConfig();
   if (!cfg.serviceId || !cfg.staffId) {
-    throw new Error("Для записи задайте YCLIENTS_AI_SERVICE_ID и YCLIENTS_AI_STAFF_ID");
+    throw new Error("Для филиала настройте serviceId и staffId интеграции YCLIENTS");
   }
   const datesParams = new URLSearchParams();
   datesParams.set("staff_id", cfg.staffId);
   datesParams.set("service_ids[]", cfg.serviceId);
-  const datesData = await requestJson(`/book_dates/${cfg.companyId}?${datesParams.toString()}`);
+  const datesData = await requestJson(cfg, `/book_dates/${cfg.companyId}?${datesParams.toString()}`);
   const today = new Date();
   const horizon = new Date(today.getTime() + input.horizonDays * 86_400_000);
   const bookingData = record(record(datesData).data);
@@ -163,7 +156,7 @@ export async function getYclientsAvailableSlots(input: {
   for (const date of dates) {
     const timeParams = new URLSearchParams();
     timeParams.set("service_ids[]", cfg.serviceId);
-    const timeData = await requestJson(`/book_times/${cfg.companyId}/${cfg.staffId}/${date}?${timeParams.toString()}`);
+    const timeData = await requestJson(cfg, `/book_times/${cfg.companyId}/${cfg.staffId}/${date}?${timeParams.toString()}`);
     const timeRows = collectRecords(timeData)
       .map((row) => ({ row, time: timeValue(row) }))
       .filter((item) => Boolean(item.time))
@@ -186,7 +179,7 @@ export async function getYclientsAvailableSlots(input: {
         time,
         staffId: cfg.staffId,
         serviceId: cfg.serviceId,
-        address: cfg.branchAddress,
+        address: cfg.branchAddress || "",
         durationMinutes: input.durationMinutes,
         source: "yclients",
       });
@@ -209,7 +202,7 @@ export async function createYclientsAppointment(input: {
   durationMinutes: number;
   comment: string;
 }) {
-  const cfg = config();
+  const cfg = await getYclientsBranchConfig();
   const slot = parseYclientsSlotId(input.slotId);
   const payload = {
     staff_id: Number(slot.staffId),
@@ -222,14 +215,14 @@ export async function createYclientsAppointment(input: {
     send_sms: false,
     api_id: "eco_ai_agent",
   };
-  const data = await requestJson(`/record/${cfg.companyId}`, { user: true, method: "POST", body: payload });
+  const data = await requestJson(cfg, `/record/${cfg.companyId}`, { user: true, method: "POST", body: payload });
   const rows = collectRecords(data);
   const id = rows.map((row) => clean(row.id) || clean(row.record_id)).find(Boolean);
   if (!id) throw new Error("YCLIENTS не вернул идентификатор созданной записи");
   return {
     id,
     datetime: `${slot.date}T${slot.time}:00`,
-    address: cfg.branchAddress,
+    address: cfg.branchAddress || "",
     source: "yclients",
   };
 }

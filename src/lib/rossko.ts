@@ -1,4 +1,6 @@
 import * as soap from "soap";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
+import { getBranchIntegrationValues } from "@/lib/branch-integration-credentials";
 
 const ROSSKO_WSDL_BASE = "http://api.rossko.ru/service/v2.1";
 
@@ -135,31 +137,36 @@ function assertSuccess(data: Record<string, unknown>, fallback: string): Record<
   return data;
 }
 
-function envOpt(name: string): string | undefined {
-  const v = process.env[name]?.trim();
+function configOpt(value: string | undefined): string | undefined {
+  const v = value?.trim();
   return v || undefined;
 }
 
-export function rosskoConfig(): RosskoConfig {
-  const deliveryPartsRaw = (process.env.ROSSKO_DELIVERY_PARTS ?? "true").trim().toLowerCase();
+export async function rosskoConfig(): Promise<RosskoConfig> {
+  const values = await getBranchIntegrationValues(
+    "rossko",
+    ["key1", "key2", "timeoutMs", "requestsPerSecond", "deliveryId", "addressId", "paymentId", "requisiteId", "contactName", "contactPhone", "deliveryParts"],
+    ["key1", "key2"]
+  );
+  const deliveryPartsRaw = (values.deliveryParts ?? "true").trim().toLowerCase();
   return {
-    key1: (process.env.ROSSKO_KEY1 ?? "").trim(),
-    key2: (process.env.ROSSKO_KEY2 ?? "").trim(),
-    timeoutMs: Math.max(5_000, parseInt(process.env.ROSSKO_TIMEOUT_MS ?? "20000", 10) || 20_000),
-    requestsPerSecond: Math.max(0.2, parseFloat(process.env.ROSSKO_RPS ?? "4") || 4),
-    deliveryId: envOpt("ROSSKO_DELIVERY_ID"),
-    addressId: envOpt("ROSSKO_ADDRESS_ID"),
-    paymentId: envOpt("ROSSKO_PAYMENT_ID"),
-    requisiteId: envOpt("ROSSKO_REQUISITE_ID"),
-    contactName: envOpt("ROSSKO_CONTACT_NAME"),
-    contactPhone: envOpt("ROSSKO_CONTACT_PHONE"),
+    key1: values.key1.trim(),
+    key2: values.key2.trim(),
+    timeoutMs: Math.max(5_000, parseInt(values.timeoutMs ?? "20000", 10) || 20_000),
+    requestsPerSecond: Math.max(0.2, parseFloat(values.requestsPerSecond ?? "4") || 4),
+    deliveryId: configOpt(values.deliveryId),
+    addressId: configOpt(values.addressId),
+    paymentId: configOpt(values.paymentId),
+    requisiteId: configOpt(values.requisiteId),
+    contactName: configOpt(values.contactName),
+    contactPhone: configOpt(values.contactPhone),
     deliveryParts: !["0", "false", "no"].includes(deliveryPartsRaw),
   };
 }
 
 export function assertRosskoKeys(cfg: RosskoConfig): void {
   if (!cfg.key1 || !cfg.key2) {
-    throw new RosskoError("ROSSKO_KEY1/ROSSKO_KEY2 не заданы");
+    throw new RosskoError("Для активного филиала не настроены key1/key2 интеграции ROSSKO");
   }
 }
 
@@ -225,6 +232,8 @@ export async function rosskoCheckout(
     parts: RosskoCheckoutPart[];
   }
 ): Promise<Record<string, unknown>> {
+  assertExternalSideEffectAllowed("supplier_order");
+  assertExternalSideEffectAllowed("rossko_order");
   assertRosskoKeys(cfg);
   const payload: Record<string, unknown> = {
     KEY1: cfg.key1,

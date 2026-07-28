@@ -3,6 +3,8 @@ import {
   isMoySkladRequestAllowed,
   moyskladDisabledMessage,
 } from "@/lib/moysklad-flags";
+import { getBranchIntegrationValues } from "@/lib/branch-integration-credentials";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 
 export const MOYSKLAD_BASE = "https://api.moysklad.ru/api/remap/1.2";
 const MOYSKLAD_TIMEOUT_MS = Math.max(5_000, parseInt(process.env.MOYSKLAD_TIMEOUT_MS ?? "15000", 10) || 15_000);
@@ -88,12 +90,13 @@ export async function moyskladFetchWithRetry<T>(
  * токен часто протухает, из‑за чего падает весь подбор (пустой список товаров).
  * Для работы только по токену: задайте MOYSKLAD_PREFER_BEARER=1.
  */
-export function getMoySkladAuthHeader(): string | null {
+export async function getMoySkladAuthHeader(): Promise<string | null> {
   if (!isMoySkladEnabled()) return null;
-  const login = process.env.MOYSKLAD_LOGIN?.trim();
-  const password = process.env.MOYSKLAD_PASSWORD?.trim();
-  const token = process.env.MOYSKLAD_TOKEN?.trim();
-  const preferBearer = process.env.MOYSKLAD_PREFER_BEARER === "1" || process.env.MOYSKLAD_PREFER_BEARER === "true";
+  const credentials = await getBranchIntegrationValues("moysklad", ["token", "login", "password", "preferBearer"], []);
+  const login = credentials.login?.trim();
+  const password = credentials.password?.trim();
+  const token = credentials.token?.trim();
+  const preferBearer = credentials.preferBearer === "1" || credentials.preferBearer === "true";
 
   if (login && password && !preferBearer) {
     return "Basic " + Buffer.from(`${login}:${password}`, "utf-8").toString("base64");
@@ -105,8 +108,8 @@ export function getMoySkladAuthHeader(): string | null {
   return null;
 }
 
-export function getMoySkladHeaders(): Record<string, string> | null {
-  const auth = getMoySkladAuthHeader();
+export async function getMoySkladHeaders(): Promise<Record<string, string> | null> {
+  const auth = await getMoySkladAuthHeader();
   if (!auth) return null;
   return {
     Authorization: auth,
@@ -127,13 +130,16 @@ export async function moyskladFetch<T>(
   options?: RequestInit
 ): Promise<{ data: T; ok: true } | { error: string; ok: false }> {
   const method = options?.method ?? "GET";
+  if (method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD") {
+    assertExternalSideEffectAllowed("moysklad_mutation");
+  }
   if (!isMoySkladRequestAllowed(method)) {
     return {
       ok: false,
       error: moyskladDisabledMessage(method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD" ? "read" : "write"),
     };
   }
-  const headers = getMoySkladHeaders();
+  const headers = await getMoySkladHeaders();
   if (!headers) {
     return { ok: false, error: "МойСклад: не заданы MOYSKLAD_TOKEN или пара MOYSKLAD_LOGIN/MOYSKLAD_PASSWORD" };
   }

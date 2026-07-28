@@ -4,17 +4,14 @@ import {
   handleAppointmentCreated,
   handleAppointmentUpdated,
 } from "@/lib/client-notifications/client-notifications";
+import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
+import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 
-const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
-const YCLIENTS_COMPANY_ID = process.env.YCLIENTS_COMPANY_ID ?? "9354";
-const YCLIENTS_COMPANY_TITLE = process.env.YCLIENTS_COMPANY_TITLE ?? "Там где масло";
-const YCLIENTS_PARTNER_TOKEN = process.env.YCLIENTS_PARTNER_TOKEN ?? "mz5bf2yp97nbs4s45e9j";
-const YCLIENTS_USER_TOKEN = process.env.YCLIENTS_USER_TOKEN?.trim() ?? "";
-const YCLIENTS_USER_LOGIN = process.env.YCLIENTS_USER_LOGIN?.trim() ?? "";
-const YCLIENTS_USER_PASSWORD = process.env.YCLIENTS_USER_PASSWORD?.trim() ?? "";
 const USER_TOKEN_TTL_MS = 50 * 60 * 1000;
 
-let runtimeUserToken: { token: string; at: number } | null = null;
+const runtimeUserTokens = new Map<string, { token: string; at: number }>();
 
 function extractUserToken(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
@@ -27,16 +24,15 @@ function extractUserToken(data: unknown): string | null {
 }
 
 async function fetchUserTokenByCredentials(
+  config: YclientsBranchConfig,
   login: string,
   password: string
 ): Promise<{ token: string | null; error?: string }> {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return { token: null, error: "YCLIENTS_PARTNER_TOKEN не задан" };
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}/auth`, {
+    const res = await fetch(`${config.apiBase}/auth`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${partner}`,
+        Authorization: `Bearer ${config.partnerToken}`,
         Accept: "application/vnd.yclients.v2+json",
         "Content-Type": "application/json",
       },
@@ -58,34 +54,36 @@ async function fetchUserTokenByCredentials(
   }
 }
 
-async function resolveAuthHeader(path: string): Promise<{ header: string | null; authError?: string }> {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return { header: null, authError: "YCLIENTS_PARTNER_TOKEN не задан" };
+async function resolveAuthHeader(
+  config: YclientsBranchConfig,
+  path: string
+): Promise<{ header: string | null; authError?: string }> {
   const needsUserToken = /\/records\/|\/record\/|\/clients\/|\/company\/|\/timetable\//.test(path);
-  if (!needsUserToken) return { header: `Bearer ${partner}` };
-  if (YCLIENTS_USER_TOKEN) return { header: `Bearer ${partner}, User ${YCLIENTS_USER_TOKEN}` };
+  if (!needsUserToken) return { header: `Bearer ${config.partnerToken}` };
+  if (config.userToken) return { header: `Bearer ${config.partnerToken}, User ${config.userToken}` };
 
+  const cached = runtimeUserTokens.get(config.branchId);
   if (
-    runtimeUserToken &&
-    Date.now() - runtimeUserToken.at <= USER_TOKEN_TTL_MS &&
-    runtimeUserToken.token
+    cached &&
+    Date.now() - cached.at <= USER_TOKEN_TTL_MS &&
+    cached.token
   ) {
-    return { header: `Bearer ${partner}, User ${runtimeUserToken.token}` };
+    return { header: `Bearer ${config.partnerToken}, User ${cached.token}` };
   }
 
-  if (!YCLIENTS_USER_LOGIN || !YCLIENTS_USER_PASSWORD) {
+  if (!config.userLogin || !config.userPassword) {
     return {
       header: null,
       authError:
-        "Для этого метода нужен YCLIENTS_USER_TOKEN или пара YCLIENTS_USER_LOGIN/YCLIENTS_USER_PASSWORD в .env.local.",
+        "Для филиала настройте userToken или пару userLogin/userPassword интеграции YCLIENTS.",
     };
   }
 
-  const auth = await fetchUserTokenByCredentials(YCLIENTS_USER_LOGIN, YCLIENTS_USER_PASSWORD);
+  const auth = await fetchUserTokenByCredentials(config, config.userLogin, config.userPassword);
   if (!auth.token) return { header: null, authError: auth.error ?? "Не удалось получить user token" };
 
-  runtimeUserToken = { token: auth.token, at: Date.now() };
-  return { header: `Bearer ${partner}, User ${auth.token}` };
+  runtimeUserTokens.set(config.branchId, { token: auth.token, at: Date.now() });
+  return { header: `Bearer ${config.partnerToken}, User ${auth.token}` };
 }
 
 type CompanyItem = { id?: number; title?: string };
@@ -200,10 +198,11 @@ function appointmentContextFromPayload(payload: unknown, fallbackId?: string | n
 }
 
 async function fetchAccessibleCompanies(
+  config: YclientsBranchConfig,
   authHeader: string
 ): Promise<{ companies: CompanyItem[]; error?: string }> {
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}/companies`, {
+    const res = await fetch(`${config.apiBase}/companies`, {
       headers: {
         Authorization: authHeader,
         Accept: "application/vnd.yclients.v2+json",
@@ -232,24 +231,25 @@ async function fetchAccessibleCompanies(
 }
 
 async function resolveCompanyId(
+  config: YclientsBranchConfig,
   requestedCompanyId: string | null | undefined,
   authHeader: string
 ): Promise<{ companyId: string | null; companies: CompanyItem[]; error?: string }> {
-  const companiesResult = await fetchAccessibleCompanies(authHeader);
-  const companies = companiesResult.companies;
   const requested = requestedCompanyId?.trim();
+  if (requested && requested !== config.companyId) {
+    return { companyId: null, companies: [], error: "company_id не относится к активному филиалу" };
+  }
+  const companiesResult = await fetchAccessibleCompanies(config, authHeader);
+  const companies = companiesResult.companies.filter((item) => String(item.id) === config.companyId);
   if (companies.length === 0) {
-    return { companyId: requested ?? null, companies, error: companiesResult.error };
+    return { companyId: config.companyId, companies, error: companiesResult.error };
   }
-  if (requested) {
-    const found = companies.find((item) => String(item.id) === requested);
-    if (found) return { companyId: requested, companies };
-  }
-  return { companyId: String(companies[0]?.id ?? ""), companies };
+  return { companyId: config.companyId, companies };
 }
 
-async function yclientsRequest(path: string, init?: RequestInit) {
-  const resolved = await resolveAuthHeader(path);
+async function yclientsRequest(config: YclientsBranchConfig, path: string, init?: RequestInit) {
+  if ((init?.method ?? "GET").toUpperCase() !== "GET") assertExternalSideEffectAllowed("yclients_mutation");
+  const resolved = await resolveAuthHeader(config, path);
   if (!resolved.header) {
     return NextResponse.json(
       { success: false, error: resolved.authError ?? "YCLIENTS токен не задан" },
@@ -263,7 +263,7 @@ async function yclientsRequest(path: string, init?: RequestInit) {
   };
 
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}${path}`, {
+    const res = await fetch(`${config.apiBase}${path}`, {
       ...init,
       headers: {
         ...headers,
@@ -277,7 +277,7 @@ async function yclientsRequest(path: string, init?: RequestInit) {
         {
           success: false,
           error:
-            "Не авторизовано в YCLIENTS. Добавьте YCLIENTS_USER_TOKEN или YCLIENTS_USER_LOGIN/YCLIENTS_USER_PASSWORD в .env.local.",
+            "Не авторизовано в YCLIENTS. Настройте userToken или userLogin/userPassword для активного филиала.",
         },
         { status: 401 }
       );
@@ -300,7 +300,37 @@ function getRequired(search: URLSearchParams, key: string) {
   return value;
 }
 
+function configuredCompanyId(requested: string | number | null | undefined, config: YclientsBranchConfig) {
+  const value = String(requested ?? config.companyId).trim();
+  if (!value) throw new Error("Не удалось определить company_id");
+  if (value !== config.companyId) throw new Error("company_id не относится к активному филиалу");
+  return value;
+}
+
+async function requireYclientsRequestContext() {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false as const, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
+  }
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return { ok: false as const, response: branchAccess.response };
+  try {
+    return { ok: true as const, config: await getYclientsBranchConfig() };
+  } catch (error) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { success: false, error: error instanceof Error ? error.message : "YCLIENTS не настроен для активного филиала" },
+        { status: 424 }
+      ),
+    };
+  }
+}
+
 export async function GET(request: NextRequest) {
+  const context = await requireYclientsRequestContext();
+  if (!context.ok) return context.response;
+  const { config } = context;
   const search = request.nextUrl.searchParams;
   const action = search.get("action");
 
@@ -309,14 +339,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: {
-          company_id: YCLIENTS_COMPANY_ID,
-          company_title: YCLIENTS_COMPANY_TITLE,
+          company_id: config.companyId,
+          company_title: config.companyTitle ?? "YCLIENTS",
         },
       });
     }
 
     if (action === "companies") {
-      const resolved = await resolveAuthHeader("/company/");
+      const resolved = await resolveAuthHeader(config, "/company/");
       if (!resolved.header) {
         return NextResponse.json(
           { success: false, error: resolved.authError ?? "YCLIENTS токен не задан" },
@@ -324,9 +354,13 @@ export async function GET(request: NextRequest) {
         );
       }
       const companyResolved = await resolveCompanyId(
-        search.get("company_id")?.trim() || YCLIENTS_COMPANY_ID,
+        config,
+        search.get("company_id")?.trim() || config.companyId,
         resolved.header
       );
+      if (!companyResolved.companyId) {
+        return NextResponse.json({ success: false, error: companyResolved.error }, { status: 403 });
+      }
       return NextResponse.json({
         success: true,
         data: companyResolved.companies,
@@ -334,24 +368,18 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const companyId = search.get("company_id")?.trim() || YCLIENTS_COMPANY_ID;
-    if (!companyId) {
-      return NextResponse.json(
-        { success: false, error: "Не удалось определить company_id" },
-        { status: 400 }
-      );
-    }
+    const companyId = configuredCompanyId(search.get("company_id"), config);
 
     switch (action) {
       case "services": {
-        return yclientsRequest(`/book_services/${companyId}`);
+        return yclientsRequest(config, `/book_services/${companyId}`);
       }
       case "staff": {
         const serviceIds = search.get("service_ids");
         const params = new URLSearchParams();
         if (serviceIds) params.set("service_ids[]", serviceIds);
         const qs = params.toString();
-        return yclientsRequest(`/book_staff/${companyId}${qs ? `?${qs}` : ""}`);
+        return yclientsRequest(config, `/book_staff/${companyId}${qs ? `?${qs}` : ""}`);
       }
       case "dates": {
         const staffId = search.get("staff_id");
@@ -362,7 +390,7 @@ export async function GET(request: NextRequest) {
         const date = search.get("date");
         if (date) params.set("date", date);
         const qs = params.toString();
-        return yclientsRequest(`/book_dates/${companyId}${qs ? `?${qs}` : ""}`);
+        return yclientsRequest(config, `/book_dates/${companyId}${qs ? `?${qs}` : ""}`);
       }
       case "times": {
         const staffId = getRequired(search, "staff_id");
@@ -371,7 +399,7 @@ export async function GET(request: NextRequest) {
         const params = new URLSearchParams();
         if (serviceIds) params.set("service_ids[]", serviceIds);
         const qs = params.toString();
-        return yclientsRequest(`/book_times/${companyId}/${staffId}/${date}${qs ? `?${qs}` : ""}`);
+        return yclientsRequest(config, `/book_times/${companyId}/${staffId}/${date}${qs ? `?${qs}` : ""}`);
       }
       case "seances": {
         const staffId = getRequired(search, "staff_id");
@@ -380,7 +408,7 @@ export async function GET(request: NextRequest) {
         const params = new URLSearchParams();
         if (serviceIds) params.set("service_ids[]", serviceIds);
         const qs = params.toString();
-        return yclientsRequest(`/timetable/seances/${companyId}/${staffId}/${date}${qs ? `?${qs}` : ""}`);
+        return yclientsRequest(config, `/timetable/seances/${companyId}/${staffId}/${date}${qs ? `?${qs}` : ""}`);
       }
       case "clients": {
         return NextResponse.json(
@@ -402,11 +430,11 @@ export async function GET(request: NextRequest) {
         if (startDate) params.set("start_date", startDate);
         if (endDate) params.set("end_date", endDate);
         if (staffId) params.set("staff_id", staffId);
-        return yclientsRequest(`/records/${companyId}?${params.toString()}`);
+        return yclientsRequest(config, `/records/${companyId}?${params.toString()}`);
       }
       case "record": {
         const recordId = getRequired(search, "record_id");
-        return yclientsRequest(`/record/${companyId}/${recordId}`);
+        return yclientsRequest(config, `/record/${companyId}/${recordId}`);
       }
       default:
         return NextResponse.json(
@@ -423,6 +451,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const context = await requireYclientsRequestContext();
+  if (!context.ok) return context.response;
+  const { config } = context;
   const body = (await request.json().catch(() => ({}))) as {
     action?: string;
     company_id?: number | string;
@@ -433,31 +464,17 @@ export async function POST(request: NextRequest) {
   const action = body.action;
 
   if (action === "auth") {
-    const login = body.login?.trim();
-    const password = body.password?.trim();
-    if (!login || !password) {
-      return NextResponse.json(
-        { success: false, error: "Нужны login и password для action=auth" },
-        { status: 400 }
-      );
-    }
-    const auth = await fetchUserTokenByCredentials(login, password);
-    if (!auth.token) {
-      return NextResponse.json(
-        { success: false, error: auth.error ?? "Не удалось получить user token" },
-        { status: 401 }
-      );
-    }
-    runtimeUserToken = { token: auth.token, at: Date.now() };
-    return NextResponse.json({ success: true, data: { user_token: auth.token } });
+    return NextResponse.json(
+      { success: false, error: "Интерактивная выдача user token отключена; настройте credential активного филиала" },
+      { status: 410 }
+    );
   }
 
-  const companyId = String(body.company_id ?? YCLIENTS_COMPANY_ID).trim();
-  if (!companyId) {
-    return NextResponse.json(
-      { success: false, error: "Не удалось определить company_id" },
-      { status: 400 }
-    );
+  let companyId: string;
+  try {
+    companyId = configuredCompanyId(body.company_id, config);
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
   }
 
   if (action === "create-client") {
@@ -473,7 +490,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "create-record") {
     const normalizedPayload = normalizeCreateRecordPayload(body.payload);
-    const response = await yclientsRequest(`/record/${companyId}`, {
+    const response = await yclientsRequest(config, `/record/${companyId}`, {
       method: "POST",
       body: JSON.stringify(normalizedPayload),
     });
@@ -494,13 +511,21 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const context = await requireYclientsRequestContext();
+  if (!context.ok) return context.response;
+  const { config } = context;
   const body = await request.json().catch(() => ({}));
   const action = String(body.action ?? "");
   if (action !== "update-record") {
     return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
   }
 
-  const companyId = String(body.company_id ?? YCLIENTS_COMPANY_ID).trim();
+  let companyId: string;
+  try {
+    companyId = configuredCompanyId(body.company_id, config);
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
+  }
   const recordId = String(body.record_id ?? "").trim();
   if (!companyId || !recordId) {
     return NextResponse.json(
@@ -509,7 +534,7 @@ export async function PUT(request: NextRequest) {
     );
   }
 
-  const response = await yclientsRequest(`/record/${companyId}/${recordId}`, {
+  const response = await yclientsRequest(config, `/record/${companyId}/${recordId}`, {
     method: "PUT",
     body: JSON.stringify(body.payload ?? {}),
   });
@@ -525,13 +550,21 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const context = await requireYclientsRequestContext();
+  if (!context.ok) return context.response;
+  const { config } = context;
   const body = await request.json().catch(() => ({}));
   const action = String(body.action ?? "");
   if (action !== "delete-record") {
     return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
   }
 
-  const companyId = String(body.company_id ?? YCLIENTS_COMPANY_ID).trim();
+  let companyId: string;
+  try {
+    companyId = configuredCompanyId(body.company_id, config);
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
+  }
   const recordId = String(body.record_id ?? "").trim();
   if (!companyId || !recordId) {
     return NextResponse.json(
@@ -540,7 +573,7 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  const response = await yclientsRequest(`/record/${companyId}/${recordId}`, {
+  const response = await yclientsRequest(config, `/record/${companyId}/${recordId}`, {
     method: "DELETE",
   });
   if (response.ok) {

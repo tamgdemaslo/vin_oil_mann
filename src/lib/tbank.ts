@@ -10,8 +10,10 @@ import {
   supplierInvoiceInclude,
   type SupplierInvoiceWithDocument,
 } from "@/lib/local-inventory-admin";
+import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 
-const DEFAULT_ORGANIZATION_ID = process.env.TBANK_DEFAULT_ORG_ID?.trim() || "default";
 const DEFAULT_TBANK_API_BASE_URL = "https://business.tbank.ru/openapi";
 const PAYMENT_PURPOSE_MAX_LENGTH = 210;
 const ACTIVE_PAYMENT_STATUSES = new Set([
@@ -165,7 +167,8 @@ function tokenPreview(token: string) {
 }
 
 function organizationId(value?: string | null) {
-  return cleanText(value) || DEFAULT_ORGANIZATION_ID;
+  void value;
+  return getMessengerOrganizationId();
 }
 
 function defaultWebhookUrl() {
@@ -173,7 +176,9 @@ function defaultWebhookUrl() {
     process.env.NEXT_PUBLIC_APP_ORIGIN?.trim() ||
     process.env.APP_ORIGIN?.trim() ||
     "";
-  return origin ? `${origin.replace(/\/$/, "")}/api/integrations/tbank/webhook/payment-status` : "";
+  return origin
+    ? `${origin.replace(/\/$/, "")}/api/integrations/tbank/webhook/payment-status/${encodeURIComponent(getScopedBranchId())}`
+    : "";
 }
 
 function apiBaseUrl(integration?: Pick<TBankIntegration, "apiBaseUrl"> | null) {
@@ -234,7 +239,7 @@ function mapIntegrationStatus(integration: (TBankIntegration & { accounts: TBank
   return {
     configured: Boolean(integration),
     connected: Boolean(integration?.tokenEncrypted && (integration.debitAccountNumberEncrypted || integration.accounts.some((account) => account.isDefault))),
-    organizationId: integration?.organizationId ?? DEFAULT_ORGANIZATION_ID,
+    organizationId: integration?.organizationId ?? getMessengerOrganizationId(),
     inn: integration?.inn ?? "",
     kpp: integration?.kpp ?? "",
     tokenConfigured: Boolean(integration?.tokenEncrypted),
@@ -266,9 +271,9 @@ function mapIntegrationStatus(integration: (TBankIntegration & { accounts: TBank
   };
 }
 
-async function getIntegration(organization = DEFAULT_ORGANIZATION_ID) {
+async function getIntegration(organization = getMessengerOrganizationId()) {
   return prisma.tBankIntegration.findUnique({
-    where: { organizationId: organization },
+    where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId: organization } },
     include: {
       accounts: {
         where: { isActive: true },
@@ -290,7 +295,7 @@ async function auditTBank(input: {
     await tx.integrationAuditLog.create({
       data: {
         id: crypto.randomUUID(),
-        organizationId: input.organizationId ?? DEFAULT_ORGANIZATION_ID,
+        organizationId: input.organizationId ?? getMessengerOrganizationId(),
         channel: "tbank",
         actorId: input.actorId ?? null,
         action: input.action,
@@ -371,7 +376,7 @@ export async function saveTBankIntegrationSettings(input: TBankSettingsInput, us
   };
 
   const integration = await prisma.tBankIntegration.upsert({
-    where: { organizationId: orgId },
+    where: { branchId_organizationId: { branchId: getScopedBranchId(), organizationId: orgId } },
     update: updateData,
     create: createData,
     include: { accounts: true },
@@ -386,7 +391,8 @@ export async function saveTBankIntegrationSettings(input: TBankSettingsInput, us
       });
       await tx.tBankSettlementAccount.upsert({
         where: {
-          integrationId_accountNumberHash: {
+          branchId_integrationId_accountNumberHash: {
+            branchId: getScopedBranchId(),
             integrationId: integration.id,
             accountNumberHash: accountHash,
           },
@@ -433,6 +439,10 @@ async function callTBankJson(
   path: string,
   init: { method?: string; body?: unknown } = {}
 ): Promise<TBankApiResponse> {
+  if ((init.method ?? "GET").toUpperCase() !== "GET") {
+    assertExternalSideEffectAllowed("payment_mutation");
+    assertExternalSideEffectAllowed("tbank_mutation");
+  }
   const requestId = crypto.randomUUID();
   const token = await tokenForIntegration(integration);
   const headers: Record<string, string> = {
@@ -670,7 +680,7 @@ async function buildDraftContext(
   if (recipient.kpp === "0" && recipient.companyType !== "individual") warnings.push("КПП не указан. Для ИП это нормально, для юрлица проверьте счёт.");
   if (!recipient.bankName) warnings.push("Не указано наименование банка получателя.");
 
-  const invoiceOrganizationId = invoice.document.store?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+  const invoiceOrganizationId = invoice.document.store?.organizationId ?? getMessengerOrganizationId();
   if (integration && invoiceOrganizationId && invoiceOrganizationId !== integration.organizationId) {
     errors.push("Организация счёта не совпадает с организацией интеграции T-Bank.");
   }
@@ -1085,7 +1095,8 @@ export async function testTBankIntegration(user: User) {
         const hash = hashSecret(item.accountNumber);
         await tx.tBankSettlementAccount.upsert({
           where: {
-            integrationId_accountNumberHash: {
+            branchId_integrationId_accountNumberHash: {
+              branchId: getScopedBranchId(),
               integrationId: integration.id,
               accountNumberHash: hash,
             },
@@ -1289,7 +1300,7 @@ export async function markSupplierInvoicePaidManually(invoiceId: string, user: U
       },
     });
     await auditTBank({
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: getMessengerOrganizationId(),
       actorId: user.login,
       action: "mark_paid_manually",
       message: `${user.name} отметил счёт ${invoice.number || invoice.id} оплаченным вручную.`,

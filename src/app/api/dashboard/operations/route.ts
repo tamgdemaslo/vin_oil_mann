@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchContext } from "@/lib/branch-context";
 import { reconcileAppointmentShipments } from "@/lib/appointment-shipment-reconcile";
 import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
 import { listClientAppointments } from "@/lib/client-site-api";
 import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-case-shared";
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
-import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
+import { isBranchIntegrationConfigured } from "@/lib/branch-integration-credentials";
+import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 
 export const dynamic = "force-dynamic";
 
@@ -83,15 +85,9 @@ type MessengerSummary = {
 };
 
 const LONG_OPEN_SHIFT_HOURS = 10;
-const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
-const YCLIENTS_COMPANY_ID = process.env.YCLIENTS_COMPANY_ID ?? "9354";
-const YCLIENTS_PARTNER_TOKEN = process.env.YCLIENTS_PARTNER_TOKEN ?? "mz5bf2yp97nbs4s45e9j";
-const YCLIENTS_USER_TOKEN = process.env.YCLIENTS_USER_TOKEN?.trim() ?? "";
-const YCLIENTS_USER_LOGIN = process.env.YCLIENTS_USER_LOGIN?.trim() ?? "";
-const YCLIENTS_USER_PASSWORD = process.env.YCLIENTS_USER_PASSWORD?.trim() ?? "";
 const YCLIENTS_USER_TOKEN_TTL_MS = 50 * 60 * 1000;
 
-let yclientsRuntimeUserToken: { token: string; at: number } | null = null;
+const yclientsRuntimeUserTokens = new Map<string, { token: string; at: number }>();
 
 function cents(amount: number) {
   return Math.round(amount);
@@ -126,18 +122,17 @@ function extractYclientsUserToken(data: unknown): string | null {
   return nested || null;
 }
 
-async function fetchYclientsUserToken() {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner || !YCLIENTS_USER_LOGIN || !YCLIENTS_USER_PASSWORD) return null;
+async function fetchYclientsUserToken(config: YclientsBranchConfig) {
+  if (!config.userLogin || !config.userPassword) return null;
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}/auth`, {
+    const res = await fetch(`${config.apiBase}/auth`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${partner}`,
+        Authorization: `Bearer ${config.partnerToken}`,
         Accept: "application/vnd.yclients.v2+json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ login: YCLIENTS_USER_LOGIN, password: YCLIENTS_USER_PASSWORD }),
+      body: JSON.stringify({ login: config.userLogin, password: config.userPassword }),
       cache: "no-store",
     });
     const data = await res.json().catch(() => ({}));
@@ -148,28 +143,27 @@ async function fetchYclientsUserToken() {
   }
 }
 
-async function resolveYclientsAuthHeader(needsUserToken: boolean) {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return null;
-  if (!needsUserToken) return `Bearer ${partner}`;
-  if (YCLIENTS_USER_TOKEN) return `Bearer ${partner}, User ${YCLIENTS_USER_TOKEN}`;
+async function resolveYclientsAuthHeader(config: YclientsBranchConfig, needsUserToken: boolean) {
+  if (!needsUserToken) return `Bearer ${config.partnerToken}`;
+  if (config.userToken) return `Bearer ${config.partnerToken}, User ${config.userToken}`;
+  const cached = yclientsRuntimeUserTokens.get(config.branchId);
   if (
-    yclientsRuntimeUserToken?.token &&
-    Date.now() - yclientsRuntimeUserToken.at <= YCLIENTS_USER_TOKEN_TTL_MS
+    cached?.token &&
+    Date.now() - cached.at <= YCLIENTS_USER_TOKEN_TTL_MS
   ) {
-    return `Bearer ${partner}, User ${yclientsRuntimeUserToken.token}`;
+    return `Bearer ${config.partnerToken}, User ${cached.token}`;
   }
-  const token = await fetchYclientsUserToken();
+  const token = await fetchYclientsUserToken(config);
   if (!token) return null;
-  yclientsRuntimeUserToken = { token, at: Date.now() };
-  return `Bearer ${partner}, User ${token}`;
+  yclientsRuntimeUserTokens.set(config.branchId, { token, at: Date.now() });
+  return `Bearer ${config.partnerToken}, User ${token}`;
 }
 
-async function yclientsData(path: string, needsUserToken: boolean) {
-  const auth = await resolveYclientsAuthHeader(needsUserToken);
+async function yclientsData(config: YclientsBranchConfig, path: string, needsUserToken: boolean) {
+  const auth = await resolveYclientsAuthHeader(config, needsUserToken);
   if (!auth) return null;
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}${path}`, {
+    const res = await fetch(`${config.apiBase}${path}`, {
       headers: {
         Authorization: auth,
         Accept: "application/vnd.yclients.v2+json",
@@ -321,7 +315,8 @@ function appointmentIsConfirmed(appointment: AppointmentRow) {
 }
 
 async function listYclientsTodayAppointments(today: string): Promise<AppointmentRow[]> {
-  const staffJson = await yclientsData(`/book_staff/${YCLIENTS_COMPANY_ID}`, false);
+  const config = await getYclientsBranchConfig();
+  const staffJson = await yclientsData(config, `/book_staff/${config.companyId}`, false);
   const staffRows = arrayValue<YclientsStaff>(asRecord(staffJson).data);
   const bookable = staffRows.filter((staff) => staff.bookable !== false);
   const staffIds = (bookable.length ? bookable : staffRows)
@@ -339,7 +334,7 @@ async function listYclientsTodayAppointments(today: string): Promise<Appointment
         end_date: today,
         staff_id: staffId,
       });
-      const data = await yclientsData(`/records/${YCLIENTS_COMPANY_ID}?${params.toString()}`, true);
+      const data = await yclientsData(config, `/records/${config.companyId}?${params.toString()}`, true);
       return arrayValue<AppointmentRow>(asRecord(data).data).map((record) => ({
         ...record,
         id: stringValue(record.id),
@@ -404,10 +399,9 @@ async function getCashState() {
   };
 }
 
-async function getMessengerSummary(): Promise<MessengerSummary> {
+async function getMessengerSummary(organizationId: string): Promise<MessengerSummary> {
   const empty = { total: 0, needsReply: 0, unread: 0, oldest: null };
   try {
-    const organizationId = getMessengerOrganizationId();
     const rows = await prisma.$queryRaw<
       Array<{
         total: number | null;
@@ -467,6 +461,12 @@ async function getMessengerSummary(): Promise<MessengerSummary> {
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId || !branch.organizationId) {
+    return NextResponse.json({ error: "Выберите конкретный филиал" }, { status: 409 });
+  }
+  const branchId = branch.branchId;
+  const organizationId = branch.organizationId;
 
   const today = toServiceDateInput(new Date());
   const tomorrow = toServiceDateInput(new Date(Date.now() + 24 * 60 * 60 * 1000));
@@ -487,13 +487,14 @@ export async function GET() {
   ] = await Promise.all([
     getCashState(),
     prisma.localDemand.findMany({
-      where: { documentDate: today },
+      where: { branchId, documentDate: today },
       include: { positions: true, counterparty: true, diagnosticMapSessions: { select: { id: true }, take: 1 } },
       orderBy: [{ momentAt: "desc" }],
       take: 80,
     }),
     prisma.localDemand.findMany({
       where: {
+        branchId,
         OR: [{ documentDate: today }, { applicable: false }],
       },
       include: { positions: true, counterparty: true, diagnosticMapSessions: { select: { id: true }, take: 1 } },
@@ -501,14 +502,16 @@ export async function GET() {
       take: 12,
     }),
     prisma.crmDeal.findMany({
-      where: { status: "open" },
+      where: { branchId, status: "open" },
       include: { stage: true },
       orderBy: [{ nextActionAt: "asc" }, { nextContactAt: "asc" }, { updatedAt: "desc" }],
       take: 80,
     }),
     prisma.localStockBalance.findMany({
       where: {
+        branchId,
         product: {
+          branchId,
           archived: false,
           minimumBalance: { not: null },
         },
@@ -517,22 +520,22 @@ export async function GET() {
       take: 300,
     }),
     prisma.localSupplierInvoice.findMany({
-      where: { status: { in: ["unpaid", "partial"] } },
+      where: { status: { in: ["unpaid", "partial"] }, document: { store: { branchId } } },
       include: { document: true },
       orderBy: [{ dueDate: "asc" }, { invoiceDate: "asc" }],
       take: 12,
     }),
     Promise.all([
-      prisma.diagnosticMapSession.count({ where: { status: { in: ["DRAFT", "IN_PROGRESS"] } } }),
-      prisma.diagnosticMapSession.count({ where: { status: { in: ["DRAFT", "IN_PROGRESS"] }, withoutPhotoCount: { gt: 0 } } }),
-      prisma.diagnostic.count({ where: { status: { in: ["DRAFT", "IN_PROGRESS"] } } }),
+      prisma.diagnosticMapSession.count({ where: { branchId, status: { in: ["DRAFT", "IN_PROGRESS"] } } }),
+      prisma.diagnosticMapSession.count({ where: { branchId, status: { in: ["DRAFT", "IN_PROGRESS"] }, withoutPhotoCount: { gt: 0 } } }),
+      prisma.diagnostic.count({ where: { branchId, status: { in: ["DRAFT", "IN_PROGRESS"] } } }),
     ]),
     prisma.localInventoryDocument.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false, store: { branchId } },
       orderBy: [{ momentAt: "desc" }],
       take: 5,
     }),
-    getMessengerSummary(),
+    getMessengerSummary(organizationId),
   ]);
 
   const notifications: DashboardNotification[] = [];
@@ -561,8 +564,9 @@ export async function GET() {
     return !attrs.includes("предчек") && !attrs.includes("precheck");
   }).length;
 
+  const yclientsConfigured = await isBranchIntegrationConfigured("yclients", ["companyId", "partnerToken"]);
   const [yclientsAppointments, localAppointments] = await Promise.all([
-    listYclientsTodayAppointments(today),
+    yclientsConfigured ? listYclientsTodayAppointments(today) : Promise.resolve([]),
     Promise.resolve((listClientAppointments() as AppointmentRow[]).map((item) => ({ ...item, source: "local" as const }))),
   ]);
   const rawAppointments = [...yclientsAppointments, ...localAppointments].filter((item, index, arr) => {

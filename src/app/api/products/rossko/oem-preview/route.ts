@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
   if (!query) return NextResponse.json({ error: "Заполните артикул, код или OEM Parts для поиска в ROSSKO" }, { status: 400 });
 
   try {
-    const cfg = rosskoConfig();
+    const cfg = await rosskoConfig();
     let deliveryId = cfg.deliveryId ?? "";
     let addressId = cfg.addressId ?? "";
     if (!deliveryId || !addressId) {

@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { ProxyAgent } from "undici";
 import type { Conversation, IncomingMessageEvent, Message, MessengerConnection, MessageOutbox } from "../messenger-types";
 import { getTelegramStoredSettings, publicTelegramSettings } from "../messenger-channel-settings";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
 
 type TelegramUser = {
@@ -134,10 +136,12 @@ function externalConversationIdFromParams(params: TelegramSendBaseParams) {
 
 async function loadConnectionByExternalChatId(externalChatId: string | null) {
   if (!externalChatId) return null;
+  const branchId = getScopedBranchId();
   const rows = await prisma.$queryRaw<Array<{ id: string; externalChatId: string; isActive: boolean }>>`
     SELECT id, external_chat_id AS "externalChatId", is_active AS "isActive"
     FROM messenger_connections
     WHERE channel = 'telegram'
+      AND branch_id = ${branchId}
       AND external_chat_id = ${externalChatId}
     LIMIT 1
   `;
@@ -154,6 +158,7 @@ function isTelegramChatClosed(result: TelegramApiError) {
 
 async function markConnectionInactive(externalChatId: string | null, error: string) {
   if (!externalChatId) return;
+  const branchId = getScopedBranchId();
   const safeError = redactTelegramSecrets(error);
   await prisma.$executeRaw`
     UPDATE messenger_connections
@@ -162,6 +167,7 @@ async function markConnectionInactive(externalChatId: string | null, error: stri
         raw_json = COALESCE(raw_json, '{}'::jsonb) || ${JSON.stringify({ lastTelegramError: safeError })}::jsonb,
         updated_at = now()
     WHERE channel = 'telegram'
+      AND branch_id = ${branchId}
       AND external_chat_id = ${externalChatId}
   `;
   await prisma.$executeRaw`
@@ -169,6 +175,7 @@ async function markConnectionInactive(externalChatId: string | null, error: stri
     SET status = 'blocked',
         updated_at = now()
     WHERE channel = 'telegram'
+      AND branch_id = ${branchId}
       AND external_conversation_id = ${externalChatId}
   `;
 }
@@ -276,6 +283,7 @@ async function sendTelegramMethod(
   body: Record<string, unknown>,
   fallbackError: string
 ): Promise<TelegramSendResult> {
+  assertExternalSideEffectAllowed("telegram_send");
   const canSend = await assertCanSend(params);
   if (!canSend.ok) return canSend;
   if (!("externalChatId" in canSend)) return canSend;
@@ -369,8 +377,17 @@ export async function assertTelegramWebhookSecret(headers?: Headers) {
 
 export async function setTelegramWebhook(options: { dropPendingUpdates?: boolean } = {}) {
   const settings = await getTelegramStoredSettings();
-  const url = settings.webhookUrl ?? "";
+  let url = settings.webhookUrl ?? "";
   if (!url) return { ok: false as const, error: "TELEGRAM_WEBHOOK_URL is not configured" };
+  try {
+    const parsed = new URL(url);
+    if (/\/api\/messenger\/webhooks?\/telegram\/?$/.test(parsed.pathname)) {
+      parsed.pathname = `${parsed.pathname.replace(/\/$/, "")}/${encodeURIComponent(getScopedBranchId())}`;
+      url = parsed.toString();
+    }
+  } catch {
+    return { ok: false as const, error: "TELEGRAM_WEBHOOK_URL is invalid" };
+  }
   if (settings.dryRun) return { ok: true as const, dryRun: true, webhookUrl: url };
   const result = await telegramApiRequest<boolean>("setWebhook", {
     url,

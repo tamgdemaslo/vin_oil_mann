@@ -3,13 +3,8 @@ import {
   handleAppointmentCreated,
 } from "@/lib/client-notifications/client-notifications";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
+import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 
-const YCLIENTS_API_BASE = "https://api.yclients.com/api/v1";
-const YCLIENTS_COMPANY_ID = process.env.YCLIENTS_COMPANY_ID ?? "9354";
-const YCLIENTS_PARTNER_TOKEN = process.env.YCLIENTS_PARTNER_TOKEN ?? "mz5bf2yp97nbs4s45e9j";
-const YCLIENTS_USER_TOKEN = process.env.YCLIENTS_USER_TOKEN?.trim() ?? "";
-const YCLIENTS_USER_LOGIN = process.env.YCLIENTS_USER_LOGIN?.trim() ?? "";
-const YCLIENTS_USER_PASSWORD = process.env.YCLIENTS_USER_PASSWORD?.trim() ?? "";
 const USER_TOKEN_TTL_MS = 50 * 60 * 1000;
 const RECENT_YCLIENTS_RECORD_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_SYNCED_RECORD_NOTIFICATIONS = 10;
@@ -22,9 +17,7 @@ type YclientsAuthCache = {
   at: number;
 };
 
-const authCacheState = globalThis as typeof globalThis & {
-  __yclientsRecordNotificationAuthCache?: YclientsAuthCache | null;
-};
+const authCacheByBranch = new Map<string, YclientsAuthCache>();
 
 type SyncOptions = {
   companyId?: string | number | null;
@@ -192,16 +185,15 @@ function yclientsErrorMessage(data: unknown, fallback: string) {
 }
 
 async function fetchUserTokenByCredentials(
+  config: YclientsBranchConfig,
   login: string,
   password: string
 ): Promise<{ token: string | null; error?: string }> {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return { token: null, error: "YCLIENTS_PARTNER_TOKEN не задан" };
   try {
-    const res = await fetch(`${YCLIENTS_API_BASE}/auth`, {
+    const res = await fetch(`${config.apiBase}/auth`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${partner}`,
+        Authorization: `Bearer ${config.partnerToken}`,
         Accept: "application/vnd.yclients.v2+json",
         "Content-Type": "application/json",
       },
@@ -219,38 +211,36 @@ async function fetchUserTokenByCredentials(
   }
 }
 
-async function resolveAuthHeader(): Promise<{ header: string | null; authError?: string }> {
-  const partner = YCLIENTS_PARTNER_TOKEN.trim();
-  if (!partner) return { header: null, authError: "YCLIENTS_PARTNER_TOKEN не задан" };
-  if (YCLIENTS_USER_TOKEN) return { header: `Bearer ${partner}, User ${YCLIENTS_USER_TOKEN}` };
+async function resolveAuthHeader(config: YclientsBranchConfig): Promise<{ header: string | null; authError?: string }> {
+  if (config.userToken) return { header: `Bearer ${config.partnerToken}, User ${config.userToken}` };
 
-  const cached = authCacheState.__yclientsRecordNotificationAuthCache;
+  const cached = authCacheByBranch.get(config.branchId);
   if (cached && Date.now() - cached.at <= USER_TOKEN_TTL_MS && cached.token) {
-    return { header: `Bearer ${partner}, User ${cached.token}` };
+    return { header: `Bearer ${config.partnerToken}, User ${cached.token}` };
   }
 
-  if (!YCLIENTS_USER_LOGIN || !YCLIENTS_USER_PASSWORD) {
+  if (!config.userLogin || !config.userPassword) {
     return {
       header: null,
       authError:
-        "Для синхронизации записей нужен YCLIENTS_USER_TOKEN или пара YCLIENTS_USER_LOGIN/YCLIENTS_USER_PASSWORD.",
+        "Для синхронизации записей настройте userToken или пару userLogin/userPassword интеграции YCLIENTS активного филиала.",
     };
   }
 
-  const auth = await fetchUserTokenByCredentials(YCLIENTS_USER_LOGIN, YCLIENTS_USER_PASSWORD);
+  const auth = await fetchUserTokenByCredentials(config, config.userLogin, config.userPassword);
   if (!auth.token) return { header: null, authError: auth.error ?? "Не удалось получить user token" };
-  authCacheState.__yclientsRecordNotificationAuthCache = { token: auth.token, at: Date.now() };
-  return { header: `Bearer ${partner}, User ${auth.token}` };
+  authCacheByBranch.set(config.branchId, { token: auth.token, at: Date.now() });
+  return { header: `Bearer ${config.partnerToken}, User ${auth.token}` };
 }
 
-async function yclientsJsonRequest(path: string) {
-  const resolved = await resolveAuthHeader();
+async function yclientsJsonRequest(config: YclientsBranchConfig, path: string) {
+  const resolved = await resolveAuthHeader(config);
   if (!resolved.header) {
     return { ok: false, status: 401, data: null, error: resolved.authError ?? "YCLIENTS токен не задан" };
   }
 
   try {
-    const response = await fetch(`${YCLIENTS_API_BASE}${path}`, {
+    const response = await fetch(`${config.apiBase}${path}`, {
       headers: {
         Authorization: resolved.header,
         Accept: "application/vnd.yclients.v2+json",
@@ -326,7 +316,11 @@ async function notifyRecentYclientsRecords(
 export async function syncRecentYclientsRecordNotifications(
   options: SyncOptions = {}
 ): Promise<YclientsRecordNotificationSyncResult> {
-  const companyId = String(options.companyId ?? YCLIENTS_COMPANY_ID).trim();
+  const config = await getYclientsBranchConfig();
+  const companyId = config.companyId;
+  if (options.companyId != null && String(options.companyId).trim() !== companyId) {
+    throw new Error("YCLIENTS companyId does not belong to the active branch integration");
+  }
   const now = new Date();
   const startDate = options.startDate?.trim() || toServiceDateInput(addDays(now, -1));
   const endDate =
@@ -370,7 +364,7 @@ export async function syncRecentYclientsRecordNotifications(
       start_date: startDate,
       end_date: endDate,
     });
-    const response = await yclientsJsonRequest(`/records/${companyId}?${params.toString()}`);
+    const response = await yclientsJsonRequest(config, `/records/${companyId}?${params.toString()}`);
     pages = page;
     if (!response.ok) {
       return {

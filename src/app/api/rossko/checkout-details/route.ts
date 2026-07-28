@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   try {
-    const cfg = rosskoConfig();
+    const cfg = await rosskoConfig();
     const data = await rosskoCheckoutDetails(cfg);
     return NextResponse.json({ ok: true, data, suggested: suggestRosskoDefaults(data) });
   } catch (e) {

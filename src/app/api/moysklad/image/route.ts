@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
 
 function isMoySkladHost(host: string): boolean {
   return host === "api.moysklad.ru" || host.endsWith(".moysklad.ru");
 }
 
 export async function GET(request: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
   const href = request.nextUrl.searchParams.get("href")?.trim();
   const productIdParam = request.nextUrl.searchParams.get("productId")?.trim();
   const lookupId = productIdParam || extractMoyskladEntityId(href);
 
   const product = lookupId
     ? await prisma.localProduct.findFirst({
-        where: { OR: [{ id: lookupId }, { moyskladId: lookupId }, { imageHref: href || undefined }] },
+        where: { branchId: branchAccess.context.branchId!, OR: [{ id: lookupId }, { moyskladId: lookupId }, { imageHref: href || undefined }] },
         include: { photos: { take: 1, orderBy: { createdAt: "desc" } } },
       })
     : href
       ? await prisma.localProduct.findFirst({
-          where: { imageHref: href },
+          where: { branchId: branchAccess.context.branchId!, imageHref: href },
           include: { photos: { take: 1, orderBy: { createdAt: "desc" } } },
         })
       : null;

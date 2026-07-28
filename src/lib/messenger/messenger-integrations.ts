@@ -19,6 +19,7 @@ import type {
   MessengerChannel,
   MessengerChannelCapabilities,
 } from "./messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export const integrationMessengerChannels = ["telegram", "whatsapp", "vk", "avito", "max", "sms"] as const;
 export type IntegrationMessengerChannel = (typeof integrationMessengerChannels)[number];
@@ -204,9 +205,9 @@ export async function startIntegrationOnboarding(channelInput: string, user: Use
   };
   const rows = await prisma.$queryRaw<OnboardingSessionRow[]>`
     INSERT INTO integration_onboarding_sessions
-      (id, organization_id, channel, provider_key, status, current_step, data_json, created_by_id, expires_at, created_at, updated_at)
+      (id, branch_id, organization_id, channel, provider_key, status, current_step, data_json, created_by_id, expires_at, created_at, updated_at)
     VALUES
-      (${id}, ${organizationId}, ${channel}, ${channel}, 'awaiting_audit', 'capability_audit',
+      (${id}, ${getScopedBranchId()}, ${organizationId}, ${channel}, ${channel}, 'awaiting_audit', 'capability_audit',
        ${JSON.stringify(dataJson)}::jsonb, ${user.login}, now() + interval '1 day', now(), now())
     RETURNING
       id,
@@ -256,6 +257,7 @@ export async function getIntegrationOnboardingSession(sessionId: string, user?: 
     FROM integration_onboarding_sessions
     WHERE id = ${sessionId}
       AND organization_id = ${organizationId}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   return rows[0] ? toOnboardingSession(rows[0]) : null;
@@ -382,9 +384,9 @@ async function writeIntegrationAudit(input: {
 }) {
   await prisma.$executeRaw`
     INSERT INTO integration_audit_logs
-      (id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
+      (id, branch_id, organization_id, channel, messenger_account_id, actor_id, action, status, message, metadata_json, created_at)
     VALUES
-      (${crypto.randomUUID()}, ${input.organizationId}, ${input.channel ?? null}, ${input.messengerAccountId ?? null},
+      (${crypto.randomUUID()}, ${getScopedBranchId()}, ${input.organizationId}, ${input.channel ?? null}, ${input.messengerAccountId ?? null},
        ${input.actorId ?? null}, ${input.action}, ${input.status ?? "ok"}, ${input.message ?? null},
        ${JSON.stringify(input.metadataJson ?? {})}::jsonb, now())
   `;
