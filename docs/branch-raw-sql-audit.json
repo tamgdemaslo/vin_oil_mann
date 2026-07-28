@@ -1,0 +1,5147 @@
+{
+  "generatedAt": "2026-07-28",
+  "counts": {
+    "GLOBAL_SAFE": 0,
+    "GROUP_SCOPED": 0,
+    "BRANCH_SCOPED": 221,
+    "BRANCH_SCOPED_BY_PARENT": 5,
+    "OWNER_MULTI_BRANCH_READ_ONLY": 0,
+    "MIGRATION_ONLY": 4,
+    "UNSAFE": 0,
+    "UNKNOWN": 0
+  },
+  "findings": [
+    {
+      "file": "src/app/api/client-cases/reconcile/route.ts",
+      "line": 20,
+      "function": "POST",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "crm_deals"
+      ],
+      "tableScopes": {
+        "crm_deals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/crm/deals/route.ts",
+      "line": 243,
+      "function": "loadStagesWithLegacyDeals",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "crm_deals"
+      ],
+      "tableScopes": {
+        "crm_deals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/attachments/[id]/route.ts",
+      "line": 15,
+      "function": "GET",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
+      "line": 74,
+      "function": "POST",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
+      "line": 140,
+      "function": "POST",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
+      "line": 147,
+      "function": "POST",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
+      "line": 158,
+      "function": "POST",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/messenger/logs/route.ts",
+      "line": 59,
+      "function": "GET",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_outbox",
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED",
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/app/api/vehicle-lookup/apply-to-shipment/route.ts",
+      "line": 67,
+      "function": "POST",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_audit_logs"
+      ],
+      "tableScopes": {
+        "integration_audit_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/catalog-search.ts",
+      "line": 665,
+      "function": "findNormalizedCatalogCandidateIds",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/catalog-search.ts",
+      "line": 685,
+      "function": "findStrictNameOemCandidateIds",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-case-workflow.ts",
+      "line": 63,
+      "function": "acknowledgeActiveReminders",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 906,
+      "function": "loadTemplate",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_templates"
+      ],
+      "tableScopes": {
+        "notification_templates": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1040,
+      "function": "rerenderNotificationJobWithCurrentTemplate",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1053,
+      "function": "repairLegacyCarTemplateErrorJobs",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1095,
+      "function": "repairLegacyCarTemplateErrorJobs",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1120,
+      "function": "loadEnabledRules",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_rules"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1533,
+      "function": "resolveLocalCounterparty",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_counterparties"
+      ],
+      "tableScopes": {
+        "local_counterparties": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1544,
+      "function": "resolveLocalCounterparty",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_counterparties"
+      ],
+      "tableScopes": {
+        "local_counterparties": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1584,
+      "function": "findTelegramConnectionTarget",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1630,
+      "function": "upsertTelegramConversationFromConnection",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1676,
+      "function": "findTelegramConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts",
+        "messenger_conversations",
+        "communication_identities",
+        "local_counterparties"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED",
+        "messenger_conversations": "BRANCH_SCOPED",
+        "communication_identities": "BRANCH_SCOPED",
+        "local_counterparties": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 1885,
+      "function": "writeNotificationLog",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "notification_logs"
+      ],
+      "tableScopes": {
+        "notification_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2115,
+      "function": "createNotificationJob",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2204,
+      "function": "processDueClientNotificationJobs",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2268,
+      "function": "finishJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2336,
+      "function": "processClientNotificationJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2458,
+      "function": "cancelAppointmentScheduledNotifications",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2520,
+      "function": "appointmentCreationNotificationExists",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2677,
+      "function": "requeueDiagnosticNotificationJobs",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2749,
+      "function": "markDiagnosticReportSent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "diagnostic_map_sessions"
+      ],
+      "tableScopes": {
+        "diagnostic_map_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2757,
+      "function": "markDiagnosticReportSent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "diagnostics"
+      ],
+      "tableScopes": {
+        "diagnostics": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2781,
+      "function": "updateClientNotificationSettings",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_rules"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2800,
+      "function": "listClientNotificationSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_templates",
+        "notification_rules",
+        "notification_jobs",
+        "notification_logs"
+      ],
+      "tableScopes": {
+        "notification_templates": "BRANCH_SCOPED",
+        "notification_rules": "BRANCH_SCOPED",
+        "notification_jobs": "BRANCH_SCOPED",
+        "notification_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2808,
+      "function": "listClientNotificationSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_rules",
+        "notification_jobs",
+        "notification_logs"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED",
+        "notification_jobs": "BRANCH_SCOPED",
+        "notification_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2817,
+      "function": "listClientNotificationSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_jobs",
+        "notification_logs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED",
+        "notification_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2829,
+      "function": "listClientNotificationSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2897,
+      "function": "updateNotificationRule",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_rules"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2920,
+      "function": "createReminderRule",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "notification_rules"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2936,
+      "function": "deleteNotificationRule",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "DELETE",
+      "mutation": true,
+      "tables": [
+        "notification_rules"
+      ],
+      "tableScopes": {
+        "notification_rules": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 2970,
+      "function": "updateNotificationTemplate",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_templates"
+      ],
+      "tableScopes": {
+        "notification_templates": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/client-notifications/client-notifications.ts",
+      "line": 3028,
+      "function": "retryNotificationJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "notification_jobs"
+      ],
+      "tableScopes": {
+        "notification_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 168,
+      "function": "loadActiveCases",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "crm_stages",
+        "crm_deals"
+      ],
+      "tableScopes": {
+        "crm_stages": "BRANCH_SCOPED",
+        "crm_deals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 194,
+      "function": "loadRecentLog",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 220,
+      "function": "loadActiveInAppLog",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 246,
+      "function": "updateActiveInAppLog",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 268,
+      "function": "writeLog",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 510,
+      "function": "acknowledgeClientCaseNotification",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 520,
+      "function": "snoozeClientCase",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "crm_deals",
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "crm_deals": "BRANCH_SCOPED",
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 529,
+      "function": "snoozeClientCase",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "client_case_notification_log"
+      ],
+      "tableScopes": {
+        "client_case_notification_log": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/crm-deadline-notifications.ts",
+      "line": 539,
+      "function": "closeClientCaseFromNotification",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "crm_deals"
+      ],
+      "tableScopes": {
+        "crm_deals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/local-inventory-read.ts",
+      "line": 129,
+      "function": "findNormalizedProductIds",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/mann-catalog.ts",
+      "line": 1057,
+      "function": "matchMannArticlesToLocalProducts",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 499,
+      "function": "listTelegramUserAccounts",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts",
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED",
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 540,
+      "function": "getSessionByAccount",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 574,
+      "function": "updateAccountStatus",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 586,
+      "function": "updateAccountStatus",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 631,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 652,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 677,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 700,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "DELETE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts",
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED",
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 709,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 719,
+      "function": "startTelegramUserAuth",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 775,
+      "function": "resendTelegramUserCode",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 785,
+      "function": "resendTelegramUserCode",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 892,
+      "function": "createOrUpdateQrSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 909,
+      "function": "createOrUpdateQrSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1020,
+      "function": "finalizeQrRuntimeAttempt",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1220,
+      "function": "checkTelegramUserQrAuth",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1393,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1407,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "DELETE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1413,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "DELETE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1419,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1433,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1454,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1474,
+      "function": "saveAuthorizedTelegramSession",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1522,
+      "function": "confirmTelegramUserCode",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1877,
+      "function": "upsertAttachmentRows",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1937,
+      "function": "refreshTelegramDialogAvatar",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1948,
+      "function": "refreshTelegramDialogAvatar",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1979,
+      "function": "refreshTelegramDialogAvatar",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 1992,
+      "function": "refreshTelegramDialogAvatar",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2022,
+      "function": "upsertTelegramDialog",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2118,
+      "function": "upsertTelegramConversationFromUser",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2138,
+      "function": "upsertTelegramConversationFromUser",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2255,
+      "function": "archiveSkippedTelegramConversations",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2294,
+      "function": "upsertTelegramMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2311,
+      "function": "upsertTelegramMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2418,
+      "function": "messages",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2425,
+      "function": "messages",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2560,
+      "function": "accountIdForOutbox",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2725,
+      "function": "saveTelegramConversationPeer",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2809,
+      "function": "setAttachmentTerminalStatus",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2820,
+      "function": "setAttachmentTerminalStatus",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2897,
+      "function": "downloadTelegramAttachmentMedia",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2948,
+      "function": "messages",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 3019,
+      "function": "disconnectTelegramUserAccount",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram.ts",
+      "line": 163,
+      "function": "markConnectionInactive",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram.ts",
+      "line": 173,
+      "function": "markConnectionInactive",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 113,
+      "function": "readTelegramCredentials",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "integration_credentials"
+      ],
+      "tableScopes": {
+        "integration_credentials": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 136,
+      "function": "upsertTelegramCredential",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "integration_credentials"
+      ],
+      "tableScopes": {
+        "integration_credentials": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 149,
+      "function": "upsertTelegramCredential",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "integration_credentials"
+      ],
+      "tableScopes": {
+        "integration_credentials": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 161,
+      "function": "upsertTelegramCredential",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_credentials"
+      ],
+      "tableScopes": {
+        "integration_credentials": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 175,
+      "function": "getTelegramStoredSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_channel_settings"
+      ],
+      "tableScopes": {
+        "messenger_channel_settings": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-channel-settings.ts",
+      "line": 224,
+      "function": "updateTelegramStoredSettings",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_channel_settings"
+      ],
+      "tableScopes": {
+        "messenger_channel_settings": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 158,
+      "function": "writeAudit",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_audit_logs"
+      ],
+      "tableScopes": {
+        "integration_audit_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 180,
+      "function": "findIdentity",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "communication_identities"
+      ],
+      "tableScopes": {
+        "communication_identities": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 214,
+      "function": "findConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 282,
+      "function": "upsertContactIdentity",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "communication_identities"
+      ],
+      "tableScopes": {
+        "communication_identities": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 320,
+      "function": "linkConversationEntities",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "conversation_entity_links"
+      ],
+      "tableScopes": {
+        "conversation_entity_links": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 344,
+      "function": "linkConversationEntities",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "conversation_entity_links"
+      ],
+      "tableScopes": {
+        "conversation_entity_links": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-contact-actions.ts",
+      "line": 466,
+      "function": "startContactConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 256,
+      "function": "loadConversationRow",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 331,
+      "function": "insertAudit",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_audit_logs"
+      ],
+      "tableScopes": {
+        "integration_audit_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 341,
+      "function": "insertSystemMessage",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 362,
+      "function": "upsertEntityLink",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "conversation_entity_links"
+      ],
+      "tableScopes": {
+        "conversation_entity_links": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 374,
+      "function": "deletePrimaryLinks",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "DELETE",
+      "mutation": true,
+      "tables": [
+        "conversation_entity_links"
+      ],
+      "tableScopes": {
+        "conversation_entity_links": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 399,
+      "function": "upsertCommunicationIdentity",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "communication_identities"
+      ],
+      "tableScopes": {
+        "communication_identities": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 768,
+      "function": "linkClientToConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 873,
+      "function": "createAndLinkClient",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 929,
+      "function": "unlinkClientFromConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 939,
+      "function": "unlinkClientFromConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "communication_identities"
+      ],
+      "tableScopes": {
+        "communication_identities": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 974,
+      "function": "classifyConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 1081,
+      "function": "createCaseForConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 1123,
+      "function": "linkCaseToConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 1172,
+      "function": "createAppointmentForConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-context.ts",
+      "line": 1242,
+      "function": "createShipmentForConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-diagnostics.ts",
+      "line": 176,
+      "function": "findTelegramConnection",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-diagnostics.ts",
+      "line": 200,
+      "function": "upsertTelegramConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-diagnostics.ts",
+      "line": 230,
+      "function": "insertDiagnosticReportMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-diagnostics.ts",
+      "line": 243,
+      "function": "markReportSent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "diagnostic_map_sessions"
+      ],
+      "tableScopes": {
+        "diagnostic_map_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-diagnostics.ts",
+      "line": 251,
+      "function": "markReportSent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "diagnostics"
+      ],
+      "tableScopes": {
+        "diagnostics": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-employee-notifications.ts",
+      "line": 51,
+      "function": "findEmployeeTelegramConnection",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-employee-notifications.ts",
+      "line": 78,
+      "function": "upsertEmployeeConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-employee-notifications.ts",
+      "line": 105,
+      "function": "insertEmployeeNotificationMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 199,
+      "function": "messengerAccountIdForConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 212,
+      "function": "messengerAccountMode",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 338,
+      "function": "listConversations",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_accounts",
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED",
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 417,
+      "function": "getConversation",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 455,
+      "function": "listMessages",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 486,
+      "function": "markConversationRead",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 500,
+      "function": "archiveConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 518,
+      "function": "setConversationPinned",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 536,
+      "function": "setConversationImportant",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 551,
+      "function": "linkConversationClient",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 571,
+      "function": "unlinkConversationClient",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 580,
+      "function": "unlinkConversationClient",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 600,
+      "function": "createCaseFromConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 607,
+      "function": "createCaseFromConversation",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 659,
+      "function": "sendMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 682,
+      "function": "sendMessage",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 715,
+      "function": "upsertConnectionFromIncoming",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 740,
+      "function": "upsertConversationFromIncoming",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 790,
+      "function": "insertIncomingMessage",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 849,
+      "function": "saveWebhookEvent",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 863,
+      "function": "finishWebhookEvent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 923,
+      "function": "handleTelegramCommand",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 931,
+      "function": "handleTelegramCommand",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 957,
+      "function": "handleTelegramCommand",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 965,
+      "function": "handleTelegramCommand",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 986,
+      "function": "ingestIncomingEvent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 1005,
+      "function": "ingestIncomingEvent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 1013,
+      "function": "ingestIncomingEvent",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_webhook_events"
+      ],
+      "tableScopes": {
+        "messenger_webhook_events": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-integrations.ts",
+      "line": 206,
+      "function": "startIntegrationOnboarding",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_onboarding_sessions"
+      ],
+      "tableScopes": {
+        "integration_onboarding_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-integrations.ts",
+      "line": 242,
+      "function": "getIntegrationOnboardingSession",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "integration_onboarding_sessions"
+      ],
+      "tableScopes": {
+        "integration_onboarding_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-integrations.ts",
+      "line": 385,
+      "function": "writeIntegrationAudit",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "integration_audit_logs"
+      ],
+      "tableScopes": {
+        "integration_audit_logs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 54,
+      "function": "reserveLinkToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_link_tokens"
+      ],
+      "tableScopes": {
+        "messenger_link_tokens": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 89,
+      "function": "getClientTelegramStatus",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 124,
+      "function": "getEmployeeTelegramStatus",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 162,
+      "function": "createClientTelegramLinkToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_link_tokens"
+      ],
+      "tableScopes": {
+        "messenger_link_tokens": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 178,
+      "function": "createEmployeeTelegramLinkToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_link_tokens"
+      ],
+      "tableScopes": {
+        "messenger_link_tokens": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 191,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_link_tokens"
+      ],
+      "tableScopes": {
+        "messenger_link_tokens": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 224,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 233,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 248,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 271,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 297,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 309,
+      "function": "linkTelegramClientFromStartToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 327,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_link_tokens"
+      ],
+      "tableScopes": {
+        "messenger_link_tokens": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 360,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 369,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 384,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 407,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 435,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 447,
+      "function": "linkTelegramEmployeeFromStartToken",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 116,
+      "function": "listMessageAttachmentProjection",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 147,
+      "function": "refreshMessageAttachmentsJson",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 167,
+      "function": "enqueueMessengerMediaJob",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_media_jobs"
+      ],
+      "tableScopes": {
+        "messenger_media_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 182,
+      "function": "enqueueMessengerMediaJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_media_jobs"
+      ],
+      "tableScopes": {
+        "messenger_media_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 196,
+      "function": "claimMessengerMediaJobs",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_media_jobs"
+      ],
+      "tableScopes": {
+        "messenger_media_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 241,
+      "function": "completeJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_media_jobs"
+      ],
+      "tableScopes": {
+        "messenger_media_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 258,
+      "function": "failJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_media_jobs"
+      ],
+      "tableScopes": {
+        "messenger_media_jobs": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 270,
+      "function": "failJob",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 283,
+      "function": "failJob",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 301,
+      "function": "processJob",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-media.ts",
+      "line": 404,
+      "function": "repairMessengerAttachmentMetadata",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 95,
+      "function": "enqueueMessageOutbox",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 143,
+      "function": "processOutboxItem",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 160,
+      "function": "processOutboxItem",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 192,
+      "function": "processOutboxItem",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 209,
+      "function": "processOutboxItem",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 242,
+      "function": "processOutboxItem",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 260,
+      "function": "retryMessageOutbox",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 297,
+      "function": "retryMessageOutbox",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_messages"
+      ],
+      "tableScopes": {
+        "messenger_messages": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-outbox.ts",
+      "line": 314,
+      "function": "processPendingOutbox",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_outbox"
+      ],
+      "tableScopes": {
+        "messenger_outbox": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-templates.ts",
+      "line": 97,
+      "function": "listMessageTemplates",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_templates"
+      ],
+      "tableScopes": {
+        "messenger_templates": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-motivation.ts",
+      "line": 255,
+      "function": "createPayrollGoal",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_goals"
+      ],
+      "tableScopes": {
+        "payroll_goals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-motivation.ts",
+      "line": 306,
+      "function": "updatePayrollGoal",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "payroll_goals"
+      ],
+      "tableScopes": {
+        "payroll_goals": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-motivation.ts",
+      "line": 421,
+      "function": "createEmployeeRecognition",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "employee_recognitions"
+      ],
+      "tableScopes": {
+        "employee_recognitions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-motivation.ts",
+      "line": 525,
+      "function": "upsertMotivationSettings",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "employee_motivation_settings"
+      ],
+      "tableScopes": {
+        "employee_motivation_settings": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-motivation.ts",
+      "line": 543,
+      "function": "upsertMotivationSettings",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "employee_motivation_settings"
+      ],
+      "tableScopes": {
+        "employee_motivation_settings": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-periods.ts",
+      "line": 483,
+      "function": "closePayrollPeriod",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_periods"
+      ],
+      "tableScopes": {
+        "payroll_periods": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-periods.ts",
+      "line": 515,
+      "function": "closePayrollPeriod",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_period_employees"
+      ],
+      "tableScopes": {
+        "payroll_period_employees": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-periods.ts",
+      "line": 554,
+      "function": "closePayrollPeriod",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_accrual_lines"
+      ],
+      "tableScopes": {
+        "payroll_accrual_lines": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 203,
+      "function": "findAdjustmentById",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "payroll_adjustments"
+      ],
+      "tableScopes": {
+        "payroll_adjustments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 235,
+      "function": "findPaymentById",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "payroll_payments",
+        "cash_expense_orders"
+      ],
+      "tableScopes": {
+        "payroll_payments": "BRANCH_SCOPED",
+        "cash_expense_orders": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 284,
+      "function": "listPayrollAdjustments",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "payroll_adjustments"
+      ],
+      "tableScopes": {
+        "payroll_adjustments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 339,
+      "function": "listPayrollPayments",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "payroll_payments",
+        "cash_expense_orders"
+      ],
+      "tableScopes": {
+        "payroll_payments": "BRANCH_SCOPED",
+        "cash_expense_orders": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 412,
+      "function": "createPayrollAdjustment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_adjustments"
+      ],
+      "tableScopes": {
+        "payroll_adjustments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 478,
+      "function": "reversePayrollAdjustment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "payroll_adjustments"
+      ],
+      "tableScopes": {
+        "payroll_adjustments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 486,
+      "function": "reversePayrollAdjustment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_adjustments"
+      ],
+      "tableScopes": {
+        "payroll_adjustments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 637,
+      "function": "createPayrollPayment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "payroll_payments"
+      ],
+      "tableScopes": {
+        "payroll_payments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 675,
+      "function": "createPayrollPayment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "cash_expense_orders"
+      ],
+      "tableScopes": {
+        "cash_expense_orders": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/payroll-settlements.ts",
+      "line": 713,
+      "function": "reversePayrollPayment",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "payroll_payments"
+      ],
+      "tableScopes": {
+        "payroll_payments": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/vin-lookup-cache.ts",
+      "line": 70,
+      "function": "getVinLookupCache",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "vin_lookup_cache"
+      ],
+      "tableScopes": {
+        "vin_lookup_cache": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/vin-lookup-cache.ts",
+      "line": 91,
+      "function": "setVinLookupCache",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "INSERT",
+      "mutation": true,
+      "tables": [
+        "vin_lookup_cache"
+      ],
+      "tableScopes": {
+        "vin_lookup_cache": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "scripts/build-branch-file-migration-manifest.mjs",
+      "line": 46,
+      "function": "csv",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments",
+        "diagnostics",
+        "diagnostic_positions",
+        "diagnostic_photos",
+        "diagnostic_map_sessions",
+        "diagnostic_map_items",
+        "diagnostic_map_photos",
+        "diagnostic_map_vehicle_photos"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED",
+        "diagnostics": "BRANCH_SCOPED",
+        "diagnostic_positions": "BRANCH_SCOPED",
+        "diagnostic_photos": "BRANCH_SCOPED",
+        "diagnostic_map_sessions": "BRANCH_SCOPED",
+        "diagnostic_map_items": "BRANCH_SCOPED",
+        "diagnostic_map_photos": "BRANCH_SCOPED",
+        "diagnostic_map_vehicle_photos": "BRANCH_SCOPED"
+      },
+      "classification": "MIGRATION_ONLY",
+      "branchSource": "controlled admin operation: read-only legacy file manifest on guarded rehearsal copy",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "MIGRATION_ONLY",
+      "annotation": {
+        "kind": "MIGRATION_ONLY",
+        "reason": "read-only legacy file manifest on guarded rehearsal copy"
+      }
+    },
+    {
+      "file": "scripts/build-branch-file-migration-manifest.mjs",
+      "line": 48,
+      "function": "csv",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments",
+        "diagnostic_map_sessions",
+        "diagnostic_map_items",
+        "diagnostic_map_photos",
+        "diagnostic_map_vehicle_photos"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED",
+        "diagnostic_map_sessions": "BRANCH_SCOPED",
+        "diagnostic_map_items": "BRANCH_SCOPED",
+        "diagnostic_map_photos": "BRANCH_SCOPED",
+        "diagnostic_map_vehicle_photos": "BRANCH_SCOPED"
+      },
+      "classification": "MIGRATION_ONLY",
+      "branchSource": "controlled admin operation: read-only legacy file manifest on guarded rehearsal copy",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "MIGRATION_ONLY",
+      "annotation": {
+        "kind": "MIGRATION_ONLY",
+        "reason": "read-only legacy file manifest on guarded rehearsal copy"
+      }
+    },
+    {
+      "file": "scripts/build-branch-file-migration-manifest.mjs",
+      "line": 50,
+      "function": "csv",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments",
+        "diagnostic_map_sessions",
+        "diagnostic_map_vehicle_photos"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED",
+        "diagnostic_map_sessions": "BRANCH_SCOPED",
+        "diagnostic_map_vehicle_photos": "BRANCH_SCOPED"
+      },
+      "classification": "MIGRATION_ONLY",
+      "branchSource": "controlled admin operation: read-only legacy file manifest on guarded rehearsal copy",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "MIGRATION_ONLY",
+      "annotation": {
+        "kind": "MIGRATION_ONLY",
+        "reason": "read-only legacy file manifest on guarded rehearsal copy"
+      }
+    },
+    {
+      "file": "scripts/build-branch-file-migration-manifest.mjs",
+      "line": 52,
+      "function": "csv",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_attachments"
+      ],
+      "tableScopes": {
+        "messenger_attachments": "BRANCH_SCOPED"
+      },
+      "classification": "MIGRATION_ONLY",
+      "branchSource": "controlled admin operation: read-only legacy object manifest on guarded rehearsal copy",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "MIGRATION_ONLY",
+      "annotation": {
+        "kind": "MIGRATION_ONLY",
+        "reason": "read-only legacy object manifest on guarded rehearsal copy"
+      }
+    }
+  ]
+}
