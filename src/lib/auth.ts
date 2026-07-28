@@ -191,7 +191,10 @@ export async function getSession(): Promise<{ user: User } | null> {
   const users = await getUsersFromEnv();
   const user = users.find((x) => normalizeLoginKey(x.login) === normalizeLoginKey(login));
   const role = normalizeRole(user?.role ?? payload.role);
-  return { user: { login: user?.login ?? login, name: user?.name ?? payload.name, role } };
+  const resolved = { login: user?.login ?? login, name: user?.name ?? payload.name, role };
+  const { bindRequestTenant } = await import("@/lib/request-tenant");
+  await bindRequestTenant(resolved);
+  return { user: resolved };
 }
 
 export async function createSession(user: User): Promise<string> {
