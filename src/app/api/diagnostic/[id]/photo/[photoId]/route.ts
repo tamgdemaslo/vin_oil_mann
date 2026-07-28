@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { prisma } from "@/lib/db";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 import { deletePhotoFile, mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export async function GET(
   _request: NextRequest,
@@ -13,7 +14,7 @@ export async function GET(
 
   const { id: diagnosticId, photoId } = await params;
   const photo = await prisma.diagnosticPhoto.findFirst({
-    where: { id: photoId, position: { diagnosticId } },
+    where: { id: photoId, branchId: getScopedBranchId(), position: { diagnosticId, branchId: getScopedBranchId() } },
   });
   if (!photo) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
 
@@ -39,7 +40,7 @@ export async function DELETE(
 
   const { id: diagnosticId, photoId } = await params;
   const photo = await prisma.diagnosticPhoto.findFirst({
-    where: { id: photoId, position: { diagnosticId } },
+    where: { id: photoId, branchId: getScopedBranchId(), position: { diagnosticId, branchId: getScopedBranchId() } },
   });
   if (!photo) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
 

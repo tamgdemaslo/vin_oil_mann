@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
-import { bufferToArrayBuffer, getMessengerStorageObject, publicMessengerStorageUrl } from "@/lib/messenger/messenger-storage";
+import { bufferToArrayBuffer, getMessengerStorageObject } from "@/lib/messenger/messenger-storage";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +23,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     FROM messenger_conversations
     WHERE id = ${id}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const key = rows[0]?.avatarThumbnailKey || rows[0]?.avatarStorageKey;
   if (key) {
-    const publicUrl = publicMessengerStorageUrl(key);
-    if (publicUrl) return NextResponse.redirect(publicUrl, 302);
     const object = await getMessengerStorageObject(key);
     return new NextResponse(bufferToArrayBuffer(object.body), {
       headers: {

@@ -7,16 +7,16 @@ export function getDiagnosticPhotosRoot(): string {
   return path.join(process.cwd(), ".data", "diagnostic-photos");
 }
 
-export function ensureDiagnosticPhotosDir(diagnosticId: string): string {
-  const dir = path.join(getDiagnosticPhotosRoot(), diagnosticId);
+export function ensureDiagnosticPhotosDir(branchId: string, diagnosticId: string): string {
+  const dir = path.join(getDiagnosticPhotosRoot(), "branches", branchId, "diagnostics", diagnosticId);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
 }
 
-export function buildPhotoDiskPath(diagnosticId: string, photoId: string, ext: string): string {
-  return path.join(getDiagnosticPhotosRoot(), diagnosticId, `${photoId}.${ext}`);
+export function buildPhotoDiskPath(branchId: string, diagnosticId: string, photoId: string, ext: string): string {
+  return path.join(getDiagnosticPhotosRoot(), "branches", branchId, "diagnostics", diagnosticId, `${photoId}.${ext}`);
 }
 
 export function safeExtFromMime(mime: string): string {

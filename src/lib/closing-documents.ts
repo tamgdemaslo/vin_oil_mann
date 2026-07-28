@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { User } from "@/lib/auth";
 
 export type ClosingDocumentType = "closing_work_order" | "work_act" | "upd_print";
@@ -742,7 +743,8 @@ export async function buildClosingDocumentPayload(
   const sequenceOrganizationId = demand.organizationId ?? "global";
   const sequence = await prisma.closingDocumentNumberSequence.findUnique({
     where: {
-      organizationId_type_year: {
+      branchId_organizationId_type_year: {
+        branchId: getScopedBranchId(),
         organizationId: sequenceOrganizationId,
         type: options.type,
         year: documentYear,
@@ -824,7 +826,8 @@ export async function issueClosingDocument(
     const sequenceOrganizationId = payload.document.organizationId ?? "global";
     const sequence = await tx.closingDocumentNumberSequence.upsert({
       where: {
-        organizationId_type_year: {
+        branchId_organizationId_type_year: {
+          branchId: getScopedBranchId(),
           organizationId: sequenceOrganizationId,
           type: payload.document.type,
           year: documentYear,

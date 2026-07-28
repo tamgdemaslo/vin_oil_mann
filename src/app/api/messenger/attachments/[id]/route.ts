@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     FROM messenger_attachments
     WHERE id = ${id}
       AND organization_id = ${getMessengerOrganizationId()}
+      AND branch_id = ${getScopedBranchId()}
     LIMIT 1
   `;
   const attachment = Array.isArray(rows) ? rows[0] : null;

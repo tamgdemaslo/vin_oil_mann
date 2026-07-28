@@ -3,6 +3,7 @@ import { buildDiagnosticReportItemText } from "@/data/diagnostic-report-copy";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
+import { runWithRequestTenant } from "@/lib/request-tenant-store";
 
 function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
@@ -45,6 +46,21 @@ export async function POST(
   }
 
   const wants = Boolean(body.clientWantsReminder);
+
+  const publicDiagnostic = await prisma.diagnostic.findUnique({
+    where: { clientReportToken: token },
+    select: { branchId: true },
+  });
+  if (!publicDiagnostic) return NextResponse.json({ error: "Отчёт не найден" }, { status: 404 });
+
+  return runWithRequestTenant(
+    {
+      mode: "branch",
+      branchId: publicDiagnostic.branchId,
+      organizationId: null,
+      allowedBranchIds: [publicDiagnostic.branchId],
+    },
+    async () => {
 
   const diagnostic = await prisma.diagnostic.findUnique({
     where: { clientReportToken: token },
@@ -147,4 +163,6 @@ export async function POST(
     existingCount,
     deadline: deadline?.toISOString() ?? null,
   });
+    }
+  );
 }

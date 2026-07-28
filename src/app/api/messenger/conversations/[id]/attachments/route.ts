@@ -16,6 +16,7 @@ import {
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
 import { assertMessengerOutboundTextSafe } from "@/lib/messenger/messenger-security";
 import type { Attachment, MessengerChannel } from "@/lib/messenger/messenger-types";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id: conversationId } = await params;
   const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
   try {
     const conversations = await prisma.$queryRaw<ConversationRow[]>`
       SELECT
@@ -79,6 +81,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       FROM messenger_conversations
       WHERE id = ${conversationId}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
       LIMIT 1
     `;
     const conversation = conversations[0];
@@ -136,18 +139,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const text = caption;
     await prisma.$executeRaw`
       INSERT INTO messenger_messages
-        (id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, message_type, text, attachments_json, status, created_at, updated_at)
+        (id, branch_id, organization_id, conversation_id, messenger_account_id, channel, direction, author_type, message_type, text, attachments_json, status, created_at, updated_at)
       VALUES
-        (${messageId}, ${organizationId}, ${conversation.id}, ${conversation.messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
+        (${messageId}, ${branchId}, ${organizationId}, ${conversation.id}, ${conversation.messengerAccountId}, ${conversation.channel}, 'outbound', 'employee',
          ${messageTypeForAttachment(type)}, ${text}, ${JSON.stringify([attachment])}::jsonb, 'queued', now(), now())
     `;
     await prisma.$executeRaw`
       INSERT INTO messenger_attachments
-        (id, organization_id, messenger_account_id, conversation_id, message_id, channel, direction, external_attachment_id,
+        (id, branch_id, organization_id, messenger_account_id, conversation_id, message_id, channel, direction, external_attachment_id,
          type, url, name, size, mime_type, preview_url, original_storage_key, thumbnail_storage_key,
          status, progress, caption, metadata_json, created_at, updated_at)
       VALUES
-        (${attachmentId}, ${organizationId}, ${conversation.messengerAccountId}, ${conversation.id}, ${messageId}, ${conversation.channel}, 'outbound', ${attachmentId},
+        (${attachmentId}, ${branchId}, ${organizationId}, ${conversation.messengerAccountId}, ${conversation.id}, ${messageId}, ${conversation.channel}, 'outbound', ${attachmentId},
          ${type}, ${attachment.url ?? null}, ${displayName}, ${buffer.length}, ${mimeType}, ${attachment.previewUrl ?? null}, ${key}, ${type === "photo" ? key : null},
          'ready', 100, ${caption || null}, ${JSON.stringify({ source: "eco_upload", storage: { key, mimeType, size: buffer.length } })}::jsonb, now(), now())
     `;
@@ -161,6 +164,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           updated_at = now()
       WHERE id = ${conversation.id}
         AND organization_id = ${organizationId}
+        AND branch_id = ${branchId}
     `;
     const outbox = await enqueueMessageOutbox({
       organizationId,

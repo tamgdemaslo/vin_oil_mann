@@ -4,6 +4,7 @@ import path from "path";
 import { Prisma } from "@prisma/client";
 import { ensureDefaultCrmStages, getCrmStageBySortOrder } from "@/lib/crm";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   getDiagnosticVehicleSyncState,
   getVehicleSnapshotFromShipment,
@@ -506,7 +507,53 @@ export async function getDiagnosticMapByToken(token: string, origin = "") {
     },
   });
   if (!row) return null;
-  return serializeDiagnosticMap(row, origin, await publicReportContactSettings());
+  const full = serializeDiagnosticMap(row, origin, await publicReportContactSettings());
+  return {
+    reportUrl: full.reportUrl,
+    publicToken: full.publicToken,
+    printUrl: full.printUrl,
+    publicTelegramUrl: full.publicTelegramUrl,
+    publicTelegramUsername: full.publicTelegramUsername,
+    publicReportPrimaryMessenger: full.publicReportPrimaryMessenger,
+    publicPhone: full.publicPhone,
+    publicBookingUrl: full.publicBookingUrl,
+    publicSiteUrl: full.publicSiteUrl,
+    publicAddress: full.publicAddress,
+    clientName: full.clientName,
+    vehicle: full.vehicle,
+    vehiclePhoto: full.vehiclePhoto
+      ? {
+          caption: full.vehiclePhoto.caption,
+          url: full.vehiclePhoto.url,
+          thumbnailUrl: full.vehiclePhoto.thumbnailUrl,
+          printUrl: full.vehiclePhoto.printUrl,
+          mimeType: full.vehiclePhoto.mimeType,
+          updatedAt: full.vehiclePhoto.updatedAt,
+        }
+      : null,
+    master: { name: full.master.name },
+    status: full.status,
+    startedAt: full.startedAt,
+    completedAt: full.completedAt,
+    clientWantsReminder: full.clientWantsReminder,
+    counts: full.counts,
+    blocks: full.blocks.map((block) => ({
+      code: block.code,
+      title: block.title,
+      short: block.short,
+      items: block.items.map(({ id: _id, sessionId: _sessionId, actions: _actions, ...item }) => ({
+        ...item,
+        photos: item.photos.map((photo) => ({
+          id: photo.id,
+          caption: photo.caption,
+          url: `/api/diagnostics/public/${encodeURIComponent(token)}/photos/${encodeURIComponent(photo.id)}`,
+          thumbnailUrl: `/api/diagnostics/public/${encodeURIComponent(token)}/photos/${encodeURIComponent(photo.id)}?variant=thumbnail`,
+          mimeType: photo.mimeType,
+        })),
+      })),
+    })),
+    statusLegend: full.statusLegend,
+  };
 }
 
 function itemMissingRecommendedPhoto(item: { status: string; photos: unknown[] }) {
@@ -762,7 +809,7 @@ export async function updateDiagnosticMapItem(sessionId: string, input: UpdateIt
   if (!itemCode) throw new Error("itemCode не указан");
   const status = input.status ?? "unchecked";
   const item = await prisma.diagnosticMapItem.update({
-    where: { sessionId_itemCode: { sessionId, itemCode } },
+    where: { branchId_sessionId_itemCode: { branchId: getScopedBranchId(), sessionId, itemCode } },
     data: {
       ...(input.status ? { status: STATUS_TO_DB[status] as never, checkMethod: METHOD_TO_DB[input.checkMethod ?? statusMethod(status)] as never } : {}),
       ...(input.checkMethod ? { checkMethod: METHOD_TO_DB[input.checkMethod] as never } : {}),
@@ -781,7 +828,7 @@ export async function updateDiagnosticMapItem(sessionId: string, input: UpdateIt
 
 export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string, file: File, caption: string) {
   const item = await prisma.diagnosticMapItem.findUnique({
-    where: { sessionId_itemCode: { sessionId, itemCode } },
+    where: { branchId_sessionId_itemCode: { branchId: getScopedBranchId(), sessionId, itemCode } },
     include: { _count: { select: { photos: true } } },
   });
   if (!item) throw new Error("Пункт диагностики не найден");
@@ -794,7 +841,8 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
   const data = prismaBytes(bytes);
   const contentType = optimized.contentType;
   const ext = optimized.extension;
-  const dir = path.join(photoRoot(), sessionId);
+  const branchId = getScopedBranchId();
+  const dir = path.join(photoRoot(), "branches", branchId, "diagnostics", sessionId);
   const photo = await prisma.diagnosticMapPhoto.create({
     data: {
       itemId: item.id,
@@ -825,8 +873,9 @@ export async function saveDiagnosticMapPhoto(sessionId: string, itemCode: string
 }
 
 export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: File, caption = "", uploadedBy?: string | null) {
-  const session = await prisma.diagnosticMapSession.findUnique({
-    where: { id: sessionId },
+  const branchId = getScopedBranchId();
+  const session = await prisma.diagnosticMapSession.findFirst({
+    where: { id: sessionId, branchId },
     include: { vehiclePhoto: true },
   });
   if (!session) throw new Error("Диагностика не найдена");
@@ -840,10 +889,10 @@ export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: Fil
   const contentType = optimized.contentType;
   const ext = optimized.extension;
   const previousPath = session.vehiclePhoto?.filePath ?? "";
-  const dir = path.join(photoRoot(), sessionId);
+  const dir = path.join(photoRoot(), "branches", branchId, "diagnostics", sessionId);
   const existingId = session.vehiclePhoto?.id;
   const photo = await prisma.diagnosticMapVehiclePhoto.upsert({
-    where: { sessionId },
+    where: { branchId_sessionId: { branchId, sessionId } },
     create: {
       sessionId,
       filePath: "",
@@ -883,11 +932,11 @@ export async function saveDiagnosticMapVehiclePhoto(sessionId: string, file: Fil
 }
 
 export async function getDiagnosticMapVehiclePhoto(sessionId: string) {
-  return prisma.diagnosticMapVehiclePhoto.findUnique({ where: { sessionId } });
+  return prisma.diagnosticMapVehiclePhoto.findFirst({ where: { branchId: getScopedBranchId(), sessionId } });
 }
 
 export async function deleteDiagnosticMapVehiclePhoto(sessionId: string) {
-  const photo = await prisma.diagnosticMapVehiclePhoto.findUnique({ where: { sessionId } });
+  const photo = await prisma.diagnosticMapVehiclePhoto.findFirst({ where: { branchId: getScopedBranchId(), sessionId } });
   if (!photo) return false;
   await prisma.diagnosticMapVehiclePhoto.delete({ where: { id: photo.id } });
   if (photo.filePath) {
@@ -897,19 +946,22 @@ export async function deleteDiagnosticMapVehiclePhoto(sessionId: string) {
 }
 
 export async function getDiagnosticMapPhoto(sessionId: string, photoId: string) {
+  const branchId = getScopedBranchId();
   return prisma.diagnosticMapPhoto.findFirst({
-    where: { id: photoId, item: { sessionId } },
+    where: { id: photoId, branchId, item: { branchId, sessionId } },
   });
 }
 
 export async function updateDiagnosticMapPhoto(sessionId: string, photoId: string, caption: string) {
-  const photo = await prisma.diagnosticMapPhoto.findFirst({ where: { id: photoId, item: { sessionId } } });
+  const branchId = getScopedBranchId();
+  const photo = await prisma.diagnosticMapPhoto.findFirst({ where: { id: photoId, branchId, item: { branchId, sessionId } } });
   if (!photo) return null;
   return prisma.diagnosticMapPhoto.update({ where: { id: photo.id }, data: { caption: asString(caption) } });
 }
 
 export async function deleteDiagnosticMapPhoto(sessionId: string, photoId: string) {
-  const photo = await prisma.diagnosticMapPhoto.findFirst({ where: { id: photoId, item: { sessionId } } });
+  const branchId = getScopedBranchId();
+  const photo = await prisma.diagnosticMapPhoto.findFirst({ where: { id: photoId, branchId, item: { branchId, sessionId } } });
   if (!photo) return false;
   await prisma.diagnosticMapPhoto.delete({ where: { id: photo.id } });
   try {

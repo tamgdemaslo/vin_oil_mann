@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTelegramStoredSettings } from "@/lib/messenger/messenger-channel-settings";
+import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 
 type MessengerErrorLogRow = {
   id: string;
@@ -54,6 +55,7 @@ export async function GET(request: NextRequest) {
 
   const limit = normalizeLimit(request.nextUrl.searchParams.get("limit"));
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const rows = await prisma.$queryRaw<MessengerErrorLogRow[]>`
       SELECT *
       FROM (
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest) {
         FROM messenger_webhook_events
         WHERE error IS NOT NULL
           AND error <> ''
+          AND branch_id = ${branchId}
         UNION ALL
         SELECT
           id,
@@ -78,8 +81,8 @@ export async function GET(request: NextRequest) {
           created_at AS "createdAt",
           updated_at AS "processedAt"
         FROM messenger_outbox
-        WHERE status = 'failed'
-           OR COALESCE(error_message, error_code) IS NOT NULL
+        WHERE branch_id = ${branchId}
+          AND (status = 'failed' OR COALESCE(error_message, error_code) IS NOT NULL)
       ) logs
       ORDER BY "createdAt" DESC
       LIMIT ${limit}

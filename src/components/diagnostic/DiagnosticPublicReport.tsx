@@ -52,7 +52,7 @@ type ReportPayload = {
     mileage?: number | null;
   };
   vehiclePhoto?: {
-    id: string;
+    id?: string;
     caption?: string | null;
     url: string;
     thumbnailUrl?: string;

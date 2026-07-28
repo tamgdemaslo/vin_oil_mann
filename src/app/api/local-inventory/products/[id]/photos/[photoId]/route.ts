@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
+import { requireBranchApi } from "@/lib/branch-api";
 
 export async function GET(
   _request: NextRequest,
@@ -9,6 +10,8 @@ export async function GET(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id, photoId } = await params;
   if (!id || !photoId) return NextResponse.json({ error: "id не указан" }, { status: 400 });
@@ -16,7 +19,7 @@ export async function GET(
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
-      product: { OR: [{ id }, { moyskladId: id }] },
+      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
     },
     select: {
       data: true,
@@ -39,6 +42,8 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id, photoId } = await params;
   if (!id || !photoId) return NextResponse.json({ error: "id не указан" }, { status: 400 });
@@ -46,7 +51,7 @@ export async function DELETE(
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
-      product: { OR: [{ id }, { moyskladId: id }] },
+      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
     },
     select: { id: true },
   });

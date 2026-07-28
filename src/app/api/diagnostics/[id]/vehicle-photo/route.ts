@@ -10,6 +10,8 @@ import {
 } from "@/lib/diagnostic-map-service";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiSessionWithShift();
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const photo = await getDiagnosticMapVehiclePhoto(id);
   if (!photo) return NextResponse.json({ error: "Фото автомобиля не найдено" }, { status: 404 });

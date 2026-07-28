@@ -1131,6 +1131,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return [null, null] as const;
   });
 
+  if (!diagnosticMeta) {
+    return NextResponse.json({ error: "Отчёт не найден" }, { status: 404 });
+  }
+
   console.info("[diagnostic-pdf] job started", {
     pdfJobId,
     reportToken: token,

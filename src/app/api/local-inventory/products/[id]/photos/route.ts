@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
+import { requireBranchApi } from "@/lib/branch-api";
 
 const MAX_PRODUCT_PHOTOS = 12;
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
@@ -17,12 +18,14 @@ export async function POST(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi();
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
   const product = await prisma.localProduct.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
     select: { id: true },
   });
   if (!product) return NextResponse.json({ error: "Товар не найден" }, { status: 404 });

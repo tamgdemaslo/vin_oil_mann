@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 import {
   buildPhotoDiskPath,
@@ -28,18 +29,19 @@ export async function POST(
     return NextResponse.json({ error: "Нужны node и file" }, { status: 400 });
   }
 
+  const branchId = getScopedBranchId();
   const position = await prisma.diagnosticPosition.findUnique({
-    where: { diagnosticId_node: { diagnosticId, node } },
+    where: { branchId_diagnosticId_node: { branchId, diagnosticId, node } },
   });
   if (!position) {
     return NextResponse.json({ error: "Позиция не найдена" }, { status: 404 });
   }
 
-  ensureDiagnosticPhotosDir(diagnosticId);
+  ensureDiagnosticPhotosDir(branchId, diagnosticId);
   const photoId = randomUUID();
   const mime = file.type || "image/jpeg";
   const ext = safeExtFromMime(mime);
-  const diskPath = buildPhotoDiskPath(diagnosticId, photoId, ext);
+  const diskPath = buildPhotoDiskPath(branchId, diagnosticId, photoId, ext);
 
   const buf = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(diskPath, buf);

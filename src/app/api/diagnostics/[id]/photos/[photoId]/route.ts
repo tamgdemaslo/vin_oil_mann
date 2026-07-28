@@ -24,6 +24,8 @@ function responseBody(buffer: Buffer): ArrayBuffer {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
+  const auth = await requireApiSessionWithShift();
+  if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
   const photo = await getDiagnosticMapPhoto(id, photoId);
   if (!photo) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
