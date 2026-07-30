@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
+import { Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Thread = { id: string; title: string; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
@@ -11,6 +11,7 @@ type Run = { id: string; status: string; model: string; reasoning: string; error
 type Source = { id: string; sourceType: string; title: string | null; url: string | null; excerpt: string | null; createdAt: string };
 type ToolCall = { id: string; toolName: string; status: string; errorMessage: string | null; durationMs: number | null; resultSummary: unknown; startedAt: string };
 type ThreadData = { thread: Thread | null; messages: Message[]; latestRun: Run; sources: Source[]; toolCalls: ToolCall[]; quotes: Quote[] };
+type ActiveBranch = { id: string; name: string };
 type OpenAIConnectionCheck = { ok: boolean; proxyConfigured: boolean; status?: number; timeoutMs: number; error?: string };
 
 const starterPrompts = [
@@ -35,7 +36,7 @@ function runLabel(run: Run) {
 
 function toolLabel(name: string) {
   const labels: Record<string, string> = {
-    mandatory_technical_web_search: "Обязательное web-исследование",
+    mandatory_technical_web_search: "Техническое web-исследование",
     lookup_vehicle: "Определение автомобиля",
     get_vehicle_service_history: "История автомобиля",
     find_mann_filters: "Применяемость MANN",
@@ -80,6 +81,7 @@ function formatTokens(value: number) {
 
 export default function AIAssistantClient() {
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [activeBranch, setActiveBranch] = useState<ActiveBranch | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [data, setData] = useState<ThreadData | null>(null);
   const [draft, setDraft] = useState("");
@@ -96,6 +98,7 @@ export default function AIAssistantClient() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(asError(payload));
     const next = (payload.threads ?? []) as Thread[];
+    setActiveBranch(payload.branch && typeof payload.branch.name === "string" ? payload.branch as ActiveBranch : null);
     setThreads(next);
     setActiveThreadId((current) => current && next.some((thread) => thread.id === current) ? current : next[0]?.id ?? null);
     return next;
@@ -250,7 +253,7 @@ export default function AIAssistantClient() {
         </aside>
 
         <section className="eco-aiw-chat">
-          <div className="eco-aiw-chat__head"><div><strong>{data?.thread?.title ?? "Новый диалог"}</strong><span><Bot size={15} /> {runLabel(data?.latestRun ?? null)}</span></div>{working && <button type="button" className="eco-aiw-stop" onClick={() => void cancel()}><CircleStop size={16} /> Остановить</button>}</div>
+          <div className="eco-aiw-chat__head"><div><strong>{data?.thread?.title ?? "Новый диалог"}</strong><span><Bot size={15} /> {runLabel(data?.latestRun ?? null)} · <Building2 size={14} /> {activeBranch?.name ?? "Филиал не выбран"}</span></div>{working && <button type="button" className="eco-aiw-stop" onClick={() => void cancel()}><CircleStop size={16} /> Остановить</button>}</div>
           <div className="eco-aiw-messages">
             {loading && <div className="eco-aiw-loading"><LoaderCircle size={19} /> Загружаем рабочее пространство…</div>}
             {!loading && !activeThreadId && <div className="eco-aiw-welcome"><Bot size={28} /><h2>Задайте рабочий вопрос</h2><p>Помощник сам выберет нужные проверки, но сохранит их источники и журнал инструментов.</p></div>}

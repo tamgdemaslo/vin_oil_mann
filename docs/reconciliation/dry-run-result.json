@@ -1,0 +1,30 @@
+{
+  "dryRunVersion": 1,
+  "status": "PASS",
+  "productionMutationAttempted": false,
+  "sourceDatabase": "reconciliation_railway",
+  "targetDatabase": "reconciliation_selectel",
+  "localUnixSocketOnly": true,
+  "manifestRecords": 342,
+  "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
+  "publicTables": {
+    "source": 137,
+    "target": 137
+  },
+  "prismaMigrationRows": {
+    "source": 56,
+    "target": 56
+  },
+  "summary": {
+    "plannedInserts": 96,
+    "mappings": 32,
+    "skips": 204,
+    "recreations": 0,
+    "recomputations": 0,
+    "manualReview": 10,
+    "rejected": 0,
+    "conflicts": 0
+  },
+  "errors": [],
+  "warnings": []
+}

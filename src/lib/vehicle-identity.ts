@@ -316,6 +316,32 @@ function usefulPrimary(raw: RecordValue): boolean {
   });
 }
 
+function primaryVehicleLacksPowertrain(vehicle: NormalizedVehicleIdentity): boolean {
+  return !(
+    vehicle.engineCode ||
+    vehicle.engineSeries ||
+    vehicle.engineName ||
+    vehicle.engineVolumeLiters ||
+    vehicle.engineVolumeCc ||
+    vehicle.powerHp ||
+    vehicle.powerKw
+  );
+}
+
+function attachPlateToLookup(result: VehicleLookupResult, licensePlate: string): VehicleLookupResult {
+  const attach = (vehicle: NormalizedVehicleIdentity): NormalizedVehicleIdentity => ({
+    ...vehicle,
+    licensePlate,
+    sourceMethods: [...new Set(["tronk_plate" as const, ...vehicle.sourceMethods])],
+  });
+  return {
+    ...result,
+    vehicle: result.vehicle ? attach(result.vehicle) : null,
+    candidates: result.candidates.map((candidate) => ({ ...candidate, vehicle: attach(candidate.vehicle) })),
+    sourceMethods: [...new Set(["tronk_plate" as const, ...result.sourceMethods])],
+  };
+}
+
 function usefulExtended(raw: RecordValue): boolean {
   const result = asRecord(raw.result);
   return Object.keys(result).length > 0 && Object.keys(asRecord(result.model_info)).length > 0;
@@ -490,9 +516,11 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     if (resolvedVin) {
       const candidate = normalizeVinInput(resolvedVin);
       if (candidate.length === 17) {
-        return lookupVehicle({ ...options, inputType: "vin", input: candidate, refresh: options.refresh });
+        const decoded = await lookupVehicle({ ...options, inputType: "vin", input: candidate, extended: true, refresh: options.refresh });
+        return attachPlateToLookup(decoded, plate.original);
       }
-      return lookupVehicle({ ...options, inputType: "frame", input: candidate, refresh: options.refresh });
+      const decoded = await lookupVehicle({ ...options, inputType: "frame", input: candidate, refresh: options.refresh });
+      return attachPlateToLookup(decoded, plate.original);
     }
     const b2b = await collect("convertb2b", "plate", () => tronkClient.lookupVehicleByPlate(plate.normalized));
     const b2bVehicle = b2b.ok ? toVehicle(asRecord(b2b.data.result ?? b2b.data), "tronk_convertb2b", { licensePlate: plate.normalized }) : null;
@@ -517,7 +545,12 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   // concrete vehicle. In that case vindecode2 is the authoritative tie-breaker:
   // merging it into every legacy report would retain their contradictory make/model.
   const hasAmbiguousPrimaryReports = primaryVehicles.length > 1;
-  const wantsExtended = Boolean(options.extended || !hasPrimary || hasAmbiguousPrimaryReports);
+  const wantsExtended = Boolean(
+    options.extended ||
+    !hasPrimary ||
+    hasAmbiguousPrimaryReports ||
+    primaryVehicles.some(primaryVehicleLacksPowertrain)
+  );
   let mergedVehicles = primaryVehicles;
   if (wantsExtended) {
     const extended = await collect("vindecode2", "vin", () => tronkClient.decodeVinExtended(normalizedVin));

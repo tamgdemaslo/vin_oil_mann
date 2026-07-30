@@ -8,6 +8,7 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { hasActiveShiftAccess } from "@/lib/active-shift-access";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
@@ -790,17 +791,13 @@ export default function ShipmentDetailPage() {
           return;
         }
         if (sess.user.role === "admin" || sess.user.role === "master") {
-          const shift = await fetch("/api/shifts/current").then((r) => (r.ok ? r.json() : null));
-          if (!shift) {
+          const [shift, cash] = await Promise.all([
+            fetch("/api/shifts/current", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+            fetch("/api/cash", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+          ]);
+          if (!hasActiveShiftAccess(sess.user.role, shift, cash?.shift)) {
             router.push(sess.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
             return;
-          }
-          if (sess.user.role === "admin") {
-            const cash = await fetch("/api/cash").then((r) => (r.ok ? r.json() : null));
-            if (!cash?.shift) {
-              router.push("/cash?needShift=1");
-              return;
-            }
           }
         }
         const res = await fetch(`/api/demands/${id}`);

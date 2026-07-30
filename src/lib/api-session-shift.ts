@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getCurrentShift } from "@/lib/shifts";
 import { getCurrentShift as getCashShift } from "@/lib/cashbox";
+import { hasActiveShiftAccess } from "@/lib/active-shift-access";
 
 /** Как на страницах отгрузки: owner без проверки смены; остальные — рабочая смена или кассовая. */
 export async function requireApiSessionWithShift(): Promise<
@@ -20,7 +21,7 @@ export async function requireApiSessionWithShift(): Promise<
   }
   const workShift = await getCurrentShift(session.user.login);
   const cashOpen = await getCashShift();
-  if (workShift || cashOpen) {
+  if (hasActiveShiftAccess(session.user.role, workShift, cashOpen)) {
     return { ok: true, session };
   }
   return {
