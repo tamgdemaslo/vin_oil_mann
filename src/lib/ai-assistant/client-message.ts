@@ -82,7 +82,11 @@ function formatPrice(cents: number) {
 }
 
 function listItems(quote: QuoteForClientMessage, detailed: boolean) {
-  const names = quoteItems(quote.includedItemsJson).map((item) => item.name).filter(Boolean);
+  const names = quoteItems(quote.includedItemsJson).map((item) => {
+    const name = item.name.trim();
+    if (!/^деталь$/iu.test(name)) return name;
+    return item.article ? `запчасть ${item.article}` : "";
+  }).filter(Boolean);
   if (!names.length) return "работа и материалы по расчёту";
   const limit = detailed ? 6 : 4;
   const visible = names.slice(0, limit);

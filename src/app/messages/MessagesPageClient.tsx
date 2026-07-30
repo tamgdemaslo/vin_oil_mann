@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, MoreVertical } from "lucide-react";
+import { ArrowLeft, PanelRight, X } from "lucide-react";
 import { useState } from "react";
 import { useMessenger } from "@/components/messenger/MessengerProvider";
 import {
@@ -18,30 +18,50 @@ import {
 
 export default function MessagesPageClient() {
   const { selectedConversation, selectedContext } = useMessenger();
-  const [mobilePane, setMobilePane] = useState<"inbox" | "chat">("inbox");
+  const [mobilePane, setMobilePane] = useState<"inbox" | "chat" | "context">("inbox");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  function openConversation() {
+    setMobilePane("chat");
+    setDetailsOpen(false);
+  }
+
+  function toggleContext() {
+    if (detailsOpen) {
+      closeContext();
+      return;
+    }
+    setMobilePane("context");
+    setDetailsOpen(true);
+  }
+
+  function closeContext() {
+    setMobilePane("chat");
+    setDetailsOpen(false);
+  }
 
   return (
     <main className="eco-page eco-page--wide eco-messenger-page">
       <header className="eco-page-head eco-messenger-page-head">
-        <div>
+        <div className="eco-messenger-page-head__title">
           <div className="eco-page-kicker">
             <Link href="/crm">CRM</Link> / <span>Сообщения</span>
           </div>
           <h1 className="eco-page-title">Сообщения</h1>
-          <p className="eco-page-subtitle">
-            Единое окно переписок для Telegram, VK, WhatsApp, Instagram, Avito, Max, сайта, SMS и внутренних сообщений.
-          </p>
         </div>
-        <div className="eco-actions">
+        <div className="eco-messenger-page-head__status">
+          <ChannelStatusStrip />
           <FullPageStateControls />
         </div>
       </header>
 
-      <ChannelStatusStrip />
-
-      <section className="eco-messenger-layout" data-mobile-pane={mobilePane}>
-        <div className="eco-messenger-layout__inbox" onClick={() => setMobilePane("chat")}>
-          <MessengerInbox />
+      <section
+        className="eco-messenger-layout"
+        data-mobile-pane={mobilePane}
+        data-details-open={detailsOpen ? "true" : "false"}
+      >
+        <div className="eco-messenger-layout__inbox">
+          <MessengerInbox onSelect={openConversation} />
         </div>
 
         <div className="eco-messenger-layout__thread">
@@ -60,8 +80,14 @@ export default function MessagesPageClient() {
                   </button>
                 }
                 rightAction={
-                  <button type="button" className="eco-messenger-icon-btn" aria-label="Действия">
-                    <MoreVertical aria-hidden className="eco-icon" />
+                  <button
+                    type="button"
+                    className={`eco-messenger-icon-btn eco-messenger-context-toggle${detailsOpen ? " is-active" : ""}`}
+                    onClick={toggleContext}
+                    aria-label="Клиент и действия"
+                    aria-expanded={detailsOpen}
+                  >
+                    <PanelRight aria-hidden className="eco-icon" />
                   </button>
                 }
               />
@@ -73,7 +99,16 @@ export default function MessagesPageClient() {
           )}
         </div>
 
-        <ContextPanel conversation={selectedConversation} context={selectedContext} />
+        <div className="eco-messenger-layout__context">
+          <div className="eco-messenger-context-pane__head">
+            <button type="button" className="eco-messenger-icon-btn" onClick={closeContext} aria-label="Закрыть панель клиента">
+              <ArrowLeft aria-hidden className="eco-icon eco-messenger-context-pane__back" />
+              <X aria-hidden className="eco-icon eco-messenger-context-pane__close" />
+            </button>
+            <strong>Клиент и действия</strong>
+          </div>
+          <ContextPanel conversation={selectedConversation} context={selectedContext} />
+        </div>
       </section>
 
       <GatewayApiCard />

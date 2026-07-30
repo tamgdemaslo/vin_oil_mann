@@ -3,7 +3,9 @@ import { prisma } from "@/lib/db";
 import { DEFAULT_ROSSKO_MARKUP_RULES } from "@/lib/ai-agent/settings";
 import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-identity";
 import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
+import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, type LocalFluidSelection } from "./material-selection";
 
 export type AssistantToolSource = {
   sourceType: "internal_catalog" | "mann" | "tronk" | "rossko";
@@ -98,6 +100,10 @@ export const assistantFunctionTools = [
         vehicleDisplayName: { type: ["string", "null"], maxLength: 180 },
         vehicleSnapshot: { type: ["object", "null"], additionalProperties: true },
         aggregateCode: { type: ["string", "null"], maxLength: 120 },
+        requiredFluidSpec: { type: ["string", "null"], maxLength: 160 },
+        requiredFluidVolumeLiters: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 200 },
+        requiredFluidOemArticle: { type: ["string", "null"], maxLength: 80 },
+        fluidPreference: { type: ["string", "null"], enum: ["prefer_local_compatible", "original_only", null] },
         locationId: { type: "string", minLength: 1, maxLength: 120 },
         selectedProducts: { type: "array", maxItems: 30, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
         consumables: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["productId", "quantity"], properties: { productId: { type: "string", minLength: 1, maxLength: 160 }, quantity: { type: "number", exclusiveMinimum: 0, maximum: 100 } } } },
@@ -246,6 +252,8 @@ function catalogMatchScore(product: CatalogRankRow, query: string) {
 function catalogFieldExcerpt(value: string | null, query: string, max = 700) {
   const source = String(value ?? "").trim();
   if (!source || source.length <= max) return source || null;
+  const exactSpecification = fluidSpecificationExcerpt(source, query, max);
+  if (exactSpecification) return exactSpecification;
   const candidates = [
     ...query.match(/\d+(?:[.\-/]\d+)+/g) ?? [],
     ...catalogSearchTokens(query).sort((left, right) => right.length - left.length),
@@ -286,6 +294,7 @@ async function searchCatalog(args: Record<string, unknown>): Promise<AssistantTo
     oemParts: product.oemParts,
     atf: catalogFieldExcerpt(product.atf, query),
     manufacturerApprovals: catalogFieldExcerpt(product.oemAtf, query),
+    compatibilityEvidence: catalogFieldExcerpt([product.atf, product.oemAtf].filter(Boolean).join("\n"), query, 360),
     acea: product.acea,
     aceaExtra: product.aceaExtra,
     api: product.apiSpec,
@@ -436,6 +445,55 @@ function quoteInputRows(value: unknown, max: number) {
   return Array.isArray(value) ? value.map(object).slice(0, max) : [];
 }
 
+function normalizedArticle(value: unknown) {
+  return text(value, 100).toLocaleUpperCase("ru-RU").replace(/[^A-ZА-Я0-9]/g, "");
+}
+
+async function automaticLocalFluidSelection(args: Record<string, unknown>): Promise<LocalFluidSelection | null> {
+  if (text(args.serviceFamily, 60) !== "transmission_fluid" || text(args.materialsOwner, 30) !== "service") return null;
+  if (text(args.fluidPreference, 40) === "original_only") return null;
+  const requiredSpec = text(args.requiredFluidSpec, 160);
+  const requiredLiters = number(args.requiredFluidVolumeLiters);
+  const tokens = fluidSpecificationTokens(requiredSpec).filter((token) => token.length >= 2).slice(0, 8);
+  if (!requiredSpec || requiredLiters <= 0 || tokens.length < 2) {
+    throw new Error("Для трансмиссионного расчёта укажите requiredFluidSpec и requiredFluidVolumeLiters, чтобы backend проверил локальное масло");
+  }
+  const branchId = getScopedBranchId();
+  const fields = (token: string): Prisma.LocalProductWhereInput[] => [
+    { atf: { contains: token, mode: "insensitive" } },
+    { oemAtf: { contains: token, mode: "insensitive" } },
+    { searchText: { contains: token, mode: "insensitive" } },
+  ];
+  const rows = await prisma.localProduct.findMany({
+    where: {
+      branchId,
+      archived: false,
+      entityType: "product",
+      salePriceCents: { gt: 0 },
+      stockBalances: { some: { branchId, available: { gt: 0 } } },
+      AND: tokens.map((token) => ({ OR: fields(token) })),
+    },
+    select: {
+      id: true,
+      name: true,
+      salePriceCents: true,
+      uomName: true,
+      packageVolume: true,
+      markingMode: true,
+      atf: true,
+      oemAtf: true,
+      searchText: true,
+      stockBalances: { where: { branchId }, select: { available: true } },
+    },
+    orderBy: [{ salePriceCents: "asc" }, { name: "asc" }],
+    take: 100,
+  });
+  return selectPreferredLocalFluid(rows.map((row) => ({
+    ...row,
+    availableUnits: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
+  })), requiredSpec, requiredLiters);
+}
+
 async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>) {
   const ids = [...new Set(itemValues.map((item) => text(item.productId, 160)).filter(Boolean))];
   const products = await prisma.localProduct.findMany({ where: { id: { in: ids }, archived: false }, select: { id: true, entityType: true, name: true, article: true, salePriceCents: true } });
@@ -457,7 +515,10 @@ async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItem
     if (!selected || number(selected.retailPriceCents) <= 0) throw new Error(`ROSSKO не вернуло пригодное предложение для ${text(item.article, 80)}`);
     const quantity = Math.round(Math.max(0.001, Math.min(100, number(item.quantity, 1))) * 1000) / 1000;
     const unitPriceCents = Math.round(number(selected.retailPriceCents));
-    return { source: "rossko", offerId: text(selected.id, 100), type: "product", name: text(selected.name, 180) || "Деталь", article: text(selected.article, 80) || text(item.article, 80), brand: text(selected.brand, 80) || null, quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), availability: text(selected.stock, 80) || "уточняется", delivery: text(selected.delivery, 100) || "уточняется" };
+    const article = text(selected.article, 80) || text(item.article, 80);
+    const brand = text(selected.brand, 80) || text(item.brand, 80) || null;
+    const fallbackName = ["Запчасть", brand, article].filter(Boolean).join(" ");
+    return { source: "rossko", offerId: text(selected.id, 100), type: "product", name: text(selected.name, 180) || fallbackName || "Запчасть по каталогу", article, brand, quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), availability: text(selected.stock, 80) || "уточняется", delivery: text(selected.delivery, 100) || "уточняется" };
   });
   const lines = [...localLines, ...rosskoLines];
   const totalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
@@ -498,9 +559,21 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   const procedureType = text(args.procedureType, 60);
   const materialsOwner = text(args.materialsOwner, 30);
   const locationId = text(args.locationId, 120) || "dachnaya";
-  const selectedProducts = quoteInputRows(args.selectedProducts, 30);
+  let selectedProducts = quoteInputRows(args.selectedProducts, 30);
   const consumables = quoteInputRows(args.consumables, 20);
-  const rosskoItems = quoteInputRows(args.rosskoItems, 12);
+  let rosskoItems = quoteInputRows(args.rosskoItems, 12);
+  const automaticFluid = await automaticLocalFluidSelection(args);
+  if (automaticFluid) {
+    const fallbackArticle = normalizedArticle(args.requiredFluidOemArticle);
+    if (!fallbackArticle && rosskoItems.length) {
+      throw new Error("Локальное совместимое масло найдено; укажите requiredFluidOemArticle, чтобы backend безопасно исключил его ROSSKO-аналог");
+    }
+    selectedProducts = [
+      { productId: automaticFluid.productId, quantity: automaticFluid.quantity },
+      ...selectedProducts.filter((item) => text(item.productId, 160) !== automaticFluid.productId),
+    ];
+    if (fallbackArticle) rosskoItems = rosskoItems.filter((item) => normalizedArticle(item.article) !== fallbackArticle);
+  }
   const material = await quoteLines([...selectedProducts, ...consumables], rosskoItems);
   const appliedRule = await resolveLaborPrice({
     organizationId: context.organizationId,
@@ -546,12 +619,25 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       requiresHumanConfirmation: appliedRule.requiresHumanConfirmation,
       appliedRule,
       scenario: { serviceFamily, procedureType, transmissionConfiguration: text(args.transmissionConfiguration, 60) || null, materialsOwner, locationId },
+      automaticMaterialDecision: automaticFluid ? {
+        source: "local_catalog",
+        policy: "prefer_compatible_in_stock",
+        requiredFluidSpec: text(args.requiredFluidSpec, 160),
+        requiredFluidVolumeLiters: number(args.requiredFluidVolumeLiters),
+        productId: automaticFluid.productId,
+        productName: automaticFluid.productName,
+        quantity: automaticFluid.quantity,
+        availableUnits: automaticFluid.availableUnits,
+        totalCents: automaticFluid.totalCents,
+        compatibilityEvidence: automaticFluid.compatibilityEvidence,
+        replacedRosskoArticle: text(args.requiredFluidOemArticle, 80) || null,
+      } : null,
       message: finalQuote
         ? "Стоимость рассчитана backend-калькулятором по применённому правилу."
         : "Нужна проверка сотрудника: итоговая цена работы не зафиксирована автоматически.",
     },
     sources: [
-      { sourceType: "internal_catalog" as const, title: "Детерминированный расчёт материалов и тарифа работы", excerpt: `${material.localCount} локальных поз.; источник работы: ${appliedRule.source}` },
+      { sourceType: "internal_catalog" as const, title: "Детерминированный расчёт материалов и тарифа работы", excerpt: automaticFluid ? `${material.localCount} локальных поз.; масло ${automaticFluid.productName} выбрано backend по допуску и остатку; источник работы: ${appliedRule.source}` : `${material.localCount} локальных поз.; источник работы: ${appliedRule.source}` },
       ...material.supplierResults.flatMap((item) => item.search.sources ?? []),
     ],
   } satisfies AssistantToolResult;

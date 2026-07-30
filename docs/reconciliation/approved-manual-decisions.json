@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-30T17:24:49.597Z",
+  "status": "PENDING_OWNER_APPROVAL",
+  "decisions": [
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0ea7ef82486396c2345f16d99eb6ea882ac847c2c1f6a60f4aabccab05fceffb"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c7751fd0388f18c29ac78070e82d176f225169700fa7dbc7bf4a37bf8c83ef4d"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a1bcb45f4310569a26e605f2ad09afcf3efee18c7d45d68d9ee483f15278cc"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "last_outbound_message_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e8b444e8cf32e6cad649174052945872bdfdef978329a48a4f65e936201600b9"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_outbound_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:057dc10c719365520231324e2ad90199d1b9d4b840311fc977173b67cfe2b214"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8d3e6191b7712e3a17122282ddb03cdbc1432a072b215cadbf97781fad2d9073"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "communication_identities",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d2793de96c255fddde510b4bf3e174b3a0ab57b058831a9040b6f02c21601956"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d900c96c021891bac39b3eb4d943c56346dfc7bf7ecf677d6c71288415727047"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2107124fffd4670bb65a53e695056593faaf1f08958f85a4772510b766630f0d"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:273a97f22835b5a9ca5752a5831248f3108cf4d12679c8ed245bf108829d4856"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:334d40cdbd8a53de29abb4944b47e43dcd9006eaa275ef21af4c992a0f0548b3"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:860708b066da237a14b25671c0c1d16cb3747ea20f48e79b7508d923bf77018f"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ba6298e982df3eaed5084a8508d9645ff34bee96d00ab1869a8fe4ad12597b2b"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bd2f414fc48c19a17628914fe5cb693f6c59367bffc597c9b84671e3a19c39ad"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a0c03b05adf5e62a53f781a083b30a5179bbae106072c9e9ca00f7e3769837"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_connections",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9c6a6ba5bfa0d9e49bbe90c4667e3d4ee2a1983531e4e49bfeb1224e1e2c45c5"
+      },
+      "proposedAction": "MANUAL_REVIEW",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0f593cc694854d8eac43cd2826badc221147f8e940e58e5fc089d09bf4ca56ae"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:536e7bce0c831d3a660448a4090a3cb8f0fe63ec54fe3365b5e78325a4d30ace"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5e404f8ce339928bf58aeb181b6f0c1fb904275b7e2d0308a8f438ad70fbd18a"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6d50e0228ea7986e0102f2ae96a1ac41143ce4e052bc0de2a30d4d7acaea00cb"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ]
+}

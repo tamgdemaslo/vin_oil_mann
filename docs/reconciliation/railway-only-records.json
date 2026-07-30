@@ -1,9 +1,9 @@
 {
-  "registryVersion": 1,
-  "generatedAt": "2026-07-29T21:15:00Z",
-  "status": "NO-GO",
+  "registryVersion": 2,
+  "generatedAt": "2026-07-30T17:24:49.597Z",
+  "status": "OWNER_REVIEW_REQUIRED",
   "hashKeyId": "f5ed85ce298ddfd9",
-  "recordCount": 342,
+  "recordCount": 410,
   "unknownCount": 0,
   "records": [
     {
@@ -35,7 +35,7 @@
       "importRisk": "MEDIUM",
       "recommendedAction": "MAP_TO_EXISTING",
       "reason": "Business-equivalent record exists in Selectel under a different primary key.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "open"
     },
@@ -2215,6 +2215,66 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:63cf284239a9a6632b0c56062b7e82e7fe70120bf553e73af60803e2be9db59a"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "messenger_account_id",
+          "external_user_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b14b0b863f3c8e730a34bde9873f18d6c6f64fea98f5222881282b7ddb37de74"
+      },
+      "createdAt": "2026-07-30T14:34:13.849364+00:00",
+      "updatedAt": "2026-07-30T14:34:13.849364+00:00",
+      "entityType": "CommunicationIdentity",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "CONFIRMED"
+    },
+    {
+      "tableName": "communication_identities",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:7f1db99a7cbbcc1a6afe47382d6a36f63e42171dec5464ded5238b3b62ea6b91"
       },
       "businessKey": {
@@ -2242,6 +2302,126 @@
       "reason": "Business-equivalent record exists in Selectel under a different primary key.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "CONFIRMED"
+    },
+    {
+      "tableName": "communication_identities",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b2bbfb44fd54a9aac8477e46ca97534fc8c5e8bb3b156eb083d778d7605101f9"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "messenger_account_id",
+          "external_user_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e4d7da7e82551e3e6c091b584e3daf9b355588742452cc6b417d6a20e28ed02c"
+      },
+      "createdAt": "2026-07-30T10:25:13.646694+00:00",
+      "updatedAt": "2026-07-30T10:25:13.646694+00:00",
+      "entityType": "CommunicationIdentity",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "CONFIRMED"
+    },
+    {
+      "tableName": "communication_identities",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bc580b28d736e0e7e39a371dc64e0fea1f3f2b4f04e1f64bde1149205b09de06"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "messenger_account_id",
+          "external_user_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:45da8f091c72ae9dd799873931c825ddc50bd1ecaedc59a5ce9e983dd7400295"
+      },
+      "createdAt": "2026-07-30T14:57:14.000159+00:00",
+      "updatedAt": "2026-07-30T14:57:14.000159+00:00",
+      "entityType": "CommunicationIdentity",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "CONFIRMED"
     },
     {
@@ -2322,6 +2502,130 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:496a9a1de43f0430141cdab0e2b6a78e3ec00cb31d693b8317a507f7e3ee1d4c"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "entity_type",
+          "entity_id",
+          "relation_type"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3c345f9fe2409efd16b8aec505657c5195ed421376daa6dda31331f322c2df4a"
+      },
+      "createdAt": "2026-07-30T14:57:14.013694+00:00",
+      "updatedAt": null,
+      "entityType": "ConversationEntityLink",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4c6b4c42ae58894899fc47452997bf56df5c3c06ad552f42b59eb16c4ceb8f6a"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "entity_type",
+          "entity_id",
+          "relation_type"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d769c680904a015dd75706a0070b51b44b9db69d8ee9de52378bd88f824442f8"
+      },
+      "createdAt": "2026-07-30T10:25:13.662895+00:00",
+      "updatedAt": null,
+      "entityType": "ConversationEntityLink",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:6c14eb919cfce16a132372f2253c0974453d633b8f8e78ccfdcf516789e0fd14"
       },
       "businessKey": {
@@ -2359,6 +2663,68 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ae35763d1d442efe34166782e476e0ec3fbfd27a8e78fc5b0b8697fa8c8f9329"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "entity_type",
+          "entity_id",
+          "relation_type"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:330ce476fa6246ca74e00d1b6ed612e5e7af74f7181ca893c88fb7c39a7223c1"
+      },
+      "createdAt": "2026-07-30T14:57:14.028153+00:00",
+      "updatedAt": null,
+      "entityType": "ConversationEntityLink",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:d900c96c021891bac39b3eb4d943c56346dfc7bf7ecf677d6c71288415727047"
       },
       "businessKey": {
@@ -2389,6 +2755,68 @@
       "requiresOwnerApproval": true,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": null
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fec6b9aa401cc65e859967f60a2455df030d54b93143e1c7cbb76deddef7e93c"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "entity_type",
+          "entity_id",
+          "relation_type"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7c79c86cecf286431196ddc2bcc8b2668e4625c45e22f364913dabbbb943152f"
+      },
+      "createdAt": "2026-07-30T14:34:13.866082+00:00",
+      "updatedAt": null,
+      "entityType": "ConversationEntityLink",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
     },
     {
       "tableName": "integration_audit_logs",
@@ -2472,6 +2900,69 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:76e40904c7d744fe65b117e29e2d1588f27fc1ca088a899c4c20c7f3bd834317"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "messenger_account_id",
+          "action",
+          "status",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:37a15a800254921bc7cecd4bf8207aa620758c175035062dcb2d82f422d2a72d"
+      },
+      "createdAt": "2026-07-30T14:34:13.881941+00:00",
+      "updatedAt": null,
+      "entityType": "IntegrationAuditLog",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "ok"
+    },
+    {
+      "tableName": "integration_audit_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:d583cb2d1ca802367131c122072f669a7afb2c6ca8b5de1a22fa135c0a5012c4"
       },
       "businessKey": {
@@ -2502,6 +2993,132 @@
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "ok"
+    },
+    {
+      "tableName": "integration_audit_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dce82f271ccaafb5bf1128f8950a803d07bf09a6fcb53bf8e269474a5519272c"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "messenger_account_id",
+          "action",
+          "status",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6112e87fd89a5cae1f3d6918921ebb0ea9991b35a012ae554ea305ddc517ec15"
+      },
+      "createdAt": "2026-07-30T10:25:13.678458+00:00",
+      "updatedAt": null,
+      "entityType": "IntegrationAuditLog",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "ok"
+    },
+    {
+      "tableName": "integration_audit_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f53b9c4471fbc98315da1ea4a14208608f0e54fb73d5b2d36460fc503b97ab42"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "messenger_account_id",
+          "action",
+          "status",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:409a356102a5b106d613136ad4ff089a92d43399d8e5cf29afee172daa1d1af3"
+      },
+      "createdAt": "2026-07-30T14:57:14.042393+00:00",
+      "updatedAt": null,
+      "entityType": "IntegrationAuditLog",
+      "parentEntities": [
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "ok"
     },
     {
@@ -3119,6 +3736,74 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:371be744a684ee170134da5349cbbd360f4c15c84c30a77b76edc97978d44fd4"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_chat_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ce79aae7facd78cf370aeb19bc0614628aed3e566a6632009480c7a6f101f2a5"
+      },
+      "createdAt": "2026-07-30T14:34:13.788203+00:00",
+      "updatedAt": "2026-07-30T14:34:13.788203+00:00",
+      "entityType": "MessengerConnection",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
+    },
+    {
+      "tableName": "messenger_connections",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:96157ffcde3f23165ef3a7dfef2c39c32151e3ad19cd181ea1ffd95cada3fe51"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_chat_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:163e0d24095bfd121af622e70b84b5ef5d3773683486b2a0b2d242c468028457"
+      },
+      "createdAt": "2026-07-30T10:25:13.582053+00:00",
+      "updatedAt": "2026-07-30T10:25:13.582053+00:00",
+      "entityType": "MessengerConnection",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
+    },
+    {
+      "tableName": "messenger_connections",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:9c6a6ba5bfa0d9e49bbe90c4667e3d4ee2a1983531e4e49bfeb1224e1e2c45c5"
       },
       "businessKey": {
@@ -3247,6 +3932,40 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": null
+    },
+    {
+      "tableName": "messenger_connections",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bcc9ff6c2330f67005ad115f056316e7be8667f1e34e8fc66d6446da366b289b"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_chat_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:832448f51745fd7b24b35711f9b1013d43b45059cfaaa8d522b6da2869bcb422"
+      },
+      "createdAt": "2026-07-30T14:57:13.944826+00:00",
+      "updatedAt": "2026-07-30T14:57:13.944826+00:00",
+      "entityType": "MessengerConnection",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "recorded"
     },
     {
       "tableName": "messenger_conversations",
@@ -3553,6 +4272,255 @@
       "reason": "Business-equivalent record exists in Selectel under a different primary key.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "open"
+    },
+    {
+      "tableName": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_conversation_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1fd7816a9f54471a67d7f0defb956438adb1c1864a1264e560383b67dc7bb5d9"
+      },
+      "createdAt": "2026-07-30T14:34:13.803795+00:00",
+      "updatedAt": "2026-07-30T14:34:13.971708+00:00",
+      "entityType": "MessengerConversation",
+      "parentEntities": [
+        {
+          "tableName": "messenger_connections",
+          "relationship": "logical_connection_id",
+          "sourceColumns": [
+            "connection_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:371be744a684ee170134da5349cbbd360f4c15c84c30a77b76edc97978d44fd4"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:371be744a684ee170134da5349cbbd360f4c15c84c30a77b76edc97978d44fd4"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "open"
+    },
+    {
+      "tableName": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_conversation_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:819d64a00a02e444768b82e9b17ebc849547fec545f75525e9b097b7f6a38d10"
+      },
+      "createdAt": "2026-07-30T10:25:13.59867+00:00",
+      "updatedAt": "2026-07-30T11:00:13.386268+00:00",
+      "entityType": "MessengerConversation",
+      "parentEntities": [
+        {
+          "tableName": "messenger_connections",
+          "relationship": "logical_connection_id",
+          "sourceColumns": [
+            "connection_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:96157ffcde3f23165ef3a7dfef2c39c32151e3ad19cd181ea1ffd95cada3fe51"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:96157ffcde3f23165ef3a7dfef2c39c32151e3ad19cd181ea1ffd95cada3fe51"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "open"
+    },
+    {
+      "tableName": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+      },
+      "businessKey": {
+        "fields": [
+          "channel",
+          "external_conversation_id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:535e2bbdecb4e6ca7c759fea1d8a029407e5e1c7453234bbdcc71e7f0afa3383"
+      },
+      "createdAt": "2026-07-30T14:57:13.960634+00:00",
+      "updatedAt": "2026-07-30T14:57:14.127683+00:00",
+      "entityType": "MessengerConversation",
+      "parentEntities": [
+        {
+          "tableName": "messenger_connections",
+          "relationship": "logical_connection_id",
+          "sourceColumns": [
+            "connection_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:bcc9ff6c2330f67005ad115f056316e7be8667f1e34e8fc66d6446da366b289b"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:bcc9ff6c2330f67005ad115f056316e7be8667f1e34e8fc66d6446da366b289b"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "open"
     },
     {
@@ -12521,7 +13489,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -12606,7 +13574,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -12691,7 +13659,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -12776,7 +13744,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -12882,6 +13850,91 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:22bffd3cfd5f4488bcffd5927f3e7d560284c80db4f4b44b41c00b449f9adbfd"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ec2b9cc9c00040a2617455d41fca845b5dd8caf8591fa36fe9a6825fa948f766"
+      },
+      "createdAt": "2026-07-30T09:41:13.383739+00:00",
+      "updatedAt": "2026-07-30T09:41:13.591791+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:2474708a5332ee7bf9ef7c7f45d720140ddf0b1a905a298f9b2930bca5c156d3"
       },
       "businessKey": {
@@ -12968,7 +14021,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -13053,7 +14106,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13149,7 +14202,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -13245,7 +14298,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -13341,7 +14394,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13426,7 +14479,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13607,7 +14660,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -13692,7 +14745,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13788,7 +14841,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13873,7 +14926,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -13958,7 +15011,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -14224,7 +15277,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -14320,7 +15373,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -14405,7 +15458,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -14501,7 +15554,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -14597,7 +15650,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -14682,7 +15735,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -14767,9 +15820,94 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:66da26380e506f2af1f8cb837e77f1c9334fc86816525ee8dd5c5d76253187b4"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2fdb2c139b364263e6bc57d3b87b9bb12b0646b17d8909280d0f5a0f0d386554"
+      },
+      "createdAt": "2026-07-30T14:57:14.111071+00:00",
+      "updatedAt": "2026-07-30T14:57:14.282971+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
     },
     {
       "tableName": "messenger_messages",
@@ -14852,9 +15990,94 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4adbc4e0f0f41bd6017a5eb6ee6a538ac4ac3020e837e8d901b9a92bc4efe0"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b59f351c0b08073a7bcf1d889783151befd93c9b5e4442882b76faa3836addf4"
+      },
+      "createdAt": "2026-07-30T11:00:13.371506+00:00",
+      "updatedAt": "2026-07-30T11:00:13.531567+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
     },
     {
       "tableName": "messenger_messages",
@@ -14948,7 +16171,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15033,7 +16256,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -15129,7 +16352,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -15225,7 +16448,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15321,7 +16544,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15417,7 +16640,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15513,7 +16736,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -15609,7 +16832,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15705,8 +16928,93 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8a3ce7abadb18e05415f32f4c44b67deccf13843ba36a226d7c5e7b69d5b4ee8"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f08e11d335ce9bcd7f1a2f9adc757d0ebfb9fd5209364b47416d0c9d2a634dd5"
+      },
+      "createdAt": "2026-07-30T10:25:13.752608+00:00",
+      "updatedAt": "2026-07-30T10:25:13.916293+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "sent"
     },
     {
@@ -15801,7 +17109,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15897,7 +17205,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -15982,7 +17290,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16067,7 +17375,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16152,7 +17460,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16237,7 +17545,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16322,9 +17630,179 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a7c5766f49e5f23aee760fd27081418414c1a477745dbd295874019b573f9d05"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:77fd387181817e49ad17f298e44ba9c8183d7b5ba69416b6fc850b56cc8ce297"
+      },
+      "createdAt": "2026-07-29T08:00:10.563148+00:00",
+      "updatedAt": "2026-07-29T08:00:10.778559+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:0471c1f926ab9c7bf0c082532df59ee34046e28d7f63e7b0cd762f142dc86ee1"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:5591c081c41fd1987ce5cb118612414d60fbc815601803035a6b836605c3ab95"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aae53063091c38b35ad579750af0ed46a6340031e062c19de6333882c2f068ba"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:327e6c6b9f821f21403c37eb493222ebc055dd98153479bf6eafa253af3a4453"
+      },
+      "createdAt": "2026-07-30T10:00:13.250669+00:00",
+      "updatedAt": "2026-07-30T10:00:13.440219+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
     },
     {
       "tableName": "messenger_messages",
@@ -16407,7 +17885,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16503,7 +17981,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -16588,7 +18066,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16684,7 +18162,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -16769,7 +18247,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -16865,7 +18343,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -17035,9 +18513,94 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
+    },
+    {
+      "tableName": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d1f704e3c3c0e0fe6fade8dadeb7e386448dacdc9fa99de0ce86d23ebe3fae71"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "conversation_id",
+          "external_message_id",
+          "direction"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4f3400feeafbd92081df4ac5f2f4e4da8f439151deaa4ba8a0d038a27ae67407"
+      },
+      "createdAt": "2026-07-30T14:34:13.955069+00:00",
+      "updatedAt": "2026-07-30T14:34:14.119248+00:00",
+      "entityType": "MessengerMessage",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_accounts",
+          "relationship": "logical_messenger_account_id",
+          "sourceColumns": [
+            "messenger_account_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "HIGH",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
     },
     {
       "tableName": "messenger_messages",
@@ -17120,7 +18683,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -17216,7 +18779,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -17301,7 +18864,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -17397,7 +18960,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
     },
@@ -17482,7 +19045,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -17567,7 +19130,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -17663,7 +19226,7 @@
       "importRisk": "HIGH",
       "recommendedAction": "INSERT_MISSING",
       "reason": "No same-PK or business-key equivalent exists in Selectel; record is durable or append-only history.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "received"
     },
@@ -18408,6 +19971,92 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2b241feafc09c38545045dec621c0d280d7f5f6ae6a926e4267fdf47ce24a339"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:96e285e270cc43e269a02705c9e3e32d902ea487338c8447d0a660614b5dc49b"
+      },
+      "createdAt": "2026-07-30T09:41:13.417777+00:00",
+      "updatedAt": "2026-07-30T09:41:13.575491+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:22bffd3cfd5f4488bcffd5927f3e7d560284c80db4f4b44b41c00b449f9adbfd"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:22bffd3cfd5f4488bcffd5927f3e7d560284c80db4f4b44b41c00b449f9adbfd"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:3710bc13891c5dd3dae3c677c7632f0f0ea8778c8706f82d685284d4191b0a78"
       },
       "businessKey": {
@@ -19038,6 +20687,178 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:95b35862597a19b3215be07024b9437e82a71e72f5fa861b79e98b3948568e91"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f8b5f6b2365df3c8fcd6409fe399fd393e87f2e6cc6a41660c5059b976e629bc"
+      },
+      "createdAt": "2026-07-29T08:00:10.609216+00:00",
+      "updatedAt": "2026-07-29T08:00:10.762767+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:0471c1f926ab9c7bf0c082532df59ee34046e28d7f63e7b0cd762f142dc86ee1"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:5591c081c41fd1987ce5cb118612414d60fbc815601803035a6b836605c3ab95"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:a7c5766f49e5f23aee760fd27081418414c1a477745dbd295874019b573f9d05"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:a7c5766f49e5f23aee760fd27081418414c1a477745dbd295874019b573f9d05"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9d89a569fe603f8d41358f6cc696e725593d2682f8849eeba3a6a88ffbfcef50"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aa0a5d4f10db1efca18769f3431885ff6e6c86d5e3de1529160506401e11bea7"
+      },
+      "createdAt": "2026-07-30T14:34:13.987687+00:00",
+      "updatedAt": "2026-07-30T14:34:14.103586+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:d1f704e3c3c0e0fe6fade8dadeb7e386448dacdc9fa99de0ce86d23ebe3fae71"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:d1f704e3c3c0e0fe6fade8dadeb7e386448dacdc9fa99de0ce86d23ebe3fae71"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:a8c8d9de7df273c69976fb67a0fa4c62c4b1d41fda489867c21e80cb80fe4664"
       },
       "businessKey": {
@@ -19143,6 +20964,92 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aec1f694d649a26e3b879c70e4d46b176b93a4d4ebca1f984af65fe1c4840700"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5af7940305dc79d22fecfa41ee6c983d0d022c5c272570e19023b9868017dd66"
+      },
+      "createdAt": "2026-07-30T14:57:14.141696+00:00",
+      "updatedAt": "2026-07-30T14:57:14.269402+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:66da26380e506f2af1f8cb837e77f1c9334fc86816525ee8dd5c5d76253187b4"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:66da26380e506f2af1f8cb837e77f1c9334fc86816525ee8dd5c5d76253187b4"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:bc2e4025eb05df9d8f9569d4f557be9c357a8b4d3cebcb2186fc43bb7da2ffcb"
       },
       "businessKey": {
@@ -19240,6 +21147,92 @@
       "reason": "Outbox row is already sent; replay would risk duplicate delivery.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c6de04be805d2bcd1eebaf2b9311146ba11adbd505d215768963172c6743ac2a"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3cf6b155009ba12aa5e443e0cbd9956836b3831a2bbf4a89294f566821cc2102"
+      },
+      "createdAt": "2026-07-30T10:25:13.784599+00:00",
+      "updatedAt": "2026-07-30T10:25:13.901047+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8a3ce7abadb18e05415f32f4c44b67deccf13843ba36a226d7c5e7b69d5b4ee8"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8a3ce7abadb18e05415f32f4c44b67deccf13843ba36a226d7c5e7b69d5b4ee8"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "sent"
     },
     {
@@ -19458,6 +21451,92 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dcb9204c16611054e2adfe13d057dc6aad85e00761b0a2c3291be64ec25916ce"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0a2ba6b10bd49f61dc2f29491f23e8f6bc2f7210e747292846e0622623026459"
+      },
+      "createdAt": "2026-07-30T11:00:13.400569+00:00",
+      "updatedAt": "2026-07-30T11:00:13.517064+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4adbc4e0f0f41bd6017a5eb6ee6a538ac4ac3020e837e8d901b9a92bc4efe0"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4adbc4e0f0f41bd6017a5eb6ee6a538ac4ac3020e837e8d901b9a92bc4efe0"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:f62fb71dc16ddbf0a5f3d1e437b5d71859a8f197f0746bde0a60f2e85e6e52bc"
       },
       "businessKey": {
@@ -19558,6 +21637,262 @@
       "statusClassification": "sent"
     },
     {
+      "tableName": "messenger_outbox",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f6599b0072acf4d388e012e620a096b07322cf2e37a4d17f1fc77715ec9e1a90"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "channel",
+          "recipient_external_chat_id",
+          "message_id",
+          "created_at"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0b97331b7f0cf6951f23d392a37e755fb68fdb967139ba4757d7c960a3a67580"
+      },
+      "createdAt": "2026-07-30T10:00:13.280222+00:00",
+      "updatedAt": "2026-07-30T10:00:13.426618+00:00",
+      "entityType": "MessengerOutbox",
+      "parentEntities": [
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": true,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        },
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_message_id",
+          "sourceColumns": [
+            "message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:aae53063091c38b35ad579750af0ed46a6340031e062c19de6333882c2f068ba"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:aae53063091c38b35ad579750af0ed46a6340031e062c19de6333882c2f068ba"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DELIVERY_STATE",
+      "importRisk": "LOW",
+      "recommendedAction": "SKIP_OBSOLETE",
+      "reason": "Sent legacy outbox state is superseded by the durable MessengerMessage and must not be re-enqueued.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0f593cc694854d8eac43cd2826badc221147f8e940e58e5fc089d09bf4ca56ae"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:45337c63550c29db7c5d0ac8a331f8afdcd362490132dcd3d96957d10bcb5bd4"
+      },
+      "createdAt": "2026-07-30T14:34:13.569725+00:00",
+      "updatedAt": "2026-07-30T14:34:13.569725+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "FUTURE_BUSINESS_EVENT",
+      "importRisk": "HIGH",
+      "recommendedAction": "RECREATE_BUSINESS_EVENT",
+      "reason": "A scheduled legacy notification cannot be copied blindly; the owner must confirm that it is still relevant before recreation.",
+      "requiresOwnerApproval": true,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1897c727560ef12bd9ec5db3c94650aaff2729a47e9c069eab2d7d0597a88ee1"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c828301300acc27e01c13c30bb5f2887ec7e11b6c2daf31efcde28a4273696f1"
+      },
+      "createdAt": "2026-07-30T14:58:13.462345+00:00",
+      "updatedAt": "2026-07-30T14:58:13.561206+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1bc9f380e7c053d443e92cadf38711142dc19a75d30a5aca49fc432862920ec2"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b3e3cd644177af87d035c71ab07c79cc5c4c558151026a6f1bca996cdbfa69bb"
+      },
+      "createdAt": "2026-07-30T14:34:13.490944+00:00",
+      "updatedAt": "2026-07-30T14:34:14.165371+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:d1f704e3c3c0e0fe6fade8dadeb7e386448dacdc9fa99de0ce86d23ebe3fae71"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:d1f704e3c3c0e0fe6fade8dadeb7e386448dacdc9fa99de0ce86d23ebe3fae71"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:9d89a569fe603f8d41358f6cc696e725593d2682f8849eeba3a6a88ffbfcef50"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:7561862f534371aacf396cdcfd637e50a5ee5b71867a5b266cc93db8390e5164"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
       "tableName": "notification_jobs",
       "primaryKey": {
         "columns": [
@@ -19631,6 +21966,210 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:33146880bb766d272ec037b22fdfb311267d65eb7991b2ad4220ee74e9478eae"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:83be533e169218930b929ba40572d527a24c4bffab15fab3c694310ae1442973"
+      },
+      "createdAt": "2026-07-30T10:25:13.180897+00:00",
+      "updatedAt": "2026-07-30T10:25:13.961165+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8a3ce7abadb18e05415f32f4c44b67deccf13843ba36a226d7c5e7b69d5b4ee8"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8a3ce7abadb18e05415f32f4c44b67deccf13843ba36a226d7c5e7b69d5b4ee8"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c6de04be805d2bcd1eebaf2b9311146ba11adbd505d215768963172c6743ac2a"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:47f9baf41d8a90ee0e368ff106333ff65afccf3708e47d8be995a660fe0e5946"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d00c599536e167eb592327b1422ca7ad421badc299f32405f427648e5402b0a4"
+      },
+      "createdAt": "2026-07-30T09:41:13.249274+00:00",
+      "updatedAt": "2026-07-30T10:00:13.481267+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:aae53063091c38b35ad579750af0ed46a6340031e062c19de6333882c2f068ba"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:aae53063091c38b35ad579750af0ed46a6340031e062c19de6333882c2f068ba"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:f6599b0072acf4d388e012e620a096b07322cf2e37a4d17f1fc77715ec9e1a90"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:4f781792a28e5a889ff368c35a21595853ea3b5834851e3c31067a6c150c8ea6"
       },
       "businessKey": {
@@ -19665,6 +22204,108 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:536e7bce0c831d3a660448a4090a3cb8f0fe63ec54fe3365b5e78325a4d30ace"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:965c62a22ff33caf6ea8af7d7b1178654bce7c6a1f82f7333e173a582a765c4b"
+      },
+      "createdAt": "2026-07-30T14:58:13.513277+00:00",
+      "updatedAt": "2026-07-30T14:58:13.513277+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "FUTURE_BUSINESS_EVENT",
+      "importRisk": "HIGH",
+      "recommendedAction": "RECREATE_BUSINESS_EVENT",
+      "reason": "A scheduled legacy notification cannot be copied blindly; the owner must confirm that it is still relevant before recreation.",
+      "requiresOwnerApproval": true,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5e404f8ce339928bf58aeb181b6f0c1fb904275b7e2d0308a8f438ad70fbd18a"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f2b856c334c479007b4655d8c2e113953036900cfaf1300d79f1d44d5e8ef74e"
+      },
+      "createdAt": "2026-07-30T16:48:13.651526+00:00",
+      "updatedAt": "2026-07-30T16:48:13.651526+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "FUTURE_BUSINESS_EVENT",
+      "importRisk": "HIGH",
+      "recommendedAction": "RECREATE_BUSINESS_EVENT",
+      "reason": "A scheduled legacy notification cannot be copied blindly; the owner must confirm that it is still relevant before recreation.",
+      "requiresOwnerApproval": true,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6d50e0228ea7986e0102f2ae96a1ac41143ce4e052bc0de2a30d4d7acaea00cb"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cba9e351f592326a53f4f0b31611e2c256d3a3cfd83630c66105fbf393a4df64"
+      },
+      "createdAt": "2026-07-30T14:57:13.644513+00:00",
+      "updatedAt": "2026-07-30T14:57:13.644513+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "FUTURE_BUSINESS_EVENT",
+      "importRisk": "HIGH",
+      "recommendedAction": "RECREATE_BUSINESS_EVENT",
+      "reason": "A scheduled legacy notification cannot be copied blindly; the owner must confirm that it is still relevant before recreation.",
+      "requiresOwnerApproval": true,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:6de53a3a749d66663b62db62ede782daf8edffa162d5485bfebb8cbdf75c25f5"
       },
       "businessKey": {
@@ -19691,6 +22332,108 @@
       "reason": "Business-equivalent record exists in Selectel under a different primary key.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:75c6ad7d3273121896a1def48dd69a4c8d04476b832cd7f61a326f4824f04284"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:08022793f43a66786c46d527742d4f548770856b5a9e3c52bae4c6a9526f8d65"
+      },
+      "createdAt": "2026-07-30T10:25:13.35813+00:00",
+      "updatedAt": "2026-07-30T11:00:13.572775+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4adbc4e0f0f41bd6017a5eb6ee6a538ac4ac3020e837e8d901b9a92bc4efe0"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4adbc4e0f0f41bd6017a5eb6ee6a538ac4ac3020e837e8d901b9a92bc4efe0"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:dcb9204c16611054e2adfe13d057dc6aad85e00761b0a2c3291be64ec25916ce"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:874c1b4debb1d97ab8cc78dc35592f2c26a7c3dd91f1885af536ae19db298ed6"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "sent"
     },
     {
@@ -19760,6 +22503,108 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_HASH_AUDIT_SUPPLEMENT",
       "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8e2c72f33d4a07f3adb3bb00f8f3f444712b3804a5375b98a6ddb2a9dca580c8"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ba56632b3873a5b686ae41a6f06134a75b8fef19dc6b3eaf6074fd78dcdcc8e8"
+      },
+      "createdAt": "2026-07-30T14:57:13.575951+00:00",
+      "updatedAt": "2026-07-30T14:57:14.325056+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:66da26380e506f2af1f8cb837e77f1c9334fc86816525ee8dd5c5d76253187b4"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:66da26380e506f2af1f8cb837e77f1c9334fc86816525ee8dd5c5d76253187b4"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:aec1f694d649a26e3b879c70e4d46b176b93a4d4ebca1f984af65fe1c4840700"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:eeece0f94ebd74fba2d54c2cb7cf8b791b3673e201695c9df84bb58fa70f1fa2"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
     },
     {
       "tableName": "notification_jobs",
@@ -20005,6 +22850,108 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c6afe28487360d4af3e680b02d55e733358476e450d36b7e15e66e5754a9de0b"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e4612db9fd2efa26b22145ab80f94739c4974522370d0becf7d309d2c2330b05"
+      },
+      "createdAt": "2026-07-30T09:41:13.172533+00:00",
+      "updatedAt": "2026-07-30T09:41:13.638611+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [
+        {
+          "tableName": "messenger_messages",
+          "relationship": "logical_messenger_message_id",
+          "sourceColumns": [
+            "messenger_message_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:22bffd3cfd5f4488bcffd5927f3e7d560284c80db4f4b44b41c00b449f9adbfd"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:22bffd3cfd5f4488bcffd5927f3e7d560284c80db4f4b44b41c00b449f9adbfd"
+          },
+          "resolution": "PLANNED_INSERT"
+        },
+        {
+          "tableName": "messenger_outbox",
+          "relationship": "logical_messenger_outbox_id",
+          "sourceColumns": [
+            "messenger_outbox_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:2b241feafc09c38545045dec621c0d280d7f5f6ae6a926e4267fdf47ce24a339"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        },
+        {
+          "tableName": "messenger_conversations",
+          "relationship": "logical_conversation_id",
+          "sourceColumns": [
+            "conversation_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:d6e4b809422e00f67de7f6feecfd109dd546a1b4a09e6aae050dc5d068ef3533"
       },
       "businessKey": {
@@ -20107,6 +23054,40 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ea1121c2feeffeead17299040a2a72f53e163df2bb1e6655e97b1912c7fae9a7"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "idempotency_key"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fcc853ca4ec02aafb8ae13e2ff94fb96032f4cf360a6f657a8a580efa89f04c9"
+      },
+      "createdAt": "2026-07-30T16:48:13.57726+00:00",
+      "updatedAt": "2026-07-30T16:48:13.864224+00:00",
+      "entityType": "NotificationJob",
+      "parentEntities": [],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "DURABLE_BUSINESS_DATA",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
+    },
+    {
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:f5084f12c4dc850cf314c6d80402ec1bb0db79b2f8775380eb7f88aa5fe2312a"
       },
       "businessKey": {
@@ -20168,6 +23149,184 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_HASH_AUDIT_SUPPLEMENT",
       "statusClassification": "client_not_connected"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:120ffe7a5e5a5fa50286503bfa5b10fa51846843f8d6df0aa8b8bf73d8e4c7e3"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:54ec0e4028b91f29f11c26e80d9833f83f48b4f309ffe8031bbd4ad68bd0a44e"
+      },
+      "createdAt": "2026-07-30T14:57:14.339229+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8e2c72f33d4a07f3adb3bb00f8f3f444712b3804a5375b98a6ddb2a9dca580c8"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8e2c72f33d4a07f3adb3bb00f8f3f444712b3804a5375b98a6ddb2a9dca580c8"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:135939a8cb1201c296675b4f6997d712b00c1a61ae7c58ba125254ee3e11d002"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6aa9ebaab0498a74673d5f881ad431d22e3b1ccf473574940438abe5c286dec8"
+      },
+      "createdAt": "2026-07-30T14:34:13.581436+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:0f593cc694854d8eac43cd2826badc221147f8e940e58e5fc089d09bf4ca56ae"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:144034500fb7e365558329a622f96072a5a2b5257a541c5538c15d8b0f5de1ba"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:59ab2b3e76288a51644181f454ede66dac5094b055fd710510aeb80746330c6c"
+      },
+      "createdAt": "2026-07-30T10:25:13.374748+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:75c6ad7d3273121896a1def48dd69a4c8d04476b832cd7f61a326f4824f04284"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:75c6ad7d3273121896a1def48dd69a4c8d04476b832cd7f61a326f4824f04284"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
     },
     {
       "tableName": "notification_logs",
@@ -20419,6 +23578,67 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:205fbca5e31eed9b60c23f20fbc0fdd8af28e5fa51c149354bc06b25009ecb8f"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2874ee5cdb49543f2813fa77ebfdb77700ec18e56f2173bb40a87e6650362627"
+      },
+      "createdAt": "2026-07-30T11:00:13.58657+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:75c6ad7d3273121896a1def48dd69a4c8d04476b832cd7f61a326f4824f04284"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:75c6ad7d3273121896a1def48dd69a4c8d04476b832cd7f61a326f4824f04284"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:2166afa539ea1c19dcf4044b8f36d2f5e3740d6ce9d338f58d97b0d9615fff40"
       },
       "businessKey": {
@@ -20473,6 +23693,67 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:26e0202602a1c7f06610081ee946dbc7c00393f2713710c2dfd98f63f0741a47"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cfef6efad57c996c09c0b45f48899ff0282f38f60de18542fd8d59e82716a88f"
+      },
+      "createdAt": "2026-07-30T14:57:13.591998+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8e2c72f33d4a07f3adb3bb00f8f3f444712b3804a5375b98a6ddb2a9dca580c8"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8e2c72f33d4a07f3adb3bb00f8f3f444712b3804a5375b98a6ddb2a9dca580c8"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
     },
     {
       "tableName": "notification_logs",
@@ -21273,6 +24554,67 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6230b4b08555b887d09c3f6f02e180cfc1d42f994e4ff791df1c004748ccf34a"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f3d66d96cfb75a2ad25bbfa70e954ce7421e834d13091430266dccb9e1ea45dd"
+      },
+      "createdAt": "2026-07-30T09:41:13.654369+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c6afe28487360d4af3e680b02d55e733358476e450d36b7e15e66e5754a9de0b"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c6afe28487360d4af3e680b02d55e733358476e450d36b7e15e66e5754a9de0b"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:6423edda6631918bbf217693b57e7e1440a16a18a749bb66ccc3da7120a50338"
       },
       "businessKey": {
@@ -21327,6 +24669,128 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6828d19c7a248a14068db38964b3624087a75566c1ad0281a76ebb8aa724777d"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4bd113287c88d421e1ce1f2cb884c4119aa28553ed439f1f440b77308182a4de"
+      },
+      "createdAt": "2026-07-30T14:34:14.181981+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1bc9f380e7c053d443e92cadf38711142dc19a75d30a5aca49fc432862920ec2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1bc9f380e7c053d443e92cadf38711142dc19a75d30a5aca49fc432862920ec2"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6b2e5fbd519eb33296ea25e8dd6a1331e52ee19880ebecf9438ac52343aaab7c"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ceb8ffe71a6edbf555ce412408d4ec6306afc1cc8e21a76ef2b8bb731d592f12"
+      },
+      "createdAt": "2026-07-29T04:00:09.999309+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:479d0dd8dbee0035c4f98e7828115faddbb0b41f794ae4927a829af896ad4ae8"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:479d0dd8dbee0035c4f98e7828115faddbb0b41f794ae4927a829af896ad4ae8"
+          },
+          "resolution": "EXACT_PK"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "skipped"
     },
     {
       "tableName": "notification_logs",
@@ -21517,6 +24981,67 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7804f6bd8394ca75310131d92c4b69b272efcaecd885366115dce4f0c8683edb"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bd5ec2d510153b909345e66a2d09350300ebcadd37db5a1eba383d4181029b26"
+      },
+      "createdAt": "2026-07-30T10:25:13.198172+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:33146880bb766d272ec037b22fdfb311267d65eb7991b2ad4220ee74e9478eae"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:33146880bb766d272ec037b22fdfb311267d65eb7991b2ad4220ee74e9478eae"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:7cf230cf14f45d0660fe78bdd65a64fa03718398b12f493876468de99e43a74a"
       },
       "businessKey": {
@@ -21632,6 +25157,189 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8201d10a2e48e846e7badbad175fba7426443275f5c13a02ebabdd149bcd36b8"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:813e4c6596659cc1d9967db1c16ba03b888ee2d0153e81673bee0204a45a573d"
+      },
+      "createdAt": "2026-07-29T05:00:10.073114+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1e49d54b5bc9d765ce4e19290db95f9d344408f167434917a1f14dec01229969"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c3f1107be7c497003ccb7601f38d2455eb5bafa503d9a96400a98a0dd259e0b8"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "skipped"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:826ce04ac8018abf2790519f2c93a445a418f49563592e63e452e5c965865254"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5dfe020774a8b0685f6e39e23e45340a87ac603da0e6d2949c1cce6c5a4daf58"
+      },
+      "createdAt": "2026-07-30T09:41:13.190082+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c6afe28487360d4af3e680b02d55e733358476e450d36b7e15e66e5754a9de0b"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:c6afe28487360d4af3e680b02d55e733358476e450d36b7e15e66e5754a9de0b"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:890f9490fa12151a9115fa9e75948592ef9b297c818ca3d7f69417a869829b7f"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2604f2c92cc1476c539bce9b494082a24edabc376c14217710a0ba435548619c"
+      },
+      "createdAt": "2026-07-30T14:58:13.574566+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1897c727560ef12bd9ec5db3c94650aaff2729a47e9c069eab2d7d0597a88ee1"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1897c727560ef12bd9ec5db3c94650aaff2729a47e9c069eab2d7d0597a88ee1"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
     },
     {
       "tableName": "notification_logs",
@@ -21875,6 +25583,123 @@
       "reason": "Business-equivalent semantic record already exists in Selectel after parent ID remapping.",
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:986423c3a85175c4597a215a135888b6364d53cd878556f9ba76f3221060e648"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d2996a456dba6383c90703963c18a63bca3239bcf49005f180e0723e3c46bd44"
+      },
+      "createdAt": "2026-07-30T14:57:13.735297+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:6d50e0228ea7986e0102f2ae96a1ac41143ce4e052bc0de2a30d4d7acaea00cb"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a6bb5bc3461df3cb516f5fe70b375d6489a721b29516fa75b8409d93f64a4d8d"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7af5bfbfb0218f513dd8f8f134af38f0c249123124c84d7acb34b196306aa337"
+      },
+      "createdAt": "2026-07-30T10:25:13.977383+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:33146880bb766d272ec037b22fdfb311267d65eb7991b2ad4220ee74e9478eae"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:33146880bb766d272ec037b22fdfb311267d65eb7991b2ad4220ee74e9478eae"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
       "statusClassification": "sent"
     },
     {
@@ -22127,6 +25952,123 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b574fb60b7904f5d64b285708978f41329018489a23cefe539d7dd7ed99ab5cd"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:498e21f78c208c027b7cd36b7047bc65137c9974ab7549635468565b21ec3a9e"
+      },
+      "createdAt": "2026-07-30T16:48:13.660839+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:5e404f8ce339928bf58aeb181b6f0c1fb904275b7e2d0308a8f438ad70fbd18a"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b75ae0b937e023d0820af22ef9a03cfa756617ae667f441c5e2f88114961a1dd"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:51b1506abea359e60b7f6c3f3b09378339795981665922ec291acd393f778e2d"
+      },
+      "createdAt": "2026-07-30T10:00:13.496027+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:47f9baf41d8a90ee0e368ff106333ff65afccf3708e47d8be995a660fe0e5946"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:47f9baf41d8a90ee0e368ff106333ff65afccf3708e47d8be995a660fe0e5946"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:b9e96e80efff4a4c9f8876af07f0cee19aef04eca3b4ec8e25fb07ea92698bf7"
       },
       "businessKey": {
@@ -22242,6 +26184,367 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_HASH_AUDIT_SUPPLEMENT",
       "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bc3746a0b2dc23b6427e9bc2971914924e25882307c9240aaae9ae29c6b2ad21"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9c5b22eb16e055bea4e874b62e5121252e0c2bc61ce37a47e539516cc5c8df80"
+      },
+      "createdAt": "2026-07-29T08:00:10.839682+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:4f781792a28e5a889ff368c35a21595853ea3b5834851e3c31067a6c150c8ea6"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8e1a5b9e10b4ee4740e5920146b2448234a1449899d2f1b07fe48f60b897d141"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "sent"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bd2814a73915bcf5279bc21fbbf3a931aa87d5d25ccbc9d825731203b121c389"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4d301e1e93ed9574976162e55aacda8dae12a13ae1ccc709011d14bdd235daa9"
+      },
+      "createdAt": "2026-07-30T16:48:13.878597+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:ea1121c2feeffeead17299040a2a72f53e163df2bb1e6655e97b1912c7fae9a7"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:ea1121c2feeffeead17299040a2a72f53e163df2bb1e6655e97b1912c7fae9a7"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:be97f1526005915650d430bf4b9dad6195edb0114381b60ad1566ff05e5917da"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:43abc3e77c0593124c3ac7289bffa89a2ebfb71958107728112b5ddd696985f3"
+      },
+      "createdAt": "2026-07-30T14:58:13.478831+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1897c727560ef12bd9ec5db3c94650aaff2729a47e9c069eab2d7d0597a88ee1"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1897c727560ef12bd9ec5db3c94650aaff2729a47e9c069eab2d7d0597a88ee1"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c1fa5d23e5d5913f6756276387aab39af15fd402c6783a42f02dfcf164f8f653"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:df7b0ce7a170509530302dd69f783769ea652bc56687be203975fbba40ca579f"
+      },
+      "createdAt": "2026-07-30T14:58:13.520568+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:536e7bce0c831d3a660448a4090a3cb8f0fe63ec54fe3365b5e78325a4d30ace"
+          },
+          "targetPrimaryKey": null,
+          "resolution": "MISSING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c7ae59164be0ba804fbf317c194505556fdada4554a347fd08a0b5a0eb5ab869"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e8be9175de7e2cd1ed71e7f7953159999a63d99f5b2ae47fd65aad66ba71e310"
+      },
+      "createdAt": "2026-07-30T09:41:13.258574+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:47f9baf41d8a90ee0e368ff106333ff65afccf3708e47d8be995a660fe0e5946"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:47f9baf41d8a90ee0e368ff106333ff65afccf3708e47d8be995a660fe0e5946"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c8f793a18f98abe94e0a38a5a42dde4c97c9225bd53ee8a8ff2f2532001d518e"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:20ea4aed3de3926d10a2a0ca80020ff18e28caaecb41d13828dd9be01b98123d"
+      },
+      "createdAt": "2026-07-30T05:20:12.577252+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:f5084f12c4dc850cf314c6d80402ec1bb0db79b2f8775380eb7f88aa5fe2312a"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:38d539d3e4941228ce73ac2c0c2985d10095579887f7cfd96cba75bd2d12b220"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "skipped"
     },
     {
       "tableName": "notification_logs",
@@ -22432,6 +26735,67 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:db29b3753494afd29ac3adb09e185059fac81c89236522d39d87e1507d350d56"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8a7d6f1da7ad2e1bf0b6db6c615ef45f01f2cd06e7c569009f3444cdcfdb6cff"
+      },
+      "createdAt": "2026-07-30T16:48:13.59469+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:ea1121c2feeffeead17299040a2a72f53e163df2bb1e6655e97b1912c7fae9a7"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:ea1121c2feeffeead17299040a2a72f53e163df2bb1e6655e97b1912c7fae9a7"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:e37c32e483bc0f80d1e75cd1d3b09e7fe640204d1de103678bf2a0d1e9239271"
       },
       "businessKey": {
@@ -22554,6 +26918,128 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e9fa2c26113b962442feced91b5747fbacc8dd466a3cd72e6d8bb63715cb1d4e"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e59cbc1e2d4f3f7dffc293d62ee4ce73c098e284cb645da798f70980915b88e8"
+      },
+      "createdAt": "2026-07-30T14:34:13.510753+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1bc9f380e7c053d443e92cadf38711142dc19a75d30a5aca49fc432862920ec2"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:1bc9f380e7c053d443e92cadf38711142dc19a75d30a5aca49fc432862920ec2"
+          },
+          "resolution": "PLANNED_INSERT"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "queued"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:eb025acee9336f6c353675c77f6554c749bc77a61cde5605ba2d334236cd5731"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6b6c33cd9457eb6fd0dc4d6e34a20f1b0218f4534a1254355b55811cf2afcf7c"
+      },
+      "createdAt": "2026-07-30T12:00:13.453647+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:8a8e4f7b9c2a53f3f385f49a3431db1a4ca58c3b12916a33e30efe4512d755eb"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:29be71868fb43a725b6564a4580ca925f71691d74fd70f58b70ff8b05396a278"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:eb47a1ca51724164d59cc95e5cd01da31cc23286a4eb9272c4f80080be2e275d"
       },
       "businessKey": {
@@ -22608,6 +27094,67 @@
       "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "scheduled"
+    },
+    {
+      "tableName": "notification_logs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f160a024954cfc15a1c97da1f04796db4bd1ec84fa5c1e9c05b5bab04dff0fb0"
+      },
+      "businessKey": {
+        "fields": [
+          "organization_id",
+          "notification_job_id",
+          "event_type",
+          "status"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8a890ee8623fe06bf2da5aee6530305592e71bbda879c6d76579c93a76936ecb"
+      },
+      "createdAt": "2026-07-29T10:00:10.867653+00:00",
+      "updatedAt": null,
+      "entityType": "NotificationLog",
+      "parentEntities": [
+        {
+          "tableName": "notification_jobs",
+          "relationship": "logical_notification_job_id",
+          "sourceColumns": [
+            "notification_job_id"
+          ],
+          "targetColumns": [
+            "id"
+          ],
+          "required": false,
+          "sourcePrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:a1d48e01867fac2745f11390df827ccbf2057756b276d3da3c19fbdd2c372ee3"
+          },
+          "targetPrimaryKey": {
+            "columns": [
+              "id"
+            ],
+            "hash": "hmac-sha256:f5ed85ce298ddfd9:5ee00294bd1a07f4a4872926bcee7f31e99f91cd160b055d0b67faaf98143df4"
+          },
+          "resolution": "MAP_TO_EXISTING"
+        }
+      ],
+      "childEntities": [],
+      "branchCandidate": {
+        "classification": "LEGACY_DEFAULT_BRANCH_MAPPING_REQUIRED",
+        "hash": null
+      },
+      "organizationId": "hmac-sha256:f5ed85ce298ddfd9:3c80bd8139f5251ad0d12b60f7f02bbcec0b2782bca3ab440e1e2967ec9a532e",
+      "sourceClassification": "FINAL_RAILWAY_DELTA_AFTER_SELECTEL_CUTOVER",
+      "dataClassification": "APPEND_ONLY_HISTORY",
+      "importRisk": "MEDIUM",
+      "recommendedAction": "INSERT_MISSING",
+      "reason": "Post-cutover Railway record has no same-PK or business-key equivalent in the Selectel snapshot.",
+      "requiresOwnerApproval": false,
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+      "statusClassification": "client_not_connected"
     },
     {
       "tableName": "notification_logs",
@@ -22883,9 +27430,10 @@
       "importRisk": "MEDIUM",
       "recommendedAction": "MAP_TO_EXISTING",
       "reason": "Business-equivalent record exists in Selectel under a different primary key.",
-      "requiresOwnerApproval": true,
+      "requiresOwnerApproval": false,
       "sourceSnapshot": "RAILWAY_FULL_DUMP",
       "statusClassification": "by_employee"
     }
-  ]
+  ],
+  "finalDeltaAddedRecords": 63
 }

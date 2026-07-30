@@ -461,7 +461,15 @@ export function MessengerWidget() {
   );
 }
 
-export function MessengerInbox({ compact = false, onClose }: { compact?: boolean; onClose?: () => void }) {
+export function MessengerInbox({
+  compact = false,
+  onClose,
+  onSelect,
+}: {
+  compact?: boolean;
+  onClose?: () => void;
+  onSelect?: () => void;
+}) {
   const {
     filteredConversations,
     selectedConversationId,
@@ -481,8 +489,8 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
     <div className={cx("eco-messenger-inbox", compact && "is-compact")}>
       <div className="eco-messenger-panel-head eco-messenger-inbox__head">
         <div>
-          <div className="eco-page-kicker">CRM · единый центр</div>
-          <h2>Сообщения</h2>
+          <h2>{compact ? "Сообщения" : "Чаты"}</h2>
+          <p>{filteredConversations.length ? `Диалогов: ${filteredConversations.length}` : "Единый центр"}</p>
         </div>
         <div className="eco-messenger-head-actions">
           {!!unreadTotal && <span className="eco-messenger-unread">{unreadTotal}</span>}
@@ -499,35 +507,42 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
         </div>
       </div>
 
-      <div className="eco-messenger-search eco-messenger-inbox__search">
-        <Search aria-hidden className="eco-icon" />
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Имя, телефон, текст, авто, VIN"
-        />
-      </div>
+      <div className="eco-messenger-inbox__tools">
+        <div className="eco-messenger-search eco-messenger-inbox__search">
+          <Search aria-hidden className="eco-icon" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Поиск по чатам"
+            aria-label="Поиск по имени, телефону, тексту, автомобилю или VIN"
+          />
+        </div>
 
-      <label className="eco-messenger-channel-filter eco-messenger-inbox__channel">
-        <span>Канал</span>
-        <span className="eco-messenger-select-wrap">
-          <select value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}>
-            <option value="all">Все каналы</option>
-            {channelFilterOptions.map((id) => {
-              const item = channelConfigs[id];
-              return (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              );
-            })}
-            {MESSENGER_DEV_TOOLS_ENABLED && (
-              <option value="mock">{channelConfigs.mock.label}</option>
-            )}
-          </select>
-          <ChevronDown aria-hidden className="eco-icon" />
-        </span>
-      </label>
+        <label className="eco-messenger-channel-filter eco-messenger-inbox__channel">
+          <span className="eco-messenger-visually-hidden">Канал</span>
+          <span className="eco-messenger-select-wrap">
+            <select
+              value={channel}
+              onChange={(event) => setChannel(event.target.value as typeof channel)}
+              aria-label="Фильтр по каналу"
+            >
+              <option value="all">Все каналы</option>
+              {channelFilterOptions.map((id) => {
+                const item = channelConfigs[id];
+                return (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                );
+              })}
+              {MESSENGER_DEV_TOOLS_ENABLED && (
+                <option value="mock">{channelConfigs.mock.label}</option>
+              )}
+            </select>
+            <ChevronDown aria-hidden className="eco-icon" />
+          </span>
+        </label>
+      </div>
 
       <div className="eco-messenger-filters eco-messenger-inbox__tabs" aria-label="Фильтры сообщений">
         {filterOptions.slice(0, compact ? 6 : filterOptions.length).map((option) => (
@@ -559,7 +574,10 @@ export function MessengerInbox({ compact = false, onClose }: { compact?: boolean
               key={conversation.id}
               conversation={conversation}
               selected={conversation.id === selectedConversationId}
-              onClick={() => selectConversation(conversation.id, compact)}
+              onClick={() => {
+                selectConversation(conversation.id, compact);
+                onSelect?.();
+              }}
             />
           ))}
         {!loading && !errorMode && filteredConversations.length === 0 && (
@@ -1312,7 +1330,7 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
               }
             }
           }}
-          rows={compact ? 2 : 3}
+          rows={1}
           disabled={disabled}
           placeholder={disabled ? "Канал не подключён" : uploading ? "Загружаем вложение..." : "Напишите сообщение..."}
         />

@@ -8,6 +8,7 @@ export const ALLOWED_ACTIONS = new Set([
   "SKIP_DUPLICATE",
   "SKIP_EPHEMERAL",
   "RECREATE_JOB",
+  "RECREATE_BUSINESS_EVENT",
   "RECOMPUTE",
   "MANUAL_REVIEW",
   "SKIP_OBSOLETE",
@@ -43,8 +44,8 @@ export function assertLocalConfig(config) {
   if (!config.socket.startsWith("/private/tmp/") || config.socket.includes("://")) {
     throw new Error("Only a Unix socket below /private/tmp is allowed; TCP/remote hosts are refused.");
   }
-  if (config.sourceDb !== "reconciliation_railway" || config.targetDb !== "reconciliation_selectel") {
-    throw new Error("Database guard refused: only reconciliation_railway -> reconciliation_selectel is allowed.");
+  if (config.sourceDb !== "reconciliation_railway" || !["reconciliation_selectel", "reconciliation_merge_rehearsal"].includes(config.targetDb)) {
+    throw new Error("Database guard refused: only reconciliation_railway -> reconciliation_selectel/reconciliation_merge_rehearsal is allowed.");
   }
   if (!existsSync(config.hashKeyFile || "")) throw new Error("RECONCILIATION_HASH_KEY_FILE is required.");
   if (!existsSync(config.supplementFile || "")) throw new Error("RECONCILIATION_SUPPLEMENT_FILE is required.");

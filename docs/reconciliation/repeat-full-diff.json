@@ -1,0 +1,1047 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-30T17:22:56.371Z",
+  "status": "PASS",
+  "productionMutationAttempted": false,
+  "sourceDatabase": "reconciliation_railway",
+  "targetDatabase": "reconciliation_merge_rehearsal",
+  "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
+  "totals": {
+    "sourceOnly": 248,
+    "targetOnly": 3674,
+    "sharedIdentical": 282508,
+    "sharedDifferent": 292
+  },
+  "explainedDifferences": {
+    "sourceOnlyManifestActions": {
+      "INSERT_MISSING": 149,
+      "MANUAL_REVIEW": 10,
+      "MAP_TO_EXISTING": 32,
+      "RECREATE_BUSINESS_EVENT": 3,
+      "SKIP_DUPLICATE": 41,
+      "SKIP_EPHEMERAL": 145,
+      "SKIP_OBSOLETE": 25
+    },
+    "resolutionManifestEntries": 283
+  },
+  "unexpectedSourceOnly": [],
+  "unexpectedSharedDifferences": [],
+  "integrity": {
+    "foreignKeyCount": 99,
+    "orphanRows": 0,
+    "invalidIndexes": 0,
+    "unvalidatedConstraints": 0
+  },
+  "protectedSelectelOnly": {
+    "contractTotal": 3709,
+    "explicitPkRowsChecked": 3674,
+    "checksumBefore": "77f187d51a0839fe1d070b04349a138e0b1949a755b428530497e4fae02a937c",
+    "checksumAfter": "77f187d51a0839fe1d070b04349a138e0b1949a755b428530497e4fae02a937c",
+    "checksumMatch": true
+  },
+  "tableDiffs": [
+    {
+      "tableName": "ai_assistant_labor_pricing_rules",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 0,
+      "sharedDifferent": 16
+    },
+    {
+      "tableName": "ai_assistant_messages",
+      "sourceOnly": 0,
+      "targetOnly": 40,
+      "sharedIdentical": 23,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "ai_assistant_quotes",
+      "sourceOnly": 0,
+      "targetOnly": 5,
+      "sharedIdentical": 0,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "ai_assistant_runs",
+      "sourceOnly": 0,
+      "targetOnly": 28,
+      "sharedIdentical": 12,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "ai_assistant_sources",
+      "sourceOnly": 0,
+      "targetOnly": 122,
+      "sharedIdentical": 195,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "ai_assistant_threads",
+      "sourceOnly": 0,
+      "targetOnly": 21,
+      "sharedIdentical": 5,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "ai_assistant_tool_calls",
+      "sourceOnly": 0,
+      "targetOnly": 264,
+      "sharedIdentical": 259,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "cash_expense_orders",
+      "sourceOnly": 0,
+      "targetOnly": 1,
+      "sharedIdentical": 30,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "cash_shifts",
+      "sourceOnly": 1,
+      "targetOnly": 2,
+      "sharedIdentical": 41,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "client_case_events",
+      "sourceOnly": 0,
+      "targetOnly": 42,
+      "sharedIdentical": 318,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "client_case_notification_log",
+      "sourceOnly": 0,
+      "targetOnly": 19,
+      "sharedIdentical": 48600,
+      "sharedDifferent": 10
+    },
+    {
+      "tableName": "communication_identities",
+      "sourceOnly": 3,
+      "targetOnly": 2,
+      "sharedIdentical": 69,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "sourceOnly": 3,
+      "targetOnly": 2,
+      "sharedIdentical": 146,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "crm_deals",
+      "sourceOnly": 0,
+      "targetOnly": 1,
+      "sharedIdentical": 41,
+      "sharedDifferent": 4
+    },
+    {
+      "tableName": "crm_stages",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 0,
+      "sharedDifferent": 10
+    },
+    {
+      "tableName": "demand_attribute_definitions",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 0,
+      "sharedDifferent": 13
+    },
+    {
+      "tableName": "integration_audit_logs",
+      "sourceOnly": 0,
+      "targetOnly": 2,
+      "sharedIdentical": 85,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "inventory_ledger_entries",
+      "sourceOnly": 0,
+      "targetOnly": 34,
+      "sharedIdentical": 318,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_counterparties",
+      "sourceOnly": 0,
+      "targetOnly": 7,
+      "sharedIdentical": 2512,
+      "sharedDifferent": 1
+    },
+    {
+      "tableName": "local_demand_positions",
+      "sourceOnly": 0,
+      "targetOnly": 50,
+      "sharedIdentical": 18389,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_demands",
+      "sourceOnly": 0,
+      "targetOnly": 17,
+      "sharedIdentical": 6110,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_inventory_document_audit_logs",
+      "sourceOnly": 0,
+      "targetOnly": 1,
+      "sharedIdentical": 45,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_inventory_document_positions",
+      "sourceOnly": 0,
+      "targetOnly": 2,
+      "sharedIdentical": 327,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_inventory_documents",
+      "sourceOnly": 0,
+      "targetOnly": 1,
+      "sharedIdentical": 97,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "local_products",
+      "sourceOnly": 0,
+      "targetOnly": 2,
+      "sharedIdentical": 1748,
+      "sharedDifferent": 4
+    },
+    {
+      "tableName": "local_stock_balances",
+      "sourceOnly": 0,
+      "targetOnly": 2,
+      "sharedIdentical": 936,
+      "sharedDifferent": 24
+    },
+    {
+      "tableName": "messenger_accounts",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 18,
+      "sharedDifferent": 1
+    },
+    {
+      "tableName": "messenger_attachments",
+      "sourceOnly": 7,
+      "targetOnly": 46,
+      "sharedIdentical": 536,
+      "sharedDifferent": 43
+    },
+    {
+      "tableName": "messenger_connections",
+      "sourceOnly": 3,
+      "targetOnly": 2,
+      "sharedIdentical": 71,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "messenger_conversations",
+      "sourceOnly": 3,
+      "targetOnly": 4,
+      "sharedIdentical": 286,
+      "sharedDifferent": 31
+    },
+    {
+      "tableName": "messenger_media_jobs",
+      "sourceOnly": 145,
+      "targetOnly": 2398,
+      "sharedIdentical": 69835,
+      "sharedDifferent": 64
+    },
+    {
+      "tableName": "messenger_messages",
+      "sourceOnly": 5,
+      "targetOnly": 258,
+      "sharedIdentical": 5304,
+      "sharedDifferent": 45
+    },
+    {
+      "tableName": "messenger_outbox",
+      "sourceOnly": 25,
+      "targetOnly": 32,
+      "sharedIdentical": 270,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "notification_jobs",
+      "sourceOnly": 19,
+      "targetOnly": 20,
+      "sharedIdentical": 349,
+      "sharedDifferent": 14
+    },
+    {
+      "tableName": "notification_logs",
+      "sourceOnly": 33,
+      "targetOnly": 51,
+      "sharedIdentical": 926,
+      "sharedDifferent": 5
+    },
+    {
+      "tableName": "notification_rules",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 9,
+      "sharedDifferent": 3
+    },
+    {
+      "tableName": "product_mann_links",
+      "sourceOnly": 0,
+      "targetOnly": 5,
+      "sharedIdentical": 5,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "product_marking_audit_logs",
+      "sourceOnly": 0,
+      "targetOnly": 4,
+      "sharedIdentical": 46,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "shifts",
+      "sourceOnly": 1,
+      "targetOnly": 1,
+      "sharedIdentical": 42,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "shipment_revisions",
+      "sourceOnly": 0,
+      "targetOnly": 146,
+      "sharedIdentical": 1321,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "telegram_user_sessions",
+      "sourceOnly": 0,
+      "targetOnly": 0,
+      "sharedIdentical": 12,
+      "sharedDifferent": 1
+    },
+    {
+      "tableName": "vehicle_lookup_cache",
+      "sourceOnly": 0,
+      "targetOnly": 33,
+      "sharedIdentical": 40,
+      "sharedDifferent": 2
+    },
+    {
+      "tableName": "vehicle_mann_mappings",
+      "sourceOnly": 0,
+      "targetOnly": 6,
+      "sharedIdentical": 2,
+      "sharedDifferent": 0
+    },
+    {
+      "tableName": "vehicle_model_aliases",
+      "sourceOnly": 0,
+      "targetOnly": 1,
+      "sharedIdentical": 2,
+      "sharedDifferent": 1
+    }
+  ],
+  "foreignKeys": [
+    {
+      "childTable": "ai_assistant_messages",
+      "parentTable": "ai_assistant_threads",
+      "name": "ai_assistant_messages_thread_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "ai_assistant_quotes",
+      "parentTable": "ai_assistant_runs",
+      "name": "ai_assistant_quotes_run_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "ai_assistant_quotes",
+      "parentTable": "ai_assistant_threads",
+      "name": "ai_assistant_quotes_thread_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "ai_assistant_runs",
+      "parentTable": "ai_assistant_threads",
+      "name": "ai_assistant_runs_thread_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "ai_assistant_sources",
+      "parentTable": "ai_assistant_runs",
+      "name": "ai_assistant_sources_run_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "ai_assistant_tool_calls",
+      "parentTable": "ai_assistant_runs",
+      "name": "ai_assistant_tool_calls_run_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "cash_expense_orders",
+      "parentTable": "local_counterparties",
+      "name": "cash_expense_orders_counterparty_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "cash_expense_orders",
+      "parentTable": "cash_expense_items",
+      "name": "cash_expense_orders_expense_item_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "cash_expense_orders",
+      "parentTable": "local_organizations",
+      "name": "cash_expense_orders_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "cash_expense_orders",
+      "parentTable": "local_stores",
+      "name": "cash_expense_orders_warehouse_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "cash_withdrawals",
+      "parentTable": "cash_shifts",
+      "name": "cash_withdrawals_shift_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "client_case_events",
+      "parentTable": "crm_deals",
+      "name": "client_case_events_case_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "client_case_notification_log",
+      "parentTable": "crm_deals",
+      "name": "client_case_notification_log_case_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "closing_documents",
+      "parentTable": "local_organizations",
+      "name": "closing_documents_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "closing_documents",
+      "parentTable": "local_demands",
+      "name": "closing_documents_shipment_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "crm_deals",
+      "parentTable": "crm_stages",
+      "name": "crm_deals_stage_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_map_items",
+      "parentTable": "diagnostic_map_sessions",
+      "name": "diagnostic_map_items_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_map_photos",
+      "parentTable": "diagnostic_map_items",
+      "name": "diagnostic_map_photos_item_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_map_recommendation_actions",
+      "parentTable": "diagnostic_map_items",
+      "name": "diagnostic_map_recommendation_actions_item_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_map_sessions",
+      "parentTable": "local_demands",
+      "name": "diagnostic_map_sessions_demand_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_map_vehicle_photos",
+      "parentTable": "diagnostic_map_sessions",
+      "name": "diagnostic_map_vehicle_photos_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_offers",
+      "parentTable": "diagnostics",
+      "name": "diagnostic_offers_diagnostic_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_photos",
+      "parentTable": "diagnostic_positions",
+      "name": "diagnostic_photos_position_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "diagnostic_positions",
+      "parentTable": "diagnostics",
+      "name": "diagnostic_positions_diagnostic_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "fluid_source_rows",
+      "parentTable": "fluid_catalog_import_batches",
+      "name": "fluid_source_rows_import_batch_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "integration_credentials",
+      "parentTable": "messenger_accounts",
+      "name": "integration_credentials_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "integration_credentials",
+      "parentTable": "integration_providers",
+      "name": "integration_credentials_provider_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "integration_onboarding_sessions",
+      "parentTable": "messenger_accounts",
+      "name": "integration_onboarding_sessions_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_assignments",
+      "parentTable": "inventory_sessions",
+      "name": "inventory_assignments_inventory_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_attachments",
+      "parentTable": "inventory_lines",
+      "name": "inventory_attachments_inventory_line_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_audit_logs",
+      "parentTable": "inventory_lines",
+      "name": "inventory_audit_logs_inventory_line_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_audit_logs",
+      "parentTable": "inventory_sessions",
+      "name": "inventory_audit_logs_inventory_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_count_entries",
+      "parentTable": "inventory_lines",
+      "name": "inventory_count_entries_inventory_line_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_ledger_entries",
+      "parentTable": "local_organizations",
+      "name": "inventory_ledger_entries_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_ledger_entries",
+      "parentTable": "inventory_ledger_entries",
+      "name": "inventory_ledger_entries_original_entry_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_ledger_entries",
+      "parentTable": "local_products",
+      "name": "inventory_ledger_entries_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_ledger_entries",
+      "parentTable": "local_demands",
+      "name": "inventory_ledger_entries_shipment_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_ledger_entries",
+      "parentTable": "local_stores",
+      "name": "inventory_ledger_entries_store_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_lines",
+      "parentTable": "inventory_sessions",
+      "name": "inventory_lines_inventory_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_lines",
+      "parentTable": "local_products",
+      "name": "inventory_lines_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_lines",
+      "parentTable": "local_stores",
+      "name": "inventory_lines_warehouse_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_locks",
+      "parentTable": "inventory_sessions",
+      "name": "inventory_locks_inventory_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_locks",
+      "parentTable": "local_organizations",
+      "name": "inventory_locks_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_locks",
+      "parentTable": "local_products",
+      "name": "inventory_locks_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_locks",
+      "parentTable": "local_stores",
+      "name": "inventory_locks_warehouse_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_movement_links",
+      "parentTable": "inventory_lines",
+      "name": "inventory_movement_links_inventory_line_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_movement_links",
+      "parentTable": "inventory_sessions",
+      "name": "inventory_movement_links_inventory_session_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_movement_links",
+      "parentTable": "inventory_ledger_entries",
+      "name": "inventory_movement_links_ledger_entry_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_sessions",
+      "parentTable": "local_organizations",
+      "name": "inventory_sessions_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "inventory_sessions",
+      "parentTable": "local_stores",
+      "name": "inventory_sessions_warehouse_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_demand_positions",
+      "parentTable": "local_demands",
+      "name": "local_demand_positions_demand_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_demand_positions",
+      "parentTable": "local_products",
+      "name": "local_demand_positions_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_demands",
+      "parentTable": "local_counterparties",
+      "name": "local_demands_counterparty_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_demands",
+      "parentTable": "local_organizations",
+      "name": "local_demands_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_demands",
+      "parentTable": "local_stores",
+      "name": "local_demands_store_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_document_audit_logs",
+      "parentTable": "local_inventory_documents",
+      "name": "local_inventory_document_audit_logs_document_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_document_positions",
+      "parentTable": "local_inventory_documents",
+      "name": "local_inventory_document_positions_document_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_document_positions",
+      "parentTable": "local_products",
+      "name": "local_inventory_document_positions_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_documents",
+      "parentTable": "local_inventory_documents",
+      "name": "local_inventory_documents_correction_of_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_documents",
+      "parentTable": "local_counterparties",
+      "name": "local_inventory_documents_counterparty_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_inventory_documents",
+      "parentTable": "local_stores",
+      "name": "local_inventory_documents_store_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_product_photos",
+      "parentTable": "local_products",
+      "name": "local_product_photos_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_stock_balances",
+      "parentTable": "local_products",
+      "name": "local_stock_balances_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_stock_balances",
+      "parentTable": "local_stores",
+      "name": "local_stock_balances_store_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_stores",
+      "parentTable": "local_organizations",
+      "name": "local_stores_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_supplier_invoice_payments",
+      "parentTable": "cash_expense_orders",
+      "name": "local_supplier_invoice_payments_cash_expense_order_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_supplier_invoice_payments",
+      "parentTable": "local_supplier_invoices",
+      "name": "local_supplier_invoice_payments_invoice_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "local_supplier_invoices",
+      "parentTable": "local_inventory_documents",
+      "name": "local_supplier_invoices_document_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "mann_filter_applications",
+      "parentTable": "mann_pdf_import_batches",
+      "name": "mann_filter_applications_import_batch_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "mann_fluid_requirement_links",
+      "parentTable": "vehicle_fluid_requirements",
+      "name": "mann_fluid_requirement_links_requirement_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "mann_pdf_application_raw",
+      "parentTable": "mann_pdf_import_batches",
+      "name": "mann_pdf_application_raw_import_batch_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_attachments",
+      "parentTable": "messenger_messages",
+      "name": "messenger_attachments_message_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_conversations",
+      "parentTable": "messenger_connections",
+      "name": "messenger_conversations_connection_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_conversations",
+      "parentTable": "messenger_accounts",
+      "name": "messenger_conversations_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_delivery_events",
+      "parentTable": "messenger_messages",
+      "name": "messenger_delivery_events_message_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_media_jobs",
+      "parentTable": "messenger_attachments",
+      "name": "messenger_media_jobs_attachment_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_messages",
+      "parentTable": "messenger_conversations",
+      "name": "messenger_messages_conversation_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_messages",
+      "parentTable": "messenger_accounts",
+      "name": "messenger_messages_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_outbox",
+      "parentTable": "messenger_connections",
+      "name": "messenger_outbox_connection_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_outbox",
+      "parentTable": "messenger_conversations",
+      "name": "messenger_outbox_conversation_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_outbox",
+      "parentTable": "messenger_messages",
+      "name": "messenger_outbox_message_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_outbox",
+      "parentTable": "messenger_accounts",
+      "name": "messenger_outbox_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "messenger_sync_cursors",
+      "parentTable": "messenger_accounts",
+      "name": "messenger_sync_cursors_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "moysklad_demand_position_sync",
+      "parentTable": "moysklad_demand_sync",
+      "name": "moysklad_demand_position_sync_demand_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "organization_members",
+      "parentTable": "local_organizations",
+      "name": "organization_members_organization_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "product_import_rows",
+      "parentTable": "product_import_jobs",
+      "name": "product_import_rows_job_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "product_mann_links",
+      "parentTable": "local_products",
+      "name": "product_mann_links_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "product_mann_poman_migration_audit",
+      "parentTable": "local_products",
+      "name": "product_mann_poman_migration_audit_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "product_marking_audit_logs",
+      "parentTable": "local_products",
+      "name": "product_marking_audit_logs_product_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "shipment_revisions",
+      "parentTable": "local_demands",
+      "name": "shipment_revisions_shipment_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "supplier_invoice_tbank_payments",
+      "parentTable": "tbank_integrations",
+      "name": "supplier_invoice_tbank_payments_integration_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "supplier_invoice_tbank_payments",
+      "parentTable": "local_supplier_invoices",
+      "name": "supplier_invoice_tbank_payments_supplier_invoice_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "tbank_settlement_accounts",
+      "parentTable": "tbank_integrations",
+      "name": "tbank_settlement_accounts_integration_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "tbank_webhook_events",
+      "parentTable": "supplier_invoice_tbank_payments",
+      "name": "tbank_webhook_events_supplier_invoice_tbank_payment_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "telegram_user_sessions",
+      "parentTable": "messenger_accounts",
+      "name": "telegram_user_sessions_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "vehicle_fluid_requirements",
+      "parentTable": "fluid_catalog_import_batches",
+      "name": "vehicle_fluid_requirements_import_batch_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "vehicle_fluid_requirements",
+      "parentTable": "fluid_source_rows",
+      "name": "vehicle_fluid_requirements_source_row_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "webhook_subscriptions",
+      "parentTable": "messenger_accounts",
+      "name": "webhook_subscriptions_messenger_account_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    },
+    {
+      "childTable": "webhook_subscriptions",
+      "parentTable": "integration_providers",
+      "name": "webhook_subscriptions_provider_id_fkey",
+      "validated": true,
+      "orphanRows": 0
+    }
+  ]
+}

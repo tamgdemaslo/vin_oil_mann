@@ -2,11 +2,13 @@
 
 import { Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
+import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 
 type Thread = { id: string; title: string; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
 type Message = { id: string; role: "user" | "assistant"; content: string; citationsJson: Citation[]; attachmentsJson: unknown; createdAt: string; runId: string | null };
 type Citation = { title: string | null; url: string };
-type Quote = { id: string; status: string; vehicleDisplayName: string | null; serviceName: string | null; selectedScenario: string | null; appliedRuleId: string | null; appliedRuleSnapshotJson: unknown; includedItemsJson: unknown; optionalItemsJson: unknown; baseTotalCents: number; maximumTotalCents: number | null; assumptionsJson: unknown; internalWarningsJson: unknown; customerSafeWarningsJson: unknown; validUntil: string | null; isSelected: boolean; createdAt: string };
+type Quote = AIServiceQuote & { appliedRuleId: string | null; isSelected: boolean; createdAt: string };
 type Run = { id: string; status: string; model: string; reasoning: string; errorMessage: string | null; inputTokens: number | null; outputTokens: number | null; durationMs: number | null; startedAt: string; completedAt: string | null; cancelledAt: string | null } | null;
 type Source = { id: string; sourceType: string; title: string | null; url: string | null; excerpt: string | null; createdAt: string };
 type ToolCall = { id: string; toolName: string; status: string; errorMessage: string | null; durationMs: number | null; resultSummary: unknown; startedAt: string };
@@ -44,6 +46,7 @@ function toolLabel(name: string) {
     find_service_options: "Поиск стоимости работы",
     search_rossko: "ROSSKO",
     calculate_quote_preview: "Предварительный расчёт",
+    calculate_service_quote_v2: "Расчёт материалов и работы",
   };
   return labels[name] || name;
 }
@@ -71,12 +74,15 @@ function clientQuoteId(message: Message) {
   return typeof quoteId === "string" ? quoteId : null;
 }
 
-function formatQuotePrice(cents: number) {
-  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.round(cents / 100 / 100) * 100)} ₽`;
-}
-
 function formatTokens(value: number) {
   return new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function structuredResponseForMessage(message: Message): AIAssistantStructuredResponse | undefined {
+  const parsed = parseAIAssistantStructuredResponse(asObject(message.attachmentsJson).structuredResponse);
+  if (parsed) return parsed;
+  if (attachmentKind(message) !== "client_message") return undefined;
+  return { summaryMarkdown: "", confirmed: [], assumptions: [], requiresVerification: [], recommendations: [], clientMessage: message.content };
 }
 
 export default function AIAssistantClient() {
@@ -263,12 +269,18 @@ export default function AIAssistantClient() {
               const linkedQuotes = quoteIds.map((id) => quotes.find((quote) => quote.id === id)).filter((quote): quote is Quote => Boolean(quote));
               const isClientMessage = attachmentKind(message) === "client_message" && Boolean(clientQuoteId(message));
               const isMissingQuote = attachmentKind(message) === "missing_quote";
+              const structuredResponse = structuredResponseForMessage(message);
               return <article key={message.id} className={`eco-aiw-message is-${message.role}`}>
                 <div className="eco-aiw-message__meta">{message.role === "assistant" ? "ИИ-помощник" : "Вы"} · {formatTime(message.createdAt)}</div>
-                <div className="eco-aiw-message__body">{message.content}</div>
+                {message.role === "assistant" ? <AIAssistantAnswerRenderer
+                  content={message.content}
+                  structuredResponse={structuredResponse}
+                  status="completed"
+                  sources={(message.citationsJson ?? []).map((citation) => ({ title: citation.title, url: citation.url, sourceType: "web" }))}
+                  quote={linkedQuotes[0]}
+                /> : <div className="eco-aiw-message__body">{message.content}</div>}
+                {linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
                 {linkedQuotes.map((quote) => <div className="eco-aiw-quote-actions" key={quote.id}>
-                  <div className="eco-aiw-quote-actions__summary"><strong>Готовый расчёт</strong><span>{quote.vehicleDisplayName || "Автомобиль уточняется"} · {quote.serviceName || "Работа уточняется"}</span><b>{quote.maximumTotalCents && quote.maximumTotalCents > quote.baseTotalCents ? `от ${formatQuotePrice(quote.baseTotalCents)} до ${formatQuotePrice(quote.maximumTotalCents)}` : formatQuotePrice(quote.baseTotalCents)}</b></div>
-                  {asObject(quote.appliedRuleSnapshotJson).name ? <p className="eco-aiw-quote-actions__rule">Тариф: {String(asObject(quote.appliedRuleSnapshotJson).name)} · {String(asObject(quote.appliedRuleSnapshotJson).selectionReason || "применённое правило")}</p> : null}
                   {quote.status === "draft" ? <div className="eco-aiw-quote-actions__buttons">
                     <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working}>Короткое сообщение</button>
                     <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working}>С расчётом</button>
@@ -278,9 +290,8 @@ export default function AIAssistantClient() {
                   </div> : <p className="eco-aiw-quote-actions__missing">Для клиентского текста в этом расчёте нужно указать автомобиль и название работы.</p>}
                   {Array.isArray(quote.internalWarningsJson) && quote.internalWarningsJson.length > 0 && <p className="eco-aiw-quote-actions__warning">Внутреннее замечание — не включено в сообщение клиенту.</p>}
                 </div>)}
-                {isClientMessage && <div className="eco-aiw-client-message-actions"><button type="button" onClick={() => void copyText(message.content)}><Clipboard size={14} /> Скопировать</button><button type="button" onClick={() => openCrmPreview(message.content)}>Открыть в CRM-диалоге</button></div>}
+                {isClientMessage && <div className="eco-aiw-client-message-actions"><button type="button" onClick={() => openCrmPreview(message.content)}>Открыть в CRM-диалоге</button></div>}
                 {isMissingQuote && <div className="eco-aiw-client-message-actions"><button type="button" onClick={() => setDraft("Выполни технический подбор и предварительный расчёт по текущему запросу")}>Рассчитать</button></div>}
-                {message.citationsJson?.length > 0 && <div className="eco-aiw-inline-sources">{message.citationsJson.map((citation) => <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> {citation.title || new URL(citation.url).hostname}</a>)}</div>}
               </article>;
             })}
             {working && <div className="eco-aiw-thinking"><LoaderCircle size={17} /> Идёт исследование: web-поиск, каталоги и источники появятся справа.</div>}

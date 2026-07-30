@@ -3,23 +3,30 @@
   "status": "PASS",
   "productionMutationAttempted": false,
   "sourceDatabase": "reconciliation_railway",
-  "targetDatabase": "reconciliation_selectel",
+  "targetDatabase": "reconciliation_merge_rehearsal",
   "localUnixSocketOnly": true,
-  "manifestRecords": 342,
+  "manifestRecords": 405,
   "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
   "publicTables": {
     "source": 137,
     "target": 137
   },
   "prismaMigrationRows": {
-    "source": 56,
-    "target": 56
+    "sourceTotal": 57,
+    "targetTotal": 56,
+    "sourceActive": 50,
+    "targetActive": 50,
+    "sourceRolledBack": 6,
+    "targetRolledBack": 6
+  },
+  "failedPrismaMigrationRows": {
+    "source": 1
   },
   "summary": {
-    "plannedInserts": 96,
+    "plannedInserts": 149,
     "mappings": 32,
-    "skips": 204,
-    "recreations": 0,
+    "skips": 211,
+    "recreations": 3,
     "recomputations": 0,
     "manualReview": 10,
     "rejected": 0,

@@ -1,9 +1,9 @@
 {
-  "reportVersion": 1,
-  "generatedAt": "2026-07-29T21:15:00Z",
+  "reportVersion": 2,
+  "generatedAt": "2026-07-30T17:24:49.597Z",
   "status": "NO-GO",
   "hashKeyId": "f5ed85ce298ddfd9",
-  "conflictCount": 282,
+  "conflictCount": 283,
   "conflicts": [
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -20,9 +20,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -39,9 +40,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -58,9 +60,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -77,9 +80,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -96,9 +100,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -115,9 +120,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -134,9 +140,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -153,9 +160,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -172,9 +180,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -191,9 +200,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -210,9 +220,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -229,9 +240,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -248,9 +260,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -267,9 +280,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -286,9 +300,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -305,9 +320,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
       "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -323,9 +339,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -341,9 +358,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -358,9 +376,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -376,9 +395,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -393,9 +413,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -410,9 +431,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -428,9 +450,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -445,9 +468,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -462,9 +486,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "client_case_notification_log",
@@ -479,9 +504,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_deals",
@@ -501,9 +527,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:32:42.686",
       "railwayUpdatedAt": "2026-07-10T15:36:36.798",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_deals",
@@ -525,9 +552,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T13:46:26.842",
       "railwayUpdatedAt": "2026-07-24T06:56:17.11",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_deals",
@@ -549,9 +577,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:32:23.725",
       "railwayUpdatedAt": "2026-07-25T07:47:16.505",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_deals",
@@ -573,9 +602,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:32:35.255",
       "railwayUpdatedAt": "2026-07-28T06:00:07.99",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -588,11 +618,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -605,11 +636,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -622,11 +654,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -639,11 +672,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -656,11 +690,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -673,11 +708,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -690,11 +726,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -707,11 +744,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -724,11 +762,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "crm_stages",
@@ -741,11 +780,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:23:25.305",
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
       "railwayUpdatedAt": "2026-07-25T07:49:37.144",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -758,11 +798,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.438",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.155",
       "railwayUpdatedAt": "2026-07-24T16:27:23.232",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -775,11 +816,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.433",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.153",
       "railwayUpdatedAt": "2026-07-24T16:27:23.225",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -792,11 +834,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.444",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.157",
       "railwayUpdatedAt": "2026-07-24T16:27:23.238",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -809,11 +852,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.458",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.164",
       "railwayUpdatedAt": "2026-07-24T16:27:23.258",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -826,11 +870,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.549",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.166",
       "railwayUpdatedAt": "2026-07-24T16:27:23.264",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -843,11 +888,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.561",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.178",
       "railwayUpdatedAt": "2026-07-24T16:27:23.297",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -860,11 +906,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.552",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.168",
       "railwayUpdatedAt": "2026-07-24T16:27:23.271",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -877,11 +924,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.555",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.171",
       "railwayUpdatedAt": "2026-07-24T16:27:23.277",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -894,11 +942,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.453",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.161",
       "railwayUpdatedAt": "2026-07-24T16:27:23.251",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -911,11 +960,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.449",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.159",
       "railwayUpdatedAt": "2026-07-24T16:27:23.245",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -928,11 +978,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.393",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.149",
       "railwayUpdatedAt": "2026-07-24T16:27:23.211",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -945,11 +996,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.559",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.176",
       "railwayUpdatedAt": "2026-07-24T16:27:23.29",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "demand_attribute_definitions",
@@ -962,11 +1014,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T18:21:25.557",
+      "selectelUpdatedAt": "2026-07-28T15:35:18.174",
       "railwayUpdatedAt": "2026-07-24T16:27:23.284",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_counterparties",
@@ -984,9 +1037,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T07:08:24.763",
       "railwayUpdatedAt": "2026-05-24T11:11:32.024",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_products",
@@ -1002,9 +1056,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T11:45:10.493",
       "railwayUpdatedAt": "2026-07-24T14:23:07.891",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_products",
@@ -1030,9 +1085,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T07:46:52.87",
       "railwayUpdatedAt": "2026-06-28T08:38:47.11",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_products",
@@ -1048,9 +1104,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T08:59:42.774",
       "railwayUpdatedAt": "2026-07-24T14:13:06.997",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_products",
@@ -1070,9 +1127,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T14:37:20.253",
       "railwayUpdatedAt": "2026-07-23T21:26:26.184",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1089,9 +1147,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1108,9 +1167,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1127,9 +1187,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1146,9 +1207,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1165,9 +1227,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1184,9 +1247,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1203,9 +1267,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1222,9 +1287,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1241,9 +1307,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1260,9 +1327,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1279,9 +1347,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1292,13 +1361,16 @@
         "hash": "hmac-sha256:f5ed85ce298ddfd9:52a8c973477e45ffdfb3d1ee6a1631cd9c5b39cf1fa28461549c43d705f8e569"
       },
       "differingFields": [
+        "available",
+        "quantity",
         "synced_at"
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1315,9 +1387,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1334,9 +1407,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1353,9 +1427,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1372,9 +1447,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1391,9 +1467,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1410,9 +1487,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1429,9 +1507,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1448,9 +1527,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1467,9 +1547,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1486,9 +1567,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1505,9 +1587,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "local_stock_balances",
@@ -1524,9 +1607,10 @@
       ],
       "selectelUpdatedAt": null,
       "railwayUpdatedAt": null,
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_accounts",
@@ -1540,11 +1624,12 @@
         "last_sync_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.338439+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.604045+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.944813+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1563,11 +1648,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.559025+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.779231+02:00",
       "railwayUpdatedAt": "2026-07-25T10:27:38.038295+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "MANUAL_BUSINESS_DECISION",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1583,11 +1669,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.882396+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.363474+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:37.962034+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1604,9 +1691,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:57.649613+02:00",
       "railwayUpdatedAt": "2026-07-25T10:31:08.097584+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1622,9 +1710,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:40.049886+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.045739+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1640,11 +1729,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.32613+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.590621+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:38.047056+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1662,9 +1752,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:29:12.130175+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:07.871647+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1680,11 +1771,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.841561+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.325653+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:09.349274+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1700,11 +1792,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.41588+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.952098+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:54.879458+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1720,11 +1813,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.934173+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.398375+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:08.068296+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1742,11 +1836,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.15246+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.399032+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:23.045062+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1762,11 +1857,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.852292+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.335661+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.005603+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1782,11 +1878,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.312015+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.841825+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:38.174034+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1804,9 +1901,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T08:50:38.470656+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:53.061507+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1822,11 +1920,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.859455+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.343129+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.247685+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1842,11 +1941,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.868556+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.352368+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.522074+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1862,9 +1962,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:36.565592+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:28.717848+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1880,11 +1981,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.447671+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.651259+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:08.509847+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1900,11 +2002,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.914307+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.385918+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:53.754086+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1921,11 +2024,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.931714+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.648136+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.076594+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1944,11 +2048,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.508452+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.794472+02:00",
       "railwayUpdatedAt": "2026-07-24T14:53:49.240186+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1966,9 +2071,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:17.447252+02:00",
       "railwayUpdatedAt": "2026-07-25T10:29:08.041457+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -1987,11 +2093,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.797009+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.011185+02:00",
       "railwayUpdatedAt": "2026-07-25T10:27:08.107035+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "MANUAL_BUSINESS_DECISION",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2007,11 +2114,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.96411+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.410366+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:08.858507+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2027,11 +2135,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.90402+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.379334+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:38.619833+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2048,9 +2157,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:30:10.803921+02:00",
       "railwayUpdatedAt": "2026-07-25T10:31:08.196632+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2068,9 +2178,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:37:53.628717+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:08.119523+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2088,9 +2199,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T16:56:37.09037+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:37.89668+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2107,9 +2219,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T11:58:23.808052+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.16448+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2125,11 +2238,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.893913+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.37026+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:38.31511+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2146,11 +2260,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.500405+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.787563+02:00",
       "railwayUpdatedAt": "2026-07-24T14:53:19.172704+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2165,11 +2280,12 @@
         "last_attempt_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.247842+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.501511+02:00",
       "railwayUpdatedAt": "2026-07-25T09:58:24.076895+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2185,11 +2301,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.332651+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.59776+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:38.142709+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2206,9 +2323,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T15:51:41.008556+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.254605+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2223,11 +2341,12 @@
         "last_attempt_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.873868+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.101486+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:54.14866+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2245,9 +2364,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:12:22.976373+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:53.382024+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2265,9 +2385,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T15:15:25.803428+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:08.044318+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2283,11 +2404,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.4573+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.680635+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:23.268797+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2304,9 +2426,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:24.768913+02:00",
       "railwayUpdatedAt": "2026-07-25T10:29:53.040918+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2323,9 +2446,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:19:38.881358+02:00",
       "railwayUpdatedAt": "2026-07-25T09:59:09.233122+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2341,9 +2465,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:51.35294+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.58168+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2360,9 +2485,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:19:57.759132+02:00",
       "railwayUpdatedAt": "2026-07-25T09:59:11.102852+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2379,11 +2505,12 @@
         "status",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.516168+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.800754+02:00",
       "railwayUpdatedAt": "2026-07-24T14:54:04.162331+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_attachments",
@@ -2399,11 +2526,12 @@
         "metadata_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.852405+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.172277+02:00",
       "railwayUpdatedAt": "2026-07-25T09:58:53.004241+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2418,9 +2546,10 @@
       ],
       "selectelUpdatedAt": "2026-07-24T18:52:36.238731+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.753709+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2435,11 +2564,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.274922+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.528574+02:00",
       "railwayUpdatedAt": "2026-07-25T10:00:38.127042+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2454,11 +2584,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.847487+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.239188+02:00",
       "railwayUpdatedAt": "2026-07-28T08:00:07.794013+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2472,11 +2603,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.554278+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.014907+02:00",
       "railwayUpdatedAt": "2026-07-28T14:00:08.948345+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2491,9 +2623,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T11:19:55.976795+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:34.439325+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2506,11 +2639,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.253552+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.506376+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:33.901708+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2523,11 +2657,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.802021+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.016289+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:30.608027+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2543,11 +2678,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.671825+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.209113+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:26.921418+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2562,11 +2698,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.336024+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.787181+02:00",
       "railwayUpdatedAt": "2026-07-28T11:00:08.176838+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2582,11 +2719,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.378578+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.887205+02:00",
       "railwayUpdatedAt": "2026-07-28T10:00:08.033458+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2600,11 +2738,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.772235+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.165988+02:00",
       "railwayUpdatedAt": "2026-07-28T14:00:08.55116+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2618,11 +2757,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.344725+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.598606+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:29.931286+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2637,11 +2777,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.718888+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.04497+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:35.142998+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2654,11 +2795,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.169826+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.419431+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:33.72383+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2669,13 +2811,16 @@
         "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
       },
       "differingFields": [
+        "last_message_at",
+        "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.013235+02:00",
-      "railwayUpdatedAt": "2026-07-25T09:54:33.368149+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "selectelUpdatedAt": "2026-07-28T20:01:32.252217+02:00",
+      "railwayUpdatedAt": "2026-07-30T12:00:13.265968+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2690,11 +2835,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.705963+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.929134+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:30.266914+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2710,11 +2856,12 @@
         "unread_count",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.019886+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.456235+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:28.202263+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2731,11 +2878,12 @@
         "participant_username",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.416838+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.672571+02:00",
       "railwayUpdatedAt": "2026-07-24T14:16:07.488956+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2750,9 +2898,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:11:18.849602+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.541179+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2767,11 +2916,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.472053+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.699589+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:30.43117+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2784,11 +2934,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.082476+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.330959+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:33.439372+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2803,9 +2954,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:11:18.422086+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.103458+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2825,11 +2977,12 @@
         "participant_avatar_url",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.94922+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.662502+02:00",
       "railwayUpdatedAt": "2026-07-28T12:00:08.312342+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2842,11 +2995,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.881404+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.106402+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:31.679197+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2861,11 +3015,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.914684+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.197216+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:32.580199+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2881,9 +3036,10 @@
       ],
       "selectelUpdatedAt": "2026-07-24T18:52:36.379682+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.871723+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2898,11 +3054,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.204272+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.659447+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:29.124475+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2918,11 +3075,12 @@
         "last_message_text",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.565904+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.786062+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:30.070735+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2936,11 +3094,12 @@
         "last_message_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.557962+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.854191+02:00",
       "railwayUpdatedAt": "2026-07-25T12:00:38.430297+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2953,11 +3112,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.945421+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.186472+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:31.774225+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_conversations",
@@ -2972,9 +3132,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T12:29:52.308002+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:35.837251+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -2990,9 +3151,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:10.305325+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:13.908379+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3008,9 +3170,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:40.055102+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.06882+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3026,9 +3189,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:40.268226+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:44.050461+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3044,9 +3208,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:04:18.913074+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:43.525903+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3062,9 +3227,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:06:21.742673+02:00",
       "railwayUpdatedAt": "2026-07-24T18:54:13.754024+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3080,9 +3246,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:09:24.593914+02:00",
       "railwayUpdatedAt": "2026-07-24T18:57:43.736384+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3098,9 +3265,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:06:59.29474+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:14.926124+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3116,9 +3284,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:09:09.365772+02:00",
       "railwayUpdatedAt": "2026-07-24T18:56:30.102665+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3134,9 +3303,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:12.623725+02:00",
       "railwayUpdatedAt": "2026-07-24T19:20:58.815078+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3152,9 +3322,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:26.75523+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:28.966709+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3170,9 +3341,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:26.719803+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:43.830598+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3188,9 +3360,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:55.258062+02:00",
       "railwayUpdatedAt": "2026-07-24T19:22:13.807689+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3206,9 +3379,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:11.70295+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:14.023647+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3224,9 +3398,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:04:06.672049+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:43.443156+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3242,9 +3417,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:04:20.32114+02:00",
       "railwayUpdatedAt": "2026-07-24T19:02:13.482615+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3260,9 +3436,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:09:47.470188+02:00",
       "railwayUpdatedAt": "2026-07-24T18:58:14.927877+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3278,9 +3455,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:53.722286+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:28.439237+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3296,9 +3474,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:12.759652+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:13.697842+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3314,9 +3493,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:30.893754+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:15.977276+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3332,9 +3512,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:55.341739+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:43.786895+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3350,9 +3531,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:40.328822+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:43.89613+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3368,9 +3550,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:56.727197+02:00",
       "railwayUpdatedAt": "2026-07-24T19:28:58.905575+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3386,9 +3569,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:25.259471+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:28.805649+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3404,9 +3588,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:04:03.907668+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:28.547347+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3422,9 +3607,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:41.73596+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:43.982141+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3440,9 +3626,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:28.131956+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:43.930994+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3458,9 +3645,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:10:10.303099+02:00",
       "railwayUpdatedAt": "2026-07-24T18:58:43.819181+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3476,9 +3664,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:15.511337+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:14.156871+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3494,9 +3683,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:51.359374+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.603731+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3512,9 +3702,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:43.144697+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:44.073139+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3531,9 +3722,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:34.817804+02:00",
       "railwayUpdatedAt": "2026-07-24T19:00:58.496485+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3550,9 +3742,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:38.909731+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:13.431904+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3568,9 +3761,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:43.098504+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:58.884135+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3586,9 +3780,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:36.570824+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:28.740194+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3604,9 +3799,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:55.281567+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:59.089611+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3622,9 +3818,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:08:37.729064+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:59.261136+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3640,9 +3837,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:14.082713+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:13.913755+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3658,9 +3856,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:14.169826+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:28.684975+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3676,9 +3875,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:09:55.072945+02:00",
       "railwayUpdatedAt": "2026-07-24T18:58:28.831023+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3694,9 +3894,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:52.30506+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:13.602373+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3712,9 +3913,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:06:53.391462+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:14.585227+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3730,9 +3932,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:08:15.74962+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:58.587542+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3748,9 +3951,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:58.140254+02:00",
       "railwayUpdatedAt": "2026-07-24T19:28:58.993423+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3766,9 +3970,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:50.881491+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:13.514207+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3784,9 +3989,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:25.312873+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:28.883805+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3802,9 +4008,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:56.706184+02:00",
       "railwayUpdatedAt": "2026-07-24T19:11:13.606803+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3820,9 +4027,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:25.260804+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:28.779505+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3838,9 +4046,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:58.269895+02:00",
       "railwayUpdatedAt": "2026-07-24T19:20:43.810353+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3856,9 +4065,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:09:40.880541+02:00",
       "railwayUpdatedAt": "2026-07-24T18:57:59.930673+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3874,9 +4084,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:26.656469+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:28.902813+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3893,9 +4104,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:03:37.518064+02:00",
       "railwayUpdatedAt": "2026-07-24T19:00:58.588082+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3911,9 +4123,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:41.674967+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:58.784872+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3929,9 +4142,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:41.688624+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:58.791586+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3947,9 +4161,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:04:05.294052+02:00",
       "railwayUpdatedAt": "2026-07-24T19:01:28.629128+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3965,9 +4180,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:55.32119+02:00",
       "railwayUpdatedAt": "2026-07-24T19:28:13.918392+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -3983,9 +4199,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:08:22.164787+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:58.980784+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4001,9 +4218,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:28.082793+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:43.744643+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4019,9 +4237,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:16:40.280707+02:00",
       "railwayUpdatedAt": "2026-07-24T19:21:44.078395+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4037,9 +4256,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:11.342699+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:13.591271+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4055,9 +4275,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:15:43.069139+02:00",
       "railwayUpdatedAt": "2026-07-24T19:10:58.996237+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4073,9 +4294,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:59.844748+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:44.068057+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4091,9 +4313,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T23:33:28.28011+02:00",
       "railwayUpdatedAt": "2026-07-24T19:27:29.053941+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4109,9 +4332,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:08:44.000095+02:00",
       "railwayUpdatedAt": "2026-07-24T18:56:13.876995+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_media_jobs",
@@ -4127,9 +4351,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:08:09.407613+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:45.504001+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4142,11 +4367,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.459727+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.685238+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:23.287155+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4160,11 +4386,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.512438+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.797458+02:00",
       "railwayUpdatedAt": "2026-07-24T14:53:49.260681+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4177,11 +4404,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.318326+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.846064+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:38.194542+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4196,9 +4424,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T15:51:41.011459+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.27706+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4211,11 +4440,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.848066+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.331614+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:09.365053+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4228,11 +4458,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.87906+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.104669+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:54.16656+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4245,11 +4476,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.939229+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.401327+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:08.085255+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4264,9 +4496,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:30:10.809535+02:00",
       "railwayUpdatedAt": "2026-07-25T10:31:08.219681+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4280,11 +4513,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.155553+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.40592+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:23.069458+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4299,9 +4533,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:36.568576+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:28.732445+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4316,9 +4551,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:37:53.632305+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:08.135734+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4332,11 +4568,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.504773+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.791124+02:00",
       "railwayUpdatedAt": "2026-07-24T14:53:19.19382+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4350,11 +4587,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:55.519062+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.803597+02:00",
       "railwayUpdatedAt": "2026-07-24T14:54:04.183796+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4367,11 +4605,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.251243+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.504681+02:00",
       "railwayUpdatedAt": "2026-07-25T09:58:24.096681+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4384,11 +4623,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.888034+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.366845+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:37.997873+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4401,11 +4641,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.862723+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.346735+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.263712+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4420,9 +4661,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:12:22.97983+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:53.397751+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4437,9 +4679,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:19:57.762631+02:00",
       "railwayUpdatedAt": "2026-07-25T09:59:11.121511+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4452,11 +4695,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.90961+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.382317+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:38.637922+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4470,11 +4714,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.335437+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.600811+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:38.166564+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4489,9 +4734,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:24.774203+02:00",
       "railwayUpdatedAt": "2026-07-25T10:29:53.067144+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4504,11 +4750,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.855967+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:31.176208+02:00",
       "railwayUpdatedAt": "2026-07-25T09:58:53.020794+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4523,9 +4770,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T16:56:37.093277+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:37.914793+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4538,11 +4786,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.967998+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.41322+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:08.877661+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4555,11 +4804,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.87249+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.355609+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.538109+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4574,9 +4824,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T08:50:38.47411+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:53.078659+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4589,11 +4840,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.855429+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.338866+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:24.021958+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4608,9 +4860,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:57.654992+02:00",
       "railwayUpdatedAt": "2026-07-25T10:31:08.12084+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4625,9 +4878,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T11:58:23.811462+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.187381+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4640,11 +4894,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.918408+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.389294+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:53.770841+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4657,11 +4912,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:52.898632+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:28.374612+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:38.333811+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4675,11 +4931,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:53.935247+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:29.651278+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:53.098904+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4694,9 +4951,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T08:19:38.884678+02:00",
       "railwayUpdatedAt": "2026-07-25T09:59:09.250068+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4711,9 +4969,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T09:29:12.133601+02:00",
       "railwayUpdatedAt": "2026-07-25T09:55:07.888745+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4728,9 +4987,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T15:15:25.810291+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:08.067942+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4743,11 +5003,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.419523+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.142083+02:00",
       "railwayUpdatedAt": "2026-07-25T09:56:54.897999+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4762,9 +5023,10 @@
       ],
       "selectelUpdatedAt": "2026-07-26T21:29:17.458786+02:00",
       "railwayUpdatedAt": "2026-07-25T10:29:08.064795+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4779,9 +5041,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:51.356082+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.596206+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4795,11 +5058,12 @@
         "attachments_json",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.329346+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.593804+02:00",
       "railwayUpdatedAt": "2026-07-25T10:30:38.073348+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4814,9 +5078,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:07:40.052708+02:00",
       "railwayUpdatedAt": "2026-07-24T18:55:29.06135+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "messenger_messages",
@@ -4829,11 +5094,12 @@
       "differingFields": [
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:54.450263+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:30.656001+02:00",
       "railwayUpdatedAt": "2026-07-25T09:57:08.526975+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4848,9 +5114,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T07:00:38.138965+02:00",
       "railwayUpdatedAt": "2026-07-25T07:00:37.931783+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4869,9 +5136,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T19:50:32.09337+02:00",
       "railwayUpdatedAt": "2026-07-25T09:00:38.258386+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4893,9 +5161,30 @@
       ],
       "selectelUpdatedAt": "2026-07-25T21:00:07.408032+02:00",
       "railwayUpdatedAt": "2026-07-25T12:00:38.647253+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:479d0dd8dbee0035c4f98e7828115faddbb0b41f794ae4927a829af896ad4ae8"
+      },
+      "differingFields": [
+        "error_message",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T13:35:48.262378+02:00",
+      "railwayUpdatedAt": "2026-07-29T06:00:09.983238+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4918,9 +5207,10 @@
       ],
       "selectelUpdatedAt": "2026-07-24T20:03:23.876939+02:00",
       "railwayUpdatedAt": "2026-07-24T19:54:36.869495+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4939,9 +5229,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T08:00:02.06579+02:00",
       "railwayUpdatedAt": "2026-07-28T08:00:08.032536+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4960,9 +5251,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T10:00:02.150571+02:00",
       "railwayUpdatedAt": "2026-07-28T10:00:08.241421+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -4981,9 +5273,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T14:00:02.404148+02:00",
       "railwayUpdatedAt": "2026-07-28T14:00:08.842912+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5003,9 +5296,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T20:28:06.48957+02:00",
       "railwayUpdatedAt": "2026-07-25T10:00:38.408518+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5028,9 +5322,10 @@
       ],
       "selectelUpdatedAt": "2026-07-24T19:07:23.79546+02:00",
       "railwayUpdatedAt": "2026-07-24T18:57:36.972507+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5052,9 +5347,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T12:06:11.106312+02:00",
       "railwayUpdatedAt": "2026-07-25T08:00:38.369334+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5069,9 +5365,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T07:00:01.462394+02:00",
       "railwayUpdatedAt": "2026-07-28T07:00:07.457254+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5086,9 +5383,10 @@
       ],
       "selectelUpdatedAt": "2026-07-28T06:00:01.342022+02:00",
       "railwayUpdatedAt": "2026-07-28T06:00:07.332895+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_jobs",
@@ -5106,9 +5404,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T21:43:05.155328+02:00",
       "railwayUpdatedAt": "2026-07-25T13:00:38.607643+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_rules",
@@ -5123,9 +5422,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T17:41:06.219728+02:00",
       "railwayUpdatedAt": "2026-07-26T21:48:10.794724+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_rules",
@@ -5140,9 +5440,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T17:41:06.222624+02:00",
       "railwayUpdatedAt": "2026-07-26T21:48:10.810153+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "notification_rules",
@@ -5157,9 +5458,10 @@
       ],
       "selectelUpdatedAt": "2026-07-27T17:41:06.224317+02:00",
       "railwayUpdatedAt": "2026-07-26T21:48:10.825131+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "telegram_user_sessions",
@@ -5173,11 +5475,12 @@
         "last_sync_at",
         "updated_at"
       ],
-      "selectelUpdatedAt": "2026-07-28T20:22:56.340227+02:00",
+      "selectelUpdatedAt": "2026-07-28T20:01:32.606715+02:00",
       "railwayUpdatedAt": "2026-07-25T09:54:36.960186+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "vehicle_lookup_cache",
@@ -5192,9 +5495,10 @@
       ],
       "selectelUpdatedAt": "2026-07-24T22:08:17.086+02:00",
       "railwayUpdatedAt": "2026-07-24T09:49:52.514+02:00",
-      "conflictType": "RUNTIME_OR_TIMESTAMP_DRIFT",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "vehicle_lookup_cache",
@@ -5210,9 +5514,10 @@
       ],
       "selectelUpdatedAt": "2026-07-25T10:49:22.408+02:00",
       "railwayUpdatedAt": "2026-07-23T09:29:35.185+02:00",
-      "conflictType": "CRITICAL_BUSINESS_FIELD_DIFFERENCE",
-      "recommendedResolution": "MANUAL_REVIEW_KEEP_SELECTEL_UNCHANGED",
-      "risk": "HIGH"
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     },
     {
       "table": "vehicle_model_aliases",
@@ -5229,9 +5534,12 @@
       ],
       "selectelUpdatedAt": "2026-07-25T22:12:49.719+02:00",
       "railwayUpdatedAt": "2026-07-24T09:50:21.983+02:00",
-      "conflictType": "NONCRITICAL_METADATA_DIFFERENCE",
-      "recommendedResolution": "KEEP_SELECTEL_CANONICAL",
-      "risk": "LOW"
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     }
-  ]
+  ],
+  "supplementalConflictCount": 1,
+  "sourceConflictCount": 282
 }

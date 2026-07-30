@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { adminAssistantConfig } from "./config";
 import { buildClientMessage, detectClientMessageMode, explicitCustomerRecommendation, type ClientMessageMode } from "./client-message";
 import { getSelectedAssistantQuote, saveAssistantQuoteSnapshot } from "./quotes";
+import { AI_ASSISTANT_STRUCTURED_RESPONSE_SCHEMA, parseAIAssistantStructuredResponse, structuredResponseToMarkdown } from "./structured-response";
 import { assistantFunctionTools, executeAssistantTool, safeAssistantJson, type AssistantToolSource } from "./tools";
 import { createOpenAIClient } from "@/lib/openai-client";
 
@@ -58,6 +59,7 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
     "Не останавливай расчёт из-за одного неподтверждённого параметра. Разделяй ПОДТВЕРЖДЕНО, РАБОЧЕЕ ДОПУЩЕНИЕ и ТРЕБУЕТ ФИНАЛЬНОЙ ПРОВЕРКИ. При средней уверенности дай полезный предварительный расчёт; при низкой — 2–3 сценария или один вопрос, только если ответ существенно меняет расчёт.",
     "Используй VIN максимально: сначала lookup_vehicle, затем данные автомобиля, историю и внешние каталоги. Если точный код агрегата не найден, продолжай по модели, двигателю, году, приводу, рынку и найденным OEM/каталожным связкам. Не перекладывай цифровой поиск на сотрудника.",
     "Для замены масла считай услугу под ключ: жидкость, фильтр или поддон с фильтром, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Нахождение только жидкости никогда не завершает исследование.",
+    "Для трансмиссионного расчёта всегда передавай в calculate_service_quote_v2 точный requiredFluidSpec, requiredFluidVolumeLiters и OEM-артикул основной жидкости в requiredFluidOemArticle. По умолчанию fluidPreference=prefer_local_compatible: не добавляй основную жидкость в selectedProducts, backend сам выберет совместимый локальный товар с достаточным остатком и заменит им поставщицкую жидкость. fluidPreference=original_only допустим только если сотрудник явно потребовал оригинал или подтверждённый технический источник запрещает аналог. Оригинал из ROSSKO оставляй как запасной вариант до решения backend.",
     "Для моторного масла, АКПП/CVT и воздушного/салонного фильтра используй calculate_service_quote_v2. Сначала укажи технический сценарий и владельца материалов, затем передай товары и расходники. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
     "Тарифы ИИ-помощника: моторное масло — 0 ₽ с маслом сервиса / 1 500 ₽ с маслом клиента; частичная трансмиссия без поддона — 4 000 / 6 000 ₽; аппаратная без поддона — 5 000 / 8 000 ₽; частичная с поддоном и фильтром — 5 000 / 10 000 ₽; аппаратная с поддоном и фильтром — 6 000 / 12 000 ₽; два фильтра грубой очистки — 6 000 / 12 000 ₽ частично и 7 000 / 14 000 ₽ аппаратно. Материалы всегда отдельными строками. Тариф «материалы сервиса» применим только когда сервис продаёт основной объём жидкости; при смешанных материалах не выбирай тариф — запроси решение сотрудника.",
     "После технического исследования ищи точный OEM, номер производителя агрегата и кросс-номера в локальном каталоге. Если позиции нет локально — используй ROSSKO. Для воздушного и салонного фильтра используй подтверждённое правило сложности; иначе покажи диапазон 200–800 ₽ и попроси сотрудника выбрать точную цену.",
@@ -261,9 +263,18 @@ async function continueResponse(client: OpenAI, args: { previousResponseId: stri
 async function finalizeAfterQuote(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string }) {
   return client.responses.create({
     model: args.model,
-    instructions: `${args.instructions}\n\nРасчёт уже сохранён инструментом. Больше не вызывай инструменты. Сформируй итоговый внутренний ответ сотруднику: технический сценарий, состав и стоимость расчёта, подтверждённые данные, допущения, требующие финальной проверки пункты и короткий безопасный текст клиенту, если он был запрошен.`,
+    instructions: `${args.instructions}\n\nРасчёт уже сохранён инструментом и будет показан отдельной нативной карточкой. Больше не вызывай инструменты и не повторяй таблицу, строки или итог расчёта в summaryMarkdown. Верни строго структурированный итог: краткое техническое резюме, подтверждённые факты, рабочие допущения, проверки перед работой, практические рекомендации и отдельный чистый текст клиенту только если он был запрошен. Не используй в клиентском тексте служебные пометки, Markdown и неизвестные названия позиций.`,
     reasoning: { effort: args.reasoning },
-    text: { verbosity: "high" },
+    text: {
+      verbosity: "medium",
+      format: {
+        type: "json_schema",
+        name: "ai_assistant_structured_response",
+        description: "Структурированный внутренний ответ после сохранения расчёта",
+        strict: true,
+        schema: AI_ASSISTANT_STRUCTURED_RESPONSE_SCHEMA,
+      },
+    },
     store: true,
     previous_response_id: args.previousResponseId,
     input: args.outputs,
@@ -483,7 +494,11 @@ export async function runAssistantThread(input: { threadId: string; organization
     }
     if (functionCalls(response).length) throw new Error("ИИ-помощник превысил лимит шагов инструментов; незавершённый ответ не будет использован в следующем запросе");
     if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
-    const answer = outputText(response) || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";
+    const rawAnswer = outputText(response);
+    const structuredResponse = savedQuoteIds.length ? parseAIAssistantStructuredResponse(rawAnswer) : null;
+    const answer = structuredResponse
+      ? structuredResponseToMarkdown(structuredResponse)
+      : rawAnswer || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";
     const citations = responses.flatMap(citationsFromResponse).filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
     const assistantMessage = await prisma.aIAssistantMessage.create({
       data: {
@@ -492,7 +507,7 @@ export async function runAssistantThread(input: { threadId: string; organization
         role: "assistant",
         content: answer,
         citationsJson: json(citations),
-        attachmentsJson: json(savedQuoteIds.length ? { kind: "technical_quote", quoteIds: savedQuoteIds } : []),
+        attachmentsJson: json(savedQuoteIds.length ? { kind: "technical_quote", quoteIds: savedQuoteIds, structuredResponse } : []),
         runId: run.id,
         createdById: "ai_assistant",
       },

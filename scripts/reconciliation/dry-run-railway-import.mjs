@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 import {
   ALLOWED_ACTIONS,
   buildPkIndex,
-  countMigrations,
   fetchRow,
   loadConfig,
   loadHasher,
@@ -53,6 +52,9 @@ const supplement = loadSupplement(config, hasher);
 const errors = [];
 const warnings = [];
 const pkCache = new Map();
+const plannedInsertKeys = new Set(manifest.records
+  .filter((record) => record.action === "INSERT_MISSING")
+  .map((record) => `${record.targetTable}\u0000${record.sourcePrimaryKey.hash}`));
 
 function pkIndex(db, tableName) {
   const key = `${db}\u0000${tableName}`;
@@ -79,12 +81,26 @@ if (manifest.schemaHash !== sourceSchema.hash || manifest.schemaHash !== targetS
 if (sourceSchema.tables.length !== manifest.expectedPublicTableCount || targetSchema.tables.length !== manifest.expectedPublicTableCount) {
   errors.push({ type: "TABLE_COUNT_MISMATCH", source: sourceSchema.tables.length, target: targetSchema.tables.length });
 }
-const sourceMigrations = countMigrations(config, config.sourceDb);
-const targetMigrations = countMigrations(config, config.targetDb);
-if (sourceMigrations !== manifest.expectedPrismaMigrationRows || targetMigrations !== manifest.expectedPrismaMigrationRows) {
-  errors.push({ type: "MIGRATION_COUNT_MISMATCH", source: sourceMigrations, target: targetMigrations });
+const sourceMigrationRows = Number(query(config, config.sourceDb, `SELECT count(*) FROM public."_prisma_migrations"`));
+const targetMigrationRows = Number(query(config, config.targetDb, `SELECT count(*) FROM public."_prisma_migrations"`));
+const sourceMigrations = Number(query(config, config.sourceDb, `SELECT count(*) FROM public."_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`));
+const targetMigrations = Number(query(config, config.targetDb, `SELECT count(*) FROM public."_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`));
+const sourceRolledBackMigrations = Number(query(config, config.sourceDb, `SELECT count(*) FROM public."_prisma_migrations" WHERE rolled_back_at IS NOT NULL`));
+const targetRolledBackMigrations = Number(query(config, config.targetDb, `SELECT count(*) FROM public."_prisma_migrations" WHERE rolled_back_at IS NOT NULL`));
+const sourceFailedMigrations = Number(query(config, config.sourceDb, `SELECT count(*) FROM public."_prisma_migrations" WHERE finished_at IS NULL AND rolled_back_at IS NULL`));
+if (targetMigrationRows !== manifest.expectedPrismaMigrationRows || sourceMigrationRows !== manifest.expectedPrismaMigrationRows + (manifest.observedFailedPrismaMigrationRowsInRailway ?? 0)) {
+  errors.push({ type: "MIGRATION_JOURNAL_COUNT_MISMATCH", source: sourceMigrationRows, target: targetMigrationRows });
 }
-if (manifest.records.length !== manifest.recordCount || manifest.recordCount !== 342) errors.push({ type: "MANIFEST_RECORD_COUNT_MISMATCH" });
+if (sourceMigrations !== manifest.expectedActivePrismaMigrationRows || targetMigrations !== manifest.expectedActivePrismaMigrationRows) {
+  errors.push({ type: "ACTIVE_MIGRATION_COUNT_MISMATCH", source: sourceMigrations, target: targetMigrations });
+}
+if (sourceRolledBackMigrations !== manifest.expectedRolledBackPrismaMigrationRows || targetRolledBackMigrations !== manifest.expectedRolledBackPrismaMigrationRows) {
+  errors.push({ type: "ROLLED_BACK_MIGRATION_COUNT_MISMATCH", source: sourceRolledBackMigrations, target: targetRolledBackMigrations });
+}
+if (sourceFailedMigrations !== (manifest.observedFailedPrismaMigrationRowsInRailway ?? 0)) {
+  errors.push({ type: "FAILED_MIGRATION_JOURNAL_MISMATCH", source: sourceFailedMigrations, expected: manifest.observedFailedPrismaMigrationRowsInRailway ?? 0 });
+}
+if (manifest.records.length !== manifest.recordCount) errors.push({ type: "MANIFEST_RECORD_COUNT_MISMATCH" });
 
 const summary = {
   plannedInserts: 0,
@@ -128,7 +144,8 @@ for (const record of manifest.records) {
         errors.push({ type: "MISSING_PARENT_MAPPING", table: record.sourceTable, parentTable: parent.tableName });
         continue;
       }
-      if (!pkIndex(config.targetDb, parent.tableName).has(parent.targetPrimaryKey.hash)) {
+      if (!pkIndex(config.targetDb, parent.tableName).has(parent.targetPrimaryKey.hash)
+          && !plannedInsertKeys.has(`${parent.tableName}\u0000${parent.targetPrimaryKey.hash}`)) {
         errors.push({ type: "ORPHAN_PARENT", table: record.sourceTable, parentTable: parent.tableName });
       }
     }
@@ -140,7 +157,7 @@ for (const record of manifest.records) {
       if (count > 0) errors.push({ type: "UNIQUE_CONFLICT", table: record.targetTable, index: index.name });
     }
   } else if (record.action === "MAP_TO_EXISTING") summary.mappings += 1;
-  else if (record.action === "RECREATE_JOB") summary.recreations += 1;
+  else if (["RECREATE_JOB", "RECREATE_BUSINESS_EVENT"].includes(record.action)) summary.recreations += 1;
   else if (record.action === "RECOMPUTE") summary.recomputations += 1;
   else if (record.action === "MANUAL_REVIEW") summary.manualReview += 1;
   else if (record.action === "REJECT_INVALID") summary.rejected += 1;
@@ -158,7 +175,8 @@ const result = {
   manifestRecords: manifest.recordCount,
   schemaHash: manifest.schemaHash,
   publicTables: { source: sourceSchema.tables.length, target: targetSchema.tables.length },
-  prismaMigrationRows: { source: sourceMigrations, target: targetMigrations },
+  prismaMigrationRows: { sourceTotal: sourceMigrationRows, targetTotal: targetMigrationRows, sourceActive: sourceMigrations, targetActive: targetMigrations, sourceRolledBack: sourceRolledBackMigrations, targetRolledBack: targetRolledBackMigrations },
+  failedPrismaMigrationRows: { source: sourceFailedMigrations },
   summary,
   errors,
   warnings,
