@@ -3,9 +3,9 @@
   "status": "PASS",
   "productionMutationAttempted": false,
   "sourceDatabase": "reconciliation_railway",
-  "targetDatabase": "reconciliation_merge_rehearsal",
+  "targetDatabase": "reconciliation_selectel",
   "localUnixSocketOnly": true,
-  "manifestRecords": 405,
+  "manifestRecords": 509,
   "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
   "publicTables": {
     "source": 137,
@@ -23,10 +23,10 @@
     "source": 1
   },
   "summary": {
-    "plannedInserts": 149,
+    "plannedInserts": 234,
     "mappings": 32,
-    "skips": 211,
-    "recreations": 3,
+    "skips": 223,
+    "recreations": 10,
     "recomputations": 0,
     "manualReview": 10,
     "rejected": 0,

@@ -18,6 +18,9 @@ import {
 const ROOT = resolve("docs/reconciliation");
 const FINAL_DELTA_FILE = process.env.RECONCILIATION_FINAL_DELTA_FILE;
 if (!FINAL_DELTA_FILE) throw new Error("RECONCILIATION_FINAL_DELTA_FILE is required.");
+const FINAL_SNAPSHOT_LABEL = process.env.RECONCILIATION_SOURCE_SNAPSHOT || "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-31";
+const BASELINE_RAILWAY_ONLY_RECORDS = 342;
+const PREVIOUS_RECONCILIATION_CUT = process.env.RECONCILIATION_PREVIOUS_CUT || "2026-07-30T17:23:33.382534Z";
 
 const BUSINESS_KEYS = {
   communication_identities: ["organization_id", "messenger_account_id", "external_user_id"],
@@ -85,8 +88,12 @@ function compactDate(value) {
   return value ? String(value).replace("T", " ").slice(0, 19) : "—";
 }
 
+function afterPreviousCut(value) {
+  return Boolean(value && Date.parse(value) > Date.parse(PREVIOUS_RECONCILIATION_CUT));
+}
+
 function sourceTime(row) {
-  return row.updated_at ?? row.updatedAt ?? row.created_at ?? row.createdAt ?? null;
+  return row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt ?? null;
 }
 
 const config = loadConfig();
@@ -275,7 +282,7 @@ const additions = newSourceRows.map((item) => {
     recommendedAction: classification.action,
     reason: classification.reason,
     requiresOwnerApproval: classification.requiresOwnerApproval,
-    sourceSnapshot: "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30",
+    sourceSnapshot: FINAL_SNAPSHOT_LABEL,
     statusClassification: item.row.status ?? item.row.direction ?? "recorded",
   };
 });
@@ -283,6 +290,7 @@ const additions = newSourceRows.map((item) => {
 const normalizedOldRegistryRecords = oldRegistry.records.map((record) => ({
   ...record,
   requiresOwnerApproval: ["MANUAL_REVIEW", "RECREATE_BUSINESS_EVENT"].includes(record.recommendedAction),
+  sourceSnapshot: afterPreviousCut(record.updatedAt ?? record.createdAt) ? FINAL_SNAPSHOT_LABEL : record.sourceSnapshot,
 }));
 const registryRecords = [...normalizedOldRegistryRecords, ...additions].sort((a, b) =>
   a.tableName.localeCompare(b.tableName) || a.primaryKey.hash.localeCompare(b.primaryKey.hash));
@@ -293,7 +301,9 @@ const registry = {
   status: registryRecords.some((record) => record.recommendedAction === "MANUAL_REVIEW" || record.requiresOwnerApproval) ? "OWNER_REVIEW_REQUIRED" : "CLASSIFIED",
   recordCount: registryRecords.length,
   unknownCount: 0,
-  finalDeltaAddedRecords: oldRegistry.finalDeltaAddedRecords ?? additions.length,
+  baselineRecordCount: oldRegistry.baselineRecordCount ?? BASELINE_RAILWAY_ONLY_RECORDS,
+  finalDeltaAddedRecords: registryRecords.length - (oldRegistry.baselineRecordCount ?? BASELINE_RAILWAY_ONLY_RECORDS),
+  latestDeltaAddedRecords: registryRecords.filter((record) => record.sourceSnapshot === FINAL_SNAPSHOT_LABEL).length,
   records: registryRecords,
 };
 
@@ -352,22 +362,29 @@ const migrationManifest = {
   expectedRolledBackPrismaMigrationRows: 6,
   observedFailedPrismaMigrationRowsInRailway: 1,
   recordCount: migrationRecords.length,
-  finalDeltaAddedRecords: oldMigration.finalDeltaAddedRecords ?? migrationAdditions.length,
+  baselineRecordCount: oldMigration.baselineRecordCount ?? BASELINE_RAILWAY_ONLY_RECORDS,
+  finalDeltaAddedRecords: migrationRecords.length - (oldMigration.baselineRecordCount ?? BASELINE_RAILWAY_ONLY_RECORDS),
+  latestDeltaAddedRecords: registryRecords.filter((record) => record.sourceSnapshot === FINAL_SNAPSHOT_LABEL).length,
   records: migrationRecords,
 };
 
 const finalSamePkItems = [];
 const conflictKnown = new Set(oldConflicts.conflicts.map((item) => `${item.table}\u0000${item.primaryKey.hash}`));
-for (const conflict of oldConflicts.conflicts) finalSamePkItems.push({
-  ...conflict,
-  sourceSnapshot: conflict.sourceSnapshot ?? "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT",
-});
+for (const conflict of oldConflicts.conflicts) {
+  const currentSourceRow = rowByPublicPk(config.sourceDb, conflict.table, conflict.primaryKey.hash);
+  finalSamePkItems.push({
+    ...conflict,
+    sourceSnapshot: afterPreviousCut(sourceTime(currentSourceRow))
+      ? FINAL_SNAPSHOT_LABEL
+      : conflict.sourceSnapshot ?? "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT",
+  });
+}
 for (const item of finalDelta) {
   const table = sourceSchema.byName.get(item.tableName);
   const tuple = table.primaryKey.map((column) => item.row[column]);
   const pk = publicPk(item.tableName, tuple);
   if (targetHas(item.tableName, pk.hash) && !conflictKnown.has(`${item.tableName}\u0000${pk.hash}`)) {
-    finalSamePkItems.push({ table: item.tableName, primaryKey: pk, risk: "HIGH", sourceSnapshot: "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30" });
+    finalSamePkItems.push({ table: item.tableName, primaryKey: pk, risk: "HIGH", sourceSnapshot: FINAL_SNAPSHOT_LABEL });
     conflictKnown.add(`${item.tableName}\u0000${pk.hash}`);
   }
 }
@@ -425,7 +442,7 @@ function resolveConflict(tableName, fields, sourceRow, targetRow, originalRisk) 
 
 function establishedRisk(tableName, fields, sourceSnapshot) {
   const set = new Set(fields);
-  if (sourceSnapshot === "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-30") return tableName === "notification_jobs" ? "HIGH" : "LOW";
+  if (sourceSnapshot === FINAL_SNAPSHOT_LABEL) return tableName === "notification_jobs" ? "HIGH" : "LOW";
   if (tableName === "crm_deals") return "HIGH";
   if (tableName === "local_products" && (set.has("sale_price_cents") || set.has("oem_atf"))) return "HIGH";
   if (tableName === "local_stock_balances" && (set.has("quantity") || set.has("available"))) return "HIGH";
@@ -592,8 +609,104 @@ for (const record of registryRecords.filter((entry) => entry.recommendedAction =
 
 const ownerByEntity = {};
 for (const item of approvals) ownerByEntity[item.tableName] = (ownerByEntity[item.tableName] ?? 0) + 1;
+const resolutionByApproval = new Map(resolutions.map((item) => [`${item.tableName}\u0000${item.primaryKey.hash}`, item]));
+const registryByApproval = new Map(registryRecords.map((item) => [`${item.tableName}\u0000${item.primaryKey.hash}`, item]));
+
+function ownerEntityLabel(tableName) {
+  return {
+    communication_identities: "Идентификация клиента в мессенджере",
+    conversation_entity_links: "Связь диалога с бизнес-сущностью",
+    crm_deals: "CRM-сделка",
+    messenger_attachments: "Вложение сообщения",
+    messenger_connections: "Подключение мессенджера",
+    notification_jobs: "Запланированное уведомление",
+  }[tableName] ?? tableName;
+}
+
+function samePkOwnerDetails(approval) {
+  const resolution = resolutionByApproval.get(`${approval.tableName}\u0000${approval.primaryKey.hash}`);
+  const fields = resolution?.conflictingFields?.join(", ") || "критичные бизнес-поля";
+  return {
+    entity: ownerEntityLabel(approval.tableName),
+    date: compactDate(resolution?.railwayUpdatedAt ?? resolution?.selectelUpdatedAt),
+    selectel: `Существует каноническая строка; конфликтующие поля: ${fields}.`,
+    railway: `Существует строка с тем же PK; значения отличаются в полях: ${fields}.`,
+    recommendation: "KEEP_SELECTEL — оставить текущие значения Selectel.",
+    recommendationImpact: "Существующая Selectel-строка не изменится; риск перезаписать актуальное production-состояние исключён.",
+    alternative: "Применить только отдельно перечисленное поле Railway после точного owner approval и дополнительной проверки истории.",
+    alternativeImpact: "Существующая Selectel-строка изменится адресно; полный row replacement запрещён.",
+    risk: resolution?.reason ?? "Критичный same-PK конфликт нельзя разрешать только по updatedAt.",
+    changesExisting: "Нет для рекомендации; да для альтернативы.",
+    optionA: "Оставить Selectel (рекомендация)",
+    optionB: "Указать точное Railway-поле для отдельного применения",
+  };
+}
+
+function railwayOnlyOwnerDetails(approval) {
+  const record = registryByApproval.get(`${approval.tableName}\u0000${approval.primaryKey.hash}`);
+  const sourceRow = rowByPublicPk(config.sourceDb, approval.tableName, approval.primaryKey.hash);
+  const date = compactDate(sourceRow?.scheduled_at ?? record?.updatedAt ?? record?.createdAt);
+  const status = record?.statusClassification && record.statusClassification !== "recorded"
+    ? ` Статус Railway: ${record.statusClassification}.`
+    : "";
+
+  if (record?.recommendedAction === "RECREATE_BUSINESS_EVENT") {
+    return {
+      entity: ownerEntityLabel(approval.tableName),
+      date,
+      selectel: "Эквивалентное событие с этим PK отсутствует; существующие Selectel jobs не изменяются.",
+      railway: `Есть legacy scheduled event.${status}`,
+      recommendation: "DO_NOT_EXECUTE_SCHEDULED_EVENT — не выполнять автоматически.",
+      recommendationImpact: "Просроченное или дублирующее уведомление не будет отправлено; строка Selectel не изменится.",
+      alternative: "RECREATE_BUSINESS_EVENT_AFTER_IMPORT через штатный Selectel workflow с новым idempotency guard.",
+      alternativeImpact: "После отдельного разрешения будет создано новое Selectel-событие; legacy job не копируется.",
+      risk: "Пропуск может отменить ещё актуальное напоминание; пересоздание без проверки может отправить дубль или устаревшее сообщение.",
+      changesExisting: "Нет; альтернатива создаёт новую строку/событие.",
+      optionA: "Не выполнять scheduled event (рекомендация)",
+      optionB: "Выполнить после будущего import через Selectel workflow",
+    };
+  }
+
+  if (approval.tableName === "messenger_attachments") {
+    return {
+      entity: ownerEntityLabel(approval.tableName),
+      date,
+      selectel: "Вложение с этим PK отсутствует; связанное сообщение/файл требует отдельной проверки.",
+      railway: `Есть metadata legacy-вложения.${status}`,
+      recommendation: "Проверить наличие и читаемость объекта; только при PASS выбрать INSERT_MISSING.",
+      recommendationImpact: "При PASS будет добавлена новая metadata-строка без изменения существующих Selectel-строк.",
+      alternative: "REJECT_INVALID — не переносить metadata без доступного файла.",
+      alternativeImpact: "Вложение останется недоступным, но в Selectel не появится битая ссылка.",
+      risk: record?.reason ?? "PostgreSQL metadata не доказывает наличие файла.",
+      changesExisting: "Нет; возможна только новая строка после file rehearsal.",
+      optionA: "Добавить после проверки файла",
+      optionB: "Пропустить как недоступное",
+    };
+  }
+
+  const linkLike = approval.tableName === "conversation_entity_links";
+  return {
+    entity: ownerEntityLabel(approval.tableName),
+    date,
+    selectel: "Точный PK отсутствует; возможен эквивалентный канонический объект или связь.",
+    railway: `Есть legacy-запись, требующая проверки бизнес-эквивалента.${status}`,
+    recommendation: linkLike
+      ? "SKIP_DUPLICATE, если эквивалентная связь подтверждена; иначе MAP_TO_EXISTING."
+      : "MAP_TO_EXISTING при подтверждённом каноническом объекте; иначе INSERT_MISSING.",
+    recommendationImpact: "Предпочтительно сохранить Selectel-канон и не дублировать бизнес-сущность.",
+    alternative: "Пропустить запись как устаревшую/неподтверждённую.",
+    alternativeImpact: "Историческая связь или идентификация может быть потеряна.",
+    risk: record?.reason ?? "Неверное сопоставление создаст дубликат или потеряет связь.",
+    changesExisting: "Нет; mapping не изменяет target row, insert создаёт новую строку.",
+    optionA: "Связать/добавить по рекомендации",
+    optionB: "Пропустить",
+  };
+}
+
 const ownerLines = [
   "# Owner review pack",
+  "",
+  `Сформировано: ${generatedAt}. Raw JSON, открытые тексты сообщений и персональные значения не включены.`,
   "",
   `Нужно утвердить: ${approvals.filter((item) => item.scope === "SAME_PK").length} critical same-PK и ${approvals.filter((item) => item.scope === "RAILWAY_ONLY").length} Railway-only решений.`,
   "",
@@ -609,7 +722,34 @@ const ownerLines = [
   "- Все 3 709 исходных Selectel-only строк защищены отдельным denylist/checksum-контролем.",
   "",
   "Решения записываются только в `approved-manual-decisions.json`; исходный manifest и PII не редактируются вручную.",
+  "",
+  "## Решения",
+  "",
 ];
+
+approvals.forEach((approval, index) => {
+  const details = approval.scope === "SAME_PK" ? samePkOwnerDetails(approval) : railwayOnlyOwnerDetails(approval);
+  ownerLines.push(
+    `### Решение ${index + 1}`,
+    "",
+    `- **Сущность:** ${details.entity} (${approval.tableName})`,
+    `- **Маскированный ID:** …${shortHash(approval.primaryKey.hash)}`,
+    `- **Дата:** ${details.date}`,
+    `- **Selectel:** ${details.selectel}`,
+    `- **Railway:** ${details.railway}`,
+    `- **Рекомендация:** ${details.recommendation}`,
+    `- **Что произойдёт:** ${details.recommendationImpact}`,
+    `- **Альтернатива:** ${details.alternative}`,
+    `- **Последствие альтернативы:** ${details.alternativeImpact}`,
+    `- **Риск:** ${details.risk}`,
+    `- **Изменение существующей Selectel-строки:** ${details.changesExisting}`,
+    "",
+    `- [A] ${details.optionA}`,
+    `- [B] ${details.optionB}`,
+    "",
+  );
+});
+if (ownerLines.at(-1) === "") ownerLines.pop();
 
 writeFileSync(resolve(ROOT, "railway-only-records.json"), `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 });
 writeFileSync(resolve(ROOT, "railway-to-selectel-migration-manifest.json"), `${JSON.stringify(migrationManifest, null, 2)}\n`, { mode: 0o600 });
@@ -619,7 +759,9 @@ writeFileSync(resolve(ROOT, "field-allowlists.json"), `${JSON.stringify({ versio
 writeFileSync(resolve(ROOT, "approved-manual-decisions.json"), `${JSON.stringify({ version: 1, generatedAt, status: "PENDING_OWNER_APPROVAL", decisions: approvals }, null, 2)}\n`, { mode: 0o600 });
 writeFileSync(resolve(ROOT, "critical-same-pk-review.md"), `${criticalLines.join("\n")}\n`, { mode: 0o600 });
 writeFileSync(resolve(ROOT, "railway-only-manual-review.md"), `${manualLines.join("\n")}\n`, { mode: 0o600 });
-writeFileSync(resolve(ROOT, "owner-review-pack.md"), `${ownerLines.join("\n")}\n`, { mode: 0o600 });
+// Keep the hand-reviewed, business-language owner-review-pack.md stable.
+// This generator still emits its technical draft for audit/rebuild purposes.
+writeFileSync(resolve(ROOT, "owner-review-pack.technical-draft.md"), `${ownerLines.join("\n")}\n`, { mode: 0o600 });
 
 const counts = (records, getter) => Object.fromEntries([...records.reduce((map, record) => {
   const key = getter(record);

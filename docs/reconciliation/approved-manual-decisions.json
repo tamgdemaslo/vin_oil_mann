@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-30T17:24:49.597Z",
-  "status": "PENDING_OWNER_APPROVAL",
+  "generatedAt": "2026-07-31T21:10:03.474Z",
+  "status": "PARTIALLY_APPROVED",
   "decisions": [
     {
       "scope": "SAME_PK",
@@ -12,7 +12,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:0ea7ef82486396c2345f16d99eb6ea882ac847c2c1f6a60f4aabccab05fceffb"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "case_status",
         "closed_at",
@@ -21,9 +21,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-001",
+      "selectedOption": "A"
     },
     {
       "scope": "SAME_PK",
@@ -34,7 +36,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:c7751fd0388f18c29ac78070e82d176f225169700fa7dbc7bf4a37bf8c83ef4d"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "case_status",
         "closed_at",
@@ -45,9 +47,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-002",
+      "selectedOption": "A"
     },
     {
       "scope": "SAME_PK",
@@ -58,7 +62,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a1bcb45f4310569a26e605f2ad09afcf3efee18c7d45d68d9ee483f15278cc"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "case_status",
         "closed_at",
@@ -69,9 +73,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-003",
+      "selectedOption": "A"
     },
     {
       "scope": "SAME_PK",
@@ -82,7 +88,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:e8b444e8cf32e6cad649174052945872bdfdef978329a48a4f65e936201600b9"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "case_status",
         "closed_at",
@@ -93,9 +99,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-004",
+      "selectedOption": "A"
     },
     {
       "scope": "SAME_PK",
@@ -106,7 +114,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:057dc10c719365520231324e2ad90199d1b9d4b840311fc977173b67cfe2b214"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "attempts",
         "created_at",
@@ -116,9 +124,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-005",
+      "selectedOption": "A"
     },
     {
       "scope": "SAME_PK",
@@ -129,7 +139,7 @@
         ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:8d3e6191b7712e3a17122282ddb03cdbc1432a072b215cadbf97781fad2d9073"
       },
-      "proposedAction": "MANUAL_REVIEW",
+      "proposedAction": "KEEP_SELECTEL",
       "affectedFields": [
         "attempts",
         "created_at",
@@ -139,9 +149,11 @@
         "status",
         "updated_at"
       ],
-      "status": "PENDING",
-      "approvedBy": null,
-      "approvedAt": null
+      "status": "APPROVED",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-006",
+      "selectedOption": "A"
     },
     {
       "scope": "RAILWAY_ONLY",
@@ -315,6 +327,21 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:40743a424c79c03e47fecc1bbd24190649fe16aad959dc93fef1cf6f4fa1d44b"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:536e7bce0c831d3a660448a4090a3cb8f0fe63ec54fe3365b5e78325a4d30ace"
       },
       "proposedAction": "RECREATE_BUSINESS_EVENT",
@@ -352,6 +379,126 @@
       "status": "PENDING",
       "approvedBy": null,
       "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:71b8b40666ca281bf4c2a97537a19ba58a1796e265b4dc54d0d550f8594223b0"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:99886e6c2c6ed1c35f79fd5371e699aa4232e27eb66814354d56c03ac60ed7c1"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:acc0a73a7eec7c975b4c10faf3798e3cd0e20d21c10209ed24defe113ffe1c0e"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cccef626f6895f9158b4c98274ff587ded0a57cdc1f7aa6f26377ec5369fc7cd"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e2647cafbfb72a98505ca2fc9690de12993a1fb66fa7edf43c8b96ad900d4ff5"
+      },
+      "proposedAction": "RECREATE_BUSINESS_EVENT",
+      "affectedFields": [],
+      "status": "PENDING",
+      "approvedBy": null,
+      "approvedAt": null
     }
-  ]
+  ],
+  "ownerDecisionSummary": {
+    "total": 26,
+    "approved": 6,
+    "pending": 20,
+    "needsMoreInfo": 0,
+    "rejected": 0,
+    "approvedDecisionIds": [
+      "DEC-001",
+      "DEC-002",
+      "DEC-003",
+      "DEC-004",
+      "DEC-005",
+      "DEC-006"
+    ],
+    "explicitlyDeferredDecisionIds": [
+      "DEC-007",
+      "DEC-008",
+      "DEC-009",
+      "DEC-010",
+      "DEC-011",
+      "DEC-012",
+      "DEC-013",
+      "DEC-014",
+      "DEC-015",
+      "DEC-016",
+      "DEC-017",
+      "DEC-018",
+      "DEC-019",
+      "DEC-020",
+      "DEC-021",
+      "DEC-022",
+      "DEC-023",
+      "DEC-024",
+      "DEC-025",
+      "DEC-026"
+    ],
+    "deferReason": "Awaiting the next owner-review batches; no production action is permitted.",
+    "nextBatch": [
+      "DEC-007",
+      "DEC-008",
+      "DEC-009",
+      "DEC-010",
+      "DEC-011"
+    ]
+  }
 }

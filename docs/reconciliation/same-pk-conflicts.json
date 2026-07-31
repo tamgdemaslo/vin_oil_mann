@@ -1,9 +1,9 @@
 {
   "reportVersion": 2,
-  "generatedAt": "2026-07-30T17:24:49.597Z",
+  "generatedAt": "2026-07-31T19:34:39.595Z",
   "status": "NO-GO",
   "hashKeyId": "f5ed85ce298ddfd9",
-  "conflictCount": 283,
+  "conflictCount": 284,
   "conflicts": [
     {
       "table": "ai_assistant_labor_pricing_rules",
@@ -2808,6 +2808,26 @@
         "columns": [
           "id"
         ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:919954405f8cdba54180b66701c38335272dbe1f521d6424ccc73b7b250bbabf"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-10T12:10:42.885111+02:00",
+      "railwayUpdatedAt": "2026-07-31T16:31:15.306492+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-31"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
         "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
       },
       "differingFields": [
@@ -5540,6 +5560,6 @@
       "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
     }
   ],
-  "supplementalConflictCount": 1,
+  "supplementalConflictCount": 2,
   "sourceConflictCount": 282
 }

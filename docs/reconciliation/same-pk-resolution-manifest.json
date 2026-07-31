@@ -1,10 +1,10 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-07-30T17:24:49.597Z",
-  "status": "OWNER_REVIEW_REQUIRED",
+  "generatedAt": "2026-07-31T21:10:03.474Z",
+  "status": "DETERMINISTIC",
   "sourceConflictCount": 282,
-  "supplementalConflictCount": 1,
-  "conflictCount": 283,
+  "supplementalConflictCount": 2,
+  "conflictCount": 284,
   "unknownCount": 0,
   "hashKeyId": "f5ed85ce298ddfd9",
   "canonicalTarget": "Selectel",
@@ -1555,58 +1555,58 @@
         }
       ],
       "conflictType": "BOTH_CHANGED",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "case_status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f360fa37d3f3d15181f58ab0b066bc5a6d220fa2225d306773e49c498c3f12ce",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:49196d2ab8a2b3ceccd5f32a0ca20dac1782b3186ae6b71d779fe6acc68b872e",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "closed_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f49e9b61bb8c2f6e7770d521bf7277517bf3b88289f883e5edc03979071d0aa8",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:00a9aea8ac2ca908f8714b19a9d6cfb470c4c477083395d1799bad6fbcd4da73",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_action",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:7b07ac6828fc1520623606d889f989bc6de145919473362b15162d9e9d3dbffd",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:e6cb3a4809c46aa644d09e09428f1183bf5a96820248fec6a64817c2f94fd451",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "stage_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:05a4620cc8e62aecaf68138ba35a9c668c4ffea8ec5f9af799e27b0ac6cb0265",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:d43888f82dce628f2e8189a5dc9edf0b98552325190980c1644c86dd05e08879",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:b1573266283cd610bf2705d2490dba3a8be28bffff5fbca8fcbb3c97befb7cbc",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:4776c34646b489497968f0ff09cc56e7f34563303623eba33569a9f66d029a29",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f8ec25ee7fefd15d628afc21072b6ccc0d385cb2ab42c7ab7d01584b8633b864",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:ca51c133b75096797d64ffb1c7cf61bf890b7996662701ccf9749ad0a1ce871a",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "CRM stage/status history is not sufficient to prove which independent business transition should win.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -1615,9 +1615,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-001",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "crm_deals",
@@ -1904,74 +1911,74 @@
         }
       ],
       "conflictType": "BOTH_CHANGED",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "case_status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f360fa37d3f3d15181f58ab0b066bc5a6d220fa2225d306773e49c498c3f12ce",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:13c1c4fc9fc785fe7a4324f6a230af9da7f8fba08410224869969fd1b16549b7",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "closed_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:d60149aebff4ab8397c7f674d20363bd14c5be78d7537356212c40b204e0ec82",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:00a9aea8ac2ca908f8714b19a9d6cfb470c4c477083395d1799bad6fbcd4da73",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_client_message_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:b435fe9f867d0be914e2e0e7a5370f6d415dfad5d769787aa41b1ce0df56f7b9",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:477d73d8c1b8f726b3268f08758d58879da8009a670264e8c72e9c925d25bb05",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_action",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:7b07ac6828fc1520623606d889f989bc6de145919473362b15162d9e9d3dbffd",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:cd41dbb5fbcdcb9f580839858fd36a049378e966b2b97e183d18a3c010498269",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "snooze_until",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:5475534225d515e15cb5b21bc23687b99630610e7820b4e0fd15096386fa8247",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:56c2f254979491a2f69c656fa59f41b8c8a67a56f159480fd509490030bb0b52",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "stage_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:05a4620cc8e62aecaf68138ba35a9c668c4ffea8ec5f9af799e27b0ac6cb0265",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:737418704fd76cca7fa2aa228f3b0d0c0bd2f4a71bec57b6ede63d6a7741d25c",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:b1573266283cd610bf2705d2490dba3a8be28bffff5fbca8fcbb3c97befb7cbc",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:4776c34646b489497968f0ff09cc56e7f34563303623eba33569a9f66d029a29",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:0e64e4bbad79e7159c77c8f2cdfc8849fb9ba3b026289783eec861002c0e8f9e",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:86c9f50a114f482adec2e36e2550ff2cffb7a9b9f765240879170c97c52ada3d",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "CRM stage/status history is not sufficient to prove which independent business transition should win.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -1980,9 +1987,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-002",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "crm_deals",
@@ -5365,74 +5379,74 @@
         }
       ],
       "conflictType": "BOTH_CHANGED",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "case_status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f360fa37d3f3d15181f58ab0b066bc5a6d220fa2225d306773e49c498c3f12ce",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:13c1c4fc9fc785fe7a4324f6a230af9da7f8fba08410224869969fd1b16549b7",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "closed_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:81aea704ef3c2cd6cfc1ba78eafb67bdace3ea834ac9b0246981f22588473b73",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:00a9aea8ac2ca908f8714b19a9d6cfb470c4c477083395d1799bad6fbcd4da73",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_client_message_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:6ee0e46ef3b20fcafa637c7bbabe42dbd3d29e4e5c128bd41b6fc61dec2a4da4",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:5d57224a40b7766a9cfee40d96dce223cb38c6485f067f77e8a1ea8b0a3eaac7",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_outbound_message_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:d6b9027ab17076b0562a7a57ee0675c81264316b9cc66bc0c347db6027d35d02",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:f22531b93cc57e1a33dc0907b0d789b854972ce27ba829f943f2cb89de9301dc",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_action",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:7b07ac6828fc1520623606d889f989bc6de145919473362b15162d9e9d3dbffd",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:b6137671a5731bb91c45a3083cf91b0d5d69d4050d5295d5f421b8e8f7983782",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "stage_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:05a4620cc8e62aecaf68138ba35a9c668c4ffea8ec5f9af799e27b0ac6cb0265",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:d43888f82dce628f2e8189a5dc9edf0b98552325190980c1644c86dd05e08879",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:b1573266283cd610bf2705d2490dba3a8be28bffff5fbca8fcbb3c97befb7cbc",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:4776c34646b489497968f0ff09cc56e7f34563303623eba33569a9f66d029a29",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:d20664a93654737e5f351a99a789a859e302b97e17601640626aacc8cd524c9a",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:b1fd8714d38b32daacb3f4ab5831dece950b7003d162a621ad307ea9ba942696",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "CRM stage/status history is not sufficient to prove which independent business transition should win.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -5441,9 +5455,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-003",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "crm_deals",
@@ -5532,74 +5553,74 @@
         }
       ],
       "conflictType": "BOTH_CHANGED",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "case_status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f360fa37d3f3d15181f58ab0b066bc5a6d220fa2225d306773e49c498c3f12ce",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:13c1c4fc9fc785fe7a4324f6a230af9da7f8fba08410224869969fd1b16549b7",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "closed_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:03e61760e18e595492c778c9046b15d2d166cae779204286ea7ba47f0135e649",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:00a9aea8ac2ca908f8714b19a9d6cfb470c4c477083395d1799bad6fbcd4da73",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_outbound_message_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:6cdbd61e57b14048129eac8e12f13a7dd8c8d1514fdbe2693b76f047897c738a",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:5185475b6f5ded8bbbb9dd6b93972ce698379fb0386affabb7cde3e882c5b00b",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_action",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:7b07ac6828fc1520623606d889f989bc6de145919473362b15162d9e9d3dbffd",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:b6137671a5731bb91c45a3083cf91b0d5d69d4050d5295d5f421b8e8f7983782",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "snooze_until",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:5475534225d515e15cb5b21bc23687b99630610e7820b4e0fd15096386fa8247",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:90ce1c17f394b78528de6c707e756a1ddb4807447fd19f435090ac74a5198bb8",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "stage_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:05a4620cc8e62aecaf68138ba35a9c668c4ffea8ec5f9af799e27b0ac6cb0265",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:d43888f82dce628f2e8189a5dc9edf0b98552325190980c1644c86dd05e08879",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:b1573266283cd610bf2705d2490dba3a8be28bffff5fbca8fcbb3c97befb7cbc",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:4776c34646b489497968f0ff09cc56e7f34563303623eba33569a9f66d029a29",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:a3b11ded1dbf4ebb120e2a079c4263e83cffc5783addbd4f8cc1376113ad1552",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:277e15f0d22663ec5f6067af0c80cbb0e92193b846dfbf503a8e19e3a066c6f0",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "CRM stage/status history is not sufficient to prove which independent business transition should win.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -5608,9 +5629,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-004",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "crm_stages",
@@ -8736,66 +8764,66 @@
       "railwaySource": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT",
       "relatedAuditEvents": [],
       "conflictType": "MANUAL_BUSINESS_DECISION",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "attempts",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:7ef87e2b8e2921730221fd7649530f657845504d2aadca09f90cc60798f9faf5",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:c6361b55255024c6bba1d3d6df3c60b173dddac49530d25536efc529dad46956",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "created_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:00333a9a4d05e34e78beab4bddcb0eeb18a590c37ad3470630118aae82e1c4c2",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:4c63c113a00b363d6b9ac1bc2e538934d2c77d859e104e3c5343db744164bfe7",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_attempt_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:9c974d73cf79607cba0a9238fc9cdd7c9fd4dc4445d9c6e06779388c31474938",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:fd65bd801435073f87af0fb487fe43ed6d23ad10da822cdf81d167cdd8d546d6",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "message_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:d6eb3d58a9b3ff7554b1b04f3614be783dd98b87c28e4f4d624303edffa26b47",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:1a2fdceaee9188729fe12c831ed3a60d7e3916f7e7a2ef6f5710a22493daf3ea",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_attempt_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:2271ca12deb47f51d398e45e8dc16e5f7d7b69b68d7ada8cabe5177015fd835e",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:759876cbe1e270ea70c8119dbd613f33654ea1ff11c1d1a8a99e1f3afaadc24f",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:8c515a2dccc594a973cbf9c617ff35bd6d58c3b4ccc17246432ef0ad3c8ea88f",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:a6099b48b41c39b04891588f2b664d0bc0e7f607a8d74a22d071f70782949caa",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:4ad1d3cad763cacc8218f8deb1c5ccfc0de2d7b71bc9f92f84e7af829aea82c3",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:d984ee9acd4c44738c22ec5838b52a60439eabd5c3ea022decb578b834d52af2",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "The same attachment PK points to different message relationships; worker timestamps cannot resolve ownership.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -8809,9 +8837,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-005",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "messenger_attachments",
@@ -10400,66 +10435,66 @@
       "railwaySource": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT",
       "relatedAuditEvents": [],
       "conflictType": "MANUAL_BUSINESS_DECISION",
-      "resolutionAction": "MANUAL_REVIEW",
+      "resolutionAction": "KEEP_SELECTEL",
       "fieldLevelActions": [
         {
           "field": "attempts",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:4dbd73cce09bd37143a8949e5c4e1b1a333b11630f0ccd36a802ba91a22b5075",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:c6361b55255024c6bba1d3d6df3c60b173dddac49530d25536efc529dad46956",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "created_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:601a0f8187bbfec74a41d89888c31f762545f1427f596abde65456a52737619e",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:c1d151675652bb0b3016c27831d07940107391611056925885d8ccd2c417d502",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "last_attempt_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:f4d8ad4f40ba51e49a1714eb9ff2619be8a8fc15b960d589248be3c7659489d0",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:e08f950610336868b3335080b18553dc08cd683686ab5711fa404672c244c580",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "message_id",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:ae6de0b4addb3b10e8122a3c8d690565e6e4f7bde76f842e921a3fbcdf4db05d",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:f8ec82a1ba477095b03550567c9e9b430d06fc0c640818f60edb063c904f72ba",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "next_attempt_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:bc146127309ec1f473047b8e000d3fde90ab717d9294b93632c44183abd6022a",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:759876cbe1e270ea70c8119dbd613f33654ea1ff11c1d1a8a99e1f3afaadc24f",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "status",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": true,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:8c515a2dccc594a973cbf9c617ff35bd6d58c3b4ccc17246432ef0ad3c8ea88f",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:a6099b48b41c39b04891588f2b664d0bc0e7f607a8d74a22d071f70782949caa",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         },
         {
           "field": "updated_at",
-          "action": "MANUAL_REVIEW",
+          "action": "KEEP_SELECTEL",
           "critical": false,
           "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:6fa2fd50188efce2ee113056e7213d8bd0ac70cee300185e2e8db637a4e450e7",
           "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:75a2b1db7967062b5f202bce97135f84a5787336a0d2d55b3287e798bee8bae4",
-          "requiresOwnerApproval": true
+          "requiresOwnerApproval": false
         }
       ],
-      "reason": "The same attachment PK points to different message relationships; worker timestamps cannot resolve ownership.",
+      "reason": "Owner approved option A: keep the Selectel version and apply no Railway fields.",
       "evidence": [
         {
           "type": "ROW_FIELD_DIFF",
@@ -10473,9 +10508,16 @@
         }
       ],
       "risk": "HIGH",
-      "requiresOwnerApproval": true,
-      "approvedBy": null,
-      "approvedAt": null
+      "requiresOwnerApproval": false,
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "ownerDecision": {
+        "decisionId": "DEC-006",
+        "selectedOption": "A",
+        "status": "APPROVED",
+        "effect": "KEEP_SELECTEL",
+        "decidedAt": "2026-07-31T21:10:03.474Z"
+      }
     },
     {
       "tableName": "messenger_attachments",
@@ -12896,6 +12938,77 @@
           "type": "RELATED_MESSENGER_GRAPH_CHECKED",
           "source": "both snapshots",
           "hash": "hmac-sha256:f5ed85ce298ddfd9:2764dc60cc184c4ea30d6960c357f00d5453bae1cf12d19fcf8c08b2ca59c54c"
+        }
+      ],
+      "risk": "LOW",
+      "requiresOwnerApproval": false,
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "tableName": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:919954405f8cdba54180b66701c38335272dbe1f521d6424ccc73b7b250bbabf"
+      },
+      "businessKeyHash": "hmac-sha256:f5ed85ce298ddfd9:a6fd087ba2c56f948d32c053f4ac4194cc37e40a1954de50c3fb03e78f360647",
+      "conflictingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "criticalFields": [
+        "last_message_at",
+        "last_message_text"
+      ],
+      "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:2a7516ce1ec7ef1b20946320a90a19356b96ac672a733cadb5ca5993dc9acda4",
+      "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:5fc561059e331e44c3bc36ce5e09ea8bc00e4b9289ee61a271037bac4bd183ab",
+      "selectelUpdatedAt": "2026-07-10T12:10:42.885111+02:00",
+      "railwayUpdatedAt": "2026-07-31T16:31:15.306492+02:00",
+      "selectelSource": "Selectel canonical production snapshot 2026-07-28",
+      "railwaySource": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-31",
+      "relatedAuditEvents": [],
+      "conflictType": "DERIVED_CONFLICT",
+      "resolutionAction": "RECOMPUTE",
+      "fieldLevelActions": [
+        {
+          "field": "last_message_at",
+          "action": "RECOMPUTE",
+          "critical": true,
+          "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:336ecbaee444cf5e21034376ce0d4711a4188e2d97f6576046b50b8413b5e62a",
+          "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:7a47e3108f39802416ee2c956d82f77b2e0975bdab0f9859192dc1494411ed17",
+          "requiresOwnerApproval": false
+        },
+        {
+          "field": "last_message_text",
+          "action": "RECOMPUTE",
+          "critical": true,
+          "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:3c4d4a66619641ea985bbc95dc0181cd2c71c1007f817fc87d0c6b6e3ca08fea",
+          "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:e31d6174a2e3957275cd70c01959886aa26041800418af8c2b33d254fc114ea1",
+          "requiresOwnerApproval": false
+        },
+        {
+          "field": "updated_at",
+          "action": "KEEP_SELECTEL",
+          "critical": false,
+          "selectelValueHash": "hmac-sha256:f5ed85ce298ddfd9:c8d856e3709bbc442cc16e661d82ccd74e1c00477b9a996348b49624614837da",
+          "railwayValueHash": "hmac-sha256:f5ed85ce298ddfd9:9487774561295230a130910abae5210cea60a378f5bafd86c00255822773b477",
+          "requiresOwnerApproval": false
+        }
+      ],
+      "reason": "Conversation summary fields are derived from the merged message history and are recomputed without replacing the row.",
+      "evidence": [
+        {
+          "type": "ROW_FIELD_DIFF",
+          "source": "local restored snapshots",
+          "hash": "hmac-sha256:f5ed85ce298ddfd9:223b934b3ede22f17d736032485cbb954e00b283ac726f13a41b3711780f8763"
+        },
+        {
+          "type": "RELATED_MESSENGER_GRAPH_CHECKED",
+          "source": "both snapshots",
+          "hash": "hmac-sha256:f5ed85ce298ddfd9:37ff596c7d57c4bad9dbe3b4c83de41897e584667786db4de7bc2ba6a6a50346"
         }
       ],
       "risk": "LOW",
@@ -19960,15 +20073,15 @@
       "relatedAuditEvents": [
         {
           "source": "Railway",
-          "eventType": "skipped",
-          "occurredAt": "2026-07-29T06:00:09.999309+02:00",
-          "evidenceHash": "hmac-sha256:f5ed85ce298ddfd9:8e631f72c2bd979af0bd482ba4a4b37e998de2461f294f057bb3ba79431b155e"
-        },
-        {
-          "source": "Railway",
           "eventType": "scheduled",
           "occurredAt": "2026-07-24T13:35:48.271688+02:00",
           "evidenceHash": "hmac-sha256:f5ed85ce298ddfd9:ae5bc58920f5ad8fb7ce1bf165b26de205c276270211429e852b45e80ced4d73"
+        },
+        {
+          "source": "Railway",
+          "eventType": "skipped",
+          "occurredAt": "2026-07-29T06:00:09.999309+02:00",
+          "evidenceHash": "hmac-sha256:f5ed85ce298ddfd9:8e631f72c2bd979af0bd482ba4a4b37e998de2461f294f057bb3ba79431b155e"
         }
       ],
       "conflictType": "INVALID_RAILWAY_STATE",
@@ -21364,5 +21477,18 @@
       "approvedBy": null,
       "approvedAt": null
     }
-  ]
+  ],
+  "ownerDecisionSummary": {
+    "approvedSamePkDecisions": [
+      "DEC-001",
+      "DEC-002",
+      "DEC-003",
+      "DEC-004",
+      "DEC-005",
+      "DEC-006"
+    ],
+    "pendingSamePkDecisions": 0,
+    "effect": "KEEP_SELECTEL",
+    "productionMutationRequired": false
+  }
 }

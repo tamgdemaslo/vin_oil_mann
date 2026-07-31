@@ -461,6 +461,9 @@ async function getMessengerSummary(organizationId: string): Promise<MessengerSum
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const audience = session.user.role === "owner" || session.user.role === "admin" ? session.user.role : "master";
+  const canViewFinance = audience === "owner";
+  const canViewClientOperations = audience !== "master";
   const branch = await requireBranchContext({ allowAll: false, requireActive: true });
   if (!branch.branchId || !branch.organizationId) {
     return NextResponse.json({ error: "Выберите конкретный филиал" }, { status: 409 });
@@ -580,7 +583,7 @@ export async function GET() {
   const nextAppointment = todayAppointments.find((item) => {
     const value = appointmentDateTime(item);
     return value ? value.getTime() >= now.getTime() : false;
-  }) ?? todayAppointments[0] ?? null;
+  }) ?? null;
   const appointmentShipmentStatuses = reconcileAppointmentShipments(todayAppointments, todayShipments);
   const appointmentShipmentStatusById = new Map(appointmentShipmentStatuses.map((status) => [status.appointmentId, status]));
   const appointmentsWithoutShipment = todayAppointments.filter((item) => {
@@ -756,10 +759,34 @@ export async function GET() {
     .sort((a, b) => notificationSortWeight(a) - notificationSortWeight(b) || String(a.deadline ?? "").localeCompare(String(b.deadline ?? "")))
     .slice(0, 80);
 
+  const visibleNotifications = audience === "master"
+    ? sortedNotifications.filter((item) => item.id.startsWith("appointment-") || item.id === "diagnostics-open")
+    : sortedNotifications;
+  const alerts = [
+    ...(cashState.shift
+      ? [{ id: "cash-open", label: "Нужно закрыть кассу", href: "/cash#cash-state", count: cashState.openedHours >= LONG_OPEN_SHIFT_HOURS ? 1 : 0, tone: "warning" }]
+      : [{ id: "cash-closed", label: "Касса закрыта", href: "/cash#cash-state", count: 1, tone: "danger" }]),
+    { id: "crm-overdue", label: "Есть просроченные дела", href: "/crm?filter=overdue", count: crmOverdue.length, tone: "danger" },
+    { id: "appointments-no-shipment", label: "Есть записи без найденной отгрузки", href: "/records?filter=no-shipment", count: appointmentsWithoutShipment.length, tone: "warning" },
+    { id: "appointments-link-manual", label: "Есть записи для ручной связи", href: "/records?filter=shipment-link", count: appointmentsRequiringManualLink.length, tone: "warning" },
+    { id: "unpaid-docs", label: "Есть неоплаченные документы", href: "/shipment?filter=unpaid", count: unpaidToday.length + unpaidInvoices.length, tone: "warning" },
+    { id: "low-stock", label: "Есть товары ниже минимума", href: "/inventory/restock?mode=below_min", count: lowStock.length, tone: "warning" },
+    { id: "diagnostics", label: "Есть диагностики без отчёта", href: "/shipment?filter=diagnostics", count: diagnosticWithoutPhotoCount, tone: "info" },
+  ];
+  const visibleAlerts = audience === "master"
+    ? alerts.filter((item) => item.id.startsWith("appointments-") || item.id === "diagnostics")
+    : alerts;
+
   return NextResponse.json({
     today,
     timezone: SERVICE_TIME_ZONE,
-    finance: {
+    audience,
+    capabilities: {
+      canViewFinance,
+      canViewClientOperations,
+      canManageCash: audience === "owner" || audience === "admin",
+    },
+    finance: canViewFinance ? {
       revenueCents,
       grossProfitCents,
       averageCheckCents: todayShipments.length ? cents(revenueCents / todayShipments.length) : 0,
@@ -769,16 +796,16 @@ export async function GET() {
       cashCents: paidStats.cashCents,
       cardCents: paidStats.cardCents,
       paymentSourceLabel: "по признакам документа",
-    },
+    } : null,
     cash: {
       status: cashState.shift ? "open" : "closed",
       openedBy: cashState.shift?.openedBy?.name ?? cashState.shift?.openedBy?.login ?? null,
       openedAt: cashState.shift?.openedAt ?? null,
-      startBalanceCents: cents((cashState.shift?.openingCash ?? 0) * 100),
-      expectedBalanceCents: cashState.expectedBalanceCents,
-      expensesCents: cashState.expensesCents,
-      withdrawalsCents: cashState.withdrawalsCents,
-      discrepancyCents: cents((cashState.shift?.discrepancy ?? 0) * 100),
+      startBalanceCents: audience === "master" ? null : cents((cashState.shift?.openingCash ?? 0) * 100),
+      expectedBalanceCents: audience === "master" ? null : cashState.expectedBalanceCents,
+      expensesCents: audience === "master" ? null : cashState.expensesCents,
+      withdrawalsCents: audience === "master" ? null : cashState.withdrawalsCents,
+      discrepancyCents: audience === "master" ? null : cents((cashState.shift?.discrepancy ?? 0) * 100),
       openedHours: cashState.openedHours,
     },
     appointments: {
@@ -826,7 +853,7 @@ export async function GET() {
         candidates: status.candidates.slice(0, 5),
       })),
     },
-    crm: {
+    crm: canViewClientOperations ? {
       overdue: crmOverdue.length,
       oldestOverdueHours,
       today: crmToday.length,
@@ -846,7 +873,7 @@ export async function GET() {
           deadline: dueLabel(crmDueAt(deal)),
           responsible: deal.responsibleLogin || "без ответственного",
         })),
-    },
+    } : null,
     shipments: {
       today: todayShipments.length,
       drafts: activeDemands.filter((demand) => !demand.applicable).length,
@@ -862,12 +889,12 @@ export async function GET() {
         store: demand.storeNameSnapshot || demand.organizationName || "",
         creator: stringValue(asRecord(demand.raw).ecoUserName) || "",
         applicable: demand.applicable,
-        sumCents: demand.sumCents,
+        sumCents: audience === "master" ? null : demand.sumCents,
         paymentStatus: paymentStatusFromRaw(demand.raw, demand.applicable),
         hasDiagnostic: demand.diagnosticMapSessions.length > 0,
       })),
     },
-    stock: {
+    stock: canViewClientOperations ? {
       belowMin: lowStock.length,
       rows: lowStock.slice(0, 5).map((row) => ({
         id: row.product.id,
@@ -876,8 +903,8 @@ export async function GET() {
         minimum: Number(row.product.minimumBalance ?? 0),
         store: row.store.name,
       })),
-    },
-    suppliers: {
+    } : null,
+    suppliers: canViewClientOperations ? {
       unpaidInvoices: unpaidInvoices.length,
       amountCents: unpaidInvoices.reduce((sum, invoice) => sum + Math.max(0, invoice.sumCents - invoice.paidAmountCents), 0),
       rows: unpaidInvoices.slice(0, 5).map((invoice) => ({
@@ -888,23 +915,15 @@ export async function GET() {
         amountCents: Math.max(0, invoice.sumCents - invoice.paidAmountCents),
         status: invoice.status,
       })),
-    },
+    } : null,
     diagnostics: {
       active: activeDiagnosticMapCount + legacyDiagnosticOpenCount,
       withoutPhoto: diagnosticWithoutPhotoCount,
     },
-    messages: messengerSummary,
-    alerts: [
-      ...(cashState.shift ? [{ id: "cash-open", label: "Нужно закрыть кассу", href: "/cash#cash-state", count: cashState.openedHours >= LONG_OPEN_SHIFT_HOURS ? 1 : 0, tone: "warning" }] : [{ id: "cash-closed", label: "Касса закрыта", href: "/cash#cash-state", count: 1, tone: "danger" }]),
-      { id: "crm-overdue", label: "Есть просроченные дела", href: "/crm?filter=overdue", count: crmOverdue.length, tone: "danger" },
-      { id: "appointments-no-shipment", label: "Есть записи без найденной отгрузки", href: "/records?filter=no-shipment", count: appointmentsWithoutShipment.length, tone: "warning" },
-      { id: "appointments-link-manual", label: "Есть записи для ручной связи", href: "/records?filter=shipment-link", count: appointmentsRequiringManualLink.length, tone: "warning" },
-      { id: "unpaid-docs", label: "Есть неоплаченные документы", href: "/shipment?filter=unpaid", count: unpaidToday.length + unpaidInvoices.length, tone: "warning" },
-      { id: "low-stock", label: "Есть товары ниже минимума", href: "/inventory/restock?mode=below_min", count: lowStock.length, tone: "warning" },
-      { id: "diagnostics", label: "Есть диагностики без отчёта", href: "/shipment?filter=diagnostics", count: diagnosticWithoutPhotoCount, tone: "info" },
-    ],
-    notifications: sortedNotifications,
-    notificationCounts: sortedNotifications.reduce(
+    messages: canViewClientOperations ? messengerSummary : null,
+    alerts: visibleAlerts,
+    notifications: visibleNotifications,
+    notificationCounts: visibleNotifications.reduce(
       (acc, item) => {
         acc.total += 1;
         acc[item.urgency] += 1;
@@ -912,7 +931,7 @@ export async function GET() {
       },
       { total: 0, urgent: 0, today: 0, soon: 0, info: 0 }
     ),
-    documents: latestDocuments.map((doc) => ({
+    documents: (audience === "master" ? [] : latestDocuments).map((doc) => ({
       id: doc.id,
       type: doc.type,
       name: doc.name,

@@ -1,109 +1,69 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatServiceTime } from "@/lib/date-time";
-import { tryResponseJson, responseJson } from "@/lib/response-json";
+import { responseJson } from "@/lib/response-json";
+import { invalidateDashboardClientBundle } from "@/lib/dashboard-client";
 
-type CurrentShift = {
+export type ShiftButtonShift = {
   id: string;
-  shiftDate: string;
-  startedAt: string;
-  endedAt: string | null;
-  closeType: string;
-  latePenaltyCents: number | null;
+  shiftDate?: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  closeType?: string;
+  latePenaltyCents?: number | null;
 } | null;
-type CurrentCashShift = {
+
+export type ShiftButtonCashShift = {
   id: string;
   status: "open" | "closed";
-  openedAt: string;
+  openedAt?: string;
 } | null;
-type UserRole = "owner" | "admin" | "master" | null;
+
+type UserRole = "owner" | "admin" | "master";
 
 const SHIFT_EVENT = "eco-shift-changed";
 
 function notifyShiftChanged() {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SHIFT_EVENT));
-  }
+  invalidateDashboardClientBundle();
+  window.dispatchEvent(new Event(SHIFT_EVENT));
 }
 
-export default function ShiftButton() {
+export default function ShiftButton({
+  role,
+  current,
+  currentCashShift,
+  loading = false,
+}: {
+  role: UserRole;
+  current: ShiftButtonShift;
+  currentCashShift: ShiftButtonCashShift;
+  loading?: boolean;
+}) {
   const router = useRouter();
-  const [current, setCurrent] = useState<CurrentShift>(null);
-  const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
-  const [role, setRole] = useState<UserRole>(null);
-  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadState() {
-      setLoading(true);
-      try {
-        const [sessionData, shiftData, cashData] = await Promise.all([
-          fetch("/api/auth/session").then(async (r) => {
-            const j = await tryResponseJson<{ user?: { role?: UserRole } | null }>(r);
-            return j ?? { user: null };
-          }),
-          fetch("/api/shifts/current", { cache: "no-store" }).then((r) => tryResponseJson<CurrentShift>(r)),
-          fetch("/api/cash", { cache: "no-store" }).then((r) =>
-            tryResponseJson<{ shift: CurrentCashShift | null }>(r)
-          ),
-        ]);
-        if (cancelled) return;
-        setRole(sessionData?.user?.role ?? null);
-        setCurrent(shiftData);
-        setCurrentCashShift(cashData?.shift ?? null);
-      } catch {
-        if (!cancelled) {
-          setRole(null);
-          setCurrent(null);
-          setCurrentCashShift(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void loadState();
-    const handleShiftChanged = () => {
-      void loadState();
-    };
-    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
-    };
-  }, []);
 
   async function startShift() {
     setError(null);
     setActionLoading(true);
     try {
-      const r = await fetch("/api/shifts/start", { method: "POST" });
-      let data: { error?: string; id?: string; shiftDate?: string; startedAt?: string };
+      const response = await fetch("/api/shifts/start", { method: "POST" });
+      let data: { error?: string };
       try {
-        data = await responseJson(r);
+        data = await responseJson(response);
       } catch {
-        setError(r.ok ? "Ошибка ответа сервера" : `Ошибка ${r.status}. Проверьте консоль сервера.`);
+        setError(response.ok ? "Сервер вернул некорректный ответ." : `Не удалось открыть смену: ошибка ${response.status}.`);
         return;
       }
-      if (!r.ok) {
-        setError(data.error ?? "Ошибка");
+      if (!response.ok) {
+        setError(data.error ?? "Не удалось открыть смену.");
         return;
       }
-      setCurrent({
-        id: data.id!,
-        shiftDate: data.shiftDate!,
-        startedAt: data.startedAt!,
-        endedAt: null,
-        closeType: "by_employee",
-        latePenaltyCents: null,
-      });
       notifyShiftChanged();
+    } catch {
+      setError("Нет связи с сервером. Проверьте подключение и повторите.");
     } finally {
       setActionLoading(false);
     }
@@ -113,20 +73,21 @@ export default function ShiftButton() {
     setError(null);
     setActionLoading(true);
     try {
-      const r = await fetch("/api/shifts/end", { method: "POST" });
+      const response = await fetch("/api/shifts/end", { method: "POST" });
       let data: { error?: string };
       try {
-        data = await responseJson(r);
+        data = await responseJson(response);
       } catch {
-        setError(r.ok ? "Ошибка ответа сервера" : `Ошибка ${r.status}. Проверьте консоль сервера.`);
+        setError(response.ok ? "Сервер вернул некорректный ответ." : `Не удалось закрыть смену: ошибка ${response.status}.`);
         return;
       }
-      if (!r.ok) {
-        setError(data.error ?? "Ошибка");
+      if (!response.ok) {
+        setError(data.error ?? "Не удалось закрыть смену.");
         return;
       }
-      setCurrent(null);
       notifyShiftChanged();
+    } catch {
+      setError("Нет связи с сервером. Проверьте подключение и повторите.");
     } finally {
       setActionLoading(false);
     }
@@ -134,84 +95,56 @@ export default function ShiftButton() {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-        <span className="text-sm text-zinc-500">Загрузка…</span>
+      <div className="eco-shift-control" role="status" aria-live="polite">
+        <span className="eco-shift-control__hint">Проверяем состояние смены…</span>
       </div>
     );
   }
 
-  const hasAnyActiveShift = !!current || currentCashShift?.status === "open";
+  const hasAnyActiveShift = Boolean(current) || currentCashShift?.status === "open";
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+    <div className="eco-shift-control">
       {hasAnyActiveShift ? (
         <>
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+          <p className="eco-shift-control__status">
             {current
-              ? `Смена открыта с ${formatServiceTime(current.startedAt)}`
-              : `Кассовая смена открыта с ${formatServiceTime(currentCashShift?.openedAt)}`}
+              ? `Смена открыта${current.startedAt ? ` с ${formatServiceTime(current.startedAt)}` : ""}`
+              : `Кассовая смена открыта${currentCashShift?.openedAt ? ` с ${formatServiceTime(currentCashShift.openedAt)}` : ""}`}
           </p>
           {role === "admin" && (
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-              Для администратора закрытие рабочей смены выполняется при закрытии кассовой.
-            </p>
+            <p className="eco-shift-control__hint">Смена администратора закрывается вместе с кассовой.</p>
           )}
           {current?.latePenaltyCents != null && current.latePenaltyCents > 0 && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Штраф за опоздание: {(current.latePenaltyCents / 100).toFixed(0)} ₽
-            </p>
+            <p className="eco-shift-control__warning">Штраф за опоздание: {(current.latePenaltyCents / 100).toFixed(0)} ₽</p>
           )}
           {role !== "admin" && current && (
-            <button
-              type="button"
-              onClick={endShift}
-              disabled={actionLoading}
-              className="mt-3 w-full rounded-lg bg-zinc-200 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-600 dark:hover:bg-zinc-500"
-            >
-              {actionLoading ? "…" : "Смена окончена"}
+            <button type="button" onClick={() => void endShift()} disabled={actionLoading} className="eco-ops-btn eco-ops-btn--ghost">
+              {actionLoading ? "Закрываем…" : "Завершить смену"}
             </button>
           )}
         </>
+      ) : role === "admin" ? (
+        <>
+          <p className="eco-shift-control__hint">Рабочая смена администратора открывается вместе с кассовой.</p>
+          <button type="button" onClick={() => router.push("/cash#open")} className="eco-ops-btn eco-ops-btn--primary">
+            Открыть кассовую смену
+          </button>
+        </>
       ) : (
         <>
-          {role === "admin" ? (
-            <>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Рабочая смена администратора открывается вместе с кассовой.
-              </p>
-              <button
-                type="button"
-                onClick={() => router.push("/cash")}
-                className="mt-3 w-full rounded-lg bg-emerald-500 py-2 text-sm font-medium text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700"
-              >
-                Открыть кассовую смену
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">Сегодня смена не начата</p>
-              <button
-                type="button"
-                onClick={startShift}
-                disabled={actionLoading}
-                className="mt-3 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 dark:bg-amber-600 dark:hover:bg-amber-700"
-              >
-                {actionLoading ? "…" : "Я на смене"}
-              </button>
-            </>
-          )}
+          <p className="eco-shift-control__hint">Сегодня смена ещё не начата.</p>
+          <button type="button" onClick={() => void startShift()} disabled={actionLoading} className="eco-ops-btn eco-ops-btn--primary">
+            {actionLoading ? "Открываем…" : "Я на смене"}
+          </button>
         </>
       )}
       {role === "admin" && current && (
-        <button
-          type="button"
-          onClick={() => router.push("/cash")}
-          className="mt-3 w-full rounded-lg bg-zinc-200 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-300 dark:bg-zinc-600 dark:hover:bg-zinc-500"
-        >
-          Перейти в кассу для закрытия
+        <button type="button" onClick={() => router.push("/cash#cash-state")} className="eco-ops-btn eco-ops-btn--ghost">
+          Перейти к закрытию кассы
         </button>
       )}
-      {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="eco-shift-control__error" role="alert">{error}</p>}
     </div>
   );
 }

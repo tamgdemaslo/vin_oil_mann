@@ -8,18 +8,22 @@ import {
   MoreHorizontal,
   Play,
   Plus,
+  RefreshCw,
   Truck,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import ShiftButton from "@/components/ShiftButton";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import ShiftButton, { type ShiftButtonCashShift, type ShiftButtonShift } from "@/components/ShiftButton";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
+import { loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { SERVICE_TIME_ZONE, formatServiceDayMonth, formatServiceTime } from "@/lib/date-time";
-import { tryResponseJson } from "@/lib/response-json";
 
-type CurrentShift = { id: string } | null;
-type CurrentCashShift = { id: string; status: "open" | "closed" } | null;
+type UserRole = "owner" | "admin" | "master";
+type CurrentShift = ShiftButtonShift;
+type CurrentCashShift = ShiftButtonCashShift;
 type NotificationUrgency = "urgent" | "today" | "soon" | "info";
+type DashboardLoadState = "loading" | "ready" | "refreshing" | "partial" | "stale" | "error";
 
 type DashboardNotification = {
   id: string;
@@ -63,7 +67,7 @@ type ShipmentItem = {
   store: string;
   creator: string;
   applicable: boolean;
-  sumCents: number;
+  sumCents: number | null;
   paymentStatus: "paid" | "unpaid" | "unknown";
   hasDiagnostic: boolean;
 };
@@ -87,6 +91,12 @@ type SupplierInvoiceItem = {
 
 type DashboardData = {
   today: string;
+  audience: UserRole;
+  capabilities: {
+    canViewFinance: boolean;
+    canViewClientOperations: boolean;
+    canManageCash: boolean;
+  };
   finance: {
     revenueCents: number;
     grossProfitCents: number;
@@ -97,16 +107,16 @@ type DashboardData = {
     cashCents: number;
     cardCents: number;
     paymentSourceLabel: string;
-  };
+  } | null;
   cash: {
     status: "open" | "closed";
     openedBy: string | null;
     openedAt: string | null;
-    startBalanceCents: number;
-    expectedBalanceCents: number;
-    expensesCents: number;
-    withdrawalsCents: number;
-    discrepancyCents: number;
+    startBalanceCents: number | null;
+    expectedBalanceCents: number | null;
+    expensesCents: number | null;
+    withdrawalsCents: number | null;
+    discrepancyCents: number | null;
     openedHours: number;
   };
   appointments: {
@@ -128,7 +138,7 @@ type DashboardData = {
     callback: number;
     noResponsible: number;
     rows: CrmItem[];
-  };
+  } | null;
   shipments: {
     today: number;
     drafts: number;
@@ -141,17 +151,17 @@ type DashboardData = {
   stock: {
     belowMin: number;
     rows: StockItem[];
-  };
+  } | null;
   suppliers: {
     unpaidInvoices: number;
     amountCents: number;
     rows: SupplierInvoiceItem[];
-  };
+  } | null;
   diagnostics: {
     active: number;
     withoutPhoto: number;
   };
-  messages?: {
+  messages: {
     total: number;
     needsReply: number;
     unread: number;
@@ -160,7 +170,7 @@ type DashboardData = {
       hours: number;
       href: string;
     } | null;
-  };
+  } | null;
   alerts: Array<{ id: string; label: string; href: string; count: number; tone: EcoBadgeTone }>;
   notifications: DashboardNotification[];
   notificationCounts: Record<NotificationUrgency | "total", number>;
@@ -456,20 +466,27 @@ function EmptyState({ title, hint }: { title: string; hint: string }) {
   );
 }
 
-function ErrorState({ title, hint }: { title: string; hint: string }) {
+function ErrorState({ title, hint, onRetry }: { title: string; hint: string; onRetry?: () => void }) {
   return (
-    <div className="eco-ops-empty is-error">
+    <div className="eco-ops-empty is-error" role="alert">
       <strong>{title}</strong>
       <span>{hint}</span>
+      {onRetry && (
+        <button type="button" className="eco-ops-btn eco-ops-btn--ghost eco-ops-btn--sm" onClick={onRetry}>
+          <RefreshCw aria-hidden className="eco-icon" />
+          Повторить
+        </button>
+      )}
     </div>
   );
 }
 
 function LoadingState({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="eco-ops-loading" aria-label="Загрузка">
+    <div className="eco-ops-loading" role="status" aria-live="polite" aria-label="Загрузка данных">
+      <span className="eco-visually-hidden">Загружаем актуальные данные…</span>
       {Array.from({ length: rows }).map((_, index) => (
-        <span key={index} />
+        <span key={index} aria-hidden />
       ))}
     </div>
   );
@@ -497,6 +514,7 @@ function CommandSignal({
   detail,
   href,
   tone = "neutral",
+  primary = false,
   icon: Icon,
 }: {
   label: string;
@@ -504,6 +522,7 @@ function CommandSignal({
   detail: ReactNode;
   href?: string;
   tone?: EcoBadgeTone;
+  primary?: boolean;
   icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 }) {
   const content = (
@@ -521,11 +540,11 @@ function CommandSignal({
   );
 
   return href ? (
-    <Link href={href} className={`eco-ops-signal is-${tone}`}>
+    <Link href={href} className={`eco-ops-signal is-${tone} ${primary ? "is-primary" : ""}`}>
       {content}
     </Link>
   ) : (
-    <div className={`eco-ops-signal is-${tone}`}>{content}</div>
+    <div className={`eco-ops-signal is-${tone} ${primary ? "is-primary" : ""}`}>{content}</div>
   );
 }
 
@@ -541,6 +560,9 @@ type MobileProblemTone = "danger" | "warning" | "info" | "neutral" | "success";
 type MobileProblem = {
   id: string;
   tone: MobileProblemTone;
+  severity: number;
+  deadlineWeight: number;
+  impact: number;
   title: string;
   meta: string;
   href: string;
@@ -548,7 +570,7 @@ type MobileProblem = {
 };
 
 function buildRevenueForecast(dashboard: DashboardData | null, cashClosed: boolean) {
-  if (!dashboard) {
+  if (!dashboard?.finance) {
     return {
       tone: "neutral" as const,
       short: "Загрузка",
@@ -572,15 +594,15 @@ function buildRevenueForecast(dashboard: DashboardData | null, cashClosed: boole
   const recordsWithoutShipment = dashboard.appointments.withoutShipment;
 
   if (shipmentCount >= 2 && averageCheck > 0 && recordsWithoutShipment > 0) {
-    const low = currentRevenue + averageCheck * recordsWithoutShipment * 0.45;
-    const high = currentRevenue + averageCheck * recordsWithoutShipment * 1.15;
+    const low = currentRevenue + averageCheck * recordsWithoutShipment * 0.5;
+    const high = currentRevenue + averageCheck * recordsWithoutShipment;
     return {
       tone: "success" as const,
       short: `${formatMoneyCents(low)} – ${formatMoneyCents(high)}`,
       value: `${formatMoneyCents(low)} – ${formatMoneyCents(high)}`,
       details: [
-        `${formatCount(shipmentCount)} отгрузок уже есть.`,
-        `${formatCount(recordsWithoutShipment)} записей без найденной отгрузки.`,
+        `Основа: ${formatCount(shipmentCount)} проведённых отгрузок и текущий средний чек.`,
+        `Диапазон предполагает реализацию 50–100% из ${formatCount(recordsWithoutShipment)} записей без отгрузки.`,
       ],
     };
   }
@@ -625,29 +647,38 @@ function MobileReportMetric({
   );
 }
 
-function MobileActionRow({
-  title,
-  value,
-  detail,
-  href,
-  action,
-  tone = "neutral",
-}: {
-  title: string;
-  value: ReactNode;
-  detail: ReactNode;
-  href: string;
-  action: string;
-  tone?: MobileProblemTone;
-}) {
+function problemPriorityLabel(tone: MobileProblemTone) {
+  if (tone === "danger") return "Срочно";
+  if (tone === "warning") return "Сегодня";
+  if (tone === "info") return "Скоро";
+  if (tone === "success") return "Готово";
+  return "К сведению";
+}
+
+function MobileWorkRow({ slot }: { slot: ScheduleTimelineItem }) {
+  if (slot.kind === "window") {
+    return (
+      <Link href={recordCreateHref()} className="eco-mobile-work-row is-window">
+        <span className="eco-mobile-work-time">{formatClockMinutes(slot.start)}</span>
+        <span className="eco-mobile-work-copy">
+          <b>Свободное окно</b>
+          <small>{slot.label} · можно записать клиента</small>
+        </span>
+        <Badge tone="success">Окно</Badge>
+        <ChevronRight aria-hidden className="eco-icon eco-mobile-work-arrow" />
+      </Link>
+    );
+  }
+
   return (
-    <Link href={href} className={`eco-mobile-action-row is-${tone}`}>
-      <span>
-        <b>{title}</b>
-        <small>{detail}</small>
+    <Link href={recordHref(slot.item)} className="eco-mobile-work-row">
+      <span className="eco-mobile-work-time">{slot.item.time || "—"}</span>
+      <span className="eco-mobile-work-copy">
+        <b>{slot.item.client}</b>
+        <small>{[slot.item.vehicle || "авто не указано", slot.item.service].filter(Boolean).join(" · ")}</small>
       </span>
-      <strong>{value}</strong>
-      <em>{action}</em>
+      <Badge tone={appointmentTone(slot.item.status)}>{slot.item.status || "Запланирована"}</Badge>
+      <ChevronRight aria-hidden className="eco-icon eco-mobile-work-arrow" />
     </Link>
   );
 }
@@ -657,387 +688,370 @@ export default function HomeDashboard({
   userName,
   needShiftNotice = false,
 }: {
-  role: string;
-  login: string;
+  role: UserRole;
   userName: string;
   needShiftNotice?: boolean;
 }) {
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<DashboardLoadState>("loading");
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
+  const [shiftAvailable, setShiftAvailable] = useState(false);
+  const [cashAvailable, setCashAvailable] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [partialErrors, setPartialErrors] = useState<string[]>([]);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const dashboardRef = useRef<DashboardData | null>(null);
+  const mountedRef = useRef(true);
 
   const needsActiveShift = role === "admin" || role === "master";
-  const hasActiveShift = !!currentShift || currentCashShift?.status === "open";
-  const sectionsLocked = needsActiveShift && !hasActiveShift;
+  const hasActiveShift = Boolean(currentShift) || currentCashShift?.status === "open" || dashboard?.cash.status === "open";
+  const shiftStatusKnown = role === "admin" ? cashAvailable || Boolean(dashboard) : shiftAvailable;
+  const sectionsLocked = needsActiveShift && shiftStatusKnown && !hasActiveShift;
+  const shiftStatusUnavailable = needsActiveShift && !shiftStatusKnown;
+  const loading = loadState === "loading";
+  const refreshing = loadState === "refreshing";
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSummary() {
-      setLoading(true);
-      setDashboardError(null);
-      try {
-        const [shiftRes, cashRes, dashboardRes] = await Promise.all([
-          fetch("/api/shifts/current", { cache: "no-store" }),
-          fetch("/api/cash", { cache: "no-store" }),
-          fetch("/api/dashboard/operations", { cache: "no-store" }),
-        ]);
-
-        if (cancelled) return;
-        setCurrentShift(await tryResponseJson<NonNullable<CurrentShift>>(shiftRes));
-        const cashData = await tryResponseJson<{ shift?: CurrentCashShift }>(cashRes);
-        setCurrentCashShift(cashData?.shift ?? null);
-        setDashboard(await tryResponseJson<DashboardData>(dashboardRes));
-      } catch {
-        if (!cancelled) {
-          setDashboardError("Не удалось загрузить операционную сводку.");
-          setDashboard(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const loadSummary = useCallback(async (force = false) => {
+    setLoadState(dashboardRef.current ? "refreshing" : "loading");
+    setDashboardError(null);
+    try {
+      const bundle = await loadDashboardClientBundle<DashboardData, CurrentShift, { shift?: CurrentCashShift }>({ force });
+      if (!mountedRef.current) return;
+      dashboardRef.current = bundle.dashboard;
+      setDashboard(bundle.dashboard);
+      setCurrentShift(bundle.shift);
+      setCurrentCashShift(bundle.cash?.shift ?? null);
+      setShiftAvailable(bundle.shiftAvailable);
+      setCashAvailable(bundle.cashAvailable);
+      setPartialErrors(bundle.partialErrors);
+      setLastUpdatedAt(bundle.loadedAt);
+      setLoadState(bundle.partialErrors.length ? "partial" : "ready");
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = error instanceof Error ? error.message : "Не удалось загрузить операционную сводку.";
+      setDashboardError(message);
+      setLoadState(dashboardRef.current ? "stale" : "error");
     }
-
-    void loadSummary();
-    const handleShiftChanged = () => void loadSummary();
-    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
-    };
   }, []);
 
-  const cashClosed = dashboard?.cash.status !== "open";
+  useEffect(() => {
+    mountedRef.current = true;
+    const initialTimer = window.setTimeout(() => void loadSummary(), 0);
+    const handleShiftChanged = () => void loadSummary(true);
+    const handleFocus = () => void loadSummary(true);
+    const refreshTimer = window.setInterval(() => void loadSummary(true), 60_000);
+    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(refreshTimer);
+      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [loadSummary]);
+
+  const cashClosed = dashboard?.cash.status === "closed";
   const cashOpenLong = (dashboard?.cash.openedHours ?? 0) >= 10;
   const notifications = dashboard?.notifications ?? [];
   const feedItems = notifications.slice(0, 5);
-  const messages = dashboard?.messages ?? { total: 0, needsReply: 0, unread: 0, oldest: null };
+  const messages = dashboard?.messages;
   const forecast = buildRevenueForecast(dashboard, cashClosed);
   const scheduleItems = useMemo(
     () => buildScheduleTimeline(dashboard?.appointments.rows ?? [], dashboard?.appointments.freeWindows ?? []),
     [dashboard?.appointments.rows, dashboard?.appointments.freeWindows]
   );
-  const shiftStatusLine = sectionsLocked
+  const shiftStatusLine = loading && !dashboard
+    ? "Получаем актуальное состояние дня"
+    : shiftStatusUnavailable
+      ? "Статус смены временно недоступен"
+      : sectionsLocked
     ? "Смена не начата · касса закрыта"
     : dashboard?.cash.status === "open"
       ? `Касса открыта${formatTime(dashboard.cash.openedAt) !== "—" ? ` с ${formatTime(dashboard.cash.openedAt)}` : ""}`
       : currentShift
         ? "Смена активна · касса закрыта"
-        : "Смена не начата · касса закрыта";
-  const mobilePrimaryAction = sectionsLocked
+        : role === "owner" ? "Касса закрыта" : "Смена не начата · касса закрыта";
+  const mobilePrimaryAction = !dashboard
+    ? null
+    : role === "master"
+      ? sectionsLocked
+        ? { href: "#shift-control", label: "Открыть смену" }
+        : { href: "/shipment?filter=diagnostics", label: "К работам" }
+    : sectionsLocked
     ? { href: role === "admin" ? "/cash#open" : "#shift-control", label: "Открыть смену" }
     : cashClosed
       ? { href: "/cash#open", label: "Открыть кассу" }
       : { href: "/shipment/new", label: "Новая отгрузка" };
   const attentionItems = useMemo<MobileProblem[]>(() => {
-    const items: MobileProblem[] = [];
-    if (cashClosed) {
+    if (!dashboard) return [];
+    const urgencyWeight: Record<NotificationUrgency, number> = { urgent: 0, today: 1, soon: 2, info: 3 };
+    const items = dashboard.notifications.map((item) => ({
+      id: item.id,
+      tone: item.urgency === "urgent" ? "danger" as const : item.urgency === "today" ? "warning" as const : item.urgency === "soon" ? "info" as const : "neutral" as const,
+      severity: urgencyWeight[item.urgency],
+      deadlineWeight: item.deadline ? new Date(item.deadline).getTime() || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+      impact: item.entityLabel === "Касса" ? 0 : item.entityLabel === "CRM-дело" ? 1 : item.entityLabel === "Запись" ? 2 : 3,
+      title: item.title,
+      meta: item.description,
+      href: item.entityHref,
+      action: item.actionLabel,
+    }));
+    if (messages?.needsReply) {
       items.push({
-        id: "cash-closed",
-        tone: "danger",
-        title: "Касса закрыта",
-        meta: "Перед продажами нужно открыть смену.",
-        href: "/cash#open",
-        action: "Открыть",
-      });
-    } else if (cashOpenLong) {
-      items.push({
-        id: "cash-open-long",
+        id: "messages-needs-reply",
         tone: "warning",
-        title: "Касса открыта давно",
-        meta: `${formatHours(Math.floor(dashboard?.cash.openedHours ?? 0))} без закрытия.`,
-        href: "/cash#cash-state",
-        action: "Проверить",
-      });
-    }
-    if (messages.needsReply > 0) {
-      items.push({
-        id: "messages",
-        tone: "warning",
+        severity: 1,
+        deadlineWeight: messages.oldest ? -messages.oldest.hours : Number.MAX_SAFE_INTEGER,
+        impact: 1,
         title: `${formatCount(messages.needsReply)} сообщений требуют ответа`,
         meta: messages.oldest ? `Самое старое: ${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : "Есть непрочитанные диалоги.",
         href: "/messages",
-        action: "Открыть",
+        action: "Ответить",
       });
     }
-    if ((dashboard?.crm.overdue ?? 0) > 0) {
-      items.push({
-        id: "crm-overdue",
-        tone: "warning",
-        title: `${formatCount(dashboard?.crm.overdue ?? 0)} просроченных дел`,
-        meta: (dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `Старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "Нужен контроль дедлайнов.",
-        href: "/crm?filter=overdue",
-        action: "Смотреть",
-      });
-    }
-    if ((dashboard?.appointments.withoutShipment ?? 0) > 0) {
-      items.push({
-        id: "appointments-without-shipment",
-        tone: "warning",
-        title: `${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной отгрузки`,
-        meta: "Проверьте журнал или создайте документ.",
-        href: "/records?filter=no-shipment",
-        action: "Создать",
-      });
-    }
-    if ((dashboard?.appointments.requiresManualLink ?? 0) > 0) {
-      items.push({
-        id: "appointments-manual-link",
-        tone: "warning",
-        title: `${formatCount(dashboard?.appointments.requiresManualLink ?? 0)} требуют связи`,
-        meta: "Найдены возможные отгрузки, нужно выбрать правильную.",
-        href: "/records?filter=shipment-link",
-        action: "Связать",
-      });
-    }
-    if ((dashboard?.stock.belowMin ?? 0) > 0) {
-      items.push({
-        id: "stock-below-min",
-        tone: "warning",
-        title: `${formatCount(dashboard?.stock.belowMin ?? 0)} товаров ниже минимума`,
-        meta: "Нужно проверить пополнение.",
-        href: "/inventory/restock?mode=below_min",
-        action: "Проверить",
-      });
-    }
-    if ((dashboard?.diagnostics.withoutPhoto ?? 0) > 0) {
-      items.push({
-        id: "diagnostics-without-photo",
-        tone: "neutral",
-        title: `${formatCount(dashboard?.diagnostics.withoutPhoto ?? 0)} диагностик без фото / отчёта`,
-        meta: "Закройте незавершённые отчёты.",
-        href: "/shipment?filter=diagnostics",
-        action: "Проверить",
-      });
-    }
-    if ((dashboard?.suppliers.unpaidInvoices ?? 0) > 0) {
-      items.push({
-        id: "supplier-invoices",
-        tone: "warning",
-        title: `${formatCount(dashboard?.suppliers.unpaidInvoices ?? 0)} счетов поставщиков`,
-        meta: `${formatMoneyCents(dashboard?.suppliers.amountCents ?? 0)} к контролю оплаты.`,
-        href: "/finance/invoices",
-        action: "Счета",
-      });
-    }
-    return items.slice(0, 6);
-  }, [
-    cashClosed,
-    cashOpenLong,
-    dashboard?.appointments.withoutShipment,
-    dashboard?.appointments.requiresManualLink,
-    dashboard?.cash.openedHours,
-    dashboard?.crm.oldestOverdueHours,
-    dashboard?.crm.overdue,
-    dashboard?.diagnostics.withoutPhoto,
-    dashboard?.stock.belowMin,
-    dashboard?.suppliers.amountCents,
-    dashboard?.suppliers.unpaidInvoices,
-    messages.needsReply,
-    messages.oldest,
-  ]);
-  const blockingProblems = attentionItems.filter((item) => item.tone === "danger").length;
-  const daySignals = [
-    {
-      id: "cash",
-      label: "Касса / смена",
-      value: dashboard?.cash.status === "open" ? "Открыта" : "Закрыта",
-      detail: shiftStatusLine,
-      href: "/cash#cash-state",
-      tone: cashClosed ? ("danger" as const) : cashOpenLong ? ("warning" as const) : ("success" as const),
-      icon: Gauge,
-    },
+    return items.sort((a, b) => a.severity - b.severity || a.deadlineWeight - b.deadlineWeight || a.impact - b.impact);
+  }, [dashboard, messages]);
+  const visibleAttentionItems = attentionItems.slice(0, role === "owner" ? 4 : 5);
+  const hiddenAttentionCount = Math.max(0, attentionItems.length - visibleAttentionItems.length);
+  const daySignals = dashboard ? [
+    role === "master"
+      ? {
+          id: "shift",
+          label: "Рабочая смена",
+          value: !shiftAvailable ? "Нет данных" : currentShift ? "Активна" : "Не начата",
+          detail: shiftStatusLine,
+          href: "#shift-control",
+          tone: !shiftAvailable ? ("neutral" as const) : currentShift ? ("success" as const) : ("warning" as const),
+          icon: Gauge,
+        }
+      : {
+          id: "cash",
+          label: "Касса / смена",
+          value: dashboard.cash.status === "open" ? "Открыта" : "Закрыта",
+          detail: shiftStatusLine,
+          href: "/cash#cash-state",
+          tone: cashClosed ? ("danger" as const) : cashOpenLong ? ("warning" as const) : ("success" as const),
+          icon: Gauge,
+        },
     {
       id: "records",
-      label: "Журнал",
-      value: formatCount(dashboard?.appointments.totalToday ?? 0),
-      detail: dashboard?.appointments.next
+      label: role === "master" ? "Работы сегодня" : "Журнал",
+      value: formatCount(dashboard.appointments.totalToday),
+      detail: dashboard.appointments.next
         ? `${dashboard.appointments.next.time} · ${dashboard.appointments.next.client}`
-        : `${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без отгрузки`,
+        : `${formatCount(dashboard.appointments.withoutShipment)} без отгрузки`,
       href: "/records",
-      tone:
-        dashboard?.appointments.withoutShipment || dashboard?.appointments.requiresManualLink
-          ? ("warning" as const)
-          : ("neutral" as const),
+      tone: dashboard.appointments.withoutShipment || dashboard.appointments.requiresManualLink ? ("warning" as const) : ("neutral" as const),
       icon: CalendarDays,
     },
-    {
-      id: "messages",
-      label: "Сообщения",
-      value: formatCount(messages.needsReply),
-      detail: messages.needsReply
-        ? messages.oldest
-          ? `${messages.oldest.client} · ${formatHours(messages.oldest.hours)}`
-          : `${formatCount(messages.unread)} непрочитанных`
-        : "ответы не ждут",
-      href: "/messages",
-      tone: messages.needsReply ? ("warning" as const) : ("neutral" as const),
-      icon: MessageCircle,
-    },
+    role === "master"
+      ? {
+          id: "diagnostics",
+          label: "Диагностики",
+          value: formatCount(dashboard.diagnostics.active),
+          detail: `${formatCount(dashboard.diagnostics.withoutPhoto)} без полного отчёта`,
+          href: "/shipment?filter=diagnostics",
+          tone: dashboard.diagnostics.withoutPhoto ? ("warning" as const) : ("neutral" as const),
+          icon: Wrench,
+        }
+      : {
+          id: "messages",
+          label: "Сообщения",
+          value: formatCount(messages?.needsReply ?? 0),
+          detail: messages?.needsReply
+            ? messages.oldest
+              ? `${messages.oldest.client} · ${formatHours(messages.oldest.hours)}`
+              : `${formatCount(messages.unread)} непрочитанных`
+            : "ответы не ждут",
+          href: "/messages",
+          tone: messages?.needsReply ? ("warning" as const) : ("neutral" as const),
+          icon: MessageCircle,
+        },
     {
       id: "shipments",
       label: "Отгрузки",
-      value: formatCount(dashboard?.shipments.today ?? 0),
-      detail: `${formatCount(dashboard?.shipments.drafts ?? 0)} черновиков · ${formatCount(dashboard?.shipments.unpaid ?? 0)} без оплаты`,
+      value: formatCount(dashboard.shipments.today),
+      detail: role === "master"
+        ? `${formatCount(dashboard.shipments.withoutDiagnostic)} без диагностики`
+        : `${formatCount(dashboard.shipments.drafts)} черновиков · ${formatCount(dashboard.shipments.unpaid)} без оплаты`,
       href: "/shipment",
-      tone: dashboard?.shipments.drafts || dashboard?.shipments.unpaid ? ("warning" as const) : ("neutral" as const),
+      tone: dashboard.shipments.drafts || dashboard.shipments.unpaid ? ("warning" as const) : ("neutral" as const),
       icon: Truck,
     },
-  ];
+  ] : [];
+  const primarySignalId = sectionsLocked
+    ? role === "master" ? "shift" : "cash"
+    : daySignals.find((signal) => signal.tone === "danger")?.id ?? "records";
 
   return (
-    <main className="eco-ops-dashboard">
+    <main className={`eco-ops-dashboard is-role-${role}`} aria-busy={loading || refreshing}>
+      <div className="eco-visually-hidden" role="status" aria-live="polite">
+        {loading ? "Загружаем операционную сводку." : refreshing ? "Обновляем операционную сводку." : loadState === "stale" ? "Показаны ранее загруженные данные." : "Операционная сводка обновлена."}
+      </div>
       <section className="eco-mobile-control" aria-label={`Мобильный контроль дня для ${userName}`}>
         <header className="eco-mobile-top">
           <div>
-            <strong>Там где масло</strong>
+            <h1>{role === "owner" ? "Контроль владельца" : role === "admin" ? "Рабочий день администратора" : "Моя смена"}</h1>
             <span>{todayShortPhrase()}</span>
             <small>{shiftStatusLine}</small>
           </div>
-          <Link href={mobilePrimaryAction.href} className="eco-mobile-primary">
-            {mobilePrimaryAction.label}
-          </Link>
+          {mobilePrimaryAction ? (
+            <Link href={mobilePrimaryAction.href} className="eco-mobile-primary">
+              {mobilePrimaryAction.label}
+            </Link>
+          ) : (
+            <span className="eco-mobile-primary is-disabled" aria-hidden>Загрузка…</span>
+          )}
         </header>
 
-        {needShiftNotice && (
-          <div className="eco-mobile-inline-alert is-warning">
-            Для администратора и мастера разделы открываются после начала смены.
+        {loadState === "stale" && dashboard && (
+          <div className="eco-mobile-inline-alert is-warning" role="alert">
+            <span>Не удалось обновить данные. Показана сводка на {lastUpdatedAt ? formatTime(new Date(lastUpdatedAt).toISOString()) : "предыдущее обновление"}.</span>
+            <button type="button" onClick={() => void loadSummary(true)}>Повторить</button>
+          </div>
+        )}
+        {loadState === "partial" && partialErrors.length > 0 && (
+          <div className="eco-mobile-inline-alert is-warning" role="status">
+            Часть статусов недоступна: {partialErrors.join(" ")}
           </div>
         )}
 
-        <section className="eco-mobile-card eco-mobile-report">
-          <div className="eco-mobile-card-head">
-            <h2>Мини-отчёт</h2>
-            <span className={`eco-mobile-status is-${cashClosed ? "danger" : "success"}`}>
-              {cashClosed ? "касса закрыта" : "касса открыта"}
-            </span>
-          </div>
-
-          <div className="eco-mobile-revenue">
-            <span>Выручка сейчас</span>
-            <strong>{loading ? "..." : formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
-            <small>
-              {dashboard?.cash.status === "open" ? "Касса открыта" : "Касса закрыта"} · {formatCount(dashboard?.finance.shipmentsCount ?? 0)} отгрузок · оплачено{" "}
-              {formatMoneyCents(dashboard?.finance.paidCents ?? 0)}
-            </small>
-          </div>
-
-          <div className="eco-mobile-metric-grid">
-            <MobileReportMetric label="Прогноз" value={forecast.short} hint={forecast.value} tone={forecast.tone} />
-            <MobileReportMetric
-              label="Касса / смена"
-              value={dashboard?.cash.status === "open" ? "Открыта" : "Закрыта"}
-              hint={dashboard?.cash.status === "open" ? `с ${formatTime(dashboard.cash.openedAt)}` : "смена не начата"}
-              tone={cashClosed ? "danger" : "success"}
-            />
-            <MobileReportMetric
-              label="Записи сегодня"
-              value={formatCount(dashboard?.appointments.totalToday ?? 0)}
-              hint={`${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной · ${formatCount(dashboard?.appointments.requiresManualLink ?? 0)} связать`}
-            />
-            <MobileReportMetric
-              label="Ближайшая"
-              value={dashboard?.appointments.next ? dashboard.appointments.next.time : "—"}
-              hint={dashboard?.appointments.next ? dashboard.appointments.next.client : "записей нет"}
-            />
-            <MobileReportMetric label="Отгрузки сегодня" value={formatCount(dashboard?.shipments.today ?? 0)} hint={`черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)}`} />
-            <MobileReportMetric label="Просрочено" value={formatCount(dashboard?.crm.overdue ?? 0)} hint={(dashboard?.crm.oldestOverdueHours ?? 0) > 0 ? `старшее ${formatHours(dashboard?.crm.oldestOverdueHours)}` : "дел нет"} tone={dashboard?.crm.overdue ? "warning" : "neutral"} />
-            <MobileReportMetric label="Блокеры" value={formatCount(blockingProblems)} hint={blockingProblems ? "мешают продажам" : "блокеров нет"} tone={blockingProblems ? "danger" : "success"} />
-          </div>
-        </section>
-
-        <section className={`eco-mobile-card eco-mobile-forecast is-${forecast.tone}`}>
-          <div className="eco-mobile-card-head">
-            <h2>Прогноз до конца дня</h2>
-            <span>{forecast.tone === "success" ? "диапазон" : forecast.tone === "warning" ? "низкая точность" : "статус"}</span>
-          </div>
-          <strong>{forecast.value}</strong>
-          <ul>
-            {forecast.details.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="eco-mobile-card eco-mobile-attention">
-          <div className="eco-mobile-card-head">
-            <h2>Требует внимания</h2>
-            <span>{attentionItems.length ? `${attentionItems.length} из главных` : "чисто"}</span>
-          </div>
-          {attentionItems.length ? (
-            <div className="eco-mobile-problems">
-              {attentionItems.map((item) => (
-                <Link key={item.id} href={item.href} className={`eco-mobile-problem is-${item.tone}`}>
-                  <span className="eco-mobile-problem-dot" />
-                  <span>
-                    <b>{item.title}</b>
-                    <small>{item.meta}</small>
-                  </span>
-                  <em>{item.action}</em>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="eco-mobile-inline-alert is-success">Сейчас нет задач, которые требуют решения.</div>
-          )}
-        </section>
-
-        <section className="eco-mobile-card eco-mobile-quick">
-          <div className="eco-mobile-card-head">
-            <h2>Быстрый доступ</h2>
-            <span>3 раздела</span>
-          </div>
-          <div className="eco-mobile-action-list">
-            <MobileActionRow
-              title="Записи"
-              value={formatCount(dashboard?.appointments.totalToday ?? 0)}
-              detail={dashboard?.appointments.next ? `Ближайшая: ${dashboard.appointments.next.time} · ${dashboard.appointments.next.client}` : `${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной`}
-              href="/records"
-              action="Журнал"
-              tone={dashboard?.appointments.withoutShipment || dashboard?.appointments.requiresManualLink ? "warning" : "neutral"}
-            />
-            <MobileActionRow
-              title="Отгрузки"
-              value={formatCount(dashboard?.shipments.today ?? 0)}
-              detail={`Черновики: ${formatCount(dashboard?.shipments.drafts ?? 0)} · ${formatCount(dashboard?.appointments.withoutShipment ?? 0)} без найденной`}
-              href="/shipment/new"
-              action="Новая"
-              tone={dashboard?.appointments.withoutShipment || dashboard?.appointments.requiresManualLink || dashboard?.shipments.drafts ? "warning" : "neutral"}
-            />
-            <MobileActionRow
-              title="Сообщения"
-              value={formatCount(messages.needsReply)}
-              detail={messages.oldest ? `${messages.oldest.client} · ${formatHours(messages.oldest.hours)}` : `${formatCount(messages.unread)} непрочитанных`}
-              href="/messages"
-              action="Ответить"
-              tone={messages.needsReply ? "warning" : "neutral"}
-            />
-          </div>
-        </section>
-
-        {sectionsLocked && role !== "admin" && (
-          <section className="eco-mobile-card eco-mobile-shift" id="shift-control">
-            <div>
-              <h2>Смена не начата</h2>
-              <p>Откройте рабочую смену, чтобы продолжить операции.</p>
-            </div>
-            <ShiftButton />
+        {!dashboard ? (
+          <section className="eco-mobile-card eco-mobile-report">
+            <div className="eco-mobile-card-head"><h2>Сводка дня</h2><span>нет данных</span></div>
+            {dashboardError ? (
+              <ErrorState title="Сводка не загрузилась" hint={dashboardError} onRetry={() => void loadSummary(true)} />
+            ) : (
+              <LoadingState rows={5} />
+            )}
           </section>
+        ) : sectionsLocked ? (
+          <section className="eco-mobile-card eco-mobile-gate">
+            <div className="eco-mobile-card-head">
+              <h2>Сначала откройте смену</h2>
+              <span>1 действие</span>
+            </div>
+            <p>{needShiftNotice ? "Вы вернулись из раздела, который доступен только во время смены. " : ""}После открытия появятся журнал, работы и операционные показатели.</p>
+          </section>
+        ) : (
+          <>
+            <section className="eco-mobile-card eco-mobile-attention">
+              <div className="eco-mobile-card-head">
+                <h2>Требует внимания</h2>
+                <span>{attentionItems.length ? `${visibleAttentionItems.length} из ${attentionItems.length}` : "чисто"}</span>
+              </div>
+              {attentionItems.length ? (
+                <div className="eco-mobile-problems">
+                  {visibleAttentionItems.map((item) => (
+                    <Link key={item.id} href={item.href} className={`eco-mobile-problem is-${item.tone}`}>
+                      <span className={`eco-mobile-problem-priority is-${item.tone}`}>{problemPriorityLabel(item.tone)}</span>
+                      <span className="eco-mobile-problem-copy">
+                        <b>{item.title}</b>
+                        <small>{item.meta}</small>
+                      </span>
+                      <span className="eco-mobile-problem-action">
+                        <span>{item.action}</span>
+                        <ChevronRight aria-hidden className="eco-icon" />
+                      </span>
+                    </Link>
+                  ))}
+                  {hiddenAttentionCount > 0 && (
+                    <Link href="/notifications" className="eco-mobile-more-link">Ещё {hiddenAttentionCount} задач</Link>
+                  )}
+                </div>
+              ) : (
+                <div className="eco-mobile-inline-alert is-success">Сейчас нет задач, которые требуют решения.</div>
+              )}
+            </section>
+
+            <section className="eco-mobile-card eco-mobile-work">
+              <div className="eco-mobile-card-head">
+                <h2>{role === "master" ? "Работы сегодня" : "Журнал сегодня"}</h2>
+                <Link href="/records">Все записи <ChevronRight aria-hidden className="eco-icon" /></Link>
+              </div>
+              {scheduleItems.length ? (
+                <div className="eco-mobile-work-list">
+                  {scheduleItems.slice(0, 3).map((slot) => <MobileWorkRow key={slot.key} slot={slot} />)}
+                </div>
+              ) : (
+                <div className="eco-mobile-inline-alert">Записей пока нет. Свободное время можно добавить в журнале.</div>
+              )}
+            </section>
+
+            <section className="eco-mobile-card eco-mobile-report">
+              <div className="eco-mobile-card-head">
+                <h2>{role === "owner" ? "Коротко о деньгах" : role === "admin" ? "Коротко о дне" : "Коротко о работах"}</h2>
+                <span>{lastUpdatedAt ? `обновлено ${formatTime(new Date(lastUpdatedAt).toISOString())}` : "актуально"}</span>
+              </div>
+
+              {role === "owner" && dashboard.finance && (
+                <div className="eco-mobile-revenue">
+                  <span>Выручка сейчас</span>
+                  <strong>{formatMoneyCents(dashboard.finance.revenueCents)}</strong>
+                  <small>{formatCount(dashboard.finance.shipmentsCount)} отгрузок · оплачено {formatMoneyCents(dashboard.finance.paidCents)}</small>
+                </div>
+              )}
+
+              <div className="eco-mobile-metric-grid is-compact">
+                {role === "owner" && dashboard.finance && (
+                  <>
+                    <MobileReportMetric label="Прибыль" value={formatMoneyCents(dashboard.finance.grossProfitCents)} hint="по проведённым документам" />
+                    <MobileReportMetric label="Не оплачено" value={formatMoneyCents(dashboard.finance.unpaidCents)} hint="ожидает оплаты" tone={dashboard.finance.unpaidCents ? "warning" : "neutral"} />
+                  </>
+                )}
+                {role === "admin" && (
+                  <>
+                    <MobileReportMetric label="Записи сегодня" value={formatCount(dashboard.appointments.totalToday)} hint={`${formatCount(dashboard.appointments.withoutShipment)} без отгрузки`} />
+                    <MobileReportMetric label="Ждут ответа" value={formatCount(messages?.needsReply ?? 0)} hint={`${formatCount(messages?.unread ?? 0)} непрочитанных`} tone={messages?.needsReply ? "warning" : "neutral"} />
+                    <MobileReportMetric label="Отгрузки" value={formatCount(dashboard.shipments.today)} hint={`${formatCount(dashboard.shipments.drafts)} черновиков`} tone={dashboard.shipments.drafts ? "warning" : "neutral"} />
+                  </>
+                )}
+                {role === "master" && (
+                  <>
+                    <MobileReportMetric label="Работы сегодня" value={formatCount(dashboard.appointments.totalToday)} hint={`${formatCount(dashboard.appointments.withoutShipment)} без отгрузки`} />
+                    <MobileReportMetric label="Диагностики" value={formatCount(dashboard.diagnostics.active)} hint={`${formatCount(dashboard.diagnostics.withoutPhoto)} без отчёта`} tone={dashboard.diagnostics.withoutPhoto ? "warning" : "neutral"} />
+                    <MobileReportMetric label="Отгрузки" value={formatCount(dashboard.shipments.today)} hint={`${formatCount(dashboard.shipments.withoutDiagnostic)} без диагностики`} tone={dashboard.shipments.withoutDiagnostic ? "warning" : "neutral"} />
+                  </>
+                )}
+              </div>
+
+              {role === "owner" && dashboard.finance && (
+                <details className={`eco-mobile-forecast-details is-${forecast.tone}`}>
+                  <summary>
+                    <span>Оценка до конца дня</span>
+                    <strong>{forecast.short}</strong>
+                    <ChevronRight aria-hidden className="eco-icon eco-mobile-forecast-toggle" />
+                  </summary>
+                  <ul>
+                    {forecast.details.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </details>
+              )}
+            </section>
+          </>
         )}
       </section>
 
       <nav className="eco-mobile-bottom-nav" aria-label="Быстрый доступ">
-        <Link href="/" className="is-active">
+        <Link href="/" className="is-active" aria-current="page">
           <Gauge aria-hidden className="eco-icon" />
           <span>Контроль</span>
         </Link>
-        <Link href="/messages">
-          <MessageCircle aria-hidden className="eco-icon" />
-          <span>Сообщения</span>
-          {!!messages.needsReply && <b>{messages.needsReply > 99 ? "99+" : messages.needsReply}</b>}
-        </Link>
+        {role === "master" ? (
+          <Link href="/shipment?filter=diagnostics">
+            <Wrench aria-hidden className="eco-icon" />
+            <span>Диагностики</span>
+            {!!dashboard?.diagnostics.withoutPhoto && <b>{dashboard.diagnostics.withoutPhoto > 99 ? "99+" : dashboard.diagnostics.withoutPhoto}</b>}
+          </Link>
+        ) : (
+          <Link href="/messages">
+            <MessageCircle aria-hidden className="eco-icon" />
+            <span>Сообщения</span>
+            {!!messages?.needsReply && <b>{messages.needsReply > 99 ? "99+" : messages.needsReply}</b>}
+          </Link>
+        )}
         <Link href="/records">
           <CalendarDays aria-hidden className="eco-icon" />
           <span>Записи</span>
@@ -1057,8 +1071,13 @@ export default function HomeDashboard({
           <div className="eco-ops-command-top">
             <div className="eco-ops-command-main">
               <span className="eco-ops-command-context">{SERVICE_ORGANIZATION_LABEL} · {todayShortPhrase()}</span>
-              <h1>Операционный центр дня</h1>
-              <p>{shiftStatusLine}. На первом экране только то, что влияет на клиентов, деньги и продолжение работы.</p>
+              <h1>{role === "owner" ? "Контроль бизнеса сегодня" : role === "admin" ? "Операционный центр дня" : "Моя рабочая смена"}</h1>
+              <p>
+                {role === "owner" ? "Деньги, отклонения и решения по филиалу." : role === "admin" ? "Клиенты, касса и очередь следующих действий." : "Ближайшие работы, отгрузки и незавершённые диагностики."}
+              </p>
+              {lastUpdatedAt && (
+                <span className="eco-ops-updated">Обновлено в {formatTime(new Date(lastUpdatedAt).toISOString())}{refreshing ? " · обновляем…" : ""}</span>
+              )}
             </div>
             <div className="eco-ops-command-actions">
               {sectionsLocked ? (
@@ -1074,114 +1093,128 @@ export default function HomeDashboard({
                   </a>
                 )
               ) : null}
-              <Link href="/shipment/new" className="eco-ops-btn eco-ops-btn--primary">
-                <Plus aria-hidden className="eco-icon" />
-                Новая отгрузка
-              </Link>
-              <Link href={recordCreateHref()} className="eco-ops-btn eco-ops-btn--ghost">
-                <CalendarDays aria-hidden className="eco-icon" />
-                Записать
-              </Link>
-              <Link href="/messages" className="eco-ops-btn eco-ops-btn--ghost">
-                <MessageCircle aria-hidden className="eco-icon" />
-                Сообщения
-                {!!messages.needsReply && <span className="eco-ops-btn-badge">{messages.needsReply > 99 ? "99+" : messages.needsReply}</span>}
-              </Link>
+              {dashboard && !sectionsLocked && role !== "master" && (
+                <Link href="/shipment/new" className="eco-ops-btn eco-ops-btn--primary">
+                  <Plus aria-hidden className="eco-icon" />
+                  Новая отгрузка
+                </Link>
+              )}
+              {dashboard && !sectionsLocked && role !== "master" && (
+                <Link href={recordCreateHref()} className="eco-ops-btn eco-ops-btn--ghost">
+                  <CalendarDays aria-hidden className="eco-icon" />
+                  Записать
+                </Link>
+              )}
+              {dashboard && !sectionsLocked && role === "master" && (
+                <Link href="/shipment?filter=diagnostics" className="eco-ops-btn eco-ops-btn--primary">
+                  <Wrench aria-hidden className="eco-icon" />
+                  Работы смены
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={() => void loadSummary(true)}
+                className="eco-ops-btn eco-ops-btn--ghost eco-ops-icon-button"
+                disabled={refreshing}
+                aria-label="Обновить операционную сводку"
+                title="Обновить"
+              >
+                <RefreshCw aria-hidden className={`eco-icon ${refreshing ? "is-spinning" : ""}`} />
+              </button>
             </div>
           </div>
-          <div className="eco-ops-signal-grid" aria-label="Ключевые сигналы дня">
-            {daySignals.map((signal) => (
-              <CommandSignal key={signal.id} {...signal} />
-            ))}
-          </div>
+          {dashboard ? (
+            <div className="eco-ops-signal-grid" aria-label="Ключевые сигналы дня">
+              {daySignals.map((signal) => (
+                <CommandSignal key={signal.id} {...signal} primary={signal.id === primarySignalId} />
+              ))}
+            </div>
+          ) : dashboardError ? (
+            <ErrorState title="Сводка не загрузилась" hint={dashboardError} onRetry={() => void loadSummary(true)} />
+          ) : (
+            <LoadingState rows={2} />
+          )}
         </section>
 
-      {needShiftNotice && (
-        <div className="eco-ops-shift-notice">
-          Для администратора и мастера остальные разделы открываются только после начала смены.
+      {loadState === "stale" && dashboard && (
+        <div className="eco-ops-shift-notice is-warning" role="alert">
+          Не удалось обновить сводку. Показаны данные на {lastUpdatedAt ? formatTime(new Date(lastUpdatedAt).toISOString()) : "предыдущее обновление"}.
         </div>
       )}
+      {loadState === "partial" && partialErrors.length > 0 && (
+        <div className="eco-ops-shift-notice is-warning" role="status">Часть статусов недоступна: {partialErrors.join(" ")}</div>
+      )}
 
-      {sectionsLocked ? (
-        <section className="eco-ops-locked" id="shift-control">
+      {dashboard && (sectionsLocked ? (
+        <section className="eco-ops-locked">
           <h2>Откройте рабочую смену, чтобы начать день.</h2>
-          <p>После открытия смены главная покажет журнал, дела клиентов, отгрузки и деньги за сегодня.</p>
-          <div>
-            {role === "admin" ? (
-              <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">
-                <Play aria-hidden className="eco-icon" />
-                Открыть смену
-              </Link>
-            ) : (
-              <ShiftButton />
-            )}
-          </div>
+          <p>{needShiftNotice ? "Вы вернулись из раздела, доступного только во время смены. " : ""}{role === "admin" ? "После открытия кассы появятся журнал, клиентские дела и отгрузки." : "После открытия смены появятся работы, отгрузки и диагностики."}</p>
         </section>
       ) : (
         <>
-          <section className="eco-ops-owner-grid" aria-label="Деньги и внимание владельца">
-            <section className="eco-ops-finance-panel">
+          <section className={`eco-ops-owner-grid ${role !== "owner" ? "is-single" : ""}`} aria-label={role === "owner" ? "Деньги и внимание владельца" : role === "admin" ? "Очередь администратора" : "Очередь работ мастера"}>
+            {role === "owner" && dashboard.finance && <section className="eco-ops-finance-panel">
               <header>
                 <div>
                   <h2>Деньги сегодня</h2>
                   <p>
-                    {formatCount(dashboard?.finance.shipmentsCount ?? 0)} отгрузок · оплачено {formatMoneyCents(dashboard?.finance.paidCents ?? 0)}
+                    {formatCount(dashboard.finance.shipmentsCount)} отгрузок · оплачено {formatMoneyCents(dashboard.finance.paidCents)} · {dashboard.finance.paymentSourceLabel}
                   </p>
                 </div>
                 <Link href="/finance" className="eco-ops-btn eco-ops-btn--ghost eco-ops-btn--sm">
                   Финансы <ChevronRight aria-hidden className="eco-icon" />
                 </Link>
               </header>
-              {dashboardError ? (
-                <ErrorState title="Финансы не загрузились" hint={dashboardError} />
-              ) : loading && !dashboard ? (
-                <LoadingState rows={4} />
-              ) : (
-                <div className="eco-ops-finance-ledger" aria-label="Короткая финансовая сводка">
+              <div className="eco-ops-finance-ledger" aria-label="Короткая финансовая сводка">
                   <div className="is-main">
                     <span>Выручка</span>
-                    <strong>{formatMoneyCents(dashboard?.finance.revenueCents ?? 0)}</strong>
+                    <strong>{formatMoneyCents(dashboard.finance.revenueCents)}</strong>
                   </div>
                   <div>
                     <span>Прибыль</span>
-                    <strong>{formatMoneyCents(dashboard?.finance.grossProfitCents ?? 0)}</strong>
+                    <strong>{formatMoneyCents(dashboard.finance.grossProfitCents)}</strong>
                   </div>
                   <div>
                     <span>Средний чек</span>
-                    <strong>{formatMoneyCents(dashboard?.finance.averageCheckCents ?? 0)}</strong>
+                    <strong>{formatMoneyCents(dashboard.finance.averageCheckCents)}</strong>
                   </div>
                   <div>
                     <span>Не оплачено</span>
-                    <strong className={(dashboard?.finance.unpaidCents ?? 0) > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard?.finance.unpaidCents ?? 0)}</strong>
+                    <strong className={dashboard.finance.unpaidCents > 0 ? "is-warning" : ""}>{formatMoneyCents(dashboard.finance.unpaidCents)}</strong>
                   </div>
                   <div>
                     <span>Ожидается в кассе</span>
-                    <strong>{formatMoneyCents(dashboard?.cash.expectedBalanceCents ?? 0)}</strong>
+                    <strong>{formatMoneyCents(dashboard.cash.expectedBalanceCents ?? 0)}</strong>
                   </div>
-                </div>
-              )}
-            </section>
+              </div>
+            </section>}
 
             <section className="eco-ops-attention-panel">
               <header>
                 <div>
                   <h2>Требует решения</h2>
-                  <p>Касса, клиенты, склад и диагностика в одном списке.</p>
+                  <p>{role === "owner" ? "Деньги, клиенты, склад и диагностика по приоритету." : role === "admin" ? "Касса, клиенты и дедлайны по приоритету." : "Записи и диагностики по сроку и влиянию."}</p>
                 </div>
                 <span>{attentionItems.length ? formatCount(attentionItems.length) : "0"}</span>
               </header>
               {attentionItems.length ? (
                 <div className="eco-ops-attention-list">
-                  {attentionItems.map((item) => (
+                  {visibleAttentionItems.map((item) => (
                     <Link key={item.id} href={item.href} className={`eco-ops-attention-item is-${item.tone}`}>
-                      <span className="eco-ops-attention-dot" />
-                      <span>
+                      <span className={`eco-ops-attention-priority is-${item.tone}`}>{problemPriorityLabel(item.tone)}</span>
+                      <span className="eco-ops-attention-copy">
                         <b>{item.title}</b>
                         <small>{item.meta}</small>
                       </span>
-                      <em>{item.action}</em>
+                      <span className="eco-ops-attention-action">
+                        <span>{item.action}</span>
+                        <ChevronRight aria-hidden className="eco-icon" />
+                      </span>
                     </Link>
                   ))}
+                  {hiddenAttentionCount > 0 && (
+                    <Link href="/notifications" className="eco-ops-attention-more">Ещё {hiddenAttentionCount} задач</Link>
+                  )}
                 </div>
               ) : (
                 <div className="eco-ops-attention-empty">
@@ -1204,7 +1237,7 @@ export default function HomeDashboard({
               }
               className="eco-ops-card--journal"
             >
-              {dashboardError ? (
+              {dashboardError && !dashboard ? (
                 <ErrorState title="Журнал не загрузился" hint={dashboardError} />
               ) : loading && !dashboard ? (
                 <LoadingState rows={5} />
@@ -1278,7 +1311,8 @@ export default function HomeDashboard({
                           }
 
                           const item = slot.item;
-                          const visibleActions = appointmentActions(item).slice(0, 2);
+                          const allActions = appointmentActions(item);
+                          const visibleActions = allActions.slice(0, 2);
                           return (
                             <article key={slot.key} className={`eco-ops-timeline-item is-record is-${appointmentStatusKey(item.status)}`}>
                               <div className="eco-ops-timeline-time">
@@ -1304,6 +1338,11 @@ export default function HomeDashboard({
                                     {action.label}
                                   </RowAction>
                                 ))}
+                                {allActions.length > visibleActions.length && (
+                                  <RowAction href={recordHref(item)} tone="quiet">
+                                    Ещё {allActions.length - visibleActions.length}
+                                  </RowAction>
+                                )}
                               </div>
                             </article>
                           );
@@ -1322,18 +1361,18 @@ export default function HomeDashboard({
               )}
             </Card>
 
-            <Card
+            {role !== "master" && dashboard.crm && <Card
               title="Дела клиентов"
               href="/crm?filter=today"
               action="Все дела"
               badge={
-                <Badge tone={dashboard?.crm.overdue ? "warning" : "neutral"}>
-                  {formatCount(dashboard?.crm.overdue ?? 0)} просрочено
+                <Badge tone={dashboard?.crm?.overdue ? "warning" : "neutral"}>
+                  {formatCount(dashboard?.crm?.overdue ?? 0)} просрочено
                 </Badge>
               }
               className="eco-ops-card--cases"
             >
-              {dashboardError ? (
+              {dashboardError && !dashboard ? (
                 <ErrorState title="Дела не загрузились" hint={dashboardError} />
               ) : loading && !dashboard ? (
                 <LoadingState rows={5} />
@@ -1341,15 +1380,15 @@ export default function HomeDashboard({
                 <>
                   <StatStrip
                     items={[
-                      { label: "Сегодня", value: dashboard?.crm.today ?? 0 },
-                      { label: "Без ответств.", value: dashboard?.crm.noResponsible ?? 0, tone: dashboard?.crm.noResponsible ? "warning" : "muted" },
-                      { label: "Расчёт", value: dashboard?.crm.quote ?? 0, tone: dashboard?.crm.quote ? "warning" : "muted" },
-                      { label: "Перезвонить", value: dashboard?.crm.callback ?? 0, tone: dashboard?.crm.callback ? "warning" : "muted" },
-                      { label: "Запчасти", value: dashboard?.crm.supplies ?? 0, tone: dashboard?.crm.supplies ? "warning" : "muted" },
+                      { label: "Сегодня", value: dashboard?.crm?.today ?? 0 },
+                      { label: "Без ответств.", value: dashboard?.crm?.noResponsible ?? 0, tone: dashboard?.crm?.noResponsible ? "warning" : "muted" },
+                      { label: "Расчёт", value: dashboard?.crm?.quote ?? 0, tone: dashboard?.crm?.quote ? "warning" : "muted" },
+                      { label: "Перезвонить", value: dashboard?.crm?.callback ?? 0, tone: dashboard?.crm?.callback ? "warning" : "muted" },
+                      { label: "Запчасти", value: dashboard?.crm?.supplies ?? 0, tone: dashboard?.crm?.supplies ? "warning" : "muted" },
                     ]}
                     dense
                   />
-                  {dashboard?.crm.rows.length ? (
+                  {dashboard.crm.rows.length ? (
                     <div className="eco-ops-case-list">
                       {dashboard.crm.rows.slice(0, 6).map((item) => (
                         <article key={item.id} className="eco-ops-case-row">
@@ -1363,7 +1402,7 @@ export default function HomeDashboard({
                               <Badge tone={item.status.toLowerCase().includes("расход") ? "info" : item.status.toLowerCase().includes("ответ") ? "warning" : "neutral"}>
                                 {item.status}
                               </Badge>
-                              <em className={item.deadline && new Date(item.deadline).getTime() < Date.now() ? "is-over" : ""}>{formatShortDeadline(item.deadline)}</em>
+                              <em className={item.deadline && new Date(item.deadline).getTime() < (lastUpdatedAt ?? 0) ? "is-over" : ""}>{formatShortDeadline(item.deadline)}</em>
                             </span>
                           </div>
                           <div className="eco-ops-case-owner">
@@ -1386,7 +1425,7 @@ export default function HomeDashboard({
                   )}
                 </>
               )}
-            </Card>
+            </Card>}
 
             <Card
               title="Отгрузки сегодня"
@@ -1399,7 +1438,7 @@ export default function HomeDashboard({
               }
               className="eco-ops-card--shipments"
             >
-              {dashboardError ? (
+              {dashboardError && !dashboard ? (
                 <ErrorState title="Отгрузки не загрузились" hint={dashboardError} />
               ) : loading && !dashboard ? (
                 <LoadingState rows={5} />
@@ -1418,17 +1457,19 @@ export default function HomeDashboard({
                   />
                   {dashboard?.shipments.rows.length ? (
                     <div className="eco-ops-table-scroll">
+                      <p className="eco-ops-table-scroll-hint">Прокрутите таблицу в сторону, чтобы увидеть все столбцы →</p>
                       <table className="eco-ops-table eco-ops-shipments-table">
+                        <caption className="eco-visually-hidden">Отгрузки за сегодня: документы, статусы, оплата и диагностика</caption>
                         <thead>
                           <tr>
-                            <th>Время</th>
-                            <th>Документ</th>
-                            <th>Клиент</th>
-                            <th>Статус</th>
-                            <th>Оплата</th>
-                            <th>Диагностика</th>
-                            <th className="is-num">Сумма</th>
-                            <th>Действия</th>
+                            <th scope="col">Время</th>
+                            <th scope="col">Документ</th>
+                            <th scope="col">Клиент</th>
+                            <th scope="col">Статус</th>
+                            {role !== "master" && <th scope="col">Оплата</th>}
+                            <th scope="col">Диагностика</th>
+                            {role !== "master" && <th scope="col" className="is-num">Сумма</th>}
+                            <th scope="col">Действия</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1445,13 +1486,13 @@ export default function HomeDashboard({
                                   {row.applicable ? "проведена" : "черновик"}
                                 </Badge>
                               </td>
-                              <td>
+                              {role !== "master" && <td>
                                 <Badge tone={paymentTone(row.paymentStatus) as EcoBadgeTone}>{paymentLabel(row.paymentStatus)}</Badge>
-                              </td>
+                              </td>}
                               <td>
                                 <Badge tone={row.hasDiagnostic ? "success" : "warning"}>{row.hasDiagnostic ? "есть" : "нет"}</Badge>
                               </td>
-                              <td className="is-num">{formatMoneyCents(row.sumCents)}</td>
+                              {role !== "master" && <td className="is-num">{formatMoneyCents(row.sumCents ?? 0)}</td>}
                               <td>
                                 <div className="eco-ops-row-actions is-table">
                                   <RowAction href={`/shipment/${row.id}`} tone="primary">Открыть</RowAction>
@@ -1464,9 +1505,14 @@ export default function HomeDashboard({
                     </div>
                   ) : (
                     <>
-                      <EmptyState title="Отгрузок сегодня нет" hint="Выручка и прибыль появятся после первых проведённых документов." />
+                      <EmptyState
+                        title="Отгрузок сегодня нет"
+                        hint={role === "master" ? "Новые работы и диагностики появятся здесь после создания отгрузки." : "Операционные показатели появятся после первых проведённых документов."}
+                      />
                       <div className="eco-ops-empty-actions">
-                        <RowAction href="/shipment/new" tone="primary">Новая отгрузка</RowAction>
+                        <RowAction href={role === "master" ? "/records" : "/shipment/new"} tone="primary">
+                          {role === "master" ? "К журналу" : "Новая отгрузка"}
+                        </RowAction>
                       </div>
                     </>
                   )}
@@ -1502,13 +1548,13 @@ export default function HomeDashboard({
                 )}
               </div>
             </Card>
-            <Card
+            {role !== "master" && dashboard.stock && dashboard.suppliers && <Card
               title="Склад и счета"
               href="/inventory/restock"
               action="К пополнению"
               badge={
-                <Badge tone={dashboard?.stock.belowMin || dashboard?.suppliers.unpaidInvoices ? "warning" : "neutral"}>
-                  {formatCount((dashboard?.stock.belowMin ?? 0) + (dashboard?.suppliers.unpaidInvoices ?? 0))}
+                <Badge tone={dashboard.stock.belowMin || dashboard.suppliers.unpaidInvoices ? "warning" : "neutral"}>
+                  {formatCount(dashboard.stock.belowMin + dashboard.suppliers.unpaidInvoices)}
                 </Badge>
               }
               flat
@@ -1517,11 +1563,11 @@ export default function HomeDashboard({
               <div className="eco-ops-compact-stack">
                 <div className="eco-ops-compact-head">
                   <strong>Ниже минимума</strong>
-                  <span>{formatCount(dashboard?.stock.belowMin ?? 0)}</span>
+                  <span>{formatCount(dashboard.stock.belowMin)}</span>
                 </div>
-                {(dashboard?.stock.rows ?? []).length ? (
+                {dashboard.stock.rows.length ? (
                   <div className="eco-ops-compact-list">
-                    {(dashboard?.stock.rows ?? []).slice(0, 4).map((item) => (
+                    {dashboard.stock.rows.slice(0, 4).map((item) => (
                       <Link key={item.id} href="/inventory/restock?mode=below_min" className="eco-ops-compact-row">
                         <span>
                           <b>{item.name}</b>
@@ -1536,11 +1582,11 @@ export default function HomeDashboard({
                 )}
                 <div className="eco-ops-compact-head">
                   <strong>Счета поставщиков</strong>
-                  <span>{formatMoneyCents(dashboard?.suppliers.amountCents ?? 0)}</span>
+                  <span>{formatMoneyCents(dashboard.suppliers.amountCents)}</span>
                 </div>
-                {(dashboard?.suppliers.rows ?? []).length ? (
+                {dashboard.suppliers.rows.length ? (
                   <div className="eco-ops-compact-list">
-                    {(dashboard?.suppliers.rows ?? []).slice(0, 3).map((item) => (
+                    {dashboard.suppliers.rows.slice(0, 3).map((item) => (
                       <Link key={item.id} href="/finance/invoices?status=unpaid" className="eco-ops-compact-row">
                         <span>
                           <b>{item.supplier}</b>
@@ -1554,19 +1600,20 @@ export default function HomeDashboard({
                   <EmptyState title="Неоплаченных счетов нет" hint="Счета к оплате появятся здесь." />
                 )}
               </div>
-            </Card>
-          </section>
-
-          <section id="shift-control" className="eco-ops-shift-card">
-            <div>
-              <span className="eco-ops-eyebrow">Текущая рабочая смена</span>
-              <h2>{hasActiveShift ? "Смена активна" : "Нет активной смены"}</h2>
-            </div>
-            <ShiftButton />
+            </Card>}
           </section>
         </>
-      )}
+      ))}
       </div>
+      {role === "master" && (
+        <section id="shift-control" className={`eco-ops-shift-card eco-ops-shift-card--shared ${sectionsLocked ? "is-required" : ""}`}>
+          <div>
+            <span className="eco-ops-eyebrow">Текущая рабочая смена</span>
+            <h2>{hasActiveShift ? "Смена активна" : "Нет активной смены"}</h2>
+          </div>
+          <ShiftButton role={role} current={currentShift} currentCashShift={currentCashShift} loading={!shiftAvailable} />
+        </section>
+      )}
     </main>
   );
 }

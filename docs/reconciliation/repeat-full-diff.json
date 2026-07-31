@@ -1,23 +1,23 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-30T17:22:56.371Z",
+  "generatedAt": "2026-07-30T17:36:55.648Z",
   "status": "PASS",
   "productionMutationAttempted": false,
   "sourceDatabase": "reconciliation_railway",
   "targetDatabase": "reconciliation_merge_rehearsal",
   "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
   "totals": {
-    "sourceOnly": 248,
+    "sourceOnly": 249,
     "targetOnly": 3674,
-    "sharedIdentical": 282508,
+    "sharedIdentical": 282512,
     "sharedDifferent": 292
   },
   "explainedDifferences": {
     "sourceOnlyManifestActions": {
-      "INSERT_MISSING": 149,
+      "INSERT_MISSING": 153,
       "MANUAL_REVIEW": 10,
       "MAP_TO_EXISTING": 32,
-      "RECREATE_BUSINESS_EVENT": 3,
+      "RECREATE_BUSINESS_EVENT": 4,
       "SKIP_DUPLICATE": 41,
       "SKIP_EPHEMERAL": 145,
       "SKIP_OBSOLETE": 25
@@ -273,16 +273,16 @@
     },
     {
       "tableName": "notification_jobs",
-      "sourceOnly": 19,
+      "sourceOnly": 20,
       "targetOnly": 20,
-      "sharedIdentical": 349,
+      "sharedIdentical": 350,
       "sharedDifferent": 14
     },
     {
       "tableName": "notification_logs",
       "sourceOnly": 33,
       "targetOnly": 51,
-      "sharedIdentical": 926,
+      "sharedIdentical": 929,
       "sharedDifferent": 5
     },
     {

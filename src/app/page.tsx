@@ -12,7 +12,6 @@ export default async function Home({
   return (
     <HomeDashboard
       role={session.user.role}
-      login={session.user.login}
       userName={session.user.name ?? session.user.login}
       needShiftNotice={sp.needShift === "1"}
     />

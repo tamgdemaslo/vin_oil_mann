@@ -10870,8 +10870,8 @@ select.eco-input::-ms-expand,
   --ops-ink: #0a0a0a;
   --ops-ink2: #2a2a2a;
   --ops-ink3: #525252;
-  --ops-muted: #737373;
-  --ops-faint: #a3a3a3;
+  --ops-muted: #5f6870;
+  --ops-faint: #656d74;
   --ops-line: #e5e2da;
   --ops-line2: #c8c2b3;
   --ops-dash: #d6d1c4;
@@ -11089,21 +11089,6 @@ select.eco-input::-ms-expand,
 
 .eco-ops-btn--lg {
   height: 44px;
-}
-
-.eco-ops-btn-badge {
-  display: inline-flex;
-  min-width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  color: #fff;
-  background: var(--ops-danger);
-  border-radius: 9px;
-  font-family: ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 800;
 }
 
 .eco-ops-dot {
@@ -11350,7 +11335,7 @@ select.eco-input::-ms-expand,
   margin: 0;
   color: var(--ops-ink);
   font-size: 14px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .eco-ops-lead-accent {
@@ -11421,11 +11406,10 @@ select.eco-input::-ms-expand,
 .eco-ops-statkey {
   overflow: hidden;
   color: var(--ops-muted);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -11434,7 +11418,7 @@ select.eco-input::-ms-expand,
   color: var(--ops-ink);
   font-family: ui-monospace, monospace;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 750;
   line-height: 1;
 }
 
@@ -12337,10 +12321,10 @@ select.eco-input::-ms-expand,
 
   .eco-mobile-top {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: center;
-    min-height: 58px;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: stretch;
+    min-height: auto;
   }
 
   .eco-mobile-top > div {
@@ -12367,19 +12351,20 @@ select.eco-input::-ms-expand,
     margin-top: 4px;
     color: var(--ops-ink2);
     font-size: 13px;
-    font-weight: 750;
+    font-weight: 650;
   }
 
   .eco-mobile-top small {
     margin-top: 2px;
     color: var(--ops-muted);
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 500;
   }
 
   .eco-mobile-primary {
     display: inline-flex;
-    min-height: 38px;
+    width: 100%;
+    min-height: 44px;
     align-items: center;
     justify-content: center;
     padding: 0 12px;
@@ -12387,8 +12372,8 @@ select.eco-input::-ms-expand,
     background: var(--ops-rust);
     border: 1px solid var(--ops-rust);
     border-radius: 5px;
-    font-size: 12px;
-    font-weight: 850;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1;
     white-space: nowrap;
   }
@@ -12415,12 +12400,11 @@ select.eco-input::-ms-expand,
     margin: 0;
     color: var(--ops-ink);
     font-size: 14px;
-    font-weight: 850;
+    font-weight: 700;
     line-height: 1.2;
   }
 
-  .eco-mobile-card-head > span,
-  .eco-mobile-status {
+  .eco-mobile-card-head > span {
     display: inline-flex;
     min-height: 22px;
     align-items: center;
@@ -12428,23 +12412,11 @@ select.eco-input::-ms-expand,
     color: var(--ops-muted);
     background: var(--ops-sunk);
     border: 1px solid var(--ops-line);
-    border-radius: 11px;
-    font-size: 10px;
-    font-weight: 850;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 650;
     line-height: 1;
     white-space: nowrap;
-  }
-
-  .eco-mobile-status.is-danger {
-    color: var(--ops-danger);
-    background: var(--ops-danger-tint);
-    border-color: var(--ops-danger-tint2);
-  }
-
-  .eco-mobile-status.is-success {
-    color: var(--ops-success);
-    background: var(--ops-success-tint);
-    border-color: var(--ops-success-tint2);
   }
 
   .eco-mobile-revenue {
@@ -12456,8 +12428,8 @@ select.eco-input::-ms-expand,
   .eco-mobile-revenue small {
     display: block;
     color: var(--ops-muted);
-    font-size: 11px;
-    font-weight: 750;
+    font-size: 12px;
+    font-weight: 600;
   }
 
   .eco-mobile-revenue strong {
@@ -12465,8 +12437,8 @@ select.eco-input::-ms-expand,
     margin-top: 4px;
     color: var(--ops-ink);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 34px;
-    font-weight: 900;
+    font-size: 30px;
+    font-weight: 750;
     letter-spacing: 0;
     line-height: 1;
     overflow-wrap: anywhere;
@@ -12498,44 +12470,35 @@ select.eco-input::-ms-expand,
   }
 
   .eco-mobile-metric span {
-    overflow: hidden;
     color: var(--ops-muted);
-    font-size: 9px;
-    font-weight: 850;
-    letter-spacing: 0.07em;
-    line-height: 1.15;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.25;
   }
 
   .eco-mobile-metric strong {
     margin-top: 6px;
     color: var(--ops-ink);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 17px;
-    font-weight: 900;
+    font-size: 18px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
     line-height: 1.05;
     overflow-wrap: anywhere;
   }
 
   .eco-mobile-metric small {
-    overflow: hidden;
     margin-top: 4px;
     color: var(--ops-muted);
-    font-size: 10.5px;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.35;
   }
 
-  .eco-mobile-metric.is-danger strong,
-  .eco-mobile-action-row.is-danger strong {
+  .eco-mobile-metric.is-danger strong {
     color: var(--ops-danger);
   }
 
-  .eco-mobile-metric.is-warning strong,
-  .eco-mobile-action-row.is-warning strong {
+  .eco-mobile-metric.is-warning strong {
     color: var(--ops-warning);
   }
 
@@ -12543,109 +12506,69 @@ select.eco-input::-ms-expand,
     color: var(--ops-success);
   }
 
-  .eco-mobile-action-list {
-    display: grid;
-    gap: 1px;
-    background: var(--ops-line);
+  .eco-mobile-metric-grid.is-compact > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .eco-mobile-forecast-details {
     border-top: 1px solid var(--ops-line);
   }
 
-  .eco-mobile-action-row {
+  .eco-mobile-forecast-details summary {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto 16px;
     gap: 10px;
     align-items: center;
     min-height: 48px;
-    padding: 9px 11px;
-    background: var(--ops-surface);
-  }
-
-  .eco-mobile-action-row > span {
-    min-width: 0;
-  }
-
-  .eco-mobile-action-row b,
-  .eco-mobile-action-row small {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .eco-mobile-action-row b {
-    color: var(--ops-ink);
-    font-size: 12.5px;
-    font-weight: 850;
-  }
-
-  .eco-mobile-action-row small {
-    margin-top: 3px;
-    color: var(--ops-muted);
-    font-size: 11px;
-    line-height: 1.25;
-  }
-
-  .eco-mobile-action-row strong {
-    color: var(--ops-ink);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 18px;
-    font-weight: 900;
-    line-height: 1;
-  }
-
-  .eco-mobile-action-row em {
-    display: inline-flex;
-    min-height: 28px;
-    align-items: center;
-    padding: 0 9px;
-    color: var(--ops-ink);
-    background: var(--ops-sunk);
-    border: 1px solid var(--ops-line);
-    border-radius: 4px;
-    font-size: 11px;
-    font-style: normal;
-    font-weight: 850;
-    white-space: nowrap;
-  }
-
-  .eco-mobile-forecast {
-    padding-bottom: 11px;
-  }
-
-  .eco-mobile-forecast.is-warning {
-    border-color: var(--ops-warning-tint2);
-  }
-
-  .eco-mobile-forecast.is-success {
-    border-color: var(--ops-success-tint2);
-  }
-
-  .eco-mobile-forecast.is-info {
-    border-color: var(--ops-info-tint2);
-  }
-
-  .eco-mobile-forecast > strong {
-    display: block;
-    padding: 13px 12px 0;
-    color: var(--ops-ink);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 20px;
-    font-weight: 900;
-    line-height: 1.15;
-  }
-
-  .eco-mobile-forecast ul {
-    display: grid;
-    gap: 5px;
-    margin: 9px 0 0;
-    padding: 0 12px;
+    padding: 10px 12px;
+    color: var(--ops-ink2);
+    cursor: pointer;
     list-style: none;
   }
 
-  .eco-mobile-forecast li {
+  .eco-mobile-forecast-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .eco-mobile-forecast-details summary span {
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .eco-mobile-forecast-details summary strong {
+    color: var(--ops-ink);
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .eco-mobile-forecast-details.is-warning summary strong {
+    color: var(--ops-warning);
+  }
+
+  .eco-mobile-forecast-toggle {
+    width: 16px;
+    height: 16px;
+    color: var(--ops-faint);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .eco-mobile-forecast-details[open] .eco-mobile-forecast-toggle {
+    transform: rotate(90deg);
+  }
+
+  .eco-mobile-forecast-details ul {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0 12px 12px 28px;
+  }
+
+  .eco-mobile-forecast-details li {
     color: var(--ops-muted);
     font-size: 12px;
-    line-height: 1.35;
+    line-height: 1.4;
   }
 
   .eco-mobile-problems {
@@ -12656,70 +12579,190 @@ select.eco-input::-ms-expand,
 
   .eco-mobile-problem {
     display: grid;
-    grid-template-columns: 8px minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-columns: max-content minmax(0, 1fr) auto;
+    gap: 8px 10px;
     align-items: center;
-    min-height: 48px;
-    padding: 9px 11px;
+    min-height: 64px;
+    padding: 10px 11px;
     background: var(--ops-surface);
   }
 
-  .eco-mobile-problem-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--ops-faint);
-    border-radius: 50%;
-  }
-
-  .eco-mobile-problem.is-danger .eco-mobile-problem-dot {
-    background: var(--ops-danger);
-  }
-
-  .eco-mobile-problem.is-warning .eco-mobile-problem-dot {
-    background: var(--ops-warning);
-  }
-
-  .eco-mobile-problem.is-info .eco-mobile-problem-dot {
-    background: var(--ops-info);
-  }
-
-  .eco-mobile-problem span:nth-child(2) {
+  .eco-mobile-problem-copy {
     min-width: 0;
   }
 
-  .eco-mobile-problem b,
-  .eco-mobile-problem small {
+  .eco-mobile-problem-copy b,
+  .eco-mobile-problem-copy small {
     display: block;
     overflow: hidden;
+  }
+
+  .eco-mobile-problem-copy b {
+    color: var(--ops-ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .eco-mobile-problem-copy small {
+    margin-top: 3px;
+    color: var(--ops-muted);
+    font-size: 12px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .eco-mobile-problem-priority {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    color: var(--ops-muted);
+    background: var(--ops-sunk);
+    border: 1px solid var(--ops-line);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .eco-mobile-problem-priority.is-danger {
+    color: var(--ops-danger);
+    background: var(--ops-danger-tint);
+    border-color: var(--ops-danger-tint2);
+  }
+
+  .eco-mobile-problem-priority.is-warning {
+    color: var(--ops-warning);
+    background: var(--ops-warning-tint);
+    border-color: var(--ops-warning-tint2);
+  }
+
+  .eco-mobile-problem-priority.is-info {
+    color: var(--ops-info);
+    background: var(--ops-info-tint);
+    border-color: var(--ops-info-tint2);
+  }
+
+  .eco-mobile-problem-action {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    color: var(--ops-ink3);
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .eco-mobile-problem-action .eco-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .eco-mobile-card-head > a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 3px;
+    color: var(--ops-rust);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .eco-mobile-card-head > a .eco-icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .eco-mobile-work-list {
+    display: grid;
+  }
+
+  .eco-mobile-work-row {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) max-content 16px;
+    gap: 8px;
+    align-items: center;
+    min-height: 64px;
+    padding: 9px 11px;
+    background: var(--ops-surface);
+    border-bottom: 1px solid var(--ops-line);
+  }
+
+  .eco-mobile-work-row:last-child {
+    border-bottom: 0;
+  }
+
+  .eco-mobile-work-row:active {
+    background: var(--ops-hover);
+  }
+
+  .eco-mobile-work-time {
+    color: var(--ops-ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .eco-mobile-work-copy {
+    min-width: 0;
+  }
+
+  .eco-mobile-work-copy b,
+  .eco-mobile-work-copy small {
+    display: block;
+    overflow: hidden;
+  }
+
+  .eco-mobile-work-copy b {
+    color: var(--ops-ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .eco-mobile-problem b {
-    color: var(--ops-ink);
-    font-size: 12.5px;
-    font-weight: 850;
-  }
-
-  .eco-mobile-problem small {
+  .eco-mobile-work-copy small {
     margin-top: 3px;
     color: var(--ops-muted);
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
-  .eco-mobile-problem em {
-    display: inline-flex;
-    min-height: 28px;
-    align-items: center;
-    padding: 0 8px;
-    color: var(--ops-ink);
-    background: var(--ops-sunk);
-    border: 1px solid var(--ops-line);
-    border-radius: 4px;
-    font-size: 10.5px;
-    font-style: normal;
-    font-weight: 850;
-    white-space: nowrap;
+  .eco-mobile-work-row .eco-ops-badge {
+    max-width: 98px;
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+  }
+
+  .eco-mobile-work-arrow {
+    width: 16px;
+    height: 16px;
+    color: var(--ops-faint);
+  }
+
+  .eco-mobile-gate > p {
+    max-width: 62ch;
+    margin: 0;
+    padding: 14px 12px 16px;
+    color: var(--ops-muted);
+    font-size: 13px;
+    line-height: 1.45;
   }
 
   .eco-mobile-inline-alert {
@@ -12729,7 +12772,7 @@ select.eco-input::-ms-expand,
     border: 1px solid var(--ops-line);
     border-radius: 6px;
     font-size: 12px;
-    font-weight: 750;
+    font-weight: 600;
     line-height: 1.35;
   }
 
@@ -12743,29 +12786,6 @@ select.eco-input::-ms-expand,
     color: var(--ops-success);
     background: var(--ops-success-tint);
     border-color: var(--ops-success-tint2);
-  }
-
-  .eco-mobile-shift {
-    padding: 12px;
-  }
-
-  .eco-mobile-shift h2,
-  .eco-mobile-shift p {
-    margin: 0;
-  }
-
-  .eco-mobile-shift h2 {
-    font-size: 15px;
-  }
-
-  .eco-mobile-shift p {
-    margin-top: 4px;
-    color: var(--ops-muted);
-    font-size: 12px;
-  }
-
-  .eco-mobile-shift > div {
-    margin-bottom: 10px;
   }
 
   .eco-mobile-bottom-nav {
@@ -12795,8 +12815,8 @@ select.eco-input::-ms-expand,
     gap: 3px;
     color: var(--ops-muted);
     border-radius: 6px;
-    font-size: 10px;
-    font-weight: 850;
+    font-size: 11px;
+    font-weight: 650;
     line-height: 1;
   }
 
@@ -12832,7 +12852,7 @@ select.eco-input::-ms-expand,
     border-radius: 9px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 9px;
-    font-weight: 900;
+    font-weight: 750;
   }
 }
 
@@ -13070,7 +13090,7 @@ select.eco-input::-ms-expand,
   margin: 0;
   color: var(--ops-ink);
   font-size: 16px;
-  font-weight: 850;
+  font-weight: 750;
   line-height: 1.2;
 }
 
@@ -13079,7 +13099,7 @@ select.eco-input::-ms-expand,
   margin: 4px 0 0;
   color: var(--ops-muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.35;
 }
 
@@ -13094,7 +13114,7 @@ select.eco-input::-ms-expand,
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 750;
 }
 
 .eco-ops-finance-mini {
@@ -13218,11 +13238,11 @@ select.eco-input::-ms-expand,
 
 .eco-ops-attention-item {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  gap: 11px;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  min-height: 58px;
-  padding: 11px 14px;
+  min-height: 64px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--ops-line);
 }
 
@@ -13234,68 +13254,79 @@ select.eco-input::-ms-expand,
   background: var(--ops-hover);
 }
 
-.eco-ops-attention-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--ops-faint);
-  border-radius: 50%;
-}
-
-.eco-ops-attention-item.is-danger .eco-ops-attention-dot {
-  background: var(--ops-danger);
-}
-
-.eco-ops-attention-item.is-warning .eco-ops-attention-dot {
-  background: var(--ops-warning);
-}
-
-.eco-ops-attention-item.is-info .eco-ops-attention-dot {
-  background: var(--ops-info);
-}
-
-.eco-ops-attention-item > span:nth-child(2) {
+.eco-ops-attention-copy {
   min-width: 0;
 }
 
-.eco-ops-attention-item b,
-.eco-ops-attention-item small {
+.eco-ops-attention-copy b,
+.eco-ops-attention-copy small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.eco-ops-attention-item b {
+.eco-ops-attention-copy b {
   color: var(--ops-ink);
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 700;
   line-height: 1.25;
 }
 
-.eco-ops-attention-item small {
+.eco-ops-attention-copy small {
   margin-top: 3px;
   color: var(--ops-muted);
-  font-size: 11.5px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
-.eco-ops-attention-item.is-danger b {
-  color: var(--ops-danger);
-}
-
-.eco-ops-attention-item em {
+.eco-ops-attention-priority {
   display: inline-flex;
-  min-height: 28px;
+  min-height: 24px;
   align-items: center;
-  padding: 0 9px;
-  color: var(--ops-ink);
+  justify-content: center;
+  padding: 0 7px;
+  color: var(--ops-muted);
   background: var(--ops-sunk);
   border: 1px solid var(--ops-line);
   border-radius: 4px;
   font-size: 11px;
-  font-style: normal;
-  font-weight: 850;
+  font-weight: 700;
   white-space: nowrap;
+}
+
+.eco-ops-attention-priority.is-danger {
+  color: var(--ops-danger);
+  background: var(--ops-danger-tint);
+  border-color: var(--ops-danger-tint2);
+}
+
+.eco-ops-attention-priority.is-warning {
+  color: var(--ops-warning);
+  background: var(--ops-warning-tint);
+  border-color: var(--ops-warning-tint2);
+}
+
+.eco-ops-attention-priority.is-info {
+  color: var(--ops-info);
+  background: var(--ops-info-tint);
+  border-color: var(--ops-info-tint2);
+}
+
+.eco-ops-attention-action {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 3px;
+  color: var(--ops-ink3);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.eco-ops-attention-action .eco-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .eco-ops-attention-empty {
@@ -13370,7 +13401,7 @@ select.eco-input::-ms-expand,
   color: var(--ops-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 750;
   line-height: 1;
 }
 
@@ -13387,7 +13418,7 @@ select.eco-input::-ms-expand,
   overflow: hidden;
   color: var(--ops-ink);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -13700,7 +13731,7 @@ select.eco-input::-ms-expand,
 
 .eco-ops-row-action {
   display: inline-flex;
-  min-height: 26px;
+  min-height: 32px;
   align-items: center;
   justify-content: center;
   padding: 0 8px;
@@ -13708,8 +13739,8 @@ select.eco-input::-ms-expand,
   background: var(--ops-surface);
   border: 1px solid var(--ops-line2);
   border-radius: 4px;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 650;
   line-height: 1;
   white-space: nowrap;
 }
@@ -13830,7 +13861,9 @@ select.eco-input::-ms-expand,
   .eco-ops-topbar-actions {
     justify-content: flex-start;
   }
+}
 
+@media (max-width: 1080px) {
   .eco-ops-journal-row,
   .eco-ops-case-row,
   .eco-ops-timeline-item {
@@ -13854,9 +13887,7 @@ select.eco-input::-ms-expand,
   .eco-ops-case-list {
     max-height: none;
   }
-}
 
-@media (max-width: 1080px) {
   .eco-ops-owner-grid {
     grid-template-columns: 1fr;
   }
@@ -14054,7 +14085,7 @@ select.eco-input::-ms-expand,
   border: 1px solid var(--ops-line);
   border-radius: 4px;
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 650;
   line-height: 1;
 }
 
@@ -14062,7 +14093,7 @@ select.eco-input::-ms-expand,
   margin: 9px 0 0;
   color: var(--ops-ink);
   font-size: 25px;
-  font-weight: 880;
+  font-weight: 750;
   letter-spacing: 0;
   line-height: 1.12;
   text-wrap: balance;
@@ -14073,7 +14104,7 @@ select.eco-input::-ms-expand,
   margin: 7px 0 0;
   color: var(--ops-ink3);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.45;
   text-wrap: pretty;
 }
@@ -14089,9 +14120,14 @@ select.eco-input::-ms-expand,
   height: 34px;
 }
 
+.eco-ops-command-actions .eco-ops-icon-button {
+  width: 34px;
+  padding: 0;
+}
+
 .eco-ops-signal-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--ops-line);
 }
@@ -14109,6 +14145,24 @@ select.eco-input::-ms-expand,
 
 .eco-ops-signal:hover {
   background: var(--ops-hover);
+}
+
+.eco-ops-signal.is-primary {
+  min-height: 90px;
+  box-shadow: inset 0 2px 0 var(--ops-rust);
+}
+
+.eco-ops-signal.is-primary.is-danger {
+  box-shadow: inset 0 2px 0 var(--ops-danger);
+}
+
+.eco-ops-signal.is-primary.is-warning {
+  box-shadow: inset 0 2px 0 var(--ops-warning);
+}
+
+.eco-ops-signal.is-primary:not(.is-danger):not(.is-warning):not(.is-success) .eco-ops-signal-icon {
+  color: var(--ops-rust);
+  background: var(--ops-rust-tint);
 }
 
 .eco-ops-signal-icon {
@@ -14142,29 +14196,28 @@ select.eco-input::-ms-expand,
 
 .eco-ops-signal-copy small {
   color: var(--ops-muted);
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  line-height: 1.1;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .eco-ops-signal-copy strong {
   margin-top: 6px;
   color: var(--ops-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .eco-ops-signal-copy em {
   margin-top: 5px;
   color: var(--ops-ink3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 650;
-  line-height: 1.25;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .eco-ops-signal-arrow {
@@ -14191,13 +14244,9 @@ select.eco-input::-ms-expand,
   background: var(--ops-warning-tint);
 }
 
-.eco-ops-signal.is-success .eco-ops-signal-icon,
-.eco-ops-signal.is-success .eco-ops-signal-copy strong {
-  color: var(--ops-success);
-}
-
 .eco-ops-signal.is-success .eco-ops-signal-icon {
-  background: var(--ops-success-tint);
+  color: var(--ops-success);
+  background: var(--ops-sunk);
 }
 
 .eco-ops-finance-ledger {
@@ -14217,12 +14266,11 @@ select.eco-input::-ms-expand,
   display: block;
   overflow: hidden;
   color: var(--ops-muted);
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.05em;
-  line-height: 1.15;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.25;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -14233,14 +14281,14 @@ select.eco-input::-ms-expand,
   color: var(--ops-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 750;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .eco-ops-finance-ledger .is-main strong {
-  font-size: 28px;
+  font-size: 26px;
 }
 
 .eco-ops-finance-ledger strong.is-warning {
@@ -14347,6 +14395,28 @@ select.eco-input::-ms-expand,
 
 .eco-ops-shipments-table {
   min-width: 1010px;
+}
+
+.eco-ops-table-scroll-hint {
+  display: none;
+}
+
+@media (min-width: 721px) and (max-width: 1100px) {
+  .eco-ops-table-scroll-hint {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    display: block;
+    width: fit-content;
+    margin: 0;
+    padding: 8px 12px;
+    color: var(--ops-muted);
+    background: var(--ops-sunk);
+    border-bottom: 1px solid var(--ops-line);
+    border-right: 1px solid var(--ops-line);
+    font-size: 12px;
+    font-weight: 600;
+  }
 }
 
 @media (max-width: 1320px) {
@@ -58980,5 +59050,359 @@ html.tgm-print-active .tgm-client-report .qr {
 
   .eco-shipment-new-page .eco-shipment-vehicle-summary .eco-key-value-grid {
     grid-template-columns: 1fr !important;
+  }
+}
+
+/* Operations dashboard and global search: role-aware production polish */
+.eco-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.platform-shell__search input:focus-visible {
+  border-color: var(--eco-focus, #155eef);
+  outline: 2px solid color-mix(in srgb, var(--eco-focus, #155eef) 24%, transparent);
+  outline-offset: 1px;
+}
+
+.platform-shell__search input::placeholder,
+.platform-shell__search-kbd {
+  color: var(--eco-muted);
+}
+
+.platform-shell__search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--eco-z-dropdown, 40);
+  display: grid;
+  width: min(440px, calc(100vw - 28px));
+  max-height: min(520px, calc(100vh - 100px));
+  overflow: auto;
+  padding: 6px;
+  color: var(--eco-ink);
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 8px;
+  box-shadow: var(--eco-shadow-pop);
+}
+
+.platform-shell__search-caption {
+  padding: 7px 9px 5px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.platform-shell__search-results button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  min-height: 50px;
+  padding: 8px 10px;
+  color: var(--eco-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+}
+
+.platform-shell__search-results button:hover,
+.platform-shell__search-results button.is-active,
+.platform-shell__search-results button:focus-visible {
+  background: var(--eco-surface-sunk);
+  outline: none;
+}
+
+.platform-shell__search-results button span,
+.platform-shell__search-results button small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-shell__search-results button span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.platform-shell__search-results button small {
+  grid-column: 1;
+  color: var(--eco-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.platform-shell__search-results button em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--eco-rust);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.platform-shell__search-results > p {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-ops-owner-grid.is-single {
+  grid-template-columns: 1fr;
+}
+
+.eco-ops-dashboard.is-role-master .eco-ops-card--journal {
+  grid-column: 1 / -1;
+}
+
+.eco-ops-updated {
+  display: block;
+  margin-top: 7px;
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.eco-ops-attention-more,
+.eco-mobile-more-link {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  color: var(--ops-rust);
+  background: var(--ops-sunk);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.eco-ops-empty.is-error .eco-ops-btn {
+  margin: 12px auto 0;
+}
+
+.eco-shift-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.eco-shift-control__status,
+.eco-shift-control__hint,
+.eco-shift-control__warning,
+.eco-shift-control__error {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--ops-ink2);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.eco-shift-control__hint {
+  color: var(--ops-muted);
+}
+
+.eco-shift-control__warning {
+  color: var(--ops-warning);
+}
+
+.eco-shift-control__error {
+  color: var(--ops-danger);
+}
+
+.eco-ops-shift-card--shared {
+  margin-top: 14px;
+}
+
+.eco-ops-shift-card--shared.is-required {
+  border-color: var(--ops-warning-tint2);
+}
+
+.eco-mobile-inline-alert button {
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 10px;
+  color: currentColor;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-weight: 650;
+}
+
+.eco-mobile-primary.is-disabled {
+  color: var(--ops-muted);
+  background: var(--ops-sunk);
+  border-color: var(--ops-line);
+}
+
+.eco-ops-btn:focus-visible,
+.eco-mobile-primary:focus-visible,
+.eco-shift-control .eco-ops-btn:focus-visible {
+  outline: 2px solid var(--ops-info);
+  outline-offset: 2px;
+}
+
+.eco-ops-signal:focus-visible,
+.eco-ops-attention-item:focus-visible,
+.eco-ops-row-action:focus-visible,
+.eco-mobile-problem:focus-visible,
+.eco-mobile-work-row:focus-visible,
+.eco-mobile-more-link:focus-visible,
+.eco-mobile-card-head > a:focus-visible,
+.eco-mobile-forecast-details summary:focus-visible,
+.eco-mobile-bottom-nav a:focus-visible {
+  outline: 2px solid var(--ops-info);
+  outline-offset: -3px;
+}
+
+.eco-ops-btn:active,
+.eco-ops-row-action:active,
+.eco-mobile-primary:active,
+.eco-mobile-more-link:active {
+  transform: translateY(1px);
+}
+
+@media (pointer: coarse) {
+  .eco-ops-btn,
+  .eco-ops-row-action,
+  .eco-mobile-card-head > a {
+    min-height: 44px;
+  }
+}
+
+.eco-icon.is-spinning {
+  animation: eco-ops-spin 800ms linear infinite;
+}
+
+@keyframes eco-ops-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1320px) and (min-width: 1181px) {
+  .platform-shell__search-kbd {
+    display: none;
+  }
+
+  .platform-shell__search-results span {
+    display: block;
+  }
+}
+
+@media (max-width: 720px) {
+  .eco-mobile-top h1 {
+    display: block;
+    margin: 0;
+    color: var(--ops-ink);
+    font-size: 18px;
+    font-weight: 750;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  .eco-mobile-primary {
+    min-height: 44px;
+  }
+
+  .eco-mobile-problem,
+  .eco-mobile-work-row,
+  .eco-mobile-more-link,
+  .eco-ops-row-action,
+  .eco-mobile-inline-alert button,
+  .eco-shift-control .eco-ops-btn {
+    min-height: 44px;
+  }
+
+  .eco-ops-shift-card--shared {
+    margin: 10px 12px 0;
+    padding: 14px;
+    grid-template-columns: 1fr;
+  }
+
+  .eco-shift-control {
+    justify-content: stretch;
+  }
+
+  .eco-shift-control__status,
+  .eco-shift-control__hint,
+  .eco-shift-control__warning,
+  .eco-shift-control__error {
+    text-align: left;
+  }
+
+  .eco-shift-control .eco-ops-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .eco-mobile-problem {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .eco-mobile-problem-priority {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+
+  .eco-mobile-problem-action {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .eco-mobile-problem-copy {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .eco-mobile-work-row {
+    grid-template-columns: 44px minmax(0, 1fr) 16px;
+  }
+
+  .eco-mobile-work-row .eco-ops-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .eco-mobile-work-arrow {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .eco-mobile-forecast-details summary {
+    grid-template-columns: minmax(0, 1fr) 16px;
+  }
+
+  .eco-mobile-forecast-details summary strong {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .eco-mobile-forecast-toggle {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-icon.is-spinning,
+  .eco-mobile-forecast-toggle {
+    animation: none;
+    transition: none;
   }
 }

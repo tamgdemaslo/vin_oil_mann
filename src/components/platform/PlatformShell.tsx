@@ -20,10 +20,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { MessengerTopbarButton } from "@/components/messenger/MessengerUi";
 import { formatServiceTime } from "@/lib/date-time";
+import { loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { safeReadJson } from "@/lib/http-json";
 import { EcoStatusDot } from "./EcoUI";
 
@@ -110,6 +111,14 @@ type PlatformNavSection = {
   items: PlatformNavItem[];
 };
 
+type PlatformSearchResult = {
+  id: string;
+  label: string;
+  description: string;
+  href: string;
+  kind: "section" | "search";
+};
+
 const SHIFT_EVENT = "eco-shift-changed";
 
 function isActivePath(pathname: string, href: string) {
@@ -171,6 +180,7 @@ function routeContext(pathname: string) {
 
 export default function PlatformShell() {
   const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = useState<PlatformUser>(null);
   const [permissions, setPermissions] = useState<PlatformPermissions>({});
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
@@ -187,38 +197,35 @@ export default function PlatformShell() {
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const browserPushSeenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
     let cancelled = false;
 
-    async function loadShellState() {
+    async function loadShellState(force = false) {
       setLoading(true);
       try {
-        const [sessionRes, shiftRes, cashRes, dashboardRes] = await Promise.all([
+        const [sessionRes, dashboardBundle] = await Promise.all([
           fetch("/api/auth/session", { cache: "no-store" }),
-          fetch("/api/shifts/current", { cache: "no-store" }),
-          fetch("/api/cash", { cache: "no-store" }),
-          fetch("/api/dashboard/operations", { cache: "no-store" }),
+          loadDashboardClientBundle<{ notificationCounts?: NotificationCounts }, CurrentShift, { shift?: CurrentCashShift }>({ force }).catch(() => null),
         ]);
         const sessionData = await safeReadJson<{
           user?: PlatformUser;
           permissions?: PlatformPermissions;
           branchContext?: ShellBranchContext | null;
         }>(sessionRes);
-        const shiftData = shiftRes.ok ? (await safeReadJson<NonNullable<CurrentShift>>(shiftRes)) ?? null : null;
-        const cashData = cashRes.ok ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null : null;
-        const dashboardData = dashboardRes.ok
-          ? (await safeReadJson<{ notificationCounts?: NotificationCounts }>(dashboardRes)) ?? null
-          : null;
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
         setPermissions(sessionData?.permissions ?? {});
-        setCurrentShift(shiftData);
-        setCurrentCashShift(cashData?.shift ?? null);
-        setNotificationCounts(dashboardData?.notificationCounts ?? null);
+        setCurrentShift(dashboardBundle?.shift ?? null);
+        setCurrentCashShift(dashboardBundle?.cash?.shift ?? null);
+        setNotificationCounts(dashboardBundle?.dashboard.notificationCounts ?? null);
         const branchContext = sessionData?.branchContext ?? null;
         setBranches(branchContext?.branches ?? []);
         setSelectedBranchId(branchContext?.activeBranchId ?? "");
@@ -239,7 +246,7 @@ export default function PlatformShell() {
     }
 
     void loadShellState();
-    const handleShiftChanged = () => void loadShellState();
+    const handleShiftChanged = () => void loadShellState(true);
     window.addEventListener(SHIFT_EVENT, handleShiftChanged);
     return () => {
       cancelled = true;
@@ -310,6 +317,8 @@ export default function PlatformShell() {
     setOpenSectionId(null);
     setProfileOpen(false);
     setMobileOpen(false);
+    setSearchOpen(false);
+    setSearchQuery("");
   }, [pathname]);
 
   useEffect(() => {
@@ -320,6 +329,7 @@ export default function PlatformShell() {
         setOpenSectionId(null);
         setProfileOpen(false);
         setMobileOpen(false);
+        setSearchOpen(false);
       }
     }
 
@@ -443,6 +453,108 @@ export default function PlatformShell() {
     [allBranchesMode, canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, operationalLocked]
   );
 
+  const searchResults = useMemo<PlatformSearchResult[]>(() => {
+    const query = searchQuery.trim();
+    const normalized = query.toLocaleLowerCase("ru-RU");
+    const navigationResults = navSections
+      .flatMap((section) => section.items.map((item) => ({ section, item })))
+      .filter(({ item }) => !item.disabled)
+      .filter(({ section, item }) => !normalized || `${section.label} ${item.label} ${item.description ?? ""}`.toLocaleLowerCase("ru-RU").includes(normalized))
+      .map(({ section, item }) => ({
+        id: `nav-${item.href}`,
+        label: item.label,
+        description: `${section.label} · ${item.description ?? "Открыть раздел"}`,
+        href: item.href,
+        kind: "section" as const,
+      }));
+
+    if (query.length < 2 || operationalLocked) return navigationResults.slice(0, 7);
+    const encoded = encodeURIComponent(query);
+    const contextualResults: PlatformSearchResult[] = [
+      {
+        id: "search-products",
+        label: `Товары: ${query}`,
+        description: "Название, артикул или код товара",
+        href: `/inventory/products?search=${encoded}`,
+        kind: "search",
+      },
+      {
+        id: "search-shipments",
+        label: `Отгрузки: ${query}`,
+        description: "Номер документа, клиент, телефон или VIN",
+        href: `/shipment?search=${encoded}`,
+        kind: "search",
+      },
+      {
+        id: "search-records",
+        label: `Записи: ${query}`,
+        description: "Клиент, телефон, автомобиль или VIN",
+        href: `/records?search=${encoded}`,
+        kind: "search",
+      },
+      {
+        id: "search-clients",
+        label: `Клиенты: ${query}`,
+        description: "Имя, телефон, госномер, VIN или ИНН",
+        href: `/clients/counterparties?search=${encoded}`,
+        kind: "search",
+      },
+    ];
+    if (/^[A-HJ-NPR-Z0-9]{17}$/i.test(query)) {
+      contextualResults.unshift({
+        id: "search-vin",
+        label: `Создать отгрузку по VIN ${query.toUpperCase()}`,
+        description: "VIN будет сразу передан в подбор автомобиля",
+        href: `/shipment/new?vin=${encoded}`,
+        kind: "search",
+      });
+    }
+    return [...contextualResults, ...navigationResults].slice(0, 8);
+  }, [navSections, operationalLocked, searchQuery]);
+
+  const openSearch = useCallback(() => {
+    setOpenSectionId(null);
+    setProfileOpen(false);
+    setSearchOpen(true);
+    setActiveSearchIndex(0);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  const runSearchResult = useCallback((result: PlatformSearchResult) => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    router.push(result.href);
+  }, [router]);
+
+  useEffect(() => {
+    function handleSearchShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (!window.matchMedia("(min-width: 1181px)").matches) return;
+        event.preventDefault();
+        openSearch();
+      }
+      if (event.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        searchInputRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => window.removeEventListener("keydown", handleSearchShortcut);
+  }, [openSearch, searchOpen]);
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSearchIndex((index) => Math.min(index + 1, Math.max(0, searchResults.length - 1)));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSearchIndex((index) => Math.max(0, index - 1));
+    } else if (event.key === "Enter" && searchResults[activeSearchIndex]) {
+      event.preventDefault();
+      runSearchResult(searchResults[activeSearchIndex]);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
@@ -565,6 +677,7 @@ export default function PlatformShell() {
                             href={item.href}
                             className={`platform-shell__dropdown-link ${isActivePath(pathname, item.href) ? "is-active" : ""}`}
                             role="menuitem"
+                            aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
                           >
                             <span>{item.label}</span>
                             {item.description && <small>{item.description}</small>}
@@ -605,10 +718,52 @@ export default function PlatformShell() {
                   </span>
                 </label>
               )}
-              <div className="platform-shell__search" aria-hidden>
-                <Search className="eco-icon" />
-                <input readOnly tabIndex={-1} placeholder="Товар, VIN, № отгрузки, клиент…" />
-                <span className="platform-shell__search-kbd">⌘K</span>
+              <div className={`platform-shell__search ${searchOpen ? "is-open" : ""}`}>
+                <Search aria-hidden className="eco-icon" />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onFocus={openSearch}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setActiveSearchIndex(0);
+                    setSearchOpen(true);
+                  }}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Товар, VIN, № отгрузки, клиент…"
+                  role="combobox"
+                  aria-label="Глобальный поиск и переход к разделу"
+                  aria-expanded={searchOpen}
+                  aria-controls="platform-global-search-results"
+                  aria-autocomplete="list"
+                  aria-activedescendant={searchOpen && searchResults[activeSearchIndex] ? `platform-search-${activeSearchIndex}` : undefined}
+                />
+                <kbd className="platform-shell__search-kbd">⌘K</kbd>
+                {searchOpen && (
+                  <div id="platform-global-search-results" className="platform-shell__search-results" role="listbox" aria-label="Результаты поиска">
+                    <div className="platform-shell__search-caption">
+                      {searchQuery.trim().length >= 2 ? "Искать в разделах" : "Быстрые переходы"}
+                    </div>
+                    {searchResults.length ? searchResults.map((result, index) => (
+                      <button
+                        key={result.id}
+                        id={`platform-search-${index}`}
+                        type="button"
+                        role="option"
+                        aria-selected={index === activeSearchIndex}
+                        className={index === activeSearchIndex ? "is-active" : ""}
+                        onMouseEnter={() => setActiveSearchIndex(index)}
+                        onClick={() => runSearchResult(result)}
+                      >
+                        <span>{result.label}</span>
+                        <small>{result.description}</small>
+                        <em>{result.kind === "search" ? "Найти" : "Открыть"}</em>
+                      </button>
+                    )) : (
+                      <p>Совпадений по разделам нет. Уточните запрос.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <Link href="/notifications" className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
@@ -685,6 +840,7 @@ export default function PlatformShell() {
                   isActivePath(pathname, item.href) ? "is-active" : ""
                 }`}
                 aria-disabled={item.disabled}
+                aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
               >
                 <span>{item.label}</span>
                 <small>{section.label}</small>
