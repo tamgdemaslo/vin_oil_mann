@@ -32,6 +32,7 @@ type WorkerResult =
 
 const workerState = globalThis as typeof globalThis & {
   __clientNotificationsWorkers?: Map<string, WorkerState>;
+  __clientNotificationsWorkerScheduler?: WorkerState;
 };
 
 function state() {
@@ -42,6 +43,11 @@ function state() {
   const created: WorkerState = {};
   workerState.__clientNotificationsWorkers.set(branchId, created);
   return created;
+}
+
+function schedulerState() {
+  workerState.__clientNotificationsWorkerScheduler ??= {};
+  return workerState.__clientNotificationsWorkerScheduler;
 }
 
 function workerIntervalMs() {
@@ -98,7 +104,7 @@ export async function runClientNotificationsWorkerOnce(
 }
 
 export function startClientNotificationsWorker() {
-  const current = state();
+  const current = schedulerState();
   if (current.started || !workerEnabled()) return;
   current.started = true;
 
