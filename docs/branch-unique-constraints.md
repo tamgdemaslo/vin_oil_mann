@@ -1,6 +1,6 @@
 # Аудит unique/PK по филиалам
 
-Сгенерировано из `prisma/schema.prisma` 2026-07-28. Ограничений: **247**, блокеров: **0**. Глобальные технические ID и высокоэнтропийные public tokens не получают `branchId`; их основания перечислены явно.
+Сгенерировано из `prisma/schema.prisma` 2026-07-28. Ограничений: **240**, блокеров: **0**. Глобальные технические ID и высокоэнтропийные public tokens не получают `branchId`; их основания перечислены явно.
 
 | model | kind | fields | current scope | expected scope | provider guarantee / basis | risk | migration | duplicate precheck | status |
 |---|---|---|---|---|---|---|---|---|---|
@@ -141,11 +141,6 @@
 | LocalStore | UNIQUE | branchId, id | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalProduct | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |
 | LocalProduct | UNIQUE | branchId, moyskladId | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalProduct | UNIQUE | branchId, article | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalProduct | UNIQUE | branchId, code | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalProduct | UNIQUE | branchId, barcodeEan13 | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalProduct | UNIQUE | branchId, barcodeEan8 | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalProduct | UNIQUE | branchId, barcodeCode128 | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalProduct | UNIQUE | branchId, id | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | ProductMannLink | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |
 | ProductMannLink | UNIQUE | branchId, organizationId, productId, mannArticleNormalized | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
@@ -171,7 +166,6 @@
 | LocalStockBalance | UNIQUE | productId, storeId | GLOBAL | PARENT_SCOPED | redundant parent-scoped key retained for Prisma compatibility; branch-aware twin exists | LOW | no | not required | SAFE_BY_PARENT |
 | LocalCounterparty | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |
 | LocalCounterparty | UNIQUE | branchId, moyskladId | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
-| LocalCounterparty | UNIQUE | branchId, normalizedPhone | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalCounterparty | UNIQUE | branchId, id | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | CashShift | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |
 | CashShift | UNIQUE | branchId, serviceDate | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
@@ -183,7 +177,6 @@
 | CashExpenseOrder | UNIQUE | branchId, number | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | CashExpenseOrder | UNIQUE | branchId, moyskladId | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalDemand | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |
-| LocalDemand | UNIQUE | branchId, name | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalDemand | UNIQUE | branchId, moyskladId | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | LocalDemand | UNIQUE | branchId, id | BRANCH | BRANCH | n/a | LOW | no | deploy/selectel/branch-unique-duplicate-precheck.sql | SAFE_BRANCH |
 | ShipmentRevision | ID | id | GLOBAL | GLOBAL_TECHNICAL_ID | application-generated UUID/CUID or explicit control-plane id | LOW | no | not required | SAFE_GLOBAL_ID |

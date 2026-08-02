@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -24,8 +25,10 @@ import {
   Link2,
   MessageCircle,
   Mic,
-  MoreVertical,
+  Minus,
   Package,
+  PanelLeft,
+  PanelRight,
   Pause,
   Pin,
   Play,
@@ -81,18 +84,6 @@ type ApiChannel = {
 type TemplatesResponse = {
   templates?: QuickReplyTemplate[];
 };
-
-type AgentListActivity = {
-  conversationId: string;
-  runId: string;
-  status: "queued" | "running" | "waiting_for_human" | "waiting_for_client" | "handed_off" | "failed";
-  stageLabel: string | null;
-  elapsedSeconds: number;
-  stale: boolean;
-  requiresHumanApproval: boolean;
-};
-
-type AgentListActivitiesResponse = { activities?: AgentListActivity[] };
 
 type AgentRunActivityStatus = {
   status?: {
@@ -401,14 +392,20 @@ function renderTemplateText(template: QuickReplyTemplate, conversation: Conversa
   return template.text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key as keyof typeof values] ?? match);
 }
 
+function fullMessengerHref(conversationId?: string | null) {
+  return conversationId ? `/messages?conversationId=${encodeURIComponent(conversationId)}` : "/messages";
+}
+
 export function MessengerTopbarButton() {
-  const { unreadTotal, openInbox } = useMessenger();
+  const { unreadTotal, openInbox, widgetView } = useMessenger();
   return (
     <button
       type="button"
       className="platform-shell__icon-btn platform-shell__notification-btn eco-messenger-topbar"
       onClick={openInbox}
       aria-label="Сообщения"
+      aria-controls="eco-messenger-floating"
+      aria-expanded={widgetView !== "collapsed"}
     >
       <MessageCircle aria-hidden className="eco-icon" />
       {!!unreadTotal && <span>{unreadTotal > 99 ? "99+" : unreadTotal}</span>}
@@ -418,42 +415,102 @@ export function MessengerTopbarButton() {
 
 export function MessengerWidget() {
   const pathname = usePathname();
-  const { widgetView, unreadTotal, openInbox, closeWidget, selectedConversation, toast, clearToast } = useMessenger();
+  const { widgetView, unreadTotal, openInbox, closeWidget, selectConversation, selectedConversation, toast, clearToast } = useMessenger();
+  const surfaceRef = useRef<HTMLElement | null>(null);
+  const [dockSide, setDockSide] = useState<"left" | "right">("left");
   const hidden =
     pathname === "/login" ||
     pathname === "/client-site" ||
     pathname === "/messages" ||
     pathname === "/crm/messages" ||
     pathname.startsWith("/report/");
+
+  useEffect(() => {
+    if (hidden || widgetView === "collapsed") return;
+    const surface = surfaceRef.current;
+    if (window.matchMedia("(pointer: fine)").matches) {
+      window.requestAnimationFrame(() => surface?.focus({ preventScroll: true }));
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeWidget();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [closeWidget, hidden, widgetView]);
+
   if (hidden) return null;
+
+  const dockAction = (
+    <button
+      type="button"
+      className="eco-messenger-icon-btn eco-messenger-dock-toggle"
+      onClick={() => setDockSide((side) => (side === "left" ? "right" : "left"))}
+      aria-label={dockSide === "left" ? "Переместить окно вправо" : "Переместить окно влево"}
+      title={dockSide === "left" ? "Переместить вправо" : "Переместить влево"}
+    >
+      {dockSide === "left" ? <PanelRight aria-hidden className="eco-icon" /> : <PanelLeft aria-hidden className="eco-icon" />}
+    </button>
+  );
 
   return (
     <>
       {toast && (
-        <button type="button" className={cx("eco-messenger-toast", widgetView !== "collapsed" && "is-widget-open")} onClick={clearToast}>
+        <button
+          type="button"
+          className={cx("eco-messenger-toast", widgetView !== "collapsed" && "is-widget-open")}
+          data-dock={dockSide}
+          onClick={() => {
+            if (toast.conversationId) selectConversation(toast.conversationId);
+            clearToast();
+          }}
+          aria-label={toast.conversationId ? `${toast.title ?? "Новое сообщение"}. Открыть диалог` : `${toast.title ?? "Уведомление"}. Закрыть`}
+        >
           <span className="eco-messenger-toast__dot" />
           <span>
-            <strong>Новое сообщение</strong>
+            <strong>{toast.title ?? "Новое сообщение"}</strong>
             <small>{toast.text}</small>
           </span>
           <X aria-hidden className="eco-icon" />
         </button>
       )}
 
-      <div className={cx("eco-messenger-widget", widgetView !== "collapsed" && "is-open")}>
+      <div
+        className={cx("eco-messenger-widget", widgetView !== "collapsed" && "is-open")}
+        data-mode={widgetView}
+        data-dock={dockSide}
+      >
         {widgetView === "collapsed" ? (
-          <button type="button" className="eco-messenger-launcher" onClick={openInbox} aria-label="Открыть сообщения">
+          <button
+            type="button"
+            className="eco-messenger-launcher"
+            onClick={openInbox}
+            aria-label="Открыть сообщения"
+            aria-controls="eco-messenger-floating"
+            aria-expanded="false"
+          >
             <span className="eco-messenger-launcher__icon">
               <MessageCircle aria-hidden className="eco-icon" />
             </span>
             <span>Сообщения</span>
             {!!unreadTotal && <strong>{unreadTotal}</strong>}
-            <ChevronDown aria-hidden className="eco-icon" />
+            <ChevronUp aria-hidden className="eco-icon" />
           </button>
         ) : (
-          <section className="eco-messenger-popover" aria-label="Сообщения">
-            {widgetView === "inbox" && <MessengerInbox compact onClose={closeWidget} />}
-            {widgetView === "chat" && selectedConversation && <MiniChat conversation={selectedConversation} onClose={closeWidget} />}
+          <section
+            ref={surfaceRef}
+            id="eco-messenger-floating"
+            className="eco-messenger-popover"
+            data-mode={widgetView}
+            role="dialog"
+            aria-label={widgetView === "widget" ? "Виджет сообщений" : "Мини-чат"}
+            tabIndex={-1}
+          >
+            {widgetView === "widget" && <MessengerInbox compact onClose={closeWidget} dockAction={dockAction} />}
+            {widgetView === "mini" && selectedConversation ? (
+              <MiniChat key={selectedConversation.id} conversation={selectedConversation} onClose={closeWidget} dockAction={dockAction} />
+            ) : widgetView === "mini" ? (
+              <MessengerInbox compact onClose={closeWidget} dockAction={dockAction} />
+            ) : null}
           </section>
         )}
       </div>
@@ -465,10 +522,12 @@ export function MessengerInbox({
   compact = false,
   onClose,
   onSelect,
+  dockAction,
 }: {
   compact?: boolean;
   onClose?: () => void;
   onSelect?: () => void;
+  dockAction?: React.ReactNode;
 }) {
   const {
     filteredConversations,
@@ -489,13 +548,26 @@ export function MessengerInbox({
     <div className={cx("eco-messenger-inbox", compact && "is-compact")}>
       <div className="eco-messenger-panel-head eco-messenger-inbox__head">
         <div>
-          <h2>{compact ? "Сообщения" : "Чаты"}</h2>
-          <p>{filteredConversations.length ? `Диалогов: ${filteredConversations.length}` : "Единый центр"}</p>
+          <h2>{compact ? "Входящие" : "Диалоги"}</h2>
+          <p>
+            {filteredConversations.length
+              ? compact
+                ? `Все каналы · ${filteredConversations.length} диалогов`
+                : `Диалогов: ${filteredConversations.length}`
+              : "Все каналы в одном месте"}
+          </p>
         </div>
         <div className="eco-messenger-head-actions">
           {!!unreadTotal && <span className="eco-messenger-unread">{unreadTotal}</span>}
+          {compact && dockAction}
           {compact && (
-            <Link href="/messages" className="eco-messenger-icon-btn" aria-label="Развернуть чат" title="Развернуть чат">
+            <Link
+              href={fullMessengerHref(selectedConversationId)}
+              className="eco-messenger-icon-btn"
+              onClick={onClose}
+              aria-label="Открыть мессенджер полностью"
+              title="Открыть полностью"
+            >
               <Expand aria-hidden className="eco-icon" />
             </Link>
           )}
@@ -650,7 +722,15 @@ function MessengerAvatar({ conversation, compact = false }: { conversation: Conv
   );
 }
 
-function MiniChat({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
+function MiniChat({
+  conversation,
+  onClose,
+  dockAction,
+}: {
+  conversation: Conversation;
+  onClose: () => void;
+  dockAction?: React.ReactNode;
+}) {
   const { setWidgetView } = useMessenger();
   return (
     <div className="eco-messenger-mini-chat">
@@ -658,20 +738,29 @@ function MiniChat({ conversation, onClose }: { conversation: Conversation; onClo
         conversation={conversation}
         compact
         leftAction={
-          <button type="button" className="eco-messenger-icon-btn" onClick={() => setWidgetView("inbox")} aria-label="Назад">
+          <button
+            type="button"
+            className="eco-messenger-icon-btn"
+            onClick={() => setWidgetView("widget")}
+            aria-label="К списку диалогов"
+          >
             <ArrowLeft aria-hidden className="eco-icon" />
           </button>
         }
         rightAction={
           <>
-            <Link href="/messages" className="eco-messenger-icon-btn" aria-label="Открыть полный экран">
+            {dockAction}
+            <Link
+              href={fullMessengerHref(conversation.id)}
+              className="eco-messenger-icon-btn"
+              onClick={onClose}
+              aria-label="Открыть мессенджер полностью"
+              title="Открыть полностью"
+            >
               <Expand aria-hidden className="eco-icon" />
             </Link>
-            <button type="button" className="eco-messenger-icon-btn" aria-label="Действия">
-              <MoreVertical aria-hidden className="eco-icon" />
-            </button>
-            <button type="button" className="eco-messenger-icon-btn" onClick={onClose} aria-label="Свернуть">
-              <X aria-hidden className="eco-icon" />
+            <button type="button" className="eco-messenger-icon-btn" onClick={onClose} aria-label="Свернуть мини-чат" title="Свернуть">
+              <Minus aria-hidden className="eco-icon" />
             </button>
           </>
         }
@@ -712,10 +801,10 @@ export function ChatHeader({
         </span>
       </div>
       {!conversation.clientId && (
-        <button type="button" className="eco-messenger-client-status" title="Привязать клиента">
+        <span className="eco-messenger-client-status" title="Клиент не привязан">
           <span className="is-full">Клиент не привязан</span>
           <span className="is-short">Без клиента</span>
-        </button>
+        </span>
       )}
       <div className="eco-messenger-chat-head__actions">{rightAction}</div>
     </div>
@@ -790,7 +879,10 @@ export function ChatThread({ conversation, compact = false }: { conversation: Co
   useEffect(() => {
     const node = threadRef.current;
     if (!node) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    node.scrollTo({
+      top: node.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
   }, [conversation.id, messages.length]);
 
   if (messages.length === 0) {
@@ -1197,6 +1289,7 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
   const [templates, setTemplates] = useState<QuickReplyTemplate[]>(quickReplyTemplates);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftStorageKey = `eco:messenger-draft:${conversation.id}`;
 
   useEffect(() => {
     let alive = true;
@@ -1219,21 +1312,35 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
   }, []);
 
   useEffect(() => {
-    const draft = window.localStorage.getItem("eco:crm-draft");
-    if (!draft) return;
-    setText(draft);
-    window.localStorage.removeItem("eco:crm-draft");
-  }, [conversation.id]);
+    const conversationDraft = window.localStorage.getItem(draftStorageKey);
+    const sharedDraft = window.localStorage.getItem("eco:crm-draft");
+    const nextDraft = conversationDraft ?? sharedDraft ?? "";
+    setText(nextDraft);
+    setQuickOpen(false);
+    setAttachmentsOpen(false);
+    setMockNotice("");
+    if (!conversationDraft && sharedDraft) window.localStorage.setItem(draftStorageKey, sharedDraft);
+    if (sharedDraft) window.localStorage.removeItem("eco:crm-draft");
+  }, [draftStorageKey]);
 
   const knownChannelStatus = channelStatuses[conversation.channel];
   const disabled = conversation.channel !== "mock" && Boolean(knownChannelStatus) && knownChannelStatus !== "connected";
   const canSend = text.trim().length > 0 && !disabled && !uploading;
 
+  function updateDraft(nextText: string) {
+    setText(nextText);
+    if (nextText.trim()) {
+      window.localStorage.setItem(draftStorageKey, nextText);
+    } else {
+      window.localStorage.removeItem(draftStorageKey);
+    }
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!canSend) return;
     sendMessage(conversation.id, text);
-    setText("");
+    updateDraft("");
   }
 
   function attachmentAction(label: string) {
@@ -1271,7 +1378,7 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
     setUploading(true);
     try {
       await sendAttachment(conversation.id, file, text);
-      setText("");
+      updateDraft("");
     } finally {
       setUploading(false);
     }
@@ -1300,7 +1407,7 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
                 key={template.key}
                 onClick={() => {
                   const rendered = renderTemplateText(template, conversation, selectedContext?.client ?? null);
-                  setText((value) => (value ? `${value}\n\n${rendered}` : rendered));
+                  updateDraft(text ? `${text}\n\n${rendered}` : rendered);
                   setQuickOpen(false);
                 }}
               >
@@ -1320,13 +1427,13 @@ export function MessengerComposer({ conversation, compact = false }: { conversat
         </button>
         <textarea
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => updateDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               if (canSend) {
                 sendMessage(conversation.id, text);
-                setText("");
+                updateDraft("");
               }
             }
           }}

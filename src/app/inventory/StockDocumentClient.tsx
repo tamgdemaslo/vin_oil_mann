@@ -1042,7 +1042,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           article: newProduct.article.trim() || undefined,
           code: newProduct.code.trim() || undefined,
           brand: newProduct.brand.trim() || undefined,
-          supplierName: selectedCounterparty?.name || undefined,
+          supplierCounterpartyId: selectedCounterparty?.id || null,
           buyPrice: newProduct.buyPrice,
           salePrice: newProduct.salePrice,
           entityType: "product",

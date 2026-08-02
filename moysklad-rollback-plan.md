@@ -28,7 +28,6 @@ cp .env ".backups/moysklad-cutover/<backup-id>/.env" 2>/dev/null || true
 cp .env.local ".backups/moysklad-cutover/<backup-id>/.env.local" 2>/dev/null || true
 cp .env.example ".backups/moysklad-cutover/<backup-id>/.env.example"
 cp .env.local.template ".backups/moysklad-cutover/<backup-id>/.env.local.template"
-cp railway.json ".backups/moysklad-cutover/<backup-id>/railway.json" 2>/dev/null || true
 cp vercel.json ".backups/moysklad-cutover/<backup-id>/vercel.json" 2>/dev/null || true
 ```
 

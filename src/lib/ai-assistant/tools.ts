@@ -5,7 +5,7 @@ import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/li
 import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
-import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, type LocalFluidSelection } from "./material-selection";
+import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
 
 export type AssistantToolSource = {
   sourceType: "internal_catalog" | "mann" | "tronk" | "rossko";
@@ -127,7 +127,13 @@ export const assistantFunctionTools = [
   },
 ] as const;
 
-type ToolContext = { organizationId: string; actorId: string; actorName: string; actorRole: string };
+type ToolContext = {
+  organizationId: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  employeeRequestedOriginalFluidOnly?: boolean;
+};
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -449,9 +455,12 @@ function normalizedArticle(value: unknown) {
   return text(value, 100).toLocaleUpperCase("ru-RU").replace(/[^A-ZА-Я0-9]/g, "");
 }
 
-async function automaticLocalFluidSelection(args: Record<string, unknown>): Promise<LocalFluidSelection | null> {
+async function automaticLocalFluidSelection(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidSelection | null> {
   if (text(args.serviceFamily, 60) !== "transmission_fluid" || text(args.materialsOwner, 30) !== "service") return null;
-  if (text(args.fluidPreference, 40) === "original_only") return null;
+  if (shouldRequireOriginalFluid({
+    fluidPreference: text(args.fluidPreference, 40) || null,
+    employeeRequestedOriginalOnly: Boolean(context.employeeRequestedOriginalFluidOnly),
+  })) return null;
   const requiredSpec = text(args.requiredFluidSpec, 160);
   const requiredLiters = number(args.requiredFluidVolumeLiters);
   const tokens = fluidSpecificationTokens(requiredSpec).filter((token) => token.length >= 2).slice(0, 8);
@@ -562,7 +571,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   let selectedProducts = quoteInputRows(args.selectedProducts, 30);
   const consumables = quoteInputRows(args.consumables, 20);
   let rosskoItems = quoteInputRows(args.rosskoItems, 12);
-  const automaticFluid = await automaticLocalFluidSelection(args);
+  const automaticFluid = await automaticLocalFluidSelection(args, context);
   if (automaticFluid) {
     const fallbackArticle = normalizedArticle(args.requiredFluidOemArticle);
     if (!fallbackArticle && rosskoItems.length) {

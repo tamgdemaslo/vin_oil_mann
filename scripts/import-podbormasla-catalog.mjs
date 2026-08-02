@@ -3,7 +3,7 @@
 
 import "dotenv/config";
 import { createHash } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
@@ -29,13 +29,24 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 
-async function latestOutput(prefix) {
+async function latestOutput(prefix, requiredFiles = []) {
   const outputRoot = resolve(workspaceRoot, "outputs");
   const entries = await readdir(outputRoot, { withFileTypes: true });
-  const matches = entries.filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix)).map((entry) => entry.name).sort();
-  const latest = matches.at(-1);
-  if (!latest) throw new Error(`В outputs не найдена папка ${prefix}*`);
-  return resolve(outputRoot, latest);
+  const matches = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+  for (const name of matches) {
+    const directory = resolve(outputRoot, name);
+    try {
+      await Promise.all(requiredFiles.map((file) => access(resolve(directory, file))));
+      return directory;
+    } catch {
+      // Review directories can share the prefix but not contain a full snapshot.
+    }
+  }
+  throw new Error(`В outputs не найдена папка ${prefix}* с необходимыми файлами.`);
 }
 
 function csvEscape(value) {
@@ -170,9 +181,13 @@ function reviewContextsCsv(rows) {
 }
 
 const positional = args.filter((value) => !value.startsWith("--"));
-const snapshotDir = positional[0] ? resolve(workspaceRoot, positional[0]) : await latestOutput("podbormasla-");
+const snapshotDir = positional[0]
+  ? resolve(workspaceRoot, positional[0])
+  : await latestOutput("podbormasla-", ["podbormasla_rows.ndjson", "podbormasla_summary.json"]);
 const mannDirOption = option("--mann-dir");
-const mannDir = mannDirOption ? resolve(workspaceRoot, mannDirOption) : await latestOutput("mann-pdf-catalog-");
+const mannDir = mannDirOption
+  ? resolve(workspaceRoot, mannDirOption)
+  : await latestOutput("mann-pdf-catalog-", ["mann_pdf_filters_long.csv"]);
 const reportDirOption = option("--report-dir");
 const reportDir = reportDirOption ? resolve(workspaceRoot, reportDirOption) : snapshotDir;
 const apply = args.includes("--apply");

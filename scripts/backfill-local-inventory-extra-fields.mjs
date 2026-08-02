@@ -131,7 +131,7 @@ function productUpdateData(row) {
     minPriceCurrencyName: clean(row["Валюта (Минимальная цена)"]),
     countryName: clean(row["Страна"]),
     vatLabel: clean(row["НДС"]),
-    supplierName: clean(row["Поставщик"]),
+    legacySupplierName: clean(row["Поставщик"]),
     weight: parseNumber(row["Вес"]),
     volume: parseNumber(row["Объем"]),
     modificationCode: clean(row["Код модификации"]),

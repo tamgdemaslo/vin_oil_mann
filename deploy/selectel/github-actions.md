@@ -1,45 +1,53 @@
-# Автоматический деплой из GitHub
+# GitHub Actions configuration for Selectel
 
-Workflow [`.github/workflows/deploy-selectel.yml`](../../.github/workflows/deploy-selectel.yml)
-запускается после каждого `push` в `codex-local-work`; также его можно запустить вручную на
-вкладке **Actions** в GitHub. Он передаёт исходники на сервер по SSH и выполняет
-`docker compose ... up -d --build`. Git на production-сервере не требуется.
+The application release workflow builds in GitHub Actions, pushes to Selectel
+Container Registry, and sends one short SSH command containing an immutable
+digest. It never uploads source and never builds on the production server.
 
-## Однократная настройка
+## Repository secrets
 
-В GitHub откройте **Settings → Environments → New environment** и создайте
-окружение `production`. В нём добавьте secrets:
+These are needed by the image job before production approval:
 
-| Secret | Значение |
+| Secret | Value |
 | --- | --- |
-| `DEPLOY_HOST` | IP-адрес или доменное имя сервера Selectel. |
-| `DEPLOY_USER` | Пользователь, под которым на сервере запускается Docker. |
-| `DEPLOY_PATH` | Абсолютный путь к клону проекта на сервере, например `/opt/vin-oil-mann`. |
-| `DEPLOY_SSH_KEY` | Закрытая часть отдельного SSH-ключа для GitHub Actions. Публичную часть добавьте в `~/.ssh/authorized_keys` пользователя сервера. |
-| `DEPLOY_KNOWN_HOSTS` | Строка из `ssh-keyscan -H <DEPLOY_HOST>` — фиксирует SSH-ключ сервера и защищает деплой от подмены хоста. |
+| `SELECTEL_REGISTRY_USERNAME` | Username of a Selectel registry read/write token. |
+| `SELECTEL_REGISTRY_PASSWORD` | Password of that token. |
 
-Ключ должен быть отдельным от личного. Создать его можно локально:
+## Repository variable
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/vin-oil-mann-github-actions -C github-actions-vin-oil-mann
-```
+| Variable | Value |
+| --- | --- |
+| `SELECTEL_REGISTRY_NAME` | Registry name only, the segment after `cr.selcloud.ru/`. |
 
-На сервер нужно добавить содержимое файла с суффиксом `.pub` в
-`~/.ssh/authorized_keys` пользователя `DEPLOY_USER`. Закрытую часть ключа
-добавьте в GitHub как `DEPLOY_SSH_KEY`.
+## `production` environment
 
-## Требования на сервере
+Require an owner/reviewer. Add:
 
-В `DEPLOY_PATH` должна находиться папка приложения, а файл `.env.production`
-должен уже находиться рядом с `docker-compose.selectel.yml`. Workflow сохраняет
-этот файл при синхронизации. Git и доступ сервера к GitHub не требуются.
+| Kind | Name | Value |
+| --- | --- | --- |
+| Secret | `DEPLOY_HOST` | Selectel server hostname or IP. |
+| Secret | `DEPLOY_USER` | Restricted Docker deploy user. |
+| Secret | `DEPLOY_SSH_KEY` | Private half of a dedicated Actions key. |
+| Secret | `DEPLOY_KNOWN_HOSTS` | Pinned `ssh-keyscan -H` line reviewed out of band. |
+| Variable | `DEPLOY_SCRIPT_PATH` | `/opt/vin-oil-mann/deploy/selectel/deploy-image.sh`. |
+| Variable | `PUBLIC_ORIGIN` | `https://www.tamgdemaslocrm.ru`. |
 
-Проверить руками перед первым автодеплоем:
+## `production-migration` environment
 
-```bash
-cd /путь/к/проекту
-docker compose -f docker-compose.selectel.yml up -d --build
-```
+Use a separate, stricter approval group. Add the same four SSH secrets and:
 
-После сохранения secrets отправьте тестовый коммит в `codex-local-work` или в GitHub
-откройте **Actions → Deploy to Selectel → Run workflow**.
+| Variable | Value |
+| --- | --- |
+| `MIGRATION_SCRIPT_PATH` | `/opt/vin-oil-mann/deploy/selectel/migrate-image.sh`. |
+
+## Release behavior
+
+Dispatch `Build and deploy immutable release to Selectel` from an allowed ref
+with a new `production-YYYY-MM-DD.N` value. GitHub displays each stage and its
+duration separately. BuildKit exports cache to the application repository's
+`buildcache` tag. After a successful public health check, the workflow creates
+the production Git tag on the deployed SHA.
+
+Migration is never an implicit application step. Dispatch the migration
+workflow only with the migration digest from the release manifest, a verified
+backup reference, and explicit approval.

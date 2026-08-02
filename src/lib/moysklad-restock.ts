@@ -134,7 +134,7 @@ export async function fetchProductCatalog(): Promise<RestockCatalog> {
       rosskoPartNumber: true,
       minimumBalance: true,
       groupPath: true,
-      supplierName: true,
+      legacySupplierName: true,
       supplierAttribute: true,
     },
     orderBy: [{ name: "asc" }],
@@ -147,7 +147,7 @@ export async function fetchProductCatalog(): Promise<RestockCatalog> {
       code: product.rosskoPartNumber ?? product.article ?? product.code ?? product.externalCode ?? null,
       minimumBalance: toFloat(product.minimumBalance),
       group: product.groupPath,
-      supplier: product.supplierName ?? product.supplierAttribute,
+      supplier: product.legacySupplierName ?? product.supplierAttribute,
     };
   }
 

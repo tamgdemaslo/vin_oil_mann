@@ -583,7 +583,7 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
         minPriceCurrencyName: textOrUndefined(row.minPrice?.currency?.name),
         countryName: textOrUndefined(row.country?.name),
         vatLabel: vatLabel(row),
-        supplierName: textOrUndefined(row.supplier?.name),
+        legacySupplierName: textOrUndefined(row.supplier?.name),
         weight: decimalOrUndefined(row.weight),
         volume: decimalOrUndefined(row.volume),
         modificationCode: textOrUndefined(row.modificationCode),
@@ -696,6 +696,7 @@ async function syncCounterparties(limit?: number | null): Promise<number> {
     const payload = {
       moyskladHref: row.meta?.href ?? null,
       name: row.name?.trim() || row.id,
+      displayName: row.name?.trim() || row.id,
       phone: row.phone?.trim() || rawPhones[0] || null,
       email: row.email?.trim() || null,
       normalizedPhone,
@@ -720,6 +721,7 @@ async function syncCounterparties(limit?: number | null): Promise<number> {
       ogrnip: textOrUndefined(row.ogrnip),
       searchText,
       archived: Boolean(row.archived),
+      status: row.archived ? "ARCHIVED" : "ACTIVE",
       raw: toJson(row),
       syncedAt: new Date(),
     };

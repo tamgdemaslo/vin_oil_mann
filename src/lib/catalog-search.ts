@@ -66,6 +66,9 @@ type CatalogProduct = Prisma.LocalProductGetPayload<{
         createdAt: true;
       };
     };
+    supplierCounterparty: {
+      select: { name: true; displayName: true };
+    };
   };
 }>;
 
@@ -480,6 +483,7 @@ function getCellFromAttributes(input: unknown): string | undefined {
 }
 
 function fieldsForProduct(product: CatalogProduct): SearchField[] {
+  const supplierName = product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? "";
   return [
     { key: "barcodeEan13", label: "EAN", value: product.barcodeEan13 ?? "", weight: 100, exact: true, identifier: true },
     { key: "barcodeEan8", label: "EAN", value: product.barcodeEan8 ?? "", weight: 100, exact: true, identifier: true },
@@ -500,7 +504,7 @@ function fieldsForProduct(product: CatalogProduct): SearchField[] {
     { key: "ilsac", label: "ILSAC", value: product.ilsac ?? "", weight: 24 },
     { key: "atf", label: "ATF", value: product.atf ?? "", weight: 24 },
     { key: "groupPath", label: "Категория", value: product.groupPath ?? "", weight: 20 },
-    { key: "supplierName", label: "Поставщик", value: product.supplierName ?? "", weight: 12 },
+    { key: "supplierName", label: "Поставщик", value: supplierName, weight: 12 },
     { key: "description", label: "Описание", value: product.description ?? "", weight: 8 },
     { key: "searchText", label: "Характеристики", value: product.searchText || buildCatalogSearchText(product), weight: 8 },
   ];
@@ -915,7 +919,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     minPriceCurrencyName: product.minPriceCurrencyName ?? "",
     countryName: product.countryName ?? "",
     vatLabel: product.vatLabel ?? "",
-    supplierName: product.supplierName ?? "",
+    supplierName: product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? "",
     weight: decimalToNullableNumber(product.weight),
     volume: decimalToNullableNumber(product.volume),
     modificationCode: product.modificationCode ?? "",
@@ -1033,6 +1037,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
               select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
               orderBy: { createdAt: "asc" },
             },
+            supplierCounterparty: { select: { name: true, displayName: true } },
           },
           orderBy: [{ name: "asc" }],
           take: Math.min(1000, Math.max(limit * 30, 100)),
@@ -1098,6 +1103,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
         select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       },
+      supplierCounterparty: { select: { name: true, displayName: true } },
     },
     orderBy: [{ name: "asc" }],
     take,

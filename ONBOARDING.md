@@ -285,10 +285,11 @@ Prisma-модели сгруппированы вокруг таких обла�
 
 ## 10. Деплой и фоновые задачи
 
-В репозитории есть настройки Railway, Vercel и Nixpacks:
+Вся production-инфраструктура проекта размещается только на Selectel:
 
-- `railway.json` запускает `npm run db:deploy` перед стартом и затем `npm run start`;
-- `nixpacks.toml` ставит Node 20 и Chromium, `CHROME_PATH=chromium`;
+- `.github/workflows/deploy-selectel.yml` собирает immutable container image;
+- `docker-compose.selectel.yml` и `deploy/selectel/` содержат production runtime и runbooks;
+- `Dockerfile` устанавливает Node 20, Chromium и все runtime-зависимости;
 - `vercel.json` содержит cron `/api/cron/auto-close-shifts` каждый день в `00:05`;
 - `src/instrumentation.ts` стартует worker клиентских уведомлений на Node runtime.
 
@@ -334,4 +335,3 @@ PDF-генерация зависит от доступного Chromium и ко
 6. Посмотреть, как отгрузка отражается в складе и на главной.
 7. Открыть `prisma/schema.prisma` и сопоставить модели с экранами.
 8. Выбрать первую маленькую задачу без live-записей во внешние сервисы.
-

@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "status": "PASS_ISOLATED_SELECTEL_REHEARSAL",
+  "generatedAt": "2026-08-02T20:59:15Z",
+  "source": {
+    "provider": "Selectel",
+    "database": "vin_oil",
+    "mode": "isolated clone of the fresh canonical Selectel restore",
+    "dumpCompletedAt": "2026-08-01T08:10:13Z",
+    "dumpBytes": 1025328094,
+    "dumpSha256": "b753f93a7fc2bcb3f37d7bd880048446c5a2796596d5c28478edfb27d571b063",
+    "baselineEvidence": "docs/rehearsal/selectel-pre-branch-baseline-2026-08-02.json",
+    "baselineEvidenceSha256": "490905dfb77a0aeaae5485b4c1e427983536a5533ab5b404ed424e07179490ec"
+  },
+  "environment": {
+    "database": "branch_selectel_final_rehearsal",
+    "postgresql": "18.4",
+    "isolated": true,
+    "externalSideEffectsEnabled": false,
+    "productionApplicationConnected": false
+  },
+  "migration": {
+    "preResolveJournal": {
+      "total": 57,
+      "active": 50,
+      "rolledBack": 6,
+      "unfinished": 1,
+      "checksumsMatch": true
+    },
+    "resolvedAttempt": {
+      "name": "20260728120000_branch_architecture_foundation",
+      "originalChecksum": "14de5716128ff19ba5acf6df3f9f25902179b3d0f05d23b1d8137cab45051d8b",
+      "appliedSteps": 0,
+      "action": "MARKED_ROLLED_BACK_IN_REHEARSAL_ONLY"
+    },
+    "repositoryMigrations": 60,
+    "migrationsAppliedInFinalRun": 10,
+    "migrateDeployWallSeconds": 19.34,
+    "postDeployJournal": {
+      "total": 67,
+      "active": 60,
+      "rolledBack": 7,
+      "unfinished": 0,
+      "checksumsMatch": true
+    }
+  },
+  "postMigration": {
+    "publicTables": 148,
+    "baselineTables": 137,
+    "unchangedBaselineTableCounts": 135,
+    "deletedBaselineTables": 0,
+    "newTables": 11,
+    "documentedCountChanges": {
+      "_prisma_migrations": 10,
+      "local_counterparties_supplierSeedRows": 13
+    },
+    "foreignKeys": 239,
+    "foreignKeyOrphanRows": 0,
+    "branchScopedTables": 129,
+    "nullBranchRows": 0,
+    "invalidIndexes": 0,
+    "unvalidatedConstraints": 0,
+    "branches": 1,
+    "branchMainRows": 1,
+    "branchTwoRows": 0,
+    "duplicatePrechecks": 33,
+    "duplicatePrecheckFailures": 0,
+    "uniqueRepairRuns": 2,
+    "uniqueRepairMutationsPlanned": 0,
+    "uniqueRepairMutationsApplied": 0,
+    "pgAmcheckRelations": 1592,
+    "pgAmcheckStatus": "PASS"
+  },
+  "criticalTotals": {
+    "status": "MATCH_BASELINE_EXCEPT_DOCUMENTED_SUPPLIER_SEED_ROWS",
+    "stockQuantity": "4979.350",
+    "stockReserve": "3.000",
+    "stockAvailable": "4976.350",
+    "shipmentSumCents": "3814379163",
+    "supplierPaymentCents": "28956350",
+    "expenseCents": "45243988",
+    "payrollCents": "7932288",
+    "messageRows": 5736,
+    "diagnosticItems": 2261
+  },
+  "performanceEvidence": "docs/rehearsal/performance-comparison-2026-08-02.json",
+  "rollback": {
+    "status": "PASS_ISOLATED_RESTORE",
+    "restoreStartedAt": "2026-08-02T20:32:29.584Z",
+    "restoreFinishedAt": "2026-08-02T20:33:35.114Z",
+    "restoreDurationMilliseconds": 65522,
+    "publicTables": 137,
+    "tableCountsMatch": "137/137",
+    "pgAmcheckRelations": 1357,
+    "pgAmcheckStatus": "PASS",
+    "snapshotRpoSeconds": 0,
+    "productionRpoMeasured": false
+  },
+  "safety": {
+    "productionMigrationAttempted": false,
+    "productionCutoverAttempted": false,
+    "productionBranchTwoCreated": false,
+    "railwayArchiveImported": false,
+    "productionMutationAttempted": false
+  }
+}

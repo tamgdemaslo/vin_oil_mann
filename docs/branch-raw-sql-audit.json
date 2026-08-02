@@ -213,7 +213,7 @@
     },
     {
       "file": "src/lib/catalog-search.ts",
-      "line": 665,
+      "line": 669,
       "function": "findNormalizedCatalogCandidateIds",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -235,7 +235,7 @@
     },
     {
       "file": "src/lib/catalog-search.ts",
-      "line": 685,
+      "line": 689,
       "function": "findStrictNameOemCandidateIds",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2659,7 +2659,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 873,
+      "line": 875,
       "function": "createAndLinkClient",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2681,7 +2681,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 929,
+      "line": 931,
       "function": "unlinkClientFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2703,7 +2703,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 939,
+      "line": 941,
       "function": "unlinkClientFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2725,7 +2725,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 974,
+      "line": 976,
       "function": "classifyConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2747,7 +2747,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1081,
+      "line": 1083,
       "function": "createCaseForConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2769,7 +2769,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1123,
+      "line": 1125,
       "function": "linkCaseToConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2791,7 +2791,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1172,
+      "line": 1174,
       "function": "createAppointmentForConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2813,7 +2813,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1242,
+      "line": 1244,
       "function": "createShipmentForConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",

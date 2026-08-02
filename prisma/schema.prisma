@@ -1129,6 +1129,7 @@ model MessengerMessage {
   @@index([channel])
   @@index([authorType, authorId])
   @@index([branchId])
+  @@index([branchId, createdAt])
   @@map("messenger_messages")
 }
 
@@ -2160,7 +2161,9 @@ model LocalProduct {
   minPriceCurrencyName      String?   @map("min_price_currency_name")
   countryName               String?   @map("country_name")
   vatLabel                  String?   @map("vat_label")
-  supplierName              String?   @map("supplier_name")
+  /// Imported free-form supplier value. Kept only for audit and migration fallback.
+  legacySupplierName        String?   @map("supplier_name")
+  supplierCounterpartyId    String?   @map("supplier_counterparty_id")
   weight                    Decimal?  @db.Decimal(14, 3)
   volume                    Decimal?  @db.Decimal(14, 3)
   modificationCode          String?   @map("modification_code")
@@ -2212,9 +2215,11 @@ model LocalProduct {
   markingAuditLogs           ProductMarkingAuditLog[]
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
+  supplierCounterparty       LocalCounterparty? @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([entityType])
   @@index([branchId, archived])
+  @@index([branchId, archived, updatedAt])
   @@index([branchId, article])
   @@index([name])
   @@index([article])
@@ -2222,7 +2227,8 @@ model LocalProduct {
   @@index([externalCode])
   @@index([brand])
   @@index([sae])
-  @@index([supplierName])
+  @@index([legacySupplierName])
+  @@index([branchId, supplierCounterpartyId])
   @@index([groupPath])
   @@index([apiSpec])
   @@index([acea])
@@ -2233,11 +2239,10 @@ model LocalProduct {
   @@index([salePriceCents])
   @@index([buyPriceCents])
   @@unique([branchId, moyskladId])
-  @@unique([branchId, article])
-  @@unique([branchId, code])
-  @@unique([branchId, barcodeEan13])
-  @@unique([branchId, barcodeEan8])
-  @@unique([branchId, barcodeCode128])
+  @@index([branchId, code])
+  @@index([branchId, barcodeEan13])
+  @@index([branchId, barcodeEan8])
+  @@index([branchId, barcodeCode128])
   @@unique([branchId, id])
   @@index([updatedAt])
   @@map("local_products")
@@ -2660,6 +2665,19 @@ model LocalCounterparty {
   moyskladId           String?   @map("moysklad_id")
   moyskladHref         String?   @map("moysklad_href") @db.Text
   name                 String
+  /// Canonical name for new counterparty workflows; name is retained for legacy integrations.
+  displayName          String    @default("") @map("display_name")
+  /// Business role in the local branch: INDIVIDUAL by default, SUPPLIER for product suppliers.
+  category             String    @default("INDIVIDUAL")
+  /// Supplier legal form: LEGAL_ENTITY, SOLE_PROPRIETOR, or OTHER.
+  legalForm            String?  @map("legal_form")
+  fullName             String?  @map("full_name") @db.Text
+  actualAddress        String?  @map("actual_address") @db.Text
+  contactPerson        String?  @map("contact_person")
+  contactPhone         String?  @map("contact_phone")
+  bankDetailsJson      Json?    @map("bank_details_json")
+  /// Mirrors the operational state for API consumers; archived remains for legacy workflows.
+  status               String    @default("ACTIVE")
   phone                String?
   email                String?
   normalizedPhone      String?   @map("normalized_phone")
@@ -2694,14 +2712,17 @@ model LocalCounterparty {
   demands            LocalDemand[]
   inventoryDocuments LocalInventoryDocument[]
   cashExpenseOrders  CashExpenseOrder[]
+  suppliedProducts   LocalProduct[] @relation("ProductSupplierCounterparty")
 
   @@index([name])
   @@index([branchId, archived])
+  @@index([branchId, category])
+  @@index([branchId, name])
+  @@index([branchId, inn])
   @@index([branchId, normalizedPhone])
   @@index([normalizedPhone])
   @@index([inn])
   @@unique([branchId, moyskladId])
-  @@unique([branchId, normalizedPhone])
   @@unique([branchId, id])
   @@map("local_counterparties")
 }
@@ -2911,12 +2932,13 @@ model LocalDemand {
   revisions              ShipmentRevision[]
   inventoryLedgerEntries InventoryLedgerEntry[]
 
-  @@unique([branchId, name])
+  @@index([branchId, name])
   @@unique([branchId, moyskladId])
   @@unique([branchId, id])
   @@index([documentDate])
   @@index([branchId, documentDate])
   @@index([momentAt])
+  @@index([branchId, momentAt])
   @@index([applicable])
   @@index([counterpartyId])
   @@index([agentMoyskladId])

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft, PanelRight, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMessenger } from "@/components/messenger/MessengerProvider";
 import {
   ChannelStatusStrip,
@@ -16,10 +16,16 @@ import {
   MessengerInbox,
 } from "@/components/messenger/MessengerUi";
 
-export default function MessagesPageClient() {
-  const { selectedConversation, selectedContext } = useMessenger();
-  const [mobilePane, setMobilePane] = useState<"inbox" | "chat" | "context">("inbox");
+export default function MessagesPageClient({ initialConversationId }: { initialConversationId: string | null }) {
+  const { selectedConversation, selectedContext, closeWidget } = useMessenger();
+  const [mobilePane, setMobilePane] = useState<"inbox" | "chat" | "context">(
+    initialConversationId ? "chat" : "inbox"
+  );
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    closeWidget();
+  }, [closeWidget]);
 
   function openConversation() {
     setMobilePane("chat");
@@ -92,7 +98,7 @@ export default function MessagesPageClient() {
                 }
               />
               <ChatThread conversation={selectedConversation} />
-              <MessengerComposer conversation={selectedConversation} />
+              <MessengerComposer key={selectedConversation.id} conversation={selectedConversation} />
             </>
           ) : (
             <EmptySelection />

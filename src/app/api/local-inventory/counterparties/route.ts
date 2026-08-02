@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
   const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
   const includeArchived = request.nextUrl.searchParams.get("archived") === "1";
   const status = request.nextUrl.searchParams.get("status") ?? undefined;
-  const type = request.nextUrl.searchParams.get("type") ?? undefined;
+  const category = request.nextUrl.searchParams.get("category") ?? undefined;
+  const type = category === "SUPPLIER" ? "supplier" : category === "INDIVIDUAL" ? "individual" : request.nextUrl.searchParams.get("type") ?? undefined;
   const phone = request.nextUrl.searchParams.get("phone") ?? undefined;
   const requisites = request.nextUrl.searchParams.get("requisites") ?? undefined;
   const shipments = request.nextUrl.searchParams.get("shipments") ?? undefined;

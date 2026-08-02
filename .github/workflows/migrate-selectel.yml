@@ -1,0 +1,83 @@
+name: Apply approved Selectel database migration image
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release whose migration image was already built"
+        required: true
+        type: string
+      commit_sha:
+        description: "Exact 40-character commit SHA"
+        required: true
+        type: string
+      migration_image_digest:
+        description: "Immutable sha256 digest from the release manifest"
+        required: true
+        type: string
+      verified_backup_reference:
+        description: "Identifier/checksum of the verified Selectel backup"
+        required: true
+        type: string
+      confirmation:
+        description: "Explicit production database authorization"
+        required: true
+        type: choice
+        options:
+          - STOP
+          - APPLY_PRODUCTION_MIGRATIONS
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Approve and run migration-only container
+    if: ${{ inputs.confirmation == 'APPLY_PRODUCTION_MIGRATIONS' }}
+    runs-on: ubuntu-latest
+    environment: production-migration
+    steps:
+      - name: Validate immutable migration request
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          IMAGE_DIGEST: ${{ inputs.migration_image_digest }}
+          BACKUP_REFERENCE: ${{ inputs.verified_backup_reference }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^production-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$ ]]
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BACKUP_REFERENCE" =~ ^[A-Za-z0-9._:/-]{8,200}$ ]]
+
+      - name: Configure pinned SSH host
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run the migration-only image
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          MIGRATION_SCRIPT_PATH: ${{ vars.MIGRATION_SCRIPT_PATH }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          IMAGE_DIGEST: ${{ inputs.migration_image_digest }}
+          BACKUP_REFERENCE: ${{ inputs.verified_backup_reference }}
+        run: |
+          set -euo pipefail
+          script="${MIGRATION_SCRIPT_PATH:-/opt/vin-oil-mann/deploy/selectel/migrate-image.sh}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$script" "$IMAGE_DIGEST" "$RELEASE_TAG" "$COMMIT_SHA" \
+            "$BACKUP_REFERENCE" APPLY_PRODUCTION_MIGRATIONS

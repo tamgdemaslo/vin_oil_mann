@@ -6,9 +6,11 @@ must have linked evidence and explicit owner approval in a separate task.
 ## Immutable prerequisites
 
 - [ ] Git recovery report is PASS and the release commit/branch is identified.
-- [ ] Railway → Selectel reconciliation is `VERIFIED`.
-- [ ] Railway compute/autodeploy is frozen and the database no longer changes.
-- [ ] Fresh final Railway and Selectel backups are readable and checksummed.
+- [ ] Legacy platform archive status is `RAILWAY_DECOMMISSIONED_ARCHIVED` and
+  the verified archive manifest is linked.
+- [ ] The legacy platform is decommissioned and cannot receive traffic or writes.
+- [ ] The archival legacy backup and current Selectel backup are readable,
+  checksummed, and separately restore-tested.
 - [ ] Test PostgreSQL security matrix has zero failures.
 - [ ] Production-copy security matrix has zero failures.
 - [ ] Migration rehearsal and post-migration verification pass.
@@ -52,8 +54,8 @@ must have linked evidence and explicit owner approval in a separate task.
 
 ## Explicit prohibitions
 
-- Do not run this checklist from a Railway database URL.
-- Do not delete Railway services/data as part of cutover.
+- Do not run this checklist from a decommissioned legacy database URL.
+- Do not use the archival legacy backup as a production, migration, or rollback target.
 - Do not change DNS, webhooks, Telegram sessions, payment callbacks, or provider
   credentials without their own reviewed step.
 - Do not create production Branch 2 before all post-migration gates pass.

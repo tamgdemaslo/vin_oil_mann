@@ -11,10 +11,11 @@ Production deployment of the Eco Platform is allowed only on Selectel.
   [`deploy/selectel/README.md`](deploy/selectel/README.md).
 - Production migrations must be refused when the configured database URL points
   to Railway. Never use a Railway database as a fallback.
-- Railway may only be accessed for the documented, read-only migration audit,
-  backup, and controlled decommissioning procedure. It is not a production
-  platform.
+- Railway is decommissioned and may not be accessed by application,
+  deployment, migration, worker or fallback code. Its verified offline archive
+  is evidence only; it is not a runtime or rollback target.
 
-Current audit status (2026-07-25): the Railway-to-Selectel migration is **not
-verified**. Do not delete or alter Railway data, services, DNS, or secrets until
-the blockers in `docs/railway-selectel-audit-2026-07-25.md` are resolved.
+Current archive status (2026-08-02): **`RAILWAY_DECOMMISSIONED_ARCHIVED`**.
+Selectel `vin_oil` is canonical. All legacy-only/shared differences are
+`ARCHIVE_ONLY_DO_NOT_IMPORT`; see
+`docs/reconciliation/railway-decommission-archive-manifest-2026-08-02.json`.

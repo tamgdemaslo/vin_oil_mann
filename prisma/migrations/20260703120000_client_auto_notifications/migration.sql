@@ -122,11 +122,3 @@ CREATE INDEX IF NOT EXISTS notification_logs_diagnostic_idx
   ON notification_logs(diagnostic_report_id);
 CREATE INDEX IF NOT EXISTS client_notification_preferences_org_idx
   ON client_notification_preferences(organization_id, telegram_enabled, consent_status);
-
-ALTER TABLE IF EXISTS messenger_messages
-  ALTER COLUMN created_at SET DEFAULT now(),
-  ALTER COLUMN updated_at SET DEFAULT now();
-
-UPDATE messenger_messages
-SET updated_at = COALESCE(updated_at, created_at, now())
-WHERE updated_at IS NULL;

@@ -6,5 +6,6 @@
 
 www.tamgdemaslocrm.ru {
     header Alt-Svc "clear"
-    reverse_proxy 127.0.0.1:3000
+    # deploy-image.sh atomically replaces this one-line file and reloads Caddy.
+    import /opt/vin-oil-mann/.deploy/caddy-upstream.caddy
 }

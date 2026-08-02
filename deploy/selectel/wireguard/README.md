@@ -32,38 +32,46 @@ connection.
    the application from falling back to the server's public IP if the tunnel
    goes down.
 
-## Start and verify
+## Publish, start and verify
 
-Run the production stack with both compose files:
+Build the proxy image in CI or another non-production runner, push it to
+Selectel Container Registry, and place its immutable digest in
+`.deploy/config.env` as `WIREGUARD_PROXY_IMAGE`. Never build this image on the
+production server.
+
+Start the proxy once with both compose files. The ordinary application deploy
+script subsequently starts only the inactive application slot with `--no-deps`:
 
 ```bash
-docker compose --env-file .env.production \
+docker compose --env-file .env.production --env-file .deploy/config.env \
   -f docker-compose.selectel.yml \
-  -f docker-compose.selectel.wireguard.yml up -d --build --remove-orphans
+  -f docker-compose.selectel.wireguard.yml up -d wireguard-proxy
 
-docker compose --env-file .env.production \
+docker compose --env-file .env.production --env-file .deploy/config.env \
   -f docker-compose.selectel.yml \
-  -f docker-compose.selectel.wireguard.yml exec wireguard wg show
+  -f docker-compose.selectel.wireguard.yml exec wireguard-proxy \
+  wget -qO- http://127.0.0.1:9090
 ```
 
 `wg show` must display a recent `latest handshake` and transfer counters. Check
 the public egress address from the OpenAI proxy without printing secrets:
 
 ```bash
-docker compose --env-file .env.production \
+docker compose --env-file .env.production --env-file .deploy/config.env \
   -f docker-compose.selectel.yml \
   -f docker-compose.selectel.wireguard.yml exec wireguard-proxy \
   wget -qO- -e use_proxy=yes -e http_proxy=http://127.0.0.1:8888 https://api.ipify.org
 ```
 
 The returned IP should be the VPN exit address, not the Selectel server IP. The
-same check from `app` without the proxy should show the Selectel address.
+same check from the active `app_blue` or `app_green` container without the
+proxy should show the Selectel address.
 
-The GitHub Actions deployment detects `wg0.conf` and automatically switches to
-the WireGuard overlay. Until that private file exists, it continues to deploy
-the base stack without VPN.
+The server-side digest deployment detects `wg0.conf` and applies the overlay to
+both blue/green slots. Until that private file exists, it uses the base stack.
 
 ## Rollback
 
-Stop the VPN overlay by deploying the base file alone. The WireGuard config is
-left on the server and remains excluded from source synchronisation.
+Rollback the application slot normally; both slots reference the same pinned
+proxy digest. Disabling the proxy is a separate reviewed configuration change.
+The WireGuard config stays on the server and remains excluded from Git.

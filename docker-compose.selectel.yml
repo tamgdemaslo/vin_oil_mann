@@ -1,3 +1,22 @@
+x-app-common: &app-common
+  restart: unless-stopped
+  env_file: .env.production
+  depends_on:
+    postgres:
+      condition: service_healthy
+  volumes:
+    - app_data:/app/.data
+  healthcheck:
+    test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:3000/api/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 20s
+
 services:
   postgres:
     image: postgres:18-bookworm
@@ -11,20 +30,48 @@ services:
       timeout: 5s
       retries: 10
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+  app_blue:
+    <<: *app-common
+    image: "${APP_BLUE_IMAGE:-eco-platform-unconfigured}"
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      APP_DEPLOYMENT_SLOT: blue
+      APP_RELEASE: "${APP_BLUE_RELEASE:-unknown}"
+      APP_COMMIT_SHA: "${APP_BLUE_COMMIT_SHA:-unknown}"
+      APP_IMAGE_DIGEST: "${APP_BLUE_IMAGE_DIGEST:-unknown}"
+      APP_BUILT_AT: "${APP_BLUE_BUILT_AT:-unknown}"
+      APP_EXPECTED_MIGRATION: "${APP_BLUE_EXPECTED_MIGRATION:-unknown}"
+      APP_DATA_DIR: /app/.data
+    labels:
+      ru.tamgdemaslo.deployment-slot: blue
+
+  app_green:
+    <<: *app-common
+    image: "${APP_GREEN_IMAGE:-eco-platform-unconfigured}"
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      APP_DEPLOYMENT_SLOT: green
+      APP_RELEASE: "${APP_GREEN_RELEASE:-unknown}"
+      APP_COMMIT_SHA: "${APP_GREEN_COMMIT_SHA:-unknown}"
+      APP_IMAGE_DIGEST: "${APP_GREEN_IMAGE_DIGEST:-unknown}"
+      APP_BUILT_AT: "${APP_GREEN_BUILT_AT:-unknown}"
+      APP_EXPECTED_MIGRATION: "${APP_GREEN_EXPECTED_MIGRATION:-unknown}"
+      APP_DATA_DIR: /app/.data
+    labels:
+      ru.tamgdemaslo.deployment-slot: green
+
+  migration:
+    image: "${MIGRATION_IMAGE:-eco-platform-migration-unconfigured}"
+    profiles: ["migration"]
     env_file: .env.production
+    environment:
+      PRODUCTION_MIGRATION_APPROVED: "${PRODUCTION_MIGRATION_APPROVED:-NO}"
+      SELECTEL_DATABASE_HOSTS: "${SELECTEL_DATABASE_HOSTS:-postgres}"
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:3000:3000"
-    volumes:
-      - app_data:/app/.data
-    command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
 
 volumes:
   postgres_data:

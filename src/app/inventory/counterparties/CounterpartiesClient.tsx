@@ -16,6 +16,7 @@ import {
   Eye,
   FileText,
   Loader2,
+  PackageOpen,
   Phone,
   Plus,
   Send,
@@ -35,6 +36,11 @@ type CounterpartyRow = {
   moyskladId?: string | null;
   source?: "local" | "snapshot" | "supplier" | string;
   name: string;
+  displayName: string;
+  fullName: string;
+  category: "INDIVIDUAL" | "SUPPLIER";
+  legalForm: "LEGAL_ENTITY" | "SOLE_PROPRIETOR" | "OTHER" | "";
+  status: string;
   phone: string;
   additionalPhone: string;
   email: string;
@@ -45,6 +51,9 @@ type CounterpartyRow = {
   legalFirstName: string;
   legalMiddleName: string;
   legalAddress: string;
+  actualAddress: string;
+  contactPerson: string;
+  contactPhone: string;
   inn: string;
   kpp: string;
   okpo: string;
@@ -80,10 +89,14 @@ type CounterpartyRow = {
     applicable: boolean;
   }>;
   vehicleCount: number;
+  supplierProductCount: number;
 };
 
 type CounterpartyForm = {
+  category: "INDIVIDUAL" | "SUPPLIER";
+  legalForm: "LEGAL_ENTITY" | "SOLE_PROPRIETOR" | "OTHER";
   name: string;
+  fullName: string;
   phone: string;
   additionalPhone: string;
   email: string;
@@ -94,6 +107,9 @@ type CounterpartyForm = {
   legalFirstName: string;
   legalMiddleName: string;
   legalAddress: string;
+  actualAddress: string;
+  contactPerson: string;
+  contactPhone: string;
   inn: string;
   kpp: string;
   okpo: string;
@@ -156,12 +172,15 @@ type TelegramLinkState = {
 };
 
 type PresenceFilter = "all" | "with" | "without";
-type ClientTypeFilter = "all" | "individual" | "company";
+type ClientTypeFilter = "all" | "individual" | "supplier";
 type StatusFilter = "active" | "archive" | "all";
 type SortKey = "name" | "createdAt" | "updatedAt" | "lastDemand";
 
 const emptyForm: CounterpartyForm = {
+  category: "INDIVIDUAL",
+  legalForm: "LEGAL_ENTITY",
   name: "",
+  fullName: "",
   phone: "",
   additionalPhone: "",
   email: "",
@@ -172,6 +191,9 @@ const emptyForm: CounterpartyForm = {
   legalFirstName: "",
   legalMiddleName: "",
   legalAddress: "",
+  actualAddress: "",
+  contactPerson: "",
+  contactPhone: "",
   inn: "",
   kpp: "",
   okpo: "",
@@ -219,6 +241,16 @@ const legalFields: Array<{ key: keyof CounterpartyForm; label: string; type?: "d
   { key: "certificateDate", label: "Дата свидетельства", type: "date" },
 ];
 
+const supplierFields: Array<{ key: keyof CounterpartyForm; label: string; type?: "textarea" }> = [
+  { key: "fullName", label: "Полное название" },
+  { key: "legalTitle", label: "Юридическое название" },
+  { key: "inn", label: "ИНН" },
+  { key: "kpp", label: "КПП" },
+  { key: "ogrn", label: "ОГРН / ОГРНИП" },
+  { key: "legalAddress", label: "Юридический адрес", type: "textarea" },
+  { key: "actualAddress", label: "Фактический адрес", type: "textarea" },
+];
+
 async function readJson<T>(res: Response): Promise<T | null> {
   try {
     return (await res.json()) as T;
@@ -229,7 +261,10 @@ async function readJson<T>(res: Response): Promise<T | null> {
 
 function formFromCounterparty(row: CounterpartyRow): CounterpartyForm {
   return {
+    category: row.category ?? "INDIVIDUAL",
+    legalForm: row.legalForm || "LEGAL_ENTITY",
     name: row.name,
+    fullName: row.fullName,
     phone: row.phone,
     additionalPhone: row.additionalPhone,
     email: row.email,
@@ -240,6 +275,9 @@ function formFromCounterparty(row: CounterpartyRow): CounterpartyForm {
     legalFirstName: row.legalFirstName,
     legalMiddleName: row.legalMiddleName,
     legalAddress: row.legalAddress,
+    actualAddress: row.actualAddress,
+    contactPerson: row.contactPerson,
+    contactPhone: row.contactPhone,
     inn: row.inn,
     kpp: row.kpp,
     okpo: row.okpo,
@@ -438,7 +476,7 @@ function getRowStatus(row: CounterpartyRow) {
 
 function typeLabelForFilter(value: ClientTypeFilter) {
   if (value === "individual") return "Физлица";
-  if (value === "company") return "Компании";
+  if (value === "supplier") return "Поставщики";
   return "Все";
 }
 
@@ -720,14 +758,14 @@ export default function CounterpartiesClient() {
       <div className="eco-page-crumbs">
         <Link href="/crm">CRM</Link>
         <span className="sep">/</span>
-        <span className="cur">Клиенты</span>
+        <span className="cur">Контрагенты</span>
       </div>
 
       <header className="eco-page-head eco-clients-head">
         <div>
-          <div className="eco-page-kicker">Локальная база клиентов</div>
-          <h1 className="eco-page-title">Клиенты</h1>
-          <p className="eco-page-subtitle">Физлица, компании и контрагенты, используемые в отгрузках и CRM.</p>
+          <div className="eco-page-kicker">Справочник текущего филиала</div>
+          <h1 className="eco-page-title">Контрагенты</h1>
+          <p className="eco-page-subtitle">Физлица и поставщики текущего филиала для отгрузок, CRM и каталога.</p>
         </div>
         <div className="eco-page-actions">
           <Link href="/crm" className="eco-btn">
@@ -736,15 +774,15 @@ export default function CounterpartiesClient() {
           </Link>
           <EcoButton type="button" variant="primary" onClick={openCreate}>
             <UserPlus aria-hidden className="eco-icon" />
-            Новый клиент
+            Создать контрагента
           </EcoButton>
         </div>
       </header>
 
       <section className="eco-grid eco-grid--kpi eco-clients-metrics" aria-label="Сводка клиентов">
-        <EcoKpi label="Всего клиентов" value={stats.total.toLocaleString("ru-RU")} sub={`${stats.active.toLocaleString("ru-RU")} активных`} tone="rust" />
+        <EcoKpi label="Всего контрагентов" value={stats.total.toLocaleString("ru-RU")} sub={`${stats.active.toLocaleString("ru-RU")} активных`} tone="rust" />
         <EcoKpi label="Физлица" value={stats.individuals.toLocaleString("ru-RU")} sub={typeLabelForFilter(type)} tone="info" />
-        <EcoKpi label="Компании" value={stats.companies.toLocaleString("ru-RU")} sub="Юрлица, ИП и поставщики" tone="success" />
+        <EcoKpi label="Поставщики" value={stats.companies.toLocaleString("ru-RU")} sub="Организации и ИП" tone="success" />
         <EcoKpi label="В архиве" value={stats.archived.toLocaleString("ru-RU")} sub={`${stats.noPhone.toLocaleString("ru-RU")} без телефона`} tone="warning" />
       </section>
 
@@ -790,7 +828,7 @@ export default function CounterpartiesClient() {
               >
                 <option value="all">Все</option>
                 <option value="individual">Физлица</option>
-                <option value="company">Компании</option>
+                <option value="supplier">Поставщики</option>
               </EcoSelect>
             </label>
             <label className="eco-select-chip">
@@ -952,11 +990,11 @@ export default function CounterpartiesClient() {
                         aria-label="Выбрать всех на странице"
                       />
                     </th>
-                    <th>Клиент</th>
+                    <th>Контрагент</th>
                     <th>Телефон</th>
                     <th>Тип</th>
                     <th className="eco-clients-optional-col">Реквизиты</th>
-                    <th>Авто</th>
+                    <th>Авто / товары</th>
                     <th>Отгрузки</th>
                     <th>Активность</th>
                     <th>Статус</th>
@@ -971,7 +1009,7 @@ export default function CounterpartiesClient() {
                         const reqs = requisitesSummary(row);
                         const vehicle = vehicleDisplay(row);
                         const name = displayName(row);
-                        const phone = row.phone || row.additionalPhone;
+                        const phone = row.contactPhone || row.phone || row.additionalPhone;
                         return (
                           <tr key={row.id} onClick={() => setDetailRow(row)} className="eco-clients-row">
                             <td className="eco-clients-check-cell" onClick={(event) => event.stopPropagation()}>
@@ -993,7 +1031,7 @@ export default function CounterpartiesClient() {
                             <td className="eco-clients-name-cell">
                               <div className="eco-clients-name-layout">
                                 <span className="eco-client-avatar" aria-hidden>
-                                  {row.companyType === "individual" ? <UserRound className="eco-icon" /> : <Building2 className="eco-icon" />}
+                                  {row.category === "INDIVIDUAL" ? <UserRound className="eco-icon" /> : <Building2 className="eco-icon" />}
                                 </span>
                                 <span>
                                   <strong title={name}>{name}</strong>
@@ -1014,14 +1052,16 @@ export default function CounterpartiesClient() {
                               {row.email && <em>{row.email}</em>}
                             </td>
                             <td>
-                              <EcoBadge tone={companyTypeTone(row.companyType)}>{companyTypeLabel(row.companyType)}</EcoBadge>
+                              <EcoBadge tone={companyTypeTone(row.companyType)}>{row.category === "SUPPLIER" ? "Поставщик" : "Физическое лицо"}</EcoBadge>
                             </td>
                             <td className="eco-clients-requisites-cell eco-clients-optional-col">
                               {reqs ? <strong title={reqs}>{reqs}</strong> : <span className="eco-muted-value">нет реквизитов</span>}
                               {row.bankName && <em>{row.bankName}</em>}
                             </td>
                             <td className="eco-clients-vehicle-cell">
-                              {vehicle.primary ? (
+                              {row.category === "SUPPLIER" ? (
+                                <><strong>{row.supplierProductCount}</strong><em>связанных товаров</em></>
+                              ) : vehicle.primary ? (
                                 <>
                                   <strong title={vehicle.title}>{vehicle.primary}</strong>
                                   {vehicle.secondary && <em title={vehicle.title}>{vehicle.secondary}</em>}
@@ -1108,9 +1148,9 @@ export default function CounterpartiesClient() {
                           <EcoBadge tone={statusInfo.tone}>{statusInfo.label}</EcoBadge>
                         </div>
                         <div className="eco-client-mobile-card__meta">
-                          <span>{row.phone || row.additionalPhone ? formatPhone(row.phone || row.additionalPhone) : "телефон не указан"}</span>
-                          <span>{companyTypeLabel(row.companyType)}</span>
-                          <span>{vehicle || "авто не привязано"}</span>
+                          <span>{row.contactPhone || row.phone || row.additionalPhone ? formatPhone(row.contactPhone || row.phone || row.additionalPhone) : "телефон не указан"}</span>
+                          <span>{row.category === "SUPPLIER" ? "Поставщик" : "Физическое лицо"}</span>
+                          <span>{row.category === "SUPPLIER" ? `${row.supplierProductCount} связанных товаров` : vehicle || "авто не привязано"}</span>
                           <span>{row.demandCount} отгрузок</span>
                         </div>
                         <div className="eco-client-mobile-card__actions" onClick={(event) => event.stopPropagation()}>
@@ -1285,7 +1325,7 @@ function ClientDrawer({
       <aside className="eco-client-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="eco-client-drawer__header">
           <div>
-            <span className="eco-page-kicker">Карточка клиента</span>
+            <span className="eco-page-kicker">{row.category === "SUPPLIER" ? "Карточка поставщика" : "Карточка клиента"}</span>
             <h2>{displayName(row)}</h2>
             <div className="eco-client-drawer__badges">
               <EcoBadge tone={companyTypeTone(row.companyType)}>{companyTypeLabel(row.companyType)}</EcoBadge>
@@ -1298,10 +1338,10 @@ function ClientDrawer({
         </header>
 
         <div className="eco-client-drawer__actions">
-          <Link href={newShipmentHref(row)} className="eco-btn eco-btn--primary">
+          {row.category === "INDIVIDUAL" ? <Link href={newShipmentHref(row)} className="eco-btn eco-btn--primary">
             <Truck aria-hidden className="eco-icon" />
             Создать отгрузку
-          </Link>
+          </Link> : null}
           <EcoButton type="button" onClick={onEdit}>
             <Edit3 aria-hidden className="eco-icon" />
             Редактировать
@@ -1314,8 +1354,9 @@ function ClientDrawer({
 
         <div className="eco-client-drawer__body">
           <InfoBlock title="Контакты" icon={<Phone aria-hidden className="eco-icon" />}>
-            <InfoLine label="Основной телефон" value={row.phone ? formatPhone(row.phone) : "не указан"} muted={!row.phone} />
+            <InfoLine label={row.category === "SUPPLIER" ? "Контактный телефон" : "Основной телефон"} value={row.contactPhone || row.phone ? formatPhone(row.contactPhone || row.phone) : "не указан"} muted={!row.contactPhone && !row.phone} />
             <InfoLine label="Доп. телефон" value={row.additionalPhone ? formatPhone(row.additionalPhone) : "не указан"} muted={!row.additionalPhone} />
+            {row.category === "SUPPLIER" ? <InfoLine label="Контактное лицо" value={row.contactPerson || "не указано"} muted={!row.contactPerson} /> : null}
             <InfoLine label="Email" value={row.email || "не указан"} muted={!row.email} />
             <div className="eco-client-contact-actions">
               <ContactActionButton
@@ -1356,13 +1397,15 @@ function ClientDrawer({
             {telegram.error && <p className="eco-client-telegram-error">{telegram.error}</p>}
           </InfoBlock>
 
-          <InfoBlock title="Автомобили" icon={<Car aria-hidden className="eco-icon" />}>
+          {row.category === "INDIVIDUAL" ? <InfoBlock title="Автомобили" icon={<Car aria-hidden className="eco-icon" />}>
             <InfoLine label="Связано авто" value={vehicle || "нет привязанных авто"} muted={!vehicle} />
             <InfoLine label="Госномер" value={row.vehiclePlate || "не указан"} muted={!row.vehiclePlate} />
             <InfoLine label="VIN" value={row.vehicleVin || "не указан"} muted={!row.vehicleVin} mono />
-          </InfoBlock>
+          </InfoBlock> : <InfoBlock title="Связанные товары" icon={<PackageOpen aria-hidden className="eco-icon" />}>
+            <InfoLine label="Товаров с этим поставщиком" value={String(row.supplierProductCount)} />
+          </InfoBlock>}
 
-          <InfoBlock title="Отгрузки" icon={<Truck aria-hidden className="eco-icon" />} className="eco-client-shipments-block">
+          {row.category === "INDIVIDUAL" ? <InfoBlock title="Отгрузки" icon={<Truck aria-hidden className="eco-icon" />} className="eco-client-shipments-block">
             <div className="eco-client-shipments-summary">
               <InfoLine label="Всего отгрузок" value={String(row.demandCount)} />
               <Link href={allClientShipmentsHref(row)} className="eco-client-shipments-all">
@@ -1385,13 +1428,13 @@ function ClientDrawer({
             ) : (
               <p className="eco-muted-value">История отгрузок пока не найдена.</p>
             )}
-          </InfoBlock>
+          </InfoBlock> : null}
 
           <InfoBlock title="Реквизиты" icon={<FileText aria-hidden className="eco-icon" />}>
             <InfoLine label="Юр. название" value={row.legalTitle || "не указано"} muted={!row.legalTitle} />
             <InfoLine label="ИНН / КПП" value={[row.inn ? `ИНН ${row.inn}` : "", row.kpp ? `КПП ${row.kpp}` : ""].filter(Boolean).join(" · ") || "нет реквизитов"} muted={!row.inn && !row.kpp} mono />
             <InfoLine label="Банк" value={row.bankName || "не указан"} muted={!row.bankName} />
-            <InfoLine label="Адрес" value={row.legalAddress || "не указан"} muted={!row.legalAddress} />
+            <InfoLine label="Адрес" value={row.actualAddress || row.legalAddress || "не указан"} muted={!row.actualAddress && !row.legalAddress} />
           </InfoBlock>
 
           <InfoBlock title="Комментарии" icon={<FileText aria-hidden className="eco-icon" />}>
@@ -1447,8 +1490,8 @@ function FormDrawer({
         <header className="eco-client-drawer__header">
           <div>
             <span className="eco-page-kicker">{mode === "edit" ? "Редактирование" : "Создание"}</span>
-            <h2>{mode === "edit" ? "Редактировать клиента" : "Новый клиент"}</h2>
-            <p>Контакт, реквизиты и базовые данные для отгрузок.</p>
+            <h2>{mode === "edit" ? "Редактировать контрагента" : "Новый контрагент"}</h2>
+            <p>Контактные данные для клиентов или реквизиты поставщика.</p>
           </div>
           <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть форму">
             <X aria-hidden className="eco-icon" />
@@ -1458,32 +1501,45 @@ function FormDrawer({
         <form id="counterparty-form" className="eco-client-form" onSubmit={onSubmit}>
           <section className="eco-client-form-section">
             <h3>Основное</h3>
-            <div className="eco-client-type-seg eco-seg" aria-label="Тип клиента">
+            <div className="eco-client-type-seg eco-seg" aria-label="Категория контрагента">
               {[
-                ["individual", "Физлицо"],
-                ["legal", "Компания"],
-                ["entrepreneur", "ИП"],
+                ["INDIVIDUAL", "Физическое лицо"],
+                ["SUPPLIER", "Поставщик"],
               ].map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
-                  className={`eco-seg-btn ${form.companyType === value ? "is-active" : ""}`}
-                  onClick={() => onChange({ companyType: value })}
+                  className={`eco-seg-btn ${form.category === value ? "is-active" : ""}`}
+                  onClick={() => onChange({
+                    category: value as CounterpartyForm["category"],
+                    companyType: value === "SUPPLIER" ? "supplier" : "individual",
+                  })}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div className="eco-client-form-grid">
-              <ClientField label="Имя или название *" value={form.name} onChange={(value) => onChange({ name: value })} autoFocus />
-              <ClientField label="Телефон" value={form.phone} onChange={(value) => onChange({ phone: value })} />
-              <ClientField label="Дополнительный телефон" value={form.additionalPhone} onChange={(value) => onChange({ additionalPhone: value })} />
-              <ClientField label="Email" value={form.email} onChange={(value) => onChange({ email: value })} type="email" />
-              <ClientField label="Комментарий" value={form.comment} onChange={(value) => onChange({ comment: value })} textarea full />
-            </div>
+            {form.category === "INDIVIDUAL" ? (
+              <div className="eco-client-form-grid">
+                <ClientField label="ФИО *" value={form.name} onChange={(value) => onChange({ name: value })} autoFocus />
+                <ClientField label="Телефон" value={form.phone} onChange={(value) => onChange({ phone: value })} />
+                <ClientField label="Дополнительный телефон" value={form.additionalPhone} onChange={(value) => onChange({ additionalPhone: value })} />
+                <ClientField label="Email" value={form.email} onChange={(value) => onChange({ email: value })} type="email" />
+                <ClientField label="Комментарий" value={form.comment} onChange={(value) => onChange({ comment: value })} textarea full />
+              </div>
+            ) : (
+              <div className="eco-client-form-grid">
+                <ClientField label="Название организации / ИП *" value={form.name} onChange={(value) => onChange({ name: value })} autoFocus />
+                <label className="eco-client-field"><span>Юридическая форма</span><EcoSelect value={form.legalForm} onChange={(event) => onChange({ legalForm: event.target.value as CounterpartyForm["legalForm"] })}><option value="LEGAL_ENTITY">ООО / АО / юрлицо</option><option value="SOLE_PROPRIETOR">ИП</option><option value="OTHER">Другое</option></EcoSelect></label>
+                <ClientField label="Контактное лицо" value={form.contactPerson} onChange={(value) => onChange({ contactPerson: value })} />
+                <ClientField label="Телефон" value={form.contactPhone} onChange={(value) => onChange({ contactPhone: value, phone: form.phone || value })} />
+                <ClientField label="Email" value={form.email} onChange={(value) => onChange({ email: value })} type="email" />
+                <ClientField label="Комментарий" value={form.comment} onChange={(value) => onChange({ comment: value })} textarea full />
+              </div>
+            )}
           </section>
 
-          <section className="eco-client-form-section">
+          {form.category === "INDIVIDUAL" ? <section className="eco-client-form-section">
             <h3>Автомобиль</h3>
             <div className="eco-client-form-grid">
               <ClientField label="Госномер" value={form.vehiclePlate} onChange={(value) => onChange({ vehiclePlate: value })} />
@@ -1491,13 +1547,21 @@ function FormDrawer({
               <ClientField label="Модель" value={form.vehicleModel} onChange={(value) => onChange({ vehicleModel: value })} />
               <ClientField label="Год" value={form.vehicleYear} onChange={(value) => onChange({ vehicleYear: value })} />
             </div>
-          </section>
+          </section> : null}
 
           <section className="eco-client-form-section">
-            <h3>Реквизиты</h3>
+            <h3>{form.category === "SUPPLIER" ? "Реквизиты поставщика" : "Реквизиты"}</h3>
             <div className="eco-client-form-grid">
-              <ClientField label="Тип контрагента" value={form.counterpartyTypeName} onChange={(value) => onChange({ counterpartyTypeName: value })} full />
-              {legalFields.map((field) => (
+              {form.category === "SUPPLIER" ? supplierFields.map((field) => (
+                <ClientField
+                  key={field.key}
+                  label={field.label}
+                  value={form[field.key]}
+                  onChange={(value) => onChange({ [field.key]: value } as Partial<CounterpartyForm>)}
+                  textarea={field.type === "textarea"}
+                  full={field.type === "textarea"}
+                />
+              )) : legalFields.map((field) => (
                 <ClientField
                   key={field.key}
                   label={field.label}
@@ -1517,7 +1581,7 @@ function FormDrawer({
           <div>
             <EcoButton type="submit" form="counterparty-form" variant="primary" disabled={saving || !form.name.trim()}>
               {saving && <Loader2 aria-hidden className="eco-icon eco-spin" />}
-              {mode === "edit" ? "Сохранить" : "Создать клиента"}
+              {mode === "edit" ? "Сохранить" : "Создать контрагента"}
             </EcoButton>
             <EcoButton type="button" variant="ghost" onClick={onClose}>Отмена</EcoButton>
           </div>

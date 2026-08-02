@@ -1,6 +1,6 @@
 {
   "dryRunVersion": 1,
-  "status": "PASS",
+  "status": "SUPERSEDED_BY_ARCHIVE_POLICY",
   "productionMutationAttempted": false,
   "sourceDatabase": "reconciliation_railway",
   "targetDatabase": "reconciliation_selectel",
@@ -25,13 +25,16 @@
   "summary": {
     "plannedInserts": 234,
     "mappings": 32,
-    "skips": 223,
-    "recreations": 10,
+    "skips": 243,
+    "recreations": 0,
     "recomputations": 0,
-    "manualReview": 10,
+    "manualReview": 0,
     "rejected": 0,
     "conflicts": 0
   },
   "errors": [],
-  "warnings": []
+  "warnings": [],
+  "previousStatus": "PASS",
+  "supersededAt": "2026-08-02T17:33:46.313Z",
+  "supersededBy": "ARCHIVE_ONLY_DO_NOT_IMPORT"
 }

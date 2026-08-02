@@ -19,7 +19,8 @@ Rollback объявляет migration owner при любом из услови�
 1. Включить maintenance/read-only на web.
 2. Остановить cron, messenger media worker и все queue consumers.
 3. Убедиться, что active jobs/transactions завершились; не убивать PostgreSQL вслепую.
-4. Не менять DNS, Telegram webhook, T-Bank callback или Railway.
+4. Не менять DNS, Telegram webhook или T-Bank callback. Декомиссионированная
+   legacy-платформа не является rollback target.
 
 Команды зависят от текущего Selectel compose/release и выполняются только в утверждённом окне. Перед каждой командой оператор фиксирует точное имя сервиса; wildcard и массовое удаление запрещены.
 
@@ -57,7 +58,10 @@ Workers включаются по одному только после успе�
 
 ## Cleanup rehearsal
 
-Cleanup разрешён после сохранения протокола, checksum и timings. Сначала read-only проверить точное имя/host; затем отдельным одобренным действием удалить **только** rehearsal database. Production, Railway, backup artifact и действующий rollback target не удалять.
+Cleanup разрешён после сохранения протокола, checksum и timings. Сначала
+read-only проверить точное имя/host; затем отдельным одобренным действием
+удалить **только** rehearsal database. Production, offline archive и
+действующий Selectel rollback target не удалять.
 
 ## Протокол времени
 

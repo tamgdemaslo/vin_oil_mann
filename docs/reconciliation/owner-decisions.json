@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedAt": "2026-07-31T19:55:19Z",
-  "status": "PARTIALLY_APPROVED",
+  "status": "CLOSED_ARCHIVE_ONLY_DO_NOT_IMPORT",
   "decisions": [
     {
       "decisionId": "DEC-001",
@@ -11,11 +11,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-002",
@@ -25,11 +29,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-003",
@@ -39,11 +47,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-004",
@@ -53,11 +65,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-005",
@@ -67,11 +83,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-006",
@@ -81,11 +101,15 @@
       "recommendedOption": "A",
       "selectedOption": "A",
       "ownerComment": null,
-      "status": "APPROVED",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
       "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": "2026-07-31T21:10:03.474Z"
+      "decidedAt": "2026-07-31T21:10:03.474Z",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-007",
@@ -93,13 +117,26 @@
       "entityType": "MESSENGER_CONNECTION",
       "maskedBusinessKey": "Telegram-подключение · телефон …3789 · 25.07 11:13",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionHistory": [
+        {
+          "selectedOption": "C",
+          "status": "NEEDS_MORE_INFO",
+          "decidedAt": "2026-07-31T21:31:08.817Z",
+          "ownerComment": null
+        }
+      ],
+      "decisionBasis": "No direct owner can be established for the Telegram connection.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-008",
@@ -107,13 +144,26 @@
       "entityType": "COMMUNICATION_IDENTITY",
       "maskedBusinessKey": "Telegram-идентификация · телефон …3789 · 25.07 11:13",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionHistory": [
+        {
+          "selectedOption": "C",
+          "status": "NEEDS_MORE_INFO",
+          "decidedAt": "2026-07-31T21:31:08.817Z",
+          "ownerComment": null
+        }
+      ],
+      "decisionBasis": "The identity has no verified business owner in Selectel.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-009",
@@ -121,13 +171,26 @@
       "entityType": "CONVERSATION_ENTITY_LINK",
       "maskedBusinessKey": "Контекст записи на обслуживание · 25.07 11:13",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionHistory": [
+        {
+          "selectedOption": "C",
+          "status": "NEEDS_MORE_INFO",
+          "decidedAt": "2026-07-31T21:31:08.817Z",
+          "ownerComment": null
+        }
+      ],
+      "decisionBasis": "The conversation-to-appointment relation cannot be mapped unambiguously.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-010",
@@ -135,13 +198,26 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 19:04:29",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionHistory": [
+        {
+          "selectedOption": "C",
+          "status": "NEEDS_MORE_INFO",
+          "decidedAt": "2026-07-31T21:31:08.817Z",
+          "ownerComment": null
+        }
+      ],
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-011",
@@ -149,13 +225,26 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 19:04:36",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionHistory": [
+        {
+          "selectedOption": "C",
+          "status": "NEEDS_MORE_INFO",
+          "decidedAt": "2026-07-31T21:31:08.817Z",
+          "ownerComment": null
+        }
+      ],
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-012",
@@ -163,13 +252,18 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 19:08:53",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-013",
@@ -177,13 +271,18 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 19:09:06",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-014",
@@ -191,13 +290,18 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 21:36:30",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-015",
@@ -205,13 +309,18 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Голосовое сообщение · 24.07 21:36:51",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-016",
@@ -219,13 +328,18 @@
       "entityType": "MESSAGE_ATTACHMENT",
       "maskedBusinessKey": "Фотография · 25.07 09:44:32",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "D",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousSelectedOption": "D",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-017",
@@ -233,13 +347,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 31.07 07:00",
       "recommendedOption": "A",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The scheduled time has passed; a late notification would be misleading.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-018",
@@ -247,13 +366,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 31.07 08:00",
       "recommendedOption": "A",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The scheduled time has passed and the original attempt had no connected client.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-019",
@@ -261,13 +385,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 06:00",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-020",
@@ -275,13 +404,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 07:00",
       "recommendedOption": "B",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
-      "requiresProductionMutation": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
+      "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-021",
@@ -289,13 +423,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 08:00",
       "recommendedOption": "B",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
-      "requiresProductionMutation": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
+      "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-022",
@@ -303,13 +442,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 09:00",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-023",
@@ -317,13 +461,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 10:00",
       "recommendedOption": "B",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
-      "requiresProductionMutation": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
+      "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-024",
@@ -331,13 +480,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 11:00",
       "recommendedOption": "B",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
-      "requiresProductionMutation": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
+      "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-025",
@@ -345,13 +499,18 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 12:00",
       "recommendedOption": "B",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
-      "requiresProductionMutation": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
+      "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     },
     {
       "decisionId": "DEC-026",
@@ -359,31 +518,33 @@
       "entityType": "APPOINTMENT_REMINDER",
       "maskedBusinessKey": "Напоминание о записи · план 01.08 14:00",
       "recommendedOption": "C",
-      "selectedOption": null,
-      "ownerComment": null,
-      "status": "PENDING",
-      "requiresManifestUpdate": true,
+      "selectedOption": "A",
+      "ownerComment": "Final choice delegated by the owner; minimal-risk no-mutation policy applied.",
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "requiresManifestUpdate": false,
       "requiresProductionMutation": false,
       "createdAt": "2026-07-31T19:55:19Z",
-      "decidedAt": null
+      "decidedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousSelectedOption": "A",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
     }
   ],
-  "updatedAt": "2026-07-31T21:10:03.474Z",
+  "updatedAt": "2026-07-31T22:04:33.354Z",
   "reviewProgress": {
     "total": 26,
-    "approved": 6,
-    "pending": 20,
+    "closedArchiveOnly": 26,
+    "pending": 0,
     "needsMoreInfo": 0,
-    "rejected": 0,
-    "approvedDecisionIds": [
+    "decisionIds": [
       "DEC-001",
       "DEC-002",
       "DEC-003",
       "DEC-004",
       "DEC-005",
-      "DEC-006"
-    ],
-    "explicitlyDeferredDecisionIds": [
+      "DEC-006",
       "DEC-007",
       "DEC-008",
       "DEC-009",
@@ -404,14 +565,10 @@
       "DEC-024",
       "DEC-025",
       "DEC-026"
-    ],
-    "deferReason": "Awaiting the next owner-review batches; no production action is permitted.",
-    "nextBatch": [
-      "DEC-007",
-      "DEC-008",
-      "DEC-009",
-      "DEC-010",
-      "DEC-011"
     ]
-  }
+  },
+  "reviewCompletedAt": "2026-07-31T22:04:33.354Z",
+  "closedAt": "2026-08-02T17:33:46.313Z",
+  "closurePolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+  "closureReason": "Owner decision dated 2026-08-02: Selectel is canonical production; Railway data is retained only in the verified offline archive."
 }

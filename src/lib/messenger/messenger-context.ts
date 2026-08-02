@@ -857,6 +857,8 @@ export async function createAndLinkClient(
     const client = await tx.localCounterparty.create({
       data: {
         name,
+        displayName: name,
+        category: "INDIVIDUAL",
         phone,
         normalizedPhone: normalizedPhone || null,
         moyskladId: null,

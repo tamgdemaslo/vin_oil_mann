@@ -71,7 +71,9 @@ type ProductInput = {
   minPriceCurrencyName?: string;
   countryName?: string;
   vatLabel?: string;
-  supplierName?: string;
+  supplierCounterpartyId?: string | null;
+  /** Legacy import-only text. Product forms must use supplierCounterpartyId. */
+  legacySupplierName?: string | null;
   weight?: number | string | null;
   volume?: number | string | null;
   modificationCode?: string;
@@ -104,6 +106,9 @@ type ProductInput = {
 
 const productWithStockInclude = {
   stockBalances: { include: { store: true }, orderBy: { store: { name: "asc" as const } } },
+  supplierCounterparty: {
+    select: { id: true, name: true, displayName: true, inn: true, legalForm: true, archived: true, status: true },
+  },
   photos: {
     select: {
       id: true,
@@ -131,7 +136,10 @@ const productListIndexSelect = {
   barcodeEan8: true,
   barcodeCode128: true,
   description: true,
-  supplierName: true,
+  legacySupplierName: true,
+  supplierCounterparty: {
+    select: { id: true, name: true, displayName: true, inn: true, legalForm: true, archived: true, status: true },
+  },
   sae: true,
   oem: true,
   acea: true,
@@ -166,7 +174,11 @@ const restockProductInclude = {
 } satisfies Prisma.LocalProductInclude;
 
 type CounterpartyInput = {
+  category?: string;
+  legalForm?: string | null;
+  allowDuplicate?: boolean;
   name?: string;
+  fullName?: string | null;
   phone?: string;
   additionalPhone?: string;
   email?: string;
@@ -177,6 +189,10 @@ type CounterpartyInput = {
   legalFirstName?: string;
   legalMiddleName?: string;
   legalAddress?: string;
+  actualAddress?: string | null;
+  contactPerson?: string | null;
+  contactPhone?: string | null;
+  bankDetailsJson?: Record<string, unknown> | null;
   inn?: string;
   kpp?: string;
   okpo?: string;
@@ -743,6 +759,7 @@ function buildProductSearchText(input: {
 }
 
 function buildCounterpartySearchText(input: {
+  fullName?: string | null;
   name?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -751,6 +768,9 @@ function buildCounterpartySearchText(input: {
   legalFirstName?: string | null;
   legalMiddleName?: string | null;
   legalAddress?: string | null;
+  actualAddress?: string | null;
+  contactPerson?: string | null;
+  contactPhone?: string | null;
   inn?: string | null;
   kpp?: string | null;
   okpo?: string | null;
@@ -768,6 +788,7 @@ function buildCounterpartySearchText(input: {
   extraSearchText?: string | null;
 }): string {
   return buildSearchText([
+    input.fullName,
     input.name,
     input.phone,
     normalizePhoneKey(input.phone),
@@ -777,6 +798,9 @@ function buildCounterpartySearchText(input: {
     input.legalFirstName,
     input.legalMiddleName,
     input.legalAddress,
+    input.actualAddress,
+    input.contactPerson,
+    input.contactPhone,
     input.inn,
     input.kpp,
     input.okpo,
@@ -817,6 +841,32 @@ function supplierSnapshotNameFromId(id: string | undefined | null) {
   }
 }
 
+function mapProductSupplier(counterparty: {
+  id: string;
+  name: string;
+  displayName: string;
+  inn: string | null;
+  legalForm: string | null;
+  archived: boolean;
+  status: string;
+} | null | undefined) {
+  if (!counterparty) return null;
+  return {
+    id: counterparty.id,
+    displayName: counterparty.displayName || counterparty.name,
+    inn: counterparty.inn ?? "",
+    legalForm: counterparty.legalForm ?? "",
+    status: counterparty.archived ? "ARCHIVED" : counterparty.status || "ACTIVE",
+  };
+}
+
+function supplierDisplayName(product: {
+  supplierCounterparty?: { name: string; displayName?: string } | null;
+  legacySupplierName?: string | null;
+}) {
+  return product.supplierCounterparty?.displayName?.trim() || product.supplierCounterparty?.name?.trim() || product.legacySupplierName?.trim() || "";
+}
+
 function mapProduct(product: ProductWithStock) {
   const stock = product.stockBalances.map((balance) => ({
     storeId: balance.storeId,
@@ -848,7 +898,9 @@ function mapProduct(product: ProductWithStock) {
     minPriceCurrencyName: product.minPriceCurrencyName ?? "",
     countryName: product.countryName ?? "",
     vatLabel: product.vatLabel ?? "",
-    supplierName: product.supplierName ?? "",
+    supplierName: supplierDisplayName(product),
+    legacySupplierName: product.legacySupplierName ?? "",
+    supplierCounterparty: mapProductSupplier(product.supplierCounterparty),
     weight: decimalToNullableNumber(product.weight),
     volume: decimalToNullableNumber(product.volume),
     modificationCode: product.modificationCode ?? "",
@@ -900,7 +952,7 @@ function mapProduct(product: ProductWithStock) {
       barcodeEan8: product.barcodeEan8,
       barcodeCode128: product.barcodeCode128,
       description: product.description,
-      supplierName: product.supplierName,
+      supplierName: supplierDisplayName(product),
       tnvedCode: product.tnvedCode,
       sae: product.sae,
       oem: product.oem,
@@ -950,7 +1002,9 @@ function mapProductSearchRow(
     barcodeEan8: product.barcodeEan8 ?? "",
     barcodeCode128: product.barcodeCode128 ?? "",
     description: product.description ?? "",
-    supplierName: product.supplierName ?? "",
+    supplierName: supplierDisplayName(product),
+    legacySupplierName: product.legacySupplierName ?? "",
+    supplierCounterparty: mapProductSupplier(product.supplierCounterparty),
     sae: product.sae ?? "",
     oem: product.oem ?? "",
     acea: product.acea ?? "",
@@ -988,7 +1042,7 @@ function mapProductSearchRow(
       barcodeEan8: product.barcodeEan8,
       barcodeCode128: product.barcodeCode128,
       description: product.description,
-      supplierName: product.supplierName,
+      supplierName: supplierDisplayName(product),
       sae: product.sae,
       oem: product.oem,
       acea: product.acea,
@@ -1032,6 +1086,8 @@ type ProductSearchRow = Pick<ProductListRow,
   | "barcodeCode128"
   | "description"
   | "supplierName"
+  | "legacySupplierName"
+  | "supplierCounterparty"
   | "sae"
   | "oem"
   | "acea"
@@ -1488,6 +1544,33 @@ async function getProductRowsForAdmin(branchId: string, includeArchived?: boolea
   return rows;
 }
 
+async function resolveProductSupplierCounterparty(
+  supplierCounterpartyId: string | null | undefined,
+  branchId: string,
+  options: { allowExistingArchivedId?: string | null } = {}
+) {
+  if (supplierCounterpartyId === undefined) return { ok: true as const, id: undefined, name: undefined };
+  const id = supplierCounterpartyId?.trim() || null;
+  if (!id) return { ok: true as const, id: null, name: "" };
+
+  const supplier = await prisma.localCounterparty.findFirst({
+    where: {
+      id,
+      branchId,
+      category: "SUPPLIER",
+      OR: [
+        { archived: false },
+        ...(options.allowExistingArchivedId === id ? [{ id }] : []),
+      ],
+    },
+    select: { id: true, name: true, displayName: true },
+  });
+  if (!supplier) {
+    return { ok: false as const, error: "Выберите активного поставщика текущего филиала" };
+  }
+  return { ok: true as const, id: supplier.id, name: supplier.displayName || supplier.name };
+}
+
 export async function getLocalAdminProduct(id: string, branchId: string) {
   const product = await prisma.localProduct.findFirst({
     where: { branchId, OR: [{ id }, { moyskladId: id }] },
@@ -1607,11 +1690,17 @@ function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterPa
 
 function mapCounterparty(counterparty: CounterpartyRow) {
   const rawExtra = counterpartyRawExtra(counterparty.raw);
+  const category = counterparty.category === "SUPPLIER" ? "SUPPLIER" : "INDIVIDUAL";
   return {
     id: counterparty.id,
     moyskladId: counterparty.moyskladId,
     source: "local" as CounterpartySource,
-    name: counterparty.name,
+    name: counterparty.displayName || counterparty.name,
+    displayName: counterparty.displayName || counterparty.name,
+    fullName: counterparty.fullName ?? "",
+    category,
+    legalForm: counterparty.legalForm ?? "",
+    status: counterparty.archived ? "ARCHIVED" : counterparty.status || "ACTIVE",
     phone: counterparty.phone ?? "",
     additionalPhone: rawExtra.additionalPhone,
     email: counterparty.email ?? "",
@@ -1622,6 +1711,10 @@ function mapCounterparty(counterparty: CounterpartyRow) {
     legalFirstName: counterparty.legalFirstName ?? "",
     legalMiddleName: counterparty.legalMiddleName ?? "",
     legalAddress: counterparty.legalAddress ?? "",
+    actualAddress: counterparty.actualAddress ?? "",
+    contactPerson: counterparty.contactPerson ?? "",
+    contactPhone: counterparty.contactPhone ?? "",
+    bankDetailsJson: counterparty.bankDetailsJson ?? null,
     inn: counterparty.inn ?? "",
     kpp: counterparty.kpp ?? "",
     okpo: counterparty.okpo ?? "",
@@ -1636,6 +1729,7 @@ function mapCounterparty(counterparty: CounterpartyRow) {
     certificateNumber: counterparty.certificateNumber ?? "",
     certificateDate: counterparty.certificateDate?.toISOString().slice(0, 10) ?? "",
     comment: rawExtra.comment,
+    supplierProductCount: 0,
     vehiclePlate: rawExtra.vehiclePlate,
     vehicleVin: rawExtra.vehicleVin,
     vehicleModel: rawExtra.vehicleModel,
@@ -1644,7 +1738,8 @@ function mapCounterparty(counterparty: CounterpartyRow) {
     createdAt: counterparty.createdAt.toISOString(),
     updatedAt: counterparty.updatedAt.toISOString(),
     searchText: buildCounterpartySearchText({
-      name: counterparty.name,
+      fullName: counterparty.fullName,
+      name: counterparty.displayName || counterparty.name,
       phone: counterparty.phone,
       email: counterparty.email,
       legalTitle: counterparty.legalTitle,
@@ -1652,6 +1747,9 @@ function mapCounterparty(counterparty: CounterpartyRow) {
       legalFirstName: counterparty.legalFirstName,
       legalMiddleName: counterparty.legalMiddleName,
       legalAddress: counterparty.legalAddress,
+      actualAddress: counterparty.actualAddress,
+      contactPerson: counterparty.contactPerson,
+      contactPhone: counterparty.contactPhone,
       inn: counterparty.inn,
       kpp: counterparty.kpp,
       okpo: counterparty.okpo,
@@ -1679,6 +1777,11 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
     moyskladId: null,
     source: "supplier",
     name,
+    displayName: name,
+    fullName: "",
+    category: "SUPPLIER",
+    legalForm: "",
+    status: "ACTIVE",
     phone: "",
     additionalPhone: "",
     email: "",
@@ -1689,6 +1792,10 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
     legalFirstName: "",
     legalMiddleName: "",
     legalAddress: "",
+    actualAddress: "",
+    contactPerson: "",
+    contactPhone: "",
+    bankDetailsJson: null,
     inn: "",
     kpp: "",
     okpo: "",
@@ -1703,6 +1810,7 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
     certificateNumber: "",
     certificateDate: "",
     comment: "",
+    supplierProductCount: 0,
     vehiclePlate: "",
     vehicleVin: "",
     vehicleModel: "",
@@ -1924,6 +2032,11 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
     moyskladId: builder.moyskladId,
     source: "snapshot",
     name: builder.name,
+    displayName: builder.name,
+    fullName: "",
+    category: "INDIVIDUAL",
+    legalForm: "",
+    status: "ACTIVE",
     phone: builder.phone,
     additionalPhone: "",
     email: "",
@@ -1934,6 +2047,10 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
     legalFirstName: "",
     legalMiddleName: "",
     legalAddress: "",
+    actualAddress: "",
+    contactPerson: "",
+    contactPhone: "",
+    bankDetailsJson: null,
     inn: "",
     kpp: "",
     okpo: "",
@@ -1948,6 +2065,7 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
     certificateNumber: "",
     certificateDate: "",
     comment: "",
+    supplierProductCount: 0,
     vehiclePlate: builder.vehiclePlate,
     vehicleVin: builder.vehicleVin,
     vehicleModel: "",
@@ -2175,7 +2293,22 @@ async function buildCounterpartyActivity(branchId: string, rows: CounterpartyLis
 }
 
 async function enrichCounterpartyRows(branchId: string, rows: CounterpartyListRow[]): Promise<CounterpartyCrmRow[]> {
-  const activityById = await buildCounterpartyActivity(branchId, rows);
+  const supplierIds = rows.filter((row) => row.category === "SUPPLIER").map((row) => row.id);
+  const [activityById, supplierProductGroups] = await Promise.all([
+    buildCounterpartyActivity(branchId, rows),
+    supplierIds.length
+      ? prisma.localProduct.groupBy({
+          by: ["supplierCounterpartyId"],
+          where: { branchId, supplierCounterpartyId: { in: supplierIds } },
+          _count: { _all: true },
+        })
+      : [],
+  ]);
+  const supplierProductCounts = new Map(
+    supplierProductGroups
+      .filter((group) => group.supplierCounterpartyId)
+      .map((group) => [group.supplierCounterpartyId!, group._count._all])
+  );
   return rows.map((row) => {
     const activity = activityById.get(row.id) ?? ({ ...emptyCounterpartyActivity(), vehicleKeys: new Set<string>(), searchParts: [] } as ActivityBuilder);
     const storedVehicleLabel = row.vehicleLabel || compactCounterpartyVehicleLabel(row);
@@ -2186,6 +2319,7 @@ async function enrichCounterpartyRows(branchId: string, rows: CounterpartyListRo
     const vehicleVin = activity.vehicleVin || row.vehicleVin;
     return {
       ...row,
+      supplierProductCount: supplierProductCounts.get(row.id) ?? row.supplierProductCount,
       demandCount: activity.demandCount,
       totalDemandSumCents: activity.totalDemandSumCents,
       lastDemandName: activity.lastDemandName,
@@ -2231,8 +2365,8 @@ function counterpartyStats(rows: CounterpartyListRow[]) {
     total: rows.length,
     active: rows.filter((row) => !row.archived).length,
     archived: rows.filter((row) => row.archived).length,
-    individuals: rows.filter((row) => row.companyType === "individual").length,
-    companies: rows.filter((row) => row.companyType !== "individual").length,
+    individuals: rows.filter((row) => row.category === "INDIVIDUAL").length,
+    companies: rows.filter((row) => row.category === "SUPPLIER").length,
     noPhone: rows.filter((row) => !row.phone && !row.additionalPhone).length,
     noRequisites: rows.filter((row) => !hasCounterpartyRequisites(row)).length,
   };
@@ -2258,7 +2392,7 @@ async function fastCounterpartyStats(branchId: string) {
     prisma.localCounterparty.count({ where: { branchId } }),
     prisma.localCounterparty.count({ where: { branchId, archived: false } }),
     prisma.localCounterparty.count({ where: { branchId, archived: true } }),
-    prisma.localCounterparty.count({ where: { branchId, companyType: "individual" } }),
+    prisma.localCounterparty.count({ where: { branchId, category: "INDIVIDUAL" } }),
     prisma.localCounterparty.count({ where: { branchId, AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
     prisma.localCounterparty.count({ where: { branchId, AND: [{ archived: false }, requisitesMissing] } }),
   ]);
@@ -2417,7 +2551,7 @@ function restockItemFromLocalProduct(
     name: product.name,
     code: product.rosskoPartNumber || product.article || product.code || product.externalCode || null,
     group: product.groupPath || null,
-    supplier: product.supplierName || product.supplierAttribute || null,
+    supplier: supplierDisplayName(product) || product.supplierAttribute || null,
     minimumBalance,
     stock,
     reserve: stockRows.reduce((sum, row) => sum + row.reserve, 0),
@@ -2570,7 +2704,10 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
   const minPriceCurrencyName = cleanText(body.minPriceCurrencyName);
   const countryName = cleanText(body.countryName);
   const vatLabel = cleanText(body.vatLabel);
-  const supplierName = cleanText(body.supplierName);
+  const supplierResult = await resolveProductSupplierCounterparty(body.supplierCounterpartyId, branchId);
+  if (!supplierResult.ok) return supplierResult;
+  const supplierCounterpartyId = supplierResult.id ?? null;
+  const legacySupplierName = cleanText(body.legacySupplierName);
   const modificationCode = cleanText(body.modificationCode);
   const tnvedCode = cleanText(body.tnvedCode);
   const sae = cleanText(body.sae);
@@ -2616,7 +2753,8 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
       minPriceCurrencyName,
       countryName,
       vatLabel,
-      supplierName,
+      legacySupplierName,
+      supplierCounterpartyId,
       weight: decimalFromInput(body.weight),
       volume: decimalFromInput(body.volume),
       modificationCode,
@@ -2657,7 +2795,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
         barcodeEan8,
         barcodeCode128,
         description,
-        supplierName,
+        supplierName: supplierResult.name ?? "",
         tnvedCode,
         sae,
         oem,
@@ -2730,7 +2868,16 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
     body.minPriceCurrencyName === undefined ? current.minPriceCurrencyName : cleanText(body.minPriceCurrencyName);
   const countryName = body.countryName === undefined ? current.countryName : cleanText(body.countryName);
   const vatLabel = body.vatLabel === undefined ? current.vatLabel : cleanText(body.vatLabel);
-  const supplierName = body.supplierName === undefined ? current.supplierName : cleanText(body.supplierName);
+  const supplierResult = await resolveProductSupplierCounterparty(
+    body.supplierCounterpartyId === undefined ? current.supplierCounterpartyId : body.supplierCounterpartyId,
+    branchId,
+    {
+    allowExistingArchivedId: current.supplierCounterpartyId,
+    }
+  );
+  if (!supplierResult.ok) return supplierResult;
+  const supplierCounterpartyId = supplierResult.id;
+  const legacySupplierName = body.legacySupplierName === undefined ? current.legacySupplierName : cleanText(body.legacySupplierName);
   const weight = body.weight === undefined ? current.weight : decimalFromInput(body.weight);
   const volume = body.volume === undefined ? current.volume : decimalFromInput(body.volume);
   const modificationCode = body.modificationCode === undefined ? current.modificationCode : cleanText(body.modificationCode);
@@ -2785,7 +2932,8 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
       minPriceCurrencyName,
       countryName,
       vatLabel,
-      supplierName,
+      legacySupplierName,
+      supplierCounterpartyId,
       weight,
       volume,
       modificationCode,
@@ -2826,7 +2974,7 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
         barcodeEan8,
         barcodeCode128,
         description,
-        supplierName,
+        supplierName: supplierResult.name ?? "",
         tnvedCode,
         sae,
         oem,
@@ -2940,7 +3088,7 @@ async function getSupplierCounterpartyRows(branchId: string, existingRows: Count
 }
 
 type CounterpartyStatusFilter = "active" | "archive" | "all";
-type CounterpartyTypeFilter = "all" | "individual" | "company";
+type CounterpartyTypeFilter = "all" | "individual" | "supplier";
 type CounterpartyPresenceFilter = "all" | "with" | "without";
 type CounterpartySortKey = "name" | "createdAt" | "updatedAt" | "lastDemand";
 
@@ -2950,7 +3098,15 @@ function normalizeCounterpartyStatus(value?: string, includeArchived?: boolean):
 }
 
 function normalizeCounterpartyType(value?: string): CounterpartyTypeFilter {
-  return value === "individual" || value === "company" ? value : "all";
+  return value === "individual" || value === "supplier" ? value : "all";
+}
+
+function normalizeCounterpartyCategory(value: unknown, fallback: "INDIVIDUAL" | "SUPPLIER" = "INDIVIDUAL") {
+  return value === "SUPPLIER" ? "SUPPLIER" : value === "INDIVIDUAL" ? "INDIVIDUAL" : fallback;
+}
+
+function normalizeSupplierLegalForm(value: unknown) {
+  return value === "LEGAL_ENTITY" || value === "SOLE_PROPRIETOR" || value === "OTHER" ? value : null;
 }
 
 function normalizePresenceFilter(value?: string): CounterpartyPresenceFilter {
@@ -3056,7 +3212,7 @@ export async function listLocalAdminCounterparties(params: {
   const where: Prisma.LocalCounterpartyWhereInput = {
     branchId: params.branchId,
     ...(status === "active" ? { archived: false } : status === "archive" ? { archived: true } : {}),
-    ...(type === "individual" ? { companyType: "individual" } : type === "company" ? { NOT: { companyType: "individual" } } : {}),
+    ...(type === "individual" ? { category: "INDIVIDUAL" } : type === "supplier" ? { category: "SUPPLIER" } : {}),
     ...(phone === "with"
       ? { AND: [{ phone: { not: null } }, { NOT: { phone: "" } }] }
       : phone === "without"
@@ -3116,19 +3272,141 @@ export async function getLocalAdminCounterparty(id: string, branchId: string) {
   return { ok: true as const, counterparty: row };
 }
 
+function normalizeSupplierDuplicateValue(value: string | null | undefined) {
+  return normalizeSearchText((value ?? "").replace(/[«»“”„‟]/g, '"').replace(/\s+/g, " ").trim());
+}
+
+function supplierSummary(counterparty: {
+  id: string;
+  name: string;
+  displayName: string;
+  inn: string | null;
+  legalForm: string | null;
+  phone: string | null;
+  contactPerson: string | null;
+  contactPhone: string | null;
+  archived: boolean;
+  status: string;
+}) {
+  return {
+    id: counterparty.id,
+    displayName: counterparty.displayName || counterparty.name,
+    inn: counterparty.inn ?? "",
+    legalForm: counterparty.legalForm ?? "",
+    phone: counterparty.contactPhone ?? counterparty.phone ?? "",
+    contactPerson: counterparty.contactPerson ?? "",
+    status: counterparty.archived ? "ARCHIVED" : counterparty.status || "ACTIVE",
+  };
+}
+
+export async function listActiveSuppliers(params: { branchId: string; search?: string; limit?: number }) {
+  const search = params.search?.trim() ?? "";
+  const limit = Math.min(100, Math.max(1, params.limit ?? 30));
+  const suppliers = await prisma.localCounterparty.findMany({
+    where: {
+      branchId: params.branchId,
+      category: "SUPPLIER",
+      archived: false,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { fullName: { contains: search, mode: "insensitive" } },
+              { inn: { contains: search, mode: "insensitive" } },
+              { contactPerson: { contains: search, mode: "insensitive" } },
+              { contactPhone: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+              { searchText: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      displayName: true,
+      inn: true,
+      legalForm: true,
+      phone: true,
+      contactPerson: true,
+      contactPhone: true,
+      archived: true,
+      status: true,
+    },
+    orderBy: [{ name: "asc" }],
+    take: limit,
+  });
+  return { suppliers: suppliers.map(supplierSummary) };
+}
+
+export async function quickCreateSupplier(body: CounterpartyInput, branchId: string) {
+  const name = body.name?.trim() ?? "";
+  if (!name) return { ok: false as const, error: "Укажите название поставщика" };
+  const inn = cleanText(body.inn);
+  const phone = cleanText(body.contactPhone) ?? cleanText(body.phone);
+  const normalizedName = normalizeSupplierDuplicateValue(name);
+  const normalizedPhone = normalizePhoneKey(phone);
+  const candidates = await prisma.localCounterparty.findMany({
+    where: { branchId, category: "SUPPLIER", archived: false },
+    select: {
+      id: true,
+      name: true,
+      displayName: true,
+      inn: true,
+      legalForm: true,
+      phone: true,
+      contactPerson: true,
+      contactPhone: true,
+      archived: true,
+      status: true,
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    take: 2_000,
+  });
+  const duplicates = candidates.filter((candidate) => {
+    const nameMatches = normalizedName && normalizeSupplierDuplicateValue(candidate.name) === normalizedName;
+    const innMatches = Boolean(inn && candidate.inn && inn === candidate.inn.trim());
+    const candidatePhone = normalizePhoneKey(candidate.contactPhone ?? candidate.phone);
+    const phoneMatches = Boolean(normalizedPhone && candidatePhone && normalizedPhone === candidatePhone);
+    return nameMatches || innMatches || phoneMatches;
+  });
+  if (duplicates.length && !body.allowDuplicate) {
+    return {
+      ok: false as const,
+      conflict: true as const,
+      error: "Похожий поставщик уже существует",
+      candidates: duplicates.map(supplierSummary),
+    };
+  }
+  return createLocalAdminCounterparty({
+    ...body,
+    category: "SUPPLIER",
+    companyType: "supplier",
+    legalTitle: body.legalTitle ?? name,
+    contactPhone: body.contactPhone ?? phone,
+  }, branchId);
+}
+
 export async function createLocalAdminCounterparty(body: CounterpartyInput, branchId: string) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
+  const category = normalizeCounterpartyCategory(body.category);
+  const legalForm = category === "SUPPLIER" ? normalizeSupplierLegalForm(body.legalForm) : null;
+  const fullName = cleanText(body.fullName);
   const phone = body.phone?.trim() || null;
   const additionalPhone = body.additionalPhone?.trim() || null;
   const email = body.email?.trim() || null;
-  const companyType = body.companyType?.trim() || "legal";
+  const companyType = category === "SUPPLIER" ? "supplier" : "individual";
   const legalTitle = body.legalTitle?.trim() || null;
-  const counterpartyTypeName = cleanText(body.counterpartyTypeName);
+  const counterpartyTypeName = cleanText(body.counterpartyTypeName) || (category === "SUPPLIER" ? "Поставщик" : "Физическое лицо");
   const legalLastName = cleanText(body.legalLastName);
   const legalFirstName = cleanText(body.legalFirstName);
   const legalMiddleName = cleanText(body.legalMiddleName);
   const legalAddress = cleanText(body.legalAddress);
+  const actualAddress = cleanText(body.actualAddress);
+  const contactPerson = cleanText(body.contactPerson);
+  const contactPhone = cleanText(body.contactPhone);
+  const bankDetailsJson = body.bankDetailsJson ? toJson(body.bankDetailsJson) : Prisma.JsonNull;
   const inn = cleanText(body.inn);
   const kpp = cleanText(body.kpp);
   const okpo = cleanText(body.okpo);
@@ -3162,6 +3440,15 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
     data: {
       branchId,
       name,
+      displayName: name,
+      category,
+      legalForm,
+      fullName,
+      actualAddress,
+      contactPerson,
+      contactPhone,
+      bankDetailsJson,
+      status: "ACTIVE",
       phone,
       email,
       normalizedPhone: normalizePhoneKey(phone),
@@ -3187,6 +3474,7 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
       certificateNumber,
       certificateDate,
       searchText: buildCounterpartySearchText({
+        fullName,
         name,
         phone,
         email,
@@ -3195,6 +3483,9 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
         legalFirstName,
         legalMiddleName,
         legalAddress,
+        actualAddress,
+        contactPerson,
+        contactPhone,
         inn,
         kpp,
         okpo,
@@ -3232,12 +3523,19 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
   if (!current) return { ok: false as const, error: "Контрагент не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
+  const category = body.category === undefined
+    ? normalizeCounterpartyCategory(current.category)
+    : normalizeCounterpartyCategory(body.category);
+  const legalForm = category === "SUPPLIER"
+    ? (body.legalForm === undefined ? current.legalForm : normalizeSupplierLegalForm(body.legalForm))
+    : null;
+  const fullName = body.fullName === undefined ? current.fullName : cleanText(body.fullName);
   const currentExtra = counterpartyRawExtra(current.raw);
   const phone = body.phone == null ? current.phone : body.phone.trim() || null;
   const additionalPhone =
     body.additionalPhone === undefined ? currentExtra.additionalPhone || null : body.additionalPhone.trim() || null;
   const email = body.email == null ? current.email : body.email.trim() || null;
-  const companyType = body.companyType == null ? current.companyType ?? "legal" : body.companyType.trim() || "legal";
+  const companyType = category === "SUPPLIER" ? "supplier" : "individual";
   const legalTitle = body.legalTitle == null ? current.legalTitle : body.legalTitle.trim() || null;
   const counterpartyTypeName =
     body.counterpartyTypeName === undefined ? current.counterpartyTypeName : cleanText(body.counterpartyTypeName);
@@ -3245,6 +3543,12 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
   const legalFirstName = body.legalFirstName === undefined ? current.legalFirstName : cleanText(body.legalFirstName);
   const legalMiddleName = body.legalMiddleName === undefined ? current.legalMiddleName : cleanText(body.legalMiddleName);
   const legalAddress = body.legalAddress === undefined ? current.legalAddress : cleanText(body.legalAddress);
+  const actualAddress = body.actualAddress === undefined ? current.actualAddress : cleanText(body.actualAddress);
+  const contactPerson = body.contactPerson === undefined ? current.contactPerson : cleanText(body.contactPerson);
+  const contactPhone = body.contactPhone === undefined ? current.contactPhone : cleanText(body.contactPhone);
+  const bankDetailsJson = body.bankDetailsJson === undefined
+    ? undefined
+    : body.bankDetailsJson == null ? Prisma.JsonNull : toJson(body.bankDetailsJson);
   const inn = body.inn === undefined ? current.inn : cleanText(body.inn);
   const kpp = body.kpp === undefined ? current.kpp : cleanText(body.kpp);
   const okpo = body.okpo === undefined ? current.okpo : cleanText(body.okpo);
@@ -3283,6 +3587,14 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
     where: { id: current.id },
     data: {
       name,
+      displayName: name,
+      category,
+      legalForm,
+      fullName,
+      actualAddress,
+      contactPerson,
+      contactPhone,
+      bankDetailsJson,
       phone,
       email,
       normalizedPhone: normalizePhoneKey(phone),
@@ -3308,7 +3620,9 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
       certificateNumber,
       certificateDate,
       archived: body.archived === undefined ? current.archived : Boolean(body.archived),
+      status: (body.archived === undefined ? current.archived : Boolean(body.archived)) ? "ARCHIVED" : "ACTIVE",
       searchText: buildCounterpartySearchText({
+        fullName,
         name,
         phone,
         email,
@@ -3317,6 +3631,9 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
         legalFirstName,
         legalMiddleName,
         legalAddress,
+        actualAddress,
+        contactPerson,
+        contactPhone,
         inn,
         kpp,
         okpo,

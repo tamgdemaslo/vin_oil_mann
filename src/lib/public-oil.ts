@@ -12,6 +12,7 @@ import {
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { createOpenAIClient } from "@/lib/openai-client";
+import { getOilRequirementsFromFluidCatalog } from "@/lib/fluid-oil-requirements";
 
 export type PublicOilCard = {
   id: string;
@@ -311,6 +312,20 @@ function paramsMap(first: CarInfoItem): Map<string, string> {
   return params;
 }
 
+function firstParameter(params: Map<string, string>, pattern: RegExp): string | undefined {
+  for (const [key, value] of params) {
+    if (pattern.test(key)) return value;
+  }
+  return undefined;
+}
+
+function cubicCentimeters(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const number = Number(value.replace(",", ".").match(/\d+(?:\.\d+)?/)?.[0]);
+  if (!Number.isFinite(number) || number <= 0) return undefined;
+  return number < 20 ? Math.round(number * 1000) : Math.round(number);
+}
+
 async function decodeVinForPublic(
   vin: string,
   vehicleOverrides?: { displacementL?: string; enginePowerPS?: number }
@@ -340,6 +355,12 @@ async function decodeVinForPublic(
 
   const make = compact(first.brand) || compact(first.make) || compact(first.manufacturer) || title.split(/\s+/)[0] || undefined;
   const model = compact(first.modelName) || compact(first.model) || title.split(/\s+/).slice(1).join(" ") || undefined;
+  const overrideVolumeCc = cubicCentimeters(vehicleOverrides?.displacementL);
+  const engineCode =
+    compact(params.get("engine code")) ||
+    compact(params.get("код двигателя")) ||
+    compact(params.get("engine_code")) ||
+    undefined;
 
   return {
     vin,
@@ -352,6 +373,9 @@ async function decodeVinForPublic(
       compact(params.get("engine code")) ||
       engineFromDescription ||
       undefined,
+    engineCode,
+    engineVolumeCc: overrideVolumeCc ?? cubicCentimeters(firstParameter(params, /engine.*(?:volume|capacity)|объ[её]м.*двигател/i)),
+    powerHp: vehicleOverrides?.enginePowerPS ?? cubicCentimeters(firstParameter(params, /power|мощност|л\.?с/i)),
     trim: compact(params.get("car_name")) || title || undefined,
     series: compact(params.get("spec_series")) || compact(params.get("series")) || undefined,
     market: compact(params.get("sales_region")) || compact(params.get("region")) || undefined,
@@ -410,18 +434,21 @@ export async function getPublicVinOilRecommendation(params: {
   let requirements: OilRequirements | null = null;
   let warning: string | undefined;
 
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  if (openaiKey && decoded && (decoded.make || decoded.model || decoded.year || (decoded.hints?.length ?? 0) > 0)) {
-    try {
-      requirements = await getOilRequirementsFromOpenAI(createOpenAIClient(openaiKey), decoded);
-    } catch (error) {
-      console.error("[public/vin-oil] oil requirements failed", error);
-      warning = "Не удалось уточнить требования масла. Проверьте VIN или повторите запрос позже.";
+  if (decoded) requirements = await getOilRequirementsFromFluidCatalog(decoded);
+  if (!requirements) {
+    const openaiKey = process.env.OPENAI_API_KEY?.trim();
+    if (openaiKey && decoded && (decoded.make || decoded.model || decoded.year || (decoded.hints?.length ?? 0) > 0)) {
+      try {
+        requirements = await getOilRequirementsFromOpenAI(createOpenAIClient(openaiKey), decoded);
+      } catch (error) {
+        console.error("[public/vin-oil] oil requirements failed", error);
+        warning = "Не удалось уточнить требования масла. Проверьте VIN или повторите запрос позже.";
+      }
+    } else if (!decoded) {
+      warning = "Не удалось распознать автомобиль по VIN.";
+    } else {
+      warning = "Не найдено однозначного требования в каталоге, а резервный подбор временно недоступен.";
     }
-  } else if (!decoded) {
-    warning = "Не удалось распознать автомобиль по VIN.";
-  } else {
-    warning = "Подбор по VIN временно недоступен: не настроен OPENAI_API_KEY.";
   }
 
   if (!hasSearchableRequirements(requirements)) {

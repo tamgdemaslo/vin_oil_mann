@@ -1,0 +1,52 @@
+name: Build Selectel WireGuard proxy image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Publish immutable proxy helper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Selectel Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: cr.selcloud.ru
+          username: ${{ secrets.SELECTEL_REGISTRY_USERNAME }}
+          password: ${{ secrets.SELECTEL_REGISTRY_PASSWORD }}
+
+      - name: Resolve repository
+        id: repository
+        env:
+          REGISTRY_NAME: ${{ vars.SELECTEL_REGISTRY_NAME }}
+        run: |
+          set -euo pipefail
+          [[ "$REGISTRY_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]
+          echo "value=cr.selcloud.ru/$REGISTRY_NAME/eco-wireguard-proxy" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/selectel/wireguard/proxy
+          push: true
+          tags: ${{ steps.repository.outputs.value }}:git-${{ github.sha }}
+          cache-from: type=gha,scope=selectel-wireguard-proxy
+          cache-to: type=gha,mode=max,scope=selectel-wireguard-proxy
+
+      - name: Publish digest to job summary
+        env:
+          REPOSITORY: ${{ steps.repository.outputs.value }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'Set `WIREGUARD_PROXY_IMAGE=%s@%s` in Selectel `.deploy/config.env`.\n' \
+            "$REPOSITORY" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

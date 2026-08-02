@@ -260,7 +260,7 @@ function demandSaveErrorMessage(response: Response, data: DemandCreateJson, fall
   const serverError = data.error?.trim();
   if (serverError) return serverError;
   const status = [response.status, response.statusText].filter(Boolean).join(" ");
-  return `${fallback}. Сервер вернул ${status || "ошибку без описания"}. Проверьте логи Railway или повторите действие.`;
+  return `${fallback}. Сервер вернул ${status || "ошибку без описания"}. Проверьте серверные логи или повторите действие.`;
 }
 
 type VinLookupItem = {
@@ -3084,6 +3084,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       : "Готово к сохранению";
   const saveDisabledReason = readinessMissing.length > 0 ? `Не хватает: ${readinessMissing.join(", ")}` : "";
   const saveDisabled = submitLoading || readinessMissing.length > 0;
+  const documentStepReady = Boolean(selectedOrg && selectedStore);
+  const finalStepReady = documentStepReady && Boolean(selectedAgent) && positions.length > 0 && overAvailablePositionsCount === 0;
   const vehicleAttributeControls = [
     {
       key: "model",
@@ -3649,6 +3651,42 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         </section>
       ) : null}
 
+      <nav className="eco-shipment-workflow-nav" aria-label="Этапы создания отгрузки">
+        <a
+          href="#shipment-parties"
+          className={selectedAgent ? "is-complete" : "is-current"}
+          aria-current={!selectedAgent ? "step" : undefined}
+        >
+          <span className="eco-shipment-workflow-index" aria-hidden>{selectedAgent ? "✓" : "1"}</span>
+          <span>
+            <strong>Клиент и автомобиль</strong>
+            <small>{selectedAgent ? clientDisplayName : "Выберите клиента"}</small>
+          </span>
+        </a>
+        <a
+          href="#shipment-positions-workspace"
+          className={positions.length > 0 ? "is-complete" : selectedAgent ? "is-current" : "is-upcoming"}
+          aria-current={selectedAgent && positions.length === 0 ? "step" : undefined}
+        >
+          <span className="eco-shipment-workflow-index" aria-hidden>{positions.length > 0 ? "✓" : "2"}</span>
+          <span>
+            <strong>Состав отгрузки</strong>
+            <small>{positions.length > 0 ? `${positions.length} позиций · ${positionsQty} ед.` : "Добавьте товары или услуги"}</small>
+          </span>
+        </a>
+        <a
+          href="#shipment-finalize"
+          className={finalStepReady ? "is-complete" : selectedAgent && positions.length > 0 ? "is-current" : "is-upcoming"}
+          aria-current={!finalStepReady && Boolean(selectedAgent) && positions.length > 0 ? "step" : undefined}
+        >
+          <span className="eco-shipment-workflow-index" aria-hidden>{finalStepReady ? "✓" : "3"}</span>
+          <span>
+            <strong>Проверка и сохранение</strong>
+            <small>{finalStepReady ? "Можно завершать" : "Проверьте документ"}</small>
+          </span>
+        </a>
+      </nav>
+
       {documentParamsOpen && (
         <div className="eco-shipment-doc-modal-backdrop" onClick={() => setDocumentParamsOpen(false)}>
           <div className="eco-shipment-doc-modal" role="dialog" aria-modal="true" aria-label="Параметры документа" onClick={(e) => e.stopPropagation()}>
@@ -3753,7 +3791,15 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
       <div className="eco-shipment-detail-layout eco-shipment-new-draft-layout">
         <div className="eco-shipment-detail-main eco-shipment-new-main">
-      <section className="eco-shipment-entity-grid" aria-label="Клиент и автомобиль">
+      <section id="shipment-parties" className="eco-shipment-workflow-section eco-shipment-workflow-section--context" aria-labelledby="shipment-parties-title">
+        <header className="eco-shipment-workflow-section-head">
+          <div>
+            <span>Шаг 1</span>
+            <h2 id="shipment-parties-title">Клиент и автомобиль</h2>
+          </div>
+          <p>Сначала выберите клиента. Данные автомобиля можно дополнить сейчас или позже.</p>
+        </header>
+        <div className="eco-shipment-entity-grid">
         <article id="shipment-client-card" className="eco-card eco-shipment-entity-card eco-shipment-client-card">
           <EntityCardHeader
             title={selectedAgent ? "Клиент" : "Выберите клиента"}
@@ -3982,12 +4028,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             </div>
           )}
         </article>
+        </div>
       </section>
 
+      <section id="shipment-positions-workspace" className="eco-shipment-workflow-section eco-shipment-workflow-section--positions" aria-labelledby="shipment-positions-title">
+        <header className="eco-shipment-workflow-section-head">
+          <div>
+            <span>Шаг 2</span>
+            <h2 id="shipment-positions-title">Состав отгрузки</h2>
+          </div>
+          <p>Найдите позиции, затем проверьте количество, скидку и доступный остаток.</p>
+        </header>
       <section id="shipment-positions-add" className="eco-card eco-card--padded eco-shipment-new-add">
         <div className="eco-card__head">
           <div>
-            <h2><PackagePlus className="eco-icon" aria-hidden /> Добавить позицию</h2>
+            <h2><PackagePlus className="eco-icon" aria-hidden /> Поиск и добавление</h2>
           </div>
         </div>
         {(positionAddMode === "catalog" || positionAddMode === "mann") && (
@@ -4761,11 +4816,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       </section>
 
       {positions.length === 0 && (
-        <section className="eco-card eco-card--padded eco-shipment-new-positions">
+        <section id="shipment-position-list" className="eco-card eco-card--padded eco-shipment-new-positions">
           <div className="eco-card__head">
             <div className="eco-position-title-stack">
               <div className="eco-position-title-row">
-                <h2>Позиции отгрузки</h2>
+                <h2>Добавлено в отгрузку</h2>
                 <EcoBadge tone="neutral">0</EcoBadge>
               </div>
             </div>
@@ -4778,11 +4833,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       )}
 
       {positions.length > 0 && (
-        <section className="eco-card eco-shipment-new-positions">
+        <section id="shipment-position-list" className="eco-card eco-shipment-new-positions">
           <div className="eco-card__head">
             <div className="eco-position-title-stack">
               <div className="eco-position-title-row">
-                <h2>Позиции отгрузки</h2>
+                <h2>Добавлено в отгрузку</h2>
                 <EcoBadge tone="rust">{positions.length}</EcoBadge>
               </div>
             </div>
@@ -5098,13 +5153,20 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
 		        </section>
 		      )}
+		      </section>
 
 		        </div>
 
-		        <aside className="eco-shipment-detail-aside eco-shipment-new-aside">
+		        <aside id="shipment-finalize" className="eco-shipment-detail-aside eco-shipment-new-aside" aria-labelledby="shipment-finalize-title">
 	          <section className="eco-card eco-shipment-new-total-card">
 	            <div className="eco-shipment-card-head">
-	              <h2>Итого</h2>
+	              <div>
+	                <span className="eco-page-kicker">Шаг 3</span>
+	                <h2 id="shipment-finalize-title">Проверка и сохранение</h2>
+	              </div>
+	              <EcoBadge tone={finalStepReady ? "success" : "warning"} dot>
+	                {finalStepReady ? "Готово" : "Проверьте"}
+	              </EcoBadge>
 	            </div>
 	            <div className="eco-shipment-new-total-body">
 	              <div className="eco-shipment-new-total-line">
@@ -5137,6 +5199,23 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 	                    ? "—"
 	                    : `${positionsMargin.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ₽ · ${positionsMarginPct}%`}
 	                </strong>
+	              </div>
+	              <div className="eco-shipment-final-checklist" aria-label="Готовность отгрузки">
+	                <button type="button" className={documentStepReady ? "is-ready" : "is-missing"} onClick={() => setDocumentParamsOpen(true)}>
+	                  <span aria-hidden>{documentStepReady ? "✓" : "1"}</span>
+	                  <span><strong>Документ</strong><small>{documentStepReady ? "Организация и склад выбраны" : "Укажите организацию и склад"}</small></span>
+	                </button>
+	                <a href="#shipment-parties" className={selectedAgent ? "is-ready" : "is-missing"}>
+	                  <span aria-hidden>{selectedAgent ? "✓" : "2"}</span>
+	                  <span><strong>Клиент</strong><small>{selectedAgent ? clientDisplayName : "Клиент не выбран"}</small></span>
+	                </a>
+	                <a href="#shipment-position-list" className={positions.length > 0 && overAvailablePositionsCount === 0 ? "is-ready" : "is-missing"}>
+	                  <span aria-hidden>{positions.length > 0 && overAvailablePositionsCount === 0 ? "✓" : "3"}</span>
+	                  <span>
+	                    <strong>Позиции</strong>
+	                    <small>{positions.length === 0 ? "Нет позиций" : overAvailablePositionsCount > 0 ? `Нехватка остатка: ${overAvailablePositionsCount}` : `${positions.length} позиций проверено`}</small>
+	                  </span>
+	                </a>
 	              </div>
 	              <div className="eco-shipment-final-actions">
 	                <label className="eco-shipment-new-check">

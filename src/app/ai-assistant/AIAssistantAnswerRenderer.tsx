@@ -4,6 +4,7 @@ import { Check, CheckCircle2, Clipboard, ExternalLink, FileText, Info, ReceiptTe
 import { useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { cleanAssistantMarkdown } from "@/lib/ai-assistant/markdown";
 import type { AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 
 export type AIAssistantSource = {
@@ -92,6 +93,7 @@ function sourceTitle(source: AIAssistantSource) {
 }
 
 function Markdown({ content, suppressTables = false }: { content: string; suppressTables?: boolean }) {
+  const readableContent = cleanAssistantMarkdown(content);
   const components: Components = {
     h1: ({ children }) => <h2>{children}</h2>,
     h2: ({ children }) => <h3>{children}</h3>,
@@ -117,7 +119,7 @@ function Markdown({ content, suppressTables = false }: { content: string; suppre
     pre: ({ children }) => <pre>{children}</pre>,
     code: ({ className, children }) => className ? <code className={className}>{children}</code> : <code>{children}</code>,
   };
-  return <div className="eco-ai-answer__markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={(url) => safeUrl(url)} components={components}>{content}</ReactMarkdown></div>;
+  return <div className="eco-ai-answer__markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={(url) => safeUrl(url)} components={components}>{readableContent}</ReactMarkdown></div>;
 }
 
 function DetailSection({ title, icon, items, tone = "neutral" }: { title: string; icon: ReactNode; items: string[]; tone?: "neutral" | "warning" | "success" }) {

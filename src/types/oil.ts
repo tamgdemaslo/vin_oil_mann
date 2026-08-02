@@ -4,6 +4,11 @@ export type VinDecodeResponse = {
   model?: string;
   year?: string;
   engine?: string;
+  /** Код двигателя, если его вернул декодер VIN. */
+  engineCode?: string;
+  /** Рабочий объём двигателя в см³. */
+  engineVolumeCc?: number;
+  powerHp?: number;
   trim?: string;
   series?: string;
   market?: string;

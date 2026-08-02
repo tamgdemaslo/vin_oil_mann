@@ -1185,6 +1185,8 @@ export default function RestockClient() {
     [categoryItems.length, channelStats, excluded, filteredItems, rosskoCartTotal]
   );
   const activeTab = procurementTabs.find((tab) => tab.id === procurementCategory);
+  const calculationStepReady = mode === "below_min" || outflowLoaded;
+  const selectionStepReady = (activeTab?.selectedQty ?? 0) > 0;
   const offerDrawerItem = useMemo(
     () => (offerDrawerProductId ? items.find((item) => item.productId === offerDrawerProductId) ?? null : null),
     [items, offerDrawerProductId]
@@ -1774,67 +1776,134 @@ export default function RestockClient() {
           </p>
         </div>
         <div className="eco-page-actions eco-restock-head-actions">
-          <div className="eco-restock-action-group">
-            <span className="eco-restock-action-label">Расчёт</span>
-            <div className="eco-seg eco-restock-seg">
-              <button
-                type="button"
-                onClick={() => setMode("below_min")}
-                className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
-              >
-                Ниже минимума
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("outflow")}
-                className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
-              >
-                С расходом
-              </button>
-            </div>
-          </div>
-          {mode === "below_min" && (
-            <EcoButton type="button" onClick={() => void loadBelowMin(true)} disabled={loading}>
-              <RefreshCw size={15} />
-              Обновить
-            </EcoButton>
-          )}
-          {isRosskoMode ? (
-            <div className="eco-restock-action-group eco-restock-action-group--wide">
-              <EcoButton type="button" onClick={() => setIncomingOpen(true)}>
-                <Truck size={15} />
-                В пути ({fmtNum(incomingSummary.total)})
-              </EcoButton>
-              <label className="eco-restock-import-order">
-                <span>№ ROSSKO</span>
-                <EcoInput
-                  value={importOrderId}
-                  onChange={(event) => setImportOrderId(event.target.value)}
-                  inputMode="numeric"
-                  aria-label="Номер заказа ROSSKO"
-                />
-              </label>
-              <EcoButton type="button" onClick={() => void importRosskoOrderByNumber()} disabled={importOrderBusy}>
-                {importOrderBusy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
-                Добавить заказ
-              </EcoButton>
-              <EcoButton type="button" variant="primary" onClick={() => void buildQuickOrderPreview()} disabled={quickBusy || rosskoHealth.status === "error"}>
-                {quickBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
-                Быстрый заказ ROSSKO
-              </EcoButton>
-              <EcoButton type="button" variant="primary" onClick={() => setCartOpen(true)}>
-                <ShoppingCart size={15} />
-                Корзина ROSSKO ({rosskoCartTotal})
-              </EcoButton>
-            </div>
-          ) : (
-            <EcoButton type="button" variant="primary" onClick={buildMessage} disabled={!canBuildMessage}>
-              <FilePlus2 size={15} />
-              Сформировать заказ
-            </EcoButton>
-          )}
+          <EcoButton type="button" onClick={() => setSettingsOpen(true)}>
+            <Settings2 size={15} />
+            О расчёте
+          </EcoButton>
         </div>
       </section>
+
+      <section className="eco-restock-cockpit" aria-label="Рабочий процесс пополнения">
+        <nav className="eco-restock-workflow" aria-label="Этапы пополнения остатков">
+          <a href="#restock-calculation" className={calculationStepReady ? "is-complete" : "is-current"} aria-current={!calculationStepReady ? "step" : undefined}>
+            <span aria-hidden>{calculationStepReady ? "✓" : "1"}</span>
+            <span><strong>Расчёт потребности</strong><small>{mode === "below_min" ? "Ниже минимума" : "По расходу за период"}</small></span>
+          </a>
+          <a
+            href="#restock-selection"
+            className={!calculationStepReady ? "is-upcoming" : selectionStepReady ? "is-complete" : "is-current"}
+            aria-current={!selectionStepReady && calculationStepReady ? "step" : undefined}
+          >
+            <span aria-hidden>{selectionStepReady ? "✓" : "2"}</span>
+            <span><strong>Отбор позиций</strong><small>{selectionStepReady ? `${fmtNum(activeTab?.selectedQty ?? 0)} ед. выбрано` : "Выберите товары и количество"}</small></span>
+          </a>
+          <a
+            href="#restock-order-actions"
+            className={calculationStepReady && selectionStepReady ? "is-current" : "is-upcoming"}
+            aria-current={calculationStepReady && selectionStepReady ? "step" : undefined}
+          >
+            <span aria-hidden>3</span>
+            <span><strong>Оформление заказа</strong><small>{isRosskoMode ? `В корзине ${fmtNum(rosskoCartTotal)} ед.` : isSupplierMessageMode ? selectedChannelLabel : "Выберите канал закупки"}</small></span>
+          </a>
+        </nav>
+
+        <div className="eco-restock-command-grid">
+          <section id="restock-calculation" className="eco-restock-command-section" aria-labelledby="restock-calculation-title">
+            <header>
+              <div>
+                <h2 id="restock-calculation-title">Расчёт потребности</h2>
+                <p>Выберите способ, по которому сформировать список дефицита.</p>
+              </div>
+            </header>
+            <div className="eco-restock-calculation-controls">
+              <div className="eco-seg eco-restock-seg">
+                <button
+                  type="button"
+                  onClick={() => setMode("below_min")}
+                  className={`eco-seg-btn ${mode === "below_min" ? "is-active" : ""}`}
+                >
+                  Ниже минимума
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("outflow")}
+                  className={`eco-seg-btn ${mode === "outflow" ? "is-active" : ""}`}
+                >
+                  С расходом
+                </button>
+              </div>
+              {mode === "below_min" && (
+                <EcoButton type="button" onClick={() => void loadBelowMin(true)} disabled={loading}>
+                  <RefreshCw size={15} />
+                  Обновить данные
+                </EcoButton>
+              )}
+            </div>
+            {mode === "outflow" && (
+              <div className="eco-restock-period-panel">
+                <label className="eco-restock-field">
+                  <span>С даты</span>
+                  <EcoInput type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                </label>
+                <label className="eco-restock-field">
+                  <span>По дату</span>
+                  <EcoInput type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                </label>
+                <EcoButton type="button" onClick={() => void loadOutflow(true)} disabled={loading} variant="primary">
+                  <Truck size={15} />
+                  Рассчитать
+                </EcoButton>
+                {outflowLoaded && meta.dateLabel && (
+                  <span className="eco-restock-period-panel__summary">Период: <strong>{meta.dateLabel}</strong></span>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section id="restock-order-actions" className="eco-restock-command-section eco-restock-command-section--order" aria-labelledby="restock-order-title">
+            <header>
+              <div>
+                <h2 id="restock-order-title">{isRosskoMode ? "Заказ через ROSSKO" : isSetupMode ? "Настройка каталога" : "Заказ поставщику"}</h2>
+                <p>{isRosskoMode ? "Проверьте поставки в пути или соберите новый заказ." : isSetupMode ? "Уточните маршруты закупки для неподготовленных товаров." : isSupplierMessageMode ? `Канал: ${selectedChannelLabel}` : "Сначала выберите конкретного поставщика."}</p>
+              </div>
+            </header>
+            {isRosskoMode ? (
+              <div className="eco-restock-order-controls">
+                <EcoButton type="button" onClick={() => setIncomingOpen(true)}>
+                  <Truck size={15} />
+                  В пути ({fmtNum(incomingSummary.total)})
+                </EcoButton>
+                <div className="eco-restock-import-group">
+                  <label className="eco-restock-import-order">
+                    <span>№ ROSSKO</span>
+                    <EcoInput value={importOrderId} onChange={(event) => setImportOrderId(event.target.value)} inputMode="numeric" aria-label="Номер заказа ROSSKO" />
+                  </label>
+                  <EcoButton type="button" onClick={() => void importRosskoOrderByNumber()} disabled={importOrderBusy}>
+                    {importOrderBusy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
+                    Добавить
+                  </EcoButton>
+                </div>
+                <EcoButton type="button" variant="primary" onClick={() => void buildQuickOrderPreview()} disabled={quickBusy || rosskoHealth.status === "error"}>
+                  {quickBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
+                  Быстрый заказ
+                </EcoButton>
+                <EcoButton type="button" variant="primary" onClick={() => setCartOpen(true)}>
+                  <ShoppingCart size={15} />
+                  Корзина ({rosskoCartTotal})
+                </EcoButton>
+              </div>
+            ) : isSetupMode ? (
+              <p className="eco-restock-command-note">Откройте товар из списка ниже и укажите категорию либо поставщика.</p>
+            ) : (
+              <div className="eco-restock-order-controls">
+                <EcoButton type="button" variant="primary" onClick={buildMessage} disabled={!canBuildMessage}>
+                  <FilePlus2 size={15} />
+                  Сформировать заказ
+                </EcoButton>
+              </div>
+            )}
+          </section>
+        </div>
 
       <div className="eco-restock-decisionbar" aria-label="Сводка пополнения">
         <div className="eco-restock-decisionbar__item is-primary">
@@ -1857,13 +1926,10 @@ export default function RestockClient() {
           <strong>{fmtNum(isRosskoMode ? restockStats.inCart : restockStats.excluded)}</strong>
           <em>{isRosskoMode ? "ROSSKO" : "строк"}</em>
         </div>
-        <button type="button" className="eco-restock-decisionbar__button" onClick={() => setSettingsOpen(true)}>
-          <Settings2 size={15} />
-          О данных
-        </button>
       </div>
+      </section>
 
-      <div className="eco-restock-category-tabs" role="tablist" aria-label="Категории закупки">
+      <div id="restock-selection" className="eco-restock-category-tabs" role="tablist" aria-label="Категории закупки">
         {procurementTabs.map((tab) => (
           <button
             key={tab.id}
@@ -1918,12 +1984,15 @@ export default function RestockClient() {
         </div>
       </aside>
 
-      <section className="eco-restock-main">
+      <section id="restock-position-workspace" className="eco-restock-main" aria-labelledby="restock-position-title">
         <div className="eco-table-toolbar eco-restock-toolbar">
-          <span className="l-meta">
-            {categoryTitle(procurementCategory)} · {selectedChannelLabel} · {restockStats.shown} позиций · дефицит{" "}
-            {fmtNum(restockStats.shortage)}
-          </span>
+          <div className="eco-restock-toolbar__title">
+            <h2 id="restock-position-title">Позиции к пополнению</h2>
+            <span>
+              {categoryTitle(procurementCategory)} · {selectedChannelLabel} · {restockStats.shown} позиций · дефицит{" "}
+              {fmtNum(restockStats.shortage)}
+            </span>
+          </div>
           <div className="grow" />
           <div className="flex flex-wrap gap-2">
             {isRosskoMode && rosskoCartTotal > 0 && (
@@ -1931,41 +2000,6 @@ export default function RestockClient() {
             )}
           </div>
         </div>
-
-        {mode === "outflow" && (
-          <div className="eco-restock-period-panel">
-            <label className="eco-restock-field">
-              <span>С даты</span>
-              <EcoInput
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-              />
-            </label>
-            <label className="eco-restock-field">
-              <span>По дату</span>
-              <EcoInput
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-              />
-            </label>
-            <EcoButton
-              type="button"
-              onClick={() => void loadOutflow(true)}
-              disabled={loading}
-              variant="primary"
-            >
-              <Truck size={15} />
-              Загрузить
-            </EcoButton>
-            {outflowLoaded && meta.dateLabel && (
-              <span className="eco-restock-period-panel__summary">
-                Период: <strong>{meta.dateLabel}</strong>
-              </span>
-            )}
-          </div>
-        )}
 
         {meta.fetchedRows !== undefined && (
           <p className="eco-restock-meta-note">

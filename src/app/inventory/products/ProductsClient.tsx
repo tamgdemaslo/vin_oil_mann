@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Archive,
   ArchiveRestore,
+  Building2,
   CheckCircle2,
   Copy,
   Download,
@@ -84,6 +85,8 @@ type ProductRow = {
   countryName: string;
   vatLabel: string;
   supplierName: string;
+  legacySupplierName?: string;
+  supplierCounterparty?: ProductSupplier | null;
   weight: number | null;
   volume: number | null;
   modificationCode: string;
@@ -271,6 +274,7 @@ type ProductForm = {
   countryName: string;
   vatLabel: string;
   supplierName: string;
+  supplierCounterpartyId: string;
   weight: string;
   volume: string;
   modificationCode: string;
@@ -307,6 +311,27 @@ type ProductForm = {
   markingActiveBarrelGtin: string;
   markingVerificationStatus: string;
   markingCurrentVolumeLiters: string;
+};
+
+type ProductSupplier = {
+  id: string;
+  displayName: string;
+  inn: string;
+  legalForm: string;
+  status: string;
+};
+
+type SupplierOption = ProductSupplier & {
+  phone: string;
+  contactPerson: string;
+};
+
+type QuickSupplierForm = {
+  name: string;
+  legalForm: "LEGAL_ENTITY" | "SOLE_PROPRIETOR" | "OTHER";
+  inn: string;
+  phone: string;
+  contactPerson: string;
 };
 
 type ProductFieldRenderOptions = {
@@ -354,6 +379,7 @@ const emptyForm: ProductForm = {
   countryName: "",
   vatLabel: "",
   supplierName: "",
+  supplierCounterpartyId: "",
   weight: "",
   volume: "",
   modificationCode: "",
@@ -1140,6 +1166,7 @@ function formFromProduct(product: ProductRow): ProductForm {
     countryName: product.countryName,
     vatLabel: product.vatLabel,
     supplierName: product.supplierName,
+    supplierCounterpartyId: product.supplierCounterparty?.id ?? "",
     weight: product.weight == null ? "" : String(product.weight),
     volume: product.volume == null ? "" : String(product.volume),
     modificationCode: product.modificationCode,
@@ -1180,6 +1207,266 @@ function formFromProduct(product: ProductRow): ProductForm {
     markingCurrentVolumeLiters:
       markingSettings.currentVolumeLiters == null ? "" : String(markingSettings.currentVolumeLiters),
   };
+}
+
+function supplierLegalFormLabel(value: string) {
+  if (value === "SOLE_PROPRIETOR") return "ИП";
+  if (value === "OTHER") return "Другое";
+  return "Юрлицо";
+}
+
+function SupplierCombobox({
+  value,
+  displayName,
+  selectedSupplier,
+  onChange,
+}: {
+  value: string;
+  displayName: string;
+  selectedSupplier: ProductSupplier | null;
+  onChange: (supplier: SupplierOption | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<SupplierOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickForm, setQuickForm] = useState<QuickSupplierForm>({
+    name: "",
+    legalForm: "LEGAL_ENTITY",
+    inn: "",
+    phone: "",
+    contactPerson: "",
+  });
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [duplicates, setDuplicates] = useState<SupplierOption[]>([]);
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const [selected, setSelected] = useState<ProductSupplier | null>(selectedSupplier);
+
+  useEffect(() => {
+    if (!value) {
+      setSelected(null);
+      return;
+    }
+    if (selectedSupplier?.id === value) setSelected(selectedSupplier);
+  }, [selectedSupplier, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(async () => {
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const params = new URLSearchParams({ limit: "30" });
+        if (query.trim()) params.set("search", query.trim());
+        const res = await fetch(`/api/suppliers?${params}`, { cache: "no-store", signal: controller.signal });
+        const data = await readJson<{ suppliers?: SupplierOption[]; error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить поставщиков");
+        if (!controller.signal.aborted) setOptions(Array.isArray(data?.suppliers) ? data.suppliers : []);
+      } catch (error) {
+        if (!controller.signal.aborted) setLoadError(error instanceof Error ? error.message : "Не удалось загрузить поставщиков");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 140);
+    return () => {
+      window.clearTimeout(timer);
+      requestRef.current?.abort();
+    };
+  }, [open, query]);
+
+  useEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewportPadding = 12;
+      const width = Math.min(Math.max(rect.width, 320), window.innerWidth - viewportPadding * 2);
+      setPosition({
+        top: Math.min(rect.bottom + 6, window.innerHeight - viewportPadding),
+        left: Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - width - viewportPadding),
+        width,
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (triggerRef.current?.contains(target) || popupRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const selectSupplier = (supplier: SupplierOption | null) => {
+    setSelected(supplier);
+    onChange(supplier);
+    setOpen(false);
+    setQuery("");
+  };
+
+  const createSupplier = async (allowDuplicate = false) => {
+    const name = quickForm.name.trim();
+    if (!name) {
+      setQuickError("Укажите название поставщика");
+      return;
+    }
+    setQuickSaving(true);
+    setQuickError(null);
+    try {
+      const res = await fetch("/api/suppliers/quick-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...quickForm, name, allowDuplicate }),
+      });
+      const data = await readJson<SupplierOption & { error?: string; candidates?: SupplierOption[] }>(res);
+      if (res.status === 409) {
+        setDuplicates(Array.isArray(data?.candidates) ? data.candidates : []);
+        setQuickError(data?.error ?? "Похожий поставщик уже существует");
+        return;
+      }
+      if (!res.ok || !data) throw new Error(data?.error ?? "Не удалось создать поставщика");
+      selectSupplier(data);
+      setQuickOpen(false);
+      setQuickForm({ name: "", legalForm: "LEGAL_ENTITY", inn: "", phone: "", contactPerson: "" });
+      setDuplicates([]);
+    } catch (error) {
+      setQuickError(error instanceof Error ? error.message : "Не удалось создать поставщика");
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  const popup = open && typeof document !== "undefined" && position
+    ? createPortal(
+        <div
+          ref={popupRef}
+          className="product-supplier-popover"
+          role="listbox"
+          aria-label="Поставщики"
+          style={{ top: position.top, left: position.left, width: position.width }}
+        >
+          <div className="product-supplier-popover__search">
+            <Search aria-hidden className="eco-icon" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Название, ИНН, контакт или телефон"
+              aria-label="Поиск поставщика"
+            />
+          </div>
+          <div className="product-supplier-popover__results">
+            {loading ? <p className="product-supplier-popover__hint"><Loader2 className="eco-icon eco-spin" /> Ищем поставщиков…</p> : null}
+            {loadError ? <p className="product-supplier-popover__error">{loadError}</p> : null}
+            {!loading && !loadError && options.length === 0 ? <p className="product-supplier-popover__hint">Поставщики не найдены.</p> : null}
+            {options.map((supplier) => (
+              <button key={supplier.id} type="button" role="option" aria-selected={supplier.id === value} onClick={() => selectSupplier(supplier)}>
+                <Building2 aria-hidden className="eco-icon" />
+                <span>
+                  <b>{supplier.displayName}</b>
+                  <em>{supplier.inn ? `ИНН ${supplier.inn}` : supplier.contactPerson || supplierLegalFormLabel(supplier.legalForm)}</em>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="product-supplier-popover__actions">
+            <button type="button" onClick={() => selectSupplier(null)}>Без поставщика</button>
+            <button type="button" onClick={() => { setQuickOpen(true); setOpen(false); setQuickError(null); setDuplicates([]); }}>
+              <Plus aria-hidden className="eco-icon" /> Создать нового поставщика
+            </button>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <div className="product-editor-field product-supplier-field" ref={triggerRef}>
+      <span className="product-editor-label"><span>Поставщик</span></span>
+      <div className="product-supplier-control">
+        <button
+          type="button"
+          className={`product-supplier-control__trigger ${value ? "is-selected" : ""}`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => { setQuery(""); setOpen((current) => !current); }}
+        >
+          <Building2 aria-hidden className="eco-icon" />
+          <span>
+            <b>{displayName || "Выберите поставщика"}</b>
+            {selected?.inn ? <em>ИНН {selected.inn}</em> : null}
+          </span>
+        </button>
+        {value ? (
+          <div className="product-supplier-control__selected-actions">
+            <button type="button" onClick={() => window.open(`/inventory/counterparties?search=${encodeURIComponent(displayName)}`, "_blank", "noopener,noreferrer")}>Открыть карточку</button>
+            <button type="button" onClick={() => selectSupplier(null)} aria-label="Очистить поставщика"><X aria-hidden className="eco-icon" /></button>
+          </div>
+        ) : null}
+      </div>
+      {selected?.status === "ARCHIVED" ? <span className="product-editor-hint is-warning">Поставщик архивирован. Связь сохранена, выберите другого при необходимости.</span> : null}
+      {popup}
+      {quickOpen && typeof document !== "undefined" ? createPortal(
+        <div className="product-supplier-modal-backdrop" role="presentation" onMouseDown={() => !quickSaving && setQuickOpen(false)}>
+          <section className="product-supplier-modal" role="dialog" aria-modal="true" aria-labelledby="quick-supplier-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Быстрое создание</span>
+                <h3 id="quick-supplier-title">Новый поставщик</h3>
+              </div>
+              <button type="button" onClick={() => setQuickOpen(false)} aria-label="Закрыть"><X aria-hidden className="eco-icon" /></button>
+            </header>
+            <p>Поставщик будет создан в текущем филиале и сразу выбран в карточке товара.</p>
+            <div className="product-supplier-modal__grid">
+              <label>Название *<input value={quickForm.name} onChange={(event) => setQuickForm((form) => ({ ...form, name: event.target.value }))} autoFocus /></label>
+              <label>Юридическая форма<select value={quickForm.legalForm} onChange={(event) => setQuickForm((form) => ({ ...form, legalForm: event.target.value as QuickSupplierForm["legalForm"] }))}><option value="LEGAL_ENTITY">ООО / АО / юрлицо</option><option value="SOLE_PROPRIETOR">ИП</option><option value="OTHER">Другое</option></select></label>
+              <label>ИНН<input inputMode="numeric" value={quickForm.inn} onChange={(event) => setQuickForm((form) => ({ ...form, inn: event.target.value }))} /></label>
+              <label>Телефон<input type="tel" value={quickForm.phone} onChange={(event) => setQuickForm((form) => ({ ...form, phone: event.target.value }))} /></label>
+              <label className="is-full">Контактное лицо<input value={quickForm.contactPerson} onChange={(event) => setQuickForm((form) => ({ ...form, contactPerson: event.target.value }))} /></label>
+            </div>
+            {quickError ? <div className="product-supplier-modal__error">{quickError}</div> : null}
+            {duplicates.length ? <div className="product-supplier-modal__duplicates">{duplicates.map((supplier) => <button key={supplier.id} type="button" onClick={() => { selectSupplier(supplier); setQuickOpen(false); }}><b>{supplier.displayName}</b><span>{supplier.inn ? `ИНН ${supplier.inn}` : "без ИНН"}</span></button>)}</div> : null}
+            <footer>
+              <button type="button" className="eco-btn eco-btn--ghost" onClick={() => setQuickOpen(false)} disabled={quickSaving}>Отмена</button>
+              {duplicates.length ? <button type="button" className="eco-btn" onClick={() => void createSupplier(true)} disabled={quickSaving}>Всё равно создать</button> : null}
+              <button type="button" className="eco-btn eco-btn--primary" onClick={() => void createSupplier()} disabled={quickSaving}>{quickSaving ? "Создаём…" : "Создать и выбрать"}</button>
+            </footer>
+          </section>
+        </div>,
+        document.body
+      ) : null}
+    </div>
+  );
 }
 
 export default function ProductsClient() {
@@ -2535,7 +2822,7 @@ export default function ProductsClient() {
         minPriceCurrencyName: form.minPriceCurrencyName.trim() || undefined,
         countryName: form.countryName.trim() || undefined,
         vatLabel: form.vatLabel.trim() || undefined,
-        supplierName: form.supplierName.trim() || undefined,
+        supplierCounterpartyId: form.supplierCounterpartyId || null,
         weight: form.weight.trim() || null,
         volume: form.volume.trim() || null,
         modificationCode: form.modificationCode.trim() || undefined,
@@ -3809,7 +4096,15 @@ export default function ProductsClient() {
                       {renderField("uomName", "Единица", { required: true, placeholder: "шт" })}
                       {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
                       {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
-                      {renderField("supplierName", "Поставщик", { placeholder: "Название поставщика" })}
+                      <SupplierCombobox
+                        value={form.supplierCounterpartyId}
+                        displayName={form.supplierName}
+                        selectedSupplier={editingProduct?.supplierCounterparty ?? null}
+                        onChange={(supplier) => updateForm({
+                          supplierCounterpartyId: supplier?.id ?? "",
+                          supplierName: supplier?.displayName ?? "",
+                        })}
+                      />
                       {renderField("cell", "Основная ячейка", { placeholder: "A-12" })}
                       {renderField("minimumBalance", "Неснижаемый остаток", { type: "number", placeholder: "0" })}
                     </div>

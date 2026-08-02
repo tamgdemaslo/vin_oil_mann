@@ -4,8 +4,12 @@
 
 ## 1. Preconditions
 
-- `RAILWAY_SELECTEL_RECONCILIATION_STATUS=VERIFIED`. Любое другое значение означает немедленный NO-GO.
-- `DATABASE_URL` указывает на Selectel PostgreSQL и не содержит `railway`/Railway hostname.
+- `LEGACY_PLATFORM_ARCHIVE_STATUS=RAILWAY_DECOMMISSIONED_ARCHIVED` и
+  `BRANCH_LEGACY_PLATFORM_ARCHIVE_EVIDENCE` указывает на проверенный
+  archive/decommission manifest. Обычная reconciliation и импорт из
+  legacy-платформы запрещены.
+- `DATABASE_URL` указывает на Selectel PostgreSQL и не содержит hostname
+  выведенной из эксплуатации платформы.
 - Есть свежий `pg_dump`, проверенный пробным restore в изолированную Selectel БД.
 - Пройдены `npm run test:branch-isolation`, `npx prisma validate`, `npx tsc --noEmit`, `npm run build`.
 - Остановлены application writes, cron и workers на время backfill.
@@ -14,11 +18,14 @@
 - `npm run migration:branch:preflight` завершён успешно.
 - `BRANCH_CREATION_ENABLED=false` до отдельного итогового решения GO для Branch 2.
 
-Если URL указывает на Railway, миграцию прекратить. Railway разрешён только для документированного read-only аудита/backup/decommissioning.
+Если URL указывает на выведенную из эксплуатации legacy-платформу,
+миграцию прекратить. Она не является production, rehearsal или rollback target.
 
 ## 2. Dry run на копии Selectel
 
-1. Восстановить утверждённый backup в отдельную пустую тестовую БД Selectel через `deploy/selectel/prepare-branch-rehearsal.sh`; скрипт не создаёт dump и не подключается к Railway.
+1. Восстановить утверждённый Selectel backup в отдельную пустую тестовую
+   БД через `deploy/selectel/prepare-branch-rehearsal.sh`; скрипт не создаёт dump
+   и не подключается к legacy-платформе.
 2. Подставить URL тестовой БД локально, не коммитить секрет.
 3. Выполнить `npx prisma migrate deploy`.
 4. Проверить, что существует ровно одна `business_groups` запись и `branch-main`.
@@ -27,7 +34,7 @@
 6. Проверить FK, composite unique indexes и один открытый cash shift на филиал.
 7. Войти каждым текущим аккаунтом и проверить memberships.
 8. Выполнить двухфилиальные security-тесты на синтетическом Branch 2.
-9. Удалить только тестовую БД после сохранения протокола; production и Railway не менять.
+9. Удалить только тестовую БД после сохранения протокола; production не менять.
 10. Выполнить `deploy/selectel/BRANCH_ROLLBACK_RUNBOOK.md` на отдельной rollback rehearsal DB и сохранить фактические restore/RTO/RPO timings.
 
 ## 3. Production change
@@ -44,7 +51,7 @@
 
 ## 4. Rollback
 
-Миграция добавляет обязательные поля и новые индексы, поэтому rollback выполняется восстановлением проверенного Selectel backup в новый экземпляр/БД и переключением приложения по утверждённой Selectel процедуре. Не удалять таблицы и не изменять Railway.
+Миграция добавляет обязательные поля и новые индексы, поэтому rollback выполняется восстановлением проверенного Selectel backup в новый экземпляр/БД и переключением приложения по утверждённой Selectel процедуре. Архив legacy-платформы не является rollback target.
 
 ## 5. Go/no-go для Branch 2
 

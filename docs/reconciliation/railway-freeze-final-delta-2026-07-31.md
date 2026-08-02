@@ -1,6 +1,7 @@
 # Railway freeze and final delta — 2026-07-31
 
-Итоговый статус этапа: **`RAILWAY_FROZEN_PENDING_OWNER_REVIEW`**.
+Текущий статус после завершения owner review 2026-08-01:
+**`RAILWAY_FROZEN_OWNER_REVIEW_COMPLETE_LOCAL_REHEARSAL_REQUIRED`**.
 
 Production import, Selectel deploy, Selectel database migration, Branch 2, DNS,
 webhooks и production env не изменялись.
@@ -91,14 +92,15 @@ Private artifacts находятся вне Git:
 - Railway-only additions относительно исходного baseline 342: **167**.
 - Добавлено текущим freeze cut: **99**.
 - Actions: 234 `INSERT_MISSING`, 32 `MAP_TO_EXISTING`, 45 `SKIP_DUPLICATE`,
-  145 `SKIP_EPHEMERAL`, 33 `SKIP_OBSOLETE`, 10 `RECREATE_BUSINESS_EVENT`,
-  10 `MANUAL_REVIEW`.
+  145 `SKIP_EPHEMERAL`, 53 `SKIP_OBSOLETE`, 0 `RECREATE_BUSINESS_EVENT`,
+  0 `MANUAL_REVIEW`.
 - Same-PK conflicts: **284** — исходные 282 + 2 supplemental.
-- Critical same-PK review: **77**; требуют owner approval: **6**.
+- Critical same-PK review: **77**; требуют owner approval: **0**.
 - `UNKNOWN = 0`.
 - Owner decisions: **26** — 6 same-PK, 10 Railway-only manual review,
   10 scheduled events.
-- Все 26 decisions имеют `PENDING`; ни одно решение автоматически не применено.
+- Owner review завершён: 16 `APPROVED`, 10 `REJECTED`, 0 `PENDING`,
+  0 `NEEDS_MORE_INFO`. Production-применения решений не было.
 
 ## Post-freeze local dry run
 
@@ -106,8 +108,8 @@ Private artifacts находятся вне Git:
 - Existing Railway и Selectel dumps восстановлены в
   `reconciliation_railway` / `reconciliation_selectel`.
 - Manifest rows: 509.
-- Planned inserts: 234; mappings: 32; skips: 223; workflow recreations: 10;
-  manual review: 10.
+- Planned inserts: 234; mappings: 32; skips: 243; workflow recreations: 0;
+  manual review: 0.
 - FK/unique/schema/orphan/manifest conflicts: **0**.
 - Dry run: **PASS**.
 - Production mutation attempted: **false**.
@@ -115,7 +117,7 @@ Private artifacts находятся вне Git:
   read-only: PostgreSQL `18`, cluster state `shut down`, `pgdata` сохранён
   (3.4 GB), после проверки image отключён.
 - Full post-freeze import rehearsal не выполнялся: для него требуется отдельное
-  разрешение fresh Selectel dump и owner decisions.
+  разрешение fresh Selectel dump. Owner decisions закрыты.
 
 ## T+60 read-only verification
 
@@ -157,8 +159,8 @@ Infrastructure verification:
 
 `freezeVerificationStatus`: **`CONFIRMED`**.
 
-Итоговый статус этапа остаётся
-**`RAILWAY_FROZEN_PENDING_OWNER_REVIEW`**.
+Текущий статус после owner review:
+**`RAILWAY_FROZEN_OWNER_REVIEW_COMPLETE_LOCAL_REHEARSAL_REQUIRED`**.
 
 Snapshot, verification JSON и пустой post-freeze application log сохранены в
 приватном reconciliation-каталоге вне Git. Новый full `pg_dump` не выполнялся.
@@ -174,8 +176,8 @@ Snapshot, verification JSON и пустой post-freeze application log сохр
 - Branch 2 или branch migration;
 - Railway project/database/volume/domain deletion;
 - credential rotation;
-- owner decisions;
 - legacy file rehearsal и rollback restore rehearsal.
 
-Следующий этап требует отдельного решения владельца по 26 карточкам, отдельного
-разрешения fresh Selectel dump и повторной финальной rehearsal.
+Следующий этап требует отдельного разрешения fresh Selectel dump и повторной
+финальной rehearsal/restore/pg_amcheck проверки. Production import всё ещё
+запрещён.

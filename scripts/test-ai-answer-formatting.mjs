@@ -7,6 +7,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
 const { parseAIAssistantStructuredResponse, structuredResponseToMarkdown } = await jiti.import("../src/lib/ai-assistant/structured-response.ts");
 const { buildClientMessage } = await jiti.import("../src/lib/ai-assistant/client-message.ts");
+const { cleanAssistantMarkdown } = await jiti.import("../src/lib/ai-assistant/markdown.ts");
 
 const structured = parseAIAssistantStructuredResponse(JSON.stringify({
   summaryMarkdown: "Жидкость **подобрана** по допуску.",
@@ -20,6 +21,10 @@ assert.ok(structured);
 assert.equal(structured.recommendations[0].priority, "important");
 assert.match(structuredResponseToMarkdown(structured), /## Подтверждено/);
 assert.equal(parseAIAssistantStructuredResponse("not json"), null);
+assert.equal(
+  cleanAssistantMarkdown("Проверено. \uE200cite\uE202turn1view0\uE201\n\n\n## Итог"),
+  "Проверено.\n\n## Итог",
+);
 
 const clientMessage = buildClientMessage({
   id: "quote-1",

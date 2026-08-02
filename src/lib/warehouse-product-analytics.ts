@@ -251,7 +251,9 @@ export type WarehouseProductAnalytics = {
   suppliers: WarehouseAnalyticsGroupRow[];
 };
 
-type ProductWithStock = Prisma.LocalProductGetPayload<{ include: { stockBalances: true } }>;
+type ProductWithStock = Prisma.LocalProductGetPayload<{
+  include: { stockBalances: true; supplierCounterparty: { select: { name: true; displayName: true } } };
+}>;
 type SalesPosition = Prisma.LocalDemandPositionGetPayload<{
   include: {
     demand: { select: { id: true; documentDate: true; momentAt: true; counterpartyId: true; agentMoyskladId: true } };
@@ -535,7 +537,7 @@ function emptyMetric(product: ProductWithStock, bucketCount: number): InternalMe
     category,
     categoryPath: product.groupPath ?? null,
     brand: product.brand ?? null,
-    supplier: product.supplierName ?? product.supplierAttribute ?? null,
+    supplier: product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? product.supplierAttribute ?? null,
     entityType: product.entityType,
     archived: product.archived,
     uomName: product.uomName ?? null,
@@ -999,7 +1001,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     prisma.localStore.findMany({ where: { archived: false }, orderBy: [{ name: "asc" }], select: { id: true, moyskladId: true, name: true, organizationId: true } }),
     prisma.localProduct.findMany({
       where: { entityType: { not: "service" } },
-      select: { groupPath: true, brand: true, supplierName: true, supplierAttribute: true, entityType: true },
+      select: { groupPath: true, brand: true, legacySupplierName: true, supplierAttribute: true, supplierCounterparty: { select: { name: true, displayName: true } }, entityType: true },
       take: 5000,
     }),
   ]);
@@ -1022,7 +1024,8 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     ...(filters.supplier
       ? {
           OR: [
-            { supplierName: { contains: filters.supplier, mode: "insensitive" } },
+            { legacySupplierName: { contains: filters.supplier, mode: "insensitive" } },
+            { supplierCounterparty: { is: { name: { contains: filters.supplier, mode: "insensitive" } } } },
             { supplierAttribute: { contains: filters.supplier, mode: "insensitive" } },
           ],
         }
@@ -1044,6 +1047,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
         where: stockBalanceWhere,
         orderBy: [{ syncedAt: "desc" }],
       },
+      supplierCounterparty: { select: { name: true, displayName: true } },
     },
     orderBy: [{ name: "asc" }],
     take: params.productId ? 1 : 6000,
@@ -1265,7 +1269,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
       warehouses: storeOptions.map((store) => ({ id: store.id, name: store.name })),
       categories: buildOptions(optionProducts.map((product) => categoryLabel(product.groupPath))),
       brands: buildOptions(optionProducts.map((product) => product.brand)),
-      suppliers: buildOptions(optionProducts.map((product) => product.supplierName ?? product.supplierAttribute)),
+      suppliers: buildOptions(optionProducts.map((product) => product.supplierCounterparty?.displayName ?? product.supplierCounterparty?.name ?? product.legacySupplierName ?? product.supplierAttribute)),
       entityTypes: buildOptions(optionProducts.map((product) => product.entityType)),
     },
     summary,

@@ -18,7 +18,7 @@ const auditFields: AuditField[] = [
   { key: "groupPath", label: "Группа", area: "Главное", hideFromMainUi: false },
   { key: "brand", label: "Бренд", area: "Главное", hideFromMainUi: false },
   { key: "uomName", label: "Единица", area: "Главное", hideFromMainUi: false },
-  { key: "supplierName", label: "Поставщик", area: "Главное", hideFromMainUi: false },
+  { key: "legacySupplierName", label: "Поставщик (legacy)", area: "Служебные", hideFromMainUi: true },
   { key: "cell", label: "Ячейка", area: "Склад", hideFromMainUi: false },
   { key: "barcodeEan13", label: "EAN-13", area: "Доп. коды", hideFromMainUi: true },
   { key: "barcodeEan8", label: "EAN-8", area: "Доп. коды", hideFromMainUi: true },

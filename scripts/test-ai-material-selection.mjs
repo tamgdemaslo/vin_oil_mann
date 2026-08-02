@@ -10,7 +10,9 @@ const {
   fluidSpecificationExcerpt,
   normalizeFluidSpecification,
   packageVolumeLiters,
+  employeeRequestedOriginalFluidOnly,
   selectPreferredLocalFluid,
+  shouldRequireOriginalFluid,
 } = await jiti.import("../src/lib/ai-assistant/material-selection.ts");
 
 const valvoline = {
@@ -30,6 +32,10 @@ assert.equal(normalizeFluidSpecification("Toyota Genuine CVT Fluid FE"), "toyota
 assert.equal(fluidSpecificationMatches(valvoline, "Toyota Genuine CVT Fluid FE"), true);
 assert.match(fluidSpecificationExcerpt(`${"Honda CVT; ".repeat(80)}Toyota\tCVTF FE; CVTF TC`, "Toyota Genuine CVT Fluid FE"), /Toyota\s+CVTF FE/i);
 assert.equal(packageVolumeLiters(valvoline), 1);
+assert.equal(employeeRequestedOriginalFluidOnly("Нужна замена жидкости в вариаторе Toyota C-HR"), false);
+assert.equal(employeeRequestedOriginalFluidOnly("Поставьте только оригинальную жидкость Toyota, без аналогов"), true);
+assert.equal(shouldRequireOriginalFluid({ fluidPreference: "original_only", employeeRequestedOriginalOnly: false }), false);
+assert.equal(shouldRequireOriginalFluid({ fluidPreference: "original_only", employeeRequestedOriginalOnly: true }), true);
 
 const selected = selectPreferredLocalFluid([valvoline], "Toyota Genuine CVT Fluid FE", 8);
 assert.ok(selected);

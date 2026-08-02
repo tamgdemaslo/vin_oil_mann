@@ -18,14 +18,8 @@ BEGIN
     ('organization_members', ARRAY['organization_id', 'user_id']),
     ('local_stores', ARRAY['moysklad_id']),
     ('local_products', ARRAY['moysklad_id']),
-    ('local_products', ARRAY['article']),
-    ('local_products', ARRAY['code']),
-    ('local_products', ARRAY['barcode_ean13']),
-    ('local_products', ARRAY['barcode_ean8']),
-    ('local_products', ARRAY['barcode_code128']),
     ('product_mann_poman_migration_audit', ARRAY['migration_key', 'product_id']),
     ('local_counterparties', ARRAY['moysklad_id']),
-    ('local_counterparties', ARRAY['normalized_phone']),
     ('cash_expense_items', ARRAY['moysklad_id']),
     ('cash_expense_orders', ARRAY['moysklad_id']),
     ('local_demands', ARRAY['moysklad_id']),
@@ -107,14 +101,18 @@ CREATE UNIQUE INDEX conversation_entity_links_branch_entity_key ON conversation_
 CREATE UNIQUE INDEX organization_members_branch_org_user_key ON organization_members(branch_id, organization_id, user_id);
 CREATE UNIQUE INDEX local_stores_branch_moysklad_key ON local_stores(branch_id, moysklad_id);
 CREATE UNIQUE INDEX local_products_branch_moysklad_key ON local_products(branch_id, moysklad_id);
-CREATE UNIQUE INDEX local_products_branch_article_key ON local_products(branch_id, article);
-CREATE UNIQUE INDEX local_products_branch_code_key ON local_products(branch_id, code);
-CREATE UNIQUE INDEX local_products_branch_ean13_key ON local_products(branch_id, barcode_ean13);
-CREATE UNIQUE INDEX local_products_branch_ean8_key ON local_products(branch_id, barcode_ean8);
-CREATE UNIQUE INDEX local_products_branch_code128_key ON local_products(branch_id, barcode_code128);
+-- Product article/code/barcodes are searchable provider attributes, not
+-- stable identities. Selectel legitimately contains different MoySklad
+-- products sharing these values.
+CREATE INDEX local_products_branch_id_code_idx ON local_products(branch_id, code);
+CREATE INDEX local_products_branch_id_barcode_ean13_idx ON local_products(branch_id, barcode_ean13);
+CREATE INDEX local_products_branch_id_barcode_ean8_idx ON local_products(branch_id, barcode_ean8);
+CREATE INDEX local_products_branch_id_barcode_code128_idx ON local_products(branch_id, barcode_code128);
 CREATE UNIQUE INDEX product_mann_poman_audit_branch_migration_product_key ON product_mann_poman_migration_audit(branch_id, migration_key, product_id);
 CREATE UNIQUE INDEX local_counterparties_branch_moysklad_key ON local_counterparties(branch_id, moysklad_id);
-CREATE UNIQUE INDEX local_counterparties_branch_phone_key ON local_counterparties(branch_id, normalized_phone);
+-- A phone can belong to several distinct counterparties in MoySklad. The
+-- lookup index was created by the foundation migration; never use it as row
+-- identity.
 CREATE UNIQUE INDEX cash_expense_items_branch_moysklad_key ON cash_expense_items(branch_id, moysklad_id);
 CREATE UNIQUE INDEX cash_expense_orders_branch_moysklad_key ON cash_expense_orders(branch_id, moysklad_id);
 CREATE UNIQUE INDEX local_demands_branch_moysklad_key ON local_demands(branch_id, moysklad_id);

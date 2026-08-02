@@ -405,7 +405,7 @@ export default function PlatformShell() {
           { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: operationalLocked || !canAccessCrm },
           { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: operationalLocked || !canAccessCrm },
           { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: operationalLocked || !canAccessCash },
-          { href: "/clients/counterparties", label: "Клиенты", description: "Контрагенты и телефоны.", disabled: operationalLocked },
+          { href: "/clients/counterparties", label: "Контрагенты", description: "Клиенты, поставщики и контакты.", disabled: operationalLocked },
         ],
       },
       ...(canAccessCrm

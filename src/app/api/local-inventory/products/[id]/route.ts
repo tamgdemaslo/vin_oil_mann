@@ -50,7 +50,7 @@ export async function PUT(
 
   const result = await updateLocalAdminProduct(id, body as Parameters<typeof updateLocalAdminProduct>[1], session.user, branchAccess.context.branchId!);
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
+    return NextResponse.json({ error: result.error }, { status: "notFound" in result && result.notFound ? 404 : 400 });
   }
   return NextResponse.json(result.product);
 }
@@ -69,7 +69,7 @@ export async function DELETE(
 
   const result = await updateLocalAdminProduct(id, { archived: true }, session.user, branchAccess.context.branchId!);
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: result.notFound ? 404 : 400 });
+    return NextResponse.json({ error: result.error }, { status: "notFound" in result && result.notFound ? 404 : 400 });
   }
   return NextResponse.json(result.product);
 }

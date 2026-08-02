@@ -21,7 +21,7 @@ import {
   type ChannelConnectionStatus,
 } from "./messenger-data";
 
-type MessengerView = "collapsed" | "inbox" | "chat";
+type MessengerView = "collapsed" | "widget" | "mini";
 export type MessengerFilter =
   | "all"
   | "unread"
@@ -35,6 +35,8 @@ export type MessengerFilter =
 type Toast = {
   id: string;
   text: string;
+  title?: string;
+  conversationId?: string;
 };
 
 type ApiChannel = {
@@ -253,6 +255,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
           showToast({
             id: `poll-${updated.id}-${updated.lastMessageAt}`,
             text: toastTextForConversation(updated),
+            conversationId: updated.id,
           });
         }
       }
@@ -280,7 +283,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         : null;
       setMessagesByConversation((map) => ({ ...map, [conversationId]: data.messages ?? [] }));
       if (incoming && selectedConversationIdRef.current !== conversationId) {
-        showToast({ id: `msg-${incoming.id}`, text: toastTextForMessage(incoming) });
+        showToast({ id: `msg-${incoming.id}`, text: toastTextForMessage(incoming), conversationId });
       }
     } catch {
       setMessagesByConversation((map) => ({ ...map, [conversationId]: map[conversationId] ?? [] }));
@@ -388,8 +391,11 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       setSelectedContext(null);
       return;
     }
+    if (!messagesByConversationRef.current[selectedConversationId]) {
+      void loadMessages(selectedConversationId);
+    }
     void loadContext(selectedConversationId);
-  }, [loadContext, selectedConversationId]);
+  }, [loadContext, loadMessages, selectedConversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("EventSource" in window)) return;
@@ -437,8 +443,6 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
     (conversationId: string, openChat = true) => {
       setSelectedConversationId(conversationId);
       markAsRead(conversationId);
-      void loadMessages(conversationId);
-      void loadContext(conversationId);
       if (typeof window !== "undefined" && isMessagesPagePath(window.location.pathname)) {
         const url = new URL(window.location.href);
         url.searchParams.set("conversationId", conversationId);
@@ -446,12 +450,12 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         appliedUrlConversationRef.current = conversationId;
       }
       if (openChat) {
-        setWidgetView("chat");
+        setWidgetView("mini");
       } else {
         setWidgetView("collapsed");
       }
     },
-    [loadContext, loadMessages, markAsRead]
+    [markAsRead]
   );
 
   useEffect(() => {
@@ -464,7 +468,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   }, [conversations, selectConversation]);
 
   const openInbox = useCallback(() => {
-    setWidgetView((view) => (view === "collapsed" ? "inbox" : "collapsed"));
+    setWidgetView((view) => (view === "collapsed" ? "widget" : "collapsed"));
   }, []);
 
   const closeWidget = useCallback(() => {
@@ -519,7 +523,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
             item.id === id && data.message ? data.message : item.id === id ? { ...item, status: "sent" } : item
           ),
         }));
-        if (data.error) showToast({ id: `send-${Date.now()}`, text: data.error });
+        if (data.error) showToast({ id: `send-${Date.now()}`, title: "Ответ канала", text: data.error, conversationId });
         void loadConversations({ silent: true });
       })
       .catch((error) => {
@@ -530,7 +534,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
             item.id === id ? { ...item, status: "failed", errorMessage } : item
           ),
         }));
-        showToast({ id: `send-failed-${Date.now()}`, text: errorMessage });
+        showToast({ id: `send-failed-${Date.now()}`, title: "Не удалось отправить", text: errorMessage, conversationId });
       });
   }, [loadConversations, showToast]);
 
@@ -587,7 +591,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
           item.id === optimisticId && data.message ? data.message : item.id === optimisticId ? { ...item, status: "sent" } : item
         ),
       }));
-      if (data.error) showToast({ id: `attachment-${Date.now()}`, text: data.error });
+      if (data.error) showToast({ id: `attachment-${Date.now()}`, title: "Ответ канала", text: data.error, conversationId });
       void loadConversations({ silent: true });
     } catch (error) {
       setMessagesByConversation((map) => ({
@@ -608,7 +612,9 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       }));
       showToast({
         id: `attachment-failed-${Date.now()}`,
+        title: "Не удалось отправить файл",
         text: error instanceof Error ? error.message : "Не удалось отправить вложение",
+        conversationId,
       });
     } finally {
       if (objectUrl) window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
@@ -646,7 +652,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
             item.id === messageId ? { ...item, status: "failed", errorMessage } : item
           ),
         }));
-        showToast({ id: `retry-failed-${Date.now()}`, text: errorMessage });
+        showToast({ id: `retry-failed-${Date.now()}`, title: "Повтор не выполнен", text: errorMessage, conversationId });
       });
   }, [refreshConversation, showToast]);
 
@@ -719,14 +725,14 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
                 ...conversation,
                 lastMessageText: message.text,
                 lastMessageAt: createdAt,
-                unreadCount: widgetView === "chat" && selectedConversationId === target.id ? 0 : conversation.unreadCount + 1,
+                unreadCount: widgetView === "mini" && selectedConversationId === target.id ? 0 : conversation.unreadCount + 1,
                 status: "needs_reply",
               }
             : conversation
         )
       )
     );
-    showToast({ id: message.id, text: toastTextForConversation(target) });
+    showToast({ id: message.id, text: toastTextForConversation(target), conversationId: target.id });
   }, [conversations, selectedConversationId, showToast, widgetView]);
 
   const toggleImportant = useCallback((conversationId: string) => {

@@ -1,20 +1,24 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-31T21:20:27Z",
-  "status": "PASS",
+  "generatedAt": "2026-07-31T22:10:02.992Z",
+  "status": "SUPERSEDED_BY_ARCHIVE_POLICY",
   "productionMutationAttempted": false,
   "externalSideEffectsEnabled": false,
   "dependencyCheck": {
     "status": "PASS",
     "approvedKeepSelectelDecisions": 6,
-    "parentMappingsRequired": 0,
-    "deferredPendingDecisions": 20
+    "needsMoreInfoDecisions": 0,
+    "unresolvedLogicalDependencyGroups": 0,
+    "unresolvedRequiredParentMappings": 0,
+    "deferredPendingDecisions": 0
   },
   "ownerDecisions": {
     "total": 26,
-    "approved": 6,
-    "pending": 20,
-    "explicitlyDeferred": 20
+    "approved": 16,
+    "rejected": 10,
+    "needsMoreInfo": 0,
+    "pending": 0,
+    "explicitlyDeferred": 0
   },
   "samePk": {
     "total": 284,
@@ -37,8 +41,24 @@
       "target": 137
     },
     "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
+    "plannedInserts": 234,
+    "mappings": 32,
+    "skips": 243,
+    "recreations": 0,
+    "manualReview": 0,
     "fkUniqueSchemaOrphanConflicts": 0,
     "errors": 0
+  },
+  "finalDecisionPolicy": {
+    "status": "PASS",
+    "unverifiedRelationsSkipped": 3,
+    "unverifiedAttachmentsSkipped": 7,
+    "scheduledNotificationsSkipped": 10,
+    "notificationsToRecreate": 0,
+    "productionMutationRequiredByOwnerDecisions": 0,
+    "selectelSshAttempted": true,
+    "selectelSshAvailable": false,
+    "externalObjectReadAttempted": false
   },
   "protectedSelectelOnlyChecksum": {
     "status": "PASS",
@@ -51,11 +71,14 @@
   },
   "idempotency": {
     "status": "PASS",
-    "secondDecisionApplicationChanged": false,
+    "secondFinalizationChanged": false,
     "manifestHashesUnchanged": true,
     "targetChecksumUnchanged": true,
     "duplicatesCreated": 0
   },
   "errors": [],
-  "warnings": []
+  "warnings": [],
+  "previousStatus": "PASS",
+  "supersededAt": "2026-08-02T17:33:46.313Z",
+  "supersededBy": "ARCHIVE_ONLY_DO_NOT_IMPORT"
 }

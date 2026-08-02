@@ -281,7 +281,7 @@ function productSnapshot(product: ProductWithStock) {
     reserve: totals.reserve,
     minimum_balance: decimalToNumber(product.minimumBalance),
     warehouse_cell: product.cell ?? "",
-    supplier: product.supplierName ?? "",
+    supplier: product.legacySupplierName ?? "",
     preferredSupplierId: product.supplierAttribute ?? "",
     procurementMode: "",
     country: product.countryName ?? "",
@@ -401,7 +401,7 @@ async function referenceRows(products?: ProductWithStock[]) {
   const unique = (values: Array<string | null | undefined>) => [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, "ru"));
   const groups = unique(rows.map((row) => row.groupPath));
   const brands = unique(rows.map((row) => row.brand));
-  const suppliers = unique(rows.map((row) => row.supplierName));
+  const suppliers = unique(rows.map((row) => row.legacySupplierName));
   const units = unique(rows.map((row) => row.uomName));
   const currencies = unique(rows.map((row) => row.currencyName)).length ? unique(rows.map((row) => row.currencyName)) : ["руб."];
   const vats = unique(rows.map((row) => row.vatLabel));
@@ -585,7 +585,7 @@ function productInputFromPreview(after: Record<string, unknown>) {
     minPriceCurrencyName: after.minPriceCurrencyName ? String(after.minPriceCurrencyName).trim() : null,
     countryName: after.countryName ? String(after.countryName).trim() : null,
     vatLabel: after.vatLabel ? String(after.vatLabel).trim() : null,
-    supplierName: after.supplierName ? String(after.supplierName).trim() : null,
+    legacySupplierName: after.supplierName ? String(after.supplierName).trim() : null,
     weight: decimal(after.weight),
     volume: decimal(after.volume),
     modificationCode: after.modificationCode ? String(after.modificationCode).trim() : null,

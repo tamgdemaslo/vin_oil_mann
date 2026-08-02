@@ -545,7 +545,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "cash_expense_items_branch_id_name_key" ON "ca
 DROP INDEX IF EXISTS "cash_expense_orders_number_key";
 CREATE UNIQUE INDEX IF NOT EXISTS "cash_expense_orders_branch_id_number_key" ON "cash_expense_orders"("branch_id", "number");
 
-CREATE UNIQUE INDEX IF NOT EXISTS "local_demands_branch_id_name_key" ON "local_demands"("branch_id", "name");
+-- Shipment names are display/document labels, not stable identities. The
+-- canonical Selectel baseline contains legitimate repeated names belonging to
+-- distinct MoySklad ids, so this must remain a lookup index rather than a
+-- uniqueness constraint.
+CREATE INDEX IF NOT EXISTS "local_demands_branch_id_name_idx" ON "local_demands"("branch_id", "name");
 CREATE INDEX IF NOT EXISTS "local_products_branch_id_archived_idx" ON "local_products"("branch_id", "archived");
 CREATE INDEX IF NOT EXISTS "local_products_branch_id_article_idx" ON "local_products"("branch_id", "article");
 CREATE INDEX IF NOT EXISTS "local_counterparties_branch_id_normalized_phone_idx" ON "local_counterparties"("branch_id", "normalized_phone");
