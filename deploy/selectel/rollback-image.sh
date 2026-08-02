@@ -38,7 +38,9 @@ set +a
 
 [[ "$ACTIVE_SLOT" =~ ^(blue|green|legacy)$ ]] || { echo "invalid previous slot" >&2; exit 78; }
 
-COMPOSE=(docker compose --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" --env-file "$SLOTS_FILE" -f "$PROJECT_ROOT/docker-compose.selectel.yml")
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-tgm}"
+[[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 78; }
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" --env-file "$SLOTS_FILE" -f "$PROJECT_ROOT/docker-compose.selectel.yml")
 if [[ -f "$PROJECT_ROOT/deploy/selectel/wireguard/wg_confs/wg0.conf" ]]; then
   COMPOSE+=(-f "$PROJECT_ROOT/docker-compose.selectel.wireguard.yml")
 fi

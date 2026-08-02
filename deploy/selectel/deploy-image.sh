@@ -136,7 +136,9 @@ SLOTS_TMP="$SLOTS_FILE.tmp.$$"
 } >"$SLOTS_TMP"
 mv "$SLOTS_TMP" "$SLOTS_FILE"
 
-COMPOSE=(docker compose --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" --env-file "$SLOTS_FILE" -f "$COMPOSE_FILE")
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-tgm}"
+[[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail "invalid COMPOSE_PROJECT_NAME"
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" --env-file "$SLOTS_FILE" -f "$COMPOSE_FILE")
 if [[ -f "$PROJECT_ROOT/deploy/selectel/wireguard/wg_confs/wg0.conf" ]]; then
   COMPOSE+=(-f "$WIREGUARD_FILE")
 fi

@@ -111,6 +111,11 @@ Keep `.env.production` where it is. Copy `config.env.template` to
 public origin, and restrict it to the deploy user. The server's Docker login
 must use the read-only Selectel token.
 
+Keep `COMPOSE_PROJECT_NAME=tgm` in `config.env` so the immutable application
+slots join the canonical production network and reuse the existing PostgreSQL
+and application-data volumes. Changing this value would create an isolated
+Compose project and is not a production migration mechanism.
+
 Before the first switch, initialize
 `/opt/vin-oil-mann/.deploy/caddy-upstream.caddy` with the existing legacy
 upstream:

@@ -36,6 +36,11 @@ forbidPattern("dockerfile", /npm install/, "Docker build must use deterministic 
 requirePattern("deploy", /cr\.selcloud\.ru\//, "deploy script must enforce Selectel Container Registry");
 requirePattern("deploy", /flock -n/, "server-side deployment lock is missing");
 requirePattern("deploy", /automatic-rollback/, "automatic rollback is missing");
+requirePattern(
+  "deploy",
+  /docker compose -p "\$COMPOSE_PROJECT_NAME"/,
+  "deployment must reuse the canonical Compose project network and volumes"
+);
 
 if (errors.length) {
   console.error(errors.join("\n"));

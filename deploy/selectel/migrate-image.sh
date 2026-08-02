@@ -55,7 +55,9 @@ if [[ "$IMAGE_MIGRATIONS" == *20260728120000_branch_architecture_foundation* && 
   exit 66
 fi
 
-COMPOSE=(docker compose --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" -f "$PROJECT_ROOT/docker-compose.selectel.yml")
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-tgm}"
+[[ "$COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "invalid COMPOSE_PROJECT_NAME" >&2; exit 78; }
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" --env-file "$CONFIG_FILE" -f "$PROJECT_ROOT/docker-compose.selectel.yml")
 BEFORE="$("${COMPOSE[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc '\''SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY finished_at'\''')"
 
 export MIGRATION_IMAGE="$IMAGE_REFERENCE"
