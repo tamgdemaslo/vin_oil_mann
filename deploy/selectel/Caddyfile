@@ -7,5 +7,5 @@
 www.tamgdemaslocrm.ru {
     header Alt-Svc "clear"
     # deploy-image.sh atomically replaces this one-line file and reloads Caddy.
-    import /opt/vin-oil-mann/.deploy/caddy-upstream.caddy
+    import /opt/tgm/.deploy/caddy-upstream.caddy
 }

@@ -25,3 +25,9 @@ services:
 
   app_green:
     <<: *wireguard-app
+
+  worker_notifications_blue:
+    <<: *wireguard-app
+
+  worker_notifications_green:
+    <<: *wireguard-app

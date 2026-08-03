@@ -12,16 +12,21 @@ owner-approved release task.
 ## Release flow
 
 ```text
-allowed Git ref + clean commit
+feature push / pull request
   -> GitHub verify (npm ci, Prisma, tests, TypeScript, Next build, policy)
-  -> BuildKit standalone image + registry cache
-  -> Selectel Container Registry tags (git SHA + release tag)
-  -> production environment approval
-  -> Selectel pulls image@sha256
+  -> no registry publication and no production access
+
+main push + clean commit
+  -> the same verification
+  -> BuildKit application + migration images
+  -> Selectel Container Registry tags (git SHA + pending release tag)
+  -> compare Prisma migrations with the active production commit
+  -> new migration: stop as migration_approval_required
+  -> no new migration: Selectel pulls application image@sha256
   -> inactive blue/green slot readiness + smoke
   -> atomic Caddy upstream switch
   -> public smoke and automatic rollback on failure
-  -> production Git tag
+  -> annotated production Git tag
 ```
 
 `deploy-image.sh` retains the previous slot and never prunes images. A failed
@@ -95,7 +100,7 @@ Tags are discovery metadata only. Deployment always uses
 
 ## 3. One-time server bootstrap
 
-Place only the reviewed infrastructure files under `/opt/vin-oil-mann`:
+Place only the reviewed infrastructure files under `/opt/tgm`:
 
 ```text
 docker-compose.selectel.yml
@@ -107,7 +112,7 @@ deploy/selectel/Caddyfile
 ```
 
 Keep `.env.production` where it is. Copy `config.env.template` to
-`/opt/vin-oil-mann/.deploy/config.env`, fill only Selectel repositories and
+`/opt/tgm/.deploy/config.env`, fill only Selectel repositories and
 public origin, and restrict it to the deploy user. The server's Docker login
 must use the read-only Selectel token.
 
@@ -117,7 +122,7 @@ and application-data volumes. Changing this value would create an isolated
 Compose project and is not a production migration mechanism.
 
 Before the first switch, initialize
-`/opt/vin-oil-mann/.deploy/caddy-upstream.caddy` with the existing legacy
+`/opt/tgm/.deploy/caddy-upstream.caddy` with the existing legacy
 upstream:
 
 ```caddyfile
@@ -137,18 +142,24 @@ monitoring window.
 ## 4. GitHub configuration
 
 Detailed secret and variable names are in [github-actions.md](github-actions.md).
-Both environments must require an owner/reviewer:
+The `production` environment must be limited to `main`; it does not require a
+reviewer because a migration-free push to `main` deploys automatically. The
+`production-migration` environment must retain a separate owner/reviewer and
+maintenance-window approval.
 
-- `production` for application traffic switches;
-- `production-migration` for database mutations.
+Every feature-branch push and pull request runs checks and the application
+build, with no Registry or production access. A push to `main` also publishes
+immutable images. The workflow reads the active Selectel commit and compares its
+migration directories with the candidate. With no new migration it performs the
+digest-only blue/green switch and tags the deployed commit. With a new migration
+it stops as `migration_approval_required` after image publication and leaves
+production unchanged.
 
-The release workflow is manual. Run it from `main`, `release/*`, or `hotfix/*`
-with a new tag such as `production-2026-08-02.1`. It defaults to `BUILD_ONLY`,
-which verifies and pushes immutable images without starting a server container
-or switching traffic. The deploy and Git-tag jobs run only when the owner
-deliberately selects `DEPLOY_PRODUCTION`. The workflow rejects other branches,
-dirty source, reused Git tags, and any attempt to combine deployment with a
-migration.
+`BUILD_ONLY` remains available only through `workflow_dispatch`. Manual
+`DEPLOY_PRODUCTION` is accepted only from `main`, after the same verification
+and migration gate. Existing migration directories may not be changed or
+removed. A missing or non-ancestor active production commit is a fail-closed
+history-alignment error.
 
 ## 5. Normal hotfix
 
@@ -156,9 +167,10 @@ migration.
 2. Create `hotfix/<name>` from that tag, not from unfinished branch work.
 3. Commit and test the minimal patch.
 4. Merge the reviewed patch to `main` and forward-port it to development.
-5. Dispatch the Selectel release workflow with a new production tag.
-6. Approve only after the manifest identifies the intended SHA and both image
-   digests.
+5. Merge the reviewed hotfix to `main`; the normal push workflow builds the
+   immutable images and deploys automatically when no migration is added.
+6. Verify the manifest, public identity, and automatically created production
+   tag identify the intended SHA and application digest.
 
 No Prisma migration workflow is run when the hotfix contains no new migration.
 The unfinished branch architecture migration remains NO-GO.
@@ -184,7 +196,7 @@ server config during the approved migration window.
 Automatic rollback is part of `deploy-image.sh`. Manual rollback is:
 
 ```bash
-cd /opt/vin-oil-mann
+cd /opt/tgm
 deploy/selectel/rollback-image.sh
 ```
 
