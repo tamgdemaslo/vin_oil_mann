@@ -35,6 +35,7 @@ yarn-error.log*
 
 # generated data and Python bytecode
 /outputs/
+*.sparseimage
 __pycache__/
 *.py[cod]
 

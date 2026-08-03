@@ -1,17 +1,42 @@
 import QRCode from "qrcode";
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { branchErrorResponse, requireBranchContext, type BranchContext } from "@/lib/branch-context";
 import {
   createEmployeeTelegramLinkToken,
   getEmployeeTelegramStatus,
 } from "@/lib/messenger/messenger-linking";
+import { runWithRequestTenant } from "@/lib/request-tenant-store";
 
 export const dynamic = "force-dynamic";
 
-async function requireSession() {
-  const session = await getSession();
-  if (!session) return { response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
-  return { session };
+async function requireConcreteBranch() {
+  try {
+    const context = await requireBranchContext({ allowAll: true, requireActive: false });
+    if (context.mode !== "branch" || !context.branchId) {
+      return {
+        response: NextResponse.json(
+          { error: "Для настройки Telegram выберите конкретный филиал.", code: "concrete_branch_required" },
+          { status: 409 },
+        ),
+      };
+    }
+    return { context };
+  } catch (error) {
+    const result = branchErrorResponse(error);
+    return { response: NextResponse.json({ error: result.error, code: result.code }, { status: result.status }) };
+  }
+}
+
+function withBranch<T>(context: BranchContext, operation: () => T) {
+  return runWithRequestTenant({
+    mode: "branch",
+    branchId: context.branchId,
+    organizationId: context.organizationId,
+    allowedBranchIds: context.branchId ? [context.branchId] : [],
+    businessGroupId: context.businessGroupId,
+    userId: context.userId,
+    permissions: context.permissions,
+  }, operation);
 }
 
 function telegramLinkError(error: unknown) {
@@ -23,25 +48,28 @@ function telegramLinkError(error: unknown) {
 }
 
 export async function GET() {
-  const auth = await requireSession();
-  if ("response" in auth) return auth.response;
+  const access = await requireConcreteBranch();
+  if ("response" in access) return access.response;
   try {
-    return NextResponse.json({ telegram: await getEmployeeTelegramStatus(auth.session.user.login) });
+    const telegram = await withBranch(access.context, () => getEmployeeTelegramStatus(access.context.user.login));
+    return NextResponse.json({ telegram, branchId: access.context.branchId });
   } catch (error) {
     return telegramLinkError(error);
   }
 }
 
 export async function POST() {
-  const auth = await requireSession();
-  if ("response" in auth) return auth.response;
+  const access = await requireConcreteBranch();
+  if ("response" in access) return access.response;
 
   try {
-    const linked = await getEmployeeTelegramStatus(auth.session.user.login);
-    const token = await createEmployeeTelegramLinkToken({
-      employeeId: auth.session.user.login,
-      createdById: auth.session.user.login,
-    });
+    const { linked, token } = await withBranch(access.context, async () => ({
+      linked: await getEmployeeTelegramStatus(access.context.user.login),
+      token: await createEmployeeTelegramLinkToken({
+        employeeId: access.context.user.login,
+        createdById: access.context.user.login,
+      }),
+    }));
     if (!token.linkUrl) {
       return NextResponse.json(
         {

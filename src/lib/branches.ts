@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { BranchContext } from "@/lib/branch-context";
+import { hasBranchPermission, type BranchContext } from "@/lib/branch-context";
+import { runWithRequestTenant } from "@/lib/request-tenant-store";
 
 export type BranchInput = {
   name?: unknown;
@@ -17,6 +18,15 @@ export type BranchInput = {
   ogrn?: unknown;
   bankDetailsJson?: unknown;
   openingDate?: unknown;
+  status?: unknown;
+  organizationId?: unknown;
+  secondaryPhone?: unknown;
+  whatsapp?: unknown;
+  communicationEmail?: unknown;
+  communicationTelegram?: unknown;
+  workingSettingsJson?: unknown;
+  communicationSettingsJson?: unknown;
+  documentSettingsJson?: unknown;
 };
 
 function clean(value: unknown, max = 240) {
@@ -66,6 +76,7 @@ function branchData(input: BranchInput, current?: { name: string; shortName: str
     ogrn: optional("ogrn", clean(input.ogrn, 32)),
     bankDetailsJson: optional("bankDetailsJson", json(input.bankDetailsJson)),
     openingDate: optional("openingDate", date(input.openingDate)),
+    status: optional("status", input.status === "inactive" ? "inactive" : "active"),
   };
 }
 
@@ -78,17 +89,7 @@ function validate(data: ReturnType<typeof branchData>) {
 }
 
 export async function createBranch(context: BranchContext, input: BranchInput) {
-  if (!context.canManageBranches) return { ok: false as const, status: 403, error: "Недостаточно прав" };
-  if (process.env.NODE_ENV === "production" && process.env.BRANCH_CREATION_ENABLED !== "true") {
-    const existingBranches = await prisma.branch.count({ where: { businessGroupId: context.businessGroupId } });
-    if (existingBranches > 0) {
-      return {
-        ok: false as const,
-        status: 409,
-        error: "Создание второго филиала заблокировано до завершения миграции и проверки изоляции данных",
-      };
-    }
-  }
+  if (!hasBranchPermission(context, "branches.create")) return { ok: false as const, status: 403, error: "Недостаточно прав" };
   const data = branchData(input);
   const error = validate(data);
   if (error) return { ok: false as const, status: 400, error };
@@ -99,32 +100,43 @@ export async function createBranch(context: BranchContext, input: BranchInput) {
   if (duplicate) return { ok: false as const, status: 409, error: "Филиал с таким адресом уже существует" };
 
   const branch = await prisma.$transaction(async (tx) => {
-    const organization = await tx.localOrganization.create({
-      data: {
-        name: data.shortName,
-        entityType: data.legalEntityType ?? "legal_entity",
-        fullLegalName: data.legalEntityName,
-        inn: data.inn,
-        ogrn: data.ogrn,
-        actualAddress: data.address,
-        phone: data.phone,
-        email: data.email,
-        isDefault: false,
-        isActive: true,
-      },
-    });
-    const created = await tx.branch.create({
+    let created = await tx.branch.create({
       data: {
         businessGroupId: context.businessGroupId,
         ...data,
-        legacyOrganizationId: organization.id,
       },
     });
-    if (context.userId) {
-      await tx.branchMembership.create({
-        data: { branchId: created.id, userId: context.userId, roleId: "branch_owner", status: "active" },
+    const createdBranchTenant = {
+      mode: "branch" as const,
+      branchId: created.id,
+      organizationId: created.id,
+      allowedBranchIds: [created.id],
+      businessGroupId: context.businessGroupId,
+      userId: context.userId,
+      permissions: context.permissions,
+    };
+    const organization = await runWithRequestTenant(createdBranchTenant, async () => {
+      if (context.userId) {
+        await tx.branchMembership.create({
+          data: { branchId: created.id, userId: context.userId, roleId: "branch_owner", status: "active" },
+        });
+      }
+      return tx.localOrganization.create({
+        data: {
+          name: data.shortName,
+          entityType: data.legalEntityType ?? "legal_entity",
+          fullLegalName: data.legalEntityName,
+          inn: data.inn,
+          ogrn: data.ogrn,
+          actualAddress: data.address,
+          phone: data.phone,
+          email: data.email,
+          isDefault: false,
+          isActive: true,
+        },
       });
-    }
+    });
+    created = await tx.branch.update({ where: { id: created.id }, data: { legacyOrganizationId: organization.id } });
     await tx.branchAuditLog.create({
       data: {
         businessGroupId: context.businessGroupId,
@@ -141,18 +153,33 @@ export async function createBranch(context: BranchContext, input: BranchInput) {
 }
 
 export async function updateBranch(context: BranchContext, branchId: string, input: BranchInput) {
-  if (!context.canManageBranches) return { ok: false as const, status: 403, error: "Недостаточно прав" };
+  if (!hasBranchPermission(context, "branches.update", branchId)) return { ok: false as const, status: 403, error: "Недостаточно прав" };
   const current = await prisma.branch.findFirst({ where: { id: branchId, businessGroupId: context.businessGroupId } });
   if (!current) return { ok: false as const, status: 404, error: "Филиал не найден" };
   const data = branchData(input, current);
   const error = validate(data);
   if (error) return { ok: false as const, status: 400, error };
 
+  const requestedOrganizationId = clean(input.organizationId, 120);
+  if (requestedOrganizationId) {
+    const [organization, linkedBranch] = await Promise.all([
+      prisma.localOrganization.findUnique({ where: { id: requestedOrganizationId }, select: { id: true } }),
+      prisma.branch.findFirst({ where: { legacyOrganizationId: requestedOrganizationId }, select: { id: true, businessGroupId: true } }),
+    ]);
+    if (!organization || (linkedBranch && (linkedBranch.id !== branchId || linkedBranch.businessGroupId !== context.businessGroupId))) {
+      return { ok: false as const, status: 400, error: "Организация недоступна этому филиалу" };
+    }
+  }
+
   const branch = await prisma.$transaction(async (tx) => {
-    const updated = await tx.branch.update({ where: { id: current.id }, data });
-    if (current.legacyOrganizationId) {
+    const updated = await tx.branch.update({
+      where: { id: current.id },
+      data: { ...data, legacyOrganizationId: requestedOrganizationId ?? undefined },
+    });
+    const organizationId = requestedOrganizationId ?? current.legacyOrganizationId;
+    if (organizationId) {
       await tx.localOrganization.update({
-        where: { id: current.legacyOrganizationId },
+        where: { id: organizationId },
         data: {
           name: data.shortName,
           entityType: data.legalEntityType ?? undefined,
@@ -164,6 +191,65 @@ export async function updateBranch(context: BranchContext, branchId: string, inp
           email: data.email,
         },
       });
+    }
+    const hasCommunicationUpdate = [
+      input.secondaryPhone,
+      input.whatsapp,
+      input.communicationEmail,
+      input.communicationTelegram,
+      input.workingSettingsJson,
+      input.communicationSettingsJson,
+    ].some((value) => value !== undefined) || input.phone !== undefined;
+    if (hasCommunicationUpdate) {
+      const existingCommunication = await tx.branchCommunicationSettings.findUnique({ where: { branchId } });
+      const existingCallbacks = existingCommunication?.callbackSettingsJson && typeof existingCommunication.callbackSettingsJson === "object" && !Array.isArray(existingCommunication.callbackSettingsJson)
+        ? existingCommunication.callbackSettingsJson as Prisma.JsonObject
+        : {};
+      const callbackSettingsJson = {
+        ...existingCallbacks,
+        ...(input.workingSettingsJson !== undefined ? { work: input.workingSettingsJson } : {}),
+        ...(input.communicationSettingsJson !== undefined ? { messages: input.communicationSettingsJson } : {}),
+      } as Prisma.InputJsonValue;
+      await tx.branchCommunicationSettings.upsert({
+        where: { branchId },
+        create: {
+          branchId,
+          primaryPhone: clean(input.phone, 80) ?? updated.phone ?? "Не указан",
+          secondaryPhone: clean(input.secondaryPhone, 80),
+          whatsapp: clean(input.whatsapp, 180),
+          telegram: clean(input.communicationTelegram, 180),
+          email: clean(input.communicationEmail, 180) ?? updated.email,
+          callbackSettingsJson,
+        },
+        update: {
+          primaryPhone: input.phone === undefined ? undefined : clean(input.phone, 80) ?? "Не указан",
+          secondaryPhone: input.secondaryPhone === undefined ? undefined : clean(input.secondaryPhone, 80),
+          whatsapp: input.whatsapp === undefined ? undefined : clean(input.whatsapp, 180),
+          telegram: input.communicationTelegram === undefined ? undefined : clean(input.communicationTelegram, 180),
+          email: input.communicationEmail === undefined ? undefined : clean(input.communicationEmail, 180),
+          callbackSettingsJson,
+        },
+      });
+    }
+    if (input.documentSettingsJson !== undefined) {
+      const primary = await tx.branchLegalEntity.findFirst({ where: { branchId }, orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] });
+      if (primary) {
+        await tx.branchLegalEntity.update({ where: { id: primary.id }, data: { documentSettingsJson: json(input.documentSettingsJson) } });
+      } else {
+        await tx.branchLegalEntity.create({
+          data: {
+            branchId,
+            name: updated.legalEntityName ?? updated.shortName,
+            entityType: updated.legalEntityType ?? "legal_entity",
+            inn: updated.inn,
+            ogrn: updated.ogrn,
+            legalAddress: updated.address,
+            bankDetailsJson: updated.bankDetailsJson ?? undefined,
+            documentSettingsJson: json(input.documentSettingsJson),
+            isPrimary: true,
+          },
+        });
+      }
     }
     await tx.branchAuditLog.create({
       data: {
@@ -181,7 +267,7 @@ export async function updateBranch(context: BranchContext, branchId: string, inp
 }
 
 export async function archiveBranch(context: BranchContext, branchId: string) {
-  if (!context.canManageBranches) return { ok: false as const, status: 403, error: "Недостаточно прав" };
+  if (!hasBranchPermission(context, "branches.archive", branchId)) return { ok: false as const, status: 403, error: "Недостаточно прав" };
   const branch = await prisma.branch.findFirst({ where: { id: branchId, businessGroupId: context.businessGroupId } });
   if (!branch) return { ok: false as const, status: 404, error: "Филиал не найден" };
   if (branch.status === "archived") return { ok: true as const, branch };

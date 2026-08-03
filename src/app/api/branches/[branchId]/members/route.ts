@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPublicUsers } from "@/lib/auth";
-import { branchErrorResponse, requireBranchContext } from "@/lib/branch-context";
+import { branchErrorResponse, hasBranchPermission, requireBranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
 
 const BRANCH_ROLES = new Set(["branch_owner", "administrator", "master", "mechanic", "accountant", "viewer"]);
 
 async function requireManagedBranch(branchId: string) {
   const context = await requireBranchContext({ allowAll: true, requireActive: false });
-  if (!context.canManageBranches) return { response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
+  if (!hasBranchPermission(context, "branches.manage_members", branchId)) return { response: NextResponse.json({ error: "Недостаточно прав" }, { status: 403 }) };
   const branch = await prisma.branch.findFirst({ where: { id: branchId, businessGroupId: context.businessGroupId } });
   if (!branch) return { response: NextResponse.json({ error: "Филиал не найден" }, { status: 404 }) };
   return { context, branch };
@@ -62,4 +62,3 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
   }
 }
-

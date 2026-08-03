@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { branchErrorResponse, requireBranchContext } from "@/lib/branch-context";
+import { branchErrorResponse, hasBranchPermission, requireBranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
 
 const BRANCH_ROLES = new Set(["branch_owner", "administrator", "master", "mechanic", "accountant", "viewer"]);
 
 async function access(branchId: string, membershipId: string) {
   const context = await requireBranchContext({ allowAll: true, requireActive: false });
-  if (!context.canManageBranches) return { context, membership: null, status: 403, error: "Недостаточно прав" };
+  if (!hasBranchPermission(context, "branches.manage_members", branchId)) return { context, membership: null, status: 403, error: "Недостаточно прав" };
   const membership = await prisma.branchMembership.findFirst({
     where: { id: membershipId, branchId, branch: { businessGroupId: context.businessGroupId } },
   });
@@ -47,4 +47,3 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
   }
 }
-

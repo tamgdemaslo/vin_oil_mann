@@ -282,8 +282,19 @@ function offerStockKey(productId: string, offer: Pick<RosskoOffer, "brand" | "pa
 function friendlyRosskoError(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error ?? "");
   if (/text должен/i.test(msg)) return "Не задан поисковый запрос";
-  if (/delivery|address|payment|key|не задан|не заданы/i.test(msg)) return "ROSSKO недоступен: проверьте настройки подключения";
-  return "Не удалось получить предложения ROSSKO";
+  if (/необходима авторизация|unauthori[sz]ed|\b401\b/i.test(msg)) {
+    return "Сессия истекла. Обновите страницу и войдите снова.";
+  }
+  if (/key1|key2|ключ|access denied|forbidden|\b403\b|неверн(?:ый|ые)|invalid (?:key|credential|auth)|auth(?:entication)? failed/i.test(msg)) {
+    return "ROSSKO не принял данные доступа текущего филиала. Проверьте подключение в интеграциях.";
+  }
+  if (/delivery|address|payment|requisite|contact|не задан|не заданы/i.test(msg)) {
+    return "Для ROSSKO не заполнены обязательные параметры подключения.";
+  }
+  if (/timeout|timed out|etimedout|econnreset|econnrefused|enotfound|socket hang up|network/i.test(msg)) {
+    return "ROSSKO не отвечает. Повторите проверку через несколько минут.";
+  }
+  return "ROSSKO отклонил проверку подключения. Повторите попытку или проверьте интеграцию.";
 }
 
 function normSkuBlob(s: unknown): string {
@@ -2399,18 +2410,26 @@ function RosskoStatusPanel({
 }) {
   const ok = health.status === "ok";
   const checking = health.status === "checking";
+  const unavailableReason = health.error || "Не удалось проверить подключение. Повторите попытку.";
+  const statusTitle = checking ? "Проверяем ROSSKO…" : ok ? "ROSSKO подключён" : "ROSSKO недоступен";
+  const statusDescription = checking
+    ? "Проверяем доступность сервиса и настройки текущего филиала"
+    : ok
+      ? "Можно искать наличие, добавлять позиции в корзину и оформлять заказ"
+      : "Поиск предложений временно невозможен.";
   return (
-    <section className={`eco-restock-rossko-status ${ok || checking ? "is-ok" : "is-error"}`}>
+    <section
+      className={`eco-restock-rossko-status ${ok || checking ? "is-ok" : "is-error"}`}
+      aria-live="polite"
+      aria-busy={checking || undefined}
+    >
       <div className="eco-restock-rossko-status__icon">
         {checking ? <Loader2 size={18} className="eco-spin" /> : ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
       </div>
       <div className="eco-restock-rossko-status__body">
-        <strong>{ok || checking ? "ROSSKO подключён" : "ROSSKO недоступен"}</strong>
-        <span>
-          {ok || checking
-            ? "Можно искать наличие, добавлять позиции в корзину и оформлять заказ"
-            : "Поиск предложений временно невозможен. Попробуйте обновить позже"}
-        </span>
+        <strong>{statusTitle}</strong>
+        <span>{statusDescription}</span>
+        {!ok && !checking && <span className="eco-restock-rossko-status__reason">Причина: {unavailableReason}</span>}
         <em>Проверено: {fmtTime(health.checkedAt)}</em>
         {bulk.active && (
           <div className="eco-restock-rossko-progress">

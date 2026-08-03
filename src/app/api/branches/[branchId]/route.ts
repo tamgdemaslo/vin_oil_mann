@@ -7,6 +7,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   try {
     const context = await requireBranchContext({ allowAll: true, requireActive: false });
     const { branchId } = await params;
+    if (!context.canViewBranches) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
     if (!context.branches.some((branch) => branch.id === branchId)) {
       return NextResponse.json({ error: "Филиал недоступен" }, { status: 403 });
     }
@@ -15,7 +16,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       include: { communication: true, legalEntities: true, telegramIntegration: { select: { status: true, phoneNumberMasked: true, telegramUsername: true, connectedAt: true, lastSyncAt: true, errorCode: true } } },
     });
     if (!branch) return NextResponse.json({ error: "Филиал не найден" }, { status: 404 });
-    return NextResponse.json({ branch });
+    return NextResponse.json({
+      branch,
+      activeBranchId: context.branchId ?? "all",
+      mode: context.mode,
+      permissions: context.permissions,
+      canUpdate: context.canUpdateBranches && context.mode === "branch" && context.branchId === branchId,
+      canArchive: context.canArchiveBranches && context.mode === "branch" && context.branchId === branchId,
+      canManageMembers: context.canManageBranchMembers && context.mode === "branch" && context.branchId === branchId,
+      canManageIntegrations: context.canManageIntegrations && context.mode === "branch" && context.branchId === branchId,
+    });
   } catch (error) {
     const result = branchErrorResponse(error);
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
@@ -35,4 +45,3 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
   }
 }
-

@@ -1161,6 +1161,7 @@ export default function SalaryDashboard({
   const dragStartDateRef = useRef<string | null>(null);
   const suppressNextClickRef = useRef(false);
   const operationFormRef = useRef<HTMLDivElement | null>(null);
+  const payrollProblemsRef = useRef<HTMLDivElement | null>(null);
 
   const viewingAsEmployee = mode === "employee";
   const canManagePayroll = isOwner && mode === "owner";
@@ -1584,8 +1585,8 @@ export default function SalaryDashboard({
     const next: { title: string; text: string; severity: "warning" | "danger" }[] = [];
     if (payrollError) {
       next.push({
-        title: "Не удалось рассчитать зарплату",
-        text: "Проверьте рабочие дни, ставки и правила сдельной части.",
+        title: "Расчёт не выполнен",
+        text: payrollError,
         severity: "danger",
       });
     }
@@ -1648,6 +1649,15 @@ export default function SalaryDashboard({
     }
     return next.slice(0, 8);
   }, [canManagePayroll, payroll, payrollError, payrollRows, payrollWorkingDays.length, rules.length, rulesLoading]);
+
+  function showPayrollProblems() {
+    const problemsElement = payrollProblemsRef.current;
+    if (!problemsElement) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    problemsElement.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "nearest" });
+    problemsElement.focus({ preventScroll: true });
+  }
 
   const availableTabs = useMemo<SalaryTab[]>(
     () =>
@@ -2772,18 +2782,31 @@ export default function SalaryDashboard({
               <EcoButton type="button" size="sm" onClick={() => void loadPayroll()}>
                 Повторить
               </EcoButton>
-              <EcoButton type="button" size="sm" variant="ghost" onClick={() => setActiveTab("rules")}>
-                Показать проблемы
+              <EcoButton
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-controls="payroll-problems"
+                onClick={showPayrollProblems}
+              >
+                К деталям ошибки
               </EcoButton>
             </div>
           )}
 
           {problems.length > 0 && (
-            <div className="eco-payroll-problems">
+            <div
+              ref={payrollProblemsRef}
+              id="payroll-problems"
+              className="eco-payroll-problems"
+              role="region"
+              aria-labelledby="payroll-problems-title"
+              tabIndex={-1}
+            >
               <div className="eco-payroll-problems__head">
                 <AlertTriangle size={17} />
                 <div>
-                  <strong>Проблемы расчёта</strong>
+                  <strong id="payroll-problems-title">Проблемы расчёта</strong>
                   <span>Проверьте эти пункты перед закрытием периода.</span>
                 </div>
               </div>

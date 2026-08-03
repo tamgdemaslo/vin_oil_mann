@@ -5,7 +5,6 @@ import {
   ChevronRight,
   Gauge,
   MessageCircle,
-  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
@@ -1033,38 +1032,6 @@ export default function HomeDashboard({
           </>
         )}
       </section>
-
-      <nav className="eco-mobile-bottom-nav" aria-label="Быстрый доступ">
-        <Link href="/" className="is-active" aria-current="page">
-          <Gauge aria-hidden className="eco-icon" />
-          <span>Контроль</span>
-        </Link>
-        {role === "master" ? (
-          <Link href="/shipment?filter=diagnostics">
-            <Wrench aria-hidden className="eco-icon" />
-            <span>Диагностики</span>
-            {!!dashboard?.diagnostics.withoutPhoto && <b>{dashboard.diagnostics.withoutPhoto > 99 ? "99+" : dashboard.diagnostics.withoutPhoto}</b>}
-          </Link>
-        ) : (
-          <Link href="/messages">
-            <MessageCircle aria-hidden className="eco-icon" />
-            <span>Сообщения</span>
-            {!!messages?.needsReply && <b>{messages.needsReply > 99 ? "99+" : messages.needsReply}</b>}
-          </Link>
-        )}
-        <Link href="/records">
-          <CalendarDays aria-hidden className="eco-icon" />
-          <span>Записи</span>
-        </Link>
-        <Link href="/shipment">
-          <Truck aria-hidden className="eco-icon" />
-          <span>Отгрузки</span>
-        </Link>
-        <Link href="/cabinet">
-          <MoreHorizontal aria-hidden className="eco-icon" />
-          <span>Ещё</span>
-        </Link>
-      </nav>
 
       <div className="eco-ops-desktop">
         <section className={`eco-ops-command ${cashClosed ? "is-blocked" : "is-ready"}`} aria-label={`Операционный центр дня для ${userName}`}>

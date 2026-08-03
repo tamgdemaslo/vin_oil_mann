@@ -8,14 +8,19 @@ import {
   CalendarDays,
   ChevronDown,
   CircleDollarSign,
+  Gauge,
   Home,
   LogOut,
   Menu,
+  MessageCircle,
+  MoreHorizontal,
   PackageSearch,
   Search,
   Settings,
+  Truck,
   UserRound,
   Warehouse,
+  Wrench,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -23,8 +28,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { MessengerTopbarButton } from "@/components/messenger/MessengerUi";
+import { useMessenger } from "@/components/messenger/MessengerProvider";
 import { formatServiceTime } from "@/lib/date-time";
-import { loadDashboardClientBundle } from "@/lib/dashboard-client";
+import { invalidateDashboardClientBundle, loadDashboardClientBundle } from "@/lib/dashboard-client";
 import { safeReadJson } from "@/lib/http-json";
 import { EcoStatusDot } from "./EcoUI";
 
@@ -74,6 +80,9 @@ type ShellBranchContext = {
   groupRole: string | null;
   branchRole: string | null;
   canManageBranches: boolean;
+  canViewBranches: boolean;
+  canViewAllBranches: boolean;
+  canUpdateBranches: boolean;
 };
 
 type DeadlineNotification = {
@@ -181,6 +190,7 @@ function routeContext(pathname: string) {
 export default function PlatformShell() {
   const pathname = usePathname();
   const router = useRouter();
+  const { unreadTotal } = useMessenger();
   const [user, setUser] = useState<PlatformUser>(null);
   const [permissions, setPermissions] = useState<PlatformPermissions>({});
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
@@ -188,6 +198,8 @@ export default function PlatformShell() {
   const [branches, setBranches] = useState<ShellBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [canViewAllBranches, setCanViewAllBranches] = useState(false);
+  const [canViewBranchSettings, setCanViewBranchSettings] = useState(false);
+  const [canUpdateBranchSettings, setCanUpdateBranchSettings] = useState(false);
   const [branchSwitching, setBranchSwitching] = useState(false);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
   const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
@@ -201,8 +213,10 @@ export default function PlatformShell() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const bottomNavRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const browserPushSeenRef = useRef<Set<string>>(new Set());
+  const reloadShellStateRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
@@ -229,7 +243,9 @@ export default function PlatformShell() {
         const branchContext = sessionData?.branchContext ?? null;
         setBranches(branchContext?.branches ?? []);
         setSelectedBranchId(branchContext?.activeBranchId ?? "");
-        setCanViewAllBranches(Boolean(branchContext?.groupRole));
+        setCanViewAllBranches(Boolean(branchContext?.canViewAllBranches));
+        setCanViewBranchSettings(Boolean(branchContext?.canViewBranches));
+        setCanUpdateBranchSettings(Boolean(branchContext?.canUpdateBranches));
       } catch {
         if (cancelled) return;
         setUser(null);
@@ -240,17 +256,25 @@ export default function PlatformShell() {
         setBranches([]);
         setSelectedBranchId("");
         setCanViewAllBranches(false);
+        setCanViewBranchSettings(false);
+        setCanUpdateBranchSettings(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
+    reloadShellStateRef.current = loadShellState;
+
     void loadShellState();
     const handleShiftChanged = () => void loadShellState(true);
+    const handleBranchUpdated = () => void loadShellState(true);
     window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    window.addEventListener("eco-branch-updated", handleBranchUpdated);
     return () => {
       cancelled = true;
+      reloadShellStateRef.current = null;
       window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+      window.removeEventListener("eco-branch-updated", handleBranchUpdated);
     };
   }, [pathname]);
 
@@ -325,7 +349,7 @@ export default function PlatformShell() {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target;
       if (!(target instanceof Node)) return;
-      if (!shellRef.current?.contains(target)) {
+      if (!shellRef.current?.contains(target) && !bottomNavRef.current?.contains(target)) {
         setOpenSectionId(null);
         setProfileOpen(false);
         setMobileOpen(false);
@@ -430,7 +454,13 @@ export default function PlatformShell() {
           {
             href: "/cabinet/branches",
             label: "Филиалы",
-            description: "Точки, реквизиты и доступ сотрудников.",
+            description: "Адреса, графики, сотрудники и настройки точек.",
+            disabled: !canViewBranchSettings,
+          },
+          {
+            href: "/cabinet/organizations",
+            label: "Организации",
+            description: "Юридические лица, реквизиты и налоги.",
             disabled: !canManageOrganizations,
           },
           { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
@@ -450,7 +480,7 @@ export default function PlatformShell() {
         ],
       },
     ],
-    [allBranchesMode, canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, operationalLocked]
+    [allBranchesMode, canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewBranchSettings, canViewWarehouseAnalytics, operationalLocked]
   );
 
   const searchResults = useMemo<PlatformSearchResult[]>(() => {
@@ -562,6 +592,14 @@ export default function PlatformShell() {
   }
 
   async function handleBranchChange(id: string) {
+    if (id === "__manage_branches__") {
+      router.push("/cabinet/branches");
+      return;
+    }
+    if (id === "__current_branch_settings__") {
+      if (selectedBranchId && selectedBranchId !== "all") router.push(`/cabinet/branches/${selectedBranchId}`);
+      return;
+    }
     if (!id || id === selectedBranchId || branchSwitching) return;
     if (hasAnyActiveShift && !window.confirm("У вас есть незакрытая смена. Всё равно переключить филиал?")) return;
     setBranchSwitching(true);
@@ -577,7 +615,11 @@ export default function PlatformShell() {
         return;
       }
       setSelectedBranchId(id);
-      window.location.href = id === "all" ? "/owner" : pathname;
+      invalidateDashboardClientBundle();
+      window.dispatchEvent(new CustomEvent("eco-branch-context-changed", { detail: { branchId: id } }));
+      await reloadShellStateRef.current?.(true);
+      if (id === "all") router.push("/owner");
+      router.refresh();
     } finally {
       setBranchSwitching(false);
     }
@@ -620,8 +662,16 @@ export default function PlatformShell() {
   const activeBranchLabel = selectedBranchId === "all"
     ? "Все филиалы"
     : branches.find((branch) => branch.id === selectedBranchId)?.shortName ?? "Филиал не выбран";
+  const mobileHomeActive = pathname === (allBranchesMode ? "/owner" : "/");
+  const mobileSecondaryActive = user?.role === "master"
+    ? pathname.startsWith("/shipment")
+    : pathname === "/messages" || pathname === "/crm/messages";
+  const mobileRecordsActive = pathname.startsWith("/records");
+  const mobileShipmentActive = user?.role !== "master" && pathname.startsWith("/shipment");
+  const mobileMoreActive = !mobileHomeActive && !mobileSecondaryActive && !mobileRecordsActive && !mobileShipmentActive;
 
   return (
+    <>
     <div ref={shellRef} className="platform-shell">
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">
@@ -701,7 +751,7 @@ export default function PlatformShell() {
                 <label className={`platform-shell__org-switch ${selectedBranchId === "all" ? "is-all" : ""}`} title="Активный филиал">
                   <Building2 aria-hidden className="eco-icon" />
                   <span className="platform-shell__branch-copy">
-                    <small>Филиал</small>
+                    <small>{branchSwitching ? "Переключаем филиал…" : "Филиал"}</small>
                     <select
                       value={selectedBranchId}
                       onChange={(event) => void handleBranchChange(event.target.value)}
@@ -714,6 +764,12 @@ export default function PlatformShell() {
                         </option>
                       ))}
                       {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
+                      {canViewBranchSettings && (
+                        <optgroup label="Управление">
+                          {!allBranchesMode && canUpdateBranchSettings && <option value="__current_branch_settings__">Настройки текущего филиала</option>}
+                          <option value="__manage_branches__">Управление филиалами</option>
+                        </optgroup>
+                      )}
                     </select>
                   </span>
                 </label>
@@ -828,6 +884,12 @@ export default function PlatformShell() {
                   <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>{branch.shortName}</option>
                 ))}
                 {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
+                {canViewBranchSettings && (
+                  <optgroup label="Управление">
+                    {!allBranchesMode && canUpdateBranchSettings && <option value="__current_branch_settings__">Настройки текущего филиала</option>}
+                    <option value="__manage_branches__">Управление филиалами</option>
+                  </optgroup>
+                )}
               </select>
             </label>
           )}
@@ -919,5 +981,44 @@ export default function PlatformShell() {
         </div>
       )}
     </div>
+    {user && (
+      <nav ref={bottomNavRef} className="platform-shell__bottom-nav" aria-label="Основная мобильная навигация">
+        <Link href={allBranchesMode ? "/owner" : "/"} className={mobileHomeActive ? "is-active" : undefined} aria-current={mobileHomeActive ? "page" : undefined}>
+          <Gauge aria-hidden className="eco-icon" />
+          <span>Контроль</span>
+        </Link>
+        {user.role === "master" ? (
+          <Link href="/shipment?filter=diagnostics" className={mobileSecondaryActive ? "is-active" : undefined} aria-current={mobileSecondaryActive ? "page" : undefined}>
+            <Wrench aria-hidden className="eco-icon" />
+            <span>Диагностики</span>
+          </Link>
+        ) : (
+          <Link href="/messages" className={mobileSecondaryActive ? "is-active" : undefined} aria-current={mobileSecondaryActive ? "page" : undefined}>
+            <MessageCircle aria-hidden className="eco-icon" />
+            <span>Сообщения</span>
+            {!!unreadTotal && <b>{unreadTotal > 99 ? "99+" : unreadTotal}</b>}
+          </Link>
+        )}
+        <Link href="/records" className={mobileRecordsActive ? "is-active" : undefined} aria-current={mobileRecordsActive ? "page" : undefined}>
+          <CalendarDays aria-hidden className="eco-icon" />
+          <span>Записи</span>
+        </Link>
+        <Link href="/shipment" className={mobileShipmentActive ? "is-active" : undefined} aria-current={mobileShipmentActive ? "page" : undefined}>
+          <Truck aria-hidden className="eco-icon" />
+          <span>Отгрузки</span>
+        </Link>
+        <button
+          type="button"
+          className={mobileOpen || mobileMoreActive ? "is-active" : undefined}
+          onClick={() => setMobileOpen((value) => !value)}
+          aria-expanded={mobileOpen}
+          aria-label={mobileOpen ? "Закрыть меню разделов" : "Открыть меню разделов"}
+        >
+          <MoreHorizontal aria-hidden className="eco-icon" />
+          <span>Ещё</span>
+        </button>
+      </nav>
+    )}
+    </>
   );
 }

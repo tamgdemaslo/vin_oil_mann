@@ -78,7 +78,12 @@ requireText("src/lib/branch-context.ts", [
   /branch_access_denied/,
   /concrete_branch_required/,
 ]);
-requireText("src/lib/branches.ts", [/BRANCH_CREATION_ENABLED/, /Создание второго филиала заблокировано/]);
+requireText("src/lib/branches.ts", [
+  /hasBranchPermission\(context, "branches\.create"\)/,
+  /hasBranchPermission\(context, "branches\.update", branchId\)/,
+  /hasBranchPermission\(context, "branches\.archive", branchId\)/,
+  /runWithRequestTenant/,
+]);
 requireText("src/app/api/ai-assistant/threads/route.ts", [/branch:\s*\{\s*id:\s*access\.branchId,\s*name:\s*access\.branchName/]);
 requireText("src/lib/db.ts", [
   /branch-isolation/,

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { MessengerProvider } from "@/components/messenger/MessengerProvider";
-import { MessengerWidget } from "@/components/messenger/MessengerUi";
 import PlatformShell from "@/components/platform/PlatformShell";
 import RouteTitle from "@/components/platform/RouteTitle";
 
@@ -28,7 +27,6 @@ export default function RootLayout({
           <RouteTitle />
           <PlatformShell />
           {children}
-          <MessengerWidget />
         </MessengerProvider>
       </body>
     </html>

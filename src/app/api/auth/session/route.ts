@@ -21,10 +21,18 @@ export async function GET() {
           groupRole: branchContext.groupRole,
           branchRole: branchContext.branchRole,
           canManageBranches: branchContext.canManageBranches,
+          permissions: branchContext.permissions,
+          canViewBranches: branchContext.canViewBranches,
+          canViewAllBranches: branchContext.canViewAllBranches,
+          canCreateBranches: branchContext.canCreateBranches,
+          canUpdateBranches: branchContext.canUpdateBranches,
+          canArchiveBranches: branchContext.canArchiveBranches,
+          canManageBranchMembers: branchContext.canManageBranchMembers,
+          canManageIntegrations: branchContext.canManageIntegrations,
         }
       : null,
     permissions: {
-      canManageOrganizations: branchContext?.canManageBranches ?? await canManageOrganizations(session.user),
+      canManageOrganizations: await canManageOrganizations(session.user),
       canViewWarehouseAnalytics: await canViewWarehouseAnalytics(session.user),
     },
   });

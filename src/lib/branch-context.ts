@@ -8,7 +8,54 @@ export const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const ACTIVE_BRANCH_MAX_AGE = 60 * 60 * 24 * 180;
 const ALL_BRANCHES = "all";
 const GROUP_ROLES = new Set(["group_owner", "group_admin", "group_analyst"]);
-const GROUP_MANAGE_ROLES = new Set(["group_owner", "group_admin"]);
+
+export type BranchPermission =
+  | "branches.view"
+  | "branches.view_all"
+  | "branches.create"
+  | "branches.update"
+  | "branches.archive"
+  | "branches.manage_members"
+  | "integrations.manage";
+
+const ALL_BRANCH_PERMISSIONS: BranchPermission[] = [
+  "branches.view",
+  "branches.view_all",
+  "branches.create",
+  "branches.update",
+  "branches.archive",
+  "branches.manage_members",
+  "integrations.manage",
+];
+
+function permissionsFromJson(value: Prisma.JsonValue | null | undefined) {
+  if (!value) return new Set<string>();
+  if (Array.isArray(value)) return new Set(value.map(String));
+  if (typeof value === "object") {
+    return new Set(Object.entries(value).filter(([, enabled]) => Boolean(enabled)).map(([permission]) => permission));
+  }
+  return new Set<string>();
+}
+
+function branchPermissions(input: {
+  groupRole: string | null;
+  branchRole: string | null;
+  permissionsJson?: Prisma.JsonValue | null;
+}) {
+  if (input.groupRole === "group_owner" || input.groupRole === "group_admin") {
+    return new Set<string>(ALL_BRANCH_PERMISSIONS);
+  }
+  if (input.groupRole === "group_analyst") return new Set<string>(["branches.view", "branches.view_all"]);
+  const permissions = permissionsFromJson(input.permissionsJson);
+  if (input.branchRole === "branch_owner") {
+    for (const permission of ["branches.view", "branches.update", "branches.manage_members", "integrations.manage"]) {
+      permissions.add(permission);
+    }
+  } else if (input.branchRole === "administrator" || input.branchRole === "branch_admin") {
+    permissions.add("branches.view");
+  }
+  return permissions;
+}
 
 type BranchCookiePayload = {
   branchId: string;
@@ -38,12 +85,41 @@ export type BranchContext = {
   branchRole: string | null;
   isGroupOwner: boolean;
   canManageBranches: boolean;
+  permissions: string[];
+  canViewBranches: boolean;
+  canViewAllBranches: boolean;
+  canCreateBranches: boolean;
+  canUpdateBranches: boolean;
+  canArchiveBranches: boolean;
+  canManageBranchMembers: boolean;
+  canManageIntegrations: boolean;
   mode: "branch" | "all";
   branchId: string | null;
   organizationId: string | null;
   branch: BranchSummary | null;
   branches: BranchSummary[];
 };
+
+function permissionFlags(permissions: Set<string>) {
+  const has = (permission: BranchPermission) => permissions.has(permission);
+  return {
+    permissions: [...permissions].sort(),
+    canViewBranches: has("branches.view"),
+    canViewAllBranches: has("branches.view_all"),
+    canCreateBranches: has("branches.create"),
+    canUpdateBranches: has("branches.update"),
+    canArchiveBranches: has("branches.archive"),
+    canManageBranchMembers: has("branches.manage_members"),
+    canManageIntegrations: has("integrations.manage"),
+    canManageBranches: has("branches.create") || has("branches.update") || has("branches.archive") || has("branches.manage_members"),
+  };
+}
+
+export function hasBranchPermission(context: BranchContext, permission: BranchPermission, branchId?: string) {
+  if (!(context.permissions ?? []).includes(permission)) return false;
+  if (!branchId) return true;
+  return context.mode === "branch" && context.branchId === branchId;
+}
 
 export class BranchAccessError extends Error {
   status: number;
@@ -217,6 +293,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   const requested = cookie?.branchId;
 
   if (requested === ALL_BRANCHES && canUseAll) {
+    const permissions = branchPermissions({ groupRole: access.groupRole, branchRole: null });
     return {
       user: session.user,
       userId: access.user.id,
@@ -224,7 +301,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
       groupRole: access.groupRole,
       branchRole: null,
       isGroupOwner: access.groupRole === "group_owner",
-      canManageBranches: Boolean(access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)),
+      ...permissionFlags(permissions),
       mode: "all",
       branchId: null,
       organizationId: null,
@@ -259,6 +336,11 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     throw new BranchAccessError("Филиал работает в режиме только для чтения", 423, "branch_read_only");
   }
   const branchMembership = access.branchMemberships.find((membership) => membership.branchId === branch.id) ?? null;
+  const permissions = branchPermissions({
+    groupRole: access.groupRole,
+    branchRole: branchMembership?.roleId ?? (access.groupRole ? "branch_owner" : null),
+    permissionsJson: branchMembership?.permissionsJson,
+  });
 
   return {
     user: session.user,
@@ -267,7 +349,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     groupRole: access.groupRole,
     branchRole: branchMembership?.roleId ?? (access.groupRole ? "branch_owner" : null),
     isGroupOwner: access.groupRole === "group_owner",
-    canManageBranches: Boolean(access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)),
+    ...permissionFlags(permissions),
     mode: "branch",
     branchId: branch.id,
     organizationId: branch.legacyOrganizationId ?? branch.id,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BellRing, Bot, Building2, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
+import { BellRing, Bot, Building2, GitBranch, KeyRound, Plug, ShieldCheck, UserRound } from "lucide-react";
 import EmployeeTelegramCard from "./EmployeeTelegramCard";
 import PasswordChangeCard from "./PasswordChangeCard";
 import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
@@ -9,13 +9,30 @@ import { EcoBadge, EcoKpi } from "@/components/platform/EcoUI";
 type CabinetDashboardProps = {
   role?: "owner" | "admin" | "master";
   canManageOrganizations?: boolean;
+  canViewBranches?: boolean;
+  activeBranchId?: string | null;
+  branchMode?: "branch" | "all";
 };
 
-export default function CabinetDashboard({ role, canManageOrganizations = false }: CabinetDashboardProps) {
+export default function CabinetDashboard({
+  role,
+  canManageOrganizations = false,
+  canViewBranches = false,
+  activeBranchId = null,
+  branchMode = "all",
+}: CabinetDashboardProps) {
   const canAccessCrm = role === "owner" || role === "admin";
   const canManageIntegrations = role === "owner" || role === "admin";
   const links = [
     { href: "/cabinet", label: "Профиль", description: "Личные данные и смена пароля.", icon: UserRound },
+    ...(canViewBranches
+      ? [{
+          href: "/cabinet/branches",
+          label: "Филиалы",
+          description: "Адреса, телефоны, графики, сотрудники и настройки точек.",
+          icon: GitBranch,
+        }]
+      : []),
     ...(canAccessCrm
       ? [
           {
@@ -124,7 +141,7 @@ export default function CabinetDashboard({ role, canManageOrganizations = false 
           <PasswordChangeCard />
         </div>
 
-        <EmployeeTelegramCard />
+        <EmployeeTelegramCard activeBranchId={activeBranchId} branchMode={branchMode} />
       </section>
     </main>
   );

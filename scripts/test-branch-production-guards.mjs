@@ -73,7 +73,9 @@ const branchRouteSource = fs.readFileSync(new URL("../src/app/api/branches/route
 const branchesSource = fs.readFileSync(new URL("../src/lib/branches.ts", import.meta.url), "utf8");
 assert.match(branchRouteSource, /requireBranchContext\(\{ allowAll: true, requireActive: false \}\)/);
 assert.match(branchRouteSource, /createBranch\(context, body\)/);
-assert.match(branchesSource, /if \(!context\.canManageBranches\) return \{ ok: false as const, status: 403/);
+assert.match(branchesSource, /hasBranchPermission\(context, "branches\.create"\)/);
+assert.match(branchesSource, /hasBranchPermission\(context, "branches\.update", branchId\)/);
+assert.match(branchesSource, /hasBranchPermission\(context, "branches\.archive", branchId\)/);
 assert.match(branchesSource, /businessGroupId: context\.businessGroupId/);
 assert.match(branchesSource, /branchAuditLog\.create/);
 assert.doesNotMatch(branchesSource.match(/export type BranchInput = \{[\s\S]*?\n\};/)?.[0] ?? "", /businessGroupId/);

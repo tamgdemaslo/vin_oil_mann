@@ -1,5 +1,13 @@
 -- Read-only verification for an isolated Selectel rehearsal database.
 -- Run only after scripts/branch-migration-preflight.mjs passes.
+-- PostgreSQL does not allow CREATE TEMP TABLE after BEGIN READ ONLY, so the
+-- session-local result table is created before the read-only transaction.
+CREATE TEMP TABLE branch_verification_results (
+  table_name text NOT NULL,
+  null_branch_ids bigint NOT NULL,
+  non_main_rows bigint NOT NULL
+);
+
 BEGIN TRANSACTION READ ONLY;
 
 SELECT 'business_groups' AS check_name, count(*)::bigint AS value FROM business_groups
@@ -11,12 +19,6 @@ UNION ALL
 SELECT 'active_group_owners', count(*)::bigint FROM business_group_memberships WHERE role = 'group_owner' AND status = 'active'
 UNION ALL
 SELECT 'active_branch_memberships', count(*)::bigint FROM branch_memberships WHERE status = 'active';
-
-CREATE TEMP TABLE branch_verification_results (
-  table_name text NOT NULL,
-  null_branch_ids bigint NOT NULL,
-  non_main_rows bigint NOT NULL
-) ON COMMIT DROP;
 
 DO $$
 DECLARE

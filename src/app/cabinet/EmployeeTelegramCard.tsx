@@ -50,20 +50,33 @@ const notificationTypes = [
   "системные уведомления",
 ];
 
-export default function EmployeeTelegramCard() {
+export default function EmployeeTelegramCard({
+  activeBranchId,
+  branchMode,
+}: {
+  activeBranchId: string | null;
+  branchMode: "branch" | "all";
+}) {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<TelegramError | null>(null);
 
   useEffect(() => {
+    if (branchMode === "all" || !activeBranchId) {
+      setStatus(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let alive = true;
     async function loadStatus() {
       setLoading(true);
       setError(null);
       try {
         const res = await fetch("/api/cabinet/telegram-link", { cache: "no-store" });
-        const data = await readJson<{ telegram?: TelegramStatus; error?: string }>(res);
+        const data = await readJson<{ telegram?: TelegramStatus; branchId?: string; error?: string; code?: string }>(res);
         if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить Telegram");
+        if (data?.branchId !== activeBranchId) throw new Error("Контекст филиала изменился. Обновите страницу.");
         if (alive) setStatus(data?.telegram ?? { connected: false });
       } catch (e) {
         if (alive) setError({ message: e instanceof Error ? e.message : "Не удалось загрузить Telegram" });
@@ -75,7 +88,7 @@ export default function EmployeeTelegramCard() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [activeBranchId, branchMode]);
 
   const connected = status?.connected;
 
@@ -91,7 +104,9 @@ export default function EmployeeTelegramCard() {
       </div>
 
       <div className="eco-employee-telegram-status">
-        {loading ? (
+        {branchMode === "all" ? (
+          <span className="eco-muted-value">Для настройки Telegram выберите конкретный филиал.</span>
+        ) : loading ? (
           <span className="eco-muted-value">Проверяем привязку...</span>
         ) : connected ? (
           <>
@@ -112,10 +127,12 @@ export default function EmployeeTelegramCard() {
       </div>
 
       <div className="eco-employee-telegram-actions">
-        <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary">
-          <Settings aria-hidden className="eco-icon" />
-          Настроить рабочий Telegram
-        </Link>
+        {branchMode === "branch" && (
+          <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary">
+            <Settings aria-hidden className="eco-icon" />
+            Настроить рабочий Telegram
+          </Link>
+        )}
       </div>
 
       {error && (

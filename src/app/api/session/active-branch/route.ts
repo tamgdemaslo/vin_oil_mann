@@ -19,6 +19,14 @@ export async function GET() {
       groupRole: context.groupRole,
       branchRole: context.branchRole,
       canManageBranches: context.canManageBranches,
+      permissions: context.permissions,
+      canViewBranches: context.canViewBranches,
+      canViewAllBranches: context.canViewAllBranches,
+      canCreateBranches: context.canCreateBranches,
+      canUpdateBranches: context.canUpdateBranches,
+      canArchiveBranches: context.canArchiveBranches,
+      canManageBranchMembers: context.canManageBranchMembers,
+      canManageIntegrations: context.canManageIntegrations,
     });
   } catch (error) {
     const result = branchErrorResponse(error);
@@ -46,4 +54,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
   }
 }
-

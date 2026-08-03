@@ -397,19 +397,18 @@ function fullMessengerHref(conversationId?: string | null) {
 }
 
 export function MessengerTopbarButton() {
-  const { unreadTotal, openInbox, widgetView } = useMessenger();
+  const pathname = usePathname();
+  const { unreadTotal } = useMessenger();
   return (
-    <button
-      type="button"
+    <Link
+      href="/messages"
       className="platform-shell__icon-btn platform-shell__notification-btn eco-messenger-topbar"
-      onClick={openInbox}
       aria-label="Сообщения"
-      aria-controls="eco-messenger-floating"
-      aria-expanded={widgetView !== "collapsed"}
+      aria-current={pathname === "/messages" || pathname === "/crm/messages" ? "page" : undefined}
     >
       <MessageCircle aria-hidden className="eco-icon" />
       {!!unreadTotal && <span>{unreadTotal > 99 ? "99+" : unreadTotal}</span>}
-    </button>
+    </Link>
   );
 }
 

@@ -22,7 +22,7 @@
     "test:ai-tool-loop-policy": "node scripts/test-ai-tool-loop-policy.mjs",
     "check:selectel-deploy": "node scripts/check-selectel-deploy-policy.mjs",
     "test:selectel-deploy-flow": "bash scripts/test-selectel-deploy-flow.sh",
-    "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs",
+    "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs && node scripts/test-branch-management-ui.mjs",
     "test:branch-security-db": "node scripts/test-branch-security-db.mjs",
     "audit:branch-models": "node scripts/generate-branch-model-classification.mjs",
     "audit:branch-raw-sql": "node scripts/audit-branch-raw-sql.mjs --strict",
