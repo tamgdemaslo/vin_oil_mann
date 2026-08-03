@@ -10,6 +10,7 @@ const jiti = createJiti(import.meta.url, {
   alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) },
 });
 const tenant = await jiti.import("../src/lib/request-tenant-store.ts");
+const branchApi = await jiti.import("../src/lib/branch-api.ts");
 const effects = await jiti.import("../src/lib/external-side-effects.ts");
 const { proxy } = await jiti.import("../src/proxy.ts");
 const { createBranch } = await jiti.import("../src/lib/branches.ts");
@@ -78,6 +79,17 @@ assert.match(branchesSource, /businessGroupId: context\.businessGroupId/);
 assert.match(branchesSource, /branchAuditLog\.create/);
 assert.doesNotMatch(branchesSource.match(/export type BranchInput = \{[\s\S]*?\n\};/)?.[0] ?? "", /businessGroupId/);
 
+for (const routePath of [
+  "../src/app/api/catalog/search/route.ts",
+  "../src/app/api/crm/deadline-notifications/route.ts",
+  "../src/app/api/dashboard/operations/route.ts",
+  "../src/app/api/messenger/conversations/route.ts",
+]) {
+  const routeSource = fs.readFileSync(new URL(routePath, import.meta.url), "utf8");
+  assert.match(routeSource, /requireBranchApi\(\{ allowAll: false, requireActive: true \}\)/);
+  assert.match(routeSource, /runWithBranchApiContext\(/);
+}
+
 if (previousSessionSecret === undefined) delete process.env.SESSION_SECRET;
 else process.env.SESSION_SECRET = previousSessionSecret;
 
@@ -87,6 +99,35 @@ const scoped = tenant.runWithRequestTenant(
   () => tenant.getScopedBranchId()
 );
 assert.equal(scoped, "branch-test");
+const branchApiScope = await branchApi.runWithBranchApiContext(
+  {
+    mode: "branch",
+    branchId: "branch-api-test",
+    organizationId: "org-api-test",
+    businessGroupId: "group-api-test",
+    userId: "user-api-test",
+    groupRole: "group_admin",
+    branchRole: "branch_admin",
+    branches: [],
+  },
+  async () => {
+    await Promise.resolve();
+    return {
+      branchId: tenant.getScopedBranchId(),
+      requestTenant: tenant.getRequestTenant(),
+    };
+  }
+);
+assert.equal(branchApiScope.branchId, "branch-api-test");
+assert.deepEqual(branchApiScope.requestTenant, {
+  mode: "branch",
+  branchId: "branch-api-test",
+  organizationId: "org-api-test",
+  allowedBranchIds: ["branch-api-test"],
+  businessGroupId: "group-api-test",
+  userId: "user-api-test",
+  permissions: ["group_admin", "branch_admin"],
+});
 assert.throws(
   () => tenant.runWithRequestTenant(
     { mode: "all", branchId: null, organizationId: null, allowedBranchIds: ["branch-test"] },
