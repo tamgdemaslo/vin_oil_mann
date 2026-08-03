@@ -3,10 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const ALLOWED_ALL_MODE_WRITES = new Set([
-  "/api/session/active-branch",
-  "/api/auth/login",
-  "/api/auth/logout",
-  "/api/auth/change-password",
+  "POST /api/session/active-branch",
+  "POST /api/auth/login",
+  "POST /api/auth/logout",
+  "POST /api/auth/change-password",
+  "POST /api/branches",
 ]);
 
 function activeBranch(value: string | undefined) {
@@ -29,7 +30,7 @@ function activeBranch(value: string | undefined) {
 
 export function proxy(request: NextRequest) {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return NextResponse.next();
-  if (ALLOWED_ALL_MODE_WRITES.has(request.nextUrl.pathname)) return NextResponse.next();
+  if (ALLOWED_ALL_MODE_WRITES.has(`${request.method} ${request.nextUrl.pathname}`)) return NextResponse.next();
   const branchId = activeBranch(request.cookies.get(ACTIVE_BRANCH_COOKIE)?.value);
   if (branchId === "all") {
     return NextResponse.json(
