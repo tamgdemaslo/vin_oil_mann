@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "status": "CLASSIFIED_NO_SELECTEL_ROW_MUTATION",
+  "generatedAt": "2026-08-02T18:30:00Z",
+  "canonicalDatabase": "Selectel vin_oil",
+  "source": "abandoned Railway import dry run against the fresh Selectel snapshot",
+  "sourceConflictOccurrences": 59,
+  "classification": "D_LEGACY_TECHNICAL_DUPLICATE",
+  "groups": [
+    {
+      "table": "communication_identities",
+      "index": "communication_identities_org_account_user_uidx",
+      "occurrences": 8
+    },
+    {
+      "table": "communication_identities",
+      "index": "communication_identities_organization_id_messenger_account__key",
+      "occurrences": 8
+    },
+    {
+      "table": "messenger_connections",
+      "index": "messenger_connections_channel_external_chat_id_key",
+      "occurrences": 8
+    },
+    {
+      "table": "messenger_conversations",
+      "index": "messenger_conversations_channel_external_conversation_id_key",
+      "occurrences": 8
+    },
+    {
+      "table": "messenger_conversations",
+      "index": "messenger_conversations_channel_external_uidx",
+      "occurrences": 8
+    },
+    {
+      "table": "notification_jobs",
+      "index": "notification_jobs_org_idempotency_uidx",
+      "occurrences": 19
+    }
+  ],
+  "unknown": 0,
+  "canonicalSelectelFindings": [
+    {
+      "table": "local_demands",
+      "proposedKey": [
+        "branch_id",
+        "name"
+      ],
+      "duplicateGroups": 795,
+      "rowsInDuplicateGroups": 1591,
+      "excessRows": 796,
+      "classification": "BUSINESS_LABEL_NOT_IDENTITY",
+      "evidence": {
+        "groupsWithDifferentMoyskladIds": 789,
+        "groupsWithDifferentPayloadSums": 795
+      },
+      "resolution": "REPLACE_PROPOSED_UNIQUE_WITH_NON_UNIQUE_LOOKUP_INDEX",
+      "rowMutationRequired": false
+    },
+    {
+      "table": "local_counterparties",
+      "proposedKey": ["branch_id", "normalized_phone"],
+      "duplicateGroups": 202,
+      "rowsInDuplicateGroups": 419,
+      "excessRows": 217,
+      "classification": "SHARED_CONTACT_ATTRIBUTE_NOT_IDENTITY",
+      "evidence": {
+        "groupsWithDifferentMoyskladIds": 192,
+        "groupsWithDifferentNames": 109
+      },
+      "resolution": "REPLACE_PROPOSED_UNIQUE_WITH_NON_UNIQUE_LOOKUP_INDEX",
+      "rowMutationRequired": false
+    },
+    {
+      "table": "local_products",
+      "proposedKey": ["branch_id", "article"],
+      "duplicateGroups": 11,
+      "rowsInDuplicateGroups": 24,
+      "excessRows": 13,
+      "classification": "PROVIDER_ATTRIBUTE_NOT_IDENTITY",
+      "resolution": "REPLACE_PROPOSED_UNIQUE_WITH_NON_UNIQUE_LOOKUP_INDEX",
+      "rowMutationRequired": false
+    },
+    {
+      "table": "local_products",
+      "proposedKey": ["branch_id", "code"],
+      "duplicateGroups": 36,
+      "rowsInDuplicateGroups": 74,
+      "excessRows": 38,
+      "classification": "PROVIDER_ATTRIBUTE_NOT_IDENTITY",
+      "resolution": "REPLACE_PROPOSED_UNIQUE_WITH_NON_UNIQUE_LOOKUP_INDEX",
+      "rowMutationRequired": false
+    },
+    {
+      "table": "local_products",
+      "proposedKey": ["branch_id", "barcode_ean13"],
+      "duplicateGroups": 2,
+      "rowsInDuplicateGroups": 6,
+      "excessRows": 4,
+      "classification": "PROVIDER_ATTRIBUTE_NOT_IDENTITY",
+      "resolution": "REPLACE_PROPOSED_UNIQUE_WITH_NON_UNIQUE_LOOKUP_INDEX",
+      "rowMutationRequired": false
+    }
+  ],
+  "schemaPolicy": {
+    "stableProductIdentity": ["branch_id", "moysklad_id"],
+    "searchOnlyProductAttributes": ["article", "code", "barcode_ean13", "barcode_ean8", "barcode_code128"],
+    "stableCounterpartyIdentity": ["branch_id", "moysklad_id"],
+    "searchOnlyCounterpartyAttributes": ["normalized_phone"]
+  },
+  "mutations": [],
+  "branchImpact": "NONE",
+  "productionMutationAllowed": false,
+  "dryRun": {
+    "expectedRowMutations": 0,
+    "idempotent": true
+  }
+}

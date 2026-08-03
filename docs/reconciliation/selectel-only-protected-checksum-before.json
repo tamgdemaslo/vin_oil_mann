@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-30T17:21:04.905Z",
+  "phase": "before",
+  "targetDatabase": "reconciliation_selectel",
+  "contractProtectedTotal": 3709,
+  "explicitPkRowsChecked": 3674,
+  "legacyAuditGapCount": 35,
+  "tables": [
+    {
+      "tableName": "ai_assistant_messages",
+      "count": 40,
+      "checksum": "cd45771acfd5319fe4a320b5c92b5158ec0d53bf599797643e565e95ca3d3081"
+    },
+    {
+      "tableName": "ai_assistant_quotes",
+      "count": 5,
+      "checksum": "a7fb923abde3f16c7476775c55d711e830de1bcc863329eea7d296c6eaad59dd"
+    },
+    {
+      "tableName": "ai_assistant_runs",
+      "count": 28,
+      "checksum": "9033ede6e690b9a1557169e6abe02ad552ed622ba365324396932a101d754ec1"
+    },
+    {
+      "tableName": "ai_assistant_sources",
+      "count": 122,
+      "checksum": "2ee71253de2dfbbeb3858602e9bd27246061bd38f613b35d0f712e0b46ad91bc"
+    },
+    {
+      "tableName": "ai_assistant_threads",
+      "count": 21,
+      "checksum": "4dcfee42370e233c7d28d84b891797829b39c66436bc7d4158647a22a621dc20"
+    },
+    {
+      "tableName": "ai_assistant_tool_calls",
+      "count": 264,
+      "checksum": "2f04c9dfe555778564955bb06e32cc0384d6db6ae2c83befaef5d3a581496fcd"
+    },
+    {
+      "tableName": "cash_expense_orders",
+      "count": 1,
+      "checksum": "a2c1facb3f97228df24f415525e1800c31a2eef483cfb8fcde6a5887d575d30b"
+    },
+    {
+      "tableName": "cash_shifts",
+      "count": 2,
+      "checksum": "25913c7774f10cb9831ebf45726cdae24fd3f981cb12249ceb56396cf00931c9"
+    },
+    {
+      "tableName": "client_case_events",
+      "count": 42,
+      "checksum": "154a45071f028d28ae831e133714c54b21c109dba646907fdd5413a6d768b73d"
+    },
+    {
+      "tableName": "client_case_notification_log",
+      "count": 19,
+      "checksum": "78df8dfaa48494a46ff777f8f1db8c94b81ab7955201844908013e478914e94b"
+    },
+    {
+      "tableName": "communication_identities",
+      "count": 2,
+      "checksum": "1cf31f37ec711981164c5a1a03e48a5458e95968e8910774bacc369fcfbcff43"
+    },
+    {
+      "tableName": "conversation_entity_links",
+      "count": 2,
+      "checksum": "2e17d7d0bf4b9b09595a7856068a9b21af0c7a5fea8532eb4f17423c9359f327"
+    },
+    {
+      "tableName": "crm_deals",
+      "count": 1,
+      "checksum": "4acb69e3c42bb604b608acacbf63b4422685500a40a5f43d5e779e573e58b55f"
+    },
+    {
+      "tableName": "integration_audit_logs",
+      "count": 2,
+      "checksum": "e4bd15b21ac4af533bbfb98f14dd9d6758cd7a83034f4a325581979ca79d55bf"
+    },
+    {
+      "tableName": "inventory_ledger_entries",
+      "count": 34,
+      "checksum": "b4a0a987aa183b8b41ffaa7f31cfea1112a8511497ec5a8ae02d20f7cb7f226a"
+    },
+    {
+      "tableName": "local_counterparties",
+      "count": 7,
+      "checksum": "12550680db82e37d244749fbe543db4ea6c16fce7a493c1755e1e89533878736"
+    },
+    {
+      "tableName": "local_demand_positions",
+      "count": 50,
+      "checksum": "9265f222713fae0c582c95a4cf4f4cc02cf4946e65ccea8ea9c68904da5bc4f2"
+    },
+    {
+      "tableName": "local_demands",
+      "count": 17,
+      "checksum": "5bd93afa110e4b564bd02fbc2228425bfa95297bfda27dd664ec272426034ea9"
+    },
+    {
+      "tableName": "local_inventory_document_audit_logs",
+      "count": 1,
+      "checksum": "8886beffe354c6d1e8f3223c156b8efa3d5e767418b62cb43803684c709ec3fe"
+    },
+    {
+      "tableName": "local_inventory_document_positions",
+      "count": 2,
+      "checksum": "0eb8869b2a347d39e06893685e9882c5c110a027b751649e49a5bc0dfc051167"
+    },
+    {
+      "tableName": "local_inventory_documents",
+      "count": 1,
+      "checksum": "933fb10a8776ccbf89390a1f1da539a0b0ecff5543628d07612daca6c899dc63"
+    },
+    {
+      "tableName": "local_products",
+      "count": 2,
+      "checksum": "a8a59d61c4557b7b001f405403edf0fd5977f2defbf4b10692ea19a2d733bfab"
+    },
+    {
+      "tableName": "local_stock_balances",
+      "count": 2,
+      "checksum": "da88362882aec44d2f5e1972cc362ade6692b9bbe07b5a1f42166e5f7cad9e9d"
+    },
+    {
+      "tableName": "messenger_attachments",
+      "count": 46,
+      "checksum": "f29a6b2e6ac28bb8bf0476a2c493b7dcb76f569d4ccb006193ba6375ae11dfe6"
+    },
+    {
+      "tableName": "messenger_connections",
+      "count": 2,
+      "checksum": "da0bb71f79f5002c39e8035feecebe0c9ac6f749d3af8312452bd88a2530f774"
+    },
+    {
+      "tableName": "messenger_conversations",
+      "count": 4,
+      "checksum": "11e25d2ac98db5fb38018a502933cc425abb69b254791722aee76bc6d4e037e1"
+    },
+    {
+      "tableName": "messenger_media_jobs",
+      "count": 2398,
+      "checksum": "c2dd1f3a4d90fd122778096312756fcbb0b9c1909f21b8cca425b47f88fd6781"
+    },
+    {
+      "tableName": "messenger_messages",
+      "count": 258,
+      "checksum": "4b4f1ae19f448c706928f126f465db8b23eb2e3ae324dc8bab758a3175b01588"
+    },
+    {
+      "tableName": "messenger_outbox",
+      "count": 32,
+      "checksum": "85e0ea3f089186d7dee7a5bf1349f26135488de266044add94b6fabc1cc285c8"
+    },
+    {
+      "tableName": "notification_jobs",
+      "count": 20,
+      "checksum": "35b0e72230c13724028b587ad037abc77789af5783b9b3d464147f443d6eaeb1"
+    },
+    {
+      "tableName": "notification_logs",
+      "count": 51,
+      "checksum": "efca57507d2223f079d6b781a6a49aa192fcb966191ab44de8c51e643c3b2128"
+    },
+    {
+      "tableName": "product_mann_links",
+      "count": 5,
+      "checksum": "887bedf68cac9a93634f0c1afa68f32a1a4074954584ea0eb14b5733a8c66e85"
+    },
+    {
+      "tableName": "product_marking_audit_logs",
+      "count": 4,
+      "checksum": "bed74ca68df4b8d554009b05e69ee30e8a2ee79ce07bf89fcd293ee9c522db34"
+    },
+    {
+      "tableName": "shifts",
+      "count": 1,
+      "checksum": "20849c4159a4106d83d0976896622b377b4aa8b26ed9c6a82e9bf6c0c28a283f"
+    },
+    {
+      "tableName": "shipment_revisions",
+      "count": 146,
+      "checksum": "4ff4dfc8943893354209007d1950519e5ee6426db457855a2d3450401147dd0c"
+    },
+    {
+      "tableName": "vehicle_lookup_cache",
+      "count": 33,
+      "checksum": "2eee144cd9affe1615011dbc819ada16638d8f0d87637a1ac3dea370690ad81f"
+    },
+    {
+      "tableName": "vehicle_mann_mappings",
+      "count": 6,
+      "checksum": "a2e69ec5f7414ee081dd2e8be580714817c4a24211bb4f71d85c18cb42db6545"
+    },
+    {
+      "tableName": "vehicle_model_aliases",
+      "count": 1,
+      "checksum": "a3ac7c24bebab5a35f487b204ba2c684a5edbe94d132286879d77d81f4efa3ea"
+    }
+  ],
+  "globalChecksum": "77f187d51a0839fe1d070b04349a138e0b1949a755b428530497e4fae02a937c"
+}

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
+import { toServiceDateInput } from "@/lib/date-time";
 import { getCurrentMonthRange, useOwnerUsers } from "../useOwnerUsers";
 
 type BonusPenalty = {
@@ -30,7 +32,7 @@ export default function PenaltiesList({ role, embedded }: { role: string; embedd
   const [dateFrom, setDateFrom] = useState(defaults.dateFrom);
   const [dateTo, setDateTo] = useState(defaults.dateTo);
   const [addLogin, setAddLogin] = useState("");
-  const [addDate, setAddDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [addDate, setAddDate] = useState(() => toServiceDateInput(new Date()));
   const [addAmount, setAddAmount] = useState("");
   const [addType, setAddType] = useState<"bonus" | "penalty_manual">("bonus");
   const [addComment, setAddComment] = useState("");
@@ -84,7 +86,7 @@ export default function PenaltiesList({ role, embedded }: { role: string; embedd
         body: JSON.stringify({
           userLogin: addLogin.trim(),
           date: addDate,
-          amountCents: Math.round(parseFloat(addAmount) * 100),
+          amountCents: Math.round(parseMoneyInput(addAmount) * 100),
           type: addType,
           comment: addComment.trim() || null,
         }),
@@ -124,7 +126,13 @@ export default function PenaltiesList({ role, embedded }: { role: string; embedd
               ))}
             </select>
             <input type="date" required value={addDate} onChange={(e) => setAddDate(e.target.value)} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800" />
-            <input type="number" step="0.01" required placeholder="Сумма (₽)" value={addAmount} onChange={(e) => setAddAmount(e.target.value)} className="w-24 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800" />
+            <MoneyInput
+              required
+              placeholder="Сумма (₽)"
+              value={addAmount}
+              onValueChange={(value, draft) => setAddAmount(draft ? String(value) : "")}
+              className="w-24 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+            />
             <select value={addType} onChange={(e) => setAddType(e.target.value as "bonus" | "penalty_manual")} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800">
               <option value="bonus">Бонус</option>
               <option value="penalty_manual">Штраф</option>

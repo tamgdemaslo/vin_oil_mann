@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "status": "PASS_LOCAL_SELECTEL_COPY",
+  "generatedAt": "2026-08-02T20:59:15.956Z",
+  "method": "one warm-up plus median of five EXPLAIN ANALYZE runs in the same isolated PostgreSQL cluster",
+  "beforeDatabase": "fresh canonical Selectel restore",
+  "afterDatabase": "branch_selectel_final_rehearsal",
+  "results": [
+    {
+      "name": "product_browse",
+      "runs": 5,
+      "beforeMedianMs": 0.071,
+      "afterMedianMs": 0.09,
+      "deltaPercent": 26.76,
+      "rows": 50
+    },
+    {
+      "name": "stock_aggregate",
+      "runs": 5,
+      "beforeMedianMs": 0.103,
+      "afterMedianMs": 0.104,
+      "deltaPercent": 0.97,
+      "rows": 100
+    },
+    {
+      "name": "shipment_recent",
+      "runs": 5,
+      "beforeMedianMs": 0.054,
+      "afterMedianMs": 0.063,
+      "deltaPercent": 16.67,
+      "rows": 50
+    },
+    {
+      "name": "message_recent",
+      "runs": 5,
+      "beforeMedianMs": 1.432,
+      "afterMedianMs": 0.099,
+      "deltaPercent": -93.09,
+      "rows": 50
+    },
+    {
+      "name": "crm_active_cases",
+      "runs": 5,
+      "beforeMedianMs": 0.04,
+      "afterMedianMs": 0.041,
+      "deltaPercent": 2.5,
+      "rows": 1
+    }
+  ],
+  "productionTrafficMeasured": false,
+  "productionMutationAttempted": false
+}

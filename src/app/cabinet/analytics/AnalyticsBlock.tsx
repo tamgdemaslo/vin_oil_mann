@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
 import { getCurrentMonthRange, useOwnerUsers } from "../useOwnerUsers";
 import PieceworkRulesEditor from "./PieceworkRulesEditor";
 
@@ -186,7 +187,8 @@ export default function AnalyticsBlock({
   const userNames = new Map(users.map((user) => [user.login, user.name]));
 
   async function saveRate(userLogin: string) {
-    const rub = parseFloat(rateInputs[userLogin] ?? "");
+    if (!(rateInputs[userLogin] ?? "").trim()) return;
+    const rub = parseMoneyInput(rateInputs[userLogin] ?? "");
     if (Number.isNaN(rub) || rub < 0) return;
     setSavingLogin(userLogin);
     setSaveMessage(null);
@@ -207,7 +209,8 @@ export default function AnalyticsBlock({
   }
 
   async function applyRateToCurrentMonth(userLogin: string) {
-    const rub = parseFloat(rateInputs[userLogin] ?? "");
+    if (!(rateInputs[userLogin] ?? "").trim()) return;
+    const rub = parseMoneyInput(rateInputs[userLogin] ?? "");
     if (Number.isNaN(rub) || rub < 0) return;
     setApplyingLogin(userLogin);
     setSaveMessage(null);
@@ -460,13 +463,10 @@ export default function AnalyticsBlock({
                       {isOwner ? (
                         <>
                           <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
+                            <MoneyInput
                               value={rateInputs[userLogin] ?? ""}
-                              onChange={(e) =>
-                                setRateInputs((prev) => ({ ...prev, [userLogin]: e.target.value }))
+                              onValueChange={(value, draft) =>
+                                setRateInputs((prev) => ({ ...prev, [userLogin]: draft ? String(value) : "" }))
                               }
                               className="w-32 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
                               placeholder="₽ за смену"

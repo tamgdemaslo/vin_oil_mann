@@ -1,6 +1,19 @@
 import Link from "next/link";
+import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
+import { EcoBadge } from "@/components/platform/EcoUI";
 import { requireActiveShiftAccess } from "@/lib/app-access";
-import { moyskladFetch } from "@/lib/moysklad";
+import { requireBranchContext } from "@/lib/branch-context";
+import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
+import { loadLocalDemandList } from "@/lib/local-inventory-read";
+import { ShipmentListRow } from "./ShipmentListRow";
+import { ShipmentRowActions } from "./ShipmentRowActions";
+
+type DemandAgent = {
+  id?: string;
+  name?: string;
+  meta?: { href?: string };
+};
 
 type DemandRow = {
   id: string;
@@ -9,7 +22,7 @@ type DemandRow = {
   applicable: boolean;
   sum: number;
   description?: string;
-  agent?: { name?: string };
+  agent?: DemandAgent;
   organization?: { name?: string };
   store?: { name?: string };
   meta?: { href?: string };
@@ -21,15 +34,18 @@ type ListOk = {
   rows: DemandRow[];
 };
 
-const DEMAND_EXPAND = "agent,organization,store,attributes";
-
 function rubles(sumKopecks: number): string {
   const v = (sumKopecks || 0) / 100;
-  return v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-function normalizePlate(s: string): string {
-  return s.replace(/\s/g, "").toUpperCase();
+function formatMoment(value: string): { date: string; time: string } {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { date: value, time: "—" };
+  return {
+    date: formatServiceDate(date),
+    time: formatServiceTime(date),
+  };
 }
 
 function getEcoUserName(row: DemandRow): string | undefined {
@@ -43,6 +59,21 @@ function getEcoUserName(row: DemandRow): string | undefined {
   return String(v);
 }
 
+function isPlateAttributeName(name: string | undefined): boolean {
+  const n = (name ?? "").toLowerCase();
+  return /гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n);
+}
+
+function attributeText(row: DemandRow, matches: (name: string) => boolean): string {
+  for (const attr of row.attributes ?? []) {
+    const name = (attr.name ?? "").trim().toLowerCase();
+    if (!matches(name)) continue;
+    const value = attr.value;
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
 function getPlateDisplay(row: DemandRow): string {
   const attrs = row.attributes ?? [];
   const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
@@ -52,13 +83,28 @@ function getPlateDisplay(row: DemandRow): string {
     if (v !== undefined && v !== null && v !== "") return String(v);
   }
   for (const a of attrs) {
-    const n = (a.name ?? "").toLowerCase();
-    if (/гос|г\/н|госномер|г\.\s*н|номер\s*(тс|а\/м|авто)|state\s*reg|plate/i.test(n)) {
+    if (isPlateAttributeName(a.name)) {
       const v = a.value;
       if (v !== undefined && v !== null && v !== "") return String(v);
     }
   }
-  return "—";
+  return "";
+}
+
+function getVehicleDisplay(row: DemandRow): { primary: string; secondary: string; title: string } {
+  const model = attributeText(row, (name) => /модель|марка|vehicle|car|авто/i.test(name) && !/гос|номер|vin|вин|масло/i.test(name));
+  const plate = getPlateDisplay(row);
+  const vin = attributeText(row, (name) => /vin|вин/i.test(name)).replace(/\s/g, "").toUpperCase();
+  const secondary = plate || (vin ? `VIN ${vin}` : "");
+  const primary = model || secondary || "автомобиль не указан";
+  const title = model
+    ? [model, plate, !plate && vin ? `VIN ${vin}` : plate && vin ? vin : ""].filter(Boolean).join(" · ")
+    : primary;
+  return {
+    primary,
+    secondary: model ? secondary : "",
+    title,
+  };
 }
 
 /** Контрагент в колонке: стандартный agent или типичные доп. поля, если agent пустой. */
@@ -75,287 +121,417 @@ function getCounterpartyDisplay(row: DemandRow): string {
   return "—";
 }
 
-function counterpartyHaystack(row: DemandRow): string {
-  const parts: string[] = [];
-  if (row.agent?.name) parts.push(row.agent.name);
-  for (const a of row.attributes ?? []) {
-    const label = (a.name ?? "").toLowerCase();
-    if (/контрагент|клиент|заказчик|покупател|фио|организация\s*заказ/i.test(label)) {
-      parts.push(String(a.value ?? ""));
-    }
-  }
-  return parts.join(" ").toLowerCase();
+function localCounterpartyIdFromMeta(meta?: { href?: string }): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/counterparty\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
 }
 
-/** Только комментарий и доп. поля — без номера документа, чтобы «332» в гос. номере не ловило «00332». */
-function plateHaystackStrict(row: DemandRow): string {
-  const parts: string[] = [];
-  if (row.description) parts.push(row.description);
-  for (const a of row.attributes ?? []) {
-    parts.push(String(a.value ?? ""));
-  }
-  return parts.join(" ").replace(/\s/g, "").toUpperCase();
+function counterpartyCatalogHref(row: DemandRow): string | null {
+  const id = row.agent?.id?.trim() || localCounterpartyIdFromMeta(row.agent?.meta);
+  if (id) return `/clients/counterparties?counterparty=${encodeURIComponent(id)}`;
+  const name = getCounterpartyDisplay(row);
+  if (!name || name === "—") return null;
+  return `/clients/counterparties?search=${encodeURIComponent(name)}`;
 }
 
-function matchesPlate(row: DemandRow, plateNorm: string): boolean {
-  if (!plateNorm) return true;
-  const display = getPlateDisplay(row);
-  if (display !== "—" && normalizePlate(display).includes(plateNorm)) return true;
-  return plateHaystackStrict(row).includes(plateNorm);
-}
-
-function matchesCounterparty(row: DemandRow, q: string): boolean {
-  if (!q.trim()) return true;
-  return counterpartyHaystack(row).includes(q.trim().toLowerCase());
-}
-
-function matchesDocSearch(row: DemandRow, q: string): boolean {
-  if (!q.trim()) return true;
-  const s = q.trim().toLowerCase();
-  const name = (row.name ?? "").toLowerCase();
-  const desc = (row.description ?? "").toLowerCase();
-  return name.includes(s) || desc.includes(s);
-}
-
-function dedupeDemands(rows: DemandRow[]): DemandRow[] {
-  const map = new Map<string, DemandRow>();
-  for (const r of rows) {
-    if (!map.has(r.id)) map.set(r.id, r);
-  }
-  return [...map.values()].sort((a, b) => String(b.moment).localeCompare(String(a.moment)));
-}
-
-async function collectDemandsByCounterparty(counterparty: string): Promise<DemandRow[]> {
-  const out: DemandRow[] = [];
-  const push = (rows: DemandRow[]) => out.push(...rows);
-
-  const bySearch = await moyskladFetch<{ rows: DemandRow[] }>(
-    `/entity/demand?search=${encodeURIComponent(counterparty)}&limit=300&order=moment,desc&expand=${DEMAND_EXPAND}`
-  );
-  if (bySearch.ok) push(bySearch.data.rows ?? []);
-
-  const cpList = await moyskladFetch<{ rows: { meta?: { href?: string } }[] }>(
-    `/entity/counterparty?search=${encodeURIComponent(counterparty)}&limit=15`
-  );
-  if (cpList.ok) {
-    for (const row of cpList.data.rows ?? []) {
-      const href = row.meta?.href;
-      if (!href) continue;
-      const res = await moyskladFetch<{ rows: DemandRow[] }>(
-        `/entity/demand?filter=${encodeURIComponent(`agent=${href}`)}&limit=80&order=moment,desc&expand=${DEMAND_EXPAND}`
-      );
-      if (res.ok) push(res.data.rows ?? []);
-    }
-  }
-
-  const orgList = await moyskladFetch<{ rows: { meta?: { href?: string } }[] }>(
-    `/entity/organization?search=${encodeURIComponent(counterparty)}&limit=8`
-  );
-  if (orgList.ok) {
-    for (const row of orgList.data.rows ?? []) {
-      const href = row.meta?.href;
-      if (!href) continue;
-      const res = await moyskladFetch<{ rows: DemandRow[] }>(
-        `/entity/demand?filter=${encodeURIComponent(`agent=${href}`)}&limit=80&order=moment,desc&expand=${DEMAND_EXPAND}`
-      );
-      if (res.ok) push(res.data.rows ?? []);
-    }
-  }
-
-  return dedupeDemands(out).filter((r) => matchesCounterparty(r, counterparty));
+function counterpartyIdFromDemand(row: DemandRow): string | null {
+  return row.agent?.id?.trim() || localCounterpartyIdFromMeta(row.agent?.meta) || null;
 }
 
 async function loadShipmentList(opts: {
+  branchId: string;
   search: string;
   counterparty: string;
   plate: string;
+  phone: string;
+  dateFrom: string;
+  dateTo: string;
   offset: number;
   limit: number;
 }): Promise<{ ok: true; data: ListOk } | { ok: false; error: string }> {
-  const { search, counterparty, plate, offset, limit } = opts;
-  const hasCp = counterparty.length > 0;
-  const hasPlate = plate.length > 0;
-  const hasDoc = search.length > 0;
-  const plateNorm = hasPlate ? normalizePlate(plate) : "";
-
-  if (!hasCp && !hasPlate) {
-    const qs = new URLSearchParams();
-    qs.set("limit", String(limit));
-    qs.set("offset", String(offset));
-    qs.set("order", "moment,desc");
-    qs.set("expand", DEMAND_EXPAND);
-    if (hasDoc) qs.set("search", search);
-    const result = await moyskladFetch<ListOk>(`/entity/demand?${qs.toString()}`, { cache: "no-store" });
-    return result;
+  try {
+    const data = await loadLocalDemandList(opts);
+    return { ok: true, data };
+  } catch (e) {
+    console.error("[shipment] local inventory read failed:", e);
+    return { ok: false, error: "Не удалось загрузить локальные отгрузки" };
   }
-
-  let pool: DemandRow[] = [];
-  if (hasCp) {
-    pool = await collectDemandsByCounterparty(counterparty);
-  } else {
-    const res = await moyskladFetch<{ rows: DemandRow[] }>(
-      `/entity/demand?search=${encodeURIComponent(plate)}&limit=450&order=moment,desc&expand=${DEMAND_EXPAND}`
-    );
-    if (!res.ok) return res;
-    pool = res.data.rows ?? [];
-  }
-
-  if (hasPlate) {
-    pool = pool.filter((r) => matchesPlate(r, plateNorm));
-  }
-  if (hasCp) {
-    pool = pool.filter((r) => matchesCounterparty(r, counterparty));
-  }
-  if (hasDoc) {
-    pool = pool.filter((r) => matchesDocSearch(r, search));
-  }
-
-  const total = pool.length;
-  const rows = pool.slice(offset, offset + limit);
-  return {
-    ok: true,
-    data: {
-      meta: { size: total, limit, offset },
-      rows,
-    },
-  };
 }
 
-function listQuery(search: string, counterparty: string, plate: string, offset: number): string {
+function normalizeDateParam(value?: string): string {
+  const raw = String(value ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function yearRange(year: number): { dateFrom: string; dateTo: string } {
+  return { dateFrom: `${year}-01-01`, dateTo: `${year}-12-31` };
+}
+
+function periodLabel(dateFrom: string, dateTo: string): string {
+  if (!dateFrom && !dateTo) return "все годы";
+  const yearFrom = dateFrom.match(/^(\d{4})-01-01$/)?.[1];
+  const yearTo = dateTo.match(/^(\d{4})-12-31$/)?.[1];
+  if (yearFrom && yearFrom === yearTo) return `${yearFrom} год`;
+  if (dateFrom && dateTo) return `${dateFrom} — ${dateTo}`;
+  if (dateFrom) return `с ${dateFrom}`;
+  return `до ${dateTo}`;
+}
+
+function shipmentNumberLabel(name: string): string {
+  const clean = name.trim();
+  const numeric = clean.match(/^\d+$/)?.[0] ?? clean.match(/-(\d+)$/)?.[1] ?? "";
+  return numeric ? numeric.padStart(4, "0") : clean;
+}
+
+function listQuery(
+  search: string,
+  counterparty: string,
+  plate: string,
+  phone: string,
+  dateFrom: string,
+  dateTo: string,
+  offset: number
+): string {
   const p = new URLSearchParams();
   if (search) p.set("search", search);
   if (counterparty) p.set("counterparty", counterparty);
   if (plate) p.set("plate", plate);
+  if (phone) p.set("phone", phone);
+  if (dateFrom) p.set("dateFrom", dateFrom);
+  if (dateTo) p.set("dateTo", dateTo);
   if (offset > 0) p.set("offset", String(offset));
   const s = p.toString();
   return s ? `?${s}` : "";
 }
 
+function ShipmentMobileCard({
+  row,
+  moment,
+  counterpartyName,
+  counterpartyHref,
+  counterpartyId,
+  vehiclePrimary,
+  vehicleSecondary,
+  vehicleTitle,
+  ecoUserName,
+  sumLabel,
+}: {
+  row: DemandRow;
+  moment: { date: string; time: string };
+  counterpartyName: string;
+  counterpartyHref: string | null;
+  counterpartyId: string | null;
+  vehiclePrimary: string;
+  vehicleSecondary: string;
+  vehicleTitle: string;
+  ecoUserName: string;
+  sumLabel: string;
+}) {
+  const href = `/shipment/${row.id}`;
+  const numberLabel = shipmentNumberLabel(row.name);
+
+  return (
+    <article className="eco-shipment-mobile-card">
+      <div className="eco-shipment-mobile-card__top">
+        <div>
+          <Link href={href} className="l-mono eco-shipment-list-number-link">
+            {numberLabel}
+          </Link>
+          <div className="l-mono eco-shipment-list-subtext">
+            {moment.date} · {moment.time}
+          </div>
+        </div>
+        <div className="l-money eco-shipment-mobile-card__sum">{sumLabel}</div>
+      </div>
+
+      <div className="eco-shipment-mobile-card__grid">
+        <div className="eco-shipment-mobile-field">
+          <span>Клиент</span>
+          {counterpartyHref ? (
+            <Link
+              href={counterpartyHref}
+              className="eco-shipment-list-counterparty-link"
+              title="Открыть контрагента"
+            >
+              {counterpartyName}
+            </Link>
+          ) : (
+            <strong>{counterpartyName}</strong>
+          )}
+        </div>
+        <div className="eco-shipment-mobile-field" title={vehicleTitle}>
+          <span>Авто</span>
+          <strong>{vehiclePrimary}</strong>
+          {vehicleSecondary && <em>{vehicleSecondary}</em>}
+        </div>
+        <div className="eco-shipment-mobile-field">
+          <span>Склад</span>
+          <strong>{row.store?.name ?? "—"}</strong>
+        </div>
+        <div className="eco-shipment-mobile-field">
+          <span>Создал</span>
+          <strong>{ecoUserName}</strong>
+        </div>
+      </div>
+
+      <div className="eco-shipment-mobile-card__foot">
+        <div className="eco-shipment-mobile-card__badges">
+          <EcoBadge tone={row.applicable ? "success" : "neutral"} dot>
+            {row.applicable ? "Проведено" : "Черновик"}
+          </EcoBadge>
+          <EcoBadge tone={row.sum > 0 ? "success" : "warning"} dot>
+            {row.sum > 0 ? "Оплачено" : "Не оплачено"}
+          </EcoBadge>
+        </div>
+        <div className="eco-shipment-mobile-card__actions" data-row-action>
+          <ContactActionButton
+            variant="icon"
+            size="sm"
+            entityType="shipment"
+            entityId={row.id}
+            counterpartyId={counterpartyId}
+            displayName={counterpartyName}
+            context={{
+              entityType: "shipment",
+              entityId: row.id,
+              shipmentId: row.id,
+              car: vehicleTitle || vehiclePrimary,
+            }}
+          />
+          <ShipmentRowActions shipmentId={row.id} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default async function ShipmentListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; counterparty?: string; plate?: string; offset?: string }>;
+  searchParams: Promise<{
+    search?: string;
+    counterparty?: string;
+    plate?: string;
+    phone?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    offset?: string;
+  }>;
 }) {
   await requireActiveShiftAccess("/shipment");
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  if (!branch.branchId) throw new Error("Активный филиал не выбран");
 
   const sp = await searchParams;
   const search = (sp.search ?? "").trim();
   const counterparty = (sp.counterparty ?? "").trim();
   const plate = (sp.plate ?? "").trim();
+  const phone = (sp.phone ?? "").trim();
+  const dateFrom = normalizeDateParam(sp.dateFrom);
+  const dateTo = normalizeDateParam(sp.dateTo);
   const offset = Math.max(0, parseInt(sp.offset ?? "0", 10) || 0);
   const limit = 50;
+  const currentYear = new Date().getFullYear();
+  const quickYears = [currentYear, currentYear - 1, currentYear - 2];
+  const hasFilters = Boolean(search || counterparty || plate || phone || dateFrom || dateTo || offset > 0);
 
-  const result = await loadShipmentList({ search, counterparty, plate, offset, limit });
+  const result = await loadShipmentList({ branchId: branch.branchId, search, counterparty, plate, phone, dateFrom, dateTo, offset, limit });
+  const sourceLabel = "Отгрузки из локальной БД";
+  const rows = result.ok ? result.data.rows ?? [] : [];
+  const postedCount = rows.filter((row) => row.applicable).length;
+  const draftCount = rows.length - postedCount;
+  const totalSum = rows.reduce((sum, row) => sum + (row.sum || 0), 0);
+  const emptyMessage = dateFrom || dateTo
+    ? `За период ${periodLabel(dateFrom, dateTo)} отгрузки не найдены. Если это старые документы 2025/2024 года, возможно, нужен полный импорт отгрузок из МойСклад.`
+    : "Ничего не найдено";
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <main className="eco-page eco-shipment-page">
+      <div className="eco-page-head">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Отгрузки</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Все отгрузки (demand) из МойСклад
-          </p>
+          <div className="eco-page-kicker">
+            <Link href="/">Главная</Link>
+            <span className="mx-2 text-[var(--eco-faint)]">/</span>
+            <span>Операции / Отгрузки</span>
+          </div>
+          <h1 className="eco-page-title">Отгрузки</h1>
         </div>
-        <Link
-          href="/shipment/new"
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
-        >
-          + Создать отгрузку
-        </Link>
+        <div className="eco-actions">
+          <button type="button" className="eco-btn">
+            <Download aria-hidden className="eco-icon" />
+            Выгрузить
+          </button>
+          <Link href="/shipment/new" className="eco-btn eco-btn--primary">
+            <Plus aria-hidden className="eco-icon" />
+            Новая отгрузка
+          </Link>
+        </div>
       </div>
 
-      <form action="/shipment" method="GET" className="mb-4 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="eco-tabs">
+        {[
+          ["Все", result.ok ? result.data.meta.size : 0, true],
+          ["Черновики", draftCount, false],
+          ["Проведено", postedCount, false],
+          ["Возвраты", 0, false],
+        ].map(([label, count, active]) => (
+          <span key={String(label)} className={`eco-tab ${active ? "is-active" : ""}`}>
+            {label}
+            <span className="eco-tab__count">{count}</span>
+          </span>
+        ))}
+      </div>
+
+      <form action="/shipment" method="GET" className="eco-filter-bar">
+        <div className="eco-search-wrap">
+          <Search aria-hidden className="eco-icon" />
           <input
             name="search"
             defaultValue={search}
-            placeholder="Номер / название документа…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <input
-            name="counterparty"
-            defaultValue={counterparty}
-            placeholder="Контрагент (имя, часть названия)…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
-          />
-          <input
-            name="plate"
-            defaultValue={plate}
-            placeholder="Гос. номер ТС (не номер отгрузки)…"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm uppercase outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-800"
+            placeholder="№, клиент, телефон, VIN…"
+            className="eco-input"
           />
         </div>
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
-          >
-            Найти
-          </button>
-          {(search || counterparty || plate || offset > 0) && (
+        <input name="counterparty" defaultValue={counterparty} placeholder="Клиент" className="eco-input max-w-[170px]" />
+        <input name="plate" defaultValue={plate} placeholder="Гос. номер" className="eco-input max-w-[140px] font-mono uppercase" />
+        <input name="phone" defaultValue={phone} placeholder="Телефон" className="eco-input max-w-[150px]" />
+        <input name="dateFrom" type="date" defaultValue={dateFrom} className="eco-input max-w-[150px]" aria-label="Дата с" />
+        <input name="dateTo" type="date" defaultValue={dateTo} className="eco-input max-w-[150px]" aria-label="Дата по" />
+        <button type="submit" className="eco-pill">
+          <Filter aria-hidden className="eco-icon" />
+          Найти
+        </button>
+        {hasFilters && (
+          <Link href="/shipment" className="eco-pill is-active">
+            Сбросить <X aria-hidden className="eco-icon" />
+          </Link>
+        )}
+        <span className="eco-pill">Период · {periodLabel(dateFrom, dateTo)}</span>
+        {quickYears.map((year) => {
+          const range = yearRange(year);
+          const active = dateFrom === range.dateFrom && dateTo === range.dateTo;
+          return (
             <Link
-              href="/shipment"
-              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              key={year}
+              href={`/shipment${listQuery(search, counterparty, plate, phone, range.dateFrom, range.dateTo, 0)}`}
+              className={`eco-pill ${active ? "is-active" : ""}`}
             >
-              Сбросить
+              {year}
             </Link>
-          )}
+          );
+        })}
+        {(dateFrom || dateTo) && (
+          <Link href={`/shipment${listQuery(search, counterparty, plate, phone, "", "", 0)}`} className="eco-pill">
+            Все годы
+          </Link>
+        )}
+        <span className="eco-pill is-dashed">
+          <Plus aria-hidden className="eco-icon" />
+          Ещё фильтр
+        </span>
+        <div className="grow" />
+        <div className="eco-seg">
+          <span className="eco-seg-btn is-active">Comfortable</span>
+          <span className="eco-seg-btn">Compact</span>
         </div>
       </form>
 
       {!result.ok ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
-          Ошибка МойСклад: {result.error}
+        <div className="eco-card eco-card--padded text-sm text-[var(--eco-danger)]">
+          Ошибка локальной БД: {result.error}
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-            <table className="w-full text-sm">
+          <div className="eco-table-wrap">
+            <div className="eco-table-toolbar">
+              <span className="l-meta">
+                {rows.length} строк · сумма {rubles(totalSum)} ₽ · {sourceLabel}
+              </span>
+              <div className="grow" />
+              <button type="button" className="eco-btn eco-btn--ghost eco-btn--sm">
+                <Printer aria-hidden className="eco-icon" />
+                Печать списка
+              </button>
+              <button type="button" className="eco-btn eco-btn--ghost eco-btn--sm">
+                <SlidersHorizontal aria-hidden className="eco-icon" />
+                Колонки
+              </button>
+            </div>
+            <div className="eco-shipment-mobile-list" aria-label="Список отгрузок">
+              {rows.map((r) => {
+                const moment = formatMoment(r.moment);
+                const counterpartyName = getCounterpartyDisplay(r);
+                const counterpartyHref = counterpartyCatalogHref(r);
+                const counterpartyId = counterpartyIdFromDemand(r);
+                const vehicle = getVehicleDisplay(r);
+                return (
+                  <ShipmentMobileCard
+                    key={r.id}
+                    row={r}
+                    moment={moment}
+                    counterpartyName={counterpartyName}
+                    counterpartyHref={counterpartyHref}
+                    counterpartyId={counterpartyId}
+                    vehiclePrimary={vehicle.primary}
+                    vehicleSecondary={vehicle.secondary}
+                    vehicleTitle={vehicle.title}
+                    ecoUserName={getEcoUserName(r) ?? "—"}
+                    sumLabel={`${rubles(r.sum)} ₽`}
+                  />
+                );
+              })}
+              {rows.length === 0 && (
+                <div className="eco-shipment-mobile-empty">
+                  {emptyMessage}
+                </div>
+              )}
+            </div>
+            <table className="eco-table eco-shipment-list-table">
               <thead>
-                <tr className="border-b border-zinc-200 text-left dark:border-zinc-700">
-                  <th className="px-4 py-3 font-medium text-zinc-500">Дата</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Номер</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Контрагент</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Гос. номер</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Организация</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Склад</th>
-                  <th className="px-4 py-3 font-medium text-zinc-500">Создал (эко)</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Сумма</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500">Статус</th>
+                <tr>
+                  <th style={{ width: 36 }}><span className="eco-check" /></th>
+                  <th>№</th>
+                  <th>Клиент</th>
+                  <th>Авто / гос. номер</th>
+                  <th>Склад</th>
+                  <th>Создал</th>
+                  <th>Статус</th>
+                  <th>Оплата</th>
+                  <th style={{ textAlign: "right" }}>Сумма</th>
+                  <th style={{ width: 96 }} />
                 </tr>
               </thead>
               <tbody>
-                {(result.data.rows ?? []).map((r) => (
-                  <tr key={r.id} className="border-b border-zinc-100 dark:border-zinc-700">
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{r.moment}</td>
-                    <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-50">
-                      <Link href={`/shipment/${r.id}`} className="hover:underline">
-                        {r.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">{getCounterpartyDisplay(r)}</td>
-                    <td className="px-4 py-3 font-mono text-zinc-800 dark:text-zinc-200">{getPlateDisplay(r)}</td>
-                    <td className="px-4 py-3">{r.organization?.name ?? "—"}</td>
-                    <td className="px-4 py-3">{r.store?.name ?? "—"}</td>
-                    <td className="px-4 py-3">{getEcoUserName(r) ?? "Не указано"}</td>
-                    <td className="px-4 py-3 text-right">{rubles(r.sum)} ₽</td>
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                          r.applicable
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                            : "bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
-                        }`}
-                      >
-                        {r.applicable ? "Проведён" : "Черновик"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {result.data.rows?.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">
-                      Ничего не найдено
+                {rows.map((r) => {
+                  const moment = formatMoment(r.moment);
+                  const counterpartyName = getCounterpartyDisplay(r);
+                  const counterpartyHref = counterpartyCatalogHref(r);
+                  const counterpartyId = counterpartyIdFromDemand(r);
+                  const vehicle = getVehicleDisplay(r);
+                  return (
+                    <ShipmentListRow
+                      key={r.id}
+                      row={r}
+                      moment={moment}
+                      counterpartyName={counterpartyName}
+                      counterpartyHref={counterpartyHref}
+                      counterpartyId={counterpartyId}
+                      vehiclePrimary={vehicle.primary}
+                      vehicleSecondary={vehicle.secondary}
+                      vehicleTitle={vehicle.title}
+                      ecoUserName={getEcoUserName(r) ?? "—"}
+                      sumLabel={`${rubles(r.sum)} ₽`}
+                    />
+                  );
+                })}
+                {rows.length === 0 && (
+                  <tr className="eco-shipment-list-empty-row">
+                    <td colSpan={10} style={{ color: "var(--eco-muted)", padding: 32, textAlign: "center" }}>
+                      {emptyMessage}
                     </td>
                   </tr>
                 )}
@@ -363,27 +539,27 @@ export default async function ShipmentListPage({
             </table>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <div className="text-zinc-500 dark:text-zinc-400">
+          <div className="mt-4 flex items-center justify-between gap-3 text-sm text-[var(--eco-muted)]">
+            <div>
               Показано: {Math.min(limit, result.data.rows?.length ?? 0)} / {result.data.meta.size}
             </div>
             <div className="flex gap-2">
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, Math.max(0, offset - limit))}`}
-                className={`rounded-lg border px-3 py-1.5 ${
+                href={`/shipment${listQuery(search, counterparty, plate, phone, dateFrom, dateTo, Math.max(0, offset - limit))}`}
+                className={`eco-btn eco-btn--sm ${
                   offset <= 0
-                    ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    ? "pointer-events-none opacity-50"
+                    : ""
                 }`}
               >
                 ← Назад
               </Link>
               <Link
-                href={`/shipment${listQuery(search, counterparty, plate, offset + limit)}`}
-                className={`rounded-lg border px-3 py-1.5 ${
+                href={`/shipment${listQuery(search, counterparty, plate, phone, dateFrom, dateTo, offset + limit)}`}
+                className={`eco-btn eco-btn--sm ${
                   offset + limit >= result.data.meta.size
-                    ? "pointer-events-none border-zinc-200 text-zinc-300 dark:border-zinc-700 dark:text-zinc-600"
-                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    ? "pointer-events-none opacity-50"
+                    : ""
                 }`}
               >
                 Вперёд →
@@ -392,6 +568,6 @@ export default async function ShipmentListPage({
           </div>
         </>
       )}
-    </div>
+    </main>
   );
 }

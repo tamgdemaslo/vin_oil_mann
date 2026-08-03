@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "generatedAt": "2026-07-31T22:10:02.992Z",
+  "status": "SUPERSEDED_BY_ARCHIVE_POLICY",
+  "scope": "OWNER_DECISIONS_AND_LOCAL_ONLY_DRY_RUN",
+  "targetDatabase": "reconciliation_selectel",
+  "manifestRecords": 509,
+  "secondPass": {
+    "decisionApplicationChanged": false,
+    "manifestHashesUnchanged": true,
+    "targetChecksumUnchanged": true,
+    "duplicatesCreated": 0,
+    "errors": 0
+  },
+  "protectedSelectelOnlyChecksum": "77f187d51a0839fe1d070b04349a138e0b1949a755b428530497e4fae02a937c",
+  "productionMutationAttempted": false,
+  "externalSideEffectsEnabled": false,
+  "previousStatus": "PASS",
+  "supersededAt": "2026-08-02T17:33:46.313Z",
+  "supersededBy": "ARCHIVE_ONLY_DO_NOT_IMPORT"
+}

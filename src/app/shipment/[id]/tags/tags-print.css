@@ -1,0 +1,127 @@
+/* Экран: превью бирки */
+.tags-print-root {
+  min-height: 100vh;
+  background: #d9d6cf;
+  padding: 24px 0;
+}
+
+.tags-sheet {
+  margin: 0 auto;
+  max-width: 220px;
+  padding-bottom: 24px;
+}
+
+@media print {
+  @page {
+    size: 50mm 80mm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 50mm !important;
+    height: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: hidden !important;
+    color-scheme: light !important;
+  }
+
+  /* Только страница бирки — иначе после /tags ломается печать заказ-наряда */
+  body:has(#tags-print-mount) > *:not(#tags-print-mount) {
+    display: none !important;
+  }
+
+  #tags-print-mount {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    display: block !important;
+    width: 50mm !important;
+    height: 80mm !important;
+    max-width: 50mm !important;
+    min-width: 50mm !important;
+    min-height: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #tags-print-mount .tags-sheet {
+    display: block !important;
+    width: 50mm !important;
+    height: 80mm !important;
+    max-width: 50mm !important;
+    min-width: 50mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #tags-print-mount,
+  #tags-print-mount * {
+    outline: none !important;
+    box-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #tags-print-mount .under-hood-tag-card {
+    width: 50mm !important;
+    height: 80mm !important;
+    max-width: 50mm !important;
+    min-width: 50mm !important;
+    margin: 0 !important;
+    border: 2px solid #000 !important;
+    box-sizing: border-box !important;
+    background: #fff !important;
+    color: #000 !important;
+    transform: none !important;
+  }
+
+  #tags-print-mount .under-hood-tag-card > div:first-child,
+  #tags-print-mount .under-hood-tag-card > div:last-child {
+    background: #000 !important;
+    color: #fff !important;
+    -webkit-text-fill-color: #fff !important;
+  }
+
+  #tags-print-mount .under-hood-tag-head,
+  #tags-print-mount .under-hood-tag-footer {
+    background-color: #000 !important;
+    color: #fff !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    -webkit-text-fill-color: #fff !important;
+  }
+
+  #tags-print-mount .under-hood-tag-head *,
+  #tags-print-mount .under-hood-tag-footer *,
+  #tags-print-mount .under-hood-tag-head-text,
+  #tags-print-mount .under-hood-tag-phone {
+    color: #fff !important;
+    -webkit-text-fill-color: #fff !important;
+    forced-color-adjust: none !important;
+  }
+
+  #tags-print-mount .under-hood-tag-phone {
+    max-width: 34mm !important;
+    overflow: visible !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 7.4px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+
+  body:has(#tags-print-mount) *,
+  body:has(#tags-print-mount) {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

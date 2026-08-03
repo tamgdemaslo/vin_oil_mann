@@ -1,0 +1,279 @@
+name: Build and deploy immutable release to Selectel
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "New production tag, for example production-2026-08-02.1"
+        required: true
+        type: string
+      database_change:
+        description: "Ordinary deploys never run migrations"
+        required: true
+        default: NO_DATABASE_MIGRATION
+        type: choice
+        options:
+          - NO_DATABASE_MIGRATION
+      deployment_mode:
+        description: "Build/push only, or explicitly switch production traffic"
+        required: true
+        default: BUILD_ONLY
+        type: choice
+        options:
+          - BUILD_ONLY
+          - DEPLOY_PRODUCTION
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  SELECTEL_REGISTRY: cr.selcloud.ru
+
+jobs:
+  verify:
+    name: Verify committed release source
+    runs-on: ubuntu-latest
+    outputs:
+      built_at: ${{ steps.metadata.outputs.built_at }}
+      lock_hash: ${{ steps.metadata.outputs.lock_hash }}
+      schema_hash: ${{ steps.metadata.outputs.schema_hash }}
+      migrations: ${{ steps.metadata.outputs.migrations }}
+      expected_migration: ${{ steps.metadata.outputs.expected_migration }}
+    steps:
+      - name: Check out the exact release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce release source policy
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^production-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$ ]]
+          [[ "$SOURCE_BRANCH" == main || "$SOURCE_BRANCH" == release/* || "$SOURCE_BRANCH" == hotfix/* ]]
+          [[ -z "$(git status --porcelain)" ]]
+          git diff --quiet
+          git diff --cached --quiet
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo "Release tag already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          [[ "${{ inputs.database_change }}" == NO_DATABASE_MIGRATION ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Verify deploy policy and hotfix behavior
+        run: |
+          npm run check:selectel-deploy
+          npm run test:selectel-deploy-flow
+          npm run test:ai-tool-loop-policy
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Next.js production build
+        run: npm run build
+
+      - name: Record deterministic build metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          lock_hash="$(sha256sum package-lock.json | cut -d' ' -f1)"
+          schema_hash="$(sha256sum prisma/schema.prisma | cut -d' ' -f1)"
+          migrations="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | paste -sd, -)"
+          expected_migration="$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1)"
+          [[ -n "$expected_migration" ]]
+          {
+            echo "built_at=$built_at"
+            echo "lock_hash=$lock_hash"
+            echo "schema_hash=$schema_hash"
+            echo "migrations=$migrations"
+            echo "expected_migration=$expected_migration"
+          } >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Build and publish immutable images
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      app_digest: ${{ steps.app.outputs.digest }}
+      migration_digest: ${{ steps.migration.outputs.digest }}
+      app_repository: ${{ steps.repositories.outputs.app }}
+      migration_repository: ${{ steps.repositories.outputs.migration }}
+    steps:
+      - name: Check out verified commit
+        uses: actions/checkout@v4
+
+      - name: Resolve Selectel repositories
+        id: repositories
+        env:
+          REGISTRY_NAME: ${{ vars.SELECTEL_REGISTRY_NAME }}
+        run: |
+          set -euo pipefail
+          [[ "$REGISTRY_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]
+          echo "app=cr.selcloud.ru/$REGISTRY_NAME/eco-platform" >> "$GITHUB_OUTPUT"
+          echo "migration=cr.selcloud.ru/$REGISTRY_NAME/eco-platform-migrations" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Selectel Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.SELECTEL_REGISTRY }}
+          username: ${{ secrets.SELECTEL_REGISTRY_USERNAME }}
+          password: ${{ secrets.SELECTEL_REGISTRY_PASSWORD }}
+
+      - name: Build and push standalone application image
+        id: app
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          push: true
+          tags: |
+            ${{ steps.repositories.outputs.app }}:git-${{ github.sha }}
+            ${{ steps.repositories.outputs.app }}:${{ inputs.release_tag }}
+          build-args: |
+            APP_RELEASE=${{ inputs.release_tag }}
+            APP_COMMIT_SHA=${{ github.sha }}
+            APP_BUILT_AT=${{ needs.verify.outputs.built_at }}
+            APP_PACKAGE_LOCK_SHA256=${{ needs.verify.outputs.lock_hash }}
+            APP_PRISMA_SCHEMA_SHA256=${{ needs.verify.outputs.schema_hash }}
+            APP_MIGRATIONS_INCLUDED=${{ needs.verify.outputs.migrations }}
+            APP_EXPECTED_MIGRATION=${{ needs.verify.outputs.expected_migration }}
+            APP_TEST_RESULT=passed
+          cache-from: type=registry,ref=${{ steps.repositories.outputs.app }}:buildcache
+          cache-to: type=registry,ref=${{ steps.repositories.outputs.app }}:buildcache,mode=max
+
+      - name: Build and push separate migration image
+        id: migration
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: migration
+          push: true
+          tags: |
+            ${{ steps.repositories.outputs.migration }}:git-${{ github.sha }}
+            ${{ steps.repositories.outputs.migration }}:${{ inputs.release_tag }}
+          build-args: |
+            APP_RELEASE=${{ inputs.release_tag }}
+            APP_COMMIT_SHA=${{ github.sha }}
+            APP_BUILT_AT=${{ needs.verify.outputs.built_at }}
+            APP_PACKAGE_LOCK_SHA256=${{ needs.verify.outputs.lock_hash }}
+            APP_PRISMA_SCHEMA_SHA256=${{ needs.verify.outputs.schema_hash }}
+            APP_MIGRATIONS_INCLUDED=${{ needs.verify.outputs.migrations }}
+            APP_EXPECTED_MIGRATION=${{ needs.verify.outputs.expected_migration }}
+            APP_TEST_RESULT=passed
+          cache-from: type=registry,ref=${{ steps.repositories.outputs.app }}:buildcache
+
+      - name: Create release manifest
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          COMMIT_SHA: ${{ github.sha }}
+          APP_IMAGE_REPOSITORY: ${{ steps.repositories.outputs.app }}
+          APP_IMAGE_DIGEST: ${{ steps.app.outputs.digest }}
+          MIGRATION_IMAGE_REPOSITORY: ${{ steps.repositories.outputs.migration }}
+          MIGRATION_IMAGE_DIGEST: ${{ steps.migration.outputs.digest }}
+          BUILT_AT: ${{ needs.verify.outputs.built_at }}
+          TEST_RESULT: passed
+        run: node scripts/create-release-manifest.mjs "$RUNNER_TEMP/release-manifest.json"
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-${{ inputs.release_tag }}
+          path: ${{ runner.temp }}/release-manifest.json
+          if-no-files-found: error
+
+  deploy:
+    name: Approve and switch Selectel production
+    needs: image
+    if: ${{ inputs.deployment_mode == 'DEPLOY_PRODUCTION' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure pinned SSH host
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact application digest
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SCRIPT_PATH: ${{ vars.DEPLOY_SCRIPT_PATH }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.app_digest }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_TAG" =~ ^production-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$ ]]
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          script="${DEPLOY_SCRIPT_PATH:-/opt/vin-oil-mann/deploy/selectel/deploy-image.sh}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$script" "$IMAGE_DIGEST" "$RELEASE_TAG" "$COMMIT_SHA"
+
+      - name: Verify public release identity
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.app_digest }}
+        run: |
+          set -euo pipefail
+          version="$(curl --fail --silent --show-error --max-time 15 "$PUBLIC_ORIGIN/api/system/version")"
+          grep -Fq "\"imageDigest\":\"$IMAGE_DIGEST\"" <<<"$version"
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_ORIGIN/api/health/ready" >/dev/null
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_ORIGIN/login" >/dev/null
+          curl --fail --silent --show-error --max-time 15 "$PUBLIC_ORIGIN/api/public/stats" >/dev/null
+
+  tag:
+    name: Tag successful production release
+    needs: [image, deploy]
+    if: ${{ inputs.deployment_mode == 'DEPLOY_PRODUCTION' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out deployed commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create immutable production tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.app_digest }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "$RELEASE_TAG" -m "Selectel production $RELEASE_TAG ($IMAGE_DIGEST)" "${{ github.sha }}"
+          git push origin "refs/tags/$RELEASE_TAG"

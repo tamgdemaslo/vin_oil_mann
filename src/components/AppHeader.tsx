@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { safeReadJson } from "@/lib/http-json";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
 type CurrentShift = { id: string } | null;
@@ -44,12 +45,15 @@ export default function AppHeader() {
       try {
         const [sessionRes, shiftRes, cashRes] = await Promise.all([
           fetch("/api/auth/session"),
-          fetch("/api/shifts/current"),
-          fetch("/api/cash"),
+          fetch("/api/shifts/current", { cache: "no-store" }),
+          fetch("/api/cash", { cache: "no-store" }),
         ]);
-        const sessionData = await sessionRes.json();
-        const shiftData = shiftRes.ok ? await shiftRes.json() : null;
-        const cashData = cashRes.ok ? await cashRes.json() : null;
+        const sessionRaw = await safeReadJson<{ user?: User }>(sessionRes);
+        const sessionData = sessionRaw ?? { user: undefined };
+        const shiftData = shiftRes.ok ? (await safeReadJson<{ id: string }>(shiftRes)) ?? null : null;
+        const cashData = cashRes.ok
+          ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null
+          : null;
         if (cancelled) return;
         setUser(sessionData.user ?? null);
         setCurrentShift(shiftData ?? null);
@@ -126,27 +130,76 @@ export default function AppHeader() {
               description: "Создание новой отгрузки.",
               disabled: locked,
             },
+          ],
+        },
+        {
+          id: "inventory",
+          href: "/inventory",
+          label: "Склад",
+          items: [
             {
-              href: "/operations/restock",
+              href: "/inventory/products",
+              label: "Товары",
+              description: "Локальный справочник товаров и остатки.",
+              disabled: locked,
+            },
+            {
+              href: "/warehouse/inventory",
+              label: "Инвентаризация",
+              description: "Сверка фактических остатков с учётными.",
+              disabled: locked,
+            },
+            {
+              href: "/inventory/receipts",
+              label: "Приёмка",
+              description: "Поступление товаров на локальный склад.",
+              disabled: locked,
+            },
+            {
+              href: "/inventory/writeoffs",
+              label: "Корректировки",
+              description: "Списания товаров и технические корректировки остатков.",
+              disabled: locked,
+            },
+            {
+              href: "/inventory/restock",
               label: "Пополнение остатков",
-              description: "Дефицит по неснижаемому остатку и сообщение поставщику.",
+              description: "Дефицит, расход и заказ поставщикам по локальной БД.",
               disabled: locked,
             },
           ],
         },
         {
           id: "finance",
-          href: "/cash",
+          href: "/finance",
           label: "Финансы",
           items: [
             {
+              href: "/finance",
+              label: "Финансовый центр",
+              description: "P&L, cashflow, расходы, прогноз и проблемы учёта.",
+              disabled: locked,
+            },
+            {
               href: "/cash#cash-state",
               label: "Касса",
-              description: "Операции по кассе, закрытие смены и история.",
+              description: "Операции по кассе, закрытие кассовой смены и история.",
               disabled: locked || !canAccessCash,
             },
             {
-              href: "/salary#payouts",
+              href: "/finance/invoices",
+              label: "Счета поставщиков",
+              description: "Счета, созданные из локальных приёмок.",
+              disabled: locked,
+            },
+            {
+              href: "/finance/profit",
+              label: "Цены и прибыль",
+              description: "Детализация маржи и себестоимости по локальной базе.",
+              disabled: locked,
+            },
+            {
+              href: "/salary",
               label: "Зарплата",
               description: "Выплаты, ставки и правила сдельной части.",
               disabled: locked,
@@ -160,17 +213,44 @@ export default function AppHeader() {
           items: [
             {
               href: "/crm",
-              label: "Воронка продаж",
-              description: "Лиды, сделки и движение клиента до оплаты.",
+              label: "Дела клиентов",
+              description: "Следующие действия, дедлайны и контроль.",
               disabled: !canAccessCrm,
             },
           ],
         },
+        ...(canAccessCrm
+          ? [
+              {
+                id: "ai-assistant",
+                href: "/ai-assistant",
+                label: "ИИ-помощник",
+                items: [
+                  {
+                    href: "/ai-assistant",
+                    label: "Рабочий чат",
+                    description: "Внутренний поиск, проверка и расчёты без действий от имени клиента.",
+                  },
+                  {
+                    href: "/cabinet/ai-assistant",
+                    label: "Настройки",
+                    description: "Статус доступа и конфигурация внутреннего режима.",
+                  },
+                ],
+              },
+            ]
+          : []),
         {
           id: "clients",
-          href: "/records",
+          href: "/clients",
           label: "Клиенты",
           items: [
+            {
+              href: "/clients/counterparties",
+              label: "Контрагенты",
+              description: "Клиенты, поставщики и компании в нашей БД.",
+              disabled: locked,
+            },
             {
               href: "/records",
               label: "Записи",
@@ -405,23 +485,17 @@ export default function AppHeader() {
                     Аналитика клиентов
                   </Link>
                 )}
-                {locked ? (
-                  <div className="rounded-lg px-3 py-2 text-sm text-zinc-400 dark:text-zinc-600">
-                    Кабинет
-                  </div>
-                ) : (
-                  <Link
-                    href="/cabinet"
-                    onClick={() => setProfileOpen(false)}
-                    className={`block rounded-lg px-3 py-2 text-sm transition ${
-                      isActivePath(pathname, "/cabinet")
-                        ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                        : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    Кабинет
-                  </Link>
-                )}
+                <Link
+                  href="/cabinet"
+                  onClick={() => setProfileOpen(false)}
+                  className={`block rounded-lg px-3 py-2 text-sm transition ${
+                    isActivePath(pathname, "/cabinet")
+                      ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                      : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  Кабинет
+                </Link>
                 <button
                   type="button"
                   onClick={handleLogout}

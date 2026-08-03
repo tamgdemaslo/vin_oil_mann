@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img">
+  <title>TGM</title>
+  <desc>Монограмма бренда «Там где масло.».</desc>
+  <rect x="0" y="0" width="400" height="400" fill="#C2410C"></rect>
+  <g transform="translate(56.00 259.57) scale(0.1471 -0.1471)">
+    <path d="M133 0V677H11V810H434V677H313V0Z" transform="translate(0 0)" fill="#0A0A0A"></path>
+    <path d="M271 -12Q187 -12 138.5 23.0Q90 58 69.5 121.5Q49 185 49 268V540Q49 626 71.0 689.0Q93 752 146.5 786.5Q200 821 292 821Q382 821 433.5 791.0Q485 761 507.0 708.0Q529 655 529 584V532H354V598Q354 624 350.5 646.0Q347 668 334.5 681.5Q322 695 294 695Q265 695 252.0 679.5Q239 664 235.5 641.0Q232 618 232 593V218Q232 191 237.5 167.5Q243 144 257.5 129.5Q272 115 299 115Q327 115 342.0 130.0Q357 145 363.0 169.0Q369 193 369 220V315H296V420H530V0H412L402 67Q386 33 355.0 10.5Q324 -12 271 -12Z" transform="translate(470.0 0)" fill="#0A0A0A"></path>
+    <path d="M57 0 71 810H263L352 339L448 810H633L647 0H520L505 539L411 0H298L198 543L186 0Z" transform="translate(1077.0 0)" fill="#0A0A0A"></path>
+    <circle cx="1877.0" cy="81.0" r="81.0" fill="#0A0A0A"></circle>
+  </g></svg>

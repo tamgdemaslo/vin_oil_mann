@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-31T19:34:39.595Z",
+  "fieldAllowlists": {
+    "ai_assistant_labor_pricing_rules": {
+      "allowedByManifest": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "client_case_notification_log": {
+      "allowedByManifest": [
+        "acknowledged_at",
+        "sent_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "crm_deals": {
+      "allowedByManifest": [
+        "closed_at",
+        "last_client_message_at",
+        "last_outbound_message_at",
+        "next_action",
+        "snooze_until",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": [
+        "case_status",
+        "stage_id",
+        "status"
+      ]
+    },
+    "crm_stages": {
+      "allowedByManifest": [
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "demand_attribute_definitions": {
+      "allowedByManifest": [
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "local_counterparties": {
+      "allowedByManifest": [
+        "raw",
+        "search_text",
+        "synced_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "local_products": {
+      "allowedByManifest": [
+        "marking_configured_at",
+        "marking_configured_by_login",
+        "marking_configured_manually",
+        "marking_settings_json",
+        "raw",
+        "search_text",
+        "synced_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": [
+        "marking_enabled",
+        "marking_mode",
+        "marking_status",
+        "oem_atf",
+        "sale_price_cents"
+      ]
+    },
+    "local_stock_balances": {
+      "allowedByManifest": [
+        "synced_at"
+      ],
+      "forbiddenWithoutApproval": [
+        "available",
+        "quantity"
+      ]
+    },
+    "messenger_accounts": {
+      "allowedByManifest": [
+        "last_sync_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "messenger_attachments": {
+      "allowedByManifest": [
+        "attempts",
+        "created_at",
+        "error_code",
+        "error_message",
+        "last_attempt_at",
+        "metadata_json",
+        "next_attempt_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": [
+        "message_id",
+        "status"
+      ]
+    },
+    "messenger_conversations": {
+      "allowedByManifest": [
+        "avatar_status",
+        "avatar_storage_key",
+        "avatar_thumbnail_key",
+        "avatar_updated_at",
+        "last_message_at",
+        "last_message_text",
+        "metadata_json",
+        "participant_avatar_url",
+        "participant_username",
+        "unread_count",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "messenger_media_jobs": {
+      "allowedByManifest": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "messenger_messages": {
+      "allowedByManifest": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "notification_jobs": {
+      "allowedByManifest": [
+        "attempts",
+        "conversation_id",
+        "error_message",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "next_attempt_at",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": [
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "status"
+      ]
+    },
+    "notification_rules": {
+      "allowedByManifest": [
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "telegram_user_sessions": {
+      "allowedByManifest": [
+        "last_sync_at",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "vehicle_lookup_cache": {
+      "allowedByManifest": [
+        "normalized_vehicle_json",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    },
+    "vehicle_model_aliases": {
+      "allowedByManifest": [
+        "canonical_generation",
+        "confirmed_by_id",
+        "updated_at"
+      ],
+      "forbiddenWithoutApproval": []
+    }
+  }
+}

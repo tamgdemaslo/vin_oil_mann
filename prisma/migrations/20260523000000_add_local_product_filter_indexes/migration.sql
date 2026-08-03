@@ -1,0 +1,11 @@
+CREATE INDEX IF NOT EXISTS "local_products_code_idx" ON "local_products"("code");
+CREATE INDEX IF NOT EXISTS "local_products_sae_idx" ON "local_products"("sae");
+CREATE INDEX IF NOT EXISTS "local_products_supplier_name_idx" ON "local_products"("supplier_name");
+CREATE INDEX IF NOT EXISTS "local_products_group_path_idx" ON "local_products"("group_path");
+CREATE INDEX IF NOT EXISTS "local_products_api_spec_idx" ON "local_products"("api_spec");
+CREATE INDEX IF NOT EXISTS "local_products_acea_idx" ON "local_products"("acea");
+CREATE INDEX IF NOT EXISTS "local_products_package_volume_idx" ON "local_products"("package_volume");
+CREATE INDEX IF NOT EXISTS "local_products_sale_price_cents_idx" ON "local_products"("sale_price_cents");
+CREATE INDEX IF NOT EXISTS "local_products_buy_price_cents_idx" ON "local_products"("buy_price_cents");
+CREATE INDEX IF NOT EXISTS "local_products_updated_at_idx" ON "local_products"("updated_at");
+CREATE INDEX IF NOT EXISTS "local_stock_balances_available_idx" ON "local_stock_balances"("available");

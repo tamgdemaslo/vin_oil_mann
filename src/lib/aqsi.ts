@@ -1,4 +1,11 @@
 import { randomUUID } from "crypto";
+import {
+  AQSI_MARKING_TYPE_AUTO_FLUIDS,
+  AQSI_PAYMENT_SUBJECT_MARKED,
+  AQSI_UNIT_CODE_LITER,
+  AQSI_UNIT_CODE_PIECE,
+} from "@/lib/marking";
+import { toAqsiDateTimeString } from "@/lib/time";
 
 export type OrdersTotals = {
   cashTotal: number;
@@ -12,6 +19,10 @@ export type AqsiPendingOrderItem = {
   unitPrice: number;
   discountPercent?: number;
   sku?: string | null;
+  markingCode?: string | null;
+  markingRequired?: boolean;
+  markingBypass?: boolean;
+  measuredPour?: boolean;
 };
 
 export type SyncAqsiPendingOrderInput = {
@@ -297,13 +308,18 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function normalizeIsoDateTime(value?: string | null): string {
-  if (value?.trim()) {
-    const candidate = value.includes("T") ? value : value.replace(" ", "T");
-    const dt = new Date(candidate);
-    if (!Number.isNaN(dt.getTime())) return dt.toISOString();
+function normalizeAqsiDateTime(value?: string | null): string {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    const localMatch = trimmed.match(
+      /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?$/
+    );
+    if (localMatch) return `${localMatch[1]}T${localMatch[2]}`;
+
+    const dt = new Date(trimmed);
+    if (!Number.isNaN(dt.getTime())) return toAqsiDateTimeString(dt);
   }
-  return new Date().toISOString();
+  return toAqsiDateTimeString();
 }
 
 function normalizeString(value?: string | null, maxLength?: number): string | undefined {
@@ -336,11 +352,18 @@ async function resolveAqsiBinding(config: AqsiConfig): Promise<{
       : [];
 
   if (devices.length === 1 && devices[0]?.id != null) {
+    const discoveredShopId =
+      config.shopId ??
+      (devices[0].shopId != null ? String(devices[0].shopId) : undefined);
+    if (discoveredShopId) {
+      return {
+        shopId: discoveredShopId,
+        cashierId: config.cashierId,
+      };
+    }
+
     return {
       deviceId: String(devices[0].id),
-      shopId:
-        config.shopId ??
-        (devices[0].shopId != null ? String(devices[0].shopId) : undefined),
       cashierId: config.cashierId,
     };
   }
@@ -361,6 +384,7 @@ export async function syncAqsiPendingOrder(
     throw new Error("Не передан идентификатор заказа для AQSI.");
   }
 
+  const orderDateTime = normalizeAqsiDateTime(input.dateTime);
   const items = input.items
     .map((item, index) => {
       const quantity = Number(item.quantity) || 0;
@@ -371,6 +395,11 @@ export async function syncAqsiPendingOrder(
       if (quantity <= 0 || unitPrice <= 0) return null;
       const effectiveUnitPrice = roundMoney(unitPrice * (1 - discountPercent / 100));
       if (effectiveUnitPrice <= 0) return null;
+      const markingCode = normalizeString(item.markingCode, 256);
+      const markingRequired = item.markingRequired === true;
+      const shouldSendMarking = markingRequired && item.markingBypass !== true && Boolean(markingCode);
+      const paymentSubjectType = shouldSendMarking ? AQSI_PAYMENT_SUBJECT_MARKED : 1;
+      const measuredPour = item.measuredPour === true;
 
       return {
         positionId: randomUUID(),
@@ -381,15 +410,18 @@ export async function syncAqsiPendingOrder(
         quantity,
         price: effectiveUnitPrice,
         tax: 6,
-        // Для /v2/Orders/simple на этом аккаунте AQSI принимает 1/2, но не 4.
-        // 1 стабильно проходит в прямой проверке API.
-        paymentMethodType: 1,
-        paymentSubjectType: 1,
-        addingType: 1,
-        addedAt: new Date().toISOString(),
+        // ФФД 1.2, тег 1214: при передаче товара покупателю должен быть полный расчет.
+        // Для маркированных товаров "Предоплата 100%" не считается выбытием в ГИС МТ.
+        paymentMethodType: 4,
+        paymentSubjectType,
+        ...(shouldSendMarking ? { markingType: AQSI_MARKING_TYPE_AUTO_FLUIDS } : {}),
+        ...(shouldSendMarking && markingCode ? { itemCode: markingCode } : {}),
+        addingType: shouldSendMarking ? 2 : 1,
+        addedAt: orderDateTime,
         editable: true,
-        unitOfMeasurement: "Piece",
-        unitCode: 0,
+        unitOfMeasurement: measuredPour ? "Litre" : "Piece",
+        unitCode: measuredPour ? AQSI_UNIT_CODE_LITER : AQSI_UNIT_CODE_PIECE,
+        isWeight: measuredPour ? 1 : 0,
       };
     })
     .filter((row): row is NonNullable<typeof row> => row != null);
@@ -404,7 +436,7 @@ export async function syncAqsiPendingOrder(
   const payload: Record<string, unknown> = {
     id: orderId,
     number: normalizeString(input.number, 32) ?? orderId.slice(0, 32),
-    dateTime: normalizeIsoDateTime(input.dateTime),
+    dateTime: orderDateTime,
     status: "Отложен",
     content: {
       type: 1,
@@ -431,11 +463,14 @@ export async function syncAqsiPendingOrder(
     tax: item.tax,
     paymentMethodType: item.paymentMethodType,
     paymentSubjectType: item.paymentSubjectType,
+    markingType: item.markingType,
+    itemCode: item.itemCode,
     addingType: item.addingType,
     addedAt: item.addedAt,
     editable: item.editable,
     unitOfMeasurement: item.unitOfMeasurement,
     unitCode: item.unitCode,
+    isWeight: item.isWeight,
   }));
 
   const fallbackPayloads: Record<string, unknown>[] = [
@@ -453,6 +488,11 @@ export async function syncAqsiPendingOrder(
           tax: position.tax,
           paymentMethodType: position.paymentMethodType,
           paymentSubjectType: position.paymentSubjectType,
+          markingType: position.markingType,
+          itemCode: position.itemCode,
+          unitOfMeasurement: position.unitOfMeasurement,
+          unitCode: position.unitCode,
+          isWeight: position.isWeight,
         })),
       },
       comment: payload.comment,
@@ -471,6 +511,12 @@ export async function syncAqsiPendingOrder(
           price: position.price,
           tax: position.tax,
           paymentMethodType: position.paymentMethodType,
+          paymentSubjectType: position.paymentSubjectType,
+          markingType: position.markingType,
+          itemCode: position.itemCode,
+          unitOfMeasurement: position.unitOfMeasurement,
+          unitCode: position.unitCode,
+          isWeight: position.isWeight,
         })),
       },
       device: payload.device,
@@ -537,4 +583,3 @@ export async function syncAqsiPendingOrder(
     };
   }
 }
-

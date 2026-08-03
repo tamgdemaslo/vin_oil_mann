@@ -1,0 +1,40 @@
+{
+  "dryRunVersion": 1,
+  "status": "SUPERSEDED_BY_ARCHIVE_POLICY",
+  "productionMutationAttempted": false,
+  "sourceDatabase": "reconciliation_railway",
+  "targetDatabase": "reconciliation_selectel",
+  "localUnixSocketOnly": true,
+  "manifestRecords": 509,
+  "schemaHash": "828100ded1f2aeaaee2ff8c764d266f7a57d2b9202cacf944c5aeba06383e66a",
+  "publicTables": {
+    "source": 137,
+    "target": 137
+  },
+  "prismaMigrationRows": {
+    "sourceTotal": 57,
+    "targetTotal": 56,
+    "sourceActive": 50,
+    "targetActive": 50,
+    "sourceRolledBack": 6,
+    "targetRolledBack": 6
+  },
+  "failedPrismaMigrationRows": {
+    "source": 1
+  },
+  "summary": {
+    "plannedInserts": 234,
+    "mappings": 32,
+    "skips": 243,
+    "recreations": 0,
+    "recomputations": 0,
+    "manualReview": 0,
+    "rejected": 0,
+    "conflicts": 0
+  },
+  "errors": [],
+  "warnings": [],
+  "previousStatus": "PASS",
+  "supersededAt": "2026-08-02T17:33:46.313Z",
+  "supersededBy": "ARCHIVE_ONLY_DO_NOT_IMPORT"
+}

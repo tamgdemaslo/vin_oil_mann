@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
+import { ContactActionButton } from "@/components/messenger/ContactActionButton";
+import MoneyInput from "@/components/MoneyInput";
+import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
+import { hasActiveShiftAccess } from "@/lib/active-shift-access";
+import { formatServiceDateTime } from "@/lib/date-time";
+import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
+import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -20,6 +29,34 @@ type Header = {
   storeId?: string;
   ecoUserName?: string;
 };
+
+type ReopenCheck = {
+  shipment: { id: string; name: string; status: "DRAFT" | "POSTED"; updatedAt: string; sumCents: number };
+  canReopen: boolean;
+  blockers: string[];
+  warnings: string[];
+  consequences: string[];
+  related: {
+    positionsCount: number;
+    trackedPositionsCount: number;
+    quantityToRestore: number;
+    closingDocuments: { id: string; type: string; number: string; status: string; revision: number }[];
+    diagnostics: { id: string; status: string; totalCount: number; completedAt: string | null }[];
+  };
+};
+
+const REOPEN_REASON_OPTIONS = [
+  { value: "product_error", label: "Ошибка в товаре" },
+  { value: "service_error", label: "Ошибка в услуге" },
+  { value: "quantity_error", label: "Неверное количество" },
+  { value: "price_error", label: "Неверная цена" },
+  { value: "client_error", label: "Неверный клиент" },
+  { value: "vehicle_error", label: "Неверный автомобиль" },
+  { value: "add_position", label: "Нужно добавить позицию" },
+  { value: "remove_position", label: "Нужно удалить позицию" },
+  { value: "discount_error", label: "Нужно изменить скидку" },
+  { value: "other", label: "Другое" },
+];
 
 type Position = {
   id?: string;
@@ -40,6 +77,104 @@ type Position = {
   discountAmount?: number; // ₽ по строке
 };
 
+type VinLookupItem = {
+  name: string;
+  article?: string;
+  price: number;
+  currency: string;
+  quantity: number;
+  store: string;
+  cell?: string;
+  productId?: string;
+  volumeLiters?: number;
+  imageHref?: string;
+  lookupKind?: "oil" | "oil-filter" | "fuel-filter" | "air-filter" | "cabin-filter" | "other";
+};
+
+type VinLookupResult = {
+  vin: string;
+  decoded?: {
+    make?: string;
+    model?: string;
+    modelYear?: string;
+    displacementL?: string;
+    enginePowerPS?: number;
+    engineSeries?: string;
+    modification?: string;
+  } | null;
+  decodeError?: string;
+  oilInfo?: {
+    approval?: string;
+    fillVolumeLiters?: string;
+    sae?: string[];
+    acea?: string[];
+    api?: string[];
+    oilFilterOem?: string;
+    fuelFilterOem?: string;
+    airFilterOem?: string;
+    cabinFilterOem?: string;
+    transmission?: {
+      code: string;
+      gearbox: string;
+      fluid: string;
+      partialVolumeLiters?: string;
+      fullVolumeLiters?: string;
+      levelCheckTempC?: string;
+      note?: string;
+    };
+  } | null;
+  openaiError?: string;
+  moySkladItems: VinLookupItem[];
+  moySkladError?: string;
+};
+
+type OilVariant = {
+  key: string;
+  name: string;
+  article?: string;
+  price: number;
+  currency: string;
+  available: number;
+  volumeLiters?: number;
+  productId?: string;
+  imageHref?: string;
+  stores: string[];
+  sourceItems: VinLookupItem[];
+};
+
+type OilBundleLine = {
+  variant: OilVariant;
+  quantity: number;
+};
+
+type OilGroup = {
+  key: string;
+  baseName: string;
+  variants: OilVariant[];
+  bestBundle: OilBundleLine[];
+  bestTotalLiters?: number;
+  bestTotalPrice?: number;
+  bestExcessLiters?: number;
+};
+
+type MaintenanceOfferLine = {
+  name: string;
+  article?: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  currency: string;
+};
+
+type MaintenanceOffer = {
+  key: string;
+  title: string;
+  note: string;
+  lines: MaintenanceOfferLine[];
+  total: number;
+  currency: string;
+};
+
 type DemandAttribute = {
   id?: string;
   name?: string;
@@ -56,11 +191,521 @@ type DetailResponse = {
   rawPositions?: unknown;
 };
 
+const VEHICLE_ATTR_NAMES = ["vin номер", "модель авто", "год", "гос. номер", "пробег", "объем", "моторное масло"];
+
+const FILTER_SECTION_META = {
+  "oil-filter": { title: "Масляные фильтры", accent: "amber" },
+  "air-filter": { title: "Воздушные фильтры", accent: "sky" },
+  "cabin-filter": { title: "Салонные фильтры", accent: "violet" },
+  "fuel-filter": { title: "Топливные фильтры", accent: "emerald" },
+} as const;
+
+type FilterSectionKind = keyof typeof FILTER_SECTION_META;
+
+function normalizeAttrName(value?: string): string {
+  return (value ?? "").toString().trim().toLowerCase().replace(/ё/g, "е");
+}
+
+function formatVehicleAttributeInput(name: string | undefined, value: string): string {
+  const normalized = normalizeAttrName(name);
+  if (/vin/.test(normalized)) return value.replace(/\s/g, "").toUpperCase().slice(0, 17);
+  if (normalized === "модель авто" || normalized === "номер" || /гос.*номер|plate/.test(normalized)) return value.toUpperCase();
+  return value;
+}
+
+function isBlankUiValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "" || normalized === "null" || normalized === "undefined";
+}
+
+function attributeValueToString(value: unknown): string {
+  if (isBlankUiValue(value)) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value && typeof value === "object" && "name" in value) {
+    const name = (value as { name?: unknown }).name;
+    return isBlankUiValue(name) ? "" : String(name);
+  }
+  return "";
+}
+
+function isVehicleAttribute(name?: string): boolean {
+  const normalized = normalizeAttrName(name);
+  return VEHICLE_ATTR_NAMES.includes(normalized);
+}
+
+function hasText(value?: string): boolean {
+  return Boolean(value && value.trim().length > 0);
+}
+
 function getStockToneClass(value?: number): string {
   const qty = Math.max(0, Math.floor(value ?? 0));
   if (qty <= 0) return "text-red-600 dark:text-red-400";
   if (qty <= 2) return "text-amber-600 dark:text-amber-400";
   return "text-emerald-600 dark:text-emerald-400";
+}
+
+function productIdFromMeta(meta?: Meta): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return localMatch[1];
+  const entityMatch = href.match(/\/entity\/(?:product|variant|service)\/([^/?#]+)/i);
+  return entityMatch?.[1] ?? "";
+}
+
+function localEntityIdFromMeta(meta?: Meta): string {
+  const href = meta?.href?.trim() ?? "";
+  if (!href) return "";
+  const localMatch = href.match(/^local:\/\/[^/]+\/([^/?#]+)/i);
+  if (localMatch?.[1]) return decodeURIComponent(localMatch[1]);
+  const entityMatch = href.match(/\/entity\/(?:product|variant|service|counterparty)\/([^/?#]+)/i);
+  return entityMatch?.[1] ? decodeURIComponent(entityMatch[1]) : "";
+}
+
+function isServiceMeta(meta?: Meta): boolean {
+  return meta?.type === "service" || /^local:\/\/service\//i.test(meta?.href ?? "") || /\/entity\/service\//i.test(meta?.href ?? "");
+}
+
+function localProductHref(position: Position): string {
+  const productId = productIdFromMeta(position.assortmentMeta);
+  if (productId) return `/inventory/products?product=${encodeURIComponent(productId)}`;
+  return `/inventory/products?search=${encodeURIComponent(position.name)}`;
+}
+
+function rawAgentFromDemand(raw: unknown): { id?: string; name?: string; meta?: Meta } | undefined {
+  if (!raw || typeof raw !== "object" || !("agent" in raw)) return undefined;
+  const agent = (raw as { agent?: unknown }).agent;
+  return agent && typeof agent === "object" ? (agent as { id?: string; name?: string; meta?: Meta }) : undefined;
+}
+
+function counterpartyHrefFromDemand(raw: unknown, fallbackName: string): string {
+  const agent = rawAgentFromDemand(raw);
+  const id = agent?.id?.trim() || localEntityIdFromMeta(agent?.meta);
+  if (id) return `/clients/counterparties?counterparty=${encodeURIComponent(id)}`;
+  const name = (agent?.name ?? fallbackName).trim();
+  return name && name !== "Клиент не выбран"
+    ? `/clients/counterparties?search=${encodeURIComponent(name)}`
+    : "/clients/counterparties";
+}
+
+function counterpartyIdFromDemand(raw: unknown): string | null {
+  const agent = rawAgentFromDemand(raw);
+  return agent?.id?.trim() || localEntityIdFromMeta(agent?.meta) || null;
+}
+
+function diagnosticApiErrorMessage(status: number, body: { error?: string; needShift?: boolean } = {}): string {
+  if (status === 401) return "Необходима авторизация";
+  if (status === 403 && body.needShift) return "Откройте смену для проведения диагностики";
+  if (status === 403) return body.error || "Недостаточно прав для проведения диагностики";
+  return body.error || "Не удалось создать диагностику";
+}
+
+function formatMoney(value: number, currency = "руб."): string {
+  return `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function parseDecimalInput(value: string): number {
+  return Number(value.replace(",", ".")) || 0;
+}
+
+function formatQuantityInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return value.toLocaleString("ru-RU", { maximumFractionDigits: 3, useGrouping: false });
+}
+
+function normalizeQuantityInput(value: string): string {
+  const [whole, ...fraction] = value.replace(/\./g, ",").replace(/[^\d,]/g, "").split(",");
+  return fraction.length > 0 ? `${whole},${fraction.join("")}` : whole;
+}
+
+function QuantityInput({
+  value,
+  onValueChange,
+  className,
+}: {
+  value: number;
+  onValueChange: (value: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(formatQuantityInput(value));
+  const [isFocused, setIsFocused] = useState(false);
+  const inputValue = isFocused ? draft : formatQuantityInput(value);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      pattern="[0-9]*[,.]?[0-9]*"
+      value={inputValue}
+      onFocus={() => {
+        setDraft(formatQuantityInput(value));
+        setIsFocused(true);
+      }}
+      onChange={(e) => {
+        const next = normalizeQuantityInput(e.target.value);
+        setDraft(next);
+        onValueChange(parseDecimalInput(next));
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        const parsed = parseDecimalInput(draft);
+        const hasDecimalPart = draft.includes(",");
+        setDraft(
+          parsed.toLocaleString("ru-RU", {
+            minimumFractionDigits: hasDecimalPart ? 1 : 0,
+            maximumFractionDigits: 3,
+            useGrouping: false,
+          })
+        );
+      }}
+      className={className}
+    />
+  );
+}
+
+function formatVolume(volume?: number): string {
+  if (typeof volume !== "number" || Number.isNaN(volume) || volume <= 0) return "—";
+  if (volume < 1) return `${Math.round(volume * 1000)} мл`;
+  return `${volume.toLocaleString("ru-RU", { minimumFractionDigits: Number.isInteger(volume) ? 0 : 1, maximumFractionDigits: 2 })} л`;
+}
+
+function detectFilterKind(item: VinLookupItem): FilterSectionKind | null {
+  if (item.lookupKind && item.lookupKind in FILTER_SECTION_META) return item.lookupKind as FilterSectionKind;
+  const name = item.name.toLowerCase();
+  if (/салон|cabin|interior/.test(name)) return "cabin-filter";
+  if (/воздуш|air filter/.test(name)) return "air-filter";
+  if (/топлив|fuel filter/.test(name)) return "fuel-filter";
+  if (/маслян|масля|oil filter/.test(name)) return "oil-filter";
+  return /фильтр|filter/.test(name) ? "oil-filter" : null;
+}
+
+function getFilterSectionClasses(kind: FilterSectionKind): string {
+  switch (kind) {
+    case "oil-filter":
+      return "border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-900/10";
+    case "air-filter":
+      return "border-sky-200 bg-sky-50/60 dark:border-sky-800 dark:bg-sky-900/10";
+    case "cabin-filter":
+      return "border-violet-200 bg-violet-50/60 dark:border-violet-800 dark:bg-violet-900/10";
+    case "fuel-filter":
+      return "border-emerald-200 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-900/10";
+  }
+}
+
+function getMoySkladImageUrl(imageHref?: string): string | undefined {
+  return imageHref ? `/api/moysklad/image?href=${encodeURIComponent(imageHref)}` : undefined;
+}
+
+function parseFillVolume(value?: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseFloat(value.replace(",", ".").replace(/[^\d.]/g, ""));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function getOilBaseName(name: string, volumeLiters?: number): string {
+  return getOilLineBaseName(name, volumeLiters);
+}
+
+function describeBundle(bundle: OilBundleLine[]): string {
+  return bundle
+    .map(({ variant, quantity }) => `${quantity} x ${formatVolume(variant.volumeLiters)}`)
+    .join(" + ");
+}
+
+function buildOilVariants(items: VinLookupItem[]): OilVariant[] {
+  const grouped = new Map<string, OilVariant>();
+  for (const item of items) {
+    const key = item.productId ?? `${item.name}|${item.article ?? ""}|${item.price}|${item.volumeLiters ?? ""}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.available += Math.max(0, Math.floor(item.quantity || 0));
+      if (item.store && item.store !== "—" && !existing.stores.includes(item.store)) existing.stores.push(item.store);
+      existing.sourceItems.push(item);
+      continue;
+    }
+    grouped.set(key, {
+      key,
+      name: item.name,
+      article: item.article,
+      price: item.price,
+      currency: item.currency,
+      available: Math.max(0, Math.floor(item.quantity || 0)),
+      volumeLiters: item.volumeLiters,
+      productId: item.productId,
+      imageHref: item.imageHref,
+      stores: item.store && item.store !== "—" ? [item.store] : [],
+      sourceItems: [item],
+    });
+  }
+  return [...grouped.values()].sort((a, b) => {
+    if (b.available !== a.available) return b.available - a.available;
+    const aVolume = a.volumeLiters ?? 0;
+    const bVolume = b.volumeLiters ?? 0;
+    if (bVolume !== aVolume) return bVolume - aVolume;
+    return a.price - b.price;
+  });
+}
+
+function chooseBestOilBundle(variants: OilVariant[], targetLiters?: number): {
+  bundle: OilBundleLine[];
+  totalLiters?: number;
+  totalPrice?: number;
+  excessLiters?: number;
+} {
+  const usable = variants.filter((variant) => (variant.volumeLiters ?? 0) > 0);
+  if (usable.length === 0) return { bundle: [] };
+  const anyStockOverall = usable.some((variant) => variant.available > 0);
+  if (!anyStockOverall) return { bundle: [] };
+  if (!targetLiters || targetLiters <= 0) {
+    const cheapest = [...usable].sort((a, b) => {
+      const aUnit = a.volumeLiters ? a.price / a.volumeLiters : Number.POSITIVE_INFINITY;
+      const bUnit = b.volumeLiters ? b.price / b.volumeLiters : Number.POSITIVE_INFINITY;
+      return aUnit - bUnit || a.price - b.price;
+    })[0];
+    return cheapest
+      ? {
+          bundle: [{ variant: cheapest, quantity: 1 }],
+          totalLiters: cheapest.volumeLiters,
+          totalPrice: cheapest.price,
+          excessLiters: 0,
+        }
+      : { bundle: [] };
+  }
+
+  const preferred = usable.filter((variant) => variant.available > 0);
+
+  let best:
+    | {
+        bundle: OilBundleLine[];
+        totalLiters: number;
+        totalPrice: number;
+        excessLiters: number;
+      }
+    | undefined;
+
+  const search = (index: number, lines: OilBundleLine[], totalLiters: number, totalPrice: number, totalCount: number) => {
+    if (totalLiters >= targetLiters) {
+      const candidate = {
+        bundle: lines.filter((line) => line.quantity > 0),
+        totalLiters,
+        totalPrice,
+        excessLiters: totalLiters - targetLiters,
+      };
+      const shouldReplace =
+        !best ||
+        candidate.excessLiters < best.excessLiters ||
+        (candidate.excessLiters === best.excessLiters && candidate.totalPrice < best.totalPrice) ||
+        (candidate.excessLiters === best.excessLiters &&
+          candidate.totalPrice === best.totalPrice &&
+          totalCount < best.bundle.reduce((sum, line) => sum + line.quantity, 0));
+      if (shouldReplace) best = candidate;
+      return;
+    }
+    if (index >= preferred.length) return;
+
+    const variant = preferred[index];
+    const volume = variant.volumeLiters ?? 0;
+    if (volume <= 0) {
+      search(index + 1, lines, totalLiters, totalPrice, totalCount);
+      return;
+    }
+
+    const maxNeeded = Math.ceil(targetLiters / volume) + 1;
+    const maxQty = Math.max(0, Math.min(variant.available, maxNeeded));
+    for (let qty = maxQty; qty >= 0; qty -= 1) {
+      if (qty === 0) {
+        search(index + 1, lines, totalLiters, totalPrice, totalCount);
+        continue;
+      }
+      search(
+        index + 1,
+        [...lines, { variant, quantity: qty }],
+        totalLiters + volume * qty,
+        totalPrice + variant.price * qty,
+        totalCount + qty
+      );
+    }
+  };
+
+  search(0, [], 0, 0, 0);
+  return best ? best : { bundle: [] };
+}
+
+function buildOilGroups(items: VinLookupItem[], targetLiters?: number): OilGroup[] {
+  const groups = new Map<string, VinLookupItem[]>();
+  for (const item of items) {
+    const baseName = getOilBaseName(item.name, item.volumeLiters);
+    const key = baseName.toLowerCase();
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+
+  return [...groups.entries()]
+    .map(([key, groupItems]) => {
+      const variants = buildOilVariants(groupItems);
+      const best = chooseBestOilBundle(variants, targetLiters);
+      return {
+        key,
+        baseName: getOilBaseName(groupItems[0]?.name ?? key, groupItems[0]?.volumeLiters),
+        variants,
+        bestBundle: best.bundle,
+        bestTotalLiters: best.totalLiters,
+        bestTotalPrice: best.totalPrice,
+        bestExcessLiters: best.excessLiters,
+      };
+    })
+    .filter((group) => group.variants.length > 0)
+    .sort((a, b) => {
+      const aHasBundle = a.bestBundle.length > 0 ? 1 : 0;
+      const bHasBundle = b.bestBundle.length > 0 ? 1 : 0;
+      if (bHasBundle !== aHasBundle) return bHasBundle - aHasBundle;
+      if ((a.bestExcessLiters ?? Number.POSITIVE_INFINITY) !== (b.bestExcessLiters ?? Number.POSITIVE_INFINITY)) {
+        return (a.bestExcessLiters ?? Number.POSITIVE_INFINITY) - (b.bestExcessLiters ?? Number.POSITIVE_INFINITY);
+      }
+      if ((a.bestTotalPrice ?? Number.POSITIVE_INFINITY) !== (b.bestTotalPrice ?? Number.POSITIVE_INFINITY)) {
+        return (a.bestTotalPrice ?? Number.POSITIVE_INFINITY) - (b.bestTotalPrice ?? Number.POSITIVE_INFINITY);
+      }
+      return a.baseName.localeCompare(b.baseName, "ru");
+    });
+}
+
+function getVehicleSummary(result: VinLookupResult): string {
+  const decoded = result.decoded;
+  const title = [decoded?.make, decoded?.model, decoded?.modelYear].filter(Boolean).join(" ");
+  return title || "не определен";
+}
+
+function getRepresentativeFilterItem(items: VinLookupItem[]): VinLookupItem | undefined {
+  if (items.length === 0) return undefined;
+  const inStock = items.filter((item) => item.quantity > 0);
+  const pool = inStock.length > 0 ? inStock : items;
+  return [...pool].sort((a, b) => a.price - b.price || a.name.localeCompare(b.name, "ru"))[0];
+}
+
+function getFilterLinePrefix(kind: FilterSectionKind): string {
+  switch (kind) {
+    case "oil-filter":
+      return "Масляный фильтр";
+    case "air-filter":
+      return "Воздушный фильтр";
+    case "cabin-filter":
+      return "Салонный фильтр";
+    case "fuel-filter":
+      return "Топливный фильтр";
+  }
+}
+
+function getOilOfferLines(group?: OilGroup): MaintenanceOfferLine[] {
+  if (!group) return [];
+  if (group.bestBundle.length > 0) {
+    return group.bestBundle.map((line) => ({
+      name: `${group.baseName} ${formatVolume(line.variant.volumeLiters)}`,
+      article: line.variant.article,
+      quantity: line.quantity,
+      unitPrice: line.variant.price,
+      total: line.variant.price * line.quantity,
+      currency: line.variant.currency,
+    }));
+  }
+  const variant = group.variants[0];
+  if (!variant) return [];
+  return [
+    {
+      name: `${group.baseName} ${formatVolume(variant.volumeLiters)}`,
+      article: variant.article,
+      quantity: 1,
+      unitPrice: variant.price,
+      total: variant.price,
+      currency: variant.currency,
+    },
+  ];
+}
+
+function buildMaintenanceOffer(
+  key: string,
+  title: string,
+  note: string,
+  oilGroup: OilGroup | undefined,
+  filterSections: { kind: FilterSectionKind; title: string; items: VinLookupItem[] }[]
+): MaintenanceOffer | null {
+  const lines = [
+    ...getOilOfferLines(oilGroup),
+    ...filterSections.flatMap((section) => {
+      const item = getRepresentativeFilterItem(section.items);
+      if (!item) return [];
+      return [
+        {
+          name: `${getFilterLinePrefix(section.kind)}: ${item.name}`,
+          article: item.article,
+          quantity: 1,
+          unitPrice: item.price,
+          total: item.price,
+          currency: item.currency,
+        },
+      ];
+    }),
+  ];
+
+  if (lines.length === 0) return null;
+  const total = lines.reduce((sum, line) => sum + line.total, 0);
+  return {
+    key,
+    title,
+    note,
+    lines,
+    total,
+    currency: lines[0]?.currency ?? "руб.",
+  };
+}
+
+function buildMaintenanceMessage(result: VinLookupResult, offers: MaintenanceOffer[]): string {
+  const oilInfo = result.oilInfo;
+  const header = [
+    "Добрый день! Рассчитали варианты ТО по VIN.",
+    "",
+    `Автомобиль: ${getVehicleSummary(result)}`,
+    `VIN: ${result.vin}`,
+  ];
+
+  if (
+    hasText(oilInfo?.approval) ||
+    (oilInfo?.acea?.length ?? 0) > 0 ||
+    (oilInfo?.api?.length ?? 0) > 0 ||
+    hasText(oilInfo?.fillVolumeLiters) ||
+    (oilInfo?.sae?.length ?? 0) > 0
+  ) {
+    header.push(
+      [
+        hasText(oilInfo?.approval)
+          ? `допуск ${oilInfo?.approval}`
+          : (oilInfo?.acea?.length ?? 0) > 0
+            ? `ACEA ${oilInfo!.acea!.join(", ")}`
+            : (oilInfo?.api?.length ?? 0) > 0
+              ? `API ${oilInfo!.api!.join(", ")}`
+              : null,
+        hasText(oilInfo?.fillVolumeLiters) ? `объем масла ${oilInfo?.fillVolumeLiters}` : null,
+        oilInfo?.sae?.length ? `SAE ${oilInfo.sae.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    );
+  }
+
+  const body = offers.flatMap((offer, index) => [
+    "",
+    `Вариант ${index + 1}: ${offer.title}`,
+    offer.note,
+    ...offer.lines.map((line) => {
+      return `${line.name} — ${line.quantity} шт. x ${formatMoney(line.unitPrice, line.currency)} = ${formatMoney(line.total, line.currency)}`;
+    }),
+    `Итого по запчастям: ${formatMoney(offer.total, offer.currency)}`,
+  ]);
+
+  return [...header, ...body, "", "Цены актуальны на момент расчета, наличие лучше подтвердить перед заказом."].join("\n");
 }
 
 export default function ShipmentDetailPage() {
@@ -73,18 +718,31 @@ export default function ShipmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [printing, setPrinting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenLoading, setReopenLoading] = useState(false);
+  const [reopenCheck, setReopenCheck] = useState<ReopenCheck | null>(null);
+  const [reopenReasonCode, setReopenReasonCode] = useState("quantity_error");
+  const [reopenComment, setReopenComment] = useState("");
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
-  const [showRaw, setShowRaw] = useState(false);
   const [attributes, setAttributes] = useState<DemandAttribute[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [vin, setVin] = useState("");
-  const [printTemplate, setPrintTemplate] = useState<"default" | "birka_own" | "birka_box" | "job_order">("default");
+  const [vinLookupLoading, setVinLookupLoading] = useState(false);
+  const [vinLookupResult, setVinLookupResult] = useState<VinLookupResult | null>(null);
+  const [showAllOilGroups, setShowAllOilGroups] = useState(false);
+  const [maintenanceCopyStatus, setMaintenanceCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [activeDetailTab, setActiveDetailTab] = useState<"positions" | "vin" | "diagnostic" | "history" | "precheck">("positions");
+  const [vehicleEditing, setVehicleEditing] = useState(false);
+  const [manualEngineVolume, setManualEngineVolume] = useState("");
+  const [manualEnginePower, setManualEnginePower] = useState("");
+  const [showVehicleOverrideDialog, setShowVehicleOverrideDialog] = useState(false);
+  const [vehicleOverridePromptVin, setVehicleOverridePromptVin] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [productOem, setProductOem] = useState("");
-  const [productMannName, setProductMannName] = useState("");
   const [productParams, setProductParams] = useState("");
   const [productOptions, setProductOptions] = useState<
     {
@@ -102,6 +760,25 @@ export default function ShipmentDetailPage() {
   >([]);
   const [productSearchLoading, setProductSearchLoading] = useState(false);
 
+  const [diagnosticModalOpen, setDiagnosticModalOpen] = useState(false);
+  const [diagnosticRowId, setDiagnosticRowId] = useState<string | null>(null);
+  const [diagnosticRemote, setDiagnosticRemote] = useState<{
+    id: string;
+    status: string;
+	    reportUrl?: string;
+	    counts?: {
+	      total?: number;
+	      good?: number;
+	      warn?: number;
+	      crit?: number;
+	      normal?: number;
+	      attention?: number;
+	      replace?: number;
+	      indirect?: number;
+    };
+  } | null>(null);
+  const [diagnosticActionLoading, setDiagnosticActionLoading] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -114,17 +791,13 @@ export default function ShipmentDetailPage() {
           return;
         }
         if (sess.user.role === "admin" || sess.user.role === "master") {
-          const shift = await fetch("/api/shifts/current").then((r) => (r.ok ? r.json() : null));
-          if (!shift) {
+          const [shift, cash] = await Promise.all([
+            fetch("/api/shifts/current", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+            fetch("/api/cash", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+          ]);
+          if (!hasActiveShiftAccess(sess.user.role, shift, cash?.shift)) {
             router.push(sess.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
             return;
-          }
-          if (sess.user.role === "admin") {
-            const cash = await fetch("/api/cash").then((r) => (r.ok ? r.json() : null));
-            if (!cash?.shift) {
-              router.push("/cash?needShift=1");
-              return;
-            }
           }
         }
         const res = await fetch(`/api/demands/${id}`);
@@ -134,10 +807,19 @@ export default function ShipmentDetailPage() {
           return;
         }
         if (cancelled) return;
+        if (json.header && !json.header.applicable) {
+          router.replace(`/shipment/${id}/edit`);
+          return;
+        }
         setData(json);
         setDescription(json.header.description ?? "");
         setApplicable(Boolean(json.header.applicable));
-        const atts = Array.isArray(json.attributes) ? (json.attributes as DemandAttribute[]) : [];
+	        const atts = Array.isArray(json.attributes)
+	          ? (json.attributes as DemandAttribute[]).map((attr) => ({
+	              ...attr,
+	              value: typeof attr.value === "string" ? formatVehicleAttributeInput(attr.name, attributeValueToString(attr.value)) : attr.value,
+	            }))
+	          : [];
         setAttributes(atts);
         // VIN из доп. полей (по имени атрибута, содержащему "vin")
         const vinIndex = atts.findIndex(
@@ -145,7 +827,7 @@ export default function ShipmentDetailPage() {
         );
         if (vinIndex >= 0) {
           const v = atts[vinIndex]?.value;
-          setVin(typeof v === "string" ? v : v != null ? String(v) : "");
+          setVin(formatVehicleAttributeInput(atts[vinIndex]?.name, attributeValueToString(v)));
         } else {
           setVin("");
         }
@@ -176,8 +858,142 @@ export default function ShipmentDetailPage() {
     };
   }, [id, router]);
 
+  const refreshDiagnosticRemote = useCallback(async () => {
+    if (!id) return;
+    try {
+      const response = await fetch(`/api/diagnostics/for-shipment?shipmentId=${encodeURIComponent(id)}`);
+      const json = await response.json();
+      if (json.diagnostic?.id) {
+        setDiagnosticRemote(json.diagnostic);
+        setDiagnosticRowId(json.diagnostic.id);
+      } else {
+        setDiagnosticRemote(null);
+        setDiagnosticRowId(null);
+      }
+    } catch {
+      // Диагностика не должна ломать карточку отгрузки.
+    }
+  }, [id]);
+
   useEffect(() => {
-    const hasQuery = [productSearch.trim(), productOem.trim(), productMannName.trim(), productParams.trim()].some(Boolean);
+    void refreshDiagnosticRemote();
+  }, [refreshDiagnosticRemote]);
+
+  const copyDiagnosticReportLink = useCallback(async () => {
+    if (!diagnosticRemote?.reportUrl) return;
+    try {
+      await navigator.clipboard?.writeText(diagnosticRemote.reportUrl);
+      setPaymentInfo("Ссылка на отчёт скопирована");
+      window.setTimeout(() => setPaymentInfo(null), 2500);
+    } catch {
+      setError("Не удалось скопировать ссылку на отчёт");
+    }
+  }, [diagnosticRemote?.reportUrl]);
+
+  const handleOpenDiagnosticDetail = useCallback(async () => {
+    if (!id) {
+      setError("Не удалось определить отгрузку");
+      return;
+    }
+    if (diagnosticActionLoading) return;
+    setDiagnosticActionLoading(true);
+    setError(null);
+    try {
+      let diagId = diagnosticRowId;
+      let remote = diagnosticRemote;
+      if (!diagId) {
+        const existingResponse = await fetch(`/api/diagnostics/for-shipment?shipmentId=${encodeURIComponent(id)}`);
+        const existingJson = await existingResponse.json().catch(() => ({})) as {
+          diagnostic?: typeof diagnosticRemote;
+          error?: string;
+          needShift?: boolean;
+        };
+        if (!existingResponse.ok) {
+          throw new Error(diagnosticApiErrorMessage(existingResponse.status, existingJson));
+        }
+        if (existingJson.diagnostic?.id) {
+          remote = existingJson.diagnostic;
+          diagId = existingJson.diagnostic.id;
+          setDiagnosticRemote(existingJson.diagnostic);
+          setDiagnosticRowId(existingJson.diagnostic.id);
+        }
+      }
+      if (!diagId) {
+        const vehicleHints = inferDiagnosticVehicleHintsFromLookup(vinLookupResult);
+        const attrModel = attributeValueToString(
+          attributes.find((a) => normalizeAttrName(a.name) === "модель авто")?.value
+        ).trim();
+        const mp = attrModel.split(/\s+/).filter(Boolean);
+        const yearStr = attributeValueToString(attributes.find((a) => normalizeAttrName(a.name) === "год")?.value).trim();
+        const plateStr = attributeValueToString(
+          attributes.find((a) => /^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i.test(normalizeAttrName(a.name)))?.value
+        ).trim();
+        const mileageStr = attributeValueToString(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value).trim();
+        const dec = vinLookupResult?.decoded;
+        const rawAgent = rawAgentFromDemand(data?.raw);
+        const rawAgentId = rawAgent?.id?.trim() || localEntityIdFromMeta(rawAgent?.meta);
+        const cr = await fetch("/api/diagnostics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentId: id,
+            clientId: rawAgentId || null,
+            clientName: data?.header.agentName ?? null,
+            vin: vin.replace(/\s/g, "").toUpperCase() || null,
+            brand: dec?.make || mp[0] || null,
+            model: dec?.model || mp.slice(1).join(" ") || null,
+            year: yearStr ? parseInt(yearStr, 10) || null : dec?.modelYear ? parseInt(dec.modelYear, 10) || null : null,
+            licensePlate: plateStr || null,
+            mileage: mileageStr ? parseInt(mileageStr.replace(/\D/g, ""), 10) || null : null,
+            vehicleHints,
+          }),
+        });
+        const cj = await cr.json().catch(() => ({})) as {
+          diagnostic?: typeof diagnosticRemote;
+          diagnosticId?: string;
+          error?: string;
+          needShift?: boolean;
+        };
+        if (!cr.ok) {
+          throw new Error(diagnosticApiErrorMessage(cr.status, cj));
+        }
+        diagId = cj.diagnostic?.id ?? cj.diagnosticId ?? null;
+        if (!diagId) throw new Error(cj.error ?? "Не удалось создать диагностику");
+        setDiagnosticRowId(diagId);
+        remote = cj.diagnostic ?? {
+          id: diagId,
+          status: "IN_PROGRESS",
+          counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
+        };
+        setDiagnosticRemote(remote);
+      }
+      if (remote?.id) {
+        setDiagnosticRemote(remote);
+        setDiagnosticRowId(remote.id);
+      }
+    setDiagnosticModalOpen(true);
+      void refreshDiagnosticRemote();
+    } catch (e) {
+      console.error("[shipment] diagnostic open/create failed:", e);
+      setError(e instanceof Error ? e.message : "Не удалось создать диагностику");
+    } finally {
+      setDiagnosticActionLoading(false);
+    }
+  }, [
+    id,
+    diagnosticRowId,
+    diagnosticRemote,
+    diagnosticActionLoading,
+    attributes,
+    vin,
+    data?.raw,
+    data?.header.agentName,
+    vinLookupResult,
+    refreshDiagnosticRemote,
+  ]);
+
+  useEffect(() => {
+    const hasQuery = [productSearch.trim(), productOem.trim(), productParams.trim()].some(Boolean);
     if (!hasQuery) {
       setProductOptions([]);
       return;
@@ -187,7 +1003,6 @@ export default function ShipmentDetailPage() {
       const params = new URLSearchParams();
       if (productSearch.trim()) params.set("search", productSearch.trim());
       if (productOem.trim()) params.set("oem", productOem.trim());
-      if (productMannName.trim()) params.set("mannName", productMannName.trim());
       if (productParams.trim()) params.set("params", productParams.trim());
       if (data?.header.storeId) params.set("storeId", data.header.storeId);
       if (data?.header.storeName) params.set("storeName", data.header.storeName);
@@ -200,9 +1015,143 @@ export default function ShipmentDetailPage() {
         .finally(() => setProductSearchLoading(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [productSearch, productOem, productMannName, productParams, data?.header.storeId, data?.header.storeName]);
+  }, [productSearch, productOem, productParams, data?.header.storeId, data?.header.storeName]);
+
+  const addFromVinLookup = useCallback((items: VinLookupItem[], desiredByProductId?: Record<string, number>) => {
+    setPositions((prev) => {
+      const next = [...prev];
+      const indexByHref = new Map(next.map((p, index) => [p.assortmentMeta?.href, index] as const));
+      for (const it of items) {
+        if (!it.productId) continue;
+        const maxAvailable = Math.max(0, Math.floor(it.quantity || 0));
+        const rawDesired = desiredByProductId?.[it.productId];
+        const desiredQuantity =
+          typeof rawDesired === "number" && Number.isFinite(rawDesired)
+            ? Math.max(0, rawDesired)
+            : rawDesired == null
+              ? maxAvailable > 0
+                ? 1
+                : 0
+              : 0;
+        if (desiredQuantity <= 0) continue;
+        const capped = maxAvailable > 0 ? Math.min(desiredQuantity, maxAvailable) : 0;
+        if (capped <= 0) continue;
+        const meta: Meta = {
+          href: `local://product/${it.productId}`,
+          type: "product",
+          mediaType: "application/json",
+        };
+        const existingIndex = indexByHref.get(meta.href);
+        if (existingIndex != null) {
+          const existing = next[existingIndex];
+          next[existingIndex] = {
+            ...existing,
+            quantity: (existing.quantity || 0) + capped,
+          };
+          continue;
+        }
+        next.push({
+          name: it.name,
+          quantity: capped,
+          price: it.price,
+          discount: 0,
+          discountMode: "percent",
+          discountAmount: 0,
+          assortmentMeta: meta,
+          slotName: it.cell,
+        });
+        indexByHref.set(meta.href, next.length - 1);
+      }
+      return next;
+    });
+  }, []);
+
+  const runVinLookup = useCallback(async (vehicleOverrides?: { displacementL?: string; enginePowerPS?: string }) => {
+    const vinClean = vin.replace(/\s/g, "").toUpperCase();
+    if (vinClean.length < 8) return;
+    const hasOverrides = Boolean(vehicleOverrides?.displacementL?.trim() || vehicleOverrides?.enginePowerPS?.trim());
+    setVinLookupLoading(true);
+    setVinLookupResult(null);
+    setShowAllOilGroups(false);
+    setMaintenanceCopyStatus("idle");
+    setShowVehicleOverrideDialog(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vin: vinClean,
+          vehicleOverrides: hasOverrides ? vehicleOverrides : undefined,
+        }),
+      });
+      const data = await res.json();
+      setVinLookupResult(data as VinLookupResult);
+
+      const decoded = (data as VinLookupResult).decoded;
+      if (decoded?.displacementL) setManualEngineVolume(decoded.displacementL);
+      if (typeof decoded?.enginePowerPS === "number" && decoded.enginePowerPS > 0) {
+        setManualEnginePower(String(decoded.enginePowerPS));
+      }
+      const hasEngineIdentity = Boolean(
+        decoded?.engineSeries?.trim() ||
+          decoded?.displacementL?.trim() ||
+          (typeof decoded?.enginePowerPS === "number" && decoded.enginePowerPS > 0)
+      );
+      if (decoded && !hasOverrides && !hasEngineIdentity) {
+        setVehicleOverridePromptVin(vinClean);
+        setManualEngineVolume(decoded.displacementL ?? "");
+        setManualEnginePower(typeof decoded.enginePowerPS === "number" && decoded.enginePowerPS > 0 ? String(decoded.enginePowerPS) : "");
+        setShowVehicleOverrideDialog(true);
+      }
+      if (decoded && (decoded.make || decoded.model || decoded.modelYear)) {
+        setAttributes((prev) =>
+          prev.map((a) => {
+            const name = normalizeAttrName(a.name);
+            if (decoded && name === "модель авто") {
+              const val = [decoded.make, decoded.model].filter(Boolean).join(" ").trim();
+              return { ...a, value: val ? formatVehicleAttributeInput(a.name, val) : null };
+            }
+            if (decoded && name === "год") {
+              const val = (decoded.modelYear ?? "").trim();
+              return { ...a, value: val || null };
+            }
+            if (name === "объем") {
+              const val = (data as VinLookupResult).oilInfo?.fillVolumeLiters?.trim();
+              if (val && !attributeValueToString(a.value).trim()) return { ...a, value: val };
+            }
+            return a;
+          })
+        );
+      }
+    } catch (e) {
+      setVinLookupResult({
+        vin: vinClean,
+        decoded: null,
+        moySkladItems: [],
+        decodeError: e instanceof Error ? e.message : "Ошибка запроса",
+      });
+    } finally {
+      setVinLookupLoading(false);
+    }
+  }, [vin]);
+
+  const copyMaintenanceMessage = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMaintenanceCopyStatus("copied");
+      window.setTimeout(() => setMaintenanceCopyStatus("idle"), 2500);
+    } catch {
+      setMaintenanceCopyStatus("error");
+      window.setTimeout(() => setMaintenanceCopyStatus("idle"), 3500);
+    }
+  }, []);
 
   async function saveShipment(): Promise<boolean> {
+    if (applicable) {
+      setError("Проведённую отгрузку нельзя редактировать напрямую. Сначала верните документ в черновик.");
+      return false;
+    }
     setSaving(true);
     setError(null);
     setPaymentInfo(null);
@@ -217,7 +1166,7 @@ export default function ShipmentDetailPage() {
           positions: positions.map((p) => ({
             id: p.id,
             quantity: p.quantity,
-            // обратно в копейки для API МойСклад
+            // обратно в копейки для локального API
             price: Math.round((p.price || 0) * 100),
             discount: typeof p.discount === "number" ? p.discount : 0,
             assortment: p.assortmentMeta ? { meta: p.assortmentMeta } : undefined,
@@ -241,6 +1190,15 @@ export default function ShipmentDetailPage() {
             }
           : prev
       );
+      if (diagnosticRemote || diagnosticRowId) {
+        void refreshDiagnosticRemote();
+        setPaymentInfo(
+          diagnosticRemote?.status === "COMPLETED"
+            ? "Данные автомобиля обновлены. В завершённой диагностике автоматически заполняются только пустые поля."
+            : "Данные автомобиля обновлены. Диагностика синхронизирована с отгрузкой."
+        );
+        window.setTimeout(() => setPaymentInfo(null), 3500);
+      }
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети");
@@ -254,31 +1212,150 @@ export default function ShipmentDetailPage() {
     await saveShipment();
   }
 
+  async function handleDuplicate() {
+    if (!id) return;
+    setDuplicating(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/demands/${encodeURIComponent(id)}/copy`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Не удалось скопировать отгрузку";
+        setError(message);
+        window.alert(message);
+        return;
+      }
+      const copiedId = typeof json.id === "string" ? json.id : typeof json.demand?.id === "string" ? json.demand.id : "";
+      if (copiedId) {
+        router.push(`/shipment/${copiedId}/edit?copied=1`);
+        return;
+      }
+      console.error("[shipment] copy response without id:", json);
+      const message = "Отгрузка могла быть скопирована, но сервер не вернул id нового черновика";
+      setError(message);
+      window.alert(message);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Ошибка сети";
+      setError(message);
+      window.alert(message);
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
+  async function handleDeleteShipment() {
+    if (!id) return;
+    if (!window.confirm("Удалить локальную отгрузку? Действие необратимо.")) return;
+    setRemoving(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/demands/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof json.error === "string" ? json.error : "Не удалось удалить отгрузку");
+        return;
+      }
+      router.push("/shipment");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  async function openReopenDialog() {
+    if (!id) return;
+    setReopenLoading(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/shipments/${encodeURIComponent(id)}/reopen-check`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Не удалось проверить возврат в черновик";
+        setError(message);
+        return;
+      }
+      setReopenCheck(json as ReopenCheck);
+      setReopenDialogOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка проверки возврата в черновик");
+    } finally {
+      setReopenLoading(false);
+    }
+  }
+
+  async function confirmReopenShipment() {
+    if (!id || !reopenCheck) return;
+    if (reopenReasonCode === "other" && !reopenComment.trim()) {
+      setError("Укажите комментарий для причины «Другое»");
+      return;
+    }
+    setReopenLoading(true);
+    setError(null);
+    setPaymentInfo(null);
+    try {
+      const res = await fetch(`/api/shipments/${encodeURIComponent(id)}/reopen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reasonCode: reopenReasonCode,
+          comment: reopenComment,
+          expectedUpdatedAt: reopenCheck.shipment.updatedAt,
+          idempotencyKey: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}`,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Не удалось вернуть отгрузку в черновик";
+        setError(message);
+        return;
+      }
+      setApplicable(false);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              header: {
+                ...prev.header,
+                applicable: false,
+              },
+            }
+          : prev
+      );
+      setReopenDialogOpen(false);
+      setPaymentInfo("Проведение отменено. Отгрузка снова доступна для редактирования.");
+      router.replace(`/shipment/${encodeURIComponent(id)}/edit?reopened=1`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка возврата в черновик");
+    } finally {
+      setReopenLoading(false);
+    }
+  }
+
   async function handlePayment() {
+    const precheckWindow = window.open("about:blank", "_blank");
+    precheckWindow?.document.write("<!doctype html><title>Предчек</title><body>Открываем предчек...</body>");
     setPaying(true);
     setError(null);
     setPaymentInfo(null);
     try {
-      const saved = await saveShipment();
-      if (!saved) return;
-
-      const res = await fetch(`/api/demands/${id}/payment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Не удалось отправить заказ в AQSI");
-        return;
+      if (!applicable) {
+        const saved = await saveShipment();
+        if (!saved) {
+          precheckWindow?.close();
+          return;
+        }
       }
 
-      setPaymentInfo(
-        json.status
-          ? `Заказ отправлен в AQSI. Статус: ${json.status}.`
-          : "Заказ отправлен в AQSI и доступен в разделе отложенных заказов."
-      );
+      const url = `/shipment/${encodeURIComponent(id)}/precheck`;
+      if (precheckWindow) precheckWindow.location.href = url;
+      else router.push(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка отправки в AQSI");
+      precheckWindow?.close();
+      setError(e instanceof Error ? e.message : "Ошибка открытия предчека");
     } finally {
       setPaying(false);
     }
@@ -286,15 +1363,15 @@ export default function ShipmentDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <p className="text-sm text-zinc-500">Загрузка отгрузки…</p>
+      <div className="eco-page">
+        <p className="text-sm text-[var(--eco-muted)]">Загрузка отгрузки...</p>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="eco-page">
         <p className="text-sm text-red-600 dark:text-red-400">{error ?? "Отгрузка не найдена"}</p>
         <p className="mt-2">
           <Link href="/shipment" className="text-sm text-amber-600 hover:underline dark:text-amber-400">
@@ -308,54 +1385,1044 @@ export default function ShipmentDetailPage() {
   const vinAttrIndex = attributes.findIndex(
     (a) => typeof a?.name === "string" && /vin/i.test(a.name)
   );
+	  const getAttrValue = (matcher: RegExp) => {
+	    const attr = attributes.find((a) => matcher.test(normalizeAttrName(a.name)));
+	    return attributeValueToString(attr?.value).trim();
+	  };
+  const updateAttrValue = (matcher: RegExp, value: string) => {
+    setAttributes((prev) =>
+      prev.map((attr) => (matcher.test(normalizeAttrName(attr.name)) ? { ...attr, value: formatVehicleAttributeInput(attr.name, value) } : attr))
+    );
+  };
+  const addProductOption = (p: {
+    id: string;
+    name: string;
+    price: number;
+    currency: string;
+    meta: Meta;
+    cell?: string;
+    stockQuantity?: number;
+    reserveQuantity?: number;
+    availableQuantity?: number;
+    slotName?: string;
+  }) => {
+    setPositions((prev) => [
+      ...prev,
+      {
+        id: undefined,
+        name: p.name,
+        quantity: 1,
+        price: p.price,
+        discount: 0,
+        discountMode: "percent",
+        discountAmount: 0,
+        assortmentMeta: p.meta,
+        slotName: p.cell ?? p.slotName,
+        stock: {
+          quantity: p.stockQuantity,
+          reserve: p.reserveQuantity,
+          available: p.availableQuantity,
+        },
+      },
+    ]);
+    setProductSearch("");
+    setProductOem("");
+    setProductParams("");
+    setProductOptions([]);
+  };
+  const agentName = data.header.agentName || "Клиент не выбран";
+  const agentInitials = agentName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "К";
+  const vehicleModel =
+    getAttrValue(/^модель авто$/i) ||
+    [vinLookupResult?.decoded?.make, vinLookupResult?.decoded?.model].filter(Boolean).join(" ");
+  const vehicleYear = getAttrValue(/^год$/i) || vinLookupResult?.decoded?.modelYear || "";
+  const vehiclePlate = getAttrValue(/^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i);
+  const vehicleMileage = getAttrValue(/пробег/i);
+  const vehicleVolume = getAttrValue(/^объем$/i);
+  const vehicleOil = getAttrValue(/моторное масло/i);
+  const documentVin = vin || getAttrValue(/vin/i);
+  const vehicleVinPart = documentVin ? `VIN ${documentVin}` : "";
+  const clientVehicleSummary =
+    vehicleModel
+      ? [vehicleModel, vehiclePlate, vehicleVinPart].filter(Boolean).join(" · ")
+      : [vehiclePlate, vehicleVinPart].filter(Boolean).join(" · ") || "автомобиль не указан";
+  const additionalAttributes = attributes
+    .map((a, index) => ({ a, index }))
+    .filter(({ a }) => !isVehicleAttribute(a.name));
+  const agentHref = counterpartyHrefFromDemand(data.raw, agentName);
+  const agentCounterpartyId = counterpartyIdFromDemand(data.raw);
+  const positionsQty = positions.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const positionsSubtotal = positions.reduce((sum, p) => sum + (p.quantity || 0) * (p.price || 0), 0);
+  const positionsDiscount = positions.reduce((sum, p) => {
+    const base = (p.quantity || 0) * (p.price || 0);
+    const discount = typeof p.discount === "number" ? p.discount : 0;
+    return sum + base * (discount / 100);
+  }, 0);
+  const positionsTotal = Math.max(0, positionsSubtotal - positionsDiscount);
+  const indexedPositions = positions.map((position, index) => ({ position, index }));
+  const positionGroups = [
+    {
+      key: "services",
+      title: "Услуги",
+      items: indexedPositions.filter(({ position }) => isServiceMeta(position.assortmentMeta)),
+    },
+    {
+      key: "products",
+      title: "Товары",
+      items: indexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
+    },
+  ].filter((group) => group.items.length > 0);
+  const positionsCost = positions.reduce((sum, p) => {
+    const cost = typeof p.stock?.cost === "number" ? p.stock.cost / 100 : 0;
+    return sum + cost * (p.quantity || 0);
+  }, 0);
+  const positionsMargin = positionsTotal - positionsCost;
+  const positionsMarginPct = positionsTotal > 0 ? Math.round((positionsMargin / positionsTotal) * 100) : 0;
+  const documentStatus = applicable ? "Проведена" : "Черновик";
+  const diagnosticPrimaryLabel = diagnosticActionLoading
+    ? diagnosticRemote || diagnosticRowId
+      ? "Открываем диагностику..."
+      : "Создаём диагностику..."
+    : diagnosticRemote || diagnosticRowId
+      ? "Открыть диагностику"
+      : "Произвести диагностику";
+  const diagnosticMapActionLabel = diagnosticActionLoading
+    ? diagnosticRemote || diagnosticRowId
+      ? "Открываем карту..."
+      : "Создаём диагностику..."
+    : diagnosticRemote || diagnosticRowId
+      ? "Открыть карту"
+      : "Создать диагностику";
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="mb-4 flex items-center gap-3">
-        <Link href="/shipment" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-          ← Отгрузки
-        </Link>
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">Отгрузка {data.header.name}</h1>
-      </div>
-
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
+    <main className="eco-page eco-shipment-detail-page">
+      <div className="eco-shipment-detail-head">
         <div>
-          <span className="text-xs text-zinc-500">Дата</span>
-          <div className="text-sm">{data.header.moment}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Контрагент</span>
-          <div className="text-sm">{data.header.agentName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Организация</span>
-          <div className="text-sm">{data.header.organizationName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Склад</span>
-          <div className="text-sm">{data.header.storeName || "—"}</div>
-        </div>
-        <div>
-          <span className="text-xs text-zinc-500">Создал (эко)</span>
-          <div className="text-sm">
-            {data.header.ecoUserName && data.header.ecoUserName.trim()
-              ? data.header.ecoUserName
-              : "Не указано (создано напрямую в МойСклад или до внедрения эко-пользователей)"}
+          <div className="eco-shipment-detail-crumbs">
+            <Link href="/">Главная</Link>
+            <span>/</span>
+            <Link href="/shipment">Отгрузки</Link>
+            <span>/</span>
+            <b>{data.header.name}</b>
+          </div>
+          <div className="eco-shipment-detail-title-row">
+            <h1>Отгрузка {data.header.name}</h1>
+            <span className="eco-shipment-detail-badge is-draft">{documentStatus}</span>
+            {paymentInfo ? <span className="eco-shipment-detail-badge is-paid">Оплачено</span> : null}
           </div>
         </div>
+        <div className="eco-shipment-detail-actions">
+          <button
+            type="button"
+            onClick={() => void handleDuplicate()}
+            disabled={saving || paying || duplicating || removing || reopenLoading}
+            className="eco-shipment-detail-link-action"
+          >
+            {duplicating ? "Копирование…" : "Копировать"}
+          </button>
+          {applicable && (
+            <button
+              type="button"
+              onClick={() => void openReopenDialog()}
+              disabled={saving || paying || duplicating || removing || reopenLoading}
+              className="eco-shipment-detail-link-action"
+            >
+              {reopenLoading ? "Проверяем…" : "Вернуть в черновик"}
+            </button>
+          )}
+          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing || reopenLoading} />
+          <button
+            type="button"
+            onClick={handlePayment}
+            disabled={saving || paying || duplicating || removing || reopenLoading}
+            className="eco-shipment-detail-action is-primary"
+          >
+            {paying ? "Открываем…" : "Открыть предчек"}
+          </button>
+        </div>
+      </div>
+
+      {reopenDialogOpen && reopenCheck && (
+        <div className="eco-shipment-reopen-backdrop" role="dialog" aria-modal="true">
+          <div className="eco-shipment-reopen-dialog">
+            <div className="eco-shipment-reopen-head">
+              <div>
+                <span className="eco-shipment-detail-kicker">Отмена проведения</span>
+                <h2>Вернуть отгрузку № {reopenCheck.shipment.name} в черновик?</h2>
+              </div>
+              <button type="button" onClick={() => setReopenDialogOpen(false)} disabled={reopenLoading}>
+                ×
+              </button>
+            </div>
+
+            <div className="eco-shipment-reopen-body">
+              <section>
+                <h3>Будет выполнено</h3>
+                <ul>
+                  {reopenCheck.consequences.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+
+              {reopenCheck.related.closingDocuments.length > 0 || reopenCheck.related.diagnostics.length > 0 ? (
+                <section>
+                  <h3>Связанные данные</h3>
+                  <ul>
+                    {reopenCheck.related.closingDocuments.map((doc) => (
+                      <li key={doc.id}>
+                        {doc.type.toUpperCase()}-{doc.number}: {doc.status}
+                      </li>
+                    ))}
+                    {reopenCheck.related.diagnostics.map((diagnostic) => (
+                      <li key={diagnostic.id}>
+                        Диагностика: {diagnostic.status}, пунктов {diagnostic.totalCount}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {reopenCheck.blockers.length > 0 && (
+                <section className="is-danger">
+                  <h3>Нельзя вернуть сейчас</h3>
+                  <ul>
+                    {reopenCheck.blockers.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {reopenCheck.warnings.length > 0 && (
+                <section className="is-warning">
+                  <h3>Важно</h3>
+                  <ul>
+                    {reopenCheck.warnings.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <label className="eco-shipment-reopen-field">
+                <span>Причина возврата в черновик</span>
+                <select value={reopenReasonCode} onChange={(e) => setReopenReasonCode(e.target.value)} disabled={!reopenCheck.canReopen || reopenLoading}>
+                  {REOPEN_REASON_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="eco-shipment-reopen-field">
+                <span>Комментарий{reopenReasonCode === "other" ? " *" : ""}</span>
+                <textarea
+                  rows={3}
+                  value={reopenComment}
+                  onChange={(e) => setReopenComment(e.target.value)}
+                  placeholder="Например: клиент попросил изменить количество фильтра"
+                  disabled={!reopenCheck.canReopen || reopenLoading}
+                />
+              </label>
+            </div>
+
+            <div className="eco-shipment-reopen-actions">
+              <button type="button" onClick={() => setReopenDialogOpen(false)} disabled={reopenLoading}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="is-primary"
+                onClick={() => void confirmReopenShipment()}
+                disabled={!reopenCheck.canReopen || reopenLoading || (reopenReasonCode === "other" && !reopenComment.trim())}
+              >
+                {reopenLoading ? "Возвращаем…" : "Вернуть в черновик"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showVehicleOverrideDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-5 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+              Уточните данные двигателя
+            </h2>
+            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+              По VIN не удалось определить объём двигателя или мощность. Если знаете эти данные, укажите их — подбор масла будет точнее.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs text-zinc-500">Объём двигателя, л</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={manualEngineVolume}
+                  onChange={(e) => setManualEngineVolume(e.target.value)}
+                  placeholder="Например: 1.8"
+                  className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500">Мощность, л.с.</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={manualEnginePower}
+                  onChange={(e) => setManualEnginePower(e.target.value)}
+                  placeholder="Например: 150"
+                  className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowVehicleOverrideDialog(false)}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                Продолжить без уточнения
+              </button>
+              <button
+                type="button"
+                disabled={!manualEngineVolume.trim() && !manualEnginePower.trim()}
+                onClick={() =>
+                  runVinLookup({
+                    displacementL: manualEngineVolume.trim() || undefined,
+                    enginePowerPS: manualEnginePower.trim() || undefined,
+                  })
+                }
+                className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+              >
+                Повторить подбор
+              </button>
+            </div>
+            {vehicleOverridePromptVin && (
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">VIN: {vehicleOverridePromptVin}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="eco-shipment-detail-layout">
+        <div className="eco-shipment-detail-main">
+          <section className="eco-shipment-detail-party-card">
+            <div className="eco-shipment-detail-party is-client">
+              <div className="eco-shipment-detail-kicker">Клиент</div>
+              <div className="eco-shipment-detail-client-row">
+                <div className="eco-shipment-detail-avatar">{agentInitials}</div>
+                <div>
+                  <h2>
+                    <Link href={agentHref} className="eco-shipment-detail-client-link" title="Открыть контрагента">
+                      <span>{agentName}</span>
+                      <ExternalLink aria-hidden />
+                    </Link>
+                  </h2>
+                  <ContactActionButton
+                    size="sm"
+                    entityType="shipment"
+                    entityId={data.header.id}
+                    counterpartyId={agentCounterpartyId}
+                    displayName={agentName}
+                    context={{
+                      entityType: "shipment",
+                      entityId: data.header.id,
+                      shipmentId: data.header.id,
+                      car: clientVehicleSummary,
+                      plate: vehiclePlate,
+                    }}
+                  />
+	                  <p>{clientVehicleSummary}</p>
+	                  <p>Создана {formatServiceDateTime(data.header.moment)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="eco-shipment-detail-party is-car">
+              <div className="eco-shipment-detail-section-head">
+                <div className="eco-shipment-detail-kicker">Автомобиль</div>
+	                <button
+	                  type="button"
+	                  className="eco-shipment-detail-icon-btn"
+	                  onClick={() => !applicable && setVehicleEditing((value) => !value)}
+                  disabled={applicable}
+                  aria-label={vehicleEditing ? "Закрыть редактирование автомобиля" : "Редактировать автомобиль"}
+                  title={applicable ? "Сначала верните отгрузку в черновик" : vehicleEditing ? "Закрыть" : "Редактировать"}
+                >
+	                  <Pencil aria-hidden />
+	                </button>
+	              </div>
+	              {vehicleEditing ? (
+	                <div className="eco-shipment-detail-car-edit">
+                  <label>
+                    <span>Модель авто</span>
+                    <input
+                      type="text"
+                      value={vehicleModel}
+                      onChange={(e) => updateAttrValue(/^модель авто$/i, e.target.value)}
+                      placeholder="AUDI q5"
+                    />
+                  </label>
+                  <label>
+                    <span>VIN</span>
+                    <input
+                      type="text"
+	                      value={documentVin}
+	                      onChange={(e) => {
+	                        const value = formatVehicleAttributeInput("vin", e.target.value);
+	                        setVin(value);
+	                        updateAttrValue(/vin/i, value);
+	                      }}
+                      placeholder="WAUZZZ..."
+                    />
+                  </label>
+                  <label>
+                    <span>Гос. номер</span>
+                    <input
+                      type="text"
+                      value={vehiclePlate}
+                      onChange={(e) => updateAttrValue(/гос.*номер|номер/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Год</span>
+                    <input
+                      type="text"
+                      value={vehicleYear}
+                      onChange={(e) => updateAttrValue(/^год$/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Пробег</span>
+                    <input
+                      type="text"
+                      value={vehicleMileage}
+                      onChange={(e) => updateAttrValue(/пробег/i, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Объём</span>
+                    <input
+                      type="text"
+                      value={vehicleVolume}
+                      onChange={(e) => updateAttrValue(/^объем$/i, e.target.value)}
+                    />
+                  </label>
+                  <label className="is-wide">
+                    <span>Моторное масло</span>
+                    <input
+                      type="text"
+                      value={vehicleOil}
+                      onChange={(e) => updateAttrValue(/моторное масло/i, e.target.value)}
+                    />
+                  </label>
+	                  <div className="eco-shipment-detail-car-edit-actions">
+	                    <button type="button" className="is-primary" onClick={() => setVehicleEditing(false)}>
+	                      Готово
+	                    </button>
+	                    <button type="button" onClick={() => setVehicleEditing(false)}>
+	                      Отмена
+	                    </button>
+	                  </div>
+	                </div>
+	              ) : (
+	                <div className="eco-shipment-detail-car-card">
+	                  <h2>{vehicleModel || "Автомобиль не указан"}</h2>
+	                  <dl>
+	                    <div>
+	                      <dt>VIN</dt>
+	                      <dd>{documentVin || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Госномер</dt>
+	                      <dd>{vehiclePlate || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Пробег</dt>
+	                      <dd>{vehicleMileage || "не указан"}</dd>
+	                    </div>
+	                    <div>
+	                      <dt>Объём</dt>
+	                      <dd>{vehicleVolume ? `${vehicleVolume} л` : "не указан"}</dd>
+	                    </div>
+	                    {vehicleYear && (
+	                      <div>
+	                        <dt>Год</dt>
+	                        <dd>{vehicleYear}</dd>
+	                      </div>
+	                    )}
+	                    {vehicleOil && (
+	                      <div>
+	                        <dt>Масло</dt>
+	                        <dd>{vehicleOil}</dd>
+	                      </div>
+	                    )}
+	                  </dl>
+	                </div>
+	              )}
+            </div>
+          </section>
+
+          <section className="eco-shipment-detail-tabs">
+            <button
+              type="button"
+              className={activeDetailTab === "positions" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("positions")}
+            >
+              Позиции <span>{positions.length}</span>
+            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "vin" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("vin")}
+            >
+              VIN-подбор <span>{vinLookupResult?.moySkladItems.length ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "diagnostic" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("diagnostic")}
+            >
+              Диагностика <span>{diagnosticRemote?.counts?.total ?? 0}</span>
+            </button>
+	            <button
+	              type="button"
+	              className={activeDetailTab === "history" ? "is-active" : undefined}
+	              onClick={() => setActiveDetailTab("history")}
+	            >
+	              Поля <span>{additionalAttributes.length}</span>
+	            </button>
+            <button
+              type="button"
+              className={activeDetailTab === "precheck" ? "is-active" : undefined}
+              onClick={() => setActiveDetailTab("precheck")}
+            >
+              Предчек
+            </button>
+          </section>
+
+          <section className="eco-shipment-detail-table-card">
+            {activeDetailTab === "positions" && (
+              <div className="eco-shipment-detail-tab-panel">
+                {!applicable && <div className="eco-shipment-detail-product-search">
+                  <label className="eco-shipment-detail-search-main">
+                    <span>Добавить товар</span>
+                    <Search aria-hidden />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Наименование, код или артикул"
+                    />
+                  </label>
+                  <div className="eco-shipment-detail-search-filters">
+                    <input
+                      type="text"
+                      value={productOem}
+                      onChange={(e) => setProductOem(e.target.value)}
+                      placeholder="OEM, MANN/POMAN, аналоги"
+                    />
+                    <input
+                      type="text"
+                      value={productParams}
+                      onChange={(e) => setProductParams(e.target.value)}
+                      placeholder="Параметры"
+                    />
+                  </div>
+                  {(productSearch.trim() || productOem.trim() || productParams.trim()) && (
+                    <div className="eco-shipment-detail-product-results">
+                      {productSearchLoading ? (
+                        <div className="eco-shipment-detail-empty is-compact">Ищем товары...</div>
+                      ) : productOptions.length > 0 ? (
+                        productOptions.map((p) => (
+                          <button type="button" key={p.id} onClick={() => addProductOption(p)}>
+                            <span>
+                              <strong>{p.name}</strong>
+                              <small>
+                                Доступно: {p.availableQuantity ?? p.stockQuantity ?? 0}
+                                {p.cell ?? p.slotName ? ` · Ячейка ${p.cell ?? p.slotName}` : ""}
+                              </small>
+                            </span>
+                            <b>{p.price.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} {p.currency}</b>
+                            <Plus aria-hidden />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="eco-shipment-detail-empty is-compact">Ничего не найдено.</div>
+                      )}
+                    </div>
+                  )}
+                </div>}
+
+                {positions.length > 0 ? (
+                  <div className="eco-shipment-detail-table-wrap">
+                    <table className="eco-shipment-detail-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Товар</th>
+                          <th>Наличие</th>
+                          <th className="is-num">Скидка</th>
+                          <th className="is-num">Кол.</th>
+                          <th className="is-num">Цена</th>
+                          <th className="is-num">Сумма</th>
+                          {!applicable && <th className="is-action">Действия</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {positionGroups.map((group) => (
+                          <Fragment key={group.key}>
+                            <tr className="eco-position-group-row">
+                              <td colSpan={applicable ? 7 : 8}>
+                                <div className="eco-position-group-label">
+                                  <span>{group.title}</span>
+                                  <b>{group.items.length}</b>
+                                </div>
+                              </td>
+                            </tr>
+                        {group.items.map(({ position: p, index }, groupRowIndex) => {
+                          const discount = typeof p.discount === "number" ? p.discount : 0;
+                          const lineTotal = (p.quantity || 0) * (p.price || 0) * (1 - discount / 100);
+                          const type = isServiceMeta(p.assortmentMeta) ? "услуга" : "товар";
+                          const productHref = localProductHref(p);
+                          const sourceProductId = productIdFromMeta(p.assortmentMeta);
+                          const availabilityDetails = [
+                            p.slotName ? <strong key="slot">{p.slotName}</strong> : null,
+                            typeof p.stock?.quantity === "number" ? <span key="qty">Остаток: {p.stock.quantity}</span> : null,
+                            typeof p.stock?.reserve === "number" ? <span key="reserve">Резерв: {p.stock.reserve}</span> : null,
+                            typeof p.stock?.available === "number" ? <span key="available">Доступно: {p.stock.available}</span> : null,
+                          ].filter(Boolean);
+                          return (
+                            <tr key={p.id ?? `summary-${index}`}>
+                              <td className="is-mono">{String(groupRowIndex + 1).padStart(2, "0")}</td>
+                              <td className="eco-position-product-cell">
+                                {productHref ? (
+                                  <Link className="eco-shipment-detail-product-link" href={productHref}>
+                                    <strong><span>{p.name}</span></strong>
+                                    <ExternalLink aria-hidden />
+                                  </Link>
+                                ) : (
+                                  <strong>{p.name}</strong>
+                                )}
+                                <span>{sourceProductId || "локальная карточка"} · {type}</span>
+                              </td>
+                              <td>
+                                <div className="eco-position-availability">
+                                  {availabilityDetails.length > 0 ? availabilityDetails : <span>—</span>}
+                                </div>
+                              </td>
+                              <td className="is-num">
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{discount ? `${discount.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%` : "—"}</span>
+                                ) : (
+                                  <div className="eco-position-discount">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      step={0.1}
+                                      value={p.discount ?? 0}
+                                      onChange={(e) => {
+                                        const percent = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                                        const next = [...positions];
+                                        next[index] = { ...p, discountMode: "percent", discount: percent };
+                                        setPositions(next);
+                                      }}
+                                      className="eco-position-edit-input is-discount"
+                                    />
+                                    <select value="percent" disabled aria-label="Тип скидки">
+                                      <option value="percent">%</option>
+                                    </select>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="is-num">
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{formatQuantityInput(p.quantity)}</span>
+                                ) : (
+                                  <QuantityInput
+                                    value={p.quantity}
+                                    onValueChange={(q) => {
+                                      const next = [...positions];
+                                      next[index] = { ...p, quantity: q };
+                                      setPositions(next);
+                                    }}
+                                    className="eco-position-edit-input is-qty"
+                                  />
+                                )}
+                              </td>
+                              <td className="is-num">
+                                {applicable ? (
+                                  <span className="eco-position-readonly-value">{p.price.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                ) : (
+                                  <MoneyInput
+                                    value={p.price}
+                                    onValueChange={(val) => {
+                                      const next = [...positions];
+                                      next[index] = { ...p, price: val };
+                                      setPositions(next);
+                                    }}
+                                    className="eco-position-edit-input is-price"
+                                  />
+                                )}
+                              </td>
+                              <td className="is-num">
+                                <strong className="eco-position-line-total">{lineTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽</strong>
+                              </td>
+                              {!applicable && <td className="is-action">
+                                <button
+                                  type="button"
+                                  className="eco-position-row-action"
+                                  onClick={() => setPositions((prev) => prev.filter((_, i) => i !== index))}
+                                  aria-label={`Удалить ${p.name}`}
+                                  title="Удалить позицию"
+                                >
+                                  <Trash2 aria-hidden />
+                                </button>
+                              </td>}
+                            </tr>
+                          );
+                        })}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="eco-shipment-new-table-foot">
+                      <span>Позиций: {positions.length}</span>
+                      <span>Кол-во всего: {positionsQty}</span>
+                      <strong>
+                        Итого: {positionsTotal.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽
+                      </strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="eco-shipment-detail-empty">В отгрузке пока нет позиций. Найдите товар выше и добавьте его в документ.</div>
+                )}
+              </div>
+            )}
+
+            {activeDetailTab === "vin" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-vin-panel">
+                  <div className="eco-shipment-detail-vin-form">
+                    <label>
+                      <span>VIN · 17 знаков</span>
+                      <input
+                        type="text"
+	                        value={vin}
+	                        onChange={(e) => {
+	                          const v = formatVehicleAttributeInput("vin", e.target.value);
+	                          setVin(v);
+                          setManualEngineVolume("");
+                          setManualEnginePower("");
+                          setShowVehicleOverrideDialog(false);
+                          updateAttrValue(/vin/i, v);
+                        }}
+                        placeholder="Например: WBAXXXXX5JZ123456"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={vin.replace(/\s/g, "").length < 8 || vinLookupLoading}
+                      onClick={() => void runVinLookup()}
+                    >
+                      {vinLookupLoading ? "Подбор..." : "Подобрать по VIN"}
+                    </button>
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticPrimaryLabel}
+                    </button>
+                  </div>
+
+                  {vinLookupResult ? (
+                    <div className="eco-shipment-detail-vin-result">
+                      {vinLookupResult.decodeError ? <p className="is-warning">{vinLookupResult.decodeError}</p> : null}
+                      {vinLookupResult.decoded ? (
+                        <div className="eco-shipment-detail-vin-summary">
+                          <strong>
+                            {[vinLookupResult.decoded.make, vinLookupResult.decoded.model, vinLookupResult.decoded.modelYear].filter(Boolean).join(" · ") || "Автомобиль определён"}
+                          </strong>
+                          <span>
+                            {[
+                              vinLookupResult.decoded.modification,
+                              vinLookupResult.decoded.engineSeries,
+                              vinLookupResult.decoded.displacementL ? `${vinLookupResult.decoded.displacementL} л` : "",
+                              vinLookupResult.decoded.enginePowerPS ? `${vinLookupResult.decoded.enginePowerPS} л.с.` : "",
+                            ].filter(Boolean).join(" · ")}
+                          </span>
+                        </div>
+                      ) : null}
+                      {vinLookupResult.oilInfo ? (
+                        <div className="eco-shipment-detail-vin-specs">
+                          <span>Допуск: <b>{vinLookupResult.oilInfo.approval || vinLookupResult.oilInfo.acea?.join(", ") || vinLookupResult.oilInfo.api?.join(", ") || "не указан"}</b></span>
+                          <span>Объём: <b>{vinLookupResult.oilInfo.fillVolumeLiters || "не указан"}</b></span>
+                          <span>SAE: <b>{vinLookupResult.oilInfo.sae?.join(", ") || "не указан"}</b></span>
+                        </div>
+                      ) : null}
+                      {vinLookupResult.moySkladError ? <p className="is-warning">{vinLookupResult.moySkladError}</p> : null}
+                      {vinLookupResult.moySkladItems.length > 0 ? (
+                        <div className="eco-shipment-detail-vin-items">
+                          <div className="eco-shipment-detail-vin-items-head">
+                            <strong>Найдено в локальном каталоге: {vinLookupResult.moySkladItems.length}</strong>
+                            <button
+                              type="button"
+                              onClick={() => addFromVinLookup(vinLookupResult.moySkladItems.filter((item) => item.quantity > 0))}
+                              disabled={vinLookupResult.moySkladItems.every((item) => item.quantity <= 0)}
+                            >
+                              Добавить всё в наличии
+                            </button>
+                          </div>
+                          {vinLookupResult.moySkladItems.map((item, index) => (
+                            <div className="eco-shipment-detail-vin-item" key={item.productId ?? `${item.name}-${index}`}>
+                              <span>
+                                <strong>{item.name}</strong>
+                                <small>
+                                  {item.article ? `Артикул ${item.article}` : "Артикул не указан"}
+                                  {item.cell ? ` · Ячейка ${item.cell}` : ""}
+                                  {` · Остаток ${item.quantity}`}
+                                </small>
+                              </span>
+                              <b>{formatMoney(item.price, item.currency)}</b>
+                              <button type="button" disabled={item.quantity <= 0} onClick={() => addFromVinLookup([item])}>
+                                <Plus aria-hidden />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="eco-shipment-detail-empty is-compact">Пока нет найденных товаров. Запустите подбор по VIN.</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="eco-shipment-detail-empty">Введите VIN и запустите подбор, чтобы добавить масло и фильтры в эту отгрузку.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+	            {activeDetailTab === "history" && (
+	              <div className="eco-shipment-detail-tab-panel">
+	                {additionalAttributes.length > 0 ? (
+	                  <div className="eco-shipment-detail-fields-grid">
+	                    {additionalAttributes.map(({ a, index }) => (
+	                        <label key={a.id ?? a.name ?? index}>
+	                          <span>{a.name ?? a.id}</span>
+	                          <input
+	                            type="text"
+	                            value={attributeValueToString(a.value)}
+		                            onChange={(e) => {
+		                              const next = [...attributes];
+		                              next[index] = { ...a, value: e.target.value };
+		                              setAttributes(next);
+		                            }}
+	                          />
+	                        </label>
+	                      ))}
+	                  </div>
+	                ) : (
+	                  <div className="eco-shipment-detail-empty">
+	                    Дополнительных локальных полей нет. Основные данные автомобиля находятся в карточке «Автомобиль».
+	                  </div>
+	                )}
+	              </div>
+	            )}
+
+            {activeDetailTab === "diagnostic" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <section className="eco-shipment-diagnostic-panel">
+                  <div className="eco-shipment-diagnostic-panel__head">
+                    <div>
+                      <span>Диагностика</span>
+                      <h2>{diagnosticRemote ? "Карта диагностики создана" : "Диагностика ещё не создана"}</h2>
+                      <p>
+                        {diagnosticRemote
+                          ? `${diagnosticRemote.status} · ${diagnosticRemote.counts?.total ?? 0} пунктов`
+                          : "Запустите карту диагностики из этой отгрузки."}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticPrimaryLabel}
+                    </button>
+                  </div>
+
+                  <div className="eco-shipment-diagnostic-metrics">
+                    <div><b>{diagnosticRemote?.counts?.total ?? 0}</b><span>Пунктов</span></div>
+                    <div><b>{diagnosticRemote?.counts?.good ?? diagnosticRemote?.counts?.normal ?? 0}</b><span>Хорошо</span></div>
+                    <div><b>{diagnosticRemote?.counts?.warn ?? diagnosticRemote?.counts?.attention ?? 0}</b><span>Внимание</span></div>
+                    <div><b>{diagnosticRemote?.counts?.crit ?? diagnosticRemote?.counts?.replace ?? 0}</b><span>Критично</span></div>
+                    <div><b>{diagnosticRemote?.counts?.indirect ?? 0}</b><span>Косвенно</span></div>
+                  </div>
+
+                  <div className="eco-shipment-diagnostic-actions">
+                    <button type="button" onClick={() => void handleOpenDiagnosticDetail()} disabled={diagnosticActionLoading}>
+                      {diagnosticMapActionLabel}
+                    </button>
+                    <a
+                      href={diagnosticRemote?.reportUrl ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Открыть отчёт" : "Отчёт появится после создания диагностики"}
+                    >
+                      Открыть отчёт
+                    </a>
+                    <a
+                      href={diagnosticRemote?.reportUrl ? `${diagnosticRemote.reportUrl}/print` : "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Печать отчёта" : "Печать появится после создания диагностики"}
+                    >
+                      Печать
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void copyDiagnosticReportLink()}
+                      disabled={!diagnosticRemote?.reportUrl}
+                      title={diagnosticRemote?.reportUrl ? "Скопировать ссылку на отчёт" : "Ссылка появится после создания диагностики"}
+                    >
+                      Скопировать ссылку
+                    </button>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {activeDetailTab === "precheck" && (
+              <div className="eco-shipment-detail-tab-panel">
+                <div className="eco-shipment-detail-precheck">
+                  <label className="is-wide">
+                    <span>Комментарий</span>
+                    <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} disabled={applicable} />
+                  </label>
+                  <label className="eco-shipment-detail-checkbox">
+                    <input
+                      id="applicable-detail"
+                      type="checkbox"
+                      checked={applicable}
+                      disabled={applicable}
+                      onChange={(e) => setApplicable(e.target.checked)}
+                    />
+                    <span>{applicable ? "Проведён — для редактирования верните в черновик" : "Провести отгрузку"}</span>
+                  </label>
+                  {error ? <p className="is-error">{error}</p> : null}
+                  {paymentInfo ? <p className="is-success">{paymentInfo}</p> : null}
+                  <div className="eco-shipment-detail-precheck-actions">
+                    <button type="button" onClick={handleSave} disabled={applicable || saving || paying || duplicating || removing} title={applicable ? "Сначала верните отгрузку в черновик" : undefined}>
+                      {saving ? "Сохранение..." : "Сохранить"}
+                    </button>
+                    <button type="button" onClick={handlePayment} disabled={saving || paying || duplicating || removing}>
+                      {paying ? "Открытие..." : "Предчек / оплата"}
+                    </button>
+                    <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} align="left" />
+                    <button type="button" className="is-danger" onClick={() => void handleDeleteShipment()} disabled={saving || paying || duplicating || removing}>
+                      {removing ? "Удаление..." : "Удалить"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="eco-shipment-detail-aside">
+          <section className="eco-shipment-detail-side-card">
+            <div className="eco-shipment-detail-side-head">
+              <h2>Сумма</h2>
+              {paymentInfo ? <span className="eco-shipment-detail-badge is-paid">оплачено</span> : null}
+            </div>
+            <div className="eco-shipment-detail-side-body">
+              <div className="eco-shipment-detail-money-row">
+                <span>Подытог</span>
+                <strong>{positionsSubtotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row">
+                <span>Скидка</span>
+                <strong>{positionsDiscount > 0 ? `${positionsDiscount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽` : "0%"}</strong>
+              </div>
+              <div className="eco-shipment-detail-total-row">
+                <span>Итого</span>
+                <strong>{positionsTotal.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row is-muted">
+                <span>Себестоимость</span>
+                <strong>{positionsCost.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽</strong>
+              </div>
+              <div className="eco-shipment-detail-money-row is-success">
+                <span>Маржа</span>
+                <strong>{positionsMargin.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽ · {positionsMarginPct}%</strong>
+              </div>
+              {paymentInfo ? <p className="eco-shipment-detail-payment-note">{paymentInfo}</p> : null}
+            </div>
+          </section>
+
+          <section className="eco-shipment-detail-side-card">
+            <div className="eco-shipment-detail-side-head">
+              <h2>Связи</h2>
+            </div>
+            <div className="eco-shipment-detail-links">
+              <div>
+                <strong>Документ</strong>
+                <span>{data.header.name} · {documentStatus.toLowerCase()}</span>
+              </div>
+              <div>
+                <strong>Склад</strong>
+                <span>{data.header.storeName || "не указан"}</span>
+              </div>
+              <div>
+                <strong>Диагностика</strong>
+                <span>
+	                  {diagnosticRemote
+	                    ? `${diagnosticRemote.status} · ${diagnosticRemote.counts?.total ?? 0} пунктов · хорошо ${diagnosticRemote.counts?.good ?? diagnosticRemote.counts?.normal ?? 0} · внимание ${diagnosticRemote.counts?.warn ?? diagnosticRemote.counts?.attention ?? 0} · критично ${diagnosticRemote.counts?.crit ?? diagnosticRemote.counts?.replace ?? 0} · косвенно ${diagnosticRemote.counts?.indirect ?? 0}`
+                    : "не создана"}
+                </span>
+                {diagnosticRemote?.reportUrl && (
+                  <span>
+                    <a href={diagnosticRemote.reportUrl} target="_blank" rel="noreferrer">Отчёт</a>{" "}
+                    ·{" "}
+                    <a href={`${diagnosticRemote.reportUrl}/print`} target="_blank" rel="noreferrer">Печать</a>
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <div hidden className="eco-shipment-detail-legacy-workbench">
+      <div className="eco-shipment-detail-workbench-title">
+        <span>Рабочие поля</span>
+        <strong>VIN, дополнительные поля, добавление позиций и сохранение</strong>
       </div>
 
       {vinAttrIndex >= 0 && (
         <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-            VIN номер
-          </h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">VIN номер</h2>
+            {diagnosticRemote && (
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+	                Диагностика: {diagnosticRemote.status} · {diagnosticRemote.counts?.total ?? 0} пунктов · хорошо{" "}
+	                {diagnosticRemote.counts?.good ?? diagnosticRemote.counts?.normal ?? 0} · внимание{" "}
+	                {diagnosticRemote.counts?.warn ?? diagnosticRemote.counts?.attention ?? 0} · критично{" "}
+	                {diagnosticRemote.counts?.crit ?? diagnosticRemote.counts?.replace ?? 0} · косвенно{" "}
+                {diagnosticRemote.counts?.indirect ?? 0}
+              </span>
+            )}
+          </div>
           <input
             type="text"
             value={vin}
             onChange={(e) => {
-              const v = e.target.value;
+              const v = formatVehicleAttributeInput("vin", e.target.value);
               setVin(v);
+              setManualEngineVolume("");
+              setManualEnginePower("");
+              setShowVehicleOverrideDialog(false);
               if (vinAttrIndex >= 0) {
                 const next = [...attributes];
                 next[vinAttrIndex] = { ...next[vinAttrIndex], value: v };
@@ -365,43 +2432,755 @@ export default function ShipmentDetailPage() {
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-mono tracking-widest dark:border-zinc-600 dark:bg-zinc-900"
             placeholder="Например: WBAXXXXX5JZ123456"
           />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <p className="mb-2 w-full text-xs text-zinc-500">
+              Подбор фильтров по VIN: введите номер выше и нажмите «Подобрать» — подберём масло и фильтры, найдём товары в локальном каталоге.
+            </p>
+            <button
+              type="button"
+              disabled={vin.replace(/\s/g, "").length < 8 || vinLookupLoading}
+              onClick={() => void runVinLookup()}
+              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
+            >
+              {vinLookupLoading ? "Подбор…" : "Подобрать по VIN"}
+            </button>
+            <button
+              type="button"
+              disabled={diagnosticActionLoading}
+              onClick={() => void handleOpenDiagnosticDetail()}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:opacity-50 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {diagnosticPrimaryLabel}
+            </button>
+          </div>
+          {vinLookupResult && (
+            <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800/50">
+              {vinLookupResult.decodeError && (
+                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.decodeError}</p>
+              )}
+              {vinLookupResult.decoded && (
+                <p className="mb-1 text-zinc-700 dark:text-zinc-300">
+                  {[vinLookupResult.decoded.make, vinLookupResult.decoded.model, vinLookupResult.decoded.modelYear].filter(Boolean).join(", ")}
+                  {vinLookupResult.decoded.modification ? ` · ${vinLookupResult.decoded.modification}` : ""}
+                  {vinLookupResult.decoded.engineSeries ? ` · ${vinLookupResult.decoded.engineSeries}` : ""}
+                  {vinLookupResult.decoded.displacementL ? ` · ${vinLookupResult.decoded.displacementL} л` : ""}
+                  {vinLookupResult.decoded.enginePowerPS ? ` · ${vinLookupResult.decoded.enginePowerPS} л.с.` : ""}
+                </p>
+              )}
+              {vinLookupResult.oilInfo && (
+                <div className="mb-2 text-xs text-zinc-600 dark:text-zinc-400">
+                  {(hasText(vinLookupResult.oilInfo.approval) ||
+                    (vinLookupResult.oilInfo.acea?.length ?? 0) > 0 ||
+                    (vinLookupResult.oilInfo.api?.length ?? 0) > 0 ||
+                    hasText(vinLookupResult.oilInfo.fillVolumeLiters)) && (
+                    <div>
+                      <span className="font-medium text-zinc-700 dark:text-zinc-200">Допуск:</span>{" "}
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                        {hasText(vinLookupResult.oilInfo.approval)
+                          ? vinLookupResult.oilInfo.approval
+                          : (vinLookupResult.oilInfo.acea?.length ?? 0) > 0
+                            ? `ACEA ${vinLookupResult.oilInfo.acea!.join(", ")}`
+                            : (vinLookupResult.oilInfo.api?.length ?? 0) > 0
+                              ? `API ${vinLookupResult.oilInfo.api!.join(", ")}`
+                              : "—"}
+                      </span>{" "}
+                      · <span className="font-medium text-zinc-700 dark:text-zinc-200">Объём:</span>{" "}
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                        {hasText(vinLookupResult.oilInfo.fillVolumeLiters) ? vinLookupResult.oilInfo.fillVolumeLiters : "—"}
+                      </span>{" "}
+                      л
+                    </div>
+                  )}
+
+                  {Array.isArray(vinLookupResult.oilInfo.sae) && vinLookupResult.oilInfo.sae.length > 0 && (
+                    <div className="mt-1">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-200">SAE:</span>{" "}
+                      <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                        {vinLookupResult.oilInfo.sae.join(", ")}
+                      </span>
+                    </div>
+                  )}
+
+                  {[
+                    vinLookupResult.oilInfo.oilFilterOem,
+                    vinLookupResult.oilInfo.fuelFilterOem,
+                    vinLookupResult.oilInfo.airFilterOem,
+                    vinLookupResult.oilInfo.cabinFilterOem,
+                  ].some(Boolean) && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs text-zinc-500 dark:text-zinc-400">
+                        OEM PARTS для фильтров
+                      </summary>
+                      <div className="mt-1 space-y-0.5">
+                        <div>
+                          масл.: {vinLookupResult.oilInfo.oilFilterOem ?? "—"}
+                        </div>
+                        <div>
+                          топл.: {vinLookupResult.oilInfo.fuelFilterOem ?? "—"}
+                        </div>
+                        <div>
+                          возд.: {vinLookupResult.oilInfo.airFilterOem ?? "—"}
+                        </div>
+                        <div>
+                          салон: {vinLookupResult.oilInfo.cabinFilterOem ?? "—"}
+                        </div>
+                      </div>
+                    </details>
+                  )}
+
+                  {vinLookupResult.oilInfo.transmission && (
+                    <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-xs dark:border-sky-800 dark:bg-sky-950/20">
+                      <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                        АКПП {vinLookupResult.oilInfo.transmission.code}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">Тип:</span>{" "}
+                        {vinLookupResult.oilInfo.transmission.gearbox}
+                      </div>
+                      <div>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">Жидкость:</span>{" "}
+                        {vinLookupResult.oilInfo.transmission.fluid}
+                      </div>
+                      <div>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">Частичная замена:</span>{" "}
+                        {vinLookupResult.oilInfo.transmission.partialVolumeLiters ?? "—"} л
+                        {" · "}
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">Полная:</span>{" "}
+                        {vinLookupResult.oilInfo.transmission.fullVolumeLiters ?? "—"} л
+                      </div>
+                      <div>
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">Контроль уровня:</span>{" "}
+                        {vinLookupResult.oilInfo.transmission.levelCheckTempC ?? "—"} °C
+                      </div>
+                      {vinLookupResult.oilInfo.transmission.note && (
+                        <div className="mt-1 text-zinc-500 dark:text-zinc-400">
+                          {vinLookupResult.oilInfo.transmission.note}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {vinLookupResult.moySkladError && (
+                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.moySkladError}</p>
+              )}
+              {vinLookupResult.moySkladItems.length > 0 && (
+                <>
+                  {(() => {
+                    const allItems = vinLookupResult.moySkladItems;
+                    const inStockItems = allItems.filter((item) => item.quantity > 0);
+                    const filterSections = (Object.keys(FILTER_SECTION_META) as FilterSectionKind[])
+                      .map((kind) => ({
+                        kind,
+                        title: FILTER_SECTION_META[kind].title,
+                        items: allItems.filter((item) => detectFilterKind(item) === kind),
+                      }))
+                      .filter((section) => section.items.length > 0);
+                    const filters = filterSections.flatMap((section) => section.items);
+                    const oils = allItems.filter(
+                      (item) =>
+                        item.lookupKind === "oil" ||
+                        (!filters.includes(item) &&
+                          /(масл|oil|atf)/i.test(item.name))
+                    );
+                    const others = allItems.filter(
+                      (item) => !filters.includes(item) && !oils.includes(item)
+                    );
+                    if (allItems.length === 0) {
+                      return (
+                        <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
+                          В локальном каталоге по этому VIN позиции не подобраны (совпадений по OEM/допуску не найдено или нет доступа к складу).
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="space-y-3">
+                        {inStockItems.length === 0 && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+                            Найдено {allItems.length} позиций, но на выбранном складе остаток 0 по всем строкам. Ниже показан полный список подбора, чтобы можно было проверить соответствие и заказать.
+                          </div>
+                        )}
+                        {filterSections.length > 0 && (
+                          <div>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span className="text-zinc-600 dark:text-zinc-400">
+                                Фильтры: {filters.length}
+                                {inStockItems.length > 0 ? ` · в наличии: ${filters.filter((i) => i.quantity > 0).length}` : ""}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={filters.every((i) => i.quantity <= 0)}
+                                onClick={() => addFromVinLookup(filters.filter((i) => i.quantity > 0))}
+                                className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Добавить все фильтры
+                              </button>
+                            </div>
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              {filterSections.map((section) => (
+                                (() => {
+                                  const availableItems = section.items.filter((item) => item.quantity > 0);
+                                  const outOfStockItems = section.items.filter((item) => item.quantity <= 0);
+                                  const renderFilterItem = (item: VinLookupItem, idx: number, keyPrefix: string) => (
+                                    <div
+                                      key={item.productId ?? `${section.kind}-${keyPrefix}-${idx}`}
+                                      className={`rounded-lg border p-2.5 shadow-sm dark:border-zinc-700 ${
+                                        item.quantity > 0
+                                          ? "border-white/70 bg-white/90 dark:bg-zinc-900/50"
+                                          : "border-zinc-200/80 bg-zinc-100/60 opacity-80 dark:border-zinc-700 dark:bg-zinc-950/40"
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                            {item.name}
+                                          </div>
+                                          <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                            {item.article ? `Артикул: ${item.article}` : "Артикул не указан"}
+                                            {item.cell ? ` · Ячейка ${item.cell}` : ""}
+                                          </div>
+                                          <div
+                                            className={`mt-1 text-xs ${
+                                              item.quantity > 0 ? "text-zinc-500 dark:text-zinc-400" : "text-amber-700 dark:text-amber-300"
+                                            }`}
+                                          >
+                                            Остаток: {item.quantity} шт.
+                                            {item.store && item.store !== "—" ? ` · ${item.store}` : ""}
+                                          </div>
+                                        </div>
+                                        <div className="shrink-0 text-right">
+                                          <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                            {formatMoney(item.price, item.currency)}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            disabled={item.quantity <= 0}
+                                            onClick={() => addFromVinLookup([item])}
+                                            className="mt-2 rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                                          >
+                                            Добавить
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+
+                                  return (
+                                    <div
+                                      key={section.kind}
+                                      className={`rounded-xl border p-3 ${getFilterSectionClasses(section.kind)}`}
+                                    >
+                                      <div className="mb-2 flex items-center justify-between gap-2">
+                                        <div>
+                                          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                            {section.title}
+                                          </h3>
+                                          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                            Найдено: {section.items.length}
+                                            {availableItems.length > 0 ? ` · в наличии: ${availableItems.length}` : ""}
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          disabled={availableItems.length === 0}
+                                          onClick={() => addFromVinLookup(availableItems)}
+                                          className="rounded-lg border border-white/70 bg-white/80 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                                        >
+                                          Добавить всё
+                                        </button>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {availableItems.map((item, idx) => renderFilterItem(item, idx, "available"))}
+                                        {outOfStockItems.length > 0 && (
+                                          <details className="rounded-lg border border-zinc-200/80 bg-white/50 px-2.5 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950/30">
+                                            <summary className="cursor-pointer select-none font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100">
+                                              Нет в наличии: {outOfStockItems.length}
+                                            </summary>
+                                            <div className="mt-2 space-y-2">
+                                              {outOfStockItems.map((item, idx) => renderFilterItem(item, idx, "out"))}
+                                            </div>
+                                          </details>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {oils.length > 0 && (() => {
+                          const targetLiters = parseFillVolume(vinLookupResult.oilInfo?.fillVolumeLiters);
+                          const oilGroups = buildOilGroups(oils, targetLiters);
+                          const getGroupComparePrice = (g: OilGroup): number => {
+                            // Сравниваем "цену варианта" как стоимость лучшего комплекта под нужный объём,
+                            // а если комплекта нет — берём базовую цену первой доступной фасовки.
+                            return typeof g.bestTotalPrice === "number" ? g.bestTotalPrice : g.variants[0]?.price ?? Number.POSITIVE_INFINITY;
+                          };
+
+                          const hasBrand = (g: OilGroup, re: RegExp): boolean => g.variants.some((v) => re.test(v.name));
+
+                          const brandPremium = /bardahl/i;
+                          const brandStandard = /eurol/i;
+                          const brandEconomy = /genesis/i;
+
+                          const medianPrice = (() => {
+                            const prices = oilGroups.map(getGroupComparePrice).filter((p) => Number.isFinite(p));
+                            if (prices.length === 0) return undefined;
+                            const sorted = [...prices].sort((a, b) => a - b);
+                            return sorted[Math.floor((sorted.length - 1) / 2)];
+                          })();
+
+                          const pickMax = (candidates: OilGroup[]): OilGroup | undefined => {
+                            if (candidates.length === 0) return undefined;
+                            return candidates.reduce((best, g) => (getGroupComparePrice(g) > getGroupComparePrice(best) ? g : best), candidates[0]);
+                          };
+                          const pickMin = (candidates: OilGroup[]): OilGroup | undefined => {
+                            if (candidates.length === 0) return undefined;
+                            return candidates.reduce((best, g) => (getGroupComparePrice(g) < getGroupComparePrice(best) ? g : best), candidates[0]);
+                          };
+                          const pickClosestToMedian = (candidates: OilGroup[]): OilGroup | undefined => {
+                            if (candidates.length === 0) return undefined;
+                            if (medianPrice == null) return candidates[0];
+                            return candidates.reduce((best, g) => {
+                              const dBest = Math.abs(getGroupComparePrice(best) - medianPrice);
+                              const dG = Math.abs(getGroupComparePrice(g) - medianPrice);
+                              return dG < dBest ? g : best;
+                            }, candidates[0]);
+                          };
+
+                          const completableOilGroups = oilGroups.filter((g) => g.bestBundle.length > 0);
+                          const rankingPool = completableOilGroups.length > 0 ? completableOilGroups : oilGroups;
+
+                          // Премиум: предпочтительно Bardahl, если нет — самый дорогой вариант.
+                          const premiumCandidates = rankingPool.filter((g) => hasBrand(g, brandPremium));
+                          const premiumGroup = pickMax(premiumCandidates.length ? premiumCandidates : rankingPool);
+
+                          // Эконом: предпочтительно Genesis, если нет — самый дешёвый вариант.
+                          const economyCandidates = rankingPool.filter((g) => hasBrand(g, brandEconomy));
+                          const economyGroup = pickMin(economyCandidates.length ? economyCandidates : rankingPool);
+
+                          // Стандарт: Eurol, если нет — вариант со средней ценой.
+                          const standardCandidates = rankingPool.filter((g) => hasBrand(g, brandStandard));
+                          const standardGroup = pickClosestToMedian(standardCandidates.length ? standardCandidates : rankingPool);
+
+                          const maintenanceOffers = [
+                            { key: "standard", title: "Оптимальный", note: "Сбалансированный вариант по цене и качеству.", group: standardGroup },
+                            { key: "economy", title: "Эконом", note: "Более доступный вариант расходников.", group: economyGroup },
+                            { key: "premium", title: "Премиум", note: "Вариант с более дорогим маслом.", group: premiumGroup },
+                          ].flatMap((offer, _idx, list) => {
+                            const firstSameOilIndex = list.findIndex((candidate) => candidate.group?.key === offer.group?.key);
+                            if (firstSameOilIndex >= 0 && list[firstSameOilIndex]?.key !== offer.key) return [];
+                            const built = buildMaintenanceOffer(offer.key, offer.title, offer.note, offer.group, filterSections);
+                            return built ? [built] : [];
+                          });
+                          const maintenanceMessage = buildMaintenanceMessage(vinLookupResult, maintenanceOffers);
+
+                          const rankedOilGroups = oilGroups
+                            .map((g, idx) => ({
+                              g,
+                              idx,
+                              hasBundle: g.bestBundle.length > 0 ? 1 : 0,
+                              rank: g.key === premiumGroup?.key ? 0 : g.key === standardGroup?.key ? 1 : g.key === economyGroup?.key ? 2 : 3,
+                            }))
+                            .sort((a, b) => b.hasBundle - a.hasBundle || a.rank - b.rank || a.idx - b.idx)
+                            .map((x) => x.g);
+
+                          const visibleOilGroups = rankedOilGroups;
+                          const hiddenOilGroupsCount = Math.max(0, oilGroups.length - visibleOilGroups.length);
+                          const oilGroupsInStock = oilGroups.filter((g) => g.variants.some((v) => v.available > 0));
+                          return oilGroups.length > 0 ? (
+                            <div>
+                              {maintenanceOffers.length > 0 && (
+                                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                        Готовый расчет ТО для клиента
+                                      </h3>
+                                      <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                                        Система собрала варианты из подобранного масла и фильтров (при наличии остатков — берутся самые дешёвые варианты).
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyMaintenanceMessage(maintenanceMessage)}
+                                      className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                                    >
+                                      Скопировать весь расчет
+                                    </button>
+                                  </div>
+                                  {maintenanceCopyStatus !== "idle" && (
+                                    <p className={`mt-2 text-xs ${maintenanceCopyStatus === "copied" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}>
+                                      {maintenanceCopyStatus === "copied" ? "Текст скопирован." : "Не удалось скопировать автоматически."}
+                                    </p>
+                                  )}
+                                  <div className="mt-3 grid gap-2 lg:grid-cols-3">
+                                    {maintenanceOffers.map((offer) => (
+                                      <div key={offer.key} className="rounded-lg border border-white/70 bg-white/90 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div>
+                                            <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                              {offer.title}
+                                            </div>
+                                            <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                                              {offer.lines.length} поз. · {offer.note}
+                                            </div>
+                                          </div>
+                                          <div className="text-right text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                            {formatMoney(offer.total, offer.currency)}
+                                          </div>
+                                        </div>
+                                        <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+                                          {offer.lines.slice(0, 4).map((line) => (
+                                            <li key={`${offer.key}-${line.name}-${line.article ?? ""}`} className="truncate">
+                                              {line.quantity} x {line.name}
+                                            </li>
+                                          ))}
+                                          {offer.lines.length > 4 && <li>+ еще {offer.lines.length - 4} поз.</li>}
+                                        </ul>
+                                        <button
+                                          type="button"
+                                          onClick={() => copyMaintenanceMessage(buildMaintenanceMessage(vinLookupResult, [offer]))}
+                                          className="mt-3 rounded-lg border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                                        >
+                                          Скопировать вариант
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <textarea
+                                    readOnly
+                                    value={maintenanceMessage}
+                                    className="mt-3 h-44 w-full rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-zinc-700 dark:border-emerald-800 dark:bg-zinc-950/60 dark:text-zinc-300"
+                                  />
+                                </div>
+                              )}
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="text-zinc-600 dark:text-zinc-400">
+                                  Масла подобрано: {oilGroups.length}
+                                  {oilGroupsInStock.length > 0 ? ` · в наличии: ${oilGroupsInStock.length}` : ""}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {premiumGroup?.bestBundle?.length ? (
+                                    <button
+                                      type="button"
+                                      disabled={premiumGroup.bestBundle.every((line) => line.variant.available <= 0)}
+                                      onClick={() =>
+                                        addFromVinLookup(
+                                          premiumGroup.bestBundle.flatMap((line) =>
+                                            line.variant.sourceItems.filter((s) => s.quantity > 0).slice(0, 1)
+                                          ),
+                                          Object.fromEntries(
+                                            premiumGroup.bestBundle
+                                              .filter((line) => line.variant.productId && line.variant.available > 0)
+                                              .map((line) => [line.variant.productId as string, line.quantity])
+                                          )
+                                        )
+                                      }
+                                      className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Добавить премиум
+                                    </button>
+                                  ) : null}
+                                  {standardGroup?.bestBundle?.length ? (
+                                    <button
+                                      type="button"
+                                      disabled={standardGroup.bestBundle.every((line) => line.variant.available <= 0)}
+                                      onClick={() =>
+                                        addFromVinLookup(
+                                          standardGroup.bestBundle.flatMap((line) =>
+                                            line.variant.sourceItems.filter((s) => s.quantity > 0).slice(0, 1)
+                                          ),
+                                          Object.fromEntries(
+                                            standardGroup.bestBundle
+                                              .filter((line) => line.variant.productId && line.variant.available > 0)
+                                              .map((line) => [line.variant.productId as string, line.quantity])
+                                          )
+                                        )
+                                      }
+                                      className="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Добавить стандарт
+                                    </button>
+                                  ) : null}
+                                  {economyGroup?.bestBundle?.length ? (
+                                    <button
+                                      type="button"
+                                      disabled={economyGroup.bestBundle.every((line) => line.variant.available <= 0)}
+                                      onClick={() =>
+                                        addFromVinLookup(
+                                          economyGroup.bestBundle.flatMap((line) =>
+                                            line.variant.sourceItems.filter((s) => s.quantity > 0).slice(0, 1)
+                                          ),
+                                          Object.fromEntries(
+                                            economyGroup.bestBundle
+                                              .filter((line) => line.variant.productId && line.variant.available > 0)
+                                              .map((line) => [line.variant.productId as string, line.quantity])
+                                          )
+                                        )
+                                      }
+                                      className="rounded bg-zinc-600 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Добавить эконом
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                {visibleOilGroups.map((group) => {
+                                  const imageUrl = getMoySkladImageUrl(group.variants[0]?.imageHref);
+                                  const tierTag =
+                                    group.key === premiumGroup?.key
+                                      ? {
+                                          label: "Премиум",
+                                          classes: "bg-amber-500/15 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
+                                          cardClasses: "border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-900/10",
+                                        }
+                                      : group.key === standardGroup?.key
+                                        ? { label: "Стандарт", classes: "bg-sky-500/15 text-sky-700 dark:bg-sky-400/10 dark:text-sky-300" }
+                                        : group.key === economyGroup?.key
+                                          ? { label: "Эконом", classes: "bg-zinc-500/15 text-zinc-700 dark:bg-zinc-400/10 dark:text-zinc-300", cardClasses: "border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/10" }
+                                          : null;
+                                  const cardClass =
+                                    tierTag?.cardClasses ??
+                                    "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/30";
+                                  return (
+                                    <div
+                                      key={group.key}
+                                      className={`rounded-xl border p-3 ${tierTag ? cardClass : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/30"}`}
+                                    >
+                                      <div className="flex gap-3">
+                                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+                                          {imageUrl ? (
+                                            <img src={imageUrl} alt={group.baseName} className="h-full w-full object-cover" />
+                                          ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-400">
+                                              Нет фото
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                            <div className="min-w-0">
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                                  {group.baseName}
+                                                </h3>
+                                              {tierTag && (
+                                                  <span
+                                                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tierTag.classes}`}
+                                                  >
+                                                  {tierTag.label}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                                {group.bestBundle.length > 0
+                                                  ? `Комплект: ${describeBundle(group.bestBundle)}`
+                                                  : `Фасовки: ${group.variants.map((variant) => formatVolume(variant.volumeLiters)).join(", ")}`}
+                                              </div>
+                                              <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                                {targetLiters ? `Нужно ${formatVolume(targetLiters)}` : "Объем не указан"}
+                                                {group.bestTotalLiters ? ` · подобрано ${formatVolume(group.bestTotalLiters)}` : ""}
+                                                {typeof group.bestExcessLiters === "number" ? ` · остаток ${formatVolume(group.bestExcessLiters)}` : ""}
+                                              </div>
+                                            </div>
+                                            <div className="text-left sm:text-right">
+                                              <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                                                {group.bestTotalPrice != null
+                                                  ? formatMoney(group.bestTotalPrice, group.variants[0]?.currency)
+                                                  : formatMoney(group.variants[0]?.price ?? 0, group.variants[0]?.currency)}
+                                              </div>
+                                              <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                                                от {formatMoney(group.variants[0]?.price ?? 0, group.variants[0]?.currency)}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="mt-3 flex flex-wrap gap-2">
+                                            {group.bestBundle.length > 0 && (
+                                              <button
+                                                type="button"
+                                                disabled={group.bestBundle.every((line) => line.variant.available <= 0)}
+                                                onClick={() =>
+                                                  addFromVinLookup(
+                                                    group.bestBundle.flatMap((line) =>
+                                                      line.variant.sourceItems.filter((s) => s.quantity > 0).slice(0, 1)
+                                                    ),
+                                                    Object.fromEntries(
+                                                      group.bestBundle
+                                                        .filter((line) => line.variant.productId && line.variant.available > 0)
+                                                        .map((line) => [line.variant.productId as string, line.quantity])
+                                                    )
+                                                  )
+                                                }
+                                                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                              >
+                                                Добавить комплект
+                                              </button>
+                                            )}
+                                            {group.variants.map((variant) => (
+                                              <button
+                                                key={variant.key}
+                                                type="button"
+                                                disabled={variant.available <= 0}
+                                                onClick={() =>
+                                                  addFromVinLookup(
+                                                    variant.sourceItems.filter((s) => s.quantity > 0).slice(0, 1)
+                                                  )
+                                                }
+                                                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-left text-xs hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                                              >
+                                                {formatVolume(variant.volumeLiters)} · {formatMoney(variant.price, variant.currency)} · {variant.available} шт.
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {hiddenOilGroupsCount > 0 && (
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowAllOilGroups((prev) => !prev)}
+                                    className="text-xs text-amber-600 hover:underline dark:text-amber-400"
+                                  >
+                                    {showAllOilGroups ? "Скрыть лишние масла" : `Показать еще ${hiddenOilGroupsCount}`}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400">
+                              Подходящих масел по допуску не найдено в локальном каталоге.
+                            </div>
+                          );
+                        })()}
+                        {oils.length === 0 &&
+                          filterSections.length > 0 &&
+                          (() => {
+                            const filterOnlyOffers = (() => {
+                              const built = buildMaintenanceOffer(
+                                "filters",
+                                "Фильтры по OEM",
+                                "Масло в каталоге не сопоставилось; в расчёт включены только подобранные фильтры (остатки на складе уточняйте).",
+                                undefined,
+                                filterSections
+                              );
+                              return built ? [built] : [];
+                            })();
+                            const filterOnlyMessage = buildMaintenanceMessage(vinLookupResult, filterOnlyOffers);
+                            if (filterOnlyOffers.length === 0) return null;
+                            return (
+                              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                      Готовый расчет ТО для клиента
+                                    </h3>
+                                    <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                                      Масло по допуску не найдено в каталоге; в текст включены фильтры с подбором по OEM (при нулевом остатке указаны цены для ориентира).
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyMaintenanceMessage(filterOnlyMessage)}
+                                    className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                                  >
+                                    Скопировать расчет
+                                  </button>
+                                </div>
+                                {maintenanceCopyStatus !== "idle" && (
+                                  <p
+                                    className={`mt-2 text-xs ${maintenanceCopyStatus === "copied" ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}
+                                  >
+                                    {maintenanceCopyStatus === "copied" ? "Текст скопирован." : "Не удалось скопировать автоматически."}
+                                  </p>
+                                )}
+                                <textarea
+                                  readOnly
+                                  value={filterOnlyMessage}
+                                  className="mt-3 h-44 w-full rounded-lg border border-emerald-200 bg-white/80 p-2 text-xs text-zinc-700 dark:border-emerald-800 dark:bg-zinc-950/60 dark:text-zinc-300"
+                                />
+                              </div>
+                            );
+                          })()}
+                        {others.length > 0 && (
+                          <div>
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <span className="text-zinc-600 dark:text-zinc-400">
+                                Прочее: {others.length}
+                                {others.some((i) => i.quantity > 0) ? ` · в наличии: ${others.filter((i) => i.quantity > 0).length}` : ""}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={others.every((i) => i.quantity <= 0)}
+                                onClick={() => addFromVinLookup(others.filter((i) => i.quantity > 0))}
+                                className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Добавить всё
+                              </button>
+                            </div>
+                            <ul className="max-h-32 overflow-auto rounded border border-zinc-200 dark:border-zinc-600">
+                              {others.map((item, idx) => (
+                                <li
+                                  key={item.productId ?? `x-${idx}`}
+                                  className="flex items-center justify-between gap-2 border-b border-zinc-100 px-2 py-1.5 last:border-0 dark:border-zinc-600"
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-zinc-800 dark:text-zinc-200">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-zinc-500">
+                                    {item.price.toFixed(2)} {item.currency}
+                                  </span>
+                                  <span className="text-zinc-500">
+                                    {item.quantity} шт.
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={item.quantity <= 0}
+                                    onClick={() => addFromVinLookup([item])}
+                                    className="shrink-0 rounded border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:hover:bg-zinc-700"
+                                  >
+                                    Добавить
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {attributes.length > 0 && (
+      {additionalAttributes.length > 0 && (
         <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
           <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-            Дополнительные поля МойСклад
+            Дополнительные поля документа
           </h2>
-          <dl className="grid gap-2 sm:grid-cols-2">
-            {attributes
-              .map((a, index) => ({ a, index }))
-              .filter(({ a }) => {
-                const name = (a.name ?? "").toString().toLowerCase();
-                return (
-                  name === "vin номер".toLowerCase() ||
-                  name === "модель авто".toLowerCase() ||
-                  name === "год".toLowerCase() ||
-                  name === "гос. номер".toLowerCase() ||
-                  name === "пробег".toLowerCase()
-                );
-              })
-              .map(({ a, index }) => (
-                <div key={a.id ?? a.name ?? index}>
-                  <dt className="text-xs text-zinc-500">{a.name ?? a.id}</dt>
-                  <dd className="mt-0.5">
-                    <input
-                      type="text"
-                      value={
-                        typeof a.value === "object"
-                          ? JSON.stringify(a.value)
-                          : String(a.value ?? "")
-                      }
-                      onChange={(e) => {
-                        const next = [...attributes];
-                        next[index] = { ...a, value: e.target.value };
-                        setAttributes(next);
-                      }}
+	          <dl className="grid gap-2 sm:grid-cols-2">
+	            {additionalAttributes.map(({ a, index }) => (
+	                <div key={a.id ?? a.name ?? index}>
+	                  <dt className="text-xs text-zinc-500">{a.name ?? a.id}</dt>
+	                  <dd className="mt-0.5">
+	                    <input
+	                      type="text"
+	                      value={attributeValueToString(a.value)}
+		                      onChange={(e) => {
+		                        const next = [...attributes];
+		                        next[index] = { ...a, value: e.target.value };
+		                        setAttributes(next);
+		                      }}
                       className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-mono dark:border-zinc-600 dark:bg-zinc-900"
                     />
                   </dd>
@@ -426,24 +3205,14 @@ export default function ShipmentDetailPage() {
               className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
             />
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label className="block text-xs text-zinc-500">OEM PARTS</label>
+              <label className="block text-xs text-zinc-500">OEM Parts / кросс-номера / аналоги</label>
               <input
                 type="text"
                 value={productOem}
                 onChange={(e) => setProductOem(e.target.value)}
-                placeholder="Фильтр по OEM"
-                className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-500">Наименование по Mann</label>
-              <input
-                type="text"
-                value={productMannName}
-                onChange={(e) => setProductMannName(e.target.value)}
-                placeholder="Фильтр по Mann"
+                placeholder="OEM, MANN/POMAN, аналоги"
                 className="mt-0.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-900"
               />
             </div>
@@ -459,7 +3228,7 @@ export default function ShipmentDetailPage() {
             </div>
           </div>
         </div>
-        {(productSearch.trim() || productOem.trim() || productMannName.trim() || productParams.trim()) && (
+        {(productSearch.trim() || productOem.trim() || productParams.trim()) && (
             <div className="mt-2 max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
               {!productSearchLoading && productOptions.length > 0 && (
                 <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 dark:border-zinc-600">
@@ -496,7 +3265,6 @@ export default function ShipmentDetailPage() {
                         ]);
                         setProductSearch("");
                         setProductOem("");
-                        setProductMannName("");
                         setProductParams("");
                         setProductOptions([]);
                       }}
@@ -541,7 +3309,14 @@ export default function ShipmentDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {positions.map((p, index) => (
+                {positionGroups.map((group) => (
+                  <Fragment key={group.key}>
+                    <tr className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/40">
+                      <td className="px-2 py-2 font-semibold" colSpan={10}>
+                        {group.title} · {group.items.length}
+                      </td>
+                    </tr>
+                {group.items.map(({ position: p, index }) => (
                   <tr
                     key={p.id ?? `new-${index}`}
                     className="border-b border-zinc-100 dark:border-zinc-700"
@@ -573,13 +3348,9 @@ export default function ShipmentDetailPage() {
                           <option value="amount">₽</option>
                         </select>
                         {p.discountMode === "amount" ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
+                          <MoneyInput
                             value={p.discountAmount ?? 0}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
+                            onValueChange={(val) => {
                               const lineBase = (p.quantity || 0) * (p.price || 0);
                               const percent =
                                 lineBase > 0 ? Math.min(100, (val / lineBase) * 100) : 0;
@@ -621,13 +3392,9 @@ export default function ShipmentDetailPage() {
                       </div>
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
+                      <QuantityInput
                         value={p.quantity}
-                        onChange={(e) => {
-                          const q = Number(e.target.value) || 0;
+                        onValueChange={(q) => {
                           const next = [...positions];
                           next[index] = { ...p, quantity: q };
                           setPositions(next);
@@ -636,13 +3403,9 @@ export default function ShipmentDetailPage() {
                       />
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <MoneyInput
                         value={p.price}
-                        onChange={(e) => {
-                          const val = Number(e.target.value) || 0;
+                        onValueChange={(val) => {
                           const next = [...positions];
                           next[index] = { ...p, price: val };
                           setPositions(next);
@@ -673,6 +3436,8 @@ export default function ShipmentDetailPage() {
                       </button>
                     </td>
                   </tr>
+                ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -712,6 +3477,7 @@ export default function ShipmentDetailPage() {
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={applicable}
             className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
           />
         </div>
@@ -720,11 +3486,12 @@ export default function ShipmentDetailPage() {
             id="applicable"
             type="checkbox"
             checked={applicable}
+            disabled={applicable}
             onChange={(e) => setApplicable(e.target.checked)}
             className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
           />
           <label htmlFor="applicable" className="text-sm text-zinc-700 dark:text-zinc-300">
-            Проведён (applicable)
+            {applicable ? "Проведён — для редактирования верните в черновик" : "Провести отгрузку"}
           </label>
         </div>
         {error && (
@@ -741,7 +3508,8 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || printing || paying}
+            disabled={applicable || saving || paying || duplicating || removing}
+            title={applicable ? "Сначала верните отгрузку в черновик" : undefined}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700"
           >
             {saving ? "Сохранение…" : "Сохранить"}
@@ -749,88 +3517,67 @@ export default function ShipmentDetailPage() {
           <button
             type="button"
             onClick={handlePayment}
-            disabled={saving || printing || paying}
+            disabled={saving || paying || duplicating || removing}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
           >
-            {paying ? "Отправка в AQSI…" : "Оплата"}
+            {paying ? "Открытие предчека…" : "Предчек / оплата"}
           </button>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500">Шаблон</label>
-            <select
-              value={printTemplate}
-              onChange={(e) =>
-                setPrintTemplate(e.target.value as "default" | "birka_own" | "birka_box" | "job_order")
-              }
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
-            >
-              <option value="default">Основной (Заказ-наряд)</option>
-              <option value="birka_own">Бирка со своим</option>
-              <option value="birka_box">Бирка коробка</option>
-              <option value="job_order">Заказ-наряд (отдельно)</option>
-            </select>
-          </div>
+          <ShipmentPrintMenu shipmentId={data.header.id} disabled={saving || paying || duplicating || removing} align="left" />
           <button
             type="button"
-            onClick={async () => {
-              setPrinting(true);
-              setError(null);
-              try {
-                const res = await fetch(`/api/demands/${data.header.id}/print`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ templateKey: printTemplate }),
-                });
-                const json = await res.json();
-                if (!res.ok) {
-                  setError(json.error ?? "Ошибка печати");
-                  return;
-                }
-                if (json.location) {
-                  window.open(json.location, "_blank");
-                } else {
-                  setError("МойСклад не вернул ссылку на файл печати.");
-                }
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Ошибка печати");
-              } finally {
-                setPrinting(false);
-              }
-            }}
-            disabled={printing || saving || paying}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            onClick={() => void handleDeleteShipment()}
+            disabled={saving || paying || duplicating || removing}
+            className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
           >
-            {printing ? "Печать…" : "Печать"}
+            {removing ? "Удаление…" : "Удалить"}
           </button>
-          {data.header.href && (
-            <a
-              href={data.header.href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-zinc-600 underline-offset-4 hover:underline dark:text-zinc-300"
-            >
-              Открыть в МойСклад →
-            </a>
-          )}
         </div>
       </div>
 
-      {data.raw ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-800">
-          <button
-            type="button"
-            onClick={() => setShowRaw((v) => !v)}
-            className="mb-3 text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-200"
-          >
-            {showRaw ? "Скрыть все поля МойСклад" : "Показать все поля МойСклад (JSON)"}
-          </button>
-          {showRaw && (
-            <div className="max-h-96 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-xs font-mono text-zinc-800 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100">
-              <pre>{JSON.stringify(data.raw, null, 2)}</pre>
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
+      </div>
+
+      <DiagnosticMapModal
+        open={diagnosticModalOpen}
+        onClose={() => {
+          setDiagnosticModalOpen(false);
+          void refreshDiagnosticRemote();
+        }}
+        diagnosticId={diagnosticRowId}
+        shipmentId={id ?? null}
+        headerDraft={{
+          vin,
+          brand: String(
+            attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+          )
+            .trim()
+            .split(/\s+/)[0] ?? "",
+          model: String(
+            attributes.find((a) => (a.name ?? "").toLowerCase() === "модель авто")?.value ?? ""
+          )
+            .trim()
+            .split(/\s+/)
+            .slice(1)
+            .join(" "),
+          year: attributeValueToString(attributes.find((a) => normalizeAttrName(a.name) === "год")?.value),
+          licensePlate: getAttrValue(/^гос\.?\s*номер$|^госномер$|license\s*plate|plate/i),
+          mileage: attributeValueToString(attributes.find((a) => /пробег/i.test(a.name ?? ""))?.value),
+          clientName: data?.header.agentName ?? "",
+          vehicleHints: inferDiagnosticVehicleHintsFromLookup(vinLookupResult),
+        }}
+        onDiagnosticCreated={(nid) => {
+          setDiagnosticRowId(nid);
+          setDiagnosticRemote({
+            id: nid,
+            status: "IN_PROGRESS",
+            counts: { total: 17, good: 0, warn: 0, crit: 0, indirect: 0 },
+          });
+        }}
+        onDiagnosticUpdated={(diagnostic) => {
+          setDiagnosticRowId(diagnostic.id);
+          setDiagnosticRemote(diagnostic);
+        }}
+        onAddedToShipment={() => window.location.reload()}
+      />
+    </main>
   );
 }
-

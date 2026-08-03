@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Эко-платформа · Там где масло.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" />
+<link rel="stylesheet" href="tokens.css" />
+<link rel="icon" href="../assets/monogram-rust.svg" />
+<meta name="ext-resource-dependency" content="../assets/logo-wordmark-black.svg" data-resource-id="logoBlack" />
+<meta name="ext-resource-dependency" content="../assets/logo-wordmark-light.svg" data-resource-id="logoLight" />
+</head>
+<body>
+<template id="__bundler_thumbnail" data-bg-color="#0A0A0A">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0A0A0A"/>
+    <circle cx="600" cy="360" r="150" fill="none" stroke="#C2410C" stroke-width="14"/>
+    <path d="M600 250 C 660 320, 690 380, 600 470 C 510 380, 540 320, 600 250 Z" fill="#C2410C"/>
+    <text x="600" y="600" text-anchor="middle" font-family="Oswald, sans-serif" font-weight="700" font-size="68" letter-spacing="4" fill="#F5F2ED">ТАМ ГДЕ МАСЛО.</text>
+    <text x="600" y="650" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="24" letter-spacing="8" fill="#737373">ЭКО-ПЛАТФОРМА</text>
+  </svg>
+</template>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="screens/auth.jsx"></script>
+<script type="text/babel" src="screens/home.jsx"></script>
+<script type="text/babel" src="screens/shipments.jsx"></script>
+<script type="text/babel" src="screens/cash.jsx"></script>
+<script type="text/babel" src="screens/inventory.jsx"></script>
+<script type="text/babel" src="screens/restock.jsx"></script>
+<script type="text/babel" src="screens/finance.jsx"></script>
+<script type="text/babel" src="screens/deals.jsx"></script>
+<script type="text/babel" src="screens/crm.jsx"></script>
+<script type="text/babel" src="screens/journal.jsx"></script>
+<script type="text/babel" src="screens/diagnostics.jsx"></script>
+<script type="text/babel" src="screens/diag-print.jsx"></script>
+<script type="text/babel" src="screens/payroll.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+-- Extra product and counterparty fields imported from MoySklad/Excel exports.
+
+ALTER TABLE "local_products"
+  ADD COLUMN "external_code" TEXT,
+  ADD COLUMN "group_path" TEXT,
+  ADD COLUMN "uom_name" TEXT,
+  ADD COLUMN "minimum_balance" DECIMAL(14,3),
+  ADD COLUMN "barcode_ean13" TEXT,
+  ADD COLUMN "barcode_ean8" TEXT,
+  ADD COLUMN "barcode_code128" TEXT,
+  ADD COLUMN "description" TEXT,
+  ADD COLUMN "min_price_cents" INTEGER,
+  ADD COLUMN "min_price_currency_name" TEXT,
+  ADD COLUMN "country_name" TEXT,
+  ADD COLUMN "vat_label" TEXT,
+  ADD COLUMN "supplier_name" TEXT,
+  ADD COLUMN "weight" DECIMAL(14,3),
+  ADD COLUMN "volume" DECIMAL(14,3),
+  ADD COLUMN "modification_code" TEXT,
+  ADD COLUMN "tnved_code" TEXT,
+  ADD COLUMN "sae" TEXT,
+  ADD COLUMN "oem" TEXT,
+  ADD COLUMN "acea" TEXT,
+  ADD COLUMN "api_spec" TEXT,
+  ADD COLUMN "package_volume" TEXT,
+  ADD COLUMN "avito" BOOLEAN,
+  ADD COLUMN "brand" TEXT,
+  ADD COLUMN "atf" TEXT,
+  ADD COLUMN "ilsac" TEXT,
+  ADD COLUMN "acea_extra" TEXT,
+  ADD COLUMN "oem_atf" TEXT,
+  ADD COLUMN "mann_name" TEXT,
+  ADD COLUMN "rossko_part_number" TEXT,
+  ADD COLUMN "rossko_brand" TEXT,
+  ADD COLUMN "rossko_min" TEXT,
+  ADD COLUMN "supplier_attribute" TEXT,
+  ADD COLUMN "oem_parts" TEXT,
+  ADD COLUMN "cell" TEXT,
+  ADD COLUMN "mann_characteristic_name" TEXT;
+
+ALTER TABLE "local_counterparties"
+  ADD COLUMN "counterparty_type_name" TEXT,
+  ADD COLUMN "legal_last_name" TEXT,
+  ADD COLUMN "legal_first_name" TEXT,
+  ADD COLUMN "legal_middle_name" TEXT,
+  ADD COLUMN "legal_address" TEXT,
+  ADD COLUMN "inn" TEXT,
+  ADD COLUMN "kpp" TEXT,
+  ADD COLUMN "okpo" TEXT,
+  ADD COLUMN "fax" TEXT,
+  ADD COLUMN "bik" TEXT,
+  ADD COLUMN "bank_name" TEXT,
+  ADD COLUMN "bank_location" TEXT,
+  ADD COLUMN "correspondent_account" TEXT,
+  ADD COLUMN "checking_account" TEXT,
+  ADD COLUMN "ogrn" TEXT,
+  ADD COLUMN "ogrnip" TEXT,
+  ADD COLUMN "certificate_number" TEXT,
+  ADD COLUMN "certificate_date" DATE;
+
+CREATE INDEX "local_products_external_code_idx" ON "local_products"("external_code");
+CREATE INDEX "local_products_brand_idx" ON "local_products"("brand");
+CREATE INDEX "local_counterparties_inn_idx" ON "local_counterparties"("inn");

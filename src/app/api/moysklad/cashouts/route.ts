@@ -1,25 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { moyskladFetch } from "@/lib/moysklad";
+import {
+  cashExpenseOrderToCashout,
+  listCashExpenseOrders,
+  type CashExpenseOrderSource,
+  type CashExpenseOrderStatus,
+  type CashExpensePaymentType,
+} from "@/lib/cash-expense-orders";
 
-type CashoutRow = {
-  id: string;
-  name: string;
-  moment: string;
-  sum: number;
-  applicable: boolean;
-  paymentPurpose?: string;
-  description?: string;
-  meta: { href: string; type: string; mediaType: string };
-  agent?: { name?: string };
-  expenseItem?: { name?: string };
-  organization?: { name?: string };
-};
+export const dynamic = "force-dynamic";
 
-type CashoutListResponse = {
-  meta?: { size?: number; limit?: number; offset?: number };
-  rows?: CashoutRow[];
-};
+function parseLimit(value: string | null) {
+  return Math.min(100, Math.max(1, parseInt(value ?? "50", 10) || 50));
+}
+
+function parseOffset(value: string | null) {
+  return Math.max(0, parseInt(value ?? "0", 10) || 0);
+}
+
+function parseStatus(value: string | null): CashExpenseOrderStatus | "all" {
+  return value === "draft" || value === "posted" || value === "cancelled" ? value : "all";
+}
+
+function parseSource(value: string | null): CashExpenseOrderSource | "all" {
+  return value === "local" || value === "moysklad_import" || value === "sync" || value === "payroll" ? value : "all";
+}
+
+function parsePaymentType(value: string | null): CashExpensePaymentType | "all" {
+  return value === "cash" || value === "card" ? value : "all";
+}
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -27,42 +36,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   }
 
-  const search = request.nextUrl.searchParams.get("search") ?? "";
-  const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "50", 10) || 50);
-  const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
+  try {
+    const search = request.nextUrl.searchParams.get("search") ?? "";
+    const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+    const offset = parseOffset(request.nextUrl.searchParams.get("offset"));
+    const status = parseStatus(request.nextUrl.searchParams.get("status"));
+    const source = parseSource(request.nextUrl.searchParams.get("source"));
+    const paymentType = parsePaymentType(request.nextUrl.searchParams.get("paymentType"));
 
-  const params = new URLSearchParams();
-  params.set("limit", String(limit));
-  params.set("offset", String(offset));
-  params.set("order", "moment,desc");
-  params.set("expand", "agent,expenseItem,organization");
-  if (search.trim()) params.set("search", search.trim());
+    const result = await listCashExpenseOrders({
+      search,
+      limit,
+      offset,
+      status,
+      source,
+      paymentType,
+    });
 
-  const result = await moyskladFetch<CashoutListResponse>(`/entity/cashout?${params.toString()}`, {
-    cache: "no-store",
-  });
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 502 });
+    return NextResponse.json({
+      meta: {
+        size: result.total,
+        limit,
+        offset,
+        source: "local",
+      },
+      cashouts: result.rows.map(cashExpenseOrderToCashout),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Не удалось загрузить расходные ордера";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({
-    meta: {
-      size: result.data.meta?.size ?? 0,
-      limit: result.data.meta?.limit ?? limit,
-      offset: result.data.meta?.offset ?? offset,
-    },
-    cashouts: (result.data.rows ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      moment: row.moment,
-      sum: row.sum,
-      applicable: row.applicable,
-      paymentPurpose: row.paymentPurpose ?? "",
-      description: row.description ?? "",
-      agentName: row.agent?.name ?? "",
-      expenseItemName: row.expenseItem?.name ?? "",
-      organizationName: row.organization?.name ?? "",
-      meta: row.meta,
-    })),
-  });
 }

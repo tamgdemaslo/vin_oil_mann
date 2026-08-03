@@ -25,7 +25,6 @@ type CatalogModalProps = {
 export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalProps) {
   const [search, setSearch] = useState("");
   const [oem, setOem] = useState("");
-  const [mannName, setMannName] = useState("");
   const [params, setParams] = useState("");
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,13 +36,13 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set("search", search.trim());
-      if (storeId) params.set("storeId", storeId);
-      if (oem.trim()) params.set("oem", oem.trim());
-      if (mannName.trim()) params.set("mannName", mannName.trim());
-      params.set("limit", "50");
-      const res = await fetch(`/api/moysklad/assortment?${params.toString()}`);
+      const query = new URLSearchParams();
+      if (search.trim()) query.set("search", search.trim());
+      if (storeId) query.set("storeId", storeId);
+      if (oem.trim()) query.set("oem", oem.trim());
+      if (params.trim()) query.set("params", params.trim());
+      query.set("limit", "50");
+      const res = await fetch(`/api/moysklad/assortment?${query.toString()}`);
       const data = await res.json();
       setError(data.error ?? null);
       if (res.ok && Array.isArray(data.rows)) {
@@ -64,7 +63,7 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
     } finally {
       setLoading(false);
     }
-  }, [search, storeId, oem, mannName, params]);
+  }, [search, storeId, oem, params]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,7 +89,6 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
       onClose();
       setSearch("");
       setOem("");
-      setMannName("");
       setParams("");
       setQuantities({});
       setError(null);
@@ -110,7 +108,7 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
         </div>
 
         <div className="space-y-3 p-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="block text-xs font-medium text-zinc-500">Наименование, код или артикул</label>
               <input
@@ -123,24 +121,13 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-500">OEM PARTS</label>
+              <label className="block text-xs font-medium text-zinc-500">OEM Parts / кросс-номера / аналоги</label>
               <input
                 type="text"
                 value={oem}
                 onChange={(e) => setOem(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && setSearchTrigger((t) => t + 1)}
-                placeholder="Фильтр по OEM"
-                className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-500">Наименование по Mann</label>
-              <input
-                type="text"
-                value={mannName}
-                onChange={(e) => setMannName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setSearchTrigger((t) => t + 1)}
-                placeholder="Фильтр по Mann"
+                placeholder="OEM, MANN/POMAN, аналоги"
                 className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
               />
             </div>

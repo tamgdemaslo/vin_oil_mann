@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getBranchContext } from "@/lib/branch-context";
 
 export type PieceworkRole = "master" | "admin";
 export type PieceworkTargetType = "service" | "product_group";
@@ -301,7 +302,8 @@ export function isPieceworkRole(role: string): role is PieceworkRole {
 
 export function extractMoyskladEntityId(href?: string): string | null {
   if (!href) return null;
-  const parts = href.split("/").filter(Boolean);
+  const cleanHref = href.split(/[?#]/)[0] ?? href;
+  const parts = cleanHref.split("/").filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : null;
 }
 
@@ -328,8 +330,11 @@ export function resolveProductGroupTargetId(pathName?: string): string | null {
   return null;
 }
 
-export async function listPieceworkRules(): Promise<PieceworkRuleView[]> {
+export async function listPieceworkRules(branchId?: string): Promise<PieceworkRuleView[]> {
+  const scopedBranchId = branchId ?? (await getBranchContext({ requireActive: true }))?.branchId;
+  if (!scopedBranchId) throw new Error("Для сдельных правил нужен активный филиал");
   const rows = await prisma.pieceworkRule.findMany({
+    where: { branchId: scopedBranchId },
     orderBy: [{ targetType: "asc" }, { targetName: "asc" }, { role: "asc" }],
   });
 
@@ -361,8 +366,8 @@ export async function listPieceworkRules(): Promise<PieceworkRuleView[]> {
   });
 }
 
-export async function getPieceworkRuleMap(): Promise<Map<string, PieceworkRuleView>> {
-  const rules = await listPieceworkRules();
+export async function getPieceworkRuleMap(branchId?: string): Promise<Map<string, PieceworkRuleView>> {
+  const rules = await listPieceworkRules(branchId);
   return new Map(rules.map((rule) => [toKey(rule.targetType, rule.targetId, rule.role), rule]));
 }
 

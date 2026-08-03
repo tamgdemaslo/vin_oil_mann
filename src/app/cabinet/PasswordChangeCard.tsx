@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 
+const FOUR_DIGIT_PASSWORD_PATTERN = /^\d{4}$/;
+
+function toFourDigits(value: string) {
+  return value.replace(/\D/g, "").slice(0, 4);
+}
+
 export default function PasswordChangeCard() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -20,8 +26,8 @@ export default function PasswordChangeCard() {
       return;
     }
 
-    if (newPassword.length < 4) {
-      setError("Новый пароль должен быть не короче 4 символов");
+    if (!FOUR_DIGIT_PASSWORD_PATTERN.test(newPassword)) {
+      setError("Новый пароль должен состоять ровно из 4 цифр");
       return;
     }
 
@@ -82,9 +88,12 @@ export default function PasswordChangeCard() {
             id="new-password"
             type="password"
             value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
+            onChange={(event) => setNewPassword(toFourDigits(event.target.value))}
             className={inputClassName}
             autoComplete="new-password"
+            inputMode="numeric"
+            maxLength={4}
+            pattern="[0-9]{4}"
             disabled={saving}
           />
         </div>
@@ -99,9 +108,12 @@ export default function PasswordChangeCard() {
             id="confirm-password"
             type="password"
             value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
+            onChange={(event) => setConfirmPassword(toFourDigits(event.target.value))}
             className={inputClassName}
             autoComplete="new-password"
+            inputMode="numeric"
+            maxLength={4}
+            pattern="[0-9]{4}"
             disabled={saving}
           />
         </div>

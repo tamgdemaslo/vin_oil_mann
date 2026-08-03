@@ -1,0 +1,650 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-31T22:04:33.354Z",
+  "status": "CLOSED_ARCHIVE_ONLY_DO_NOT_IMPORT",
+  "decisions": [
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0ea7ef82486396c2345f16d99eb6ea882ac847c2c1f6a60f4aabccab05fceffb"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-001",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c7751fd0388f18c29ac78070e82d176f225169700fa7dbc7bf4a37bf8c83ef4d"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-002",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a1bcb45f4310569a26e605f2ad09afcf3efee18c7d45d68d9ee483f15278cc"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "last_outbound_message_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-003",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e8b444e8cf32e6cad649174052945872bdfdef978329a48a4f65e936201600b9"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "case_status",
+        "closed_at",
+        "last_outbound_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-004",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:057dc10c719365520231324e2ad90199d1b9d4b840311fc977173b67cfe2b214"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-005",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "SAME_PK",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8d3e6191b7712e3a17122282ddb03cdbc1432a072b215cadbf97781fad2d9073"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner",
+      "approvedAt": "2026-07-31T21:10:03.474Z",
+      "decisionId": "DEC-006",
+      "selectedOption": "A",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "KEEP_SELECTEL",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "communication_identities",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d2793de96c255fddde510b4bf3e174b3a0ab57b058831a9040b6f02c21601956"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "decisionId": "DEC-008",
+      "selectedOption": "D",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The identity has no verified business owner in Selectel.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "conversation_entity_links",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d900c96c021891bac39b3eb4d943c56346dfc7bf7ecf677d6c71288415727047"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "decisionId": "DEC-009",
+      "selectedOption": "D",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The conversation-to-appointment relation cannot be mapped unambiguously.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2107124fffd4670bb65a53e695056593faaf1f08958f85a4772510b766630f0d"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-014",
+      "selectedOption": "D",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:273a97f22835b5a9ca5752a5831248f3108cf4d12679c8ed245bf108829d4856"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-016",
+      "selectedOption": "D",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:334d40cdbd8a53de29abb4944b47e43dcd9006eaa275ef21af4c992a0f0548b3"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "decisionId": "DEC-010",
+      "selectedOption": "D",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:860708b066da237a14b25671c0c1d16cb3747ea20f48e79b7508d923bf77018f"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "decisionId": "DEC-011",
+      "selectedOption": "D",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ba6298e982df3eaed5084a8508d9645ff34bee96d00ab1869a8fe4ad12597b2b"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-015",
+      "selectedOption": "D",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bd2f414fc48c19a17628914fe5cb693f6c59367bffc597c9b84671e3a19c39ad"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-012",
+      "selectedOption": "D",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a0c03b05adf5e62a53f781a083b30a5179bbae106072c9e9ca00f7e3769837"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-013",
+      "selectedOption": "D",
+      "decisionBasis": "The object and target parent message cannot both be verified.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "messenger_connections",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9c6a6ba5bfa0d9e49bbe90c4667e3d4ee2a1983531e4e49bfeb1224e1e2c45c5"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": null,
+      "approvedAt": null,
+      "decisionId": "DEC-007",
+      "selectedOption": "D",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionBasis": "No direct owner can be established for the Telegram connection.",
+      "previousStatus": "REJECTED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0f593cc694854d8eac43cd2826badc221147f8e940e58e5fc089d09bf4ca56ae"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-017",
+      "selectedOption": "A",
+      "decisionBasis": "The scheduled time has passed; a late notification would be misleading.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:40743a424c79c03e47fecc1bbd24190649fe16aad959dc93fef1cf6f4fa1d44b"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-023",
+      "selectedOption": "A",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:536e7bce0c831d3a660448a4090a3cb8f0fe63ec54fe3365b5e78325a4d30ace"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-026",
+      "selectedOption": "A",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5e404f8ce339928bf58aeb181b6f0c1fb904275b7e2d0308a8f438ad70fbd18a"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-018",
+      "selectedOption": "A",
+      "decisionBasis": "The scheduled time has passed and the original attempt had no connected client.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6d50e0228ea7986e0102f2ae96a1ac41143ce4e052bc0de2a30d4d7acaea00cb"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-021",
+      "selectedOption": "A",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:71b8b40666ca281bf4c2a97537a19ba58a1796e265b4dc54d0d550f8594223b0"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-022",
+      "selectedOption": "A",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:99886e6c2c6ed1c35f79fd5371e699aa4232e27eb66814354d56c03ac60ed7c1"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-024",
+      "selectedOption": "A",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:acc0a73a7eec7c975b4c10faf3798e3cd0e20d21c10209ed24defe113ffe1c0e"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-025",
+      "selectedOption": "A",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cccef626f6895f9158b4c98274ff587ded0a57cdc1f7aa6f26377ec5369fc7cd"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-020",
+      "selectedOption": "A",
+      "decisionBasis": "Reconciliation and rehearsal gates cannot complete safely before the scheduled time; do not send late.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    },
+    {
+      "scope": "RAILWAY_ONLY",
+      "tableName": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e2647cafbfb72a98505ca2fc9690de12993a1fb66fa7edf43c8b96ad900d4ff5"
+      },
+      "proposedAction": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "affectedFields": [],
+      "status": "CLOSED_BY_OWNER_ARCHIVE_POLICY",
+      "approvedBy": "owner-delegated-codex",
+      "approvedAt": "2026-07-31T22:04:33.354Z",
+      "reviewedAt": "2026-07-31T22:04:33.354Z",
+      "decisionId": "DEC-019",
+      "selectedOption": "A",
+      "decisionBasis": "The client is unconfirmed and safe recreation cannot complete through the required gates before the scheduled time.",
+      "previousStatus": "APPROVED",
+      "previousProposedAction": "SKIP_OBSOLETE",
+      "selectedPolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT",
+      "closedAt": "2026-08-02T17:33:46.313Z"
+    }
+  ],
+  "ownerDecisionSummary": {
+    "total": 26,
+    "closedArchiveOnly": 26,
+    "pending": 0
+  },
+  "closedAt": "2026-08-02T17:33:46.313Z",
+  "closurePolicy": "ARCHIVE_ONLY_DO_NOT_IMPORT"
+}

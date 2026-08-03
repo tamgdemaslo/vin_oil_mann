@@ -4,7 +4,7 @@
  */
 
 export function stripPhoneToDigits(input: string): string {
-  return input.replace(/[\s()\-+]/g, "");
+  return input.replace(/\D/g, "");
 }
 
 /**
@@ -18,6 +18,24 @@ export function normalizePhoneKey(raw: string | undefined | null): string | null
   if (/^7\d{10}$/.test(digits)) return digits;
   if (/^\d{10,15}$/.test(digits)) return digits;
   return null;
+}
+
+/**
+ * Единый ключ для сравнения телефонов в операционных сценариях.
+ * Для РФ сравниваем последние 10 цифр, чтобы +7 и 8 не расходились.
+ * Международные номера оставляем в полном нормализованном виде.
+ */
+export function normalizePhone(raw: string | undefined | null): string | null {
+  const key = normalizePhoneKey(raw);
+  if (!key) return null;
+  if (/^[78]\d{10}$/.test(key)) return key.slice(-10);
+  return key;
+}
+
+export function phoneKeysEqual(left: string | undefined | null, right: string | undefined | null): boolean {
+  const a = normalizePhone(left);
+  const b = normalizePhone(right);
+  return Boolean(a && b && a === b);
 }
 
 /** Фрагмент контрагента из МойСклад (отгрузка expand=agent / counterparty). */

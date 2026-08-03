@@ -1,0 +1,5565 @@
+{
+  "reportVersion": 2,
+  "generatedAt": "2026-07-31T19:34:39.595Z",
+  "status": "NO-GO",
+  "hashKeyId": "f5ed85ce298ddfd9",
+  "conflictCount": 284,
+  "conflicts": [
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:00e2a9dca13ef3c411d4ee5c7e17b07bb01c0728627ffdc0bfba13a8d622cc9c"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0ba34208e31c26b7d4ccc57daa2da43322ef3a7812f7750ba42c0457ff4a03d5"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:253e3e5c946342e56a8242f25997c3ca836e3effe25cde5b32f3d5e81562945e"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4192b07378ad5a9cc78d37b738ed1f9ce269ca92f67cea802b7ce79a5f701e05"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:42c27a5a55843e863982b4a023869cc68e45faa1697e68cca76f5140674df788"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6a2829c97f700a8e9e4759ceffeccdb7d9d21d1b3bfb07308626aec28ecb9003"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:70d3a1a969880581af99667fb03b4ab2a0a1cf7322ef77ffc1e5bc99babb2479"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:760b29dbb31a193806ab59e19b78d665a4e4041136c3f3a77085370711ab3bea"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7fb44ca9ad877dd9a5d358445eea4a188718a1e4962bd635ed6a75ce359a7b63"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:829315ffeb8bbed1b228fd3d61e994be383b6ab6c1fbb9e984ae30cfb13a5a76"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8f97ddd7cc61fede193bc9480f47b8883434cba62731fc76e14766752bc544a3"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9d9596f63708a44055703bbccf1b72ce9fb27d925184f18cc766aede2e8bda68"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a582862d29f59bebb386c05fc4a2ef1bdb91217599088be55dc3df6997b3745f"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a8c16986f2625bbe1556415b1d1e0148c8cd7ceebc505caedb9fa5d64cb0a8d3"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c436d54af8701e680bead8869600107ad17f7d89e99a0ec765d1b6ed7aa220f8"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "ai_assistant_labor_pricing_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ea94192c00b37605cba41a54f433d913c0221e1e04b6a0c4f8ca3edfc1ad9a29"
+      },
+      "differingFields": [
+        "created_at",
+        "effective_from",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:20.975997+02:00",
+      "railwayUpdatedAt": "2026-07-25T20:14:31.744438+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0f538ae0e736c6711a65b7bae49d00415ee50bad9c65821e2f107d8a0c82303b"
+      },
+      "differingFields": [
+        "acknowledged_at",
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:18a21281195faa3897397272e0c7590048475b5a0afdf1b2956cdfb507649d0e"
+      },
+      "differingFields": [
+        "acknowledged_at",
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1a67d95d59cb5949d2d5db59cf1243999463a4bc36fa684cac8a67495b586d74"
+      },
+      "differingFields": [
+        "acknowledged_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3232fd76805165fbdfad86ddabbde1c91819dff7fb6f86beedb2b146f450378b"
+      },
+      "differingFields": [
+        "acknowledged_at",
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:832bc49e9731814ea737e1119291984e20d84ec1a6cbdbf1946e072717235133"
+      },
+      "differingFields": [
+        "acknowledged_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9e833feb63d6d011bab4a9a6dd744b48b7133e98e225888f814f2db25bc635a4"
+      },
+      "differingFields": [
+        "acknowledged_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a797d693430e5feaa4fcbf22ac221834134441dcff988db668ba4952b132a7a3"
+      },
+      "differingFields": [
+        "acknowledged_at",
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:df68edb6e9612917f400c76eca2781053cee618a55634845046bcea71b07bddd"
+      },
+      "differingFields": [
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e6173e67c1f1e561102319ba1f62d706879e8aa0e28baee634558eb5d51b5ffe"
+      },
+      "differingFields": [
+        "sent_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "client_case_notification_log",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f0f83ea5fc9ff05752bc547eb4dcc90f7921b4adc93dc1b88517acc9e41d56fb"
+      },
+      "differingFields": [
+        "acknowledged_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0ea7ef82486396c2345f16d99eb6ea882ac847c2c1f6a60f4aabccab05fceffb"
+      },
+      "differingFields": [
+        "case_status",
+        "closed_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:32:42.686",
+      "railwayUpdatedAt": "2026-07-10T15:36:36.798",
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c7751fd0388f18c29ac78070e82d176f225169700fa7dbc7bf4a37bf8c83ef4d"
+      },
+      "differingFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T13:46:26.842",
+      "railwayUpdatedAt": "2026-07-24T06:56:17.11",
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e3a1bcb45f4310569a26e605f2ad09afcf3efee18c7d45d68d9ee483f15278cc"
+      },
+      "differingFields": [
+        "case_status",
+        "closed_at",
+        "last_client_message_at",
+        "last_outbound_message_at",
+        "next_action",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:32:23.725",
+      "railwayUpdatedAt": "2026-07-25T07:47:16.505",
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_deals",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e8b444e8cf32e6cad649174052945872bdfdef978329a48a4f65e936201600b9"
+      },
+      "differingFields": [
+        "case_status",
+        "closed_at",
+        "last_outbound_message_at",
+        "next_action",
+        "snooze_until",
+        "stage_id",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:32:35.255",
+      "railwayUpdatedAt": "2026-07-28T06:00:07.99",
+      "conflictType": "BOTH_CHANGED",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:17ac6cc064d5ba0262d4628e18822de3a126ee5fb5985fdef448f8b7ca8858ae"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:23042c80150ad5b9f4407775e7c7effab1f1f68b5c02566abd20ba2a87209b56"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2db62db960064e0d4dcf40a9d559164fea4b4ccd5bc813ed90ab47b3f9be47d3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:409c23d5c61b6914875451f7294701c2edd83cbaab6c3170283c84e3c004ee46"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:43388d2f956bfe8ed0904fd586de138399c2ad450780e8b5192aab896c78fe79"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:66cdff1b7c52431df47e1e007386e4a7878297830bbb26046e35dfde153e3472"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aa0b15d31a05adc1527a00af34cc1246862d24f0960a32e8638ca3e18954a0e9"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c2a19e06a16cc31defcbf6802377389e065a09e74b255044e6eef07efe2af08d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c5dfbf8db26a84ad5dc57695d397f3966bb895b10136b33b1e4ea4fdb71fe0a0"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "crm_stages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cc9c1df6afffb273d968f01357885f334e0b348426eb0f3c936359a11481f4d3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T18:09:23.174",
+      "railwayUpdatedAt": "2026-07-25T07:49:37.144",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:115f92bf690ed2d9ce6a5216214e726e4416841ea5fdefbdab6e1be3d5122669"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.155",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.232",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:173fc7dd2d84312d8176fb0d96bf204d7ed4b0f157a894129475a75d47fd1818"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.153",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.225",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:18e78c26ce5f298cbb0b1a8cc3f95e6ca62e48263fe5ff7fd05d791082b461c8"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.157",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.238",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6a94ede1dcb5b160e6f0ba9cfa495ab607eb814cc9d8d72a6729a0fe4d14f9b3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.164",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.258",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:80da01244771be699efbd3460a205b40d7cdec96115cfc51fea9aaaa8e80301b"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.166",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.264",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:973504b3450b4cbbbf8638c2f384c31fdef0e2d85afbd068bb03b2b0b4608056"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.178",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.297",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a62de9487322417aca42d8ff23382a747a428c7ae398b3e1ec5f4f404e0efdd1"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.168",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.271",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ad7aee35b41a400c7468908a1ccffa4a8cb7fdfad071e1204c5ac8a06406a318"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.171",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.277",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:be97213dccffc64e94a5d899efeea1ae1f81bae1098f00c56bd49386e0931794"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.161",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.251",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c79c6d8874f16edfcd6eff5b55bfc102fb4f75d09b8090a6ebb752cf2d752b06"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.159",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.245",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d04f23f7e0dcb58f4c2e72da8f5d8b765f652a229aa8d94bc3675d7301234d5a"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.149",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.211",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:db04cf342bcba43699181f20f539a494aa77df31e36e0f9d3b0c8729f4b14d8d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.176",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.29",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "demand_attribute_definitions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dfbe901bfcdaa9eae123407425116f8147f25f1114ed11230f3ea748afca9cb1"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T15:35:18.174",
+      "railwayUpdatedAt": "2026-07-24T16:27:23.284",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_counterparties",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3d5b87116cb8e7e2ff99cd12141cca4b283533a7c8532619366be89eeea39bfe"
+      },
+      "differingFields": [
+        "raw",
+        "search_text",
+        "synced_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T07:08:24.763",
+      "railwayUpdatedAt": "2026-05-24T11:11:32.024",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_products",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:74fc8b284af91d3e4b31eb51b51614d17c0a976eaf0f7e20506ab51425eb6077"
+      },
+      "differingFields": [
+        "marking_settings_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T11:45:10.493",
+      "railwayUpdatedAt": "2026-07-24T14:23:07.891",
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_products",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7c388e44c117520cd73596c70ed0c6e692f0b6bbe64a5b4a0e03e146a6b9b407"
+      },
+      "differingFields": [
+        "marking_configured_at",
+        "marking_configured_by_login",
+        "marking_configured_manually",
+        "marking_enabled",
+        "marking_mode",
+        "marking_settings_json",
+        "marking_status",
+        "raw",
+        "sale_price_cents",
+        "search_text",
+        "synced_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T07:46:52.87",
+      "railwayUpdatedAt": "2026-06-28T08:38:47.11",
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_products",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8633487fb3aa3ed32243acc345b0ab3b09efa342cfc2e3d72774fc87203d5c22"
+      },
+      "differingFields": [
+        "marking_settings_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T08:59:42.774",
+      "railwayUpdatedAt": "2026-07-24T14:13:06.997",
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_products",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ffb3c249cb440c3d4c0ce32372d484c7e4800be2281a8bc87dbf819cfa7539a5"
+      },
+      "differingFields": [
+        "marking_configured_at",
+        "oem_atf",
+        "raw",
+        "search_text",
+        "synced_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T14:37:20.253",
+      "railwayUpdatedAt": "2026-07-23T21:26:26.184",
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:046d13a51593c491018ad6cd0fa9c5a0cce37cab3927fc47eb6493b2e0ca57d6"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:054e46935b07dd44d6e02a2977a779e41721b272c3efc3971bea7bb8d6731ed4"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0690ef89ef8ce4022f94f215c14b14e0af42a4e8e8f5da6691a465cfc2f5f157"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1c0ead03a7e7bd026e327d5762a0ff1c38092c3935383a8e474f2df25a82f5b5"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:24cd5b812b012d1a362a37a463da8e601312fac9c0cbf68f9a0cb38de1b6a8b0"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:27dc0f2d5872883ef74781a85c49d74bb35122ae5965a09a822289c601dc9631"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2bc06d21ade432cf145fc07b31609b70ae3fe18bda6e1d51d55760e9ad151735"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3150138539245d7006bc942eff29dfd5728ddf178c2d8414e796d62e8a009565"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3ddd6dc1136aecefa3ee5167f54333b87ae17e738693c52cac276e2ae1f60c2a"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:40367ccc66580d3cebeb6347612026eb9743fbf110a1b58fa8084e71590d07d9"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4840e5c5031977fb3f08194675a029d4f39ca0751279b13be3f56e67e248e968"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:52a8c973477e45ffdfb3d1ee6a1631cd9c5b39cf1fa28461549c43d705f8e569"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:567ab345e426c00b61ef6f146d1ed49a01e5f3b334fdfaa2f98dd1a8b7d87576"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:65cc6adf67e50cfb892aab23b7167f90073407f43ab43c9ec72a2d3dd41bc6d3"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:691bf3c5cd2c6aded151b649ce5b1c8658d09022b32ae64526cc1237ed86098b"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7a914cb055931a2688d6ba57f415146c0e85e10e73e8a2293c0fd5529fca0ac7"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7c5fc602e1ec2b2b47d004358d5b3b0200ffcde658dbbbc8d4aba5723d8a6e77"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8d395e4ef65f27c11f219b08a6848a87a8fd2c4cb7553b0013c1c2ed7ee8b829"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a45375ac82f68555b8cc8bdafbdd0b462e8842825e5bc1c67cf7094395b6d5eb"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aa805c9519921778c0e3446d80f26f8b2552694c4f076f9a814cd0b6bf65abd6"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:af46701e5f849ca807c6c420923cde21a238eabd3af2a6d2d1df5b1e6062194c"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c4c79faa7f1c0d8e0fd57340ec7adc90a8c281d7133cf4738285b0dc8d2359a3"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c5a632ea5169b931791651e78a1508b5e68e96b61164197cc07cae10abd526c1"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "local_stock_balances",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ee87ef529853baec7039826b257c1ce1f85d797e04a3eb1e7c83553602b6fce8"
+      },
+      "differingFields": [
+        "available",
+        "quantity",
+        "synced_at"
+      ],
+      "selectelUpdatedAt": null,
+      "railwayUpdatedAt": null,
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_accounts",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4ea15b391de93359544df91574bb31d42b0d0d28dbde715ca252198401fe3bed"
+      },
+      "differingFields": [
+        "last_sync_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.604045+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.944813+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:057dc10c719365520231324e2ad90199d1b9d4b840311fc977173b67cfe2b214"
+      },
+      "differingFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.779231+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:27:38.038295+02:00",
+      "conflictType": "MANUAL_BUSINESS_DECISION",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:08d79a014ece7315e0ed0350f574985ba07fc2ca3661d311c02e52105068f178"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.363474+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:37.962034+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0f967c56d73c28bfc987083db2b5b4c156c3558040c332e91140fd3ff466eed9"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:57.649613+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:31:08.097584+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:143597273832fd168df277bbab7019c92d256bdb894bece8ae3831067c0e8c5c"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:40.049886+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.045739+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:14d9139a4de479b461687c7690dbbfb1a912b17f7722a5f4ac82dc33352d83fa"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.590621+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:38.047056+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:18e8f8c113b12113697bd4f228c41cd5edd1304234dad6c971ce6a2df2260500"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:29:12.130175+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:07.871647+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1d7f872deeee05d0c4575f2d476e01c7e5c580669237ae64125d6fc353de10f3"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.325653+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:09.349274+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2477cb90f9a8c63e6d9aaca706ccb3ca71efae0f3f46850b25fb7d66fda7f605"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.952098+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:54.879458+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:25b0cea649d8363b43101c1881ce0463c87e4ca8c2d452c706c9947a40d6b527"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.398375+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:08.068296+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:29b9e5f1dfe272bb3d42b9bff7730f089852ef0629979cd905b77ff2c093f4e8"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.399032+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:23.045062+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:33a798431a39146c8f4c3a5ff96d3a023a3994a6ebeaaac6de149b1314f74279"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.335661+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.005603+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3cbe1aa3cd6e779211cec9f3c800b2130b1c762dfd62ee87276666cce27b13d6"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.841825+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:38.174034+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3df734eff76603a092a6140e379fc0fc06cbde39fc361d185e05d5601f841f10"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T08:50:38.470656+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:53.061507+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4db45cfb1e302acab5b2ba5b6abc40bc892d64b7a0978d4d4a4a601cc2b81878"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.343129+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.247685+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4eef1f32e92c10208eb19efb96271f75ed89d23ce5e4236ae3cf05be78a9648b"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.352368+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.522074+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5049c2949affc8994337a9bff6252436ca617867a8ebfda28a252550642cd6d0"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:36.565592+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:28.717848+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5cff5175e6113127b62d78bc1021bdc2d6136a1e94d80bd839981f38ddb49506"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.651259+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:08.509847+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:709a6def1dd7a3df99f4c69aef16e17229ac70bbd09f8860635bd89ad5323931"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.385918+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:53.754086+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7bd8099f3736b4d1bbbcdfdd3c0d729622abede86b874a703576c2b7840d830a"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.648136+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.076594+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7f4778bd7e3d295d86d7c33b81ec65aef8c4d71a3caad8a1f5e463141b3c645b"
+      },
+      "differingFields": [
+        "attempts",
+        "error_code",
+        "error_message",
+        "last_attempt_at",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.794472+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:53:49.240186+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8ba1ffe92ccb92977b55332355b86d581973fa4006c35eb70cff18b8901e8fd2"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:17.447252+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:29:08.041457+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8d3e6191b7712e3a17122282ddb03cdbc1432a072b215cadbf97781fad2d9073"
+      },
+      "differingFields": [
+        "attempts",
+        "created_at",
+        "last_attempt_at",
+        "message_id",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.011185+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:27:08.107035+02:00",
+      "conflictType": "MANUAL_BUSINESS_DECISION",
+      "recommendedResolution": "MANUAL_REVIEW",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:95ef5fae00a8f0d0e8b901a071425b74b7c6154ce70b7b33d62555781eca67f1"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.410366+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:08.858507+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:97e0ae34b5f1b0cbfdd4ca3aed35c095a73c0cc4611bf7eae316717aa3eddd90"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.379334+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:38.619833+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9cd79eec60b34fa433c180e03298f9b2984c468822f8f15b69f744117578ef60"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:30:10.803921+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:31:08.196632+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9e336cb6f8f71b58126a27c1e0d088748fc788ae781499c8742fffc7f9699ce0"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:37:53.628717+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:08.119523+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a89bcfc00672fcbe4f3d2d5f8bd83960686347c2f5bdcc296ba25d239b137e29"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T16:56:37.09037+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:37.89668+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:aeeec9c47452b11fe57b7bd2a9d3f4798845922f3f5287511a4b73578f72278a"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T11:58:23.808052+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.16448+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b10cb69dfbc4197db1b1268a194dc6c1e6c198f5c4ec9011aabe11e54e553455"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.37026+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:38.31511+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b17d817f42686134cdfbbf3288dbe72003187172a46ac3964474f8e59095a00e"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.787563+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:53:19.172704+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b633f8e309953e241b11cafe5f8ed3b3b888a1fa87b4337bba0a990fa394d264"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.501511+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:58:24.076895+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c227cb800143f75286e3be40c2fa04c18d8cfbb25702859d3b50b72dfe2b088e"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.59776+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:38.142709+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cf25e951a79867956ccacccb3ae37d1cee0af25303307e9404b714642a0d7798"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T15:51:41.008556+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.254605+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:da73c5f2d29ecddc55a0164043aba665f2469d5e906383dcbbc2bab8d6a1ecf0"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.101486+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:54.14866+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dbc0a9dfe271a33357232e31985efda2b42053a426433e93f05f8c99033598f2"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:12:22.976373+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:53.382024+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dd848f446dc69da5f0977718181c157efe631818fdcb43552fadc494ed4cc1be"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T15:15:25.803428+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:08.044318+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e38cdd03298412c9ee405d4ca34efeb07a329ad3dfc4c8f434ae277c9f0b3dc7"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.680635+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:23.268797+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:eb34f38cfef14eaa1d2f972210b567bc1c050a686b6e13e02795c2d01101fdc3"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:24.768913+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:29:53.040918+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ede58da57b940d3384f21a8f8705947dbb2b52e0bd18c87a5aac576c3183d7b3"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:19:38.881358+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:59:09.233122+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f3d3ff7cf0a756f0ddc5fe07b954518c37e899aa52a5ab6eb243e173b1d9bd1f"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:51.35294+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.58168+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f6341d4064a900e3a95ac9f2f0d5527a6bfee1f3bae229a77bab539149011776"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:19:57.759132+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:59:11.102852+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f97737d57caf4e153c2429f928f66e4832424a02bd831af1039f6862bde87e5a"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "next_attempt_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.800754+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:54:04.162331+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_attachments",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fe0bfb4d74575554f05d36a6d3bac32c52553845655f150cf6790d18f2dfacfe"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "metadata_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.172277+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:58:53.004241+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:01f9a81c00ab4a661eb15a73ff152ddac4ec3aecd9e035fab492ef545356bd34"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T18:52:36.238731+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.753709+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1759956a09e607420bdc9043ff66e51c2ba092db13fffd8efd230ca6bfdff03e"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.528574+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:00:38.127042+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1f285ccfbfb01f8a72e1bc84813f6dbb4b962ae19f6bbb93ef929ac21aac76e2"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.239188+02:00",
+      "railwayUpdatedAt": "2026-07-28T08:00:07.794013+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1fa8cc549eed4075b5999dd3c5b956f1d9cc2ac59484b89aa6d66fc94650ec1d"
+      },
+      "differingFields": [
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.014907+02:00",
+      "railwayUpdatedAt": "2026-07-28T14:00:08.948345+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:327e5bd2bab41ecc6b89d1b7c0f66f493b1de61b14c7002321762649f9c5b3a6"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T11:19:55.976795+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:34.439325+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3bc665039a4072eddd219e8f3cbdf87729e844da7de2a1490be3c7506e7be65b"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.506376+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:33.901708+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4709ec17dd242f679ea8ae640ce29c1e7fbe35dfcd97c6561e784cf637a07af6"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.016289+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:30.608027+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4e2ac7f629ff99098625fcd44fd80c79f91a7b0e4efb93f4ce17e0bcfaa29583"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.209113+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:26.921418+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:570cdcd31c6c582124d3fc606161426233cbd6354701d5d4c50f0be58c2f8a88"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.787181+02:00",
+      "railwayUpdatedAt": "2026-07-28T11:00:08.176838+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5a946ff65c9e72340f5fff34efabd5158f9137e6addf593dd6270c4325ae021f"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.887205+02:00",
+      "railwayUpdatedAt": "2026-07-28T10:00:08.033458+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6302790c129064d2ab8650cf8d889a302b25d51c3a9d4a0209dace5e11900e45"
+      },
+      "differingFields": [
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.165988+02:00",
+      "railwayUpdatedAt": "2026-07-28T14:00:08.55116+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:710559986d874f5b33ddc189b7aaa58057c6f4f757199079b7e3b7296a150d79"
+      },
+      "differingFields": [
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.598606+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:29.931286+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:77fbb1dd640316aadbce548bd628d2039d859328262055490333da60d7d9d5a8"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.04497+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:35.142998+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:881ff125b6829803dceebc16d311510f79e5e1fb280e40137a9638d5845ef889"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.419431+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:33.72383+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:919954405f8cdba54180b66701c38335272dbe1f521d6424ccc73b7b250bbabf"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-10T12:10:42.885111+02:00",
+      "railwayUpdatedAt": "2026-07-31T16:31:15.306492+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_READ_ONLY_FINAL_DELTA_2026-07-31"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:93d14fc0c83a7da5a15912193dcdfb62f9018edced3c8e7c611e3880b78d6c98"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.252217+02:00",
+      "railwayUpdatedAt": "2026-07-30T12:00:13.265968+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9505c72d92c769e34c8f5626f12313dda3d65f8a74187d1c01da6989bb556307"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.929134+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:30.266914+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9a137e612be8283cb7b54c40fcd23f378d2656c042a1929e8769e8bca82d5fae"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "unread_count",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.456235+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:28.202263+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9b06882ffd3a69e56b7e42c7915cdf235bad8227894fb928672333af68956f78"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "metadata_json",
+        "participant_username",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.672571+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:16:07.488956+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a2c8a4b2fcdf19d7973fbbbe32ad789c5e8fe55486300faa6e2dff799ecfe1b9"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:11:18.849602+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.541179+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a680cfb775a2d6e6647a3d57a5ef555c36f34bd20159daa037c206dfbebeefe4"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.699589+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:30.43117+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a766ea7edd88b85e6cefdc629d62baa501455ff4bdbe01d5b99f65da03d1c538"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.330959+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:33.439372+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c5f73dc1dc3836157799f27dc0ce8690dd8a05cb68e61fe8be0cc84956a1ae74"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:11:18.422086+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.103458+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c8f04b3808ec6029b0a8c789d37eaf04142904a9c856946a104c2852b97a85ce"
+      },
+      "differingFields": [
+        "avatar_status",
+        "avatar_storage_key",
+        "avatar_thumbnail_key",
+        "avatar_updated_at",
+        "last_message_at",
+        "metadata_json",
+        "participant_avatar_url",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.662502+02:00",
+      "railwayUpdatedAt": "2026-07-28T12:00:08.312342+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cabc3605d1e0f0e746fef9dcee45cd3ee15eb396234e92df1d5b6aa482a2c627"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.106402+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:31.679197+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cc72b07a22476daf66207a9109095d4e327138448e3f6a54ee76d414d0a28508"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.197216+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:32.580199+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:df32c7948e73a012c53b7c54d3026717230049faac87ff8f03c7dffec5a3e1cd"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T18:52:36.379682+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.871723+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:edab480a3d6a65613e9d1968c4130d16713bf0ab185c66577ff19d7f95f7a168"
+      },
+      "differingFields": [
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.659447+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:29.124475+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f06085301be6a2206e8e2bb879d6716539f8ab0347935a2dabc391dc051785a3"
+      },
+      "differingFields": [
+        "avatar_updated_at",
+        "last_message_at",
+        "last_message_text",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.786062+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:30.070735+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f29870715bee632d417bc73507c3eaa23a993e6a2d4e8585c0db6d38208f0186"
+      },
+      "differingFields": [
+        "last_message_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.854191+02:00",
+      "railwayUpdatedAt": "2026-07-25T12:00:38.430297+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f8f382c71b61ef38b98cd9b269af9f52d6e15d58488960fa50d4f03d98437791"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.186472+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:31.774225+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_conversations",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fb864c7839ff374cecccefc70db3e9ac3296b70f6d2a83e3a366d754ef7072f9"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T12:29:52.308002+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:35.837251+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0b38ec1fa9587b669b9f0d012418290569a3965d6cca60938fd9564cd863788b"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:10.305325+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:13.908379+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0c44629cb452856c2d7344167a9d88751087309cf356a6dc570269c267385e05"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:40.055102+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.06882+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0eb2ef0d155d23e1fddd2ddb5d37afc3a34092bf08b5d38232ff9e43f61b218d"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:40.268226+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:44.050461+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0fce1a32ad9a1214032c9d1c44b47822a7438d68ae0906bc458adbb798d05f5d"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:04:18.913074+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:43.525903+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1381e74718319322735a5830c1f9b437452511411f2f589576096c2d0a7ce4b7"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:06:21.742673+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:54:13.754024+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1a9a1968c2dc8597e0178be17977bd4b73c3458953adcb040d153f06e9426a66"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:09:24.593914+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:57:43.736384+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:1bd1147c7d986ed7d9190df1b65ae4d3a1fdad2f964a09fdd77c1cca06479dc2"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:06:59.29474+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:14.926124+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:279eff20a3141c6ca398cfec521d999ef060d50410aa70b74e0ae12ee7699ec8"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:09:09.365772+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:56:30.102665+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:27a7cae9cf83f8157cb567de3b8f009bbb08d39a2a2a1b364eea7b85a5f8a624"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:12.623725+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:20:58.815078+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2ee9eb4ac3ef8b83499a6970039fbd605066f3b8b73f41e1fdc6461c8817c0d4"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:26.75523+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:28.966709+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:30d87895b7b24e9db85da8572df4026a419e786c4d6c8ac597749ae3e388b643"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:26.719803+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:43.830598+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:33d296969fa96bc8e37ab8ece90617fde7ba08da6017a398a7bf85be7e38055f"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:55.258062+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:22:13.807689+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3df3b961069481c38cb4fa6e2a9b3f1b107d4abf244d3ad2ee489e69b316fbfd"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:11.70295+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:14.023647+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:414fb7e206a2563e19a401ecca5bbae11eb688bc56bdccf68451978596ee7167"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:04:06.672049+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:43.443156+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:45078aa2085ade219ddf99b32a7fa7bbcdf7fdd9093969e389cfa0cbeed820de"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:04:20.32114+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:02:13.482615+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:467e3097d2a3dda2f9955e8823aba870d4738784a86e9ee0b4565761ad38f781"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:09:47.470188+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:58:14.927877+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:49673bb7d556cc216c57376579d6fcf05427a33dee3d0ff2f06053d5b4021463"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:53.722286+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:28.439237+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:49fcc6461466078df230626aa8ff81a31f2654ea085169b55e59cd124344e656"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:12.759652+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:13.697842+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4a7e743b76889dd234b802802837500c314f4c24eb4a4a1306b288626c2299be"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:30.893754+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:15.977276+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4a7f55a3b2caef38e8ad6498ff4ce681d2400ccdd9bf7e4f74bfb59a658f5c2f"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:55.341739+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:43.786895+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4ba687f159d549b682c13a751b43111905903ab421a0fc47979ee38be2001f4e"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:40.328822+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:43.89613+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4ec5ed2c66df6ddc0883939eedf46471e2defa83e1918b4bfba696292367229b"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:56.727197+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:28:58.905575+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4fd537bef0bd0a20f91728da34ddb7ba568cfdc6267175322843b78ca9cb86be"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:25.259471+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:28.805649+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5091a2947ebdad6e7dedae25696b10c5600771942985920c8e03105cea51a7da"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:04:03.907668+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:28.547347+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5413bf7f2b69eedaa4144ff8a1977a9bd9e6c7b3a1a102a3c07d3e7c53c3d850"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:41.73596+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:43.982141+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5b843c543085b06b20deb6f367d3d850d81b55058221e97364ae7356a8d31d1c"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:28.131956+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:43.930994+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6428dfb83888268a185391bcef2095cafcb6f20cb2d62129352643aefdf96da5"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:10:10.303099+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:58:43.819181+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6e93a3714e49be1946535688a473561897057d7db8373150989d79d6a39c756b"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:15.511337+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:14.156871+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:703c9e568b23c31b3ce6fa3aa627a92c98335a5c3d121b154b94381bb9792c11"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:51.359374+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.603731+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7d0ad6db3ddb5802d59e4de235253f68e8d0117b86e6c41e4626f2b4178ca778"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:43.144697+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:44.073139+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7d0afde99d7b085a3eba54efaf8b52019ac3f0f26e040e73310c1e8ec8575ce1"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:34.817804+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:00:58.496485+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7e02a45c5ac97758e104397041650afa83dcce08a025661fdc4084bc6d497ba1"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:38.909731+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:13.431904+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:85de1cab4630b81e28fe540405b792145f208873ce2ea2bb9388291ef2dac3a8"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:43.098504+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:58.884135+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8bd7036be1cc364a58563d5251755db46d46cd7860e9e3a6d922692e51e7deda"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:36.570824+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:28.740194+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8c35e1a07417817ace5f89b9e0394fc37404ff3b2dd517a45412755f8a0fa514"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:55.281567+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:59.089611+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8c575729a532a93cba272f0fbc9678b018c613a72ffb9ae7bac10e4364bffc2d"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:08:37.729064+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:59.261136+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8cc3b72b6ac21f4ccb708291de8b627818b366a50e4617d273f483f1891b84a2"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:14.082713+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:13.913755+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:902552956c8c572dbffa8cfc1aef053b77e03def31e7773bcbb1dd9088f7d08b"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:14.169826+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:28.684975+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:90784108631c504b2fa96213bd52a2ad8814be664a46692b820a01feefae3861"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:09:55.072945+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:58:28.831023+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:948671745a3c2a786da1cae67943a6d1b535c940c79af6717324e3225e7369b3"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:52.30506+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:13.602373+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9585061106688bace63f69a7195883bfc31327d31bf846b429cc36f6a83e5f42"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:06:53.391462+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:14.585227+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:978ce3130539dced048685830a22833791d6fe46945fcb70ac12a3a2116889b9"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:08:15.74962+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:58.587542+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:97d13c6edea49bbd8dba17b3ec86b6edc7d4a27314011cd016c90d1546864261"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:58.140254+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:28:58.993423+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:98c4bc22f8b08beadd193d31801b274c668b2e0d17df13ab2ca81a680bcfa5f2"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:50.881491+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:13.514207+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9e53cac18b323d2d794635ac8c96f36072eef81829207dd66d308a57a67f3776"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:25.312873+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:28.883805+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9f1b787f38148f025a516385b973b8376d3ad332f04fce86fee34ebb7c83c616"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:56.706184+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:11:13.606803+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a47ba9a34a677dc362e56a330a835c837719ead302df569114b9422e974cac5d"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:25.260804+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:28.779505+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a51e5c46e2930b7a0684eb2dcd759c1cf41729668bea4a17d7ea0aa3dc60c77e"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:58.269895+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:20:43.810353+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a5ff7c1671a4e2162e2160efb99c67829a4c75ef20542f4e597c0e9e491a5f35"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:09:40.880541+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:57:59.930673+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b5b95f90a6cfeb340eeb9c9e5a4bf3fa0955ebf018bf68b19388df467ff3545b"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:26.656469+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:28.902813+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b8d450e3d0941be8700e250b31849db7c5d267a72d40380fca641074aba49fb2"
+      },
+      "differingFields": [
+        "attempts",
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:03:37.518064+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:00:58.588082+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b91f1c529c572a4ee8d30ef7148893a208b73e76a2f35bf04a938bc07e06a219"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:41.674967+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:58.784872+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cbf968826c660ee4a99589013d2653a42137a5bb26975b550e0817020c527194"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:41.688624+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:58.791586+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cf27e6af461a50248661d6e418960a1a21df96df731672d6c19acb4cc063e0ec"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:04:05.294052+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:01:28.629128+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d92f461f6f3b2bb3dd7c478a3bf4e4ebfb8d6bf4b4bfe590e16b25dcb011e0ed"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:55.32119+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:28:13.918392+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:dc8a59279a8c1eb01f03363c65b44536a213d04748819f115649d28d84453c51"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:08:22.164787+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:58.980784+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e0342a67431b5aeef42d3c15fde8b0442a5d2bcf00e5c2c424cd9a5e1afff02f"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:28.082793+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:43.744643+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e1c421f6be03c20a43b9d85d2a83d1c456a8b4bce2aa2ebb45359b1b198b0c73"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:16:40.280707+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:21:44.078395+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e31decb44b2a6871e327be124b80edd87e3e9b39ad2e0b3961d61b1cd0a1ee00"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:11.342699+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:13.591271+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ee84a8fad9cecf1e756001033cfbb99c808fd941243ae8081fb47dbe475d145a"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:15:43.069139+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:10:58.996237+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f2aaad9487be0a428c662d2da1603f8a7eb59789458f5035ea22747d6958c188"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:59.844748+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:44.068057+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f4390c82b2728114792a1b7ea812b61ba6688000076d23ae2631bab8cbdee1be"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T23:33:28.28011+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:27:29.053941+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f4b676b7e5050afced9a31d10469fa3130ef64f3ef6c2aa2e2409b6fb2e44c29"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:08:44.000095+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:56:13.876995+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_media_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fb3bad0d9641341053f8fe979b00d3f2e0e96989c5517fa6357a06e96c1d63b0"
+      },
+      "differingFields": [
+        "last_attempt_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:08:09.407613+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:45.504001+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:04b54db65cc84f211d1bd677ab9b62df65f10ce3e4ea84bb20ba82e492fb78be"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.685238+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:23.287155+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0b2b259f4f3e6fe6ee78196a5092cb85aaca80cb5a174943309662daf6b656a4"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.797458+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:53:49.260681+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0bdf0d29eae420658bcaab28810c5fa5d5bf96378627681afc88b90df33992dc"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.846064+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:38.194542+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0cc0c569ac07e039d2d06598fe6b0045916e31d2fc8d3f61c13510cecf3d7e7d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T15:51:41.011459+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.27706+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:2017397f6fa6778063837248912483af0c8c2c6cfc995eb27f93b0e29fc38ffb"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.331614+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:09.365053+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:30dbed026f1d25a8af1e30b59365c9810d7bc27e7bc2daaac46b6e3c8001b851"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.104669+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:54.16656+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:312eb104c6f412b25ffca34d8344af8873c9c1c70e7926c74cc3ef07c2dd4736"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.401327+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:08.085255+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:357e2c9c2b5f8a4252f581cb06eadc84ed85724444e277774d20062a96cebfe3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:30:10.809535+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:31:08.219681+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:36705b11449f82c17cfd9df01fb1191ed7d8348ba55c052321d692e1ec77fc04"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.40592+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:23.069458+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3a6fe2a6cc84c75a25d8d2d624bf64c90815e1d0a789942bfb8c0c7bea4f2c50"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:36.568576+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:28.732445+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:3bd66458da563807cfa313e1c83ba2098b8c00f201371c48ba9256d77e73ac07"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:37:53.632305+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:08.135734+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4d38dc5fd0b6eec787163a9da53d203ae7aff771aca19cec299fdba871fb3512"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.791124+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:53:19.19382+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:4f8407402ff6d9827326e5d8d106f33a814c5a3b168a5aa420da45137a8a83a6"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.803597+02:00",
+      "railwayUpdatedAt": "2026-07-24T14:54:04.183796+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:5478f8dae73a654ee818971d57f88570bd885b069911cd0c0d4420c88f20c243"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.504681+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:58:24.096681+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:64e4ef71a35d67e92b01f7456e15d86bdf0b1b01402e5b4458acd2df691cc62d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.366845+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:37.997873+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6519b16734e2205d9edcb331cf6b5f9b7943224e649cabdeca25af5c2edd4c5d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.346735+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.263712+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:676bbc4cbae65642019f17c71f4d581094daf95ff6efcc4e371e7073447f1beb"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:12:22.97983+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:53.397751+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6a1d52abc774a1b8340c2e848ac4f94177dfc4bea6daddbaa665f6e819c38c0d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:19:57.762631+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:59:11.121511+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6beb63ac6874a9a9f3b21ef737e4671aa4f1b1df7d365892ab84a11de06187ac"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.382317+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:38.637922+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:79a94d7e1d91004613a159ae2595488d770a6650888997a89b9e39b6f86be004"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.600811+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:38.166564+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:7b90cf57f8a1dee8d11374acba91b17c98a6b1181d37c81e02fa4f815f0af536"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:24.774203+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:29:53.067144+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8348396ba98ec4b5c1068f97f535b12ca15dd7077bc276c6f8cd3528afc04a30"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:31.176208+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:58:53.020794+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:8631683a4d0ae4bd1136a7ad9f66e566471df8e15ba2e968ce1af7c51ce48f99"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T16:56:37.093277+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:37.914793+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:88f4f0b3ec723b339f754f0237ca771f253fc96078a8a0fa511f96175a2454cd"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.41322+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:08.877661+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:95076bb52ce6d884f8b3c7ab738d31e052c99463e697df389ca228051506943e"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.355609+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.538109+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:9632a4c7ed4c350713c31431f2725607c9a609949f422e01fc626adeb015c84d"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T08:50:38.47411+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:53.078659+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a104a6884fd14d093ab0c0ebdee2732d85f62626fb1d726eeef3b812a255b860"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.338866+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:24.021958+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a61c52530f992efcfe435653fb171454205dadd66fd6de5cd42f7cd678f5a026"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:57.654992+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:31:08.12084+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:acbdbdf9d7cd6fb411ebb2ded5911a817a868438497d775f24475ba97eee0dc3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T11:58:23.811462+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.187381+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:b2e8c31e3286dfeeb9372f0b000a73ba7626a5b436fc8bb79d1684f6a6c3f1c4"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.389294+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:53.770841+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:baf2a4fd7425b7fbf8c8532d600d822955457575d1a1e9003b7473a8c32b56e5"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:28.374612+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:38.333811+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c274e3daee0c68d7d54c136a47ad3f9a540b6df81d8e645115496ce9dac8bbea"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:29.651278+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:53.098904+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c45d40dfa36b251c96a387252877087c1400785c4e352a43df12fc280d6db57c"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T08:19:38.884678+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:59:09.250068+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c591f6ca46f72806b32b4e169d997294ac23e89a3898faaf21affeac1a3d1a64"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T09:29:12.133601+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:55:07.888745+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c792feb5d80a6b790f02e6ee283dc2f2be7eb372462bb2e0c48267beba0dde0e"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T15:15:25.810291+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:08.067942+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:cac37e2d90c8ee43f3a10023e90a81e3c52db05ac86fcde95ef7fd2ad07045ec"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.142083+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:56:54.897999+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d6b48e8be01abd6830f8388cfaffcb1433f6f5a173f1612b1234734ef3e15890"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-26T21:29:17.458786+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:29:08.064795+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:d88e2666bbf212ab0293a7b985a0ca7b1d0346b599a6f3c6aae119a86046f278"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:51.356082+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.596206+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f1b23dfce535e05a2add33185eb85ab6e730c056efe659d7b8e5e90a6bcc6c5c"
+      },
+      "differingFields": [
+        "attachments_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.593804+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:30:38.073348+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f369f96593535958cb769b210107e40a9ea73246f68550e8aa518daa3c96337c"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:07:40.052708+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:55:29.06135+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "messenger_messages",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f3b05bcd464063afc130b24b39b8064ed59c8b621a99c0963dd1db68f74abae3"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:30.656001+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:57:08.526975+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0252b2de2fc8ae370484570b7d21048aac30e5f01397199d12ecff3bb50e85b2"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T07:00:38.138965+02:00",
+      "railwayUpdatedAt": "2026-07-25T07:00:37.931783+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:19e8f5e2a3313d4ab6bbddd706597819f482e707fbd71a21fce1fbf7b8d8eb11"
+      },
+      "differingFields": [
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T19:50:32.09337+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:00:38.258386+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:405b705b7c1471b4ea034bcbfdb5b12ccacdb708ea7bd76f564c96c70fc26861"
+      },
+      "differingFields": [
+        "conversation_id",
+        "error_message",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T21:00:07.408032+02:00",
+      "railwayUpdatedAt": "2026-07-25T12:00:38.647253+02:00",
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:479d0dd8dbee0035c4f98e7828115faddbb0b41f794ae4927a829af896ad4ae8"
+      },
+      "differingFields": [
+        "error_message",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T13:35:48.262378+02:00",
+      "railwayUpdatedAt": "2026-07-29T06:00:09.983238+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:6b4ed2d19524c0cbb0a670a74cb726ca46be393fc5c0d448311e1cc39b2c9fa3"
+      },
+      "differingFields": [
+        "attempts",
+        "error_message",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "next_attempt_at",
+        "provider_message_id",
+        "sent_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T20:03:23.876939+02:00",
+      "railwayUpdatedAt": "2026-07-24T19:54:36.869495+02:00",
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:746cf3ea8ca559387e692ff6256c629e2f2a4f70eaa6e0154a8272991d5e8592"
+      },
+      "differingFields": [
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T08:00:02.06579+02:00",
+      "railwayUpdatedAt": "2026-07-28T08:00:08.032536+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:770796422fe42e3eb76eb5f0b37a64f517faaecdaefc660c525788cc653ebb78"
+      },
+      "differingFields": [
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T10:00:02.150571+02:00",
+      "railwayUpdatedAt": "2026-07-28T10:00:08.241421+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:84e2962cf5646889def887b2033d208d7d4f99da7e4d431497a1a963a0606e77"
+      },
+      "differingFields": [
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T14:00:02.404148+02:00",
+      "railwayUpdatedAt": "2026-07-28T14:00:08.842912+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:a5ee109278a91be50d4454bd497640748bc3653c87581d87ed7ac5208712b323"
+      },
+      "differingFields": [
+        "attempts",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T20:28:06.48957+02:00",
+      "railwayUpdatedAt": "2026-07-25T10:00:38.408518+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ba263ea813b6b17dd7bfa4c94580b003ed00db40abc4a8cefee334e4f27aee05"
+      },
+      "differingFields": [
+        "attempts",
+        "error_message",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "next_attempt_at",
+        "provider_message_id",
+        "sent_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T19:07:23.79546+02:00",
+      "railwayUpdatedAt": "2026-07-24T18:57:36.972507+02:00",
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:c6605f9be16a2741694cbbfdce6f82faae04ab4e385604b817f4cb50c31c548b"
+      },
+      "differingFields": [
+        "attempts",
+        "conversation_id",
+        "messenger_message_id",
+        "messenger_outbox_id",
+        "provider_message_id",
+        "sent_at",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T12:06:11.106312+02:00",
+      "railwayUpdatedAt": "2026-07-25T08:00:38.369334+02:00",
+      "conflictType": "RAILWAY_CONTAINS_MISSING_FIELDS",
+      "recommendedResolution": "APPLY_RAILWAY_FIELD",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:e8f6121b9602e28fc55d65ec45bff72a797f8fef38187e36f3094e5ad63a55c4"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T07:00:01.462394+02:00",
+      "railwayUpdatedAt": "2026-07-28T07:00:07.457254+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:ee2d3282335d6647b6814adbf43029d254565e646ec6af82a208c0f5de5bf7f7"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T06:00:01.342022+02:00",
+      "railwayUpdatedAt": "2026-07-28T06:00:07.332895+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_jobs",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f09e196c4cf1fbf0204df7c1f853614c96c1281c7d502e6957258e0a560ff255"
+      },
+      "differingFields": [
+        "attempts",
+        "error_message",
+        "status",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T21:43:05.155328+02:00",
+      "railwayUpdatedAt": "2026-07-25T13:00:38.607643+02:00",
+      "conflictType": "INVALID_RAILWAY_STATE",
+      "recommendedResolution": "REJECT_RAILWAY",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0367c2f1e53f1f48d92802cb72ea3f7098e6c329334b0d640f2742c11cb21028"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T17:41:06.219728+02:00",
+      "railwayUpdatedAt": "2026-07-26T21:48:10.794724+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:750725c5943c71ddc73b83924d14e5cc32e178aa05391ffad55c369f365ce5b7"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T17:41:06.222624+02:00",
+      "railwayUpdatedAt": "2026-07-26T21:48:10.810153+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "notification_rules",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:bc72819ee59ddbc62429e10ccaf3c94408ceed6f59e16c473a8d7076c8d900a1"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-27T17:41:06.224317+02:00",
+      "railwayUpdatedAt": "2026-07-26T21:48:10.825131+02:00",
+      "conflictType": "IDENTICAL_BUSINESS_DIFFERENT_TECHNICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "telegram_user_sessions",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:42dc5a8ff4e7fe86507ad1ac5621652f4a7ec5acb255d77b41cfee2f5b16120d"
+      },
+      "differingFields": [
+        "last_sync_at",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-28T20:01:32.606715+02:00",
+      "railwayUpdatedAt": "2026-07-25T09:54:36.960186+02:00",
+      "conflictType": "EPHEMERAL_CONFLICT",
+      "recommendedResolution": "SKIP_EPHEMERAL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "vehicle_lookup_cache",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:f121e992f213ba5551d4dbbdc8b1e389e14cf39731ed2e212a8abece6f5aea7e"
+      },
+      "differingFields": [
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-24T22:08:17.086+02:00",
+      "railwayUpdatedAt": "2026-07-24T09:49:52.514+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "vehicle_lookup_cache",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:fa37661c4973739bef6a354ac4ce22a4eaf77d4c158628022740202ccd80379a"
+      },
+      "differingFields": [
+        "normalized_vehicle_json",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T10:49:22.408+02:00",
+      "railwayUpdatedAt": "2026-07-23T09:29:35.185+02:00",
+      "conflictType": "DERIVED_CONFLICT",
+      "recommendedResolution": "RECOMPUTE",
+      "risk": "HIGH",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    },
+    {
+      "table": "vehicle_model_aliases",
+      "primaryKey": {
+        "columns": [
+          "id"
+        ],
+        "hash": "hmac-sha256:f5ed85ce298ddfd9:0a9ec7e7a129578b7587e2aae2ce5c44d7e338b145a4de1c7d182058b8da06b4"
+      },
+      "differingFields": [
+        "canonical_generation",
+        "confirmed_by_id",
+        "updated_at"
+      ],
+      "selectelUpdatedAt": "2026-07-25T22:12:49.719+02:00",
+      "railwayUpdatedAt": "2026-07-24T09:50:21.983+02:00",
+      "conflictType": "SELECTEL_CANONICAL",
+      "recommendedResolution": "KEEP_SELECTEL",
+      "risk": "LOW",
+      "sourceSnapshot": "RAILWAY_FULL_DUMP_OR_PRIOR_SUPPLEMENT"
+    }
+  ],
+  "supplementalConflictCount": 2,
+  "sourceConflictCount": 282
+}

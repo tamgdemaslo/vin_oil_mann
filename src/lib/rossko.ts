@@ -1,4 +1,6 @@
 import * as soap from "soap";
+import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
+import { getBranchIntegrationValues } from "@/lib/branch-integration-credentials";
 
 const ROSSKO_WSDL_BASE = "http://api.rossko.ru/service/v2.1";
 
@@ -135,31 +137,36 @@ function assertSuccess(data: Record<string, unknown>, fallback: string): Record<
   return data;
 }
 
-function envOpt(name: string): string | undefined {
-  const v = process.env[name]?.trim();
+function configOpt(value: string | undefined): string | undefined {
+  const v = value?.trim();
   return v || undefined;
 }
 
-export function rosskoConfig(): RosskoConfig {
-  const deliveryPartsRaw = (process.env.ROSSKO_DELIVERY_PARTS ?? "true").trim().toLowerCase();
+export async function rosskoConfig(): Promise<RosskoConfig> {
+  const values = await getBranchIntegrationValues(
+    "rossko",
+    ["key1", "key2", "timeoutMs", "requestsPerSecond", "deliveryId", "addressId", "paymentId", "requisiteId", "contactName", "contactPhone", "deliveryParts"],
+    ["key1", "key2"]
+  );
+  const deliveryPartsRaw = (values.deliveryParts ?? "true").trim().toLowerCase();
   return {
-    key1: (process.env.ROSSKO_KEY1 ?? "").trim(),
-    key2: (process.env.ROSSKO_KEY2 ?? "").trim(),
-    timeoutMs: Math.max(5_000, parseInt(process.env.ROSSKO_TIMEOUT_MS ?? "20000", 10) || 20_000),
-    requestsPerSecond: Math.max(0.2, parseFloat(process.env.ROSSKO_RPS ?? "4") || 4),
-    deliveryId: envOpt("ROSSKO_DELIVERY_ID"),
-    addressId: envOpt("ROSSKO_ADDRESS_ID"),
-    paymentId: envOpt("ROSSKO_PAYMENT_ID"),
-    requisiteId: envOpt("ROSSKO_REQUISITE_ID"),
-    contactName: envOpt("ROSSKO_CONTACT_NAME"),
-    contactPhone: envOpt("ROSSKO_CONTACT_PHONE"),
+    key1: values.key1.trim(),
+    key2: values.key2.trim(),
+    timeoutMs: Math.max(5_000, parseInt(values.timeoutMs ?? "20000", 10) || 20_000),
+    requestsPerSecond: Math.max(0.2, parseFloat(values.requestsPerSecond ?? "4") || 4),
+    deliveryId: configOpt(values.deliveryId),
+    addressId: configOpt(values.addressId),
+    paymentId: configOpt(values.paymentId),
+    requisiteId: configOpt(values.requisiteId),
+    contactName: configOpt(values.contactName),
+    contactPhone: configOpt(values.contactPhone),
     deliveryParts: !["0", "false", "no"].includes(deliveryPartsRaw),
   };
 }
 
 export function assertRosskoKeys(cfg: RosskoConfig): void {
   if (!cfg.key1 || !cfg.key2) {
-    throw new RosskoError("ROSSKO_KEY1/ROSSKO_KEY2 не заданы");
+    throw new RosskoError("Для активного филиала не настроены key1/key2 интеграции ROSSKO");
   }
 }
 
@@ -225,6 +232,8 @@ export async function rosskoCheckout(
     parts: RosskoCheckoutPart[];
   }
 ): Promise<Record<string, unknown>> {
+  assertExternalSideEffectAllowed("supplier_order");
+  assertExternalSideEffectAllowed("rossko_order");
   assertRosskoKeys(cfg);
   const payload: Record<string, unknown> = {
     KEY1: cfg.key1,
@@ -278,10 +287,10 @@ export function suggestRosskoDefaults(details: Record<string, unknown>): {
   payment_id?: string;
   requisite_id?: string;
 } {
-  const deliveries = findCollection(details, ["TypeDelivery", "typeDelivery", "Delivery", "delivery"]);
-  const addresses = findCollection(details, ["AddressDelivery", "addressDelivery", "Address", "address"]);
-  const payments = findCollection(details, ["TypePayment", "typePayment", "Payment", "payment"]);
-  const companies = findCollection(details, ["CompanyList", "companyList", "Company", "company"]);
+  const deliveries = findCollection(details, ["TypeDelivery", "typeDelivery", "DeliveryType", "deliveryType"], ["delivery"]);
+  const addresses = findCollection(details, ["AddressDelivery", "addressDelivery", "DeliveryAddress", "deliveryAddress"], ["address"]);
+  const payments = findCollection(details, ["TypePayment", "typePayment", "PaymentType", "paymentType"], ["payment"]);
+  const companies = findCollection(details, ["CompanyList", "companyList"], ["company"]);
 
   const delivery = pickByName(deliveries, ["курьер"]) ?? deliveries[0];
   const address = addresses[0];
@@ -289,17 +298,18 @@ export function suggestRosskoDefaults(details: Record<string, unknown>): {
   const company =
     pickByName(companies, ["елисеенко"]) ??
     pickByName(companies, ["ип"]) ??
+    companies.find((row) => !/частн/i.test(displayName(row))) ??
     companies[0];
 
   return {
     delivery_id: idValue(delivery, ["ID", "id"]),
     address_id: idValue(address, ["ID", "id"]),
     payment_id: idValue(payment, ["ID", "id"]),
-    requisite_id: idValue(company, ["ID", "id", "RequisiteID", "requisite_id"]),
+    requisite_id: idValue(company, ["ID", "id", "RequisiteID", "requisite_id", "requisite"]),
   };
 }
 
-function findCollection(root: unknown, keys: string[]): Record<string, unknown>[] {
+function findCollection(root: unknown, keys: string[], itemKeys: string[] = ["Item", "item"]): Record<string, unknown>[] {
   const wanted = new Set(keys.map((x) => x.toLowerCase()));
   const seen = new Set<unknown>();
   const queue: unknown[] = [root];
@@ -319,7 +329,7 @@ function findCollection(root: unknown, keys: string[]): Record<string, unknown>[
     if (!isRecord(cur)) continue;
     for (const [key, value] of Object.entries(cur)) {
       if (wanted.has(key.toLowerCase())) {
-        const arr = asArray(value);
+        const arr = asArray(value, itemKeys);
         if (arr.length) return arr;
       }
       if (value && typeof value === "object") queue.push(value);
@@ -329,9 +339,14 @@ function findCollection(root: unknown, keys: string[]): Record<string, unknown>[
   return [];
 }
 
-function asArray(v: unknown): Record<string, unknown>[] {
+function asArray(v: unknown, itemKeys: string[] = ["Item", "item"]): Record<string, unknown>[] {
   if (Array.isArray(v)) return v.filter(isRecord);
   if (isRecord(v)) {
+    for (const key of itemKeys) {
+      const nested = v[key];
+      if (Array.isArray(nested)) return nested.filter(isRecord);
+      if (isRecord(nested)) return [nested];
+    }
     if (Array.isArray(v.Item)) return v.Item.filter(isRecord);
     if (Array.isArray(v.item)) return v.item.filter(isRecord);
     return [v];
@@ -341,9 +356,13 @@ function asArray(v: unknown): Record<string, unknown>[] {
 
 function pickByName(rows: Record<string, unknown>[], tokens: string[]): Record<string, unknown> | undefined {
   return rows.find((row) => {
-    const name = String(row.Name ?? row.name ?? "").toLowerCase();
+    const name = displayName(row).toLowerCase();
     return tokens.some((token) => name.includes(token));
   });
+}
+
+function displayName(row: Record<string, unknown>): string {
+  return String(row.Name ?? row.name ?? row.requisite ?? row.Requisite ?? "");
 }
 
 function idValue(row: Record<string, unknown> | undefined, keys: string[]): string | undefined {

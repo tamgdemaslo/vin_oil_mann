@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await rosskoOrders(rosskoConfig(), ids);
+    const data = await rosskoOrders(await rosskoConfig(), ids);
     return NextResponse.json({ ok: true, data });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -1,11 +1,19 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import AppHeader from "@/components/AppHeader";
-import IdleLockGuard from "@/components/IdleLockGuard";
+import { MessengerProvider } from "@/components/messenger/MessengerProvider";
+import { MessengerWidget } from "@/components/messenger/MessengerUi";
+import PlatformShell from "@/components/platform/PlatformShell";
+import RouteTitle from "@/components/platform/RouteTitle";
 
 export const metadata: Metadata = {
-  title: "Эко-платформа — продажи и деньги",
-  description: "Эко-платформа автосервиса: отгрузки, касса, выплаты и личный кабинет",
+  title: "Главная | ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ",
+  description: "Личный кабинет ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ: отгрузки, касса, выплаты и организации",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -16,9 +24,12 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="antialiased">
-        <AppHeader />
-        <IdleLockGuard />
-        {children}
+        <MessengerProvider>
+          <RouteTitle />
+          <PlatformShell />
+          {children}
+          <MessengerWidget />
+        </MessengerProvider>
       </body>
     </html>
   );

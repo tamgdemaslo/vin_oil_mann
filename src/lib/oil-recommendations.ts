@@ -1,7 +1,8 @@
 import OpenAI from "openai";
-import { moyskladFetch, getMoySkladAuthHeader, MOYSKLAD_BASE } from "@/lib/moysklad";
+import { prisma } from "@/lib/db";
 import { getOilLineBaseName, parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { normalizeSAE, normalizeOEM, normalizeACEA, normalizeAPI } from "@/lib/oil-normalizer";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type {
   VinDecodeResponse,
   OilRequirements,
@@ -12,6 +13,24 @@ import type {
 const CACHE_DAYS = Math.min(30, Math.max(1, parseInt(process.env.OIL_CACHE_DAYS ?? "7", 10) || 7));
 const CACHE_TTL_MS = CACHE_DAYS * 24 * 60 * 60 * 1000;
 const cache = new Map<string, { requirements: OilRequirements; at: number }>();
+const OIL_PRODUCTS_CACHE_TTL_MS = Math.max(
+  60_000,
+  parseInt(process.env.MOYSKLAD_LOOKUP_OIL_CACHE_MS ?? "1800000", 10) || 1_800_000
+);
+type BranchOilProductsCache = {
+  snapshot: { at: number; products: OilProduct[] } | null;
+  inFlight: Promise<OilProduct[]> | null;
+};
+const oilProductsCacheByBranch = new Map<string, BranchOilProductsCache>();
+const oilCandidatesCache = new Map<string, { at: number; products: OilProduct[] }>();
+
+function getBranchOilProductsCache(branchId = getScopedBranchId()): BranchOilProductsCache {
+  const existing = oilProductsCacheByBranch.get(branchId);
+  if (existing) return existing;
+  const created = { snapshot: null, inFlight: null };
+  oilProductsCacheByBranch.set(branchId, created);
+  return created;
+}
 
 function getCacheKey(vin: string, market?: string): string {
   return `${vin.toUpperCase()}|${(market ?? "").trim()}`;
@@ -191,38 +210,35 @@ async function getOilCapacityFallbackFromOpenAI(
   }
 }
 
-/** ID доп. полей товара МойСклад для масел (задаются в .env). */
-const MOYSKLAD_ATTR_SAE = process.env.MOYSKLAD_ATTR_SAE ?? "";
-const MOYSKLAD_ATTR_OEM = process.env.MOYSKLAD_ATTR_OEM ?? "";
-const MOYSKLAD_ATTR_ACEA = process.env.MOYSKLAD_ATTR_ACEA ?? "";
-const MOYSKLAD_ATTR_API = process.env.MOYSKLAD_ATTR_API ?? "";
-const MOYSKLAD_ATTR_ILSAC = process.env.MOYSKLAD_ATTR_ILSAC ?? "";
-const MOYSKLAD_ATTR_VOLUME = process.env.MOYSKLAD_ATTR_VOLUME ?? "";
-const MOYSKLAD_ATTR_CATEGORY = process.env.MOYSKLAD_ATTR_CATEGORY ?? "";
-
-type ProductRow = {
-  id: string;
-  name: string;
-  article?: string;
-  meta?: { href: string };
-  salePrices?: { value: number; currency?: { name?: string } }[];
-  attributes?: { id: string; meta?: { href?: string }; value: string }[];
-  images?: {
-    rows?: Array<{
-      tiny?: { href?: string };
-      miniature?: { href?: string };
-      meta?: { href?: string };
-    }>;
-  };
-};
-
-function getFirstImageHref(row: ProductRow): string | undefined {
-  const first = row.images?.rows?.[0];
-  return first?.tiny?.href ?? first?.miniature?.href ?? first?.meta?.href;
-}
-
 function mergeUnique(values: string[][]): string[] {
   return [...new Set(values.flat().filter(Boolean))];
+}
+
+function decimalToNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value && typeof value === "object" && "toNumber" in value && typeof value.toNumber === "function") {
+    const n = value.toNumber();
+    return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+  }
+  const parsed = Number(value ?? NaN);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function attributesSearchText(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((attr) => {
+      if (!attr || typeof attr !== "object") return "";
+      const record = attr as Record<string, unknown>;
+      const raw = record.value;
+      if (raw && typeof raw === "object") {
+        const nested = raw as Record<string, unknown>;
+        return String(nested.name ?? nested.value ?? "");
+      }
+      return String(raw ?? "");
+    })
+    .filter(Boolean)
+    .join(" ");
 }
 
 function enrichOilLineRequirements(oils: OilProduct[]): OilProduct[] {
@@ -249,118 +265,128 @@ function enrichOilLineRequirements(oils: OilProduct[]): OilProduct[] {
   return oils;
 }
 
-/** Загрузить товары категории «масло» из МойСклад с полями SAE, OEM, ACEA, API, объём. */
-export async function fetchOilProductsFromMoySklad(limit = 200): Promise<OilProduct[]> {
-  const pageLimit = Math.min(1000, Math.max(100, limit));
-  let offset = 0;
-  let size = Number.POSITIVE_INFINITY;
-  const rows: ProductRow[] = [];
+function cloneOilProducts(products: OilProduct[]): OilProduct[] {
+  return products.map((product) => ({
+    ...product,
+    meta: { ...product.meta },
+    requirements_norm: {
+      sae: [...product.requirements_norm.sae],
+      oem: [...product.requirements_norm.oem],
+      acea: [...product.requirements_norm.acea],
+      api: [...product.requirements_norm.api],
+      ilsac: [...product.requirements_norm.ilsac],
+    },
+  }));
+}
 
-  while (offset < size) {
-    const res = await moyskladFetch<{ meta?: { size?: number; limit?: number; offset?: number }; rows?: ProductRow[] }>(
-      `/entity/product?limit=${pageLimit}&offset=${offset}&expand=attributes,images`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) {
-      console.warn("[oil-recommendations] MoySklad product list failed:", res.error);
-      return [];
-    }
+function getCachedOilProductsSnapshot(): OilProduct[] | null {
+  const snapshot = getBranchOilProductsCache().snapshot;
+  if (!snapshot || Date.now() - snapshot.at > OIL_PRODUCTS_CACHE_TTL_MS) return null;
+  return cloneOilProducts(snapshot.products);
+}
 
-    const chunk = res.data.rows ?? [];
-    rows.push(...chunk);
-    const reportedSize = res.data.meta?.size;
-    size = typeof reportedSize === "number" && reportedSize > 0 ? reportedSize : rows.length;
-    if (chunk.length < pageLimit) break;
-    offset += pageLimit;
-  }
+export function warmOilProductsCache(): Promise<OilProduct[]> {
+  return fetchOilProductsFromMoySklad(1000, { forceRefresh: true });
+}
+
+/** Совместимое имя: теперь загружает товары категории «масло» из локального каталога. */
+export async function fetchOilProductsFromMoySklad(
+  limit = 200,
+  options?: { forceRefresh?: boolean }
+): Promise<OilProduct[]> {
+  const branchId = getScopedBranchId();
+  const branchCache = getBranchOilProductsCache(branchId);
+  const cached = options?.forceRefresh ? null : getCachedOilProductsSnapshot();
+  if (cached) return cached;
+  if (branchCache.inFlight) return cloneOilProducts(await branchCache.inFlight);
+
+  branchCache.inFlight = loadOilProductsFromLocalDb(limit).finally(() => {
+    getBranchOilProductsCache(branchId).inFlight = null;
+  });
+  const products = await branchCache.inFlight;
+  branchCache.snapshot = { at: Date.now(), products: cloneOilProducts(products) };
+  return cloneOilProducts(products);
+}
+
+async function loadOilProductsFromLocalDb(limit = 200): Promise<OilProduct[]> {
+  const take = Math.min(1000, Math.max(1, limit));
+  const rows = await prisma.localProduct.findMany({
+    where: {
+      archived: false,
+      entityType: { not: "service" },
+      OR: [
+        { name: { contains: "масл", mode: "insensitive" } },
+        { name: { contains: "oil", mode: "insensitive" } },
+        { groupPath: { contains: "масл", mode: "insensitive" } },
+        { groupPath: { contains: "oil", mode: "insensitive" } },
+        { searchText: { contains: "масл", mode: "insensitive" } },
+        { searchText: { contains: "oil", mode: "insensitive" } },
+        { sae: { not: null } },
+        { acea: { not: null } },
+        { apiSpec: { not: null } },
+        { ilsac: { not: null } },
+        { oem: { not: null } },
+        { oemParts: { not: null } },
+      ],
+    },
+    orderBy: [{ name: "asc" }],
+    take: Math.min(1000, Math.max(take * 5, 200)),
+  });
 
   const oils: OilProduct[] = [];
-
-  for (const r of rows) {
-    const attrs = (r.attributes ?? []).reduce((acc, a) => {
-      const attrId = a.meta?.href?.split("/").pop() ?? a.id;
-      acc[attrId] = typeof a.value === "string" ? a.value : String(a.value ?? "");
-      return acc;
-    }, {} as Record<string, string>);
-
-    const saeRaw = MOYSKLAD_ATTR_SAE ? attrs[MOYSKLAD_ATTR_SAE] : "";
-    const oemRaw = MOYSKLAD_ATTR_OEM ? attrs[MOYSKLAD_ATTR_OEM] : "";
-    const aceaRaw = MOYSKLAD_ATTR_ACEA ? attrs[MOYSKLAD_ATTR_ACEA] : "";
-    const apiRaw = MOYSKLAD_ATTR_API ? attrs[MOYSKLAD_ATTR_API] : "";
-    const volRaw = MOYSKLAD_ATTR_VOLUME ? attrs[MOYSKLAD_ATTR_VOLUME] : "";
-
-    const nameLower = (r.name ?? "").toLowerCase();
-    const nameLooksLikeOil =
-      nameLower.includes("масл") ||
-      nameLower.includes("oil") ||
-      normalizeSAE(r.name ?? "").length > 0 ||
-      normalizeACEA(r.name ?? "").length > 0;
-
-    if (MOYSKLAD_ATTR_CATEGORY) {
-      const cat = attrs[MOYSKLAD_ATTR_CATEGORY] ?? "";
-      // Если UUID категории указан, но у карточки поле пустое — не выкидываем строку:
-      // иначе весь каталог даёт 0 «масляных» товаров (частая ошибка настройки .env).
-      if (cat.trim()) {
-        if (!cat.toLowerCase().includes("масл") && !cat.toLowerCase().includes("oil") && !nameLooksLikeOil) continue;
-      } else {
-        if (!nameLooksLikeOil && !saeRaw) continue;
-      }
-    } else {
-      if (!nameLooksLikeOil && !saeRaw) continue;
-    }
-
-    const ilsacRaw = MOYSKLAD_ATTR_ILSAC ? attrs[MOYSKLAD_ATTR_ILSAC] : "";
-    // Важно: поиск кандидатов делается по доп. полям, но для матчинга SAE
-    // делаем fallback из имени, чтобы не терять товары, у которых SAE атрибут
-    // заполнен неполностью (а в названии SAE обычно указан).
+  for (const row of rows) {
+    const attributesText = attributesSearchText(row.attributes);
+    const name = row.name ?? "";
+    const requirementText = [
+      name,
+      row.searchText,
+      row.sae,
+      row.oem,
+      row.oemParts,
+      row.acea,
+      row.aceaExtra,
+      row.apiSpec,
+      row.ilsac,
+      row.params,
+      attributesText,
+    ].join(" ");
     const requirements_norm = {
-      sae: mergeUnique([normalizeSAE(saeRaw || ""), normalizeSAE(r.name ?? "")]),
-      oem: mergeUnique([normalizeOEM(oemRaw || ""), normalizeOEM(r.name ?? "")]),
-      acea: mergeUnique([normalizeACEA(aceaRaw || ""), normalizeACEA(r.name ?? "")]),
-      api: mergeUnique([normalizeAPI(apiRaw || ""), normalizeAPI(r.name ?? "")]),
-      ilsac: mergeUnique([normalizeILSAC(ilsacRaw || ""), normalizeILSAC(r.name ?? "")]),
+      sae: mergeUnique([normalizeSAE(row.sae ?? ""), normalizeSAE(name), normalizeSAE(attributesText)]),
+      oem: mergeUnique([normalizeOEM(row.oem ?? ""), normalizeOEM(row.oemParts ?? ""), normalizeOEM(name), normalizeOEM(attributesText)]),
+      acea: mergeUnique([normalizeACEA(row.acea ?? ""), normalizeACEA(row.aceaExtra ?? ""), normalizeACEA(name), normalizeACEA(attributesText)]),
+      api: mergeUnique([normalizeAPI(row.apiSpec ?? ""), normalizeAPI(name), normalizeAPI(attributesText)]),
+      ilsac: mergeUnique([normalizeILSAC(row.ilsac ?? ""), normalizeILSAC(name), normalizeILSAC(attributesText)]),
     };
 
-    let volume_liters: number | undefined;
-    if (volRaw) {
-      const num = parseFloat(volRaw.replace(",", ".").replace(/[^\d.]/g, ""));
-      if (!Number.isNaN(num)) volume_liters = num;
-    }
-    if (volume_liters == null) {
-      const fromName = parsePackVolumeLitersFromOilName(r.name ?? "");
-      if (fromName != null) volume_liters = fromName;
-    }
+    const hasAnyRequirement =
+      requirements_norm.sae.length +
+        requirements_norm.oem.length +
+        requirements_norm.acea.length +
+        requirements_norm.api.length +
+        requirements_norm.ilsac.length >
+      0;
+    const looksLikeOil = /масл|oil/i.test(requirementText);
+    if (!looksLikeOil && !hasAnyRequirement) continue;
 
-    const priceCents = r.salePrices?.[0]?.value ?? 0;
-    const price = priceCents / 100;
-    const currency = r.salePrices?.[0]?.currency?.name ?? "руб.";
+    let volume_liters = row.packageVolume ? parsePackVolumeLitersFromOilName(row.packageVolume) : undefined;
+    if (volume_liters == null) volume_liters = parsePackVolumeLitersFromOilName(name);
+    if (volume_liters == null) volume_liters = decimalToNumber(row.volume);
 
     oils.push({
-      id: r.id,
-      name: r.name ?? "",
-      article: r.article,
-      price,
-      currency,
-      meta: r.meta ?? { href: `${MOYSKLAD_BASE}/entity/product/${r.id}` },
+      id: row.id,
+      name,
+      article: row.article ?? undefined,
+      price: row.salePriceCents / 100,
+      currency: row.currencyName ?? "руб.",
+      meta: { href: row.moyskladHref ?? `local://product/${row.id}` },
       requirements_norm,
       volume_liters,
-      imageHref: getFirstImageHref(r),
+      imageHref: row.imageHref ?? undefined,
     });
   }
 
-  return enrichOilLineRequirements(oils);
+  return enrichOilLineRequirements(oils.slice(0, take));
 }
-
-const OEM_ATTR_HREF =
-  MOYSKLAD_ATTR_OEM ? `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_ATTR_OEM}` : "";
-const SAE_ATTR_HREF =
-  MOYSKLAD_ATTR_SAE ? `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_ATTR_SAE}` : "";
-const ACEA_ATTR_HREF =
-  MOYSKLAD_ATTR_ACEA ? `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_ATTR_ACEA}` : "";
-const API_ATTR_HREF =
-  MOYSKLAD_ATTR_API ? `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_ATTR_API}` : "";
-const ILSAC_ATTR_HREF =
-  MOYSKLAD_ATTR_ILSAC ? `${MOYSKLAD_BASE}/entity/product/metadata/attributes/${MOYSKLAD_ATTR_ILSAC}` : "";
 
 /** Нормализация ILSAC (GF-5, GF-6 и т.д.) для поиска. */
 function normalizeILSAC(value: string): string[] {
@@ -375,187 +401,28 @@ function normalizeILSAC(value: string): string[] {
   return [...new Set(out)];
 }
 
-/** Поиск масел в МойСклад только по допускам (OEM/SAE/ACEA/API/ILSAC) — без VIN/OpenAI. */
+/** Поиск масел в локальной БД только по допускам (OEM/SAE/ACEA/API/ILSAC) — без VIN/OpenAI. */
 export async function fetchOilCandidatesByRequirements(requirements: OilRequirements): Promise<OilProduct[]> {
-  const auth = getMoySkladAuthHeader();
-  if (!auth) return [];
-  const headers: Record<string, string> = {
-    Authorization: auth,
-    Accept: "application/json;charset=utf-8",
-  };
-  const saeList = (requirements.sae_viscosities ?? []).flatMap((s) => normalizeSAE(s));
-  const oemList = (requirements.oem_approvals ?? []).flatMap((s) => normalizeOEM(s));
-  const aceaList = (requirements.acea ?? []).flatMap((s) => normalizeACEA(s));
-  const apiList = (requirements.api ?? []).flatMap((s) => normalizeAPI(s));
-  const ilsacList = (requirements.ilsac ?? []).flatMap((s) => normalizeILSAC(s));
-  const terms: { value: string; href: string }[] = [];
-  const seen = new Set<string>();
-  const add = (v: string, href: string) => {
-    const key = v.replace(/\s/g, "").toLowerCase();
-    if (key.length >= 2 && !seen.has(key)) {
-      seen.add(key);
-      terms.push({ value: v, href });
-    }
-  };
-  if (oemList.length > 0) {
-    if (OEM_ATTR_HREF) oemList.forEach((v) => add(v, OEM_ATTR_HREF));
-    if (SAE_ATTR_HREF) saeList.forEach((v) => add(v, SAE_ATTR_HREF));
-  } else {
-    if (SAE_ATTR_HREF) saeList.forEach((v) => add(v, SAE_ATTR_HREF));
-    if (ACEA_ATTR_HREF) {
-      aceaList.forEach((v) => {
-        add(v, ACEA_ATTR_HREF);
-        if (/^[A-C]\d/i.test(v)) add(`ACEA ${v}`, ACEA_ATTR_HREF);
-      });
-    }
-    if (API_ATTR_HREF) {
-      apiList.forEach((v) => {
-        add(v, API_ATTR_HREF);
-        add(`API ${v}`, API_ATTR_HREF);
-      });
-    }
-    if (ILSAC_ATTR_HREF) {
-      ilsacList.forEach((v) => {
-        add(v, ILSAC_ATTR_HREF);
-        if (/^GF-/i.test(v)) add(`ILSAC ${v}`, ILSAC_ATTR_HREF);
-      });
-    }
+  const warmCatalog = getCachedOilProductsSnapshot();
+  if (warmCatalog) return warmCatalog;
+
+  const cacheKey = JSON.stringify({
+    branchId: getScopedBranchId(),
+    sae: requirements.sae_viscosities ?? [],
+    oem: requirements.oem_approvals ?? [],
+    acea: requirements.acea ?? [],
+    api: requirements.api ?? [],
+    ilsac: requirements.ilsac ?? [],
+  });
+  const cachedCandidates = oilCandidatesCache.get(cacheKey);
+  if (cachedCandidates && Date.now() - cachedCandidates.at <= OIL_PRODUCTS_CACHE_TTL_MS) {
+    return cloneOilProducts(cachedCandidates.products);
   }
 
-  const rowMap = new Map<string, ProductRow>();
-  const rowsList = await Promise.all(
-    terms.map(async ({ value, href }) => {
-      try {
-        const res = await fetch(
-          `${MOYSKLAD_BASE}/entity/product?filter=${encodeURIComponent(href)}~${encodeURIComponent(value)}&limit=100&expand=attributes,images`,
-          { headers }
-        );
-        if (!res.ok) return [] as ProductRow[];
-        const data = (await res.json()) as { rows?: ProductRow[] };
-        return data.rows ?? [];
-      } catch {
-        return [] as ProductRow[];
-      }
-    })
-  );
-  for (const rows of rowsList) {
-    for (const row of rows) {
-      if (!rowMap.has(row.id)) rowMap.set(row.id, row);
-    }
-  }
-
-  // Часть карточек в МойСклад заполнена только названием ("Takayama ... 5W-30 C3 ..."),
-  // без доп. полей SAE/ACEA. Атрибутный filter их не найдёт, поэтому добираем кандидатов
-  // обычным поиском по названию/описанию и дальше всё равно прогоняем через scoreAndMatch.
-  const nameSearchValues = [
-    ...new Set(
-      [...saeList, ...saeList.map((v) => v.replace("-", "")), ...aceaList, ...oemList]
-        .map((v) => v.trim())
-        .filter((v) => v.length >= 2)
-    ),
-  ];
-  const nameRowsList = await Promise.all(
-    nameSearchValues.map(async (value) => {
-      try {
-        const res = await fetch(
-          `${MOYSKLAD_BASE}/entity/product?search=${encodeURIComponent(value)}&limit=100&expand=attributes,images`,
-          { headers }
-        );
-        if (!res.ok) return [] as ProductRow[];
-        const data = (await res.json()) as { rows?: ProductRow[] };
-        return data.rows ?? [];
-      } catch {
-        return [] as ProductRow[];
-      }
-    })
-  );
-  for (const rows of nameRowsList) {
-    for (const row of rows) {
-      if (!rowMap.has(row.id)) rowMap.set(row.id, row);
-    }
-  }
-
-  // Если нашли одну фасовку линейки, добираем остальные фасовки этой же линейки
-  // (часто у соседней фасовки не заполнены SAE/ACEA или она не попала в первые 100 search-результатов).
-  const baseNames = [
-    ...new Set(
-      [...rowMap.values()]
-        .map((row) => getOilLineBaseName(row.name ?? "", parsePackVolumeLitersFromOilName(row.name ?? "")))
-        .filter((name) => name.length >= 6)
-    ),
-  ].slice(0, 80);
-  const siblingRowsList = await Promise.all(
-    baseNames.map(async (baseName) => {
-      try {
-        const res = await fetch(
-          `${MOYSKLAD_BASE}/entity/product?search=${encodeURIComponent(baseName)}&limit=50&expand=attributes,images`,
-          { headers }
-        );
-        if (!res.ok) return [] as ProductRow[];
-        const data = (await res.json()) as { rows?: ProductRow[] };
-        return data.rows ?? [];
-      } catch {
-        return [] as ProductRow[];
-      }
-    })
-  );
-  for (const rows of siblingRowsList) {
-    for (const row of rows) {
-      if (!rowMap.has(row.id)) rowMap.set(row.id, row);
-    }
-  }
-
-  const oils: OilProduct[] = [];
-  for (const r of rowMap.values()) {
-    const attrs: Record<string, string> = {};
-    for (const a of r.attributes ?? []) {
-      const id = a.meta?.href?.split("/").pop() ?? a.id;
-      attrs[id] = typeof a.value === "string" ? a.value : String(a.value ?? "");
-    }
-    const saeRaw = MOYSKLAD_ATTR_SAE ? attrs[MOYSKLAD_ATTR_SAE] : "";
-    const oemRaw = MOYSKLAD_ATTR_OEM ? attrs[MOYSKLAD_ATTR_OEM] : "";
-    const aceaRaw = MOYSKLAD_ATTR_ACEA ? attrs[MOYSKLAD_ATTR_ACEA] : "";
-    const apiRaw = MOYSKLAD_ATTR_API ? attrs[MOYSKLAD_ATTR_API] : "";
-    const ilsacRaw = MOYSKLAD_ATTR_ILSAC ? attrs[MOYSKLAD_ATTR_ILSAC] : "";
-    const requirements_norm = {
-      sae: mergeUnique([normalizeSAE(saeRaw || ""), normalizeSAE(r.name ?? "")]),
-      oem: mergeUnique([normalizeOEM(oemRaw || ""), normalizeOEM(r.name ?? "")]),
-      acea: mergeUnique([normalizeACEA(aceaRaw || ""), normalizeACEA(r.name ?? "")]),
-      api: mergeUnique([normalizeAPI(apiRaw || ""), normalizeAPI(r.name ?? "")]),
-      ilsac: mergeUnique([normalizeILSAC(ilsacRaw || ""), normalizeILSAC(r.name ?? "")]),
-    };
-    const hasAnyNorm =
-      requirements_norm.sae.length +
-        requirements_norm.oem.length +
-        requirements_norm.acea.length +
-        requirements_norm.api.length +
-        requirements_norm.ilsac.length >
-      0;
-    if (!hasAnyNorm) continue;
-    let volume_liters: number | undefined;
-    const volRaw = MOYSKLAD_ATTR_VOLUME ? attrs[MOYSKLAD_ATTR_VOLUME] : "";
-    if (volRaw) {
-      const num = parseFloat(volRaw.replace(",", ".").replace(/[^\d.]/g, ""));
-      if (!Number.isNaN(num)) volume_liters = num;
-    }
-    if (volume_liters == null) {
-      const fromName = parsePackVolumeLitersFromOilName(r.name ?? "");
-      if (fromName != null) volume_liters = fromName;
-    }
-    const priceCents = r.salePrices?.[0]?.value ?? 0;
-    oils.push({
-      id: r.id,
-      name: r.name ?? "",
-      article: r.article,
-      price: priceCents / 100,
-      currency: r.salePrices?.[0]?.currency?.name ?? "руб.",
-      meta: r.meta ?? { href: `${MOYSKLAD_BASE}/entity/product/${r.id}` },
-      requirements_norm,
-      volume_liters,
-      imageHref: getFirstImageHref(r),
-    });
-  }
-  return enrichOilLineRequirements(oils);
+  const oils = await fetchOilProductsFromMoySklad(1000);
+  const enriched = enrichOilLineRequirements(oils);
+  oilCandidatesCache.set(cacheKey, { at: Date.now(), products: cloneOilProducts(enriched) });
+  return enriched;
 }
 
 const SCORE_OEM = 100;

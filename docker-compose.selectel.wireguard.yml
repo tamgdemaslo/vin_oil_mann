@@ -1,0 +1,27 @@
+# Optional Selectel-only egress proxy. Publish this small helper image once and
+# pin it by digest; ordinary application deploys never build it on the server.
+x-wireguard-app: &wireguard-app
+  environment:
+    OPENAI_PROXY_URL: "http://wireguard-proxy:8888"
+    TELEGRAM_HTTP_PROXY_URL: "http://wireguard-proxy:8888"
+    TELEGRAM_PROXY_HOST: wireguard-proxy
+    TELEGRAM_PROXY_PORT: "1080"
+    TELEGRAM_PROXY_SOCKS_TYPE: "5"
+    TELEGRAM_PROXY_USERNAME: ""
+    TELEGRAM_PROXY_PASSWORD: ""
+  depends_on:
+    wireguard-proxy:
+      condition: service_started
+
+services:
+  wireguard-proxy:
+    image: "${WIREGUARD_PROXY_IMAGE:?Set WIREGUARD_PROXY_IMAGE to a Selectel registry digest}"
+    restart: unless-stopped
+    volumes:
+      - ./deploy/selectel/wireguard:/config:ro
+
+  app_blue:
+    <<: *wireguard-app
+
+  app_green:
+    <<: *wireguard-app

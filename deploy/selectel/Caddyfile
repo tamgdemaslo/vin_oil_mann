@@ -1,0 +1,11 @@
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
+www.tamgdemaslocrm.ru {
+    header Alt-Svc "clear"
+    # deploy-image.sh atomically replaces this one-line file and reloads Caddy.
+    import /opt/vin-oil-mann/.deploy/caddy-upstream.caddy
+}

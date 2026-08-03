@@ -1,4 +1,6 @@
-import { moyskladFetch } from "@/lib/moysklad";
+import { prisma } from "@/lib/db";
+import { toServiceDateInput } from "@/lib/date-time";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 export type RestockCatalogEntry = {
   id: string;
@@ -119,83 +121,58 @@ export function buildNeedsOrderFromCatalog(catalog: RestockCatalog, stockMap: Re
   return items;
 }
 
-function rowToCatalogEntry(row: Record<string, unknown>): [string, RestockCatalogEntry] | null {
-  const pid = row.id;
-  if (typeof pid !== "string" || !pid) return null;
-
-  let minimumBalance: number | null = null;
-  const rawMb = row.minimumBalance;
-  if (typeof rawMb === "number" && Number.isFinite(rawMb)) minimumBalance = rawMb;
-
-  let group: string | null = null;
-  const pf = row.productFolder;
-  if (pf && typeof pf === "object") {
-    const n = (pf as { name?: string }).name;
-    if (typeof n === "string" && n.trim()) group = n.trim();
-  }
-
-  let supplier: string | null = null;
-  const sup = row.supplier;
-  if (sup && typeof sup === "object") {
-    const n = (sup as { name?: string }).name;
-    if (typeof n === "string" && n.trim()) supplier = n.trim();
-  }
-
-  const name = typeof row.name === "string" ? row.name : null;
-  const code = typeof row.code === "string" ? row.code : null;
-
-  return [
-    pid,
-    {
-      id: pid,
-      name,
-      code,
-      minimumBalance,
-      group,
-      supplier,
-    },
-  ];
-}
-
 export async function fetchProductCatalog(): Promise<RestockCatalog> {
   const idx: RestockCatalog = {};
-  let offset = 0;
-  const limit = 100;
+  const products = await prisma.localProduct.findMany({
+    where: { archived: false, entityType: { not: "service" } },
+    select: {
+      id: true,
+      name: true,
+      article: true,
+      code: true,
+      externalCode: true,
+      rosskoPartNumber: true,
+      minimumBalance: true,
+      groupPath: true,
+      legacySupplierName: true,
+      supplierAttribute: true,
+    },
+    orderBy: [{ name: "asc" }],
+  });
 
-  for (;;) {
-    const path = `/entity/product?limit=${limit}&offset=${offset}&filter=archived=false&expand=productFolder,supplier`;
-    const res = await moyskladFetch<{ rows?: Record<string, unknown>[] }>(path, { cache: "no-store" });
-    if (!res.ok) throw new Error(res.error);
-    const rows = res.data.rows ?? [];
-    for (const r of rows) {
-      if (!r || typeof r !== "object") continue;
-      const pair = rowToCatalogEntry(r as Record<string, unknown>);
-      if (pair) idx[pair[0]] = pair[1];
-    }
-    if (rows.length < limit) break;
-    offset += limit;
+  for (const product of products) {
+    idx[product.id] = {
+      id: product.id,
+      name: product.name,
+      code: product.rosskoPartNumber ?? product.article ?? product.code ?? product.externalCode ?? null,
+      minimumBalance: toFloat(product.minimumBalance),
+      group: product.groupPath,
+      supplier: product.legacySupplierName ?? product.supplierAttribute,
+    };
   }
 
   return idx;
 }
 
-let catalogCache: { at: number; map: RestockCatalog } | null = null;
+const catalogCacheByBranch = new Map<string, { at: number; map: RestockCatalog }>();
 const CATALOG_TTL_MS = Math.max(30_000, parseInt(process.env.RESTOCK_CATALOG_CACHE_MS ?? "120000", 10) || 120_000);
 
 export function clearRestockCatalogCache(): void {
-  catalogCache = null;
+  catalogCacheByBranch.delete(getScopedBranchId());
 }
 
 export async function getProductCatalogCached(refresh: boolean): Promise<RestockCatalog> {
   if (refresh) {
     clearRestockCatalogCache();
   }
+  const branchId = getScopedBranchId();
+  const catalogCache = catalogCacheByBranch.get(branchId);
   const now = Date.now();
   if (catalogCache && now - catalogCache.at < CATALOG_TTL_MS) {
     return catalogCache.map;
   }
   const map = await fetchProductCatalog();
-  catalogCache = { at: Date.now(), map };
+  catalogCacheByBranch.set(branchId, { at: Date.now(), map });
   return map;
 }
 
@@ -204,30 +181,31 @@ export async function fetchStockAllPages(opts: {
   pageLimit: number;
   maxPages: number;
 }): Promise<StockRowRaw[]> {
-  const { stockMode, pageLimit, maxPages } = opts;
+  const { pageLimit, maxPages } = opts;
   if (pageLimit < 1 || pageLimit > 1000) throw new Error("pageLimit must be 1..1000");
   if (maxPages < 1) throw new Error("maxPages must be >= 1");
 
-  let url =
-    `/report/stock/all?limit=${pageLimit}&offset=0` +
-    (stockMode ? `&stockMode=${encodeURIComponent(stockMode)}` : "");
-  const all: StockRowRaw[] = [];
+  const balances = await prisma.localStockBalance.findMany({
+    include: { product: { select: { id: true } } },
+    orderBy: [{ productId: "asc" }],
+    take: pageLimit * maxPages,
+  });
 
-  for (let page = 0; page < maxPages; page++) {
-    const res = await moyskladFetch<{ rows?: StockRowRaw[]; meta?: { nextHref?: string } }>(url, {
-      cache: "no-store",
+  const byProduct = new Map<string, Pick<RestockItem, "stock" | "reserve" | "inTransit" | "quantity">>();
+  for (const balance of balances) {
+    const prev = byProduct.get(balance.productId) ?? { stock: 0, reserve: 0, inTransit: 0, quantity: 0 };
+    byProduct.set(balance.productId, {
+      stock: prev.stock + (toFloat(balance.available) ?? 0),
+      reserve: prev.reserve + (toFloat(balance.reserve) ?? 0),
+      inTransit: prev.inTransit,
+      quantity: prev.quantity + (toFloat(balance.quantity) ?? 0),
     });
-    if (!res.ok) throw new Error(res.error);
-    const rows = res.data.rows ?? [];
-    for (const r of rows) {
-      if (r && typeof r === "object") all.push(r as StockRowRaw);
-    }
-    const next = res.data.meta?.nextHref;
-    if (typeof next !== "string" || !next) break;
-    url = next;
   }
 
-  return all;
+  return [...byProduct.entries()].map(([productId, stock]) => ({
+    meta: { href: `local://product/${productId}` },
+    ...stock,
+  }));
 }
 
 export async function loadNeedsOrderItems(opts: {
@@ -249,72 +227,6 @@ export async function loadNeedsOrderItems(opts: {
     if (sh !== null) it.shortage = sh;
   }
   return { items, fetchedRows: rows.length, catalogSize: Object.keys(catalog).length };
-}
-
-function iterDocumentPositions(doc: Record<string, unknown>): Record<string, unknown>[] {
-  const pos = doc.positions;
-  if (pos && typeof pos === "object" && !Array.isArray(pos)) {
-    const rows = (pos as { rows?: unknown }).rows;
-    if (Array.isArray(rows)) return rows.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
-  }
-  if (Array.isArray(pos)) return pos.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
-  return [];
-}
-
-function positionProductIdAndQty(pos: Record<string, unknown>): [string | null, number] {
-  const qty = toFloat(pos.quantity);
-  if (qty === null || qty <= 0) return [null, 0];
-  const assortment = pos.assortment;
-  if (!assortment || typeof assortment !== "object") return [null, 0];
-  const as = assortment as Record<string, unknown>;
-  const productO = as.product;
-  if (productO && typeof productO === "object") {
-    const pm = (productO as { meta?: { href?: string } }).meta;
-    if (pm && typeof pm.href === "string") {
-      const pid = extractIdFromHref(pm.href);
-      if (pid) return [pid, qty];
-    }
-  }
-  const meta = as.meta;
-  if (meta && typeof meta === "object") {
-    const href = (meta as { href?: string }).href;
-    if (typeof href === "string") {
-      const pid = extractIdFromHref(href);
-      if (pid) return [pid, qty];
-    }
-  }
-  return [null, 0];
-}
-
-async function aggregateSingleDocumentPath(
-  path: string,
-  filt: string
-): Promise<Record<string, number>> {
-  const totals: Record<string, number> = {};
-  let offset = 0;
-  const limit = 100;
-  let pageGuard = 0;
-  const expand = "positions.assortment,positions.assortment.product";
-
-  for (;;) {
-    pageGuard++;
-    if (pageGuard > 500) break;
-    const q =
-      `/${path}?limit=${limit}&offset=${offset}&filter=${encodeURIComponent(filt)}&expand=${encodeURIComponent(expand)}`;
-    const res = await moyskladFetch<{ rows?: Record<string, unknown>[] }>(q, { cache: "no-store" });
-    if (!res.ok) break;
-    const rows = res.data.rows ?? [];
-    for (const doc of rows) {
-      if (!doc || typeof doc !== "object") continue;
-      for (const pos of iterDocumentPositions(doc as Record<string, unknown>)) {
-        const [pid, qn] = positionProductIdAndQty(pos);
-        if (pid && qn > 0) totals[pid] = (totals[pid] ?? 0) + qn;
-      }
-    }
-    if (rows.length < limit) break;
-    offset += limit;
-  }
-  return totals;
 }
 
 export function calendarRangeMomentBounds(
@@ -340,29 +252,44 @@ export function calendarRangeMomentBounds(
 
 /** Сегодня по календарю в часовом поясе Europe/Moscow. */
 export function todayIsoInMoscow(): string {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Moscow",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = fmt.formatToParts(new Date());
-  const y = parts.find((p) => p.type === "year")?.value;
-  const m = parts.find((p) => p.type === "month")?.value;
-  const d = parts.find((p) => p.type === "day")?.value;
-  if (y && m && d) return `${y}-${m}-${d}`;
-  return new Date().toISOString().slice(0, 10);
+  return toServiceDateInput(new Date());
 }
 
 export async function aggregateOutflowFromEntities(momentFrom: string, momentTo: string): Promise<Record<string, number>> {
-  const filt = `moment>=${momentFrom};moment<=${momentTo}`;
-  const paths = ["entity/demand", "entity/retaildemand", "entity/loss"] as const;
-  const parts = await Promise.all(paths.map((p) => aggregateSingleDocumentPath(p, filt)));
   const totals: Record<string, number> = {};
-  for (const part of parts) {
-    for (const [pid, q] of Object.entries(part)) {
-      totals[pid] = (totals[pid] ?? 0) + q;
-    }
+  const dateFrom = momentFrom.slice(0, 10);
+  const dateTo = momentTo.slice(0, 10);
+
+  const [demands, writeoffs] = await Promise.all([
+    prisma.localDemandPosition.groupBy({
+      by: ["productId"],
+      where: {
+        productId: { not: null },
+        demand: {
+          applicable: true,
+          documentDate: { gte: dateFrom, lte: dateTo },
+        },
+      },
+      _sum: { quantity: true },
+    }),
+    prisma.localInventoryDocumentPosition.groupBy({
+      by: ["productId"],
+      where: {
+        productId: { not: null },
+        document: {
+          type: "writeoff",
+          applicable: true,
+          documentDate: { gte: dateFrom, lte: dateTo },
+        },
+      },
+      _sum: { quantity: true },
+    }),
+  ]);
+
+  for (const row of [...demands, ...writeoffs]) {
+    if (!row.productId) continue;
+    const quantity = toFloat(row._sum.quantity) ?? 0;
+    if (quantity > 0) totals[row.productId] = (totals[row.productId] ?? 0) + quantity;
   }
   return totals;
 }
@@ -400,7 +327,7 @@ export async function loadOutflowNeedsItems(opts: {
   ]);
 
   const stockMap = buildStockMap(rows);
-  let items = buildNeedsOrderFromCatalog(catalog, stockMap);
+  const items = buildNeedsOrderFromCatalog(catalog, stockMap);
   for (const it of items) {
     const sh = shortage(it);
     if (sh !== null) it.shortage = sh;

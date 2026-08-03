@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-deploy-check/
 /out/
 
 # production
@@ -22,6 +23,8 @@
 
 # misc
 .DS_Store
+._*
+.tmp-*/
 *.pem
 
 # debug
@@ -30,13 +33,23 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# generated data and Python bytecode
+/outputs/
+__pycache__/
+*.py[cod]
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
 !.env.local.template
+!deploy/selectel/.env.production.template
+deploy/selectel/wireguard/wg_confs/*.conf
 
 # vercel
 .vercel
+
+# railway (local `railway link` metadata)
+.railway/
 
 # typescript
 *.tsbuildinfo

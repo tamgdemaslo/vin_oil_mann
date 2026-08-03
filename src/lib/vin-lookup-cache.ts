@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { OilInfo, VinDecoded } from "@/types/lookup";
 
 export type VinLookupCachePayload = {
@@ -11,25 +12,8 @@ const CACHE_TTL_DAYS = Math.min(365, Math.max(1, parseInt(process.env.VIN_LOOKUP
 let tableReady: Promise<void> | null = null;
 
 async function ensureVinLookupCacheTable() {
-  tableReady ??= (async () => {
-    try {
-      await prisma.$executeRawUnsafe(`
-        CREATE TABLE IF NOT EXISTS vin_lookup_cache (
-          vin TEXT PRIMARY KEY,
-          payload JSONB NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          expires_at TIMESTAMPTZ NOT NULL
-        )
-      `);
-      await prisma.$executeRawUnsafe(
-        "CREATE INDEX IF NOT EXISTS vin_lookup_cache_expires_at_idx ON vin_lookup_cache (expires_at)"
-      );
-    } catch (error) {
-      tableReady = null;
-      throw error;
-    }
-  })();
+  // Runtime DDL is forbidden. The reviewed migration creates this table.
+  tableReady ??= Promise.resolve();
   return tableReady;
 }
 
@@ -81,11 +65,16 @@ function hasUsefulPayload(payload: VinLookupCachePayload | null | undefined): bo
 
 export async function getVinLookupCache(vin: string): Promise<VinLookupCachePayload | null> {
   try {
+    const branchId = getScopedBranchId();
     await ensureVinLookupCacheTable();
-    const rows = await prisma.$queryRawUnsafe<Array<{ payload: VinLookupCachePayload }>>(
-      "SELECT payload FROM vin_lookup_cache WHERE vin = $1 AND expires_at > NOW() LIMIT 1",
-      vin
-    );
+    const rows = await prisma.$queryRaw<Array<{ payload: VinLookupCachePayload }>>`
+      SELECT payload
+      FROM vin_lookup_cache
+      WHERE branch_id = ${branchId}
+        AND vin = ${vin}
+        AND expires_at > NOW()
+      LIMIT 1
+    `;
     const payload = rows[0]?.payload ?? null;
     return hasUsefulPayload(payload) ? payload : null;
   } catch (error) {
@@ -97,20 +86,16 @@ export async function getVinLookupCache(vin: string): Promise<VinLookupCachePayl
 export async function setVinLookupCache(vin: string, payload: VinLookupCachePayload): Promise<void> {
   try {
     if (!hasUsefulPayload(payload)) return;
+    const branchId = getScopedBranchId();
     await ensureVinLookupCacheTable();
-    await prisma.$executeRawUnsafe(
-      `
-      INSERT INTO vin_lookup_cache (vin, payload, expires_at)
-      VALUES ($1, $2::jsonb, $3)
-      ON CONFLICT (vin) DO UPDATE SET
+    await prisma.$executeRaw`
+      INSERT INTO vin_lookup_cache (branch_id, vin, payload, expires_at)
+      VALUES (${branchId}, ${vin}, ${JSON.stringify(payload)}::jsonb, ${getExpiryDate()})
+      ON CONFLICT (branch_id, vin) DO UPDATE SET
         payload = EXCLUDED.payload,
         updated_at = NOW(),
         expires_at = EXCLUDED.expires_at
-      `,
-      vin,
-      JSON.stringify(payload),
-      getExpiryDate()
-    );
+    `;
   } catch (error) {
     console.warn("[lookup-cache] write failed", error instanceof Error ? error.message : String(error));
   }

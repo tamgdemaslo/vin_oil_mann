@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getCurrentShift as getCurrentCashShift } from "@/lib/cashbox";
 import { getCurrentShift } from "@/lib/shifts";
+import { hasActiveShiftAccess } from "@/lib/active-shift-access";
 
 export async function requireAuthenticatedSession(from: string) {
   const session = await getSession();
@@ -14,8 +15,8 @@ export async function requireActiveShiftAccess(from: string) {
   if (session.user.role === "owner") return session;
 
   const currentShift = await getCurrentShift(session.user.login);
-  const currentCashShift = getCurrentCashShift();
-  if (currentShift || currentCashShift) {
+  const currentCashShift = await getCurrentCashShift();
+  if (hasActiveShiftAccess(session.user.role, currentShift, currentCashShift)) {
     return session;
   }
 
