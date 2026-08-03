@@ -22,6 +22,12 @@ function forbidPattern(file, pattern, reason) {
 requirePattern("workflow", /docker\/build-push-action@/, "image must be built with buildx in CI");
 requirePattern("workflow", /deploy-image\.sh/, "deployment must call the server-side digest deploy script");
 requirePattern("workflow", /git status --porcelain/, "CI must reject a dirty checkout");
+requirePattern("workflow", /default: BUILD_ONLY/, "workflow must default to build/push without switching traffic");
+requirePattern(
+  "workflow",
+  /if: \$\{\{ inputs\.deployment_mode == 'DEPLOY_PRODUCTION' \}\}/,
+  "production switch must require explicit DEPLOY_PRODUCTION mode"
+);
 forbidPattern("workflow", /\brsync\b/, "source uploads are forbidden");
 forbidPattern("workflow", /docker compose[^\n]*--build/, "production server builds are forbidden");
 forbidPattern("workflow", /railway/i, "Railway is forbidden in the Selectel production workflow");

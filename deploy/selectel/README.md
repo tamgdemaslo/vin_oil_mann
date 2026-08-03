@@ -143,8 +143,11 @@ Both environments must require an owner/reviewer:
 - `production-migration` for database mutations.
 
 The release workflow is manual. Run it from `main`, `release/*`, or `hotfix/*`
-with a new tag such as `production-2026-08-02.1`. It rejects other branches,
-dirty source, reused tags, and any attempt to combine deployment with a
+with a new tag such as `production-2026-08-02.1`. It defaults to `BUILD_ONLY`,
+which verifies and pushes immutable images without starting a server container
+or switching traffic. The deploy and Git-tag jobs run only when the owner
+deliberately selects `DEPLOY_PRODUCTION`. The workflow rejects other branches,
+dirty source, reused Git tags, and any attempt to combine deployment with a
 migration.
 
 ## 5. Normal hotfix

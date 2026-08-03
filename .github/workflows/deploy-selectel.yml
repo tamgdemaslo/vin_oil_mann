@@ -14,6 +14,14 @@ on:
         type: choice
         options:
           - NO_DATABASE_MIGRATION
+      deployment_mode:
+        description: "Build/push only, or explicitly switch production traffic"
+        required: true
+        default: BUILD_ONLY
+        type: choice
+        options:
+          - BUILD_ONLY
+          - DEPLOY_PRODUCTION
 
 concurrency:
   group: production-deploy
@@ -201,6 +209,7 @@ jobs:
   deploy:
     name: Approve and switch Selectel production
     needs: image
+    if: ${{ inputs.deployment_mode == 'DEPLOY_PRODUCTION' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -248,6 +257,7 @@ jobs:
   tag:
     name: Tag successful production release
     needs: [image, deploy]
+    if: ${{ inputs.deployment_mode == 'DEPLOY_PRODUCTION' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
