@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { requireBranchContext } from "@/lib/branch-context";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { reconcileAppointmentShipments } from "@/lib/appointment-shipment-reconcile";
 import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
 import { listClientAppointments } from "@/lib/client-site-api";
@@ -464,12 +464,16 @@ export async function GET() {
   const audience = session.user.role === "owner" || session.user.role === "admin" ? session.user.role : "master";
   const canViewFinance = audience === "owner";
   const canViewClientOperations = audience !== "master";
-  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  const branch = access.context;
   if (!branch.branchId || !branch.organizationId) {
     return NextResponse.json({ error: "Выберите конкретный филиал" }, { status: 409 });
   }
   const branchId = branch.branchId;
   const organizationId = branch.organizationId;
+
+  return runWithBranchApiContext(branch, async () => {
 
   const today = toServiceDateInput(new Date());
   const tomorrow = toServiceDateInput(new Date(Date.now() + 24 * 60 * 60 * 1000));
@@ -777,7 +781,7 @@ export async function GET() {
     ? alerts.filter((item) => item.id.startsWith("appointments-") || item.id === "diagnostics")
     : alerts;
 
-  return NextResponse.json({
+    return NextResponse.json({
     today,
     timezone: SERVICE_TIME_ZONE,
     audience,
@@ -939,5 +943,6 @@ export async function GET() {
       sumCents: doc.sumCents,
       href: doc.type === "receipt" ? `/inventory/receipts?id=${doc.id}` : "/inventory/writeoffs",
     })),
+    });
   });
 }

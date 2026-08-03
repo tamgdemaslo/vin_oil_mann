@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { searchCatalog, type CatalogSearchParams } from "@/lib/catalog-search";
 
 function readValues(request: NextRequest, key: string) {
@@ -13,6 +14,8 @@ function readValues(request: NextRequest, key: string) {
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branch.ok) return branch.response;
 
   const sp = request.nextUrl.searchParams;
   const params: CatalogSearchParams = {
@@ -47,5 +50,5 @@ export async function GET(request: NextRequest) {
     strictNameOem: sp.get("strictNameOem") === "1" || sp.get("strictNameOem") === "true",
   };
 
-  return NextResponse.json(await searchCatalog(params));
+  return runWithBranchApiContext(branch.context, async () => NextResponse.json(await searchCatalog(params)));
 }
