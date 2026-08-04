@@ -2,9 +2,13 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { runWithBranchApiContext } from "@/lib/branch-api";
+import { requireBranchContext } from "@/lib/branch-context";
 import { buildJobOrderPosterModel, posterModelOptsFromVariant } from "@/lib/job-order-poster-data";
 import OrderPoster from "@/components/print/OrderPoster";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
+
+export const dynamic = "force-dynamic";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -188,7 +192,8 @@ export default async function ShipmentPosterPrintPage({
     redirect(`/login?from=${encodeURIComponent(`/shipment/${id}/poster${suffix}`)}`);
   }
 
-  const data = await buildJobOrderPosterModel(id, intervalOpts);
+  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
+  const data = await runWithBranchApiContext(branch, () => buildJobOrderPosterModel(id, intervalOpts));
   if (!data) {
     return (
       <div id="poster-print-mount" className="mx-auto max-w-lg px-6 py-16 text-center">
