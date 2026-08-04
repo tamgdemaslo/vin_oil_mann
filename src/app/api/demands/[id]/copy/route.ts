@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { type CreateDemandBody, type DemandPositionInput } from "@/lib/demand-create-payload";
 import { prisma } from "@/lib/db";
 import { createLocalDemand, loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
@@ -81,12 +82,15 @@ function buildCopyMeta(params: {
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id?.trim()) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  try {
-    const loaded = await loadLocalDemandDetailPayload(id.trim());
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    try {
+    const loaded = await loadLocalDemandDetailPayload(id.trim(), branchAccess.context.branchId!);
     if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.notFound ? 404 : 400 });
 
     const raw = loaded.data.raw as {
@@ -237,14 +241,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       positions: positions.length > 0 ? positions : undefined,
     };
 
-    const created = await createLocalDemand(body, { ecoUserName: session.user.name || session.user.login });
+    const created = await createLocalDemand(body, {
+      ecoUserName: session.user.name || session.user.login,
+      branchId: branchAccess.context.branchId!,
+      organizationId: branchAccess.context.organizationId!,
+    });
     if (!created.ok) return NextResponse.json({ error: created.error }, { status: 400 });
     return NextResponse.json({ ok: true, id: created.id, name: created.name, href: created.href });
-  } catch (error) {
-    console.error("[api/demands/copy] failed:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Не удалось скопировать отгрузку" },
-      { status: 500 }
-    );
-  }
+    } catch (error) {
+      console.error("[api/demands/copy] failed:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Не удалось скопировать отгрузку" },
+        { status: 500 }
+      );
+    }
+  });
 }
