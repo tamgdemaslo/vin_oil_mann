@@ -98,6 +98,15 @@ for (const routePath of [
   assert.match(routeSource, /runWithBranchApiContext\(/);
 }
 
+for (const pagePath of [
+  "../src/app/shipment/[id]/poster/page.tsx",
+  "../src/app/shipment/[id]/tags/page.tsx",
+]) {
+  const pageSource = fs.readFileSync(new URL(pagePath, import.meta.url), "utf8");
+  assert.match(pageSource, /requireBranchContext\(\{ allowAll: false, requireActive: true \}\)/);
+  assert.match(pageSource, /runWithBranchApiContext\(/);
+}
+
 if (previousSessionSecret === undefined) delete process.env.SESSION_SECRET;
 else process.env.SESSION_SECRET = previousSessionSecret;
 
