@@ -82,8 +82,16 @@ assert.doesNotMatch(branchesSource.match(/export type BranchInput = \{[\s\S]*?\n
 for (const routePath of [
   "../src/app/api/catalog/search/route.ts",
   "../src/app/api/crm/deadline-notifications/route.ts",
+  "../src/app/api/crm/deals/route.ts",
   "../src/app/api/dashboard/operations/route.ts",
+  "../src/app/api/demands/route.ts",
+  "../src/app/api/demands/[id]/route.ts",
+  "../src/app/api/demands/[id]/copy/route.ts",
+  "../src/app/api/demands/metadata/route.ts",
   "../src/app/api/messenger/conversations/route.ts",
+  "../src/app/api/messenger/conversations/[id]/messages/route.ts",
+  "../src/app/api/messenger/conversations/[id]/context/route.ts",
+  "../src/app/api/messenger/telegram-user/sync/route.ts",
 ]) {
   const routeSource = fs.readFileSync(new URL(routePath, import.meta.url), "utf8");
   assert.match(routeSource, /requireBranchApi\(\{ allowAll: false, requireActive: true \}\)/);

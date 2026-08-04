@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { caseStatusFromStageName, defaultNextActionForCaseStatus, isClientCaseStatus } from "@/lib/client-case-shared";
 import { processClientCaseWorkflowTransitions, writeClientCaseEvent } from "@/lib/client-case-workflow";
 import { ensureDefaultCrmStages, getFirstCrmStage } from "@/lib/crm";
@@ -284,35 +285,42 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
 export async function GET() {
   const access = await requireCrmSession();
   if (access.response) return access.response;
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
 
-  try {
-    await ensureDefaultCrmStages();
+  return runWithBranchApiContext(branchAccess.context, async () => {
     try {
-      await processClientCaseWorkflowTransitions();
-    } catch (error) {
-      if (!isMissingCrmCaseColumns(error)) throw error;
-    }
-    let stages: CrmStageWithDeals;
-    try {
-      stages = await loadStagesWithDeals();
-    } catch (error) {
-      if (!isMissingCrmCaseColumns(error)) throw error;
-      stages = await loadStagesWithLegacyDeals();
-    }
+      await ensureDefaultCrmStages();
+      try {
+        await processClientCaseWorkflowTransitions();
+      } catch (error) {
+        if (!isMissingCrmCaseColumns(error)) throw error;
+      }
+      let stages: CrmStageWithDeals;
+      try {
+        stages = await loadStagesWithDeals();
+      } catch (error) {
+        if (!isMissingCrmCaseColumns(error)) throw error;
+        stages = await loadStagesWithLegacyDeals();
+      }
 
-    return NextResponse.json({ stages });
-  } catch (error) {
-    console.error("[crm/deals GET]", error);
-    return databaseHint(error);
-  }
+      return NextResponse.json({ stages });
+    } catch (error) {
+      console.error("[crm/deals GET]", error);
+      return databaseHint(error);
+    }
+  });
 }
 
 export async function POST(request: NextRequest) {
   const access = await requireCrmSession();
   if (access.response) return access.response;
   const session = access.session!;
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
 
-  try {
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    try {
     const body = await request.json().catch(() => ({}));
     const title = parseOptionalString(body.title);
     const customerName = parseOptionalString(body.customerName);
@@ -434,8 +442,9 @@ export async function POST(request: NextRequest) {
     }).catch((error) => console.warn("[crm/deals POST] client case event failed", error));
 
     return NextResponse.json(created, { status: 201 });
-  } catch (error) {
-    console.error("[crm/deals POST]", error);
-    return databaseHint(error);
-  }
+    } catch (error) {
+      console.error("[crm/deals POST]", error);
+      return databaseHint(error);
+    }
+  });
 }
