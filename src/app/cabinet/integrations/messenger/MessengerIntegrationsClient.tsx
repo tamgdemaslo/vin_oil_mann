@@ -100,6 +100,14 @@ type ActionResult = {
   message: string;
 };
 
+type PostActionOptions = {
+  onFailure?: (feedback: ActionResult) => void;
+  timeoutMs?: number;
+};
+
+const DEFAULT_ACTION_TIMEOUT_MS = 45_000;
+const QR_START_TIMEOUT_MS = 35_000;
+
 const channelOrder = ["telegram", "whatsapp", "vk", "avito", "max", "sms"] as const;
 const plannedOrder = ["whatsapp", "vk", "avito", "max", "sms"] as const;
 
@@ -171,6 +179,7 @@ export default function MessengerIntegrationsClient() {
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
   const [lastCodeDelivery, setLastCodeDelivery] = useState<CodeDeliveryState>(null);
   const [qrLogin, setQrLogin] = useState<QrLoginState>(null);
+  const [qrFeedback, setQrFeedback] = useState<ActionResult | null>(null);
   const [mediaHealth, setMediaHealth] = useState<MediaHealthPayload | null>(null);
   const [storageProbe, setStorageProbe] = useState<StorageProbePayload | null>(null);
 
@@ -214,11 +223,13 @@ export default function MessengerIntegrationsClient() {
         setResult({ tone: "success", title: "Проверка", message: "Статус Telegram обновлён." });
       }
     } catch (error) {
-      setResult({
+      const feedback = {
         tone: "danger",
         title: "Telegram",
         message: error instanceof Error ? error.message : "Не удалось обновить статус Telegram.",
-      });
+      } satisfies ActionResult;
+      setResult(feedback);
+      setQrFeedback(feedback);
     } finally {
       setLoading(false);
       setAction(null);
@@ -245,14 +256,23 @@ export default function MessengerIntegrationsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrLogin?.accountId, activeAccount?.status]);
 
-  async function postAction(endpoint: string, body: Record<string, unknown>, nextAction: typeof action, fallback: string) {
+  async function postAction(
+    endpoint: string,
+    body: Record<string, unknown>,
+    nextAction: typeof action,
+    fallback: string,
+    options: PostActionOptions = {}
+  ) {
     setAction(nextAction);
     setResult(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const data = await safeReadJson<ActionPayload>(response);
       if (!response.ok || data?.ok === false) {
@@ -260,9 +280,21 @@ export default function MessengerIntegrationsClient() {
       }
       return data ?? {};
     } catch (error) {
-      setResult({ tone: "danger", title: "Telegram", message: error instanceof Error ? error.message : fallback });
+      const feedback = {
+        tone: "danger",
+        title: "Telegram",
+        message:
+          error instanceof Error && error.name === "AbortError"
+            ? "Telegram не ответил вовремя. Проверьте соединение backend с Telegram и повторите запрос QR."
+            : error instanceof Error
+              ? error.message
+              : fallback,
+      } satisfies ActionResult;
+      setResult(feedback);
+      options.onFailure?.(feedback);
       return null;
     } finally {
+      window.clearTimeout(timeoutId);
       setAction(null);
     }
   }
@@ -438,23 +470,29 @@ export default function MessengerIntegrationsClient() {
   }
 
   async function startQrLogin() {
+    setQrFeedback(null);
     const data = await postAction(
       "/api/messenger/telegram-user/start-qr",
       { phone },
       "qrStart",
-      "Не удалось создать QR для Telegram."
+      "Не удалось создать QR для Telegram.",
+      { onFailure: setQrFeedback, timeoutMs: QR_START_TIMEOUT_MS }
     );
     if (!data) return;
     if (data.connected && data.account) {
       setSelectedAccountId(data.account.id);
       setQrLogin(null);
-      setResult({ tone: "success", title: "Telegram подключён", message: "Рабочий аккаунт подключён через QR." });
+      const feedback = { tone: "success", title: "Telegram подключён", message: "Рабочий аккаунт подключён через QR." } satisfies ActionResult;
+      setResult(feedback);
+      setQrFeedback(feedback);
       await loadStatus();
       return;
     }
     const accountId = data.accountId;
     if (!accountId || !data.qrLoginUrl || !data.qrImageDataUrl) {
-      setResult({ tone: "danger", title: "QR Telegram", message: "Backend не вернул QR-код. Попробуйте создать QR заново." });
+      const feedback = { tone: "danger", title: "QR Telegram", message: "Backend не вернул QR-код. Попробуйте создать QR заново." } satisfies ActionResult;
+      setResult(feedback);
+      setQrFeedback(feedback);
       return;
     }
     setSelectedAccountId(accountId);
@@ -464,11 +502,13 @@ export default function MessengerIntegrationsClient() {
       imageDataUrl: data.qrImageDataUrl,
       expiresAt: data.expiresAt ?? null,
     });
-    setResult({
+    const feedback = {
       tone: "warning",
       title: "QR готов",
       message: "Откройте рабочий Telegram: Настройки → Устройства → Подключить устройство, затем отсканируйте QR.",
-    });
+    } satisfies ActionResult;
+    setResult(feedback);
+    setQrFeedback(feedback);
     await loadStatus();
   }
 
@@ -713,6 +753,18 @@ export default function MessengerIntegrationsClient() {
               <QrCode size={16} />
               {action === "qrStart" ? "Готовим QR..." : "Подключить по QR"}
             </EcoButton>
+            {qrFeedback && (
+              <div
+                className={`eco-integration-note eco-integration-note--${qrFeedback.tone}`}
+                role={qrFeedback.tone === "danger" ? "alert" : "status"}
+                aria-live="polite"
+              >
+                {qrFeedback.tone === "danger" ? <AlertTriangle size={16} /> : qrFeedback.tone === "success" ? <CheckCircle2 size={16} /> : <QrCode size={16} />}
+                <span>
+                  <strong>{qrFeedback.title}.</strong> {qrFeedback.message}
+                </span>
+              </div>
+            )}
           </div>
 
           {qrLogin && (

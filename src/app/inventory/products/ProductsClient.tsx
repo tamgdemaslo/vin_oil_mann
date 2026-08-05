@@ -2308,6 +2308,15 @@ export default function ProductsClient() {
     setExportMenuOpen(false);
   }
 
+  function openCopyToBranch() {
+    if (selectedProductIds.length === 0) {
+      setToast({ message: "Выберите товары чекбоксами перед копированием в филиал." });
+      return;
+    }
+    setExportMenuOpen(false);
+    setCopyProductIds(selectedProductIds);
+  }
+
   function resetImportWizard() {
     setImportFile(null);
     setImportJob(null);
@@ -4505,6 +4514,16 @@ export default function ProductsClient() {
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("selected")}>Выбранные строки ({selectedProductIds.length})</button>
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("active")}>Только активные</button>
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("archived")}>Архивные</button>
+                  {selectedProductIds.length > 0 && canCopyProducts ? (
+                    <>
+                      <div className="eco-product-export-separator" role="separator" />
+                      <button type="button" role="menuitem" onClick={openCopyToBranch}>
+                        <Copy aria-hidden className="eco-icon" />
+                        Скопировать в филиал ({selectedProductIds.length})
+                      </button>
+                    </>
+                  ) : null}
+                  <div className="eco-product-export-separator" role="separator" />
                   <button type="button" role="menuitem" onClick={downloadTemplate}>Скачать пустой шаблон</button>
                   <button type="button" role="menuitem" onClick={openImportHistory}>История экспортов/импортов</button>
                 </div>
@@ -4682,11 +4701,6 @@ export default function ProductsClient() {
             </div>
             <div className="eco-products-strip-meta">
               {selectedProductIds.length > 0 ? <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span> : null}
-              {selectedProductIds.length > 0 && canCopyProducts ? (
-                <button type="button" className="eco-btn eco-btn--sm" onClick={() => setCopyProductIds(selectedProductIds)}>
-                  <Copy aria-hidden className="eco-icon" /> Скопировать в филиал
-                </button>
-              ) : null}
               <span>{visibleProductsLabel} из {totalProductsLabel}</span>
             </div>
           </div>
