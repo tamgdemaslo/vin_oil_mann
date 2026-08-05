@@ -17,7 +17,8 @@ const {
 
 assert.equal(normalizeVinInput(" wba5e-7101 fg155636 "), "WBA5E7101FG155636");
 assert.equal(normalizeFrameInput(" zvw52-3030148 "), "ZVW523030148");
-assert.deepEqual(normalizePlateInput("Т 332 ЕК 39"), { original: "Т 332 ЕК 39", normalized: "T332EK39" });
+assert.deepEqual(normalizePlateInput("Т 332 ЕК 39"), { original: "Т 332 ЕК 39", normalized: "Т332ЕК39" });
+assert.deepEqual(normalizePlateInput("T-744-KO-39"), { original: "T-744-KO-39", normalized: "Т744КО39" });
 assert.equal(normalizeVehicleMake("Mercedes-Benz"), "MERCEDES");
 assert.equal(normalizeVehicleMake("LandRover"), "LAND ROVER");
 assert.equal(normalizeEngineCode("B47 D20-A"), "B47D20A");

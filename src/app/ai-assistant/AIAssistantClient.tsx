@@ -1,11 +1,11 @@
 "use client";
 
-import { Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
 import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 
-type Thread = { id: string; title: string; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
+type Thread = { id: string; title: string; status: "active" | "archived"; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
 type Message = { id: string; role: "user" | "assistant"; content: string; citationsJson: Citation[]; attachmentsJson: unknown; createdAt: string; runId: string | null };
 type Citation = { title: string | null; url: string };
 type Quote = AIServiceQuote & { appliedRuleId: string | null; isSelected: boolean; createdAt: string };
@@ -87,6 +87,8 @@ function structuredResponseForMessage(message: Message): AIAssistantStructuredRe
 
 export default function AIAssistantClient() {
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [archivedThreads, setArchivedThreads] = useState<Thread[]>([]);
+  const [threadListMode, setThreadListMode] = useState<"active" | "archived">("active");
   const [activeBranch, setActiveBranch] = useState<ActiveBranch | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [data, setData] = useState<ThreadData | null>(null);
@@ -97,16 +99,18 @@ export default function AIAssistantClient() {
   const [clientPreview, setClientPreview] = useState<string | null>(null);
   const [connectionCheck, setConnectionCheck] = useState<OpenAIConnectionCheck | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
-  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadThreads = useCallback(async () => {
     const response = await fetch("/api/ai-assistant/threads", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(asError(payload));
     const next = (payload.threads ?? []) as Thread[];
+    const nextArchived = (payload.archivedThreads ?? []) as Thread[];
     setActiveBranch(payload.branch && typeof payload.branch.name === "string" ? payload.branch as ActiveBranch : null);
     setThreads(next);
-    setActiveThreadId((current) => current && next.some((thread) => thread.id === current) ? current : next[0]?.id ?? null);
+    setArchivedThreads(nextArchived);
     return next;
   }, []);
 
@@ -130,14 +134,30 @@ export default function AIAssistantClient() {
     void loadThread(activeThreadId).catch((reason) => setError(reason instanceof Error ? reason.message : "Не удалось открыть диалог"));
   }, [activeThreadId, loadThread]);
 
+  useEffect(() => {
+    const visibleThreads = threadListMode === "archived" ? archivedThreads : threads;
+    setActiveThreadId((current) => current && visibleThreads.some((thread) => thread.id === current) ? current : visibleThreads[0]?.id ?? null);
+  }, [archivedThreads, threadListMode, threads]);
+
   const working = sending || data?.latestRun?.status === "running" || data?.latestRun?.status === "queued";
+  const visibleThreads = threadListMode === "archived" ? archivedThreads : threads;
+  const activeThread = [...threads, ...archivedThreads].find((thread) => thread.id === activeThreadId) ?? null;
+  const activeThreadIsArchived = activeThread?.status === "archived";
   useEffect(() => {
     if (!activeThreadId || !working) return;
     const timer = window.setInterval(() => { void loadThread(activeThreadId).catch(() => undefined); }, 2_000);
     return () => window.clearInterval(timer);
   }, [activeThreadId, loadThread, working]);
 
-  useEffect(() => { messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [data?.messages?.length, working]);
+  useEffect(() => {
+    const messagesElement = messagesRef.current;
+    if (!messagesElement) return;
+    messagesElement.scrollTo({ top: messagesElement.scrollHeight, behavior: "smooth" });
+  }, [activeThreadId, data?.messages?.length, working]);
+
+  const focusComposer = useCallback(() => {
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }, []);
 
   const createThread = useCallback(async () => {
     setError(null);
@@ -147,31 +167,45 @@ export default function AIAssistantClient() {
       if (!response.ok) throw new Error(asError(payload));
       const thread = payload.thread as Thread;
       setThreads((current) => [thread, ...current]);
+      setThreadListMode("active");
       setActiveThreadId(thread.id);
+      setData(null);
       setDraft("");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось создать диалог"); }
-  }, []);
+      focusComposer();
+      return thread;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось создать диалог");
+      return null;
+    }
+  }, [focusComposer]);
 
   const send = useCallback(async () => {
     const message = draft.trim();
-    if (!message || !activeThreadId || working) return;
+    if (!message || working || activeThreadIsArchived) return;
+    let requestedThreadId = activeThreadId;
     setSending(true);
     setError(null);
     setDraft("");
     try {
-      const response = await fetch(`/api/ai-assistant/threads/${encodeURIComponent(activeThreadId)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
+      const thread = activeThreadId ? { id: activeThreadId } : await createThread();
+      if (!thread) {
+        setDraft(message);
+        return;
+      }
+      requestedThreadId = thread.id;
+      const response = await fetch(`/api/ai-assistant/threads/${encodeURIComponent(thread.id)}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(asError(payload));
-      await Promise.all([loadThread(activeThreadId), loadThreads()]);
+      await Promise.all([loadThread(thread.id), loadThreads()]);
     } catch (reason) {
       setDraft(message);
       setError(reason instanceof Error ? reason.message : "Не удалось отправить запрос");
-      await loadThread(activeThreadId).catch(() => undefined);
+      if (requestedThreadId) await loadThread(requestedThreadId).catch(() => undefined);
     } finally { setSending(false); }
-  }, [activeThreadId, draft, loadThread, loadThreads, working]);
+  }, [activeThreadId, activeThreadIsArchived, createThread, draft, loadThread, loadThreads, working]);
 
   const requestClientMessage = useCallback(async (quoteId: string, mode: "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price") => {
-    if (!activeThreadId || working) return;
+    if (!activeThreadId || working || activeThreadIsArchived) return;
     const labels = { short_with_price: "Короткое сообщение для клиента с расчётом", short_without_price: "Короткое сообщение для клиента без цены", detailed_with_price: "Подробное сообщение для клиента с расчётом", only_final_price: "Только итоговая цена для клиента" };
     setSending(true);
     setError(null);
@@ -187,7 +221,7 @@ export default function AIAssistantClient() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось подготовить клиентский текст");
     } finally { setSending(false); }
-  }, [activeThreadId, loadThread, loadThreads, working]);
+  }, [activeThreadId, activeThreadIsArchived, loadThread, loadThreads, working]);
 
   const copyText = useCallback(async (value: string) => {
     try {
@@ -214,6 +248,38 @@ export default function AIAssistantClient() {
       await loadThread(activeThreadId);
     } catch { setError("Не удалось остановить текущую проверку"); }
   }, [activeThreadId, loadThread]);
+
+  const setThreadStatus = useCallback(async (thread: Thread, status: "active" | "archived") => {
+    try {
+      setError(null);
+      const response = await fetch(`/api/ai-assistant/threads/${encodeURIComponent(thread.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(asError(payload));
+      const updated = payload.thread as Thread;
+
+      if (status === "archived") {
+        const remainingThreads = threads.filter((item) => item.id !== thread.id);
+        setThreads(remainingThreads);
+        setArchivedThreads((current) => [updated, ...current.filter((item) => item.id !== thread.id)]);
+        if (activeThreadId === thread.id) {
+          setData(null);
+          setActiveThreadId(remainingThreads[0]?.id ?? null);
+        }
+      } else {
+        setArchivedThreads((current) => current.filter((item) => item.id !== thread.id));
+        setThreads((current) => [updated, ...current.filter((item) => item.id !== thread.id)]);
+        setThreadListMode("active");
+        setData(null);
+        setActiveThreadId(updated.id);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось изменить статус диалога");
+    }
+  }, [activeThreadId, threads]);
 
   const checkOpenAIConnection = useCallback(async () => {
     setCheckingConnection(true);
@@ -252,18 +318,28 @@ export default function AIAssistantClient() {
         <aside className="eco-aiw-sidebar">
           <div className="eco-aiw-sidebar__head"><strong>Диалоги</strong><button type="button" className="eco-aiw-icon-button" onClick={() => void createThread()} title="Новый диалог" aria-label="Новый диалог"><MessageSquarePlus size={18} /></button></div>
           <button type="button" className="eco-aiw-new" onClick={() => void createThread()}><Sparkles size={17} /> Новый запрос</button>
+          <div className="eco-aiw-list-tabs" role="tablist" aria-label="Список диалогов">
+            <button type="button" role="tab" aria-selected={threadListMode === "active"} className={threadListMode === "active" ? "is-active" : ""} onClick={() => setThreadListMode("active")}>Активные <span>{threads.length}</span></button>
+            <button type="button" role="tab" aria-selected={threadListMode === "archived"} className={threadListMode === "archived" ? "is-active" : ""} onClick={() => setThreadListMode("archived")}>Архив <span>{archivedThreads.length}</span></button>
+          </div>
           <div className="eco-aiw-thread-list">
-            {threads.map((thread) => <button type="button" key={thread.id} className={`eco-aiw-thread ${thread.id === activeThreadId ? "is-active" : ""}`} onClick={() => setActiveThreadId(thread.id)}><span>{thread.title}</span><small>{formatTime(thread.lastMessageAt)} · {thread._count?.messages ?? 0}</small></button>)}
-            {!loading && threads.length === 0 && <p className="eco-aiw-empty-list">Создайте первый диалог, чтобы начать проверку.</p>}
+            {visibleThreads.map((thread) => <div key={thread.id} className="eco-aiw-thread-row">
+              <button type="button" className={`eco-aiw-thread ${thread.id === activeThreadId ? "is-active" : ""}`} onClick={() => { setData(null); setActiveThreadId(thread.id); }}><span>{thread.title}</span><small>{formatTime(thread.lastMessageAt)} · {thread._count?.messages ?? 0}</small></button>
+              <button type="button" className="eco-aiw-thread-action" onClick={() => void setThreadStatus(thread, thread.status === "archived" ? "active" : "archived")} disabled={thread.id === activeThreadId && working} title={thread.status === "archived" ? "Вернуть из архива" : "Архивировать"} aria-label={thread.status === "archived" ? `Вернуть «${thread.title}» из архива` : `Архивировать «${thread.title}»`}>
+                {thread.status === "archived" ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+              </button>
+            </div>)}
+            {!loading && visibleThreads.length === 0 && <p className="eco-aiw-empty-list">{threadListMode === "archived" ? "Архив пока пуст." : "Напишите вопрос внизу — первый диалог создастся автоматически."}</p>}
           </div>
         </aside>
 
         <section className="eco-aiw-chat">
-          <div className="eco-aiw-chat__head"><div><strong>{data?.thread?.title ?? "Новый диалог"}</strong><span><Bot size={15} /> {runLabel(data?.latestRun ?? null)} · <Building2 size={14} /> {activeBranch?.name ?? "Филиал не выбран"}</span></div>{working && <button type="button" className="eco-aiw-stop" onClick={() => void cancel()}><CircleStop size={16} /> Остановить</button>}</div>
-          <div className="eco-aiw-messages">
+          <div className="eco-aiw-chat__head"><div><strong>{data?.thread?.title ?? activeThread?.title ?? "Новый диалог"}</strong><span><Bot size={15} /> {activeThreadIsArchived ? "В архиве" : runLabel(data?.latestRun ?? null)} · <Building2 size={14} /> {activeBranch?.name ?? "Филиал не выбран"}</span></div>{working && <button type="button" className="eco-aiw-stop" onClick={() => void cancel()}><CircleStop size={16} /> Остановить</button>}</div>
+          <div ref={messagesRef} className="eco-aiw-messages">
             {loading && <div className="eco-aiw-loading"><LoaderCircle size={19} /> Загружаем рабочее пространство…</div>}
             {!loading && !activeThreadId && <div className="eco-aiw-welcome"><Bot size={28} /><h2>Задайте рабочий вопрос</h2><p>Помощник сам выберет нужные проверки, но сохранит их источники и журнал инструментов.</p></div>}
-            {!loading && activeThreadId && messages.length === 0 && <div className="eco-aiw-welcome"><FileSearch size={28} /><h2>Новый внутренний диалог</h2><p>Например, найдите клиентскую историю, проверьте артикул, определите автомобиль или соберите предварительный расчёт.</p><div className="eco-aiw-starters">{starterPrompts.map((item) => <button key={item} type="button" onClick={() => setDraft(item)}>{item}<ChevronRight size={15} /></button>)}</div></div>}
+            {!loading && activeThreadId && !activeThreadIsArchived && messages.length === 0 && <div className="eco-aiw-welcome"><FileSearch size={28} /><h2>Новый внутренний диалог</h2><p>Например, найдите клиентскую историю, проверьте артикул, определите автомобиль или соберите предварительный расчёт.</p><div className="eco-aiw-starters">{starterPrompts.map((item) => <button key={item} type="button" onClick={() => { setDraft(item); focusComposer(); }}>{item}<ChevronRight size={15} /></button>)}</div></div>}
+            {!loading && activeThreadId && activeThreadIsArchived && messages.length === 0 && <div className="eco-aiw-welcome"><Archive size={28} /><h2>Диалог в архиве</h2><p>Он сохранён для просмотра. Верните его из архива в списке слева, если нужно продолжить работу.</p></div>}
             {messages.map((message) => {
               const quoteIds = quoteIdsForMessage(message);
               const linkedQuotes = quoteIds.map((id) => quotes.find((quote) => quote.id === id)).filter((quote): quote is Quote => Boolean(quote));
@@ -282,11 +358,11 @@ export default function AIAssistantClient() {
                 {linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
                 {linkedQuotes.map((quote) => <div className="eco-aiw-quote-actions" key={quote.id}>
                   {quote.status === "draft" ? <div className="eco-aiw-quote-actions__buttons">
-                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working}>Короткое сообщение</button>
-                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working}>С расчётом</button>
-                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_without_price")} disabled={working}>Без расчёта</button>
-                    <button type="button" onClick={() => void requestClientMessage(quote.id, "detailed_with_price")} disabled={working}>Подробное сообщение</button>
-                    <button type="button" onClick={() => setDraft("Добавь рекомендацию к сообщению клиенту: ")}>Добавить рекомендацию</button>
+                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working || activeThreadIsArchived}>Короткое сообщение</button>
+                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working || activeThreadIsArchived}>С расчётом</button>
+                    <button type="button" onClick={() => void requestClientMessage(quote.id, "short_without_price")} disabled={working || activeThreadIsArchived}>Без расчёта</button>
+                    <button type="button" onClick={() => void requestClientMessage(quote.id, "detailed_with_price")} disabled={working || activeThreadIsArchived}>Подробное сообщение</button>
+                    <button type="button" onClick={() => setDraft("Добавь рекомендацию к сообщению клиенту: ")} disabled={activeThreadIsArchived}>Добавить рекомендацию</button>
                   </div> : <p className="eco-aiw-quote-actions__missing">Для клиентского текста в этом расчёте нужно указать автомобиль и название работы.</p>}
                   {Array.isArray(quote.internalWarningsJson) && quote.internalWarningsJson.length > 0 && <p className="eco-aiw-quote-actions__warning">Внутреннее замечание — не включено в сообщение клиенту.</p>}
                 </div>)}
@@ -294,11 +370,10 @@ export default function AIAssistantClient() {
                 {isMissingQuote && <div className="eco-aiw-client-message-actions"><button type="button" onClick={() => setDraft("Выполни технический подбор и предварительный расчёт по текущему запросу")}>Рассчитать</button></div>}
               </article>;
             })}
+            {clientPreview && <section className="eco-aiw-client-preview" aria-label="Предпросмотр сообщения для CRM"><div><strong>Предпросмотр для CRM</strong><span>Текст ещё не отправлен клиенту.</span></div><textarea value={clientPreview} onChange={(event) => setClientPreview(event.target.value)} rows={5} /><footer><button type="button" onClick={() => void copyText(clientPreview)}><Clipboard size={14} /> Скопировать</button><button type="button" className="is-primary" onClick={openCrmDialog}>Открыть в CRM-диалоге</button><button type="button" onClick={() => setClientPreview(null)}>Закрыть</button></footer></section>}
             {working && <div className="eco-aiw-thinking"><LoaderCircle size={17} /> Идёт исследование: web-поиск, каталоги и источники появятся справа.</div>}
-            <div ref={messageEndRef} />
           </div>
-          <form className="eco-aiw-composer" onSubmit={(event) => { event.preventDefault(); void send(); }}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void send(); } }} disabled={!activeThreadId || working} placeholder={activeThreadId ? "Напишите рабочий запрос…" : "Создайте диалог слева"} rows={3} /><button type="submit" disabled={!draft.trim() || !activeThreadId || working}><Send size={18} /> Отправить</button><small>⌘/Ctrl + Enter — отправить</small></form>
-          {clientPreview && <section className="eco-aiw-client-preview" aria-label="Предпросмотр сообщения для CRM"><div><strong>Предпросмотр для CRM</strong><span>Текст ещё не отправлен клиенту.</span></div><textarea value={clientPreview} onChange={(event) => setClientPreview(event.target.value)} rows={5} /><footer><button type="button" onClick={() => void copyText(clientPreview)}><Clipboard size={14} /> Скопировать</button><button type="button" className="is-primary" onClick={openCrmDialog}>Открыть в CRM-диалоге</button><button type="button" onClick={() => setClientPreview(null)}>Закрыть</button></footer></section>}
+          <form className="eco-aiw-composer" onSubmit={(event) => { event.preventDefault(); void send(); }}><textarea ref={composerRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void send(); } }} disabled={working || activeThreadIsArchived} placeholder={activeThreadIsArchived ? "Диалог в архиве — восстановите его, чтобы продолжить" : activeThreadId ? "Напишите рабочий запрос…" : "Напишите вопрос — новый диалог создастся автоматически"} rows={3} /><button type="submit" disabled={!draft.trim() || working || activeThreadIsArchived}><Send size={18} /> Отправить</button><small>{activeThreadIsArchived ? "Архивный диалог доступен только для просмотра." : activeThreadId ? "⌘/Ctrl + Enter — отправить" : "⌘/Ctrl + Enter — создать диалог и отправить"}</small></form>
         </section>
 
         <aside className="eco-aiw-evidence">

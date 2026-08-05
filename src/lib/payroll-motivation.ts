@@ -128,6 +128,7 @@ export async function listActivePayrollGoals(params: {
   organizationId?: string;
 }) {
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -167,6 +168,7 @@ export async function listActivePayrollGoals(params: {
         updated_at AS "updatedAt"
       FROM payroll_goals
       WHERE organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
+        AND branch_id = ${branchId}
         AND status <> 'archived'
         AND starts_at <= ${params.dateKey}
         AND ends_at >= ${params.dateKey}
@@ -324,6 +326,7 @@ export async function listEmployeeRecognition(params: {
   limit?: number;
 }) {
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -353,6 +356,7 @@ export async function listEmployeeRecognition(params: {
         created_at AS "createdAt"
       FROM employee_recognitions
       WHERE organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
+        AND branch_id = ${branchId}
         AND lower(employee_id) = ${normalizeLogin(params.employeeLogin)}
       ORDER BY created_at DESC
       LIMIT ${params.limit ?? 20}

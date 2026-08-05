@@ -116,6 +116,11 @@ Keep `.env.production` where it is. Copy `config.env.template` to
 public origin, and restrict it to the deploy user. The server's Docker login
 must use the read-only Selectel token.
 
+Set `OPENAI_API_KEY` in `/opt/tgm/.env.production` before enabling the
+internal AI assistant. This is a server-only secret; do not add it to GitHub
+variables, `NEXT_PUBLIC_*`, or the repository. After changing the file,
+redeploy the active application image so the new container receives the value.
+
 Keep `COMPOSE_PROJECT_NAME=tgm` in `config.env` so the immutable application
 slots join the canonical production network and reuse the existing PostgreSQL
 and application-data volumes. Changing this value would create an isolated

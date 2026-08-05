@@ -87,8 +87,12 @@ const MAKE_ALIASES: Record<string, string> = {
   "GREAT WALL": "GREAT WALL",
 };
 
-const PLATE_CYRILLIC_TO_LATIN: Record<string, string> = {
-  А: "A", В: "B", Е: "E", К: "K", М: "M", Н: "H", О: "O", Р: "P", С: "C", Т: "T", У: "Y", Х: "X",
+// TRONK expects Russian licence plates in Cyrillic.  People often enter the
+// visually identical Latin characters, so convert those to the canonical
+// Cyrillic representation before using the value as a provider input or cache
+// key.
+const PLATE_LATIN_TO_CYRILLIC: Record<string, string> = {
+  A: "А", B: "В", C: "С", E: "Е", H: "Н", K: "К", M: "М", O: "О", P: "Р", T: "Т", X: "Х", Y: "У",
 };
 
 const paidRequestBuckets = ((globalThis as typeof globalThis & {
@@ -209,7 +213,10 @@ export function normalizeFrameInput(value: string): string {
 
 export function normalizePlateInput(value: string): { original: string; normalized: string } {
   const original = value.trim();
-  const normalized = original.toUpperCase().replace(/\s+/g, "").replace(/[АВЕКМНОРСТУХ]/g, (char) => PLATE_CYRILLIC_TO_LATIN[char] ?? char);
+  const normalized = original
+    .toUpperCase()
+    .replace(/[\s-]+/g, "")
+    .replace(/[ABCEHKMOPTXY]/g, (char) => PLATE_LATIN_TO_CYRILLIC[char] ?? char);
   return { original, normalized };
 }
 

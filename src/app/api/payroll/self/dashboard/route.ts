@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canonicalizeLogin, getSession, getUsersFromEnv } from "@/lib/auth";
+import { canonicalizeLogin, getUsersFromEnv } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getCachedPayrollSummary, type PayrollSummary, type VehicleRecord } from "@/lib/payroll";
 import { getPayrollPeriodEmployeeByRange } from "@/lib/payroll-periods";
 import {
@@ -178,8 +179,15 @@ function goalCurrentValue(goal: PayrollGoalRecord, summary: PayrollSummary, logi
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+
+  // The summary, goals and recognition queries are all branch-scoped.  Running
+  // the whole handler in the verified branch context both supplies that scope
+  // to the payroll engine and prevents a personal dashboard from crossing into
+  // another branch's data.
+  return runWithBranchApiContext(access.context, async () => {
+    const session = { user: access.context.user };
 
   const { searchParams } = new URL(request.url);
   const previewUser = searchParams.get("previewUser");
@@ -237,7 +245,7 @@ export async function GET(request: NextRequest) {
   ]);
   const userNameByLogin = new Map(users.map((user) => [user.login.toLowerCase(), user.name]));
 
-  return NextResponse.json({
+    return NextResponse.json({
     employee: {
       login: employee.login,
       name: employee.name,
@@ -307,5 +315,6 @@ export async function GET(request: NextRequest) {
       createdAt: item.createdAt,
     })),
     opportunities: buildOpportunities(monthSummary, login),
+    });
   });
 }

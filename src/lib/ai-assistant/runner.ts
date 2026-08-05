@@ -430,8 +430,27 @@ export async function createAssistantThread(input: { organizationId: string; act
   return prisma.aIAssistantThread.create({ data: { organizationId: input.organizationId, createdById: input.actor.id, title: text(input.title, 120) || "Новый разговор" } });
 }
 
-export async function listAssistantThreads(organizationId: string) {
-  return prisma.aIAssistantThread.findMany({ where: { organizationId, status: "active" }, select: { id: true, title: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } }, orderBy: { lastMessageAt: "desc" }, take: 100 });
+export async function listAssistantThreads(organizationId: string, status: "active" | "archived" = "active") {
+  return prisma.aIAssistantThread.findMany({ where: { organizationId, status }, select: { id: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } }, orderBy: { lastMessageAt: "desc" }, take: 100 });
+}
+
+export async function setAssistantThreadStatus(input: { threadId: string; organizationId: string; status: "active" | "archived" }) {
+  const thread = await threadOrThrow(input.threadId, input.organizationId);
+  if (thread.status === input.status) return thread;
+
+  if (input.status === "archived") {
+    const running = await prisma.aIAssistantRun.findFirst({
+      where: { threadId: thread.id, organizationId: input.organizationId, status: { in: ["queued", "running"] } },
+      select: { id: true },
+    });
+    if (running) throw new Error("Нельзя архивировать диалог, пока выполняется запрос");
+  }
+
+  return prisma.aIAssistantThread.update({
+    where: { id: thread.id },
+    data: { status: input.status },
+    select: { id: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } },
+  });
 }
 
 export async function getAssistantThread(threadId: string, organizationId: string) {
@@ -459,6 +478,7 @@ export async function runAssistantThread(input: { threadId: string; organization
   if (!message || message.length > MAX_MESSAGE_CHARS || message.includes("\u0000")) throw new Error("Сообщение слишком большое или содержит недопустимые символы");
   const config = adminAssistantConfig();
   const thread = await threadOrThrow(input.threadId, input.organizationId);
+  if (thread.status === "archived") throw new Error("Диалог находится в архиве. Восстановите его, чтобы продолжить работу.");
   await closeStaleAssistantRuns(thread.id, input.organizationId);
   if (await prisma.aIAssistantRun.findFirst({ where: { threadId: thread.id, organizationId: input.organizationId, status: { in: ["queued", "running"] } }, select: { id: true } })) throw new Error("Предыдущий запрос ещё выполняется");
   const inputMessage = await prisma.aIAssistantMessage.create({ data: { threadId: thread.id, organizationId: input.organizationId, role: "user", content: message, createdById: input.actor.id } });

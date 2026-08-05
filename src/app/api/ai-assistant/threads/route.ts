@@ -11,9 +11,13 @@ export async function GET() {
   const access = await requireAIAssistantAccess();
   if ("response" in access) return access.response;
   try {
-    const threads = await listAssistantThreads(access.organizationId);
+    const [threads, archivedThreads] = await Promise.all([
+      listAssistantThreads(access.organizationId),
+      listAssistantThreads(access.organizationId, "archived"),
+    ]);
     return NextResponse.json({
       threads,
+      archivedThreads,
       branch: { id: access.branchId, name: access.branchName },
     });
   } catch (error) {
