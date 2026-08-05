@@ -38,6 +38,7 @@ export type BranchContext = {
   businessGroupId: string;
   groupRole: string | null;
   branchRole: string | null;
+  permissions: string[];
   isGroupOwner: boolean;
   canManageBranches: boolean;
   mode: "branch" | "all";
@@ -46,6 +47,17 @@ export type BranchContext = {
   branch: BranchSummary | null;
   branches: BranchSummary[];
 };
+
+function permissionsFromJson(value: Prisma.JsonValue | null | undefined) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([permission]) => permission);
+  }
+  return [];
+}
 
 export class BranchAccessError extends Error {
   status: number;
@@ -256,6 +268,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
       businessGroupId: access.group.id,
       groupRole: access.groupRole,
       branchRole: null,
+      permissions: [],
       isGroupOwner: access.groupRole === "group_owner",
       canManageBranches: Boolean(access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)),
       mode: "all",
@@ -292,6 +305,12 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     throw new BranchAccessError("Филиал работает в режиме только для чтения", 423, "branch_read_only");
   }
   const branchMembership = access.branchMemberships.find((membership) => membership.branchId === branch.id) ?? null;
+  const branchPermissions = permissionsFromJson(branchMembership?.permissionsJson);
+  const canManageSelectedBranch = Boolean(
+    access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)
+  ) || ["branch_owner", "administrator"].includes(branchMembership?.roleId ?? "")
+    || branchPermissions.includes("branches.manage")
+    || branchPermissions.includes("branch.members.manage");
 
   return {
     user: session.user,
@@ -299,8 +318,9 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     businessGroupId: access.group.id,
     groupRole: access.groupRole,
     branchRole: branchMembership?.roleId ?? (access.groupRole ? "branch_owner" : null),
+    permissions: branchPermissions,
     isGroupOwner: access.groupRole === "group_owner",
-    canManageBranches: Boolean(access.groupRole && GROUP_MANAGE_ROLES.has(access.groupRole)),
+    canManageBranches: canManageSelectedBranch,
     mode: "branch",
     branchId: branch.id,
     organizationId: branch.legacyOrganizationId ?? branch.id,

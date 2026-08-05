@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { branchErrorResponse, requireBranchContext } from "@/lib/branch-context";
-import { updateBranch, type BranchInput } from "@/lib/branches";
+import { archiveBranch, updateBranch, type BranchInput } from "@/lib/branches";
 import { prisma } from "@/lib/db";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ branchId: string }> }) {
@@ -27,6 +27,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const context = await requireBranchContext({ allowAll: true, requireActive: false });
     const { branchId } = await params;
     const body = (await request.json()) as BranchInput;
+    if (body.status === "archived") {
+      const archived = await archiveBranch(context, branchId);
+      if (!archived.ok) return NextResponse.json({ error: archived.error }, { status: archived.status });
+      return NextResponse.json({ branch: archived.branch });
+    }
     const result = await updateBranch(context, branchId, body);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json({ branch: result.branch });
@@ -35,4 +40,3 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
   }
 }
-

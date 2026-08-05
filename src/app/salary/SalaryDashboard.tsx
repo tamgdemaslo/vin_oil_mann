@@ -1065,14 +1065,16 @@ export default function SalaryDashboard({
   login,
   name,
   isOwner,
+  initialPersonalView = false,
 }: {
   role: string;
   login: string;
   name: string;
   isOwner: boolean;
+  initialPersonalView?: boolean;
 }) {
   const defaults = getCurrentMonthRange();
-  const [mode, setMode] = useState<PayrollMode>(isOwner ? "owner" : "employee");
+  const [mode, setMode] = useState<PayrollMode>(isOwner && !initialPersonalView ? "owner" : "employee");
   const [activeTab, setActiveTab] = useState<SalaryTab>(() => {
     if (typeof window === "undefined") return "calculation";
     return parseSalaryTab(new URLSearchParams(window.location.search).get("tab"));

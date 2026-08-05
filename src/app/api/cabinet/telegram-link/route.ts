@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import {
   createEmployeeTelegramLinkToken,
+  disconnectEmployeeTelegram,
   getEmployeeTelegramStatus,
 } from "@/lib/messenger/messenger-linking";
 
@@ -45,9 +46,9 @@ export async function POST() {
     if (!token.linkUrl) {
       return NextResponse.json(
         {
-          error: "Telegram bot username не настроен. Откройте Кабинет → Интеграции → Мессенджеры и сохраните настройки Telegram.",
+          error: "Telegram-бот для персональной привязки пока не настроен.",
           code: "telegram_not_configured",
-          settingsUrl: "/cabinet/integrations/messenger",
+          hint: "Обратитесь к владельцу филиала: рабочий канал Telegram должен быть подключён в Управлении.",
         },
         { status: 400 }
       );
@@ -62,6 +63,16 @@ export async function POST() {
         expiresAt: token.expiresAt,
       },
     });
+  } catch (error) {
+    return telegramLinkError(error);
+  }
+}
+
+export async function DELETE() {
+  const auth = await requireSession();
+  if ("response" in auth) return auth.response;
+  try {
+    return NextResponse.json(await disconnectEmployeeTelegram(auth.session.user.login));
   } catch (error) {
     return telegramLinkError(error);
   }

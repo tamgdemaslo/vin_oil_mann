@@ -88,6 +88,34 @@ type TBankForm = {
   productionMode: boolean;
 };
 
+type RosskoStatus = {
+  configured: boolean;
+  connected: boolean;
+  key1Configured: boolean;
+  key2Configured: boolean;
+  key1Masked: string | null;
+  key2Masked: string | null;
+  profile: string;
+  deliveryId: string;
+  addressId: string;
+  paymentId: string;
+  requisiteId: string;
+  preferredStore: string;
+  contactName: string;
+  contactPhone: string;
+  deliveryParts: boolean;
+  timeoutMs: string;
+  requestsPerSecond: string;
+  lastCheckedAt: string | null;
+  lastCheckStatus: "never" | "ok" | "error";
+  lastErrorCode: string | null;
+};
+
+type RosskoForm = Omit<RosskoStatus, "configured" | "connected" | "key1Configured" | "key2Configured" | "key1Masked" | "key2Masked" | "lastCheckedAt" | "lastCheckStatus" | "lastErrorCode"> & {
+  key1: string;
+  key2: string;
+};
+
 type RunResult = {
   title: string;
   message: string;
@@ -106,6 +134,22 @@ const DEFAULT_TBANK_FORM: TBankForm = {
   webhookUrl: "",
   sandbox: false,
   productionMode: false,
+};
+
+const DEFAULT_ROSSKO_FORM: RosskoForm = {
+  key1: "",
+  key2: "",
+  profile: "",
+  deliveryId: "",
+  addressId: "",
+  paymentId: "",
+  requisiteId: "",
+  preferredStore: "",
+  contactName: "",
+  contactPhone: "",
+  deliveryParts: true,
+  timeoutMs: "20000",
+  requestsPerSecond: "4",
 };
 
 const TECHNICAL_ERROR_RE = /prisma|p\d{4}|stack|trace|econn|timeout|failed to connect|can't reach|database server|fetch failed|api\/|http/i;
@@ -176,16 +220,20 @@ export default function IntegrationsClient() {
   const [tbank, setTbank] = useState<TBankStatus | null>(null);
   const [tbankError, setTbankError] = useState<string | null>(null);
   const [tbankForm, setTbankForm] = useState<TBankForm>(DEFAULT_TBANK_FORM);
+  const [rossko, setRossko] = useState<RosskoStatus | null>(null);
+  const [rosskoError, setRosskoError] = useState<string | null>(null);
+  const [rosskoForm, setRosskoForm] = useState<RosskoForm>(DEFAULT_ROSSKO_FORM);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState<"inventory" | "analytics" | "tbank-save" | "tbank-test" | null>(null);
+  const [running, setRunning] = useState<"inventory" | "analytics" | "tbank-save" | "tbank-test" | "rossko-save" | "rossko-test" | "rossko-disconnect" | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
 
   async function loadStatus() {
     setLoading(true);
-    const [inventoryRes, analyticsRes, tbankRes] = await Promise.allSettled([
+    const [inventoryRes, analyticsRes, tbankRes, rosskoRes] = await Promise.allSettled([
       fetch("/api/local-inventory/sync", { cache: "no-store" }),
       fetch("/api/analytics/customers/sync-status", { cache: "no-store" }),
       fetch("/api/integrations/tbank/status", { cache: "no-store" }),
+      fetch("/api/integrations/rossko", { cache: "no-store" }),
     ]);
 
     let inventory: InventoryStatus | null = null;
@@ -221,6 +269,18 @@ export default function IntegrationsClient() {
       setTbankError("Статус T-Bank временно недоступен");
     }
 
+    if (rosskoRes.status === "fulfilled") {
+      const data = await safeReadJson<RosskoStatus & { error?: string }>(rosskoRes.value);
+      if (rosskoRes.value.ok && data) {
+        setRossko(data);
+        setRosskoError(null);
+      } else {
+        setRosskoError(safeMessage(data?.error, "Статус ROSSKO временно недоступен"));
+      }
+    } else {
+      setRosskoError("Статус ROSSKO временно недоступен");
+    }
+
     setPayload({ inventory, analytics, inventoryError, analyticsError });
     setLoading(false);
   }
@@ -245,6 +305,25 @@ export default function IntegrationsClient() {
       productionMode: tbank.productionMode,
     });
   }, [tbank]);
+
+  useEffect(() => {
+    if (!rossko) return;
+    setRosskoForm({
+      key1: "",
+      key2: "",
+      profile: rossko.profile,
+      deliveryId: rossko.deliveryId,
+      addressId: rossko.addressId,
+      paymentId: rossko.paymentId,
+      requisiteId: rossko.requisiteId,
+      preferredStore: rossko.preferredStore,
+      contactName: rossko.contactName,
+      contactPhone: rossko.contactPhone,
+      deliveryParts: rossko.deliveryParts,
+      timeoutMs: rossko.timeoutMs,
+      requestsPerSecond: rossko.requestsPerSecond,
+    });
+  }, [rossko]);
 
   useEffect(() => {
     if (!payload.inventory?.isRunning && !payload.analytics?.isRunning) return;
@@ -376,9 +455,51 @@ export default function IntegrationsClient() {
     }
   }
 
+  function updateRosskoForm<K extends keyof RosskoForm>(key: K, value: RosskoForm[K]) {
+    setRosskoForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveRosskoSettings(disconnect = false) {
+    const action = disconnect ? "rossko-disconnect" : "rossko-save";
+    setRunning(action);
+    setRunResult(null);
+    try {
+      const response = await fetch("/api/integrations/rossko", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(disconnect ? { disconnect: true } : rosskoForm),
+      });
+      const data = await safeReadJson<RosskoStatus & { error?: string }>(response);
+      if (!response.ok || !data) throw new Error(safeMessage(data?.error, "Настройки ROSSKO не сохранены."));
+      setRossko(data);
+      setRunResult({ title: "ROSSKO", message: disconnect ? "ROSSKO отключён только для текущего филиала." : "Настройки ROSSKO сохранены для текущего филиала.", tone: "success" });
+    } catch (error) {
+      setRunResult({ title: "ROSSKO", message: error instanceof Error ? error.message : "Настройки ROSSKO не сохранены.", tone: "danger" });
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function testRosskoConnection() {
+    setRunning("rossko-test");
+    setRunResult(null);
+    try {
+      const response = await fetch("/api/integrations/rossko/test", { method: "POST" });
+      const data = await safeReadJson<{ ok?: boolean; message?: string; error?: string; integration?: RosskoStatus }>(response);
+      if (data?.integration) setRossko(data.integration);
+      if (!response.ok || !data?.ok) throw new Error(safeMessage(data?.error, "Не удалось проверить ROSSKO."));
+      setRunResult({ title: "ROSSKO", message: data.message || "ROSSKO подключён.", tone: "success" });
+    } catch (error) {
+      setRunResult({ title: "ROSSKO", message: error instanceof Error ? error.message : "Не удалось проверить ROSSKO.", tone: "danger" });
+    } finally {
+      setRunning(null);
+    }
+  }
+
   const inventoryTone = toneForStatus(payload.inventory);
   const analyticsTone = toneForStatus(payload.analytics);
   const tbankTone = tbank?.connected ? "success" as const : tbank?.configured ? "warning" as const : "neutral" as const;
+  const rosskoTone = rossko?.connected ? "success" as const : rossko?.configured ? "warning" as const : "neutral" as const;
 
   return (
     <main className="eco-page">
@@ -387,22 +508,22 @@ export default function IntegrationsClient() {
           <div className="eco-page-crumbs">
             <Link href="/">Главная</Link>
             <span className="sep">/</span>
-            <Link href="/cabinet">Кабинет</Link>
+            <Link href="/management">Управление</Link>
             <span className="sep">/</span>
             <span className="cur">Интеграции</span>
           </div>
           <div className="eco-title-row">
             <h1 className="eco-page-title">Интеграции</h1>
             <EcoBadge tone="warning" dot>
-              admin only
+              управление подключениями
             </EcoBadge>
           </div>
-          <p className="eco-page-subtitle">МойСклад оставлен только для служебного статуса и ручного восстановления данных.</p>
+          <p className="eco-page-subtitle">Подключения сгруппированы по бизнес-задаче. Личный Telegram сотрудника настраивается только в личном меню.</p>
         </div>
         <div className="eco-page-actions">
           <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--ghost">
             <MessageSquareText size={16} />
-            Мессенджеры
+            Каналы связи
           </Link>
           <EcoButton type="button" variant="secondary" onClick={() => void loadStatus()} disabled={loading}>
             <RefreshCw size={16} />
@@ -430,6 +551,53 @@ export default function IntegrationsClient() {
           </div>
         </EcoCard>
       )}
+
+      <section id="finance" className="eco-integration-group">
+        <header><div><p className="eco-page-kicker">Финансы</p><h2>Банковские подключения</h2></div><span>T-Bank, счета и безопасные лимиты платежей.</span></header>
+      <EcoCard className="eco-tbank-settings">
+        <div className="eco-card__head">
+          <div>
+            <div className="eco-page-kicker">Поставщики / каталог</div>
+            <h2 className="eco-stock-doc-title">ROSSKO</h2>
+            <p>Ключи, условия доставки и наценка работают только в текущем филиале. Поиск ИИ выполняется в режиме чтения.</p>
+          </div>
+          <EcoBadge tone={rosskoTone} dot>
+            {rossko?.connected ? "подключено" : rossko?.configured ? "требует проверки" : "не настроено"}
+          </EcoBadge>
+        </div>
+
+        {rosskoError && <div className="eco-form-error eco-tbank-settings-error">{rosskoError}</div>}
+
+        <div className="eco-tbank-settings-grid">
+          <label><span>Профиль ROSSKO</span><EcoInput value={rosskoForm.profile} onChange={(event) => updateRosskoForm("profile", event.target.value)} placeholder="например основной кабинет" /></label>
+          <label><span>Предпочитаемый склад</span><EcoInput value={rosskoForm.preferredStore} onChange={(event) => updateRosskoForm("preferredStore", event.target.value)} placeholder="идентификатор или название" /></label>
+          <label><span>Key 1</span><EcoInput type="password" value={rosskoForm.key1} onChange={(event) => updateRosskoForm("key1", event.target.value)} placeholder={rossko?.key1Configured ? "сохранён: ••••••••" : "вставьте Key 1"} /></label>
+          <label><span>Key 2</span><EcoInput type="password" value={rosskoForm.key2} onChange={(event) => updateRosskoForm("key2", event.target.value)} placeholder={rossko?.key2Configured ? "сохранён: ••••••••" : "вставьте Key 2"} /></label>
+          <label><span>Способ доставки</span><EcoInput value={rosskoForm.deliveryId} onChange={(event) => updateRosskoForm("deliveryId", event.target.value)} placeholder="delivery_id" /></label>
+          <label><span>Адрес доставки</span><EcoInput value={rosskoForm.addressId} onChange={(event) => updateRosskoForm("addressId", event.target.value)} placeholder="address_id" /></label>
+          <label><span>Способ оплаты</span><EcoInput value={rosskoForm.paymentId} onChange={(event) => updateRosskoForm("paymentId", event.target.value)} placeholder="payment_id" /></label>
+          <label><span>Реквизиты</span><EcoInput value={rosskoForm.requisiteId} onChange={(event) => updateRosskoForm("requisiteId", event.target.value)} placeholder="requisite_id" /></label>
+          <label><span>Контакт доставки</span><EcoInput value={rosskoForm.contactName} onChange={(event) => updateRosskoForm("contactName", event.target.value)} placeholder="ФИО" /></label>
+          <label><span>Телефон доставки</span><EcoInput value={rosskoForm.contactPhone} onChange={(event) => updateRosskoForm("contactPhone", event.target.value)} placeholder="+7…" /></label>
+        </div>
+
+        <div className="eco-tbank-settings-flags">
+          <label className="eco-check-row"><input type="checkbox" checked={rosskoForm.deliveryParts} onChange={(event) => updateRosskoForm("deliveryParts", event.target.checked)} /><span>Разрешить частичную поставку</span></label>
+        </div>
+
+        <StatusRows rows={[
+          ["Ключи", rossko?.key1Configured && rossko?.key2Configured ? "оба ключа сохранены в зашифрованном виде" : "нужны Key 1 и Key 2"],
+          ["Последняя проверка", formatDateTime(rossko?.lastCheckedAt)],
+          ["Результат проверки", rossko?.lastCheckStatus === "ok" ? "авторизация подтверждена" : rossko?.lastCheckStatus === "error" ? "нужна проверка ключей или доступности" : "проверка ещё не выполнялась"],
+          ["Наценка", "используются правила ИИ-помощника текущего филиала"],
+        ]} />
+
+        <div className="eco-form-actions">
+          <EcoButton type="button" variant="primary" onClick={() => void saveRosskoSettings()} disabled={running !== null}><Building2 size={16} />{running === "rossko-save" ? "Сохраняем..." : "Сохранить ROSSKO"}</EcoButton>
+          <EcoButton type="button" onClick={() => void testRosskoConnection()} disabled={running !== null || !rossko?.configured}><ShieldCheck size={16} />{running === "rossko-test" ? "Проверяем..." : "Проверить подключение"}</EcoButton>
+          {rossko?.configured && <EcoButton type="button" variant="secondary" onClick={() => void saveRosskoSettings(true)} disabled={running !== null}>{running === "rossko-disconnect" ? "Отключаем..." : "Отключить филиал"}</EcoButton>}
+        </div>
+      </EcoCard>
 
       <EcoCard className="eco-tbank-settings">
         <div className="eco-card__head">
@@ -527,8 +695,11 @@ export default function IntegrationsClient() {
           </EcoButton>
         </div>
       </EcoCard>
+      </section>
 
-      <section className="eco-cabinet-grid">
+      <section id="inventory" className="eco-integration-group">
+        <header><div><p className="eco-page-kicker">Учёт и склад</p><h2>МойСклад и синхронизации</h2></div><span>Складские данные и аналитика клиентов в одном подключении.</span></header>
+      <div className="eco-cabinet-grid">
         <EcoCard>
           <div className="eco-card__head">
             <div>
@@ -603,8 +774,11 @@ export default function IntegrationsClient() {
             </EcoButton>
           </div>
         </EcoCard>
+      </div>
       </section>
 
+      <section id="system" className="eco-integration-group">
+        <header><div><p className="eco-page-kicker">Система</p><h2>Техническая диагностика</h2></div><span>Служебные статусы для владельца платформы.</span></header>
       <EcoCard>
         <div className="eco-card__head--plain">
           <div>
@@ -626,6 +800,7 @@ export default function IntegrationsClient() {
           ]}
         />
       </EcoCard>
+      </section>
     </main>
   );
 }

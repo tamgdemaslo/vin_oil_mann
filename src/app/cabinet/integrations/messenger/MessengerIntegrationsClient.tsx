@@ -624,20 +624,20 @@ export default function MessengerIntegrationsClient() {
           <div className="eco-page-crumbs">
             <Link href="/">Главная</Link>
             <span className="sep">/</span>
-            <Link href="/cabinet">Кабинет</Link>
+            <Link href="/management">Управление</Link>
             <span className="sep">/</span>
             <Link href="/cabinet/integrations">Интеграции</Link>
             <span className="sep">/</span>
-            <span className="cur">Мессенджеры</span>
+            <span className="cur">Каналы связи</span>
           </div>
           <div className="eco-title-row">
-            <h1 className="eco-page-title">Мессенджеры</h1>
+            <h1 className="eco-page-title">Каналы связи</h1>
             <EcoBadge tone={statusTone(activeAccount?.status ?? telegramChannel?.connectionStatus)} dot>
               {accountStatusLabel(activeAccount?.status)}
             </EcoBadge>
           </div>
           <p className="eco-page-subtitle">
-            Единый Messenger Gateway: Telegram уже работает через рабочий аккаунт, остальные каналы подключим после capability audit.
+            Рабочие каналы филиала для общения с клиентами. Они не связаны с личным Telegram сотрудника.
           </p>
         </div>
         <div className="eco-page-actions">
@@ -711,7 +711,7 @@ export default function MessengerIntegrationsClient() {
           <div className="eco-card__head">
             <div>
               <div className="eco-page-kicker">Real adapter</div>
-              <h2 className="eco-stock-doc-title">Рабочий Telegram-аккаунт</h2>
+              <h2 className="eco-stock-doc-title">Рабочий Telegram филиала</h2>
             </div>
             <EcoBadge tone={statusTone(activeAccount?.status ?? telegramChannel?.connectionStatus)} dot>
               {accountStatusLabel(activeAccount?.status)}

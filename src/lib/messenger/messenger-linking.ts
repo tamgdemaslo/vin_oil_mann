@@ -153,6 +153,23 @@ export async function getEmployeeTelegramStatus(employeeId: string) {
   };
 }
 
+export async function disconnectEmployeeTelegram(employeeId: string) {
+  await ensureMessengerIntegrationCoreSchema();
+  const organizationId = getMessengerOrganizationId();
+  const updated = await prisma.$executeRaw`
+    UPDATE messenger_connections
+    SET is_active = false,
+        updated_at = now()
+    WHERE organization_id = ${organizationId}
+      AND branch_id = ${linkingBranchId()}
+      AND channel = 'telegram'
+      AND type = 'employee'
+      AND employee_id = ${employeeId}
+      AND is_active = true
+  `;
+  return { disconnected: Number(updated) > 0 };
+}
+
 export async function createClientTelegramLinkToken(input: { clientId: string; createdById?: string | null; ttlMinutes?: number }) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();

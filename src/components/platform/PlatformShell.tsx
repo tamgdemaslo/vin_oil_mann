@@ -10,12 +10,14 @@ import {
   ChevronDown,
   CircleDollarSign,
   Home,
+  KeyRound,
   LogOut,
   Menu,
-  PackageSearch,
   Search,
+  Send,
   Settings,
   UserRound,
+  WalletCards,
   Warehouse,
   X,
 } from "lucide-react";
@@ -34,11 +36,6 @@ type PlatformUser = {
   name: string;
   role?: "owner" | "admin" | "master";
 } | null;
-
-type PlatformPermissions = {
-  canManageOrganizations?: boolean;
-  canViewWarehouseAnalytics?: boolean;
-};
 
 type CurrentShift = {
   id: string;
@@ -75,6 +72,7 @@ type ShellBranchContext = {
   branches: ShellBranch[];
   groupRole: string | null;
   branchRole: string | null;
+  permissions: string[];
   canManageBranches: boolean;
 };
 
@@ -103,14 +101,34 @@ type PlatformNavItem = {
   label: string;
   description?: string;
   disabled?: boolean;
+  disabledReason?: string;
+  requiresBranch?: boolean;
+  requiresShift?: boolean;
 };
 
 type PlatformNavSection = {
   id: string;
   href: string;
   label: string;
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon?: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
   items: PlatformNavItem[];
+};
+
+type PlatformPersonalItem = {
+  id?: string;
+  href?: string;
+  label: string;
+  description?: string;
+  action?: "logout";
+};
+
+type PlatformNavigation = {
+  effectiveRole: string;
+  sections: PlatformNavSection[];
+  personalItems: PlatformPersonalItem[];
+  managementActions: PlatformNavItem[];
+  canViewAllBranches: boolean;
+  canManageBranches: boolean;
 };
 
 type PlatformSearchResult = {
@@ -123,16 +141,47 @@ type PlatformSearchResult = {
 
 const SHIFT_EVENT = "eco-shift-changed";
 
+const NAV_ICONS: Record<string, ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
+  home: Home,
+  work: BriefcaseBusiness,
+  clients: CalendarDays,
+  warehouse: Warehouse,
+  finance: CircleDollarSign,
+  "ai-assistant": Bot,
+  management: Settings,
+};
+
 function isActivePath(pathname: string, href: string) {
-  const cleanHref = href.split("#")[0] || "/";
+  const cleanHref = href.split(/[?#]/)[0] || "/";
   if (cleanHref === "/") return pathname === "/";
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
-function roleLabel(role?: "owner" | "admin" | "master") {
-  if (role === "owner") return "Владелец";
-  if (role === "admin") return "Администратор";
-  return "Мастер";
+function roleLabel(role?: string) {
+  const labels: Record<string, string> = {
+    owner: "Владелец",
+    admin: "Администратор",
+    master: "Мастер-приёмщик",
+    group_owner: "Владелец группы",
+    group_admin: "Администратор группы",
+    group_analyst: "Аналитик группы",
+    branch_owner: "Владелец филиала",
+    administrator: "Администратор",
+    mechanic: "Механик",
+    accountant: "Бухгалтер",
+    viewer: "Наблюдатель",
+  };
+  return role ? labels[role] ?? role : "Сотрудник";
+}
+
+function personalItemIcon(item: PlatformPersonalItem) {
+  if (item.action === "logout") return LogOut;
+  if (item.href?.startsWith("/salary")) return WalletCards;
+  if (item.href?.startsWith("/notifications")) return Bell;
+  if (item.href?.includes("tab=telegram")) return Send;
+  if (item.href?.includes("tab=security")) return KeyRound;
+  if (item.href?.includes("tab=branches")) return Building2;
+  return UserRound;
 }
 
 function userInitials(user: NonNullable<PlatformUser>) {
@@ -177,10 +226,18 @@ function routeContext(pathname: string) {
     return { label: "Текущий раздел:", value: "Финансы" };
   }
   if (pathname.startsWith("/ai-assistant")) return { label: "Текущий раздел:", value: "ИИ-помощник" };
+  if (pathname.startsWith("/management")) return { label: "Текущий раздел:", value: "Управление" };
   if (pathname.startsWith("/crm") || pathname.startsWith("/records") || pathname.startsWith("/clients")) {
-    return { label: "Текущий раздел:", value: "CRM" };
+    return { label: "Текущий раздел:", value: "Клиенты" };
   }
-  if (pathname.startsWith("/cabinet")) return { label: "Текущий раздел:", value: "Кабинет" };
+  if (
+    pathname.startsWith("/cabinet/branches") ||
+    pathname.startsWith("/cabinet/organizations") ||
+    pathname.startsWith("/cabinet/integrations") ||
+    pathname.startsWith("/cabinet/notifications") ||
+    pathname.startsWith("/cabinet/ai-assistant")
+  ) return { label: "Текущий раздел:", value: "Управление" };
+  if (pathname.startsWith("/cabinet")) return { label: "Текущий раздел:", value: "Личные настройки" };
   return { label: "Текущий раздел:", value: pathname };
 }
 
@@ -188,7 +245,7 @@ export default function PlatformShell() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<PlatformUser>(null);
-  const [permissions, setPermissions] = useState<PlatformPermissions>({});
+  const [navigation, setNavigation] = useState<PlatformNavigation | null>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
   const [branches, setBranches] = useState<ShellBranch[]>([]);
@@ -224,23 +281,23 @@ export default function PlatformShell() {
         ]);
         const sessionData = await safeReadJson<{
           user?: PlatformUser;
-          permissions?: PlatformPermissions;
+          navigation?: PlatformNavigation;
           branchContext?: ShellBranchContext | null;
         }>(sessionRes);
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
-        setPermissions(sessionData?.permissions ?? {});
+        setNavigation(sessionData?.navigation ?? null);
         setCurrentShift(dashboardBundle?.shift ?? null);
         setCurrentCashShift(dashboardBundle?.cash?.shift ?? null);
         setNotificationCounts(dashboardBundle?.dashboard.notificationCounts ?? null);
         const branchContext = sessionData?.branchContext ?? null;
         setBranches(branchContext?.branches ?? []);
         setSelectedBranchId(branchContext?.activeBranchId ?? "");
-        setCanViewAllBranches(Boolean(branchContext?.groupRole));
+        setCanViewAllBranches(Boolean(sessionData?.navigation?.canViewAllBranches ?? branchContext?.groupRole));
       } catch {
         if (cancelled) return;
         setUser(null);
-        setPermissions({});
+        setNavigation(null);
         setCurrentShift(null);
         setCurrentCashShift(null);
         setNotificationCounts(null);
@@ -346,120 +403,27 @@ export default function PlatformShell() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const needsShift = !!user && (user.role === "admin" || user.role === "master");
+  const effectiveRole = navigation?.effectiveRole ?? user?.role;
+  const needsShift = !!user && ["admin", "master", "administrator", "mechanic"].includes(effectiveRole ?? "");
   const hasAnyActiveShift = !!currentShift || currentCashShift?.status === "open";
   const allBranchesMode = selectedBranchId === "all";
   const locked = needsShift && !hasAnyActiveShift;
   const operationalLocked = locked || allBranchesMode;
-  const canAccessCash = user?.role === "owner" || user?.role === "admin";
-  const canAccessCrm = user?.role === "owner" || user?.role === "admin";
-  const canManageIntegrations = user?.role === "owner" || user?.role === "admin";
-  const canManageOrganizations = Boolean(permissions.canManageOrganizations);
-  const canViewWarehouseAnalytics = Boolean(permissions.canViewWarehouseAnalytics);
 
   const navSections = useMemo<PlatformNavSection[]>(
-    () => [
-      {
-        id: "home",
-        href: allBranchesMode ? "/owner" : "/",
-        label: "Главная",
-        icon: Home,
-        items: allBranchesMode
-          ? [{ href: "/owner", label: "Все филиалы", description: "Агрегированная сводка без операционных действий." }]
-          : [{ href: "/", label: "Сводка", description: "Статус смены и быстрый старт." }],
-      },
-      {
-        id: "operations",
-        href: "/shipment",
-        label: "Операции",
-        icon: BriefcaseBusiness,
-        items: [
-          { href: "/shipment", label: "Все отгрузки", description: "Журнал и поиск документов.", disabled: operationalLocked },
-          { href: "/shipment/new", label: "Новая отгрузка", description: "Создание документа.", disabled: operationalLocked },
-        ],
-      },
-      {
-        id: "inventory",
-        href: "/inventory/products",
-        label: "Склад",
-        icon: Warehouse,
-        items: [
-          { href: "/inventory/products", label: "Товары", description: "Карточки, остатки и фото.", disabled: operationalLocked },
-          { href: "/warehouse/product-analytics", label: "Аналитика товаров", description: "Продажи, маржа и неликвид.", disabled: operationalLocked || !canViewWarehouseAnalytics },
-          { href: "/warehouse/inventory", label: "Инвентаризация", description: "Сверка фактических остатков.", disabled: operationalLocked },
-          { href: "/inventory/receipts", label: "Приёмка", description: "Поступления на локальный склад.", disabled: operationalLocked },
-          { href: "/inventory/writeoffs", label: "Корректировки", description: "Списания и технические корректировки.", disabled: operationalLocked },
-          { href: "/inventory/restock", label: "Пополнение", description: "Дефицит и заказ поставщикам.", disabled: operationalLocked },
-        ],
-      },
-      {
-        id: "finance",
-        href: "/finance",
-        label: "Финансы",
-        icon: CircleDollarSign,
-        items: [
-          { href: "/finance", label: "Финансовый центр", description: "P&L, cashflow, расходы, план/факт.", disabled: operationalLocked },
-          { href: "/cash", label: "Касса", description: "Кассовая смена, расходы и закрытие.", disabled: operationalLocked || !canAccessCash },
-          { href: "/finance/invoices", label: "Счета поставщиков", description: "Документы из приёмок.", disabled: operationalLocked },
-          { href: "/finance/profit", label: "Цены и прибыль", description: "Детализация по товарам и документам.", disabled: operationalLocked },
-          { href: "/salary", label: "Зарплата", description: "Выплаты и правила.", disabled: operationalLocked },
-        ],
-      },
-      {
-        id: "crm",
-        href: "/crm",
-        label: "CRM",
-        icon: CalendarDays,
-        items: [
-          { href: "/crm", label: "Дела клиентов", description: "Следующие действия и контроль.", disabled: operationalLocked || !canAccessCrm },
-          { href: "/messages", label: "Сообщения", description: "Единый центр переписок.", disabled: operationalLocked || !canAccessCrm },
-          { href: "/records", label: "Записи", description: "Журнал YCLIENTS.", disabled: operationalLocked || !canAccessCash },
-          { href: "/clients/counterparties", label: "Контрагенты", description: "Клиенты, поставщики и контакты.", disabled: operationalLocked },
-        ],
-      },
-      ...(canAccessCrm
-        ? [{
-            id: "ai-assistant",
-            href: "/ai-assistant",
-            label: "ИИ-помощник",
-            icon: Bot,
-            items: [
-              { href: "/ai-assistant", label: "Рабочий чат", description: "Внутренний поиск и расчёты без действий от имени клиента.", disabled: allBranchesMode },
-              { href: "/cabinet/ai-assistant", label: "Настройки", description: "Доступ и границы внутреннего режима." },
-            ],
-          }]
-        : []),
-      {
-        id: "cabinet",
-        href: "/cabinet",
-        label: "Кабинет",
-        icon: Settings,
-        items: [
-          { href: "/cabinet", label: "Профиль", description: "Смена пароля и личный блок." },
-          {
-            href: "/cabinet/branches",
-            label: "Филиалы",
-            description: "Точки, реквизиты и доступ сотрудников.",
-            disabled: !canManageOrganizations,
-          },
-          { href: "/cabinet/customer-analytics", label: "Аналитика клиентов", description: "Повторы и прибыль.", disabled: !canAccessCrm },
-          { href: "/cabinet/ai-assistant", label: "ИИ-помощник", description: "Внутренний режим и доступы.", disabled: !canManageIntegrations },
-          {
-            href: "/cabinet/integrations",
-            label: "Интеграции",
-            description: "Статусы и ручные запуски.",
-            disabled: !canManageIntegrations,
-          },
-          {
-            href: "/cabinet/integrations/messenger",
-            label: "Мессенджеры",
-            description: "Telegram webhook и каналы.",
-            disabled: !canManageIntegrations,
-          },
-        ],
-      },
-    ],
-    [allBranchesMode, canAccessCash, canAccessCrm, canManageIntegrations, canManageOrganizations, canViewWarehouseAnalytics, operationalLocked]
+    () => (navigation?.sections ?? []).map((section) => ({
+      ...section,
+      icon: NAV_ICONS[section.id] ?? Settings,
+      items: section.items.map((navItem) => {
+        const shiftDisabled = Boolean(navItem.requiresShift && locked);
+        return {
+          ...navItem,
+          disabled: Boolean(navItem.disabled || shiftDisabled),
+          disabledReason: shiftDisabled ? "Рабочий раздел откроется после начала смены" : navItem.disabledReason,
+        };
+      }),
+    })),
+    [locked, navigation]
   );
 
   const searchResults = useMemo<PlatformSearchResult[]>(() => {
@@ -689,7 +653,7 @@ export default function PlatformShell() {
                         item.disabled ? (
                           <div key={item.href} className="platform-shell__dropdown-link is-disabled">
                             <span>{item.label}</span>
-                            {item.description && <small>{item.description}</small>}
+                            <small>{item.disabledReason ?? item.description}</small>
                           </div>
                         ) : (
                           <Link
@@ -779,6 +743,20 @@ export default function PlatformShell() {
                           {selectedBranchId === "all" && <Check aria-hidden className="eco-icon" />}
                         </button>
                       )}
+                      {navigation?.canManageBranches && (
+                        <div className="platform-shell__branch-actions" role="group" aria-label="Управление филиалами">
+                          {selectedBranchId !== "all" && (
+                            <Link href={`/cabinet/branches?branch=${encodeURIComponent(selectedBranchId)}`} role="menuitem">
+                              <Settings aria-hidden className="eco-icon" />
+                              Настройки текущего филиала
+                            </Link>
+                          )}
+                          <Link href="/cabinet/branches" role="menuitem">
+                            <Building2 aria-hidden className="eco-icon" />
+                            Управление филиалами
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -852,26 +830,29 @@ export default function PlatformShell() {
                   <span className="platform-shell__avatar">{userInitials(user)}</span>
                   <span className="platform-shell__profile-copy">
                     <strong>{compactUserName(user)}</strong>
-                    <small>{roleLabel(user.role)} · {activeBranchLabel}</small>
+                    <small>{roleLabel(navigation?.effectiveRole ?? user.role)} · {activeBranchLabel}</small>
                   </span>
                   <ChevronDown aria-hidden className="eco-icon platform-shell__chevron" />
                 </button>
 
                 <div className={`platform-shell__profile-menu ${profileOpen ? "is-open" : ""}`} role="menu" aria-hidden={!profileOpen}>
-                  <Link href="/cabinet" className="platform-shell__dropdown-link" role="menuitem">
-                    <UserRound aria-hidden className="eco-icon" />
-                    <span>Кабинет</span>
-                  </Link>
-                  {canAccessCrm && (
-                    <Link href="/cabinet/customer-analytics" className="platform-shell__dropdown-link" role="menuitem">
-                      <PackageSearch aria-hidden className="eco-icon" />
-                      <span>Аналитика клиентов</span>
-                    </Link>
-                  )}
-                  <button type="button" className="platform-shell__dropdown-link danger" onClick={handleLogout} role="menuitem">
-                    <LogOut aria-hidden className="eco-icon" />
-                    <span>Выйти</span>
-                  </button>
+                  {(navigation?.personalItems ?? []).map((personalItem) => {
+                    const Icon = personalItemIcon(personalItem);
+                    if (personalItem.action === "logout") {
+                      return (
+                        <button key="logout" type="button" className="platform-shell__dropdown-link danger" onClick={handleLogout} role="menuitem">
+                          <Icon aria-hidden className="eco-icon" />
+                          <span>{personalItem.label}</span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <Link key={personalItem.href} href={personalItem.href ?? "/cabinet"} className="platform-shell__dropdown-link" role="menuitem">
+                        <Icon aria-hidden className="eco-icon" />
+                        <span>{personalItem.label}</span>
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -885,6 +866,10 @@ export default function PlatformShell() {
 
       {user && mobileOpen && (
         <nav className="platform-shell__mobile-panel" aria-label="Мобильная навигация">
+          <div className="platform-shell__mobile-user">
+            <span className="platform-shell__avatar">{userInitials(user)}</span>
+            <span><strong>{user.name || user.login}</strong><small>{roleLabel(navigation?.effectiveRole ?? user.role)}</small></span>
+          </div>
           {branches.length > 0 && (
             <label className="platform-shell__mobile-branch">
               <span>Активный филиал</span>
@@ -900,22 +885,31 @@ export default function PlatformShell() {
               </select>
             </label>
           )}
-          {navSections.flatMap((section) =>
-            section.items.map((item) => (
-              <Link
-                key={`${section.id}-${item.href}`}
-                href={item.href}
-                className={`platform-shell__mobile-link ${item.disabled ? "is-disabled" : ""} ${
-                  isActivePath(pathname, item.href) ? "is-active" : ""
-                }`}
-                aria-disabled={item.disabled}
-                aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
-              >
-                <span>{item.label}</span>
-                <small>{section.label}</small>
-              </Link>
-            ))
-          )}
+          <div className="platform-shell__mobile-groups">
+            {navSections.map((section) => {
+              const Icon = section.icon ?? NAV_ICONS[section.id] ?? Settings;
+              const sectionActive = section.items.some((navItem) => isActivePath(pathname, navItem.href));
+              return (
+                <details key={section.id} open={sectionActive}>
+                  <summary><Icon aria-hidden className="eco-icon" /><span>{section.label}</span><ChevronDown aria-hidden className="eco-icon platform-shell__chevron" /></summary>
+                  <div>
+                    {section.items.map((navItem) => navItem.disabled ? (
+                      <span key={navItem.href} className="platform-shell__mobile-link is-disabled" aria-disabled="true"><strong>{navItem.label}</strong><small>{navItem.disabledReason ?? navItem.description}</small></span>
+                    ) : (
+                      <Link key={navItem.href} href={navItem.href} className={`platform-shell__mobile-link ${isActivePath(pathname, navItem.href) ? "is-active" : ""}`} aria-current={isActivePath(pathname, navItem.href) ? "page" : undefined}>
+                        <strong>{navItem.label}</strong><small>{navItem.description}</small>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+          <div className="platform-shell__mobile-personal">
+            <Link href="/cabinet"><UserRound aria-hidden className="eco-icon" />Мой профиль</Link>
+            <Link href="/cabinet?tab=security"><KeyRound aria-hidden className="eco-icon" />Безопасность</Link>
+            <button type="button" onClick={handleLogout}><LogOut aria-hidden className="eco-icon" />Выйти</button>
+          </div>
         </nav>
       )}
 
