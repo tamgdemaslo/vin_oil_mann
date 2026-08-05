@@ -8,6 +8,7 @@ import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-c
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { isBranchIntegrationConfigured } from "@/lib/branch-integration-credentials";
+import { resolveDashboardAccessForBranch } from "@/lib/dashboard-variant";
 import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 
 export const dynamic = "force-dynamic";
@@ -462,8 +463,6 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   const audience = session.user.role === "owner" || session.user.role === "admin" ? session.user.role : "master";
-  const canViewFinance = audience === "owner";
-  const canViewClientOperations = audience !== "master";
   const access = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!access.ok) return access.response;
   const branch = access.context;
@@ -472,6 +471,19 @@ export async function GET() {
   }
   const branchId = branch.branchId;
   const organizationId = branch.organizationId;
+  const dashboardAccess = await resolveDashboardAccessForBranch(branch);
+
+  // An employee dashboard is served from /api/dashboard/my-payroll. Do not
+  // load management records here merely to hide them in the browser.
+  if (dashboardAccess.variant === "EMPLOYEE") {
+    return NextResponse.json({
+      variant: dashboardAccess.variant,
+      audience,
+      timezone: branch.branch?.timezone ?? SERVICE_TIME_ZONE,
+      capabilities: dashboardAccess,
+    });
+  }
+  const { canViewFinance, canViewClientOperations } = dashboardAccess;
 
   return runWithBranchApiContext(branch, async () => {
 
@@ -783,12 +795,13 @@ export async function GET() {
 
     return NextResponse.json({
     today,
-    timezone: SERVICE_TIME_ZONE,
+    timezone: branch.branch?.timezone ?? SERVICE_TIME_ZONE,
+    variant: dashboardAccess.variant,
     audience,
     capabilities: {
       canViewFinance,
       canViewClientOperations,
-      canManageCash: audience === "owner" || audience === "admin",
+      canManageCash: dashboardAccess.canManageCash,
     },
     finance: canViewFinance ? {
       revenueCents,

@@ -39,6 +39,9 @@ export type CatalogSearchParams = {
   packageVolume?: string | string[];
   stock?: string;
   markingProblems?: boolean;
+  priceMissing?: boolean;
+  origin?: string;
+  copyBatchId?: string;
   inStock?: boolean;
   includeArchived?: boolean;
   limit?: number;
@@ -172,6 +175,12 @@ export type CatalogSearchItem = {
   markingConfiguredManually: boolean;
   markingConfiguredAt: string | null;
   markingConfiguredByLogin: string | null;
+  origin: string;
+  sourceBranchId: string | null;
+  sourceProductId: string | null;
+  copyBatchId: string | null;
+  copiedAt: string | null;
+  priceNeedsSetup: boolean;
   stockQuantity: number;
   reserveQuantity: number;
   availableQuantity: number;
@@ -224,6 +233,7 @@ export type CatalogSearchResult = {
       packageVolume: string[];
       stock: StockFilter;
       markingProblems: boolean;
+      priceMissing: boolean;
     };
     filterOptions: {
       brands: string[];
@@ -782,6 +792,7 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
   })) {
     return false;
   }
+  if (filters.priceMissing && !item.priceNeedsSetup) return false;
   return true;
 }
 
@@ -959,6 +970,12 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     markingConfiguredManually: product.markingConfiguredManually,
     markingConfiguredAt: product.markingConfiguredAt?.toISOString() ?? null,
     markingConfiguredByLogin: product.markingConfiguredByLogin ?? null,
+    origin: product.origin,
+    sourceBranchId: product.sourceBranchId,
+    sourceProductId: product.sourceProductId,
+    copyBatchId: product.copyBatchId,
+    copiedAt: product.copiedAt?.toISOString() ?? null,
+    priceNeedsSetup: product.priceNeedsSetup,
     stockQuantity: firstStock?.quantity ?? 0,
     reserveQuantity: firstStock?.reserve ?? 0,
     availableQuantity: firstStock?.available ?? 0,
@@ -1014,6 +1031,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     packageVolume: cleanFilterValues(params.packageVolume),
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
+    priceMissing: params.priceMissing === true,
   };
   const storeId = await resolveStoreId(params);
   const strictNameOem = params.strictNameOem === true && Boolean(params.q?.trim());
@@ -1024,6 +1042,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
           where: {
             ...(params.includeArchived ? {} : { archived: false }),
             ...(type !== "all" ? { entityType: type } : {}),
+            ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
+            ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
+            ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
             id: { in: strictCandidateIds },
           },
           include: {
@@ -1087,6 +1108,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   const where: Prisma.LocalProductWhereInput = {
     ...(params.includeArchived ? {} : { archived: false }),
     ...(type !== "all" ? { entityType: type } : {}),
+    ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
+    ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
+    ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
     ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
   };
   const take = tokens.length ? Math.min(2000, Math.max(limit * 30, 300)) : Math.min(500, Math.max(limit + offset, 100));

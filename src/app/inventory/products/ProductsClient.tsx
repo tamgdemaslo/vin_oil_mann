@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
+import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranchDialog";
 import {
   bulkOilSetupProblems,
   deriveProductMarkingStatus,
@@ -124,6 +125,12 @@ type ProductRow = {
   markingConfiguredManually?: boolean;
   markingConfiguredAt?: string | null;
   markingConfiguredByLogin?: string | null;
+  origin?: string;
+  sourceBranchId?: string | null;
+  sourceProductId?: string | null;
+  copyBatchId?: string | null;
+  copiedAt?: string | null;
+  priceNeedsSetup?: boolean;
 };
 
 type ProductFormErrors = Partial<Record<keyof ProductForm, string>>;
@@ -140,6 +147,15 @@ type ProductSortKey =
   | "updatedAt";
 type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
+type ProductOriginFilter = "all" | "MANUAL" | "BRANCH_COPY" | "IMPORT" | "SYNC";
+
+const productOriginLabels: Record<ProductOriginFilter, string> = {
+  all: "Все источники",
+  MANUAL: "Вручную",
+  BRANCH_COPY: "Копирование из филиала",
+  IMPORT: "Импорт",
+  SYNC: "Синхронизация",
+};
 
 type ProductFilters = {
   brand: string[];
@@ -152,6 +168,7 @@ type ProductFilters = {
   packageVolume: string[];
   stock: StockFilter;
   markingProblems: boolean;
+  priceMissing: boolean;
 };
 
 type ProductFacetOption = {
@@ -528,6 +545,7 @@ const emptyFilters: ProductFilters = {
   packageVolume: [],
   stock: "all",
   markingProblems: false,
+  priceMissing: false,
 };
 
 const emptyFilterOptions: ProductFilterOptions = {
@@ -777,7 +795,7 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems">;
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
@@ -1473,11 +1491,18 @@ export default function ProductsClient() {
   const searchParams = useSearchParams();
   const initialProductId = searchParams.get("product")?.trim() ?? "";
   const initialSearch = searchParams.get("search")?.trim() ?? "";
+  const searchOrigin = searchParams.get("origin")?.trim() ?? "";
+  const initialOrigin: ProductOriginFilter = ["MANUAL", "BRANCH_COPY", "IMPORT", "SYNC"].includes(searchOrigin)
+    ? searchOrigin as ProductOriginFilter
+    : "all";
+  const initialCopyBatchId = searchParams.get("copyBatchId")?.trim() ?? "";
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
   const [filters, setFilters] = useState<ProductFilters>(emptyFilters);
+  const [originFilter, setOriginFilter] = useState<ProductOriginFilter>(initialOrigin);
+  const [copyBatchId, setCopyBatchId] = useState(initialCopyBatchId);
   const [sort, setSort] = useState<ProductSortKey>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [loading, setLoading] = useState(true);
@@ -1515,6 +1540,8 @@ export default function ProductsClient() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [canCopyProducts, setCanCopyProducts] = useState(false);
+  const [copyProductIds, setCopyProductIds] = useState<string[] | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -1648,12 +1675,12 @@ export default function ProductsClient() {
   const activeFiltersCount = useMemo(
     () => Object.entries(filters).reduce((count, [key, value]) => {
       if (key === "stock") return count + (value !== "all" ? 1 : 0);
-      if (key === "markingProblems") return count + (value === true ? 1 : 0);
+      if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
     }, 0),
     [filters]
   );
-  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0;
+  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId);
   const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
   const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
   const filtersLayoutClass = [
@@ -1750,10 +1777,14 @@ export default function ProductsClient() {
         if (stockValue !== "all") params.set(key, stockValue);
       } else if (key === "markingProblems") {
         if (value === true) params.set(key, "1");
+      } else if (key === "priceMissing") {
+        if (value === true) params.set(key, "1");
       } else if (Array.isArray(value)) {
         value.filter(Boolean).forEach((item) => params.append(key, item));
       }
     }
+    if (originFilter !== "all") params.set("origin", originFilter);
+    if (copyBatchId) params.set("copyBatchId", copyBatchId);
     return params;
   }
 
@@ -1958,6 +1989,21 @@ export default function ProductsClient() {
   }, [formOpen, loadEditorGroups]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadCopyPermission() {
+      try {
+        const res = await fetch("/api/products/copy-to-branch", { cache: "no-store" });
+        const data = await readJson<{ canCopy?: boolean }>(res);
+        if (!cancelled) setCanCopyProducts(Boolean(res.ok && data?.canCopy));
+      } catch {
+        if (!cancelled) setCanCopyProducts(false);
+      }
+    }
+    void loadCopyPermission();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const delay = initialLoadStartedRef.current ? 320 : 0;
     initialLoadStartedRef.current = true;
     const timer = window.setTimeout(() => {
@@ -1965,7 +2011,7 @@ export default function ProductsClient() {
     }, delay);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sort, direction, filters]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId]);
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -2003,7 +2049,7 @@ export default function ProductsClient() {
     observer.observe(target);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters]);
+  }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters, originFilter, copyBatchId]);
 
 
   function updateForm(patch: Partial<ProductForm>) {
@@ -2198,6 +2244,11 @@ export default function ProductsClient() {
     closeFilterDrawerOnMobile();
   }
 
+  function togglePriceMissingFilter() {
+    setFilters((prev) => ({ ...prev, priceMissing: !prev.priceMissing }));
+    closeFilterDrawerOnMobile();
+  }
+
   function toggleFilterValue(key: MultiFilterKey, value: string) {
     pinFacetPreviewValue(key, value);
     setFilters((prev) => {
@@ -2211,11 +2262,15 @@ export default function ProductsClient() {
 
   function resetFilters() {
     setFilters(emptyFilters);
+    setOriginFilter("all");
+    setCopyBatchId("");
   }
 
   function resetAll() {
     setSearch("");
     setFilters(emptyFilters);
+    setOriginFilter("all");
+    setCopyBatchId("");
   }
 
   function buildExportParams(scope: "all" | "current" | "selected" | "active" | "archived") {
@@ -2228,7 +2283,7 @@ export default function ProductsClient() {
         if (key === "stock") {
           const stockValue = value as StockFilter;
           if (stockValue !== "all") params.set(key, stockValue);
-        } else if (key === "markingProblems") {
+        } else if (key === "markingProblems" || key === "priceMissing") {
           if (value === true) params.set(key, "1");
         } else if (Array.isArray(value)) {
           value.filter(Boolean).forEach((item) => params.append(key, item));
@@ -2566,6 +2621,23 @@ export default function ProductsClient() {
         onRemove: () => setFilters((prev) => ({ ...prev, markingProblems: false })),
       });
     }
+    if (filters.priceMissing) {
+      chips.push({
+        key: "priceMissing",
+        label: "Без цены",
+        onRemove: () => setFilters((prev) => ({ ...prev, priceMissing: false })),
+      });
+    }
+    if (originFilter !== "all") {
+      chips.push({
+        key: "origin",
+        label: "Источник: " + productOriginLabels[originFilter],
+        onRemove: () => {
+          setOriginFilter("all");
+          setCopyBatchId("");
+        },
+      });
+    }
     return chips;
   }
 
@@ -2687,6 +2759,19 @@ export default function ProductsClient() {
           <Copy aria-hidden className="eco-icon" />
           <span>Создать похожий</span>
         </button>
+        {canCopyProducts ? (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setActiveActionMenuId(null);
+              setCopyProductIds([activeActionRow.id]);
+            }}
+          >
+            <Copy aria-hidden className="eco-icon" />
+            <span>Скопировать в филиал</span>
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"
@@ -4520,6 +4605,33 @@ export default function ProductsClient() {
                   Проблемы маркировки
                 </span>
               </button>
+              <button
+                type="button"
+                className={`eco-filter-row ${filters.priceMissing ? "is-active" : ""}`}
+                onClick={togglePriceMissingFilter}
+              >
+                <span className="eco-filter-row-label">
+                  <span className={`eco-check ${filters.priceMissing ? "is-checked" : ""}`} />
+                  Без цены
+                </span>
+              </button>
+            </div>
+
+            <div className="eco-filter-group">
+              <div className="eco-filter-title">Источник карточки</div>
+              <select
+                className="eco-input"
+                value={originFilter}
+                onChange={(event) => {
+                  setOriginFilter(event.target.value as ProductOriginFilter);
+                  setCopyBatchId("");
+                  closeFilterDrawerOnMobile();
+                }}
+              >
+                {Object.entries(productOriginLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
 
             {renderFacetFilter("group", 7)}
@@ -4570,6 +4682,11 @@ export default function ProductsClient() {
             </div>
             <div className="eco-products-strip-meta">
               {selectedProductIds.length > 0 ? <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span> : null}
+              {selectedProductIds.length > 0 && canCopyProducts ? (
+                <button type="button" className="eco-btn eco-btn--sm" onClick={() => setCopyProductIds(selectedProductIds)}>
+                  <Copy aria-hidden className="eco-icon" /> Скопировать в филиал
+                </button>
+              ) : null}
               <span>{visibleProductsLabel} из {totalProductsLabel}</span>
             </div>
           </div>
@@ -4672,6 +4789,8 @@ export default function ProductsClient() {
                         </span>
                       ) : null}
                       {row.archived ? <span className="eco-product-archive-badge">В архиве</span> : null}
+                      {row.origin === "BRANCH_COPY" ? <span className="eco-product-archive-badge">Из филиала</span> : null}
+                      {row.priceNeedsSetup ? <span className="eco-product-marking-badge is-warning">Настроить цену</span> : null}
                     </div>
                   </td>
                   <td className="eco-product-cell">{row.cell || "—"}</td>
@@ -4732,6 +4851,15 @@ export default function ProductsClient() {
           </div>
         </div>
       </section>
+      ) : null}
+      {copyProductIds ? (
+        <ProductCopyToBranchDialog
+          productIds={copyProductIds}
+          onClose={() => setCopyProductIds(null)}
+          onCompleted={() => {
+            setSelectedProductIds([]);
+          }}
+        />
       ) : null}
     </div>
   );

@@ -15,8 +15,10 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import ShiftButton, { type ShiftButtonCashShift, type ShiftButtonShift } from "@/components/ShiftButton";
+import MyPayrollCard, { type EmployeePayrollData, type EmployeePayrollPeriod } from "@/components/dashboard/MyPayrollCard";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
+import type { DashboardVariant } from "@/lib/dashboard-variant";
 import { SERVICE_TIME_ZONE, formatServiceDayMonth, formatServiceTime } from "@/lib/date-time";
 
 type UserRole = "owner" | "admin" | "master";
@@ -24,6 +26,7 @@ type CurrentShift = ShiftButtonShift;
 type CurrentCashShift = ShiftButtonCashShift;
 type NotificationUrgency = "urgent" | "today" | "soon" | "info";
 type DashboardLoadState = "loading" | "ready" | "refreshing" | "partial" | "stale" | "error";
+type EmployeePayrollQuery = { period: EmployeePayrollPeriod; dateFrom?: string; dateTo?: string };
 
 type DashboardNotification = {
   id: string;
@@ -190,6 +193,16 @@ function formatCount(value: number) {
 function formatHours(value?: number | null) {
   if (!value || value <= 0) return "—";
   return `${formatCount(value)} ч`;
+}
+
+async function readDashboardResponse<T>(response: Response, fallback: string): Promise<T> {
+  const payload = await response.json().catch(() => null) as { error?: unknown } | T | null;
+  if (!response.ok) {
+    const error = payload && typeof payload === "object" && "error" in payload ? payload.error : null;
+    throw new Error(typeof error === "string" ? error : fallback);
+  }
+  if (!payload) throw new Error(fallback);
+  return payload as T;
 }
 
 function todayShortPhrase() {
@@ -686,10 +699,12 @@ function MobileWorkRow({ slot }: { slot: ScheduleTimelineItem }) {
 export default function HomeDashboard({
   role,
   userName,
+  dashboardVariant,
   needShiftNotice = false,
 }: {
   role: UserRole;
   userName: string;
+  dashboardVariant: DashboardVariant;
   needShiftNotice?: boolean;
 }) {
   const [loadState, setLoadState] = useState<DashboardLoadState>("loading");
@@ -698,12 +713,16 @@ export default function HomeDashboard({
   const [shiftAvailable, setShiftAvailable] = useState(false);
   const [cashAvailable, setCashAvailable] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [employeePayroll, setEmployeePayroll] = useState<EmployeePayrollData | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [partialErrors, setPartialErrors] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const dashboardRef = useRef<DashboardData | null>(null);
+  const employeePayrollRef = useRef<EmployeePayrollData | null>(null);
+  const employeePayrollQueryRef = useRef<EmployeePayrollQuery>({ period: "today" });
   const mountedRef = useRef(true);
 
+  const isEmployeeDashboard = dashboardVariant === "EMPLOYEE";
   const needsActiveShift = role === "admin" || role === "master";
   const hasActiveShift = Boolean(currentShift) || currentCashShift?.status === "open" || dashboard?.cash.status === "open";
   const shiftStatusKnown = role === "admin" ? cashAvailable || Boolean(dashboard) : shiftAvailable;
@@ -712,10 +731,33 @@ export default function HomeDashboard({
   const loading = loadState === "loading";
   const refreshing = loadState === "refreshing";
 
-  const loadSummary = useCallback(async (force = false) => {
-    setLoadState(dashboardRef.current ? "refreshing" : "loading");
+  const loadSummary = useCallback(async (force = false, employeeQuery = employeePayrollQueryRef.current) => {
+    setLoadState((isEmployeeDashboard ? employeePayrollRef.current : dashboardRef.current) ? "refreshing" : "loading");
     setDashboardError(null);
     try {
+      if (isEmployeeDashboard) {
+        const params = new URLSearchParams({ period: employeeQuery.period });
+        if (employeeQuery.dateFrom) params.set("dateFrom", employeeQuery.dateFrom);
+        if (employeeQuery.dateTo) params.set("dateTo", employeeQuery.dateTo);
+        const [shiftResponse, payrollResponse] = await Promise.all([
+          fetch("/api/shifts/current", { cache: "no-store" }),
+          fetch(`/api/dashboard/my-payroll?${params.toString()}`, { cache: "no-store" }),
+        ]);
+        const payroll = await readDashboardResponse<EmployeePayrollData>(payrollResponse, "Не удалось загрузить расчёт.");
+        const shift = shiftResponse.ok ? await readDashboardResponse<CurrentShift>(shiftResponse, "Рабочая смена недоступна") : null;
+        if (!mountedRef.current) return;
+        employeePayrollRef.current = payroll;
+        setEmployeePayroll(payroll);
+        setDashboard(null);
+        setCurrentShift(shift);
+        setCurrentCashShift(null);
+        setShiftAvailable(shiftResponse.ok);
+        setCashAvailable(false);
+        setPartialErrors(shiftResponse.ok ? [] : ["Статус рабочей смены временно недоступен."]);
+        setLastUpdatedAt(Date.now());
+        setLoadState(shiftResponse.ok ? "ready" : "partial");
+        return;
+      }
       const bundle = await loadDashboardClientBundle<DashboardData, CurrentShift, { shift?: CurrentCashShift }>({ force });
       if (!mountedRef.current) return;
       dashboardRef.current = bundle.dashboard;
@@ -733,7 +775,13 @@ export default function HomeDashboard({
       setDashboardError(message);
       setLoadState(dashboardRef.current ? "stale" : "error");
     }
-  }, []);
+  }, [isEmployeeDashboard]);
+
+  const changeEmployeePayrollPeriod = useCallback((period: EmployeePayrollPeriod, range?: { dateFrom: string; dateTo: string }) => {
+    const next: EmployeePayrollQuery = range ? { period, ...range } : { period };
+    employeePayrollQueryRef.current = next;
+    void loadSummary(true, next);
+  }, [loadSummary]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -884,6 +932,32 @@ export default function HomeDashboard({
   const primarySignalId = sectionsLocked
     ? role === "master" ? "shift" : "cash"
     : daySignals.find((signal) => signal.tone === "danger")?.id ?? "records";
+
+  if (isEmployeeDashboard) {
+    return (
+      <main className="eco-employee-dashboard" aria-busy={loading || refreshing}>
+        <div className="eco-visually-hidden" role="status" aria-live="polite">
+          {loading ? "Загружаем личный расчёт." : refreshing ? "Обновляем личный расчёт." : "Личный расчёт обновлён."}
+        </div>
+        <MyPayrollCard
+          data={employeePayroll}
+          loading={loading || refreshing}
+          error={dashboardError}
+          onRefresh={() => void loadSummary(true)}
+          onPeriodChange={changeEmployeePayrollPeriod}
+        />
+        {role === "master" && (
+          <section id="shift-control" className="eco-ops-shift-card eco-ops-shift-card--shared eco-employee-dashboard__shift">
+            <div>
+              <span className="eco-ops-eyebrow">Текущая рабочая смена</span>
+              <h2>{currentShift ? "Смена активна" : "Нет активной смены"}</h2>
+            </div>
+            <ShiftButton role={role} current={currentShift} currentCashShift={null} loading={!shiftAvailable} />
+          </section>
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className={`eco-ops-dashboard is-role-${role}`} aria-busy={loading || refreshing}>

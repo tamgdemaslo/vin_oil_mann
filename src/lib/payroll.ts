@@ -306,6 +306,7 @@ export type VehicleRecord = {
   demandId: string;
   demandName: string;
   date: string;
+  moment: string;
   agentName: string;
   sumCents: number;
   works: { name: string; quantity: number; priceCents: number }[];
@@ -586,6 +587,7 @@ export async function computePayroll(params: {
       demandId: demand.id,
       demandName: demand.name,
       date: demandDate,
+      moment: demand.moment,
       agentName: demand.agent?.name ?? "",
       sumCents,
       works,

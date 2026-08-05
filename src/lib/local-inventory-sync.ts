@@ -616,7 +616,7 @@ async function syncProducts(entityType: "product" | "service", limit?: number | 
       await withDbRetry(() =>
         prisma.localProduct.upsert({
           where: { branchId_moyskladId: { branchId: getScopedBranchId(), moyskladId: row.id } },
-          create: { moyskladId: row.id, ...payload },
+          create: { moyskladId: row.id, origin: "SYNC", ...payload },
           update: payload,
         })
       );

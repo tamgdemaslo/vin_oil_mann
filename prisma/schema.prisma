@@ -2199,6 +2199,14 @@ model LocalProduct {
   markingConfiguredAt       DateTime? @map("marking_configured_at")
   markingConfiguredByLogin  String?   @map("marking_configured_by_login")
   searchText                String    @default("") @map("search_text") @db.Text
+  /// Origin is local by default; copied cards retain a safe, auditable provenance.
+  origin                    String    @default("MANUAL")
+  sourceProductId           String?   @map("source_product_id")
+  sourceBranchId            String?   @map("source_branch_id")
+  copyBatchId               String?   @map("copy_batch_id")
+  copiedAt                  DateTime? @map("copied_at")
+  createdById               String?   @map("created_by_id")
+  priceNeedsSetup           Boolean   @default(false) @map("price_needs_setup")
   archived                  Boolean   @default(false)
   raw                       Json?
   syncedAt                  DateTime  @default(now()) @map("synced_at")
@@ -2238,6 +2246,10 @@ model LocalProduct {
   @@index([markingConfiguredManually])
   @@index([salePriceCents])
   @@index([buyPriceCents])
+  @@index([branchId, origin])
+  @@index([branchId, sourceProductId])
+  @@index([branchId, copyBatchId])
+  @@index([branchId, priceNeedsSetup])
   @@unique([branchId, moyskladId])
   @@index([branchId, code])
   @@index([branchId, barcodeEan13])
@@ -2246,6 +2258,62 @@ model LocalProduct {
   @@unique([branchId, id])
   @@index([updatedAt])
   @@map("local_products")
+}
+
+/// Audit and idempotency boundary for copying catalog cards between branches.
+/// This model is intentionally not branch-scoped: one batch belongs to two branches.
+model BranchProductCopyBatch {
+  id                     String                  @id @default(cuid())
+  businessGroupId        String                  @map("business_group_id")
+  sourceBranchId         String                  @map("source_branch_id")
+  targetBranchId         String                  @map("target_branch_id")
+  createdById            String                  @map("created_by_id")
+  idempotencyKey         String                  @unique @map("idempotency_key")
+  status                 String                  @default("PENDING")
+  optionsJson            Json                    @default("{}") @map("options_json")
+  totalSelected          Int                     @default(0) @map("total_selected")
+  totalCreated           Int                     @default(0) @map("total_created")
+  totalUpdated           Int                     @default(0) @map("total_updated")
+  totalSkipped           Int                     @default(0) @map("total_skipped")
+  totalFailed            Int                     @default(0) @map("total_failed")
+  totalPriceNeedsSetup   Int                     @default(0) @map("total_price_needs_setup")
+  totalSuppliersUnmapped Int                     @default(0) @map("total_suppliers_unmapped")
+  startedAt              DateTime?               @map("started_at")
+  completedAt            DateTime?               @map("completed_at")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+
+  items BranchProductCopyItem[]
+
+  @@index([businessGroupId, createdAt])
+  @@index([sourceBranchId, createdAt])
+  @@index([targetBranchId, createdAt])
+  @@index([status])
+  @@map("branch_product_copy_batches")
+}
+
+/// Per-source-card result within a copy batch. It also makes retries traceable.
+model BranchProductCopyItem {
+  id               String                 @id @default(cuid())
+  batchId          String                 @map("batch_id")
+  sourceProductId  String                 @map("source_product_id")
+  targetProductId  String?                @map("target_product_id")
+  matchingMethod   String?                @map("matching_method")
+  action           String                 @default("PENDING")
+  status           String                 @default("PENDING")
+  reason           String?                @db.Text
+  copiedFieldsJson Json?                  @map("copied_fields_json")
+  errorCode        String?                @map("error_code")
+  errorMessage     String?                @map("error_message") @db.Text
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  batch BranchProductCopyBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, sourceProductId])
+  @@index([targetProductId])
+  @@index([status])
+  @@map("branch_product_copy_items")
 }
 
 model ProductMannLink {

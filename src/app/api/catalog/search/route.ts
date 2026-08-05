@@ -37,6 +37,11 @@ export async function GET(request: NextRequest) {
     packageVolume: readValues(request, "packageVolume"),
     stock: sp.get("stock") ?? undefined,
     markingProblems: sp.get("markingProblems") === "1" || sp.get("markingProblems") === "true",
+    priceMissing: sp.get("priceMissing") === "1" || sp.get("priceMissing") === "true",
+    origin: ["MANUAL", "BRANCH_COPY", "IMPORT", "SYNC"].includes(sp.get("origin") ?? "")
+      ? sp.get("origin") ?? undefined
+      : undefined,
+    copyBatchId: sp.get("copyBatchId") ?? undefined,
     inStock: sp.get("inStock") === "1" || sp.get("inStock") === "true",
     includeArchived: sp.get("archived") === "1" || sp.get("includeArchived") === "1",
     limit: Math.min(100, parseInt(sp.get("limit") ?? "30", 10) || 30),

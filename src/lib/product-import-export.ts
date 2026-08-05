@@ -976,7 +976,7 @@ export async function executeProductImport(jobId: string, options?: ProductImpor
     const data = productDataFromAfter(row.after);
     if (row.action === "create") {
       const created = await tx.localProduct.create({
-        data,
+        data: { ...data, origin: "IMPORT" },
         include: { stockBalances: true },
       });
       row.matchedProductId = created.id;
