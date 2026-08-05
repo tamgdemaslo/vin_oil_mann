@@ -72,12 +72,17 @@ for (const context of [
 
 const branchRouteSource = fs.readFileSync(new URL("../src/app/api/branches/route.ts", import.meta.url), "utf8");
 const branchesSource = fs.readFileSync(new URL("../src/lib/branches.ts", import.meta.url), "utf8");
+const yclientsRouteSource = fs.readFileSync(new URL("../src/app/api/yclients/route.ts", import.meta.url), "utf8");
 assert.match(branchRouteSource, /requireBranchContext\(\{ allowAll: true, requireActive: false \}\)/);
 assert.match(branchRouteSource, /createBranch\(context, body\)/);
 assert.match(branchesSource, /if \(!context\.canManageBranches\) return \{ ok: false as const, status: 403/);
 assert.match(branchesSource, /businessGroupId: context\.businessGroupId/);
 assert.match(branchesSource, /branchAuditLog\.create/);
 assert.doesNotMatch(branchesSource.match(/export type BranchInput = \{[\s\S]*?\n\};/)?.[0] ?? "", /businessGroupId/);
+assert.match(
+  yclientsRouteSource,
+  /runWithBranchApiContext\(branchAccess\.context, async \(\) => \{\s*let config: YclientsBranchConfig;\s*try \{\s*config = await getYclientsBranchConfig\(\);[\s\S]*?return operation\(config\);/
+);
 
 for (const routePath of [
   "../src/app/api/catalog/search/route.ts",

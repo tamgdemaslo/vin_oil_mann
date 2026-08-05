@@ -5,7 +5,7 @@ import {
   handleAppointmentUpdated,
 } from "@/lib/client-notifications/client-notifications";
 import { getSession } from "@/lib/auth";
-import { requireBranchApi } from "@/lib/branch-api";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 import { assertExternalSideEffectAllowed } from "@/lib/external-side-effects";
 
@@ -307,43 +307,45 @@ function configuredCompanyId(requested: string | number | null | undefined, conf
   return value;
 }
 
-async function requireYclientsRequestContext() {
+async function withYclientsRequestContext(
+  operation: (config: YclientsBranchConfig) => Promise<NextResponse> | NextResponse
+): Promise<NextResponse> {
   const session = await getSession();
   if (!session) {
-    return { ok: false as const, response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }) };
+    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   }
   const branchAccess = await requireBranchApi();
-  if (!branchAccess.ok) return { ok: false as const, response: branchAccess.response };
-  try {
-    return { ok: true as const, config: await getYclientsBranchConfig() };
-  } catch (error) {
-    return {
-      ok: false as const,
-      response: NextResponse.json(
+  if (!branchAccess.ok) return branchAccess.response;
+
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    let config: YclientsBranchConfig;
+    try {
+      config = await getYclientsBranchConfig();
+    } catch (error) {
+      return NextResponse.json(
         { success: false, error: error instanceof Error ? error.message : "YCLIENTS не настроен для активного филиала" },
         { status: 424 }
-      ),
-    };
-  }
+      );
+    }
+    return operation(config);
+  });
 }
 
 export async function GET(request: NextRequest) {
-  const context = await requireYclientsRequestContext();
-  if (!context.ok) return context.response;
-  const { config } = context;
-  const search = request.nextUrl.searchParams;
-  const action = search.get("action");
+  return withYclientsRequestContext(async (config) => {
+    const search = request.nextUrl.searchParams;
+    const action = search.get("action");
 
-  try {
-    if (action === "config") {
-      return NextResponse.json({
-        success: true,
-        data: {
-          company_id: config.companyId,
-          company_title: config.companyTitle ?? "YCLIENTS",
-        },
-      });
-    }
+    try {
+      if (action === "config") {
+        return NextResponse.json({
+          success: true,
+          data: {
+            company_id: config.companyId,
+            company_title: config.companyTitle ?? "YCLIENTS",
+          },
+        });
+      }
 
     if (action === "companies") {
       const resolved = await resolveAuthHeader(config, "/company/");
@@ -442,26 +444,25 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
     }
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Некорректные параметры" },
-      { status: 400 }
-    );
-  }
+    } catch (error) {
+      return NextResponse.json(
+        { success: false, error: error instanceof Error ? error.message : "Некорректные параметры" },
+        { status: 400 }
+      );
+    }
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const context = await requireYclientsRequestContext();
-  if (!context.ok) return context.response;
-  const { config } = context;
-  const body = (await request.json().catch(() => ({}))) as {
-    action?: string;
-    company_id?: number | string;
-    payload?: unknown;
-    login?: string;
-    password?: string;
-  };
-  const action = body.action;
+  return withYclientsRequestContext(async (config) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: string;
+      company_id?: number | string;
+      payload?: unknown;
+      login?: string;
+      password?: string;
+    };
+    const action = body.action;
 
   if (action === "auth") {
     return NextResponse.json(
@@ -507,18 +508,17 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
+  });
 }
 
 export async function PUT(request: NextRequest) {
-  const context = await requireYclientsRequestContext();
-  if (!context.ok) return context.response;
-  const { config } = context;
-  const body = await request.json().catch(() => ({}));
-  const action = String(body.action ?? "");
-  if (action !== "update-record") {
-    return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
-  }
+  return withYclientsRequestContext(async (config) => {
+    const body = await request.json().catch(() => ({}));
+    const action = String(body.action ?? "");
+    if (action !== "update-record") {
+      return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
+    }
 
   let companyId: string;
   try {
@@ -546,18 +546,17 @@ export async function PUT(request: NextRequest) {
       console.warn("[client-notifications/yclients-update]", error);
     });
   }
-  return response;
+    return response;
+  });
 }
 
 export async function DELETE(request: NextRequest) {
-  const context = await requireYclientsRequestContext();
-  if (!context.ok) return context.response;
-  const { config } = context;
-  const body = await request.json().catch(() => ({}));
-  const action = String(body.action ?? "");
-  if (action !== "delete-record") {
-    return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
-  }
+  return withYclientsRequestContext(async (config) => {
+    const body = await request.json().catch(() => ({}));
+    const action = String(body.action ?? "");
+    if (action !== "delete-record") {
+      return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
+    }
 
   let companyId: string;
   try {
@@ -581,5 +580,6 @@ export async function DELETE(request: NextRequest) {
       console.warn("[client-notifications/yclients-delete]", error);
     });
   }
-  return response;
+    return response;
+  });
 }
