@@ -21,6 +21,8 @@ export type BranchSummary = {
   businessGroupId: string;
   name: string;
   shortName: string;
+  /** The current name of the organization linked to this branch, when present. */
+  displayName: string;
   slug: string;
   status: string;
   address: string | null;
@@ -131,8 +133,38 @@ function branchSummary(branch: {
   phone: string | null;
   email: string | null;
   legacyOrganizationId: string | null;
-}): BranchSummary {
-  return { ...branch };
+}, organizationName?: string | null): BranchSummary {
+  return {
+    ...branch,
+    displayName: organizationName?.trim() || branch.shortName || branch.name,
+  };
+}
+
+async function branchSummaries(branches: Array<{
+  id: string;
+  businessGroupId: string;
+  name: string;
+  shortName: string;
+  slug: string;
+  status: string;
+  address: string | null;
+  timezone: string;
+  phone: string | null;
+  email: string | null;
+  legacyOrganizationId: string | null;
+}>): Promise<BranchSummary[]> {
+  const organizationIds = branches
+    .map((branch) => branch.legacyOrganizationId)
+    .filter((id): id is string => Boolean(id));
+  const organizations = organizationIds.length
+    ? await prisma.localOrganization.findMany({
+        where: { id: { in: organizationIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const organizationNames = new Map(organizations.map((organization) => [organization.id, organization.name]));
+
+  return branches.map((branch) => branchSummary(branch, branch.legacyOrganizationId ? organizationNames.get(branch.legacyOrganizationId) : null));
 }
 
 async function auditAccess(input: {
@@ -210,6 +242,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   if (!session) return null;
 
   const access = await resolveAccess(session.user);
+  const summaries = await branchSummaries(access.branches);
   const store = await cookies();
   const cookie = decodeCookie(store.get(ACTIVE_BRANCH_COOKIE)?.value, session.user.login);
   const allowedIds = new Set(access.branches.map((branch) => branch.id));
@@ -229,7 +262,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
       branchId: null,
       organizationId: null,
       branch: null,
-      branches: access.branches.map(branchSummary),
+      branches: summaries,
     };
   }
 
@@ -253,7 +286,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     throw new BranchAccessError("Пользователю не назначен доступ ни к одному филиалу", 403, "branch_membership_required");
   }
 
-  const branch = access.branches.find((candidate) => candidate.id === selectedId) ?? null;
+  const branch = summaries.find((candidate) => candidate.id === selectedId) ?? null;
   if (!branch) throw new BranchAccessError("Филиал недоступен", 403);
   if (options.requireActive !== false && branch.status !== "active") {
     throw new BranchAccessError("Филиал работает в режиме только для чтения", 423, "branch_read_only");
@@ -271,8 +304,8 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
     mode: "branch",
     branchId: branch.id,
     organizationId: branch.legacyOrganizationId ?? branch.id,
-    branch: branchSummary(branch),
-    branches: access.branches.map(branchSummary),
+    branch,
+    branches: summaries,
   };
 }
 
@@ -315,6 +348,9 @@ export async function selectActiveBranch(candidate: string, authUser: AuthUser) 
     throw new BranchAccessError("Филиал недоступен", 403);
   }
 
+  const organization = branch.legacyOrganizationId
+    ? await prisma.localOrganization.findUnique({ where: { id: branch.legacyOrganizationId }, select: { name: true } })
+    : null;
   await prisma.user.update({ where: { id: access.user.id }, data: { lastActiveBranchId: branch.id } });
   await auditAccess({
     userId: access.user.id,
@@ -322,7 +358,7 @@ export async function selectActiveBranch(candidate: string, authUser: AuthUser) 
     branchId: branch.id,
     action: "branch_switched",
   });
-  return { token: branchCookieToken(branch.id, authUser.login), branchId: branch.id, branch: branchSummary(branch) };
+  return { token: branchCookieToken(branch.id, authUser.login), branchId: branch.id, branch: branchSummary(branch, organization?.name) };
 }
 
 export function branchErrorResponse(error: unknown) {

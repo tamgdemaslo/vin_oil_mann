@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  Check,
   ChevronDown,
   CircleDollarSign,
   Home,
@@ -63,6 +64,7 @@ type ShellBranch = {
   id: string;
   name: string;
   shortName: string;
+  displayName?: string;
   status: string;
 };
 
@@ -160,6 +162,10 @@ function formatTime(value?: string | null) {
   return formatted === "—" ? "" : formatted;
 }
 
+function branchLabel(branch: ShellBranch) {
+  return branch.displayName?.trim() || branch.shortName || branch.name;
+}
+
 function routeContext(pathname: string) {
   if (pathname === "/") return { label: "Текущий раздел:", value: "Главная" };
   if (pathname.startsWith("/shipment/new")) return { label: "Текущий раздел:", value: "Новая отгрузка" };
@@ -189,6 +195,7 @@ export default function PlatformShell() {
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [canViewAllBranches, setCanViewAllBranches] = useState(false);
   const [branchSwitching, setBranchSwitching] = useState(false);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
   const [deadlineCounts, setDeadlineCounts] = useState<DeadlineNotificationCounts | null>(null);
   const [deadlineToast, setDeadlineToast] = useState<DeadlineNotification | null>(null);
@@ -316,6 +323,7 @@ export default function PlatformShell() {
   useEffect(() => {
     setOpenSectionId(null);
     setProfileOpen(false);
+    setBranchMenuOpen(false);
     setMobileOpen(false);
     setSearchOpen(false);
     setSearchQuery("");
@@ -328,6 +336,7 @@ export default function PlatformShell() {
       if (!shellRef.current?.contains(target)) {
         setOpenSectionId(null);
         setProfileOpen(false);
+        setBranchMenuOpen(false);
         setMobileOpen(false);
         setSearchOpen(false);
       }
@@ -571,13 +580,19 @@ export default function PlatformShell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branchId: id }),
       });
+      const payload = await safeReadJson<{ error?: string; activeBranchId?: string; activeBranch?: ShellBranch | null }>(response);
       if (!response.ok) {
-        const payload = await safeReadJson<{ error?: string }>(response);
         window.alert(payload?.error ?? "Не удалось переключить филиал");
         return;
       }
-      setSelectedBranchId(id);
-      window.location.href = id === "all" ? "/owner" : pathname;
+      const nextBranchId = payload?.activeBranchId ?? id;
+      const nextBranch = payload?.activeBranch;
+      if (nextBranch) {
+        setBranches((current) => current.map((branch) => branch.id === nextBranch.id ? nextBranch : branch));
+      }
+      setSelectedBranchId(nextBranchId);
+      setBranchMenuOpen(false);
+      window.location.href = nextBranchId === "all" ? "/owner" : pathname;
     } finally {
       setBranchSwitching(false);
     }
@@ -617,9 +632,10 @@ export default function PlatformShell() {
         : `Кассовая смена активна${formatTime(currentCashShift?.openedAt) ? ` с ${formatTime(currentCashShift?.openedAt)}` : ""}`
       : "Смена не начата";
   const context = routeContext(pathname);
+  const activeBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;
   const activeBranchLabel = selectedBranchId === "all"
     ? "Все филиалы"
-    : branches.find((branch) => branch.id === selectedBranchId)?.shortName ?? "Филиал не выбран";
+    : activeBranch ? branchLabel(activeBranch) : "Филиал не выбран";
 
   return (
     <div ref={shellRef} className="platform-shell">
@@ -655,7 +671,11 @@ export default function PlatformShell() {
                     type="button"
                     className={`platform-shell__nav-trigger ${active ? "is-active" : ""} ${open ? "is-open" : ""}`}
                     disabled={disabled}
-                    onClick={() => setOpenSectionId(open ? null : section.id)}
+                    onClick={() => {
+                      setBranchMenuOpen(false);
+                      setProfileOpen(false);
+                      setOpenSectionId(open ? null : section.id);
+                    }}
                     aria-expanded={open}
                     aria-haspopup="menu"
                   >
@@ -698,25 +718,70 @@ export default function PlatformShell() {
           ) : user ? (
             <>
               {branches.length > 0 && (
-                <label className={`platform-shell__org-switch ${selectedBranchId === "all" ? "is-all" : ""}`} title="Активный филиал">
-                  <Building2 aria-hidden className="eco-icon" />
-                  <span className="platform-shell__branch-copy">
-                    <small>Филиал</small>
-                    <select
-                      value={selectedBranchId}
-                      onChange={(event) => void handleBranchChange(event.target.value)}
-                      disabled={branchSwitching}
-                      aria-label="Активный филиал"
-                    >
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>
-                          {branch.shortName}{branch.status === "archived" ? " · архив" : ""}
-                        </option>
-                      ))}
-                      {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
-                    </select>
-                  </span>
-                </label>
+                <div className={`platform-shell__org-switch ${selectedBranchId === "all" ? "is-all" : ""}`}>
+                  <button
+                    type="button"
+                    className="platform-shell__org-switch-trigger"
+                    onClick={() => {
+                      setOpenSectionId(null);
+                      setProfileOpen(false);
+                      setBranchMenuOpen((open) => !open);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setBranchMenuOpen(false);
+                    }}
+                    disabled={branchSwitching}
+                    aria-expanded={branchMenuOpen}
+                    aria-haspopup="menu"
+                    aria-controls="platform-shell-branch-menu"
+                  >
+                    <Building2 aria-hidden className="eco-icon" />
+                    <span className="platform-shell__branch-copy">
+                      <small>Рабочий филиал</small>
+                      <strong>{branchSwitching ? "Переключаем…" : activeBranchLabel}</strong>
+                    </span>
+                    <ChevronDown aria-hidden className="eco-icon platform-shell__branch-chevron" />
+                  </button>
+                  {branchMenuOpen && (
+                    <div id="platform-shell-branch-menu" className="platform-shell__branch-menu" role="menu" aria-label="Выбор филиала">
+                      {branches.map((branch) => {
+                        const selected = branch.id === selectedBranchId;
+                        const label = branchLabel(branch);
+                        return (
+                          <button
+                            key={branch.id}
+                            type="button"
+                            className={selected ? "is-selected" : ""}
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            disabled={branch.status !== "active" || branchSwitching}
+                            onClick={() => void handleBranchChange(branch.id)}
+                          >
+                            <span>
+                              <strong>{label}</strong>
+                              {branch.name !== label && branch.name !== branch.shortName && <small>{branch.name}</small>}
+                              {branch.status === "archived" && <small>Архив</small>}
+                            </span>
+                            {selected && <Check aria-hidden className="eco-icon" />}
+                          </button>
+                        );
+                      })}
+                      {canViewAllBranches && (
+                        <button
+                          type="button"
+                          className={selectedBranchId === "all" ? "is-selected" : ""}
+                          role="menuitemradio"
+                          aria-checked={selectedBranchId === "all"}
+                          disabled={branchSwitching}
+                          onClick={() => void handleBranchChange("all")}
+                        >
+                          <span><strong>Все филиалы</strong><small>Сводный режим без операций</small></span>
+                          {selectedBranchId === "all" && <Check aria-hidden className="eco-icon" />}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
               <div className={`platform-shell__search ${searchOpen ? "is-open" : ""}`}>
                 <Search aria-hidden className="eco-icon" />
@@ -776,7 +841,11 @@ export default function PlatformShell() {
                 <button
                   type="button"
                   className="platform-shell__profile-btn"
-                  onClick={() => setProfileOpen((value) => !value)}
+                  onClick={() => {
+                    setOpenSectionId(null);
+                    setBranchMenuOpen(false);
+                    setProfileOpen((value) => !value);
+                  }}
                   aria-expanded={profileOpen}
                   aria-haspopup="menu"
                 >
@@ -825,7 +894,7 @@ export default function PlatformShell() {
                 disabled={branchSwitching}
               >
                 {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>{branch.shortName}</option>
+                  <option key={branch.id} value={branch.id} disabled={branch.status !== "active"}>{branchLabel(branch)}</option>
                 ))}
                 {canViewAllBranches && <option value="all">Все филиалы · обзор</option>}
               </select>

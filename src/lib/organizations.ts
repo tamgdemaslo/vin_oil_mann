@@ -553,7 +553,7 @@ export async function updateOrganization(id: string, input: OrganizationInput, p
 
   const updated = await prisma.$transaction(async (tx) => {
     if (makeDefault) await tx.localOrganization.updateMany({ data: { isDefault: false } });
-    return tx.localOrganization.update({
+    const organization = await tx.localOrganization.update({
       where: { id },
       data: {
         ...data,
@@ -561,6 +561,11 @@ export async function updateOrganization(id: string, input: OrganizationInput, p
       },
       include: ORGANIZATION_INCLUDE,
     });
+    await tx.branch.updateMany({
+      where: { legacyOrganizationId: id },
+      data: { name: data.name, shortName: data.name },
+    });
+    return organization;
   });
 
   await auditOrganizationChange({

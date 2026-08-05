@@ -9413,20 +9413,31 @@ body.antialiased {
 }
 
 .platform-shell__org-switch {
+  position: relative;
+  min-width: 190px;
+  max-width: 260px;
+}
+
+.platform-shell__org-switch-trigger {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-width: 190px;
-  max-width: 260px;
+  width: 100%;
   min-height: 38px;
   padding: 4px 8px;
   color: var(--eco-ink-2);
   background: var(--eco-surface);
   border: 1px solid var(--eco-line);
   border-radius: 4px;
+  text-align: left;
 }
 
-.platform-shell__org-switch.is-all {
+.platform-shell__org-switch-trigger:hover {
+  border-color: var(--eco-line-strong, var(--eco-line));
+  background: var(--eco-surface-sunk);
+}
+
+.platform-shell__org-switch.is-all .platform-shell__org-switch-trigger {
   color: var(--eco-warning-ink, #6b4300);
   background: var(--eco-warning-soft, #fff7df);
   border-color: var(--eco-warning, #c27a00);
@@ -9445,17 +9456,97 @@ body.antialiased {
   line-height: 1;
 }
 
-.platform-shell__org-switch select {
-  min-width: 0;
-  width: 100%;
+.platform-shell__branch-copy > strong {
+  overflow: hidden;
   color: inherit;
-  background: transparent;
-  border: 0;
   font-size: 12px;
   font-weight: 700;
-  outline: none;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.platform-shell__branch-chevron {
+  flex: 0 0 auto;
+}
+
+.platform-shell__org-switch-trigger[aria-expanded="true"] .platform-shell__branch-chevron {
+  transform: rotate(180deg);
+}
+
+.platform-shell__branch-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 90;
+  display: grid;
+  width: max(260px, 100%);
+  max-width: min(340px, calc(100vw - 24px));
+  gap: 2px;
+  padding: 6px;
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+  box-shadow: var(--eco-shadow-pop);
+}
+
+.platform-shell__branch-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 8px;
+  color: var(--eco-ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  text-align: left;
+}
+
+.platform-shell__branch-menu button > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.platform-shell__branch-menu button strong,
+.platform-shell__branch-menu button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-shell__branch-menu button strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.platform-shell__branch-menu button small {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.platform-shell__branch-menu button:hover,
+.platform-shell__branch-menu button.is-selected {
+  color: var(--eco-ink);
+  background: var(--eco-surface-sunk);
+}
+
+.platform-shell__branch-menu button.is-selected {
+  color: var(--eco-rust);
+}
+
+.platform-shell__branch-menu button:disabled {
+  color: var(--eco-faint);
+  cursor: not-allowed;
+}
+
+.platform-shell__org-switch-trigger:focus-visible,
+.platform-shell__branch-menu button:focus-visible,
 .platform-shell__org-switch select:focus-visible,
 .platform-shell__mobile-branch select:focus-visible {
   outline: 2px solid var(--eco-focus, #155eef);

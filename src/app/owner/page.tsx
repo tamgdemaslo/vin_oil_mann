@@ -42,7 +42,7 @@ export default async function OwnerDashboardPage() {
             <tbody>
               {dashboard.branches.map((row) => (
                 <tr key={row.branch.id}>
-                  <th><span className={`eco-owner-dashboard__status is-${row.branch.status}`} />{row.branch.shortName}</th>
+                  <th><span className={`eco-owner-dashboard__status is-${row.branch.status}`} />{row.branch.displayName}</th>
                   <td>{money(row.revenueCents)}</td>
                   <td>{money(row.averageCheckCents)}</td>
                   <td>{row.clientsCount}</td>

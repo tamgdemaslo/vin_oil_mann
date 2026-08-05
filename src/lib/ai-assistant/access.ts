@@ -14,7 +14,7 @@ export async function requireAIAssistantAccess() {
     return {
       session,
       branchId: branch.branchId!,
-      branchName: branch.branch?.shortName ?? "Филиал",
+      branchName: branch.branch?.displayName ?? branch.branch?.shortName ?? "Филиал",
       organizationId: branch.organizationId!,
       actorId: session.user.login,
     } as const;

@@ -592,13 +592,12 @@ function formatHours(count: number) {
 }
 
 function getMonthBounds(year: number, month: number) {
-  const first = new Date(year, month, 1);
-  const last = new Date(year, month + 1, 0);
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   return {
-    dateFrom: toLocalDateInputValue(first),
-    dateTo: toLocalDateInputValue(last),
-    daysInMonth: last.getDate(),
-    startPad: (first.getDay() + 6) % 7,
+    dateFrom: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+    dateTo: `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`,
+    daysInMonth,
+    startPad: (new Date(Date.UTC(year, month, 1)).getUTCDay() + 6) % 7,
   };
 }
 
@@ -611,17 +610,17 @@ function getMonthLabel(date: Date) {
 }
 
 function getPresetRange(preset: "current" | "previous" | "7" | "30") {
-  const now = new Date();
   if (preset === "current") return getCurrentMonthRange();
   if (preset === "previous") {
-    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const last = new Date(now.getFullYear(), now.getMonth(), 0);
-    return { dateFrom: toLocalDateInputValue(first), dateTo: toLocalDateInputValue(last) };
+    const [yearText, monthText] = getCurrentMonthRange().dateFrom.split("-");
+    const previous = new Date(Date.UTC(Number(yearText), Number(monthText) - 2, 1));
+    return getMonthBounds(previous.getUTCFullYear(), previous.getUTCMonth());
   }
   const days = preset === "7" ? 7 : 30;
-  const from = new Date(now);
-  from.setDate(now.getDate() - days + 1);
-  return { dateFrom: toLocalDateInputValue(from), dateTo: toLocalDateInputValue(now) };
+  const dateTo = toLocalDateInputValue(new Date());
+  const end = new Date(`${dateTo}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() - days + 1);
+  return { dateFrom: end.toISOString().slice(0, 10), dateTo };
 }
 
 function getDateRangeKeys(startKey: string, endKey: string) {
@@ -1333,6 +1332,13 @@ export default function SalaryDashboard({
 
   const loadPayroll = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
+    if (dateFrom > dateTo) {
+      setPayroll(null);
+      setPayrollWorkingDays([]);
+      setPayrollError("Дата начала расчёта не может быть позже даты окончания.");
+      setProgressText(null);
+      return;
+    }
     setPayrollLoading(true);
     setPayrollError(null);
     setProgressText("Считаем рабочие дни, услуги и сдельные начисления...");
@@ -1673,6 +1679,16 @@ export default function SalaryDashboard({
     const range = getPresetRange(preset);
     setDateFrom(range.dateFrom);
     setDateTo(range.dateTo);
+  }
+
+  function updateDateFrom(value: string) {
+    setDateFrom(value);
+    if (value && dateTo && value > dateTo) setDateTo(value);
+  }
+
+  function updateDateTo(value: string) {
+    setDateTo(value);
+    if (value && dateFrom && value < dateFrom) setDateFrom(value);
   }
 
   async function saveMotivationGoal() {
@@ -2725,10 +2741,10 @@ export default function SalaryDashboard({
             </div>
             <div className="eco-payroll-controls">
               <FieldLabel label="С">
-                <EcoInput type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                <EcoInput type="date" value={dateFrom} onChange={(event) => updateDateFrom(event.target.value)} />
               </FieldLabel>
               <FieldLabel label="По">
-                <EcoInput type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                <EcoInput type="date" value={dateTo} onChange={(event) => updateDateTo(event.target.value)} />
               </FieldLabel>
               {!viewingAsEmployee && (
                 <FieldLabel label="Сотрудник">

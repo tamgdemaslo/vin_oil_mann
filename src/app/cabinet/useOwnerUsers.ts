@@ -17,12 +17,18 @@ export function toLocalDateInputValue(value: Date) {
 }
 
 export function getCurrentMonthRange() {
-  const now = new Date();
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // Date inputs contain calendar dates, not instants.  Building a Date at
+  // browser-local midnight and then formatting it in the service timezone
+  // could move either edge of the month by a day.  Derive both keys directly
+  // from today's service date instead.
+  const today = toServiceDateInput(new Date());
+  const [yearText, monthText] = today.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return {
-    dateFrom: toLocalDateInputValue(first),
-    dateTo: toLocalDateInputValue(last),
+    dateFrom: `${yearText}-${monthText}-01`,
+    dateTo: `${yearText}-${monthText}-${String(daysInMonth).padStart(2, "0")}`,
   };
 }
 

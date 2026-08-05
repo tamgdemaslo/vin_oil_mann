@@ -37,7 +37,7 @@ export async function getOwnerDashboard(context: BranchContext) {
     const expenseCents = expenses._sum.amountCents ?? 0;
     const payrollCents = payroll._sum.amountCents ?? 0;
     return {
-      branch: { id: branch.id, name: branch.name, shortName: branch.shortName, status: branch.status },
+      branch: { id: branch.id, name: branch.name, shortName: branch.shortName, displayName: branch.displayName, status: branch.status },
       revenueCents,
       shipmentsCount: shipments._count._all,
       averageCheckCents: Math.round(shipments._avg.sumCents ?? 0),
@@ -84,4 +84,3 @@ export async function getOwnerDashboard(context: BranchContext) {
     branches: rows,
   };
 }
-

@@ -7,6 +7,7 @@ type Branch = {
   id: string;
   name: string;
   shortName: string;
+  displayName?: string;
   slug: string;
   status: string;
   address: string | null;
@@ -77,7 +78,7 @@ export default function BranchesPage() {
         {loading ? <p>Загрузка филиалов…</p> : branches.map((branch) => (
           <article key={branch.id}>
             <span className={`eco-branches-page__dot is-${branch.status}`} />
-            <div><strong>{branch.shortName}</strong><small>{branch.address || "Адрес не заполнен"}</small></div>
+            <div><strong>{branch.displayName ?? branch.shortName}</strong><small>{branch.address || "Адрес не заполнен"}</small></div>
             <span>{branch.phone || "Телефон не заполнен"}</span>
             <code>/branches/{branch.slug}</code>
             <span className="eco-branches-page__status">{branch.status === "active" ? "Активен" : "Архив"}</span>
