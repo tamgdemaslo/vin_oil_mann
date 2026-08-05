@@ -1,0 +1,56 @@
+name: Verify source for Timeweb App Platform
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  verify:
+    name: Verify committed source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure the checkout is clean
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          git diff --quiet
+          git diff --cached --quiet
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Verify AI tool policy
+        run: npm run test:ai-tool-loop-policy
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Next.js production build
+        run: npm run build

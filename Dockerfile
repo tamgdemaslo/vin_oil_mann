@@ -76,11 +76,14 @@ WORKDIR /app
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
+COPY --from=build --chown=app:app /app/prisma ./prisma
+COPY --from=build --chown=app:app /app/deploy/timeweb/start-app.sh /usr/local/bin/start-app
+RUN chmod 755 /usr/local/bin/start-app
 
 USER app
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["/usr/local/bin/start-app"]
 
 FROM dependencies AS migration
 
@@ -118,3 +121,7 @@ RUN chmod 755 /usr/local/bin/eco-migrate \
 
 USER app
 ENTRYPOINT ["/usr/local/bin/eco-migrate"]
+
+# Timeweb App Platform builds the final Dockerfile stage. Keep the web runtime
+# last so it never starts the legacy migration image.
+FROM runtime AS app

@@ -1,21 +1,19 @@
 # Production infrastructure policy
 
-Production deployment of the Eco Platform is allowed only on Selectel.
+Production runs on Timeweb Cloud App Platform.
 
-- Do not use the Railway CLI, Railway API, or Railway deploy commands for
-  application work.
-- Do not add `railway.toml`, `railway.json`, Railway GitHub Actions, Railway
-  URLs, or Railway environment-variable fallbacks.
-- All production deployments, migrations, workers, and environment variables
-  must be scoped to the current Selectel deployment instructions in
-  [`deploy/selectel/README.md`](deploy/selectel/README.md).
-- Production migrations must be refused when the configured database URL points
-  to Railway. Never use a Railway database as a fallback.
+- App Platform deploys the `main` branch from GitHub. GitHub Actions run source
+  verification only; they must not publish images or connect to production over
+  SSH.
+- Use the root `Dockerfile` with its final `app` stage. Do not use the legacy
+  Selectel Compose files for new production work.
+- Production secrets belong in Timeweb App Platform variables, never in the
+  repository or GitHub Actions logs.
+- Database schema changes require a separately approved migration and a
+  verified Timeweb backup. Application startup must not apply migrations.
 - Railway is decommissioned and may not be accessed by application,
   deployment, migration, worker or fallback code. Its verified offline archive
   is evidence only; it is not a runtime or rollback target.
 
-Current archive status (2026-08-02): **`RAILWAY_DECOMMISSIONED_ARCHIVED`**.
-Selectel `vin_oil` is canonical. All legacy-only/shared differences are
-`ARCHIVE_ONLY_DO_NOT_IMPORT`; see
-`docs/reconciliation/railway-decommission-archive-manifest-2026-08-02.json`.
+Legacy Selectel deployment files and audit evidence are retained for history;
+they are not an active production target.
