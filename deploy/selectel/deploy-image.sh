@@ -26,6 +26,15 @@ fail() {
   return "${2:-1}"
 }
 
+write_caddy_upstream() {
+  local content="$1"
+  local temp_file="$UPSTREAM_FILE.tmp.$$"
+  cp -p "$UPSTREAM_FILE" "$temp_file"
+  printf '%s\n' "$content" >"$temp_file"
+  chmod 0640 "$temp_file"
+  mv "$temp_file" "$UPSTREAM_FILE"
+}
+
 usage() {
   echo "Usage: deploy-image.sh sha256:<digest> production-YYYY-MM-DD.N <40-char-commit-sha>" >&2
   echo "       deploy-image.sh --dry-run" >&2
@@ -298,8 +307,7 @@ rollback_on_error() {
   fi
   if (( TRAFFIC_SWITCHED == 1 )); then
     stage "automatic-rollback"
-    printf '%s\n' "$OLD_UPSTREAM_CONTENT" >"$UPSTREAM_FILE.tmp.$$"
-    mv "$UPSTREAM_FILE.tmp.$$" "$UPSTREAM_FILE"
+    write_caddy_upstream "$OLD_UPSTREAM_CONTENT"
     validate_caddy || true
     if [[ "$(id -u)" -eq 0 ]]; then systemctl reload caddy || true; else sudo systemctl reload caddy || true; fi
   fi
@@ -331,8 +339,7 @@ check_runtime_logs "$CANDIDATE_SERVICE"
 
 stage "switch-traffic"
 OLD_UPSTREAM_CONTENT="$(<"$UPSTREAM_FILE")"
-printf 'reverse_proxy 127.0.0.1:%s\n' "$CANDIDATE_PORT" >"$UPSTREAM_FILE.tmp.$$"
-mv "$UPSTREAM_FILE.tmp.$$" "$UPSTREAM_FILE"
+write_caddy_upstream "reverse_proxy 127.0.0.1:$CANDIDATE_PORT"
 TRAFFIC_SWITCHED=1
 validate_caddy || fail "Caddy validation failed after candidate upstream update"
 if [[ "$(id -u)" -eq 0 ]]; then systemctl reload caddy; else sudo systemctl reload caddy; fi
@@ -376,7 +383,8 @@ check_runtime_logs "$CANDIDATE_WORKER_SERVICE"
 stage "record-release"
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 NODE_VERSION="$("${COMPOSE[@]}" exec -T "$CANDIDATE_SERVICE" node --version)"
-MIGRATIONS_APPLIED="$("${COMPOSE[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc '\''SELECT COALESCE(json_agg(migration_name ORDER BY finished_at)::text, '\''\''[]'\''\'') FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL'\''' | tail -n 1)"
+MIGRATIONS_APPLIED="$("${COMPOSE[@]}" exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc '\''SELECT json_agg(migration_name ORDER BY finished_at)::text FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL'\''' | tail -n 1)"
+MIGRATIONS_APPLIED="${MIGRATIONS_APPLIED:-[]}"
 [[ "$MIGRATIONS_APPLIED" == \[*\] ]] || fail "could not record applied migrations"
 
 cp "$ACTIVE_FILE" "$PREVIOUS_FILE.tmp.$$"

@@ -76,7 +76,18 @@ if [[ "$1" == compose ]]; then
   if [[ "$args" == *" ps -q app_green "* ]]; then printf '3%.0s' {1..64}; echo; exit 0; fi
   if [[ "$args" == *" ps -q app_blue "* ]]; then printf '1%.0s' {1..64}; echo; exit 0; fi
   if [[ "$args" == *" exec -T app_"*" node --version "* ]]; then echo "v20.19.0"; exit 0; fi
-  if [[ "$args" == *" exec -T postgres "* ]]; then echo '["20260802125000_branch_query_planner_statistics"]'; exit 0; fi
+  if [[ "$args" == *" exec -T postgres "* ]]; then
+    [[ "$args" == *'SELECT json_agg(migration_name ORDER BY finished_at)::text'* ]] || {
+      echo "migration evidence query is not the expected read-only JSON aggregation" >&2
+      exit 1
+    }
+    [[ "$args" != *'COALESCE('* ]] || {
+      echo "migration evidence query must not rely on nested shell quoting for an empty JSON fallback" >&2
+      exit 1
+    }
+    echo '["20260802125000_branch_query_planner_statistics"]'
+    exit 0
+  fi
   if [[ "$args" == *" logs --no-color "* ]]; then exit 0; fi
   exit 0
 fi
