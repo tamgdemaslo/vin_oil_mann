@@ -450,8 +450,8 @@ async function requiredVinContext(input: { runId: string; organizationId: string
   return { results, sources, summaries };
 }
 
-function usageTotals(responses: unknown[]) {
-  return responses.reduce((total, response) => ({
+function usageTotals(responses: unknown[]): { inputTokens: number; outputTokens: number } {
+  return responses.reduce<{ inputTokens: number; outputTokens: number }>((total, response) => ({
     inputTokens: total.inputTokens + (finiteNumber(field(field(response, "usage"), "input_tokens")) ?? 0),
     outputTokens: total.outputTokens + (finiteNumber(field(field(response, "usage"), "output_tokens")) ?? 0),
   }), { inputTokens: 0, outputTokens: 0 });
@@ -642,9 +642,11 @@ export async function runAssistantThread(input: { threadId: string; organization
           elapsedMs: Date.now() - startedAt,
         });
       }
+      const currentResponseId = text(field(response, "id"), 240);
+      if (!currentResponseId) throw new Error("OpenAI вернул ответ без идентификатора");
       response = finalizeNow
         ? await finalizeAfterTools(client, {
-            previousResponseId: response.id,
+            previousResponseId: currentResponseId,
             outputs,
             instructions,
             model: config.model,
@@ -654,7 +656,7 @@ export async function runAssistantThread(input: { threadId: string; organization
             limitReason,
           })
         : await continueResponse(client, {
-            previousResponseId: response.id,
+            previousResponseId: currentResponseId,
             outputs,
             instructions,
             model: config.model,
@@ -695,8 +697,8 @@ export async function runAssistantThread(input: { threadId: string; organization
     if (sources.length) await prisma.aIAssistantSource.createMany({ data: sources.map((source) => ({ branchId, runId: run.id, messageId: assistantMessage.id, organizationId: input.organizationId, sourceType: source.sourceType, title: source.title, url: source.url ?? null, excerpt: source.excerpt ?? null, metadataJson: safeAssistantJson(source.metadata ?? {}) })) });
     const usage = usageTotals(responses);
     await Promise.all([
-      prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "completed", responseId: text(response?.id, 180) || null, toolSummaryJson: json(toolSummaries), inputTokens: usage.inputTokens || null, outputTokens: usage.outputTokens || null, durationMs: Date.now() - startedAt, completedAt: new Date() } }),
-      prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { lastResponseId: text(response?.id, 180) || null, lastMessageAt: new Date() } }),
+      prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "completed", responseId: text(field(response, "id"), 180) || null, toolSummaryJson: json(toolSummaries), inputTokens: usage.inputTokens || null, outputTokens: usage.outputTokens || null, durationMs: Date.now() - startedAt, completedAt: new Date() } }),
+      prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { lastResponseId: text(field(response, "id"), 180) || null, lastMessageAt: new Date() } }),
     ]);
     return { runId: run.id, messageId: assistantMessage.id, cancelled: false };
   } catch (error) {
