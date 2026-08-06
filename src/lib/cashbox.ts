@@ -113,15 +113,9 @@ const DEFAULT_TIMEZONE =
       : SERVICE_TIME_ZONE;
 
 function getDbFilePath() {
-  const base =
-    process.env.CASHBOX_DB_PATH && process.env.CASHBOX_DB_PATH.trim()
-      ? process.env.CASHBOX_DB_PATH.trim()
-      : path.join(process.cwd(), ".data", "cashbox.json");
-  const dir = path.dirname(base);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return base;
+  return process.env.CASHBOX_DB_PATH && process.env.CASHBOX_DB_PATH.trim()
+    ? process.env.CASHBOX_DB_PATH.trim()
+    : path.join(process.cwd(), ".data", "cashbox.json");
 }
 
 function readLegacyState(): CashboxState {
