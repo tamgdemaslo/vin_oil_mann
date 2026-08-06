@@ -23,7 +23,8 @@ const TECHNICAL_REQUEST_RE = /(акпп|автоматическ\S*\s*(?:кор�
 type AssistantActor = { id: string; name: string; role: string };
 type Citation = { title: string | null; url: string; startIndex?: number | null; endIndex?: number | null };
 type PersistedSource = AssistantToolSource | { sourceType: "web"; title: string; url?: string | null; excerpt?: string | null; metadata?: Record<string, unknown> };
-type MandatoryResearch = { response: any | null; error: string | null; summary: Record<string, unknown>; sources: PersistedSource[]; connectionFailure: boolean; connectionError: string | null };
+type MandatoryResearch = { response: unknown | null; error: string | null; summary: Record<string, unknown>; sources: PersistedSource[]; connectionFailure: boolean; connectionError: string | null };
+type ResponseFunctionCall = { arguments: unknown; name: unknown; callId: unknown };
 
 class AssistantRunLimitError extends Error {
   constructor(public readonly code: "failed_tool_limit" | "failed_run_timeout", message: string) {
@@ -38,6 +39,27 @@ function json(value: unknown): Prisma.InputJsonValue {
 
 function text(value: unknown, max = 12_000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function field(value: unknown, name: string): unknown {
+  return record(value)?.[name];
+}
+
+function arrayField(value: unknown, name: string): unknown[] {
+  const candidate = field(value, name);
+  return Array.isArray(candidate) ? candidate : [];
+}
+
+function responseOutput(response: unknown) {
+  return arrayField(response, "output");
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function compactToolEvidence(toolSummaries: Array<Record<string, unknown>>) {
@@ -91,42 +113,44 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
   ].join("\n");
 }
 
-function outputText(response: any) {
-  const direct = text(response?.output_text, 16_000);
+function outputText(response: unknown) {
+  const direct = text(field(response, "output_text"), 16_000);
   if (direct) return direct;
-  return (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "message").flatMap((item: any) => Array.isArray(item?.content) ? item.content : []).map((item: any) => text(item?.text, 16_000)).filter(Boolean).join("\n");
+  return responseOutput(response).filter((item) => field(item, "type") === "message").flatMap((item) => arrayField(item, "content")).map((item) => text(field(item, "text"), 16_000)).filter(Boolean).join("\n");
 }
 
-function citationsFromResponse(response: any): Citation[] {
+function citationsFromResponse(response: unknown): Citation[] {
   const citations: Citation[] = [];
-  for (const item of Array.isArray(response?.output) ? response.output : []) {
-    if (item?.type !== "message") continue;
-    for (const content of Array.isArray(item?.content) ? item.content : []) {
-      for (const annotation of Array.isArray(content?.annotations) ? content.annotations : []) {
-        const url = annotation?.type === "url_citation" ? text(annotation.url, 1200) : "";
-        if (url) citations.push({ title: text(annotation.title, 500) || null, url, startIndex: Number.isFinite(annotation.start_index) ? annotation.start_index : null, endIndex: Number.isFinite(annotation.end_index) ? annotation.end_index : null });
+  for (const item of responseOutput(response)) {
+    if (field(item, "type") !== "message") continue;
+    for (const content of arrayField(item, "content")) {
+      for (const annotation of arrayField(content, "annotations")) {
+        const url = field(annotation, "type") === "url_citation" ? text(field(annotation, "url"), 1200) : "";
+        if (url) citations.push({ title: text(field(annotation, "title"), 500) || null, url, startIndex: finiteNumber(field(annotation, "start_index")), endIndex: finiteNumber(field(annotation, "end_index")) });
       }
     }
   }
   return citations.filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
 }
 
-function sourcesFromResponses(responses: any[], toolSources: AssistantToolSource[]): PersistedSource[] {
+function sourcesFromResponses(responses: unknown[], toolSources: AssistantToolSource[]): PersistedSource[] {
   const sources: PersistedSource[] = [...toolSources];
   for (const response of responses) {
     for (const citation of citationsFromResponse(response)) sources.push({ sourceType: "web", title: citation.title || "Web search", url: citation.url, metadata: { citation: true } });
-    for (const item of Array.isArray(response?.output) ? response.output : []) {
-      if (item?.type !== "web_search_call") continue;
-      for (const source of Array.isArray(item?.action?.sources ?? item?.sources) ? item.action?.sources ?? item.sources : []) {
-        const url = text(source?.url, 1200);
-        if (url) sources.push({ sourceType: "web", title: text(source?.title, 500) || "Web search", url, excerpt: text(source?.snippet ?? source?.description, 1200) || null, metadata: { provider: "web_search" } });
+    for (const item of responseOutput(response)) {
+      if (field(item, "type") !== "web_search_call") continue;
+      const actionSources = field(field(item, "action"), "sources");
+      const sourceItems = Array.isArray(actionSources) ? actionSources : arrayField(item, "sources");
+      for (const source of sourceItems) {
+        const url = text(field(source, "url"), 1200);
+        if (url) sources.push({ sourceType: "web", title: text(field(source, "title"), 500) || "Web search", url, excerpt: text(field(source, "snippet") ?? field(source, "description"), 1200) || null, metadata: { provider: "web_search" } });
       }
     }
   }
   return sources.filter((source, index) => sources.findIndex((other) => `${other.sourceType}:${other.url ?? ""}:${other.title}` === `${source.sourceType}:${source.url ?? ""}:${source.title}`) === index).slice(0, 60);
 }
 
-function sourcesFromResponse(response: any, toolSources: AssistantToolSource[]): PersistedSource[] {
+function sourcesFromResponse(response: unknown, toolSources: AssistantToolSource[]): PersistedSource[] {
   return sourcesFromResponses([response], toolSources);
 }
 
@@ -177,12 +201,11 @@ async function createDeterministicClientMessage(input: {
   return { runId: input.runId, messageId: assistantMessage.id, cancelled: false, clientMessage: true, quoteId: content?.quoteId ?? null };
 }
 
-function webSearchTrace(response: any) {
-  const calls = (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "web_search_call");
-  const queries = calls.flatMap((item: any) => {
-    const action = item?.action ?? {};
-    const many = Array.isArray(action.queries) ? action.queries : [];
-    return [action.query, ...many].map((value) => text(value, 500)).filter(Boolean);
+function webSearchTrace(response: unknown) {
+  const calls = responseOutput(response).filter((item) => field(item, "type") === "web_search_call");
+  const queries = calls.flatMap((item) => {
+    const action = field(item, "action");
+    return [field(action, "query"), ...arrayField(action, "queries")].map((value) => text(value, 500)).filter(Boolean);
   });
   return { webSearchCalls: calls.length, queries: [...new Set(queries)].slice(0, 20) };
 }
@@ -253,8 +276,10 @@ function researchReasoning(reasoning: string) {
   return ["high", "xhigh", "max"].includes(reasoning) ? "medium" : reasoning;
 }
 
-function functionCalls(response: any) {
-  return (Array.isArray(response?.output) ? response.output : []).filter((item: any) => item?.type === "function_call");
+function functionCalls(response: unknown): ResponseFunctionCall[] {
+  return responseOutput(response).flatMap((item) => field(item, "type") === "function_call"
+    ? [{ arguments: field(item, "arguments"), name: field(item, "name"), callId: field(item, "call_id") }]
+    : []);
 }
 
 async function createInitialResponse(client: OpenAI, args: { lastResponseId: string | null; message: string; history: Array<{ role: string; content: string }>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean }) {
@@ -268,9 +293,9 @@ async function createInitialResponse(client: OpenAI, args: { lastResponseId: str
     store: true,
   };
   if (args.lastResponseId) {
-    try { return await client.responses.create({ ...request, previous_response_id: args.lastResponseId, input: args.message } as never) as any; } catch (error) { if (!previousResponseError(error)) throw error; }
+    try { return await client.responses.create({ ...request, previous_response_id: args.lastResponseId, input: args.message } as never) as unknown; } catch (error) { if (!previousResponseError(error)) throw error; }
   }
-  return client.responses.create({ ...request, input: historyInput(args.history) } as never) as Promise<any>;
+  return client.responses.create({ ...request, input: historyInput(args.history) } as never) as Promise<unknown>;
 }
 
 async function continueAfterTechnicalResearch(client: OpenAI, args: { previousResponseId: string; instructions: string; model: string; reasoning: string }) {
@@ -284,7 +309,7 @@ async function continueAfterTechnicalResearch(client: OpenAI, args: { previousRe
     store: true,
     previous_response_id: args.previousResponseId,
     input: "Продолжи на основе обязательного исследования: используй локальные инструменты, найди товары, работу и ROSSKO при отсутствии, собери полезный предварительный расчёт. Не повторяй исследование дословно и не проси разрешения на него.",
-  } as never) as Promise<any>;
+  } as never) as Promise<unknown>;
 }
 
 async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean; finalizationWarning?: string }) {
@@ -298,7 +323,7 @@ async function continueResponse(client: OpenAI, args: { previousResponseId: stri
     store: true,
     previous_response_id: args.previousResponseId,
     input: args.outputs,
-  } as never) as Promise<any>;
+  } as never) as Promise<unknown>;
 }
 
 async function finalizeAfterTools(client: OpenAI, args: {
@@ -340,7 +365,7 @@ async function finalizeAfterTools(client: OpenAI, args: {
     previous_response_id: args.previousResponseId,
     input: args.outputs,
   };
-  return client.responses.create(request as never) as Promise<any>;
+  return client.responses.create(request as never) as Promise<unknown>;
 }
 
 async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string; organizationId: string; message: string; history: Array<{ role: string; content: string }>; internalContext?: unknown; instructions: string; model: string; reasoning: string }): Promise<MandatoryResearch> {
@@ -371,7 +396,7 @@ async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string
       include: ["web_search_call.action.sources"],
       store: true,
       input: technicalResearchPrompt(input.message, input.history, input.internalContext),
-    } as never, { timeout: TECHNICAL_RESEARCH_TIMEOUT_MS }) as any;
+    } as never, { timeout: TECHNICAL_RESEARCH_TIMEOUT_MS }) as unknown;
     const trace = webSearchTrace(response);
     const sources = sourcesFromResponse(response, []);
     const summary = { ...trace, sourceCount: sources.length, workflow: "mandatory_technical_research" };
@@ -425,10 +450,10 @@ async function requiredVinContext(input: { runId: string; organizationId: string
   return { results, sources, summaries };
 }
 
-function usageTotals(responses: any[]) {
+function usageTotals(responses: unknown[]) {
   return responses.reduce((total, response) => ({
-    inputTokens: total.inputTokens + (Number.isInteger(response?.usage?.input_tokens) ? response.usage.input_tokens : 0),
-    outputTokens: total.outputTokens + (Number.isInteger(response?.usage?.output_tokens) ? response.usage.output_tokens : 0),
+    inputTokens: total.inputTokens + (finiteNumber(field(field(response, "usage"), "input_tokens")) ?? 0),
+    outputTokens: total.outputTokens + (finiteNumber(field(field(response, "usage"), "output_tokens")) ?? 0),
   }), { inputTokens: 0, outputTokens: 0 });
 }
 
@@ -517,9 +542,10 @@ export async function runAssistantThread(input: { threadId: string; organization
       ? await mandatoryTechnicalResearch({ client, runId: run.id, organizationId: input.organizationId, message, history, internalContext: vinContext?.results, instructions, model: config.model, reasoning: config.reasoning })
       : null;
     if (research) toolSummaries.push({ toolName: "mandatory_technical_web_search", status: research.error ? "failed" : "completed", ...research.summary });
-    const responses: any[] = research?.response ? [research.response] : [];
-    let response = research?.response
-      ? await continueAfterTechnicalResearch(client, { previousResponseId: research.response.id, instructions, model: config.model, reasoning: config.reasoning })
+    const responses: unknown[] = research?.response ? [research.response] : [];
+    const researchResponseId = text(field(research?.response, "id"), 240);
+    let response = researchResponseId
+      ? await continueAfterTechnicalResearch(client, { previousResponseId: researchResponseId, instructions, model: config.model, reasoning: config.reasoning })
       : await createInitialResponse(client, {
           lastResponseId: thread.lastResponseId,
           message: research?.error
@@ -546,7 +572,7 @@ export async function runAssistantThread(input: { threadId: string; organization
         let argumentsValue: unknown = {};
         try { argumentsValue = JSON.parse(text(call.arguments, 10_000) || "{}"); } catch { argumentsValue = {}; }
         const toolName = text(call.name, 120);
-        const callId = text(call.call_id, 240);
+        const callId = text(call.callId, 240);
         if (!callId) throw new Error(`OpenAI вернул вызов инструмента «${toolName || "без имени"}» без call_id`);
         if (!limitReason && runDurationExceeded(startedAt)) limitReason = "duration";
         if (!limitReason && toolCallCount >= MAX_TOOL_CALLS) limitReason = "tool_calls";

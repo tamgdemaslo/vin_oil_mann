@@ -99,7 +99,7 @@ export async function loadConversationModelHistory(input: {
   // a pasted catalogue or a very long forwarded message unable to trip an
   // input-size guardrail for the entire agent run.
   let remainingChars = MAX_HISTORY_CHARS;
-  let trace = completeTrace
+  const trace = completeTrace
     .slice()
     .reverse()
     .flatMap((item): ConversationHistoryTraceItem[] => {

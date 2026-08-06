@@ -506,7 +506,7 @@ export async function buildJobOrderPosterModel(
   const nextDate = addMonthsRuFormat(header.moment, intervalMonths);
   const nextMileage = mileage > 0 ? mileage + intervalKm : intervalKm;
 
-  let lifetimeVisits = visits;
+  const lifetimeVisits = visits;
   let lifetimeSinceYear = "";
   if (/^\d{2}\.\d{2}\.\d{4}$/.test(sinceVisit)) {
     lifetimeSinceYear = sinceVisit.slice(-4);
