@@ -42,8 +42,6 @@ __pycache__/
 .env*
 !.env.example
 !.env.local.template
-!deploy/selectel/.env.production.template
-deploy/selectel/wireguard/wg_confs/*.conf
 
 # vercel
 .vercel

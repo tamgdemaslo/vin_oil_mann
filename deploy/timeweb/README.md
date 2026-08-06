@@ -14,8 +14,11 @@ or connect to a production host.
 - Health endpoint: `/api/health/ready`.
 
 Set production values as App Platform variables. At minimum the application
-requires `DATABASE_URL` and `APP_ORIGIN`; use `.env.example` as the complete
-variable inventory. Secrets must stay in the Timeweb control panel.
+requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, and `APP_ORIGIN`; use
+`.env.example` as the complete variable inventory. `OPENAI_API_KEY` is a
+server-side Timeweb runtime secret: never set `NEXT_PUBLIC_OPENAI_API_KEY`, a
+Docker build argument, or a GitHub Actions variable. Secrets must stay in the
+Timeweb control panel.
 
 The platform filesystem is replaced on every deployment. Do not use
 `/app/.data` as the durable source of business files: store them in PostgreSQL
@@ -27,3 +30,9 @@ App startup never applies Prisma migrations. Before a schema change reaches
 `main`, create and verify a Timeweb database backup, apply the migration in an
 approved maintenance operation, then verify `/api/health/ready` after the App
 Platform release.
+
+## Preflight
+
+Before any production action, run `npm run check:timeweb-only`. The check must
+pass before a release is promoted. The only GitHub workflow is source
+verification; Timeweb performs the deployment after the approved `main` change.

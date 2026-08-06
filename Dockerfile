@@ -32,7 +32,7 @@ ENV APP_RELEASE=$APP_RELEASE \
 COPY . ./
 RUN npx next build --webpack
 
-FROM node:20-bookworm-slim AS runtime
+FROM node:20-bookworm-slim AS app
 
 ARG APP_RELEASE=development
 ARG APP_COMMIT_SHA=unknown
@@ -84,44 +84,3 @@ USER app
 EXPOSE 3000
 
 CMD ["/usr/local/bin/start-app"]
-
-FROM dependencies AS migration
-
-ARG APP_RELEASE=development
-ARG APP_COMMIT_SHA=unknown
-ARG APP_BUILT_AT=unknown
-ARG APP_PACKAGE_LOCK_SHA256=unknown
-ARG APP_PRISMA_SCHEMA_SHA256=unknown
-ARG APP_MIGRATIONS_INCLUDED=unknown
-ARG APP_EXPECTED_MIGRATION=unknown
-ARG APP_TEST_RESULT=unknown
-
-LABEL org.opencontainers.image.title="Eco Platform database migrations" \
-      org.opencontainers.image.revision=$APP_COMMIT_SHA \
-      org.opencontainers.image.version=$APP_RELEASE \
-      org.opencontainers.image.created=$APP_BUILT_AT \
-      ru.tamgdemaslo.package-lock-sha256=$APP_PACKAGE_LOCK_SHA256 \
-      ru.tamgdemaslo.prisma-schema-sha256=$APP_PRISMA_SCHEMA_SHA256 \
-      ru.tamgdemaslo.migrations-included=$APP_MIGRATIONS_INCLUDED \
-      ru.tamgdemaslo.expected-migration=$APP_EXPECTED_MIGRATION \
-      ru.tamgdemaslo.tests=$APP_TEST_RESULT
-
-ENV NODE_ENV=production \
-    APP_RELEASE=$APP_RELEASE \
-    APP_COMMIT_SHA=$APP_COMMIT_SHA \
-    APP_BUILT_AT=$APP_BUILT_AT \
-    APP_EXPECTED_MIGRATION=$APP_EXPECTED_MIGRATION
-
-COPY scripts/check-selectel-database-url.mjs ./scripts/check-selectel-database-url.mjs
-COPY deploy/selectel/migration-entrypoint.sh /usr/local/bin/eco-migrate
-RUN chmod 755 /usr/local/bin/eco-migrate \
-  && groupadd --gid 1001 app \
-  && useradd --uid 1001 --gid app --create-home app \
-  && chown -R app:app /app
-
-USER app
-ENTRYPOINT ["/usr/local/bin/eco-migrate"]
-
-# Timeweb App Platform builds the final Dockerfile stage. Keep the web runtime
-# last so it never starts the legacy migration image.
-FROM runtime AS app

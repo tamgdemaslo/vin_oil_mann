@@ -41,7 +41,7 @@ if (schemaMode !== "skip") {
   // The repository's historical migrations start from a pre-existing production
   // schema. A synthetic empty security database therefore uses the current Prisma
   // schema directly. Production-copy rehearsal remains responsible for proving
-  // the real migration chain against the canonical Selectel baseline.
+  // the real migration chain against the canonical production baseline.
   const schemaCommand = schemaMode === "migrate"
     ? ["prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
     : ["prisma", "db", "push", "--skip-generate", "--schema", "prisma/schema.prisma"];

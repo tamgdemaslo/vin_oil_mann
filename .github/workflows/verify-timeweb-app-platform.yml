@@ -46,6 +46,9 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Enforce Timeweb-only deployment policy
+        run: npm run check:timeweb-only
+
       - name: Verify AI tool policy
         run: npm run test:ai-tool-loop-policy
 

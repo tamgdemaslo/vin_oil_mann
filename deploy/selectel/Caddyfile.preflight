@@ -1,4 +1,0 @@
-http://161.104.45.31 {
-    encode zstd gzip
-    import /opt/vin-oil-mann/.deploy/caddy-upstream.caddy
-}

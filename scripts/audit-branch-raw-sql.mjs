@@ -60,7 +60,7 @@ function classify({ relative, snippet, tables, operation, mutation, annotation }
   const hasAllowedBranches = /allowedBranchIds|allowed_branch_ids/i.test(snippet);
   const hasBusinessGroup = /businessGroupId|business_group_id/i.test(snippet);
   const isDdl = ["CREATE", "ALTER", "DROP", "TRUNCATE"].includes(operation);
-  const isControlledMigration = relative.startsWith("prisma/migrations/") || relative.startsWith("deploy/selectel/") || /migration|backfill/i.test(relative);
+  const isControlledMigration = relative.startsWith("prisma/migrations/") || /migration|backfill/i.test(relative);
 
   if (annotation?.kind === "GLOBAL_SAFE") {
     if (tables.some((table) => tableScopes.get(table)?.scope !== "GLOBAL")) {
@@ -102,7 +102,7 @@ function classify({ relative, snippet, tables, operation, mutation, annotation }
 }
 
 const findings = [];
-const scanRoots = ["src", "scripts", "deploy/selectel"].map((dir) => path.join(root, dir)).filter(fs.existsSync);
+const scanRoots = ["src", "scripts"].map((dir) => path.join(root, dir)).filter(fs.existsSync);
 for (const file of scanRoots.flatMap(files)) {
   const source = fs.readFileSync(file, "utf8");
   const relative = path.relative(root, file);

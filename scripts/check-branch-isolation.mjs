@@ -110,7 +110,6 @@ requireText("src/lib/vin-lookup-cache.ts", [
 ]);
 requireText("src/app/api/messenger/webhook/telegram/\[branchId\]/route.ts", [/runForBranch/]);
 requireText("src/app/api/integrations/tbank/webhook/payment-status/\[branchId\]/route.ts", [/runForBranch/]);
-requireText("deploy/selectel/BRANCH_MIGRATION_RUNBOOK.md", [/LEGACY_PLATFORM_ARCHIVE_STATUS=RAILWAY_DECOMMISSIONED_ARCHIVED/, /migration:branch:preflight/]);
 requireText("prisma/migrations/20260728120000_branch_architecture_foundation/migration.sql", [
   /'branch-main'/,
   /branch_memberships/,

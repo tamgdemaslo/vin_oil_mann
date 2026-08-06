@@ -46,7 +46,7 @@ const registry = [
   ["Cash/invoice attachment URLs", "external URL metadata", "provider-controlled", "branch-scoped expense/invoice", "visible only with parent entity", "provider URL may be external", "move to proxy storage in separate feature", "LEGACY_POINTER"],
   ["Temporary files", "OS temp", "random UUID dir", "single render job", "not addressable via app route", "no", "cleanup in finally", "ENFORCED"],
   ["Generated images", "on-demand SVG/image response", "n/a", "single report token", "token-bound", "yes, report-scoped", "none", "ENFORCED"],
-  ["Backups", "outside application runtime", "Selectel runbook only", "database/deployment", "operator control", "no", "application has no backup read route", "NOT_APP_ACCESSIBLE"],
+  ["Backups", "outside application runtime", "operator runbook only", "database/deployment", "operator control", "no", "application has no backup read route", "NOT_APP_ACCESSIBLE"],
 ];
 
 const markdown = `# Аудит файловых подсистем по филиалам\n\n` +

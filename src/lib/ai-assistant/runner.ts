@@ -51,7 +51,7 @@ function publicRunError(error: unknown) {
   const message = text(error instanceof Error ? error.message : String(error), 1_200);
   if (/connection error|fetch failed|econnrefused|enotfound|network/i.test(message)) {
     if (process.env.OPENAI_PROXY_URL?.trim()) {
-      return "Не удалось подключиться к OpenAI через защищённый прокси сервера. Проверьте состояние WireGuard-подключения на Selectel и повторите попытку после его восстановления.";
+      return "Не удалось подключиться к OpenAI из серверного runtime. Проверьте состояние защищённого подключения и повторите попытку.";
     }
     return "Не удалось подключиться к OpenAI. Проверьте исходящее HTTPS-подключение сервера и доступность API; повторите попытку после восстановления соединения.";
   }

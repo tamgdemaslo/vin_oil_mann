@@ -93,7 +93,7 @@ for (const match of schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
       providerGuarantees,
       risk,
       migrationRequired,
-      duplicatePrecheck: branchScoped && constraint.fields.includes("branchId") ? "deploy/selectel/branch-unique-duplicate-precheck.sql" : "not required",
+      duplicatePrecheck: branchScoped && constraint.fields.includes("branchId") ? "manual preflight required" : "not required",
       status,
     });
   }

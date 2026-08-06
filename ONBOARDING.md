@@ -285,13 +285,21 @@ Prisma-модели сгруппированы вокруг таких обла�
 
 ## 10. Деплой и фоновые задачи
 
-Вся production-инфраструктура проекта размещается только на Selectel:
+Вся production-инфраструктура проекта размещается только на Timeweb Cloud App
+Platform:
 
-- `.github/workflows/deploy-selectel.yml` собирает immutable container image;
-- `docker-compose.selectel.yml` и `deploy/selectel/` содержат production runtime и runbooks;
-- `Dockerfile` устанавливает Node 20, Chromium и все runtime-зависимости;
-- `vercel.json` содержит cron `/api/cron/auto-close-shifts` каждый день в `00:05`;
-- `src/instrumentation.ts` стартует worker клиентских уведомлений на Node runtime.
+- Timeweb автоматически собирает корневой `Dockerfile` из ветки `main` и
+  запускает его финальный stage `app`;
+- `.github/workflows/verify-timeweb-app-platform.yml` только проверяет исходный
+  код и не подключается к production;
+- `deploy/timeweb/README.md` — единственный актуальный production runbook;
+- `src/instrumentation.ts` стартует worker клиентских уведомлений в Node runtime.
+
+Перед production-действием прочитайте runbook и выполните
+`npm run check:timeweb-only`. Selectel не является fallback, местом для
+секретов или deployment target. `vercel.json` — устаревшая конфигурация cron и
+не доказывает работу расписания на Timeweb: фактический scheduler нужно
+подтвердить в панели Timeweb до изменения production.
 
 PDF-генерация зависит от доступного Chromium и корректного `APP_ORIGIN` / `NEXT_PUBLIC_APP_ORIGIN`.
 
