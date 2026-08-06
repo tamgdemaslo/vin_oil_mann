@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { rosskoCheckoutDetails, rosskoConfig, suggestRosskoDefaults } from "@/lib/rossko";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { rosskoCheckoutDetails, rosskoCheckoutOptions, rosskoConfig } from "@/lib/rossko";
+import { rosskoIntegrationError } from "@/lib/rossko-integration";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  }
+  const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branch.ok) return branch.response;
 
   try {
-    const cfg = await rosskoConfig();
-    const data = await rosskoCheckoutDetails(cfg);
-    return NextResponse.json({ ok: true, data, suggested: suggestRosskoDefaults(data) });
+    const checkout = await runWithBranchApiContext(branch.context, async () => {
+      const cfg = await rosskoConfig();
+      return rosskoCheckoutOptions(await rosskoCheckoutDetails(cfg));
+    });
+    return NextResponse.json({ ok: true, checkout });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 502 });
+    const safe = rosskoIntegrationError(e);
+    return NextResponse.json(safe, { status: safe.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 });
   }
 }

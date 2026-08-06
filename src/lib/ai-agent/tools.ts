@@ -9,7 +9,7 @@ import { searchCatalog } from "@/lib/catalog-search";
 import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { getVinLookupCache } from "@/lib/vin-lookup-cache";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
-import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
+import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { createYclientsAppointment, getYclientsAvailableSlots, parseYclientsSlotId } from "./yclients";
 import { safeToolOutputGuardrail, sanitizeForModel, tenantToolInputGuardrail } from "./security";
 import { getFreshTechnicalEvidence, queryTechnicalProvider, saveTechnicalEvidence, technicalVehicleKey, technicalWebSearchAvailability, type TechnicalVehicle } from "./technical-evidence";
@@ -907,13 +907,8 @@ export const rosskoSearchTool = tool({
       const ctx = requireContext(context);
       if (!ctx.settings.rosskoSearchEnabled) return { enabled: false, offers: [], reason: "Поиск ROSSKO отключён в настройках" };
       const cfg = await rosskoConfig();
-      let deliveryId = cfg.deliveryId || "";
-      let addressId = cfg.addressId || "";
-      if (!deliveryId || !addressId) {
-        const defaults = suggestRosskoDefaults(await rosskoCheckoutDetails(cfg));
-        deliveryId ||= defaults.delivery_id || "";
-        addressId ||= defaults.address_id || "";
-      }
+      const deliveryId = cfg.deliveryId || "";
+      const addressId = cfg.addressId || "";
       if (!deliveryId) throw new Error("Для ROSSKO не настроен способ доставки");
       const raw = await rosskoSearch(cfg, { text: [brand, article].filter(Boolean).join(" "), deliveryId, addressId });
       const offers = collectRosskoOffers(raw)
@@ -1231,7 +1226,6 @@ export const createClientCaseTool = tool({
           nextAction: "Ждать поставку запчастей",
           stageId: stage.id,
           responsibleLogin: ctx.actorId,
-          moyskladCounterpartyId: conversation.client?.id || null,
           conversationId: ctx.conversationId,
           caseStatus: "waiting_parts",
           caseType: "message",
@@ -1408,9 +1402,9 @@ export const createAppointmentTool = tool({
       let draftShipmentId: string | null = null;
       {
         const shipment = await createLocalDemand({
-          organization: { meta: { href: organization.moyskladHref || `local://organization/${organization.id}`, type: "organization", mediaType: "application/json" } },
-          agent: { meta: { href: client.moyskladHref || `local://counterparty/${client.id}`, type: "agent", mediaType: "application/json" } },
-          store: { meta: { href: store.moyskladHref || `local://store/${store.id}`, type: "store", mediaType: "application/json" } },
+          organization: { meta: { href: `local://organization/${organization.id}`, type: "organization", mediaType: "application/json" } },
+          agent: { meta: { href: `local://counterparty/${client.id}`, type: "agent", mediaType: "application/json" } },
+          store: { meta: { href: `local://store/${store.id}`, type: "store", mediaType: "application/json" } },
           moment: appointment.datetime,
           applicable: false,
           description: `${commentText}\nЗапись: ${appointment.id}; диалог: ${ctx.conversationId}; VIN: ${normalizeVin(vehicle.vin)}`,
@@ -1557,7 +1551,6 @@ export const handoffToHumanTool = tool({
           nextAction: reason,
           stageId: stage.id,
           responsibleLogin: ctx.actorId.startsWith("system:") ? null : ctx.actorId,
-          moyskladCounterpartyId: conversation.client?.id || null,
           conversationId: ctx.conversationId,
           caseStatus: "calculation_needed",
           caseType: "message",

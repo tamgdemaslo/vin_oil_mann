@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { getBranchContext } from "@/lib/branch-context";
 import { invalidateCounterpartyRows, invalidateWarehouseReadCaches } from "@/lib/local-inventory-admin";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
-import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { extractLocalEntityId } from "@/lib/piecework-rules";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { assertNoActiveInventoryLocks } from "@/lib/warehouse-inventory";
 import type { User } from "@/lib/auth";
@@ -17,16 +17,16 @@ import type {
   DemandDetailPosition,
 } from "@/lib/demand-detail-load";
 
-type MoySkladMeta = {
+type LocalEntityMeta = {
   href: string;
   type: string;
   mediaType: string;
 };
 
 type UpdateDemandBody = {
-  organization?: { meta: MoySkladMeta };
-  agent?: { meta: MoySkladMeta };
-  store?: { meta: MoySkladMeta };
+  organization?: { meta: LocalEntityMeta };
+  agent?: { meta: LocalEntityMeta };
+  store?: { meta: LocalEntityMeta };
   name?: string;
   description?: string;
   moment?: string;
@@ -39,7 +39,7 @@ type UpdateDemandBody = {
     quantity: number;
     price: number;
     discount?: number;
-    assortment?: { meta: MoySkladMeta };
+    assortment?: { meta: LocalEntityMeta };
   }[];
 };
 
@@ -127,9 +127,9 @@ export type LinkDemandToAppointmentBody = {
 
 type ResolvedPosition = {
   id?: string;
-  moyskladPositionId?: string | null;
+  sourcePositionId?: string | null;
   productId: string | null;
-  assortmentMoyskladId: string | null;
+  assortmentReference?: string | null;
   assortmentType: string;
   name: string;
   quantity: Prisma.Decimal;
@@ -202,18 +202,10 @@ function normalizeReopenReason(body: ReopenDemandBody): { ok: true; reasonCode: 
 }
 
 function entityIdFromMeta(meta?: { href?: string } | null): string | null {
-  return extractMoyskladEntityId(meta?.href);
+  return extractLocalEntityId(meta?.href);
 }
 
-function localMeta(type: string, id: string, href?: string | null): MoySkladMeta {
-  return {
-    href: href || `local://${type}/${id}`,
-    type,
-    mediaType: "application/json",
-  };
-}
-
-function moyskladMeta(type: string, id: string | null | undefined, href?: string | null): MoySkladMeta {
+function localMeta(type: string, id: string | null | undefined, href?: string | null): LocalEntityMeta {
   return {
     href: href || (id ? `local://${type}/${id}` : `local://${type}`),
     type,
@@ -221,12 +213,8 @@ function moyskladMeta(type: string, id: string | null | undefined, href?: string
   };
 }
 
-function entityMeta(type: string, moyskladId: string | null | undefined, href: string | null | undefined, localId: string): MoySkladMeta {
-  return {
-    href: href || `local://${type}/${localId || moyskladId || ""}`,
-    type,
-    mediaType: "application/json",
-  };
+function entityMeta(type: string, _legacyId: string | null | undefined, _legacyHref: string | null | undefined, localId: string): LocalEntityMeta {
+  return localMeta(type, localId);
 }
 
 function parseMoment(value?: string): { documentDate: string; momentAt: Date } {
@@ -325,7 +313,7 @@ function shipmentSnapshot(
   positions: Array<{
     id?: string | null;
     productId: string | null;
-    assortmentMoyskladId: string | null;
+    assortmentReference?: string | null;
     assortmentType: string;
     name: string;
     quantity: Prisma.Decimal | number;
@@ -357,7 +345,7 @@ function shipmentSnapshot(
     positions: positions.map((position) => ({
       id: position.id ?? null,
       productId: position.productId,
-      assortmentMoyskladId: position.assortmentMoyskladId,
+      assortmentReference: position.assortmentReference,
       assortmentType: position.assortmentType,
       name: position.name,
       quantity: decimalToNumber(position.quantity),
@@ -503,13 +491,13 @@ async function resolveCreatePositions(
     .filter((id): id is string => Boolean(id));
   const products = assortmentIds.length
     ? await prisma.localProduct.findMany({
-        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { moyskladId: { in: [...new Set(assortmentIds)] } }] },
+        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
       })
     : [];
   const productByExternalId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     productByExternalId.set(product.id, product);
-    if (product.moyskladId) productByExternalId.set(product.moyskladId, product);
+    if (product.id) productByExternalId.set(product.id, product);
   }
   const balances = storeId
     ? await prisma.localStockBalance.findMany({
@@ -523,17 +511,17 @@ async function resolveCreatePositions(
 
   return input.map((position) => {
     const meta = position.assortment?.meta;
-    const assortmentMoyskladId = entityIdFromMeta(meta);
-    const product = assortmentMoyskladId ? productByExternalId.get(assortmentMoyskladId) : undefined;
+    const assortmentReference = entityIdFromMeta(meta);
+    const product = assortmentReference ? productByExternalId.get(assortmentReference) : undefined;
     const balance = product ? balanceByProductId.get(product.id) : undefined;
     const quantity = Number(position.quantity) || 0;
     const priceCents = Math.round((Number(position.price) || 0) * 100);
     const discount = typeof position.discount === "number" ? position.discount : 0;
     return {
       productId: product?.id ?? null,
-      assortmentMoyskladId,
+      assortmentReference,
       assortmentType: meta?.type ?? product?.entityType ?? "",
-      name: (product?.name ?? cleanRecordText(position.name)) || assortmentMoyskladId || "Позиция",
+      name: (product?.name ?? cleanRecordText(position.name)) || assortmentReference || "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
@@ -555,29 +543,29 @@ async function resolveUpdatePositions(
     .filter((id): id is string => Boolean(id));
   const products = assortmentIds.length
     ? await prisma.localProduct.findMany({
-        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { moyskladId: { in: [...new Set(assortmentIds)] } }] },
+        where: { OR: [{ id: { in: [...new Set(assortmentIds)] } }, { id: { in: [...new Set(assortmentIds)] } }] },
       })
     : [];
   const productByExternalId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     productByExternalId.set(product.id, product);
-    if (product.moyskladId) productByExternalId.set(product.moyskladId, product);
+    if (product.id) productByExternalId.set(product.id, product);
   }
 
   return positions.map((position) => {
     const existing = position.id ? existingById.get(position.id) : undefined;
     const meta = position.assortment?.meta;
-    const assortmentMoyskladId = entityIdFromMeta(meta);
-    const product = assortmentMoyskladId ? productByExternalId.get(assortmentMoyskladId) : undefined;
+    const assortmentReference = entityIdFromMeta(meta);
+    const product = assortmentReference ? productByExternalId.get(assortmentReference) : undefined;
     const quantity = Number(position.quantity) || 0;
     const priceCents = Math.round(Number(position.price) || 0);
     const discount = typeof position.discount === "number" ? position.discount : 0;
     return {
       id: position.id,
       productId: product?.id ?? existing?.productId ?? null,
-      assortmentMoyskladId,
+      assortmentReference,
       assortmentType: meta?.type ?? existing?.assortmentType ?? product?.entityType ?? "",
-      name: product?.name ?? existing?.name ?? assortmentMoyskladId ?? "Позиция",
+      name: product?.name ?? existing?.name ?? assortmentReference ?? "Позиция",
       quantity: new Prisma.Decimal(quantity),
       priceCentsPerUnit: priceCents,
       discount: new Prisma.Decimal(discount),
@@ -718,7 +706,7 @@ async function applyStockMovements(
 
 async function findLocalDemand(id: string, branchId: string) {
   return prisma.localDemand.findFirst({
-    where: { branchId, OR: [{ id }, { moyskladId: id }] },
+    where: { branchId, OR: [{ id }, { id: id }] },
     include: { positions: true, counterparty: true, store: true, organization: true },
   });
 }
@@ -990,17 +978,14 @@ export async function createLocalDemandFromRecord(
       const demand = await tx.localDemand.create({
         data: {
           name,
-          moyskladHref: null,
           momentAt: moment.momentAt,
           documentDate: moment.documentDate,
           applicable: false,
           sumCents: 0,
           description: description || null,
           counterpartyId: resolved.counterparty.id,
-          agentMoyskladId: resolved.counterparty.moyskladId ?? resolved.counterparty.id,
           agentNameSnapshot: resolved.counterparty.name,
           storeId: store.id,
-          storeMoyskladId: store.moyskladId ?? store.id,
           storeNameSnapshot: store.name,
           organizationId: organization.id,
           organizationName: organization.name,
@@ -1053,7 +1038,7 @@ export async function linkLocalDemandToAppointment(
   try {
     const result = await prisma.$transaction(async (tx) => {
       const current = await tx.localDemand.findFirst({
-        where: { OR: [{ id }, { moyskladId: id }] },
+        where: { OR: [{ id }, { id: id }] },
         include: { positions: true, counterparty: true, store: true, organization: true },
       });
       if (!current) throw new Error("NOT_FOUND");
@@ -1157,18 +1142,18 @@ export async function createLocalDemand(
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось определить филиал" };
   }
-  const storeMoyskladId = entityIdFromMeta(body.store?.meta);
-  const agentMoyskladId = entityIdFromMeta(body.agent?.meta);
+  const storeId = entityIdFromMeta(body.store?.meta);
+  const counterpartyId = entityIdFromMeta(body.agent?.meta);
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
   const [store, counterparty, organization] = await Promise.all([
-    storeMoyskladId
-      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeMoyskladId }, { moyskladId: storeMoyskladId }] } })
+    storeId
+      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeId }, { id: storeId }] } })
       : null,
-    agentMoyskladId
-      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentMoyskladId }, { moyskladId: agentMoyskladId }] } })
+    counterpartyId
+      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
       : null,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { id: organizationLookupId }] } })
       : null,
   ]);
 
@@ -1203,17 +1188,14 @@ export async function createLocalDemand(
         data: {
           branchId: scope.branchId,
           name,
-          moyskladHref: null,
           momentAt,
           documentDate,
           applicable,
           sumCents: sumPositionsCents(positions),
           description: body.description?.trim() || null,
           counterpartyId: counterparty.id,
-          agentMoyskladId,
           agentNameSnapshot: counterparty.name,
           storeId: store.id,
-          storeMoyskladId,
           storeNameSnapshot: store.name,
           organizationId: organization.id,
           organizationName: organization.name,
@@ -1228,7 +1210,6 @@ export async function createLocalDemand(
           data: positions.map((position) => ({
             demandId: created.id,
             productId: position.productId,
-            assortmentMoyskladId: position.assortmentMoyskladId,
             assortmentType: position.assortmentType,
             name: position.name,
             quantity: position.quantity,
@@ -1303,13 +1284,13 @@ export async function updateLocalDemand(
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
   const [nextStore, nextCounterparty, nextOrganization] = await Promise.all([
     storeLookupId
-      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeLookupId }, { moyskladId: storeLookupId }] } })
+      ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeLookupId }, { id: storeLookupId }] } })
       : current.store,
     agentLookupId
-      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentLookupId }, { moyskladId: agentLookupId }] } })
+      ? prisma.localCounterparty.findFirst({ where: { branchId: scope.branchId, OR: [{ id: agentLookupId }, { id: agentLookupId }] } })
       : current.counterparty,
     organizationLookupId
-      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { moyskladId: organizationLookupId }] } })
+      ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { id: organizationLookupId }] } })
       : current.organization,
   ]);
 
@@ -1338,7 +1319,7 @@ export async function updateLocalDemand(
     : current.positions.map((position) => ({
         id: position.id,
         productId: position.productId,
-        assortmentMoyskladId: position.assortmentMoyskladId,
+        assortmentReference: null,
         assortmentType: position.assortmentType,
         name: position.name,
         quantity: position.quantity,
@@ -1356,7 +1337,7 @@ export async function updateLocalDemand(
   const nextMoment = body.moment ? parseMoment(body.moment) : { documentDate: current.documentDate, momentAt: current.momentAt };
   const nextStoreId = nextStore?.id ?? current.storeId;
   const storeChanged = Boolean(nextStoreId && nextStoreId !== current.storeId);
-  const importedDraftBeingPosted = Boolean(current.moyskladId) && !current.applicable && nextApplicable;
+  const importedDraftBeingPosted = false;
 
   let updated: Awaited<ReturnType<typeof prisma.localDemand.update>>;
   try {
@@ -1423,7 +1404,6 @@ export async function updateLocalDemand(
           data: nextPositions.map((position) => ({
             demandId: current.id,
             productId: position.productId,
-            assortmentMoyskladId: position.assortmentMoyskladId,
             assortmentType: position.assortmentType,
             name: position.name,
             quantity: position.quantity,
@@ -1449,10 +1429,8 @@ export async function updateLocalDemand(
         applicable: nextApplicable,
         description: nextDescription || null,
         counterpartyId: nextCounterparty?.id ?? current.counterpartyId,
-        agentMoyskladId: nextCounterparty ? nextCounterparty.moyskladId ?? nextCounterparty.id : current.agentMoyskladId,
         agentNameSnapshot: nextCounterparty?.name ?? current.agentNameSnapshot,
         storeId: nextStore?.id ?? current.storeId,
-        storeMoyskladId: nextStore ? nextStore.moyskladId ?? nextStore.id : current.storeMoyskladId,
         storeNameSnapshot: nextStore?.name ?? current.storeNameSnapshot,
         organizationId: nextOrganization?.id ?? current.organizationId,
         organizationName: nextOrganization?.name ?? current.organizationName,
@@ -1622,7 +1600,7 @@ export async function reopenLocalDemand(
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const current = await tx.localDemand.findFirst({
-        where: { OR: [{ id }, { moyskladId: id }] },
+        where: { OR: [{ id }, { id: id }] },
         include: { positions: true, counterparty: true, store: true, organization: true },
       });
       if (!current) throw new Error("NOT_FOUND");
@@ -1782,7 +1760,7 @@ export async function loadLocalDemandDetailPayload(
 ): Promise<{ ok: true; data: DemandDetailPayload } | { ok: false; error: string; notFound?: boolean }> {
   const scope = await resolveDemandBranchScope(branchId);
   const demand = await prisma.localDemand.findFirst({
-    where: { branchId: scope.branchId, OR: [{ id }, { moyskladId: id }] },
+    where: { branchId: scope.branchId, OR: [{ id }, { id: id }] },
     include: {
       counterparty: true,
       store: true,
@@ -1796,10 +1774,8 @@ export async function loadLocalDemandDetailPayload(
     const positionRaw = jsonRecord(position.raw);
     const copyMeta = positionRaw.copyMeta;
     const assortmentMeta = position.product
-      ? entityMeta(position.product.entityType, position.product.moyskladId, position.product.moyskladHref, position.product.id)
-      : position.assortmentMoyskladId
-        ? moyskladMeta(position.assortmentType, position.assortmentMoyskladId, null)
-        : undefined;
+      ? entityMeta(position.product.entityType, position.product.id, undefined, position.product.id)
+      : undefined;
     return {
       id: position.id,
       name: position.name,
@@ -1886,17 +1862,17 @@ export async function loadLocalDemandDetailPayload(
         };
       });
   const agentMeta = demand.counterparty
-    ? entityMeta("counterparty", demand.counterparty.moyskladId, demand.counterparty.moyskladHref, demand.counterparty.id)
-    : demand.agentMoyskladId
-      ? moyskladMeta("counterparty", demand.agentMoyskladId, null)
+    ? entityMeta("counterparty", demand.counterparty.id, undefined, demand.counterparty.id)
+    : demand.counterpartyId
+      ? localMeta("counterparty", demand.counterpartyId, null)
       : undefined;
   const storeMeta = demand.store
-    ? entityMeta("store", demand.store.moyskladId, demand.store.moyskladHref, demand.store.id)
-    : demand.storeMoyskladId
-      ? moyskladMeta("store", demand.storeMoyskladId, null)
+    ? entityMeta("store", demand.store.id, undefined, demand.store.id)
+    : demand.storeId
+      ? localMeta("store", demand.storeId, null)
       : undefined;
   const organizationMeta = demand.organization
-    ? entityMeta("organization", demand.organization.moyskladId, demand.organization.moyskladHref, demand.organization.id)
+    ? entityMeta("organization", demand.organization.id, undefined, demand.organization.id)
     : undefined;
 
   const data: DemandDetailPayload = {
@@ -1911,7 +1887,7 @@ export async function loadLocalDemandDetailPayload(
       agentName: demand.counterparty?.name ?? demand.agentNameSnapshot ?? "",
       organizationName: demand.organization?.name ?? demand.organizationName ?? "",
       storeName: demand.store?.name ?? demand.storeNameSnapshot ?? "",
-      storeId: demand.store?.moyskladId ?? demand.store?.id ?? demand.storeMoyskladId ?? "",
+      storeId: demand.store?.id ?? demand.storeId ?? "",
       ecoUserName: undefined,
     },
     attributes,
@@ -1921,7 +1897,7 @@ export async function loadLocalDemandDetailPayload(
       meta: localMeta("demand", demand.id),
       agent: demand.counterparty
         ? {
-            id: demand.counterparty.moyskladId ?? demand.counterparty.id,
+            id: demand.counterparty.id ?? demand.counterparty.id,
             name: demand.counterparty.name,
             phone: demand.counterparty.phone ?? undefined,
             companyType: demand.counterparty.companyType ?? undefined,
@@ -1935,10 +1911,10 @@ export async function loadLocalDemandDetailPayload(
             meta: agentMeta,
           }
         : undefined,
-      store: demand.store ? { id: demand.store.moyskladId ?? demand.store.id, name: demand.store.name, meta: storeMeta } : undefined,
+      store: demand.store ? { id: demand.store.id ?? demand.store.id, name: demand.store.name, meta: storeMeta } : undefined,
       organization: demand.organization?.name || demand.organizationName
         ? {
-            id: demand.organization?.moyskladId ?? demand.organization?.id,
+            id: demand.organization?.id ?? demand.organization?.id,
             name: demand.organization?.name ?? demand.organizationName ?? "",
             meta: organizationMeta,
           }

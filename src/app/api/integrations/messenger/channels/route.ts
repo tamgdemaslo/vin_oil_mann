@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
 import { listIntegrationMessengerChannels } from "@/lib/messenger/messenger-integrations";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  const channels = await listIntegrationMessengerChannels(session.user);
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  const channels = await runWithBranchApiContext(access.context, () => listIntegrationMessengerChannels(access.context.user));
   return NextResponse.json({ channels });
 }

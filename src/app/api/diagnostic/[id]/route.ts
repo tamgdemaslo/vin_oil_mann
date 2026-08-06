@@ -136,8 +136,7 @@ export async function PATCH(
     year?: number | null;
     licensePlate?: string | null;
     mileage?: number | null;
-    shipmentMoySkladId?: string | null;
-    agentMoySkladId?: string | null;
+    shipmentDraftId?: string | null;
     vehicleHints?: VehicleHints | null;
     clientWantsReminder?: boolean;
   };
@@ -154,8 +153,7 @@ export async function PATCH(
   if (body.year !== undefined) data.year = typeof body.year === "number" ? body.year : null;
   if (body.licensePlate !== undefined) data.licensePlate = body.licensePlate?.trim() || null;
   if (body.mileage !== undefined) data.mileage = typeof body.mileage === "number" ? body.mileage : null;
-  if (body.shipmentMoySkladId !== undefined) data.shipmentMoySkladId = body.shipmentMoySkladId?.trim() || null;
-  if (body.agentMoySkladId !== undefined) data.agentMoySkladId = body.agentMoySkladId?.trim() || null;
+  if (body.shipmentDraftId !== undefined) data.shipmentDraftId = body.shipmentDraftId?.trim() || null;
   if (typeof body.clientWantsReminder === "boolean") data.clientWantsReminder = body.clientWantsReminder;
 
   const hasVehicleHints = body.vehicleHints !== undefined && body.vehicleHints !== null;

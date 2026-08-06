@@ -124,8 +124,8 @@ type VinLookupResult = {
     };
   } | null;
   openaiError?: string;
-  moySkladItems: VinLookupItem[];
-  moySkladError?: string;
+  legacyItems: VinLookupItem[];
+  legacyError?: string;
 };
 
 type OilVariant = {
@@ -395,8 +395,8 @@ function getFilterSectionClasses(kind: FilterSectionKind): string {
   }
 }
 
-function getMoySkladImageUrl(imageHref?: string): string | undefined {
-  return imageHref ? `/api/moysklad/image?href=${encodeURIComponent(imageHref)}` : undefined;
+function getLocalImageUrl(imageHref?: string): string | undefined {
+  return imageHref ? `/api/local-inventory/image?href=${encodeURIComponent(imageHref)}` : undefined;
 }
 
 function parseFillVolume(value?: string): number | undefined {
@@ -1007,7 +1007,7 @@ export default function ShipmentDetailPage() {
       if (data?.header.storeId) params.set("storeId", data.header.storeId);
       if (data?.header.storeName) params.set("storeName", data.header.storeName);
       params.set("limit", "15");
-      fetch(`/api/moysklad/products?${params.toString()}`)
+      fetch(`/api/local-inventory/shipment-products?${params.toString()}`)
         .then((r) => r.json())
         .then((data) => {
           if (data.products) setProductOptions(data.products);
@@ -1128,7 +1128,7 @@ export default function ShipmentDetailPage() {
       setVinLookupResult({
         vin: vinClean,
         decoded: null,
-        moySkladItems: [],
+        legacyItems: [],
         decodeError: e instanceof Error ? e.message : "Ошибка запроса",
       });
     } finally {
@@ -1882,7 +1882,7 @@ export default function ShipmentDetailPage() {
               className={activeDetailTab === "vin" ? "is-active" : undefined}
               onClick={() => setActiveDetailTab("vin")}
             >
-              VIN-подбор <span>{vinLookupResult?.moySkladItems.length ?? 0}</span>
+              VIN-подбор <span>{vinLookupResult?.legacyItems.length ?? 0}</span>
             </button>
             <button
               type="button"
@@ -2164,20 +2164,20 @@ export default function ShipmentDetailPage() {
                           <span>SAE: <b>{vinLookupResult.oilInfo.sae?.join(", ") || "не указан"}</b></span>
                         </div>
                       ) : null}
-                      {vinLookupResult.moySkladError ? <p className="is-warning">{vinLookupResult.moySkladError}</p> : null}
-                      {vinLookupResult.moySkladItems.length > 0 ? (
+                      {vinLookupResult.legacyError ? <p className="is-warning">{vinLookupResult.legacyError}</p> : null}
+                      {vinLookupResult.legacyItems.length > 0 ? (
                         <div className="eco-shipment-detail-vin-items">
                           <div className="eco-shipment-detail-vin-items-head">
-                            <strong>Найдено в локальном каталоге: {vinLookupResult.moySkladItems.length}</strong>
+                            <strong>Найдено в локальном каталоге: {vinLookupResult.legacyItems.length}</strong>
                             <button
                               type="button"
-                              onClick={() => addFromVinLookup(vinLookupResult.moySkladItems.filter((item) => item.quantity > 0))}
-                              disabled={vinLookupResult.moySkladItems.every((item) => item.quantity <= 0)}
+                              onClick={() => addFromVinLookup(vinLookupResult.legacyItems.filter((item) => item.quantity > 0))}
+                              disabled={vinLookupResult.legacyItems.every((item) => item.quantity <= 0)}
                             >
                               Добавить всё в наличии
                             </button>
                           </div>
-                          {vinLookupResult.moySkladItems.map((item, index) => (
+                          {vinLookupResult.legacyItems.map((item, index) => (
                             <div className="eco-shipment-detail-vin-item" key={item.productId ?? `${item.name}-${index}`}>
                               <span>
                                 <strong>{item.name}</strong>
@@ -2561,13 +2561,13 @@ export default function ShipmentDetailPage() {
                   )}
                 </div>
               )}
-              {vinLookupResult.moySkladError && (
-                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.moySkladError}</p>
+              {vinLookupResult.legacyError && (
+                <p className="mb-2 text-amber-700 dark:text-amber-400">{vinLookupResult.legacyError}</p>
               )}
-              {vinLookupResult.moySkladItems.length > 0 && (
+              {vinLookupResult.legacyItems.length > 0 && (
                 <>
                   {(() => {
-                    const allItems = vinLookupResult.moySkladItems;
+                    const allItems = vinLookupResult.legacyItems;
                     const inStockItems = allItems.filter((item) => item.quantity > 0);
                     const filterSections = (Object.keys(FILTER_SECTION_META) as FilterSectionKind[])
                       .map((kind) => ({
@@ -2929,7 +2929,7 @@ export default function ShipmentDetailPage() {
                               </div>
                               <div className="space-y-2">
                                 {visibleOilGroups.map((group) => {
-                                  const imageUrl = getMoySkladImageUrl(group.variants[0]?.imageHref);
+                                  const imageUrl = getLocalImageUrl(group.variants[0]?.imageHref);
                                   const tierTag =
                                     group.key === premiumGroup?.key
                                       ? {

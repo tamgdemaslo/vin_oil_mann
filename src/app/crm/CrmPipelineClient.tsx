@@ -76,15 +76,13 @@ type Deal = {
   nextAction: string | null;
   stageId: string;
   responsibleLogin: string | null;
-  moyskladCounterpartyId: string | null;
-  moyskladCounterpartyName: string | null;
-  moyskladCounterpartyHref: string | null;
+  counterpartyId: string | null;
+  counterpartyHref: string | null;
   yclientsRecordId: string | null;
-  moyskladDemandId: string | null;
+  shipmentId: string | null;
   organizationId?: string | null;
   conversationId?: string | null;
   appointmentId?: string | null;
-  shipmentId?: string | null;
   precheckId?: string | null;
   diagnosticId?: string | null;
   procurementId?: string | null;
@@ -140,12 +138,12 @@ type CreateForm = {
   responsibleLogin: string;
   notes: string;
   yclientsRecordId: string;
-  moyskladDemandId: string;
+  shipmentId: string;
   suppliesNote: string;
   suppliesSupplier: string;
   suppliesExpectedAt: string;
   createLocalClient: boolean;
-  createMoyskladCounterparty: boolean;
+  createLegacyCounterparty: boolean;
 };
 
 const EMPTY_FORM: CreateForm = {
@@ -162,12 +160,12 @@ const EMPTY_FORM: CreateForm = {
   responsibleLogin: "",
   notes: "",
   yclientsRecordId: "",
-  moyskladDemandId: "",
+  shipmentId: "",
   suppliesNote: "",
   suppliesSupplier: "",
   suppliesExpectedAt: "",
   createLocalClient: true,
-  createMoyskladCounterparty: false,
+  createLegacyCounterparty: false,
 };
 
 const CLIENT_TYPE_META: Record<ClientType, { label: string; tone: EcoBadgeTone; className: string }> = {
@@ -380,9 +378,9 @@ function resolveClientType(deal: Deal): ClientType {
   if (deal.clientType === "new_lead" || deal.clientType === "regular" || deal.clientType === "repeat" || deal.clientType === "unlinked") {
     return deal.clientType;
   }
-  if (!deal.customerName && !deal.phoneNormalized && !deal.moyskladCounterpartyId) return "unlinked";
+  if (!deal.customerName && !deal.phoneNormalized && !deal.counterpartyId) return "unlinked";
   if (deal.source?.toLowerCase().includes("повтор")) return "repeat";
-  if (deal.moyskladCounterpartyId) return "regular";
+  if (deal.counterpartyId) return "regular";
   return "new_lead";
 }
 
@@ -395,7 +393,7 @@ function matchQuery(deal: Deal, query: string) {
     deal.vehicle,
     deal.source,
     deal.responsibleLogin,
-    deal.moyskladCounterpartyName,
+    deal.customerName,
     deal.nextAction,
     deal.notes,
     deal.suppliesNote,
@@ -408,17 +406,17 @@ function matchQuery(deal: Deal, query: string) {
 }
 
 function displayCustomerName(deal: Deal) {
-  return deal.customerName || deal.moyskladCounterpartyName || deal.phoneNormalized || "Клиент не привязан";
+  return deal.customerName || deal.customerName || deal.phoneNormalized || "Клиент не привязан";
 }
 
 function linkedClientSearch(deal: Deal) {
-  return encodeURIComponent(deal.customerName || deal.moyskladCounterpartyName || deal.phoneNormalized || "");
+  return encodeURIComponent(deal.customerName || deal.customerName || deal.phoneNormalized || "");
 }
 
 function newShipmentHrefFromDeal(deal: Deal) {
   const params = new URLSearchParams();
   params.set("crmDealId", deal.id);
-  const clientName = deal.customerName || deal.moyskladCounterpartyName || "";
+  const clientName = deal.customerName || deal.customerName || "";
   if (clientName) params.set("counterparty", clientName);
   if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
   if (deal.vehicle) params.set("vehicle", deal.vehicle);
@@ -438,7 +436,7 @@ function recordsHrefFromDeal(deal: Deal) {
   params.set("source", "CRM-дело");
   params.set("comment", [deal.title, deal.nextAction, deal.notes].filter(Boolean).join("\n"));
   if (deal.phoneNormalized) params.set("phone", deal.phoneNormalized);
-  if (deal.customerName || deal.moyskladCounterpartyName) params.set("client", deal.customerName || deal.moyskladCounterpartyName || "");
+  if (deal.customerName || deal.customerName) params.set("client", deal.customerName || deal.customerName || "");
   if (deal.vehicle) params.set("vehicle", deal.vehicle);
   if (deal.responsibleLogin) params.set("responsible", deal.responsibleLogin);
   const query = params.toString();
@@ -514,7 +512,7 @@ export default function CrmPipelineClient({
           const type = resolveClientType(deal);
           return type === "regular" || type === "repeat";
         })
-        .map((deal) => deal.moyskladCounterpartyId || deal.phoneNormalized || deal.customerName || deal.id)
+        .map((deal) => deal.counterpartyId || deal.phoneNormalized || deal.customerName || deal.id)
     ).size;
     return {
       active: activeDeals.length,
@@ -572,7 +570,7 @@ export default function CrmPipelineClient({
         if (view === "noResponsible" && deal.responsibleLogin) return false;
         if ((view === "new_lead" || view === "regular" || view === "repeat" || view === "unlinked") && clientType !== view) return false;
         if (view === "withRecord" && !deal.yclientsRecordId) return false;
-        if (view === "withoutDemand" && deal.moyskladDemandId) return false;
+        if (view === "withoutDemand" && deal.shipmentId) return false;
         if (view === "waitSupplies" && !(dealStatus === "waiting_parts" || Boolean(deal.suppliesNote || deal.suppliesExpectedAt))) return false;
         if (view === "needsEstimate" && dealStatus !== "calculation_needed") return false;
         if (responsibleFilter !== "all" && loginLabel(deal.responsibleLogin) !== responsibleFilter) return false;
@@ -580,8 +578,8 @@ export default function CrmPipelineClient({
         if (stageFilter !== "all" && deal.stageId !== stageFilter) return false;
         if (linkFilter === "withRecord" && !deal.yclientsRecordId) return false;
         if (linkFilter === "withoutRecord" && deal.yclientsRecordId) return false;
-        if (linkFilter === "withDemand" && !deal.moyskladDemandId) return false;
-        if (linkFilter === "withoutDemand" && deal.moyskladDemandId) return false;
+        if (linkFilter === "withDemand" && !deal.shipmentId) return false;
+        if (linkFilter === "withoutDemand" && deal.shipmentId) return false;
         return matchQuery(deal, normalizedQuery);
       }),
     }));
@@ -651,7 +649,7 @@ export default function CrmPipelineClient({
     }
     const timer = setTimeout(() => {
       setCounterpartyLoading(true);
-      fetch(`/api/moysklad/counterparties?search=${encodeURIComponent(queryText)}&limit=10`)
+      fetch(`/api/local-inventory/counterparty-options?search=${encodeURIComponent(queryText)}&limit=10`)
         .then((res) => res.json())
         .then((data) => {
           setCounterpartyOptions(Array.isArray(data.counterparties) ? data.counterparties : []);
@@ -691,7 +689,7 @@ export default function CrmPipelineClient({
       phone: prev.phone || counterparty.phone || counterparty.normalizedPhone || "",
       clientType: "regular",
       createLocalClient: false,
-      createMoyskladCounterparty: false,
+      createLegacyCounterparty: false,
     }));
   }
 
@@ -699,7 +697,7 @@ export default function CrmPipelineClient({
     if (selectedCounterparty || !form.createLocalClient) return selectedCounterparty;
     const name = form.customerName.trim() || form.title.trim();
     if (!name) return null;
-    const res = await fetch("/api/moysklad/counterparties", {
+    const res = await fetch("/api/local-inventory/counterparty-options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone: form.phone, companyType: "individual" }),
@@ -721,8 +719,8 @@ export default function CrmPipelineClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          moyskladCounterpartyName: counterpartySearch.trim() || form.customerName || form.title,
-          moyskladCounterparty: counterparty,
+          customerName: counterpartySearch.trim() || form.customerName || form.title,
+          legacyCounterparty: counterparty,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as Deal & { error?: string };
@@ -1116,7 +1114,7 @@ export default function CrmPipelineClient({
           onCounterpartySearch={(value) => {
             setSelectedCounterparty(null);
             setCounterpartySearch(value);
-            updateForm("createMoyskladCounterparty", false);
+            updateForm("createLegacyCounterparty", false);
           }}
           onSelectCounterparty={selectCounterparty}
           onClearCounterparty={() => {
@@ -1194,7 +1192,7 @@ function DealCard({
   const nextAction = deal.nextAction || defaultNextActionForCaseStatus(status, stage?.name) || "Уточнить следующий шаг";
   const hasComments = Boolean(deal.notes);
   const hasRecord = Boolean(deal.yclientsRecordId);
-  const hasDemand = Boolean(deal.moyskladDemandId);
+  const hasDemand = Boolean(deal.shipmentId);
   const hasDiagnostic = Boolean(deal.source?.toLowerCase().includes("diagnostic") || deal.notes?.toLowerCase().includes("диагност"));
   const quoteSentStage = stages.find(isQuoteSentStage);
   const suppliesCheckStage = stages.find((item) => normalizeStageName(item.name).includes("проверить расход"));
@@ -1270,7 +1268,7 @@ function DealCard({
             className="eco-deal-card__primary-contact"
             entityType="crm_case"
             entityId={deal.id}
-            counterpartyId={deal.moyskladCounterpartyId}
+            counterpartyId={deal.counterpartyId}
             phone={deal.phoneNormalized}
             displayName={displayCustomerName(deal)}
             context={{
@@ -1313,7 +1311,7 @@ function DealCard({
           {(resolveClientType(deal) === "regular" || resolveClientType(deal) === "repeat") && (
             <div className="eco-deal-card__history">
               <span>История клиента</span>
-              <strong>{deal.moyskladDemandId ? `отгрузка ${deal.moyskladDemandId}` : deal.moyskladCounterpartyName || "локальная карточка"}</strong>
+              <strong>{deal.shipmentId ? `отгрузка ${deal.shipmentId}` : deal.customerName || "локальная карточка"}</strong>
             </div>
           )}
           <div className="eco-deal-card__details">
@@ -1329,7 +1327,7 @@ function DealCard({
               label="Написать"
               entityType="crm_case"
               entityId={deal.id}
-              counterpartyId={deal.moyskladCounterpartyId}
+              counterpartyId={deal.counterpartyId}
               phone={deal.phoneNormalized}
               displayName={displayCustomerName(deal)}
               context={{
@@ -1595,7 +1593,7 @@ function CaseFormDrawer({
               </label>
               <label className="eco-client-field">
                 <span>Отгрузка</span>
-                <input value={form.moyskladDemandId} onChange={(event) => onChange("moyskladDemandId", event.target.value)} placeholder="ID / номер" className="eco-input" />
+                <input value={form.shipmentId} onChange={(event) => onChange("shipmentId", event.target.value)} placeholder="ID / номер" className="eco-input" />
               </label>
               <label className="eco-client-field">
                 <span>Расчёт, ₽</span>
@@ -1710,7 +1708,7 @@ function CaseDrawer({
             label="Написать"
             entityType="crm_case"
             entityId={deal.id}
-            counterpartyId={deal.moyskladCounterpartyId}
+            counterpartyId={deal.counterpartyId}
             phone={deal.phoneNormalized}
             displayName={displayCustomerName(deal)}
             context={{
@@ -1772,7 +1770,7 @@ function CaseDrawer({
               Автомобиль
             </h3>
             <InfoLine label="Авто / VIN" value={deal.vehicle || "Не указано"} />
-            <InfoLine label="История" value={deal.moyskladCounterpartyName || deal.moyskladCounterpartyId ? "Есть карточка клиента" : "История пока не привязана"} />
+            <InfoLine label="История" value={deal.customerName || deal.counterpartyId ? "Есть карточка клиента" : "История пока не привязана"} />
           </section>
 
           <section className="eco-client-info-block eco-crm-wide-block">
@@ -1809,7 +1807,7 @@ function CaseDrawer({
               Связи
             </h3>
             <RelatedLine icon={<CalendarClock size={15} />} label="Запись" value={deal.yclientsRecordId || "Клиент ещё не записан"} href={recordsHrefFromDeal(deal)} />
-            <RelatedLine icon={<Truck size={15} />} label="Отгрузка" value={deal.moyskladDemandId || "Нет отгрузки"} href={deal.moyskladDemandId ? `/shipment/${encodeURIComponent(deal.moyskladDemandId)}` : "/shipment/new"} />
+            <RelatedLine icon={<Truck size={15} />} label="Отгрузка" value={deal.shipmentId || "Нет отгрузки"} href={deal.shipmentId ? `/shipment/${encodeURIComponent(deal.shipmentId)}` : "/shipment/new"} />
             <RelatedLine icon={<ReceiptText size={15} />} label="Расчёт" value={deal.amountCents ? formatMoney(deal.amountCents) : "Без расчёта"} />
             <RelatedLine icon={<WalletCards size={15} />} label="Оплата" value="Проверить при необходимости" />
           </section>

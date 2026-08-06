@@ -4,8 +4,8 @@ import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { type CreateDemandBody, type DemandPositionInput } from "@/lib/demand-create-payload";
 import { prisma } from "@/lib/db";
 import { createLocalDemand, loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
-import { extractMoyskladEntityId } from "@/lib/piecework-rules";
-import { toMoyskladMomentString } from "@/lib/time";
+import { extractLocalEntityId } from "@/lib/piecework-rules";
+import { toServiceMomentString } from "@/lib/time";
 import type { Prisma } from "@prisma/client";
 
 type CopyProduct = Prisma.LocalProductGetPayload<{ include: { stockBalances: true } }>;
@@ -30,7 +30,7 @@ function decimalToNumber(value: unknown): number {
 
 function productMeta(product: CopyProduct) {
   return {
-    href: product.moyskladHref || `local://${product.entityType || "product"}/${product.id}`,
+    href: `local://${product.entityType || "product"}/${product.id}`,
     type: product.entityType || "product",
     mediaType: "application/json",
   };
@@ -107,7 +107,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         });
     const orgM = raw.organization?.meta ?? (fallbackOrganization
       ? {
-          href: fallbackOrganization.moyskladHref || `local://organization/${fallbackOrganization.id}`,
+          href: `local://organization/${fallbackOrganization.id}`,
           type: "organization",
           mediaType: "application/json",
         }
@@ -121,27 +121,23 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       );
     }
 
-    const moment = toMoyskladMomentString();
-    const storeLookupId = extractMoyskladEntityId(storeM.href);
+    const moment = toServiceMomentString();
+    const storeLookupId = extractLocalEntityId(storeM.href);
     const localStore = storeLookupId
       ? await prisma.localStore.findFirst({
           where: {
-            OR: [
-              { id: storeLookupId },
-              { moyskladId: storeLookupId },
-              { moyskladHref: storeM.href },
-            ],
+            id: storeLookupId,
           },
           select: { id: true },
         })
       : null;
     const sourcePositions = loaded.data.positions;
     const assortmentIds = [...new Set(sourcePositions
-      .map((position) => extractMoyskladEntityId(position.assortmentMeta?.href))
+      .map((position) => extractLocalEntityId(position.assortmentMeta?.href))
       .filter((value): value is string => Boolean(value)))];
     const sourceNames = [...new Set(sourcePositions.map((position) => position.name.trim()).filter(Boolean))];
     const productWhere: Prisma.LocalProductWhereInput[] = [];
-    if (assortmentIds.length > 0) productWhere.push({ OR: [{ id: { in: assortmentIds } }, { moyskladId: { in: assortmentIds } }] });
+    if (assortmentIds.length > 0) productWhere.push({ id: { in: assortmentIds } });
     if (sourceNames.length > 0) {
       productWhere.push({
         OR: sourceNames.map((name) => ({ name: { equals: name, mode: "insensitive" as const } })),
@@ -162,7 +158,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const productsByName = new Map<string, CopyProduct[]>();
     for (const product of catalogProducts) {
       productById.set(product.id, product);
-      if (product.moyskladId) productById.set(product.moyskladId, product);
       const nameKey = normalizeLookup(product.name);
       if (nameKey) productsByName.set(nameKey, [...(productsByName.get(nameKey) ?? []), product]);
     }
@@ -171,7 +166,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const originalPriceCents = Math.round(Number(position.price) || 0);
       const quantity = Number(position.quantity) || 1;
       const discount = typeof position.discount === "number" ? position.discount : 0;
-      const assortmentId = extractMoyskladEntityId(position.assortmentMeta?.href);
+      const assortmentId = extractLocalEntityId(position.assortmentMeta?.href);
       const byId = assortmentId ? productById.get(assortmentId) : undefined;
       const exactByName = productsByName.get(normalizeLookup(position.name)) ?? [];
       const activeExact = exactByName.filter((product) => !product.archived);

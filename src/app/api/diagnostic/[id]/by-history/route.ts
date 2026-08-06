@@ -14,13 +14,13 @@ export async function GET(
 
   const diag = await prisma.diagnostic.findUnique({
     where: { id },
-    select: { vin: true, agentMoySkladId: true },
+    select: { vin: true, shipmentDraftId: true },
   });
   if (!diag) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
 
-  const demands = diag.agentMoySkladId
-    ? await prisma.moySkladDemandSync.findMany({
-        where: { agentMetaHref: { contains: diag.agentMoySkladId } },
+  const demands = diag.shipmentDraftId
+    ? await prisma.localDemand.findMany({
+        where: { id: diag.shipmentDraftId },
         orderBy: { momentAt: "desc" },
         take: 3,
         select: {
@@ -33,9 +33,8 @@ export async function GET(
       })
     : [];
 
-  const diagOr: { vin?: string; agentMoySkladId?: string }[] = [];
+  const diagOr: { vin?: string }[] = [];
   if (diag.vin) diagOr.push({ vin: diag.vin });
-  if (diag.agentMoySkladId) diagOr.push({ agentMoySkladId: diag.agentMoySkladId });
 
   const diagnostics =
     diagOr.length > 0

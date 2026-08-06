@@ -24,6 +24,6 @@ that may already have been sent to clients.
 
 ## Data boundary
 
-This API is local-DB only. It must not depend on MoySklad, old diagnostic offer
+This API is local-DB only. It must not depend on external inventory systems, old diagnostic offer
 templates, or the old `DiagnosticOffer` flow. Recommendation actions are created
 from the diagnostic item/recommendation context.

@@ -5,7 +5,7 @@ import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settl
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   calculatePieceworkAmountCents,
-  extractMoyskladEntityId,
+  extractLocalEntityId,
   getPieceworkRuleKey,
   getPieceworkRuleMap,
   resolveProductGroupTargetId,
@@ -170,11 +170,11 @@ async function fetchLocalDemandsWithPositions(
     positions: demand.positions.map((position) => {
       const product = position.product;
       const assortmentType = product?.entityType ?? position.assortmentType ?? "";
-      const assortmentId = product?.id ?? position.assortmentMoyskladId ?? position.id;
+      const assortmentId = product?.id ?? position.productId ?? position.id;
       return {
         assortment: {
           meta: {
-            href: product?.moyskladHref ?? `local://${assortmentType || "product"}/${assortmentId}`,
+            href: `local://${assortmentType || "product"}/${assortmentId}`,
             type: assortmentType,
           },
           name: position.name,
@@ -297,7 +297,7 @@ function mergeStaffingByDate(params: {
   return byDate;
 }
 
-/** Дата из moment МойСклад (YYYY-MM-DD) */
+/** Дата документа в формате YYYY-MM-DD */
 function momentToDate(moment: string): string {
   return moment.slice(0, 10);
 }
@@ -472,7 +472,7 @@ export async function computePayroll(params: {
       const type = p.assortment?.meta?.type ?? "";
 
       if (type === "service") {
-        const serviceId = extractMoyskladEntityId(p.assortment?.meta?.href);
+        const serviceId = extractLocalEntityId(p.assortment?.meta?.href);
         works.push({ name, quantity: qty, priceCents: saleCents });
         if (!master) {
           addUnallocatedPiecework({

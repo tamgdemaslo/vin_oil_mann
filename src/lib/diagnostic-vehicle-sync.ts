@@ -178,7 +178,7 @@ export async function getVehicleSnapshotFromShipment(shipmentId: string | null |
   const rawId = cleanString(shipmentId);
   if (!rawId) return null;
   const demand = await prisma.localDemand.findFirst({
-    where: { OR: [{ id: rawId }, { moyskladId: rawId }, { name: rawId }] },
+    where: { OR: [{ id: rawId }, { id: rawId }, { name: rawId }] },
     select: {
       id: true,
       attributes: true,

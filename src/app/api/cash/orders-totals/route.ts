@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentShift, requireSessionUser } from "@/lib/cashbox";
+import { getCurrentShift } from "@/lib/cashbox";
 import { getOrdersTotalsForDate } from "@/lib/aqsi";
 import { toLocalDateString } from "@/lib/time";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 
 export async function GET(request: NextRequest) {
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  return runWithBranchApiContext(access.context, async () => {
   try {
-    await requireSessionUser();
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get("date");
 
@@ -21,7 +24,7 @@ export async function GET(request: NextRequest) {
       Intl.DateTimeFormat().resolvedOptions().timeZone ||
       "Europe/Moscow";
 
-    const totals = await getOrdersTotalsForDate({ serviceDate, timezone });
+    const totals = await getOrdersTotalsForDate({ serviceDate, timezone, registerId: currentShift?.aqsiRegisterId });
 
     return NextResponse.json({
       date: serviceDate,
@@ -29,7 +32,7 @@ export async function GET(request: NextRequest) {
       cashTotal: totals.cashTotal,
       cardTotal: totals.cardTotal,
       ...(totals.cashTotal === 0 && totals.cardTotal === 0
-        ? { hint: "Суммы 0. Проверьте AQSI_ORDERS_PATH в .env.local и что в AQSI есть чеки за эту дату." }
+        ? { hint: "Суммы 0. Проверьте путь чеков в настройках AQSI и наличие чеков за эту дату." }
         : {}),
     });
   } catch (e) {
@@ -42,4 +45,5 @@ export async function GET(request: NextRequest) {
         : 502;
     return NextResponse.json({ error: msg }, { status });
   }
+  });
 }

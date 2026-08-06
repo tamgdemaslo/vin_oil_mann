@@ -45,7 +45,6 @@ function ProductsScreen() {
         </div>
         <div style={{display: 'flex', gap: 8}}>
           <button className="btn">{Ic.download} Выгрузить</button>
-          <button className="btn">{Ic.refresh} Синхр. МойСклад</button>
           <button className="btn primary">{Ic.plus} Новый товар</button>
         </div>
       </div>
@@ -336,13 +335,13 @@ function ReceivingScreen() {
             </table>
           </div>
 
-          {/* МойСклад sync */}
+          {/* Локальный складской учёт */}
           <div className="banner info">
             <span style={{display: 'flex'}}>{Ic.info}</span>
             <div>
               <div className="b-title">После проведения приёмки</div>
               <div className="b-body">
-                Остатки обновятся в МойСклад автоматически. Будет создан счёт поставщика
+                Остатки обновятся во внутреннем учёте. Будет создан счёт поставщика
                 <span style={{color: 'var(--ink)', fontWeight: 600, fontFamily: 'var(--f-mono)', marginLeft: 4}}>СЧ-2026-0102</span>
                 со сроком оплаты 30 дней.
               </div>
@@ -507,7 +506,7 @@ function WriteoffScreen() {
             <div>
               <div className="b-title">Действие необратимо</div>
               <div className="b-body">
-                Списание уменьшит остатки и пройдёт через МойСклад как «Списание брака».
+                Списание уменьшит остатки во внутреннем учёте как «Списание брака».
                 Сумма {fmtMoney(items.reduce((s, it) => s + it.cost * it.qty, 0))} будет отнесена на расходы.
               </div>
             </div>

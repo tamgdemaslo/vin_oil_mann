@@ -215,7 +215,7 @@ type Filters = {
   document: string;
   withoutReceipt: boolean;
   overdueOnly: boolean;
-  source: "all" | "local" | "receipt" | "import" | "moysklad_import";
+  source: "all" | "local" | "receipt" | "import" | "legacy_import";
 };
 
 const DEFAULT_FILTERS: Filters = {
@@ -308,7 +308,7 @@ function latestTBankPayment(invoice?: SupplierInvoice | null) {
 function sourceLabel(value: string) {
   if (value === "local") return "Локальная БД";
   if (value === "import") return "Импорт";
-  if (value === "moysklad_import") return "Архивный импорт";
+  if (value === "legacy_import") return "Архивный импорт";
   return "Приёмка";
 }
 
@@ -849,7 +849,7 @@ export default function SupplierInvoicesClient() {
               <option value="receipt">Приёмка</option>
               <option value="local">Локальная БД</option>
               <option value="import">Импорт</option>
-              <option value="moysklad_import">Архивный импорт</option>
+              <option value="legacy_import">Архивный импорт</option>
             </EcoSelect>
           </label>
           <div className="eco-invoices-filter-toggles">

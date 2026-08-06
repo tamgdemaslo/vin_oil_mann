@@ -47,7 +47,7 @@ type CashShift = {
 
 type CashExpensePaymentType = "cash" | "card";
 type CashExpenseOrderStatus = "draft" | "posted" | "cancelled";
-type CashExpenseOrderSource = "local" | "moysklad_import" | "sync";
+type CashExpenseOrderSource = "local" | "legacy_import" | "sync";
 
 type CashOperation =
   | {
@@ -83,7 +83,7 @@ type CashOperation =
       expenseItemMetaHref?: string;
       paymentType: CashExpensePaymentType;
       attachmentUrl?: string;
-      moyskladCashoutHref?: string;
+      legacyCashoutHref?: string;
     };
 
 type ReferenceOption = {
@@ -110,14 +110,14 @@ type CashoutRecord = {
   agentName: string;
   expenseItemName: string;
   organizationName: string;
-  moyskladCashoutHref?: string;
+  legacyCashoutHref?: string;
   meta: { href: string; type: string; mediaType: string };
 };
 
 type CashTab = "opening" | "active" | "closed";
 type CashoutStatusFilter = "all" | "posted" | "draft" | "cancelled";
 type CashoutPeriodFilter = "all" | "today" | "month";
-type CashoutSourceFilter = "all" | "local" | "moysklad";
+type CashoutSourceFilter = "all" | "local" | "legacy";
 type CashoutTenderFilter = "all" | "cash" | "card";
 
 type FlowSectionProps = {
@@ -236,7 +236,7 @@ function cashoutStatus(cashout: CashoutRecord) {
 function cashoutSourceLabel(cashout: CashoutRecord) {
   if (cashout.source === "local") return "Локальная БД";
   if (cashout.source === "sync") return "Архивный импорт";
-  return cashout.moyskladCashoutHref ? "Архивный импорт" : "Импорт";
+  return cashout.legacyCashoutHref ? "Архивный импорт" : "Импорт";
 }
 
 function isPostedExpense(op: CashOperation): op is Extract<CashOperation, { type: "expense" }> {
@@ -363,7 +363,7 @@ export default function CashPage() {
     try {
       const params = new URLSearchParams({ limit: "20" });
       if (search.trim()) params.set("search", search.trim());
-      const res = await fetch(`/api/moysklad/counterparties?${params.toString()}`, {
+      const res = await fetch(`/api/local-inventory/counterparty-options?${params.toString()}`, {
         cache: "no-store",
       });
       const data = await safeJson<{ counterparties?: ReferenceOption[]; error?: string }>(res);
@@ -392,7 +392,7 @@ export default function CashPage() {
       if (cashoutStatusFilter !== "all") params.set("status", cashoutStatusFilter);
       if (cashoutSourceFilter === "local") params.set("source", "local");
       if (cashoutTenderFilter !== "all") params.set("paymentType", cashoutTenderFilter);
-      const res = await fetch(`/api/moysklad/cashouts?${params.toString()}`, { cache: "no-store" });
+      const res = await fetch(`/api/local-inventory/cash-expense-orders?${params.toString()}`, { cache: "no-store" });
       const data = await safeJson<{
         cashouts?: CashoutRecord[];
         meta?: { size?: number };
@@ -481,8 +481,8 @@ export default function CashPage() {
       setExpenseRefsError(null);
       try {
         const [expenseItemsResult, counterpartiesResult] = await Promise.allSettled([
-          fetch("/api/moysklad/expense-items?limit=1000", { cache: "no-store" }),
-          fetch("/api/moysklad/counterparties?limit=20", { cache: "no-store" }),
+          fetch("/api/local-inventory/expense-items?limit=1000", { cache: "no-store" }),
+          fetch("/api/local-inventory/counterparty-options?limit=20", { cache: "no-store" }),
         ]);
         if (cancelled) return;
 
@@ -1066,12 +1066,12 @@ export default function CashPage() {
         : "Касса · смена закрыта";
   const visibleCashouts = cashouts.filter((cashout) => {
     const status = cashout.status ?? (cashout.applicable ? "posted" : "draft");
-    const source = cashout.source ?? (cashout.moyskladCashoutHref ? "moysklad_import" : "local");
+    const source = cashout.source ?? (cashout.legacyCashoutHref ? "legacy_import" : "local");
     if (cashoutStatusFilter !== "all" && status !== cashoutStatusFilter) return false;
     if (cashoutPeriodFilter === "today" && !isToday(cashout.moment)) return false;
     if (cashoutPeriodFilter === "month" && !isCurrentMonth(cashout.moment)) return false;
     if (cashoutSourceFilter === "local" && source !== "local") return false;
-    if (cashoutSourceFilter === "moysklad" && source === "local" && !cashout.moyskladCashoutHref) return false;
+    if (cashoutSourceFilter === "legacy" && source === "local" && !cashout.legacyCashoutHref) return false;
     if (cashoutTenderFilter !== "all" && (cashout.paymentType ?? "cash") !== cashoutTenderFilter) return false;
     return true;
   });
@@ -1785,7 +1785,7 @@ export default function CashPage() {
               <select value={cashoutSourceFilter} onChange={(event) => setCashoutSourceFilter(event.target.value as CashoutSourceFilter)} className="eco-select-inline">
                 <option value="all">Все</option>
                 <option value="local">Локальная БД</option>
-                <option value="moysklad">Архивный импорт</option>
+                <option value="legacy">Архивный импорт</option>
               </select>
             </label>
             <label className="eco-select-chip">

@@ -6,7 +6,7 @@ export type ExternalSideEffect =
   | "supplier_order"
   | "email_send"
   | "yclients_mutation"
-  | "moysklad_mutation"
+  | "legacy_mutation"
   | "rossko_order";
 
 const flags: Record<ExternalSideEffect, string> = {
@@ -17,7 +17,7 @@ const flags: Record<ExternalSideEffect, string> = {
   supplier_order: "SUPPLIER_ORDER_ENABLED",
   email_send: "EMAIL_SEND_ENABLED",
   yclients_mutation: "YCLIENTS_MUTATIONS_ENABLED",
-  moysklad_mutation: "MOYSKLAD_MUTATIONS_ENABLED",
+  legacy_mutation: "LEGACY_MUTATIONS_ENABLED",
   rossko_order: "ROSSKO_ORDER_ENABLED",
 };
 

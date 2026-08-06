@@ -4,24 +4,33 @@ import {
   RED_NODE_OFFERS,
   SURVEY_NEXT_VISIT_OFFERS,
 } from "@/data/diagnostic-catalog";
-import { enrichVariantWithMoySklad } from "@/lib/diagnostic-moysklad-resolve";
 
 export type VariantJson = {
   label: string;
   priceRub: number;
-  moySkladProductId?: string;
+  productId?: string;
 };
 
 async function buildVariantsForTemplate(
-  template: { variants: { label: string; defaultPriceRub: number; moySkladSearchHints?: string[] }[] }
+  template: { variants: { label: string; defaultPriceRub: number; catalogSearchHints?: string[] }[] }
 ): Promise<VariantJson[]> {
   const out: VariantJson[] = [];
   for (const v of template.variants) {
-    const enriched = await enrichVariantWithMoySklad(v.moySkladSearchHints);
+    const hints = (v.catalogSearchHints ?? []).map((hint) => hint.trim()).filter(Boolean);
+    const product = hints.length
+      ? await prisma.localProduct.findFirst({
+          where: {
+            archived: false,
+            OR: hints.map((hint) => ({ name: { contains: hint, mode: "insensitive" as const } })),
+          },
+          select: { id: true, salePriceCents: true },
+          orderBy: { updatedAt: "desc" },
+        })
+      : null;
     out.push({
       label: v.label,
-      priceRub: enriched.priceRub ?? v.defaultPriceRub,
-      moySkladProductId: enriched.moySkladProductId,
+      priceRub: product ? product.salePriceCents / 100 : v.defaultPriceRub,
+      productId: product?.id,
     });
   }
   return out;

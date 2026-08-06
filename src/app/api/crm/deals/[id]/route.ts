@@ -21,11 +21,10 @@ const LEGACY_DEAL_SELECT = {
   amountCents: true,
   stageId: true,
   responsibleLogin: true,
-  moyskladCounterpartyId: true,
-  moyskladCounterpartyName: true,
-  moyskladCounterpartyHref: true,
+  counterpartyId: true,
+  counterpartyHref: true,
   yclientsRecordId: true,
-  moyskladDemandId: true,
+  shipmentId: true,
   nextContactAt: true,
   snoozeUntil: true,
   status: true,
@@ -233,18 +232,18 @@ export async function PATCH(
     if (body.procurementId !== undefined) data.procurementId = parseOptionalString(body.procurementId);
     if (body.nextAction !== undefined) data.nextAction = parseOptionalString(body.nextAction);
     if (body.responsibleLogin !== undefined) data.responsibleLogin = parseOptionalString(body.responsibleLogin);
-    if (body.moyskladCounterparty !== undefined) {
-      const counterparty = parseCounterparty(body.moyskladCounterparty);
-      data.moyskladCounterpartyId = counterparty?.id ?? null;
-      data.moyskladCounterpartyName = counterparty?.name ?? null;
-      data.moyskladCounterpartyHref = counterparty?.href ?? null;
+    if (body.legacyCounterparty !== undefined) {
+      const counterparty = parseCounterparty(body.legacyCounterparty);
+      data.counterpartyId = counterparty?.id ?? null;
+      data.customerName = counterparty?.name ?? null;
+      data.counterpartyHref = counterparty?.href ?? null;
     }
     const nextYclientsRecordId = body.yclientsRecordId !== undefined ? parseOptionalString(body.yclientsRecordId) : undefined;
-    const nextMoyskladDemandId = body.moyskladDemandId !== undefined ? parseOptionalString(body.moyskladDemandId) : undefined;
+    const nextLegacyDemandId = body.shipmentId !== undefined ? parseOptionalString(body.shipmentId) : undefined;
     if (body.yclientsRecordId !== undefined) data.yclientsRecordId = nextYclientsRecordId;
-    if (body.moyskladDemandId !== undefined) data.moyskladDemandId = nextMoyskladDemandId;
+    if (body.shipmentId !== undefined) data.shipmentId = nextLegacyDemandId;
     if (body.yclientsRecordId !== undefined) data.appointmentId = nextYclientsRecordId;
-    if (body.moyskladDemandId !== undefined) data.shipmentId = nextMoyskladDemandId;
+    if (body.shipmentId !== undefined) data.shipmentId = nextLegacyDemandId;
     if (body.suppliesNote !== undefined) data.suppliesNote = parseOptionalString(body.suppliesNote);
     if (body.suppliesSupplier !== undefined) data.suppliesSupplier = parseOptionalString(body.suppliesSupplier);
     if (body.suppliesExpectedAt !== undefined) data.suppliesExpectedAt = parseDate(body.suppliesExpectedAt);

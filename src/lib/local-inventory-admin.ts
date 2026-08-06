@@ -122,7 +122,6 @@ const productWithStockInclude = {
 } satisfies Prisma.LocalProductInclude;
 const productListIndexSelect = {
   id: true,
-  moyskladId: true,
   name: true,
   article: true,
   code: true,
@@ -878,7 +877,6 @@ function mapProduct(product: ProductWithStock) {
   }));
   return {
     id: product.id,
-    moyskladId: product.moyskladId,
     name: product.name,
     article: product.article ?? "",
     code: product.code ?? "",
@@ -1573,7 +1571,7 @@ async function resolveProductSupplierCounterparty(
 
 export async function getLocalAdminProduct(id: string, branchId: string) {
   const product = await prisma.localProduct.findFirst({
-    where: { branchId, OR: [{ id }, { moyskladId: id }] },
+    where: { branchId, OR: [{ id }, { id: id }] },
     include: productWithStockInclude,
   });
   if (!product) return null;
@@ -1693,7 +1691,6 @@ function mapCounterparty(counterparty: CounterpartyRow) {
   const category = counterparty.category === "SUPPLIER" ? "SUPPLIER" : "INDIVIDUAL";
   return {
     id: counterparty.id,
-    moyskladId: counterparty.moyskladId,
     source: "local" as CounterpartySource,
     name: counterparty.displayName || counterparty.name,
     displayName: counterparty.displayName || counterparty.name,
@@ -1774,7 +1771,6 @@ function mapCounterparty(counterparty: CounterpartyRow) {
 function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
   return {
     id: supplierSnapshotId(name),
-    moyskladId: null,
     source: "supplier",
     name,
     displayName: name,
@@ -1858,7 +1854,7 @@ type ActivityBuilder = CounterpartyActivity & {
 
 type SnapshotCounterpartyBuilder = {
   key: string;
-  moyskladId: string | null;
+  id: string | null;
   name: string;
   phone: string;
   normalizedPhone: string;
@@ -1890,7 +1886,7 @@ function emptyCounterpartyActivity(): CounterpartyActivity {
   };
 }
 
-function moyskladCounterpartyIdFromHref(href: string | null | undefined) {
+function localCounterpartyIdFromHref(href: string | null | undefined) {
   const match = href?.match(/\/entity\/counterparty\/([^/?#]+)/);
   return match?.[1] ?? null;
 }
@@ -1915,8 +1911,8 @@ function phoneValuesFromUnknown(value: unknown) {
     .filter(Boolean);
 }
 
-function snapshotKey(input: { moyskladId?: string | null; normalizedPhone?: string | null; name?: string | null }) {
-  if (input.moyskladId) return `moysklad:${input.moyskladId}`;
+function snapshotKey(input: { id?: string | null; normalizedPhone?: string | null; name?: string | null }) {
+  if (input.id) return `legacy:${input.id}`;
   if (input.normalizedPhone) return `phone:${input.normalizedPhone}`;
   const name = normalizeSearchText(input.name ?? "");
   return name ? `name:${name}` : "";
@@ -1924,12 +1920,12 @@ function snapshotKey(input: { moyskladId?: string | null; normalizedPhone?: stri
 
 function ensureSnapshotBuilder(
   builders: Map<string, SnapshotCounterpartyBuilder>,
-  input: { moyskladId?: string | null; name?: string | null; phone?: string | null; normalizedPhone?: string | null }
+  input: { id?: string | null; name?: string | null; phone?: string | null; normalizedPhone?: string | null }
 ) {
   const name = input.name?.trim() ?? "";
   const phone = input.phone?.trim() ?? "";
   const normalizedPhone = input.normalizedPhone?.trim() || normalizePhoneKey(phone) || "";
-  const key = snapshotKey({ moyskladId: input.moyskladId, normalizedPhone, name });
+  const key = snapshotKey({ id: input.id, normalizedPhone, name });
   if (!key || (!name && !phone && !normalizedPhone)) return null;
 
   const existing = builders.get(key);
@@ -1937,13 +1933,13 @@ function ensureSnapshotBuilder(
     if (!existing.name && name) existing.name = name;
     if (!existing.phone && phone) existing.phone = phone;
     if (!existing.normalizedPhone && normalizedPhone) existing.normalizedPhone = normalizedPhone;
-    if (!existing.moyskladId && input.moyskladId) existing.moyskladId = input.moyskladId;
+    if (!existing.id && input.id) existing.id = input.id;
     return existing;
   }
 
   const builder: SnapshotCounterpartyBuilder = {
     key,
-    moyskladId: input.moyskladId ?? null,
+    id: input.id ?? null,
     name: name || phone || normalizedPhone,
     phone: phone || normalizedPhone,
     normalizedPhone,
@@ -2000,7 +1996,7 @@ function addSnapshotDemand(
 function snapshotBuilderMatchesExisting(builder: SnapshotCounterpartyBuilder, existingRows: CounterpartyListRow[]) {
   const normalizedName = normalizeSearchText(builder.name);
   return existingRows.some((row) => {
-    if (builder.moyskladId && row.moyskladId === builder.moyskladId) return true;
+    if (builder.id && row.id === builder.id) return true;
     if (builder.normalizedPhone) {
       const rowPhones = [row.phone, row.additionalPhone].map(normalizePhoneKey).filter(Boolean);
       if (rowPhones.includes(builder.normalizedPhone)) return true;
@@ -2029,7 +2025,6 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
 
   return {
     id: `snapshot:${builder.key}`,
-    moyskladId: builder.moyskladId,
     source: "snapshot",
     name: builder.name,
     displayName: builder.name,
@@ -2095,7 +2090,7 @@ async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows:
       where: {
         branchId,
         OR: [
-          { agentMoyskladId: { not: null } },
+          { counterpartyId: { not: null } },
           { agentNameSnapshot: { not: null } },
         ],
       },
@@ -2104,7 +2099,7 @@ async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows:
         momentAt: true,
         sumCents: true,
         description: true,
-        agentMoyskladId: true,
+        counterpartyId: true,
         agentNameSnapshot: true,
         attributes: true,
         raw: true,
@@ -2122,7 +2117,7 @@ async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows:
       ].filter(Boolean);
       const phone = rawPhones[0] ?? "";
       const builder = ensureSnapshotBuilder(builders, {
-        moyskladId: demand.agentMoyskladId,
+        id: demand.counterpartyId,
         name: demand.agentNameSnapshot || stringFromRecord(agent, "name"),
         phone,
         normalizedPhone: normalizePhoneKey(phone),
@@ -2138,50 +2133,6 @@ async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows:
     }
   } catch {
     // The CRM list should still work when the local demand mirror is not available yet.
-  }
-
-  try {
-    const analyticsDemands = await prisma.moySkladDemandSync.findMany({
-      where: {
-        applicable: true,
-        OR: [
-          { agentNameSnapshot: { not: null } },
-          { normalizedPhone: { not: null } },
-          { agentMetaHref: { not: null } },
-        ],
-      },
-      select: {
-        name: true,
-        momentAt: true,
-        sumCents: true,
-        agentMetaHref: true,
-        agentNameSnapshot: true,
-        phonesRaw: true,
-        normalizedPhone: true,
-      },
-      orderBy: { momentAt: "desc" },
-      take: 20_000,
-    });
-
-    for (const demand of analyticsDemands) {
-      const phones = phonesFromAnalyticsRaw(demand.phonesRaw);
-      const phone = phones[0] ?? demand.normalizedPhone ?? "";
-      const builder = ensureSnapshotBuilder(builders, {
-        moyskladId: moyskladCounterpartyIdFromHref(demand.agentMetaHref),
-        name: demand.agentNameSnapshot,
-        phone,
-        normalizedPhone: demand.normalizedPhone ?? normalizePhoneKey(phone),
-      });
-      if (!builder) continue;
-      addSnapshotDemand(builder, {
-        demandName: demand.name,
-        momentAt: demand.momentAt,
-        sumCents: demand.sumCents,
-        searchParts: [phone, demand.normalizedPhone ?? "", demand.agentMetaHref ?? ""],
-      });
-    }
-  } catch {
-    // Historical analytics may be disabled on local/dev databases.
   }
 
   return [...builders.values()]
@@ -2237,7 +2188,6 @@ async function buildCounterpartyActivity(branchId: string, rows: CounterpartyLis
     select: {
       counterpartyId: true,
       id: true,
-      moyskladId: true,
       name: true,
       momentAt: true,
       sumCents: true,
@@ -2258,7 +2208,7 @@ async function buildCounterpartyActivity(branchId: string, rows: CounterpartyLis
     activity.searchParts.push(demand.name, demand.description ?? "");
     if (activity.recentDemands.length < 5) {
       activity.recentDemands.push({
-        id: demand.moyskladId ?? demand.id,
+        id: demand.id ?? demand.id,
         name: demand.name,
         momentAt: demand.momentAt.toISOString(),
         sumCents: demand.sumCents ?? 0,
@@ -2842,7 +2792,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
 }
 
 export async function updateLocalAdminProduct(id: string, body: ProductInput, actor: ActingUser | null | undefined, branchId: string) {
-  const current = await prisma.localProduct.findFirst({ where: { branchId, OR: [{ id }, { moyskladId: id }] } });
+  const current = await prisma.localProduct.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
   if (!current) return { ok: false as const, error: "Товар не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите название товара" };
@@ -3262,7 +3212,7 @@ export async function getLocalAdminCounterparty(id: string, branchId: string) {
   const counterparty = await prisma.localCounterparty.findFirst({
     where: {
       branchId,
-      OR: [{ id: cleanId }, { moyskladId: cleanId }],
+      OR: [{ id: cleanId }, { id: cleanId }],
     },
   });
   if (!counterparty) {
@@ -3519,7 +3469,7 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
 }
 
 export async function updateLocalAdminCounterparty(id: string, body: CounterpartyInput, branchId: string) {
-  const current = await prisma.localCounterparty.findFirst({ where: { branchId, OR: [{ id }, { moyskladId: id }] } });
+  const current = await prisma.localCounterparty.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
   if (!current) return { ok: false as const, error: "Контрагент не найден", notFound: true };
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
@@ -4076,7 +4026,7 @@ export async function listLocalSupplierInvoices(params: {
   const source = params.source === "local" ||
     params.source === "receipt" ||
     params.source === "import" ||
-    params.source === "moysklad_import"
+    params.source === "legacy_import"
     ? params.source
     : "";
   const sortBy = ["invoiceDate", "dueDate", "sum", "supplier", "status"].includes(params.sortBy ?? "")
@@ -4343,7 +4293,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if (reasonError) return { ok: false as const, error: reasonError };
   }
   const store = storeId
-    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
+    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] } })
     : null;
   if (storeId && !store) return { ok: false as const, error: "Склад не найден в локальной БД" };
   if (applicable && !store) return { ok: false as const, error: "Выберите склад" };
@@ -4358,12 +4308,12 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
 
   const productIds = [...new Set(inputPositions.map((position) => position.productId!.trim()))];
   const products = await prisma.localProduct.findMany({
-    where: { OR: [{ id: { in: productIds } }, { moyskladId: { in: productIds } }] },
+    where: { OR: [{ id: { in: productIds } }, { id: { in: productIds } }] },
   });
   const productByAnyId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     productByAnyId.set(product.id, product);
-    if (product.moyskladId) productByAnyId.set(product.moyskladId, product);
+    if (product.id) productByAnyId.set(product.id, product);
   }
 
   const positions = inputPositions.map((position) => {
@@ -4392,7 +4342,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
   const counterparty = counterpartyId && !supplierSnapshotName
-    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { moyskladId: counterpartyId }] } })
+    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
     : null;
   const sumCents = positions.reduce((sum, position) => {
     if ("error" in position) return sum;
@@ -4639,7 +4589,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     if (reasonError) return { ok: false as const, error: reasonError };
   }
   const store = storeId
-    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } })
+    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] } })
     : null;
   if (storeId && !store) return { ok: false as const, error: "Склад не найден в локальной БД" };
   if (applicable && !store) return { ok: false as const, error: "Выберите склад" };
@@ -4655,12 +4605,12 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
 
   const productIds = [...new Set(inputPositions.map((position) => position.productId!.trim()))];
   const products = await prisma.localProduct.findMany({
-    where: { OR: [{ id: { in: productIds } }, { moyskladId: { in: productIds } }] },
+    where: { OR: [{ id: { in: productIds } }, { id: { in: productIds } }] },
   });
   const productByAnyId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     productByAnyId.set(product.id, product);
-    if (product.moyskladId) productByAnyId.set(product.moyskladId, product);
+    if (product.id) productByAnyId.set(product.id, product);
   }
 
   const positions = inputPositions.map((position) => {
@@ -4689,7 +4639,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
   const counterparty = counterpartyId && !supplierSnapshotName
-    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { moyskladId: counterpartyId }] } })
+    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
     : null;
   const sumCents = positions.reduce((sum, position) => {
     if ("error" in position) return sum;
@@ -5708,6 +5658,7 @@ export async function listLocalStockDocuments(params: {
           article: position.product?.article ?? "",
           code: position.product?.code ?? "",
           brand: position.product?.brand ?? "",
+          entityType: position.product?.entityType ?? "",
           quantity: position.quantity.toNumber(),
           price: position.priceCentsPerUnit / 100,
           slotName: position.slotName ?? "",

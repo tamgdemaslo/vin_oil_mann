@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { toServiceDateInput } from "@/lib/date-time";
 import { createLocalStockDocument, listLocalStockDocuments } from "@/lib/local-inventory-admin";
 import { type CreateSupplyBody } from "@/lib/supply-create-payload";
-import { extractMoyskladEntityId } from "@/lib/piecework-rules";
+import { extractLocalEntityId } from "@/lib/piecework-rules";
 import { prisma } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -49,11 +49,11 @@ export async function POST(request: NextRequest) {
   if (!body.organization?.meta?.href || !body.agent?.meta?.href || !body.store?.meta?.href) {
     return NextResponse.json({ error: "Укажите организацию, поставщика и склад (meta.href)" }, { status: 400 });
   }
-  const organizationId = extractMoyskladEntityId(body.organization.meta.href) ?? body.organization.meta.href;
-  const storeId = extractMoyskladEntityId(body.store.meta.href) ?? body.store.meta.href;
+  const organizationId = extractLocalEntityId(body.organization.meta.href) ?? body.organization.meta.href;
+  const storeId = extractLocalEntityId(body.store.meta.href) ?? body.store.meta.href;
   const [organization, store] = await Promise.all([
-    prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationId }, { moyskladId: organizationId }] } }),
-    prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] } }),
+    prisma.localOrganization.findFirst({ where: { isActive: true, OR: [{ id: organizationId }, { id: organizationId }] } }),
+    prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] } }),
   ]);
   if (!organization) return NextResponse.json({ error: "Организация не найдена в локальной БД" }, { status: 400 });
   if (!store) return NextResponse.json({ error: "Склад не найден в локальной БД" }, { status: 400 });
@@ -72,13 +72,13 @@ export async function POST(request: NextRequest) {
     {
       type: "receipt",
       storeId,
-      counterpartyId: extractMoyskladEntityId(body.agent.meta.href) ?? body.agent.meta.href,
+      counterpartyId: extractLocalEntityId(body.agent.meta.href) ?? body.agent.meta.href,
       documentDate: (body.incomingDate || body.moment || toServiceDateInput(new Date())).slice(0, 10),
       moment: body.moment,
       description: body.description,
       applicable: body.applicable !== false,
       positions: validPositions.map((position) => ({
-        productId: extractMoyskladEntityId(position.assortment.meta.href) ?? position.assortment.meta.href,
+        productId: extractLocalEntityId(position.assortment.meta.href) ?? position.assortment.meta.href,
         quantity: Number(position.quantity) || 1,
         price: Number(position.price) || 0,
       })),

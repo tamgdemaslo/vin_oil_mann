@@ -6,7 +6,7 @@ const FALLBACK_REPLACEMENTS_COUNT = 4217;
 export async function GET() {
   try {
     const replacementsCount = await withTimeout(
-      prisma.moySkladDemandSync.count({
+      prisma.localDemand.count({
         where: { applicable: true },
       }),
       1200

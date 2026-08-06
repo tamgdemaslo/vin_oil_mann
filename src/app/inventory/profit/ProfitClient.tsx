@@ -361,7 +361,7 @@ export default function ProfitClient() {
   async function loadOptions() {
     try {
       const [orgRes, storeRes] = await Promise.all([
-        fetchWithTimeout("/api/moysklad/organizations", { cache: "no-store" }),
+        fetchWithTimeout("/api/local-inventory/organizations", { cache: "no-store" }),
         fetchWithTimeout("/api/local-inventory/stores", { cache: "no-store" }),
       ]);
       const orgJson = await readJson<{ organizations?: Option[] }>(orgRes);

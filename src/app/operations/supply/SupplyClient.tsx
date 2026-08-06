@@ -79,11 +79,11 @@ function formatDateForInput(date = new Date()): string {
   return toServiceDateInput(date);
 }
 
-function formatMoyskladMoment(date = new Date()): string {
+function formatLegacyMoment(date = new Date()): string {
   return toServiceMomentString(date);
 }
 
-function dateInputToMoyskladMoment(value: string): string | undefined {
+function dateInputToLegacyMoment(value: string): string | undefined {
   return value ? `${value} 00:00:00` : undefined;
 }
 
@@ -158,8 +158,8 @@ export default function SupplyClient() {
     setRefsError(null);
     try {
       const [orgRes, agentRes] = await Promise.all([
-        fetch("/api/moysklad/organizations", { cache: "no-store" }),
-        fetch("/api/moysklad/counterparties?limit=30", { cache: "no-store" }),
+        fetch("/api/local-inventory/organizations", { cache: "no-store" }),
+        fetch("/api/local-inventory/counterparty-options?limit=30", { cache: "no-store" }),
       ]);
       const [orgData, agentData] = await Promise.all([
         readJson<{ organizations?: RefOption[]; error?: string }>(orgRes),
@@ -171,7 +171,7 @@ export default function SupplyClient() {
       const orgs = Array.isArray(orgData?.organizations) ? orgData.organizations : [];
       const nextOrg = orgs.find((org) => org.isDefault) ?? orgs[0] ?? null;
       const storeParams = nextOrg?.id ? `?organizationId=${encodeURIComponent(nextOrg.id)}` : "";
-      const storeRes = await fetch(`/api/moysklad/stores${storeParams}`, { cache: "no-store" });
+      const storeRes = await fetch(`/api/local-inventory/store-options${storeParams}`, { cache: "no-store" });
       const storeData = await readJson<{ stores?: RefOption[]; error?: string }>(storeRes);
       if (!storeRes.ok) throw new Error(storeData?.error ?? "Не удалось загрузить склады");
       const loadedStores = Array.isArray(storeData?.stores) ? storeData.stores : [];
@@ -202,7 +202,7 @@ export default function SupplyClient() {
     setSelectedOrg(org);
     setSelectedStore(null);
     const params = org?.id ? `?organizationId=${encodeURIComponent(org.id)}` : "";
-    const res = await fetch(`/api/moysklad/stores${params}`, { cache: "no-store" });
+    const res = await fetch(`/api/local-inventory/store-options${params}`, { cache: "no-store" });
     const data = await readJson<{ stores?: RefOption[]; error?: string }>(res);
     if (!res.ok) {
       setRefsError(data?.error ?? "Не удалось загрузить склады организации");
@@ -221,7 +221,7 @@ export default function SupplyClient() {
       setAgentLoading(true);
       try {
         const params = new URLSearchParams({ search: agentSearch.trim(), limit: "20" });
-        const res = await fetch(`/api/moysklad/counterparties?${params.toString()}`, { cache: "no-store" });
+        const res = await fetch(`/api/local-inventory/counterparty-options?${params.toString()}`, { cache: "no-store" });
         const data = await readJson<{ counterparties?: RefOption[] }>(res);
         if (res.ok) setAgentOptions(Array.isArray(data?.counterparties) ? data.counterparties : []);
       } finally {
@@ -241,7 +241,7 @@ export default function SupplyClient() {
       setProductLoading(true);
       try {
         const params = new URLSearchParams({ search: query, limit: "20" });
-        const res = await fetch(`/api/moysklad/supply-products?${params.toString()}`, { cache: "no-store" });
+        const res = await fetch(`/api/local-inventory/supply-products?${params.toString()}`, { cache: "no-store" });
         const data = await readJson<{ products?: ProductOption[] }>(res);
         if (res.ok) setProductOptions(Array.isArray(data?.products) ? data.products : []);
       } finally {
@@ -288,7 +288,7 @@ export default function SupplyClient() {
     setAgentCreateLoading(true);
     setSubmitError(null);
     try {
-      const res = await fetch("/api/moysklad/counterparties", {
+      const res = await fetch("/api/local-inventory/counterparty-options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, companyType: "legal" }),
@@ -349,8 +349,8 @@ export default function SupplyClient() {
           store: { meta: selectedStore.meta },
           description: description.trim() || undefined,
           incomingNumber: incomingNumber.trim() || undefined,
-          incomingDate: dateInputToMoyskladMoment(incomingDate),
-          moment: formatMoyskladMoment(),
+          incomingDate: dateInputToLegacyMoment(incomingDate),
+          moment: formatLegacyMoment(),
           applicable,
           vatEnabled: false,
           positions: validPositions.map((position) => ({

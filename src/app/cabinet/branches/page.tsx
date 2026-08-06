@@ -189,9 +189,27 @@ export default function BranchesPage() {
       setCreating(false);
       await loadBranches();
       if (payload?.branch?.id) chooseBranch(payload.branch.id);
-      setNotice("Филиал создан. Юридические реквизиты редактируются отдельно в «Организациях».");
+      setNotice("Филиал создан без фиктивных credentials. Продолжите мастер настройки в карточке филиала.");
     }
     setSaving(false);
+  }
+
+  async function continueOnboarding() {
+    if (!details) return;
+    setSaving(true);
+    setError("");
+    const response = await fetch("/api/session/active-branch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchId: details.id }),
+    });
+    const payload = await safeReadJson<{ error?: string }>(response);
+    if (!response.ok) {
+      setError(payload?.error ?? "Не удалось выбрать филиал для мастера настройки");
+      setSaving(false);
+      return;
+    }
+    window.location.assign("/cabinet/integrations?onboarding=1");
   }
 
   async function saveBranch(event: FormEvent<HTMLFormElement>) {
@@ -325,7 +343,7 @@ export default function BranchesPage() {
                     <label className="is-wide">Связанная организация<select name="legacyOrganizationId" defaultValue={details.legacyOrganizationId ?? ""} disabled={!canManage}><option value="">Не выбрана</option>{organizations.filter((organization) => organization.isActive || organization.id === details.legacyOrganizationId).map((organization) => <option value={organization.id} key={organization.id}>{organization.name}{organization.inn ? ` · ИНН ${organization.inn}` : ""}</option>)}</select><small>Реквизиты организации изменяются отдельно.</small></label>
                     <label>Статус<select name="status" defaultValue={details.status} disabled={!canManage}><option value="active">Активен</option><option value="archived">Архив</option></select></label>
                   </div>
-                  <div className="eco-branch-editor__actions"><Link href="/cabinet/organizations" className="eco-btn eco-btn--quiet">Открыть организации</Link>{canManage && <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><Save aria-hidden className="eco-icon" />{saving ? "Сохраняем…" : "Сохранить филиал"}</button>}</div>
+                  <div className="eco-branch-editor__actions"><Link href="/cabinet/organizations" className="eco-btn eco-btn--quiet">Открыть организации</Link>{canManage && <button type="button" className="eco-btn eco-btn--secondary" onClick={() => void continueOnboarding()} disabled={saving}>Продолжить мастер настройки</button>}{canManage && <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><Save aria-hidden className="eco-icon" />{saving ? "Сохраняем…" : "Сохранить филиал"}</button>}</div>
                 </form>
               )}
 

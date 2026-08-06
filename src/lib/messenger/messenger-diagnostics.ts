@@ -88,7 +88,7 @@ function vehicleName(input: { brand?: string | null; model?: string | null; lice
 async function resolveCounterparty(clientId: string | null) {
   if (!clientId) return null;
   return prisma.localCounterparty.findFirst({
-    where: { OR: [{ id: clientId }, { moyskladId: clientId }] },
+    where: { id: clientId },
     select: { id: true, name: true, phone: true },
   });
 }
@@ -98,8 +98,6 @@ async function resolveLegacyDiagnostic(request: NextRequest, diagnosticId: strin
     where: { id: diagnosticId },
     select: {
       id: true,
-      agentMoySkladId: true,
-      shipmentMoySkladId: true,
       shipmentDraftId: true,
       clientReportToken: true,
       brand: true,
@@ -112,17 +110,20 @@ async function resolveLegacyDiagnostic(request: NextRequest, diagnosticId: strin
     },
   });
   if (!diagnostic) return null;
-  const counterparty = await resolveCounterparty(diagnostic.agentMoySkladId);
+  const linkedDemand = diagnostic.shipmentDraftId
+    ? await prisma.localDemand.findUnique({ where: { id: diagnostic.shipmentDraftId }, include: { counterparty: true } })
+    : null;
+  const counterparty = linkedDemand?.counterparty ?? null;
   return {
     source: "legacy",
     diagnosticId: diagnostic.id,
-    clientId: counterparty?.id ?? diagnostic.agentMoySkladId,
+    clientId: counterparty?.id ?? null,
     clientName: counterparty?.name ?? "клиент",
     clientPhone: counterparty?.phone ?? null,
     vehicleName: vehicleName(diagnostic),
     reportToken: diagnostic.clientReportToken,
     reportUrl: diagnostic.clientReportToken ? buildDiagnosticReportUrl(request, diagnostic.clientReportToken) : null,
-    shipmentId: diagnostic.shipmentMoySkladId ?? diagnostic.shipmentDraftId,
+    shipmentId: diagnostic.shipmentDraftId,
     checkedCount: diagnostic.summaryGreen + diagnostic.summaryYellow + diagnostic.summaryRed,
     recommendationCount: diagnostic.summaryYellow,
     criticalCount: diagnostic.summaryRed,

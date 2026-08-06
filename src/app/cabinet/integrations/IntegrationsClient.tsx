@@ -2,48 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Activity, Building2, Database, Landmark, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
+import { Building2, Landmark, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
 import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoKpi, EcoSelect, EcoStatusDot } from "@/components/platform/EcoUI";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { safeReadJson } from "@/lib/http-json";
-
-type InventoryStatus = {
-  isRunning?: boolean;
-  mode?: string | null;
-  phase?: string | null;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-  productsSynced?: number;
-  servicesSynced?: number;
-  counterpartiesSynced?: number;
-  storesSynced?: number;
-  stockRowsSynced?: number;
-  demandsSynced?: number;
-  message?: string | null;
-  error?: string | null;
-};
-
-type AnalyticsStatus = {
-  isRunning?: boolean;
-  mode?: string | null;
-  phase?: string | null;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-  totalDemands?: number | null;
-  processedDemands?: number;
-  scannedDemands?: number;
-  demandsSynced?: number;
-  lastDemandName?: string | null;
-  message?: string | null;
-  error?: string | null;
-};
-
-type StatusPayload = {
-  inventory: InventoryStatus | null;
-  analytics: AnalyticsStatus | null;
-  inventoryError: string | null;
-  analyticsError: string | null;
-};
+import OperationalIntegrationsPanel from "./OperationalIntegrationsPanel";
 
 type TBankStatus = {
   configured: boolean;
@@ -95,25 +58,36 @@ type RosskoStatus = {
   key2Configured: boolean;
   key1Masked: string | null;
   key2Masked: string | null;
-  profile: string;
   deliveryId: string;
   addressId: string;
   paymentId: string;
   requisiteId: string;
-  preferredStore: string;
   contactName: string;
   contactPhone: string;
+  contactComment: string;
   deliveryParts: boolean;
+  offerPriority: "optimal" | "fastest" | "lowest_price" | "local_stock";
   timeoutMs: string;
   requestsPerSecond: string;
+  markupRules: Array<{ fromCents: number; toCents: number | null; marginPercent: number; category?: string | null }>;
   lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastErrorMessage: string | null;
   lastCheckStatus: "never" | "ok" | "error";
   lastErrorCode: string | null;
 };
 
-type RosskoForm = Omit<RosskoStatus, "configured" | "connected" | "key1Configured" | "key2Configured" | "key1Masked" | "key2Masked" | "lastCheckedAt" | "lastCheckStatus" | "lastErrorCode"> & {
+type RosskoForm = Omit<RosskoStatus, "configured" | "connected" | "key1Configured" | "key2Configured" | "key1Masked" | "key2Masked" | "markupRules" | "lastCheckedAt" | "lastSuccessAt" | "lastErrorAt" | "lastErrorMessage" | "lastCheckStatus" | "lastErrorCode"> & {
   key1: string;
   key2: string;
+};
+
+type RosskoCheckoutOptions = {
+  delivery: Array<{ id: string; name: string }>;
+  payment: Array<{ id: string; name: string }>;
+  address: Array<{ id: string; city: string; street: string; house: string; office: string; deliveryIds: string[]; label: string }>;
+  company: Array<{ id: string; name: string; requisite: string }>;
 };
 
 type RunResult = {
@@ -139,15 +113,15 @@ const DEFAULT_TBANK_FORM: TBankForm = {
 const DEFAULT_ROSSKO_FORM: RosskoForm = {
   key1: "",
   key2: "",
-  profile: "",
   deliveryId: "",
   addressId: "",
   paymentId: "",
   requisiteId: "",
-  preferredStore: "",
   contactName: "",
   contactPhone: "",
+  contactComment: "",
   deliveryParts: true,
+  offerPriority: "optimal",
   timeoutMs: "20000",
   requestsPerSecond: "4",
 };
@@ -162,34 +136,7 @@ function safeMessage(value: unknown, fallback = "Нет данных") {
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) return "—";
-  return formatServiceDateTime(value);
-}
-
-function phaseLabel(value?: string | null) {
-  if (!value || value === "idle") return "ожидание";
-  if (value === "done") return "готово";
-  if (value === "error") return "ошибка";
-  if (value === "products") return "товары";
-  if (value === "stores") return "склады";
-  if (value === "counterparties") return "клиенты";
-  if (value === "stock") return "остатки";
-  if (value === "demands") return "отгрузки";
-  if (value === "fetching") return "загрузка";
-  if (value === "persisting") return "сохранение";
-  return value;
-}
-
-function toneForStatus(status?: { isRunning?: boolean; phase?: string | null; error?: string | null } | null) {
-  if (!status) return "neutral" as const;
-  if (status.isRunning) return "info" as const;
-  if (status.error || status.phase === "error") return "warning" as const;
-  if (status.phase === "done") return "success" as const;
-  return "neutral" as const;
-}
-
-function numberValue(value?: number | null) {
-  return Number.isFinite(value ?? NaN) ? String(value) : "0";
+  return value ? formatServiceDateTime(value) : "—";
 }
 
 function StatusRows({ rows }: { rows: Array<[string, string | number]> }) {
@@ -197,65 +144,43 @@ function StatusRows({ rows }: { rows: Array<[string, string | number]> }) {
     <div className="eco-action-list">
       {rows.map(([label, value]) => (
         <div key={label} className="eco-action-link" aria-disabled="true">
-          <span className="eco-action-icon">
-            <EcoStatusDot tone="neutral" />
-          </span>
-          <span>
-            <strong>{label}</strong>
-            <small>{value}</small>
-          </span>
+          <span className="eco-action-icon"><EcoStatusDot tone="neutral" /></span>
+          <span><strong>{label}</strong><small>{value}</small></span>
         </div>
       ))}
     </div>
   );
 }
 
-export default function IntegrationsClient() {
-  const [payload, setPayload] = useState<StatusPayload>({
-    inventory: null,
-    analytics: null,
-    inventoryError: null,
-    analyticsError: null,
-  });
+export default function IntegrationsClient({
+  branchName,
+  canEditSecrets,
+  organizationConfigured,
+  employeesConfigured,
+}: {
+  branchName: string;
+  canEditSecrets: boolean;
+  organizationConfigured: boolean;
+  employeesConfigured: boolean;
+}) {
   const [tbank, setTbank] = useState<TBankStatus | null>(null);
   const [tbankError, setTbankError] = useState<string | null>(null);
   const [tbankForm, setTbankForm] = useState<TBankForm>(DEFAULT_TBANK_FORM);
   const [rossko, setRossko] = useState<RosskoStatus | null>(null);
   const [rosskoError, setRosskoError] = useState<string | null>(null);
   const [rosskoForm, setRosskoForm] = useState<RosskoForm>(DEFAULT_ROSSKO_FORM);
+  const [rosskoCheckout, setRosskoCheckout] = useState<RosskoCheckoutOptions | null>(null);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState<"inventory" | "analytics" | "tbank-save" | "tbank-test" | "rossko-save" | "rossko-test" | "rossko-disconnect" | null>(null);
+  const [running, setRunning] = useState<"tbank-save" | "tbank-test" | "rossko-save" | "rossko-test" | "rossko-disconnect" | "rossko-markup" | null>(null);
+  const [rosskoMarkupRules, setRosskoMarkupRules] = useState<RosskoStatus["markupRules"]>([]);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
 
   async function loadStatus() {
     setLoading(true);
-    const [inventoryRes, analyticsRes, tbankRes, rosskoRes] = await Promise.allSettled([
-      fetch("/api/local-inventory/sync", { cache: "no-store" }),
-      fetch("/api/analytics/customers/sync-status", { cache: "no-store" }),
+    const [tbankRes, rosskoRes] = await Promise.allSettled([
       fetch("/api/integrations/tbank/status", { cache: "no-store" }),
       fetch("/api/integrations/rossko", { cache: "no-store" }),
     ]);
-
-    let inventory: InventoryStatus | null = null;
-    let analytics: AnalyticsStatus | null = null;
-    let inventoryError: string | null = null;
-    let analyticsError: string | null = null;
-
-    if (inventoryRes.status === "fulfilled") {
-      const data = await safeReadJson<{ status?: InventoryStatus; error?: string }>(inventoryRes.value);
-      inventory = data?.status ?? null;
-      if (!inventoryRes.value.ok || data?.error) inventoryError = safeMessage(data?.error, "Статус склада временно недоступен");
-    } else {
-      inventoryError = "Статус склада временно недоступен";
-    }
-
-    if (analyticsRes.status === "fulfilled") {
-      const data = await safeReadJson<{ sync?: AnalyticsStatus; error?: string }>(analyticsRes.value);
-      analytics = data?.sync ?? null;
-      if (!analyticsRes.value.ok || data?.error) analyticsError = safeMessage(data?.error, "Статус аналитики временно недоступен");
-    } else {
-      analyticsError = "Статус аналитики временно недоступен";
-    }
 
     if (tbankRes.status === "fulfilled") {
       const data = await safeReadJson<TBankStatus & { error?: string }>(tbankRes.value);
@@ -281,7 +206,6 @@ export default function IntegrationsClient() {
       setRosskoError("Статус ROSSKO временно недоступен");
     }
 
-    setPayload({ inventory, analytics, inventoryError, analyticsError });
     setLoading(false);
   }
 
@@ -311,88 +235,21 @@ export default function IntegrationsClient() {
     setRosskoForm({
       key1: "",
       key2: "",
-      profile: rossko.profile,
       deliveryId: rossko.deliveryId,
       addressId: rossko.addressId,
       paymentId: rossko.paymentId,
       requisiteId: rossko.requisiteId,
-      preferredStore: rossko.preferredStore,
       contactName: rossko.contactName,
       contactPhone: rossko.contactPhone,
+      contactComment: rossko.contactComment,
       deliveryParts: rossko.deliveryParts,
+      offerPriority: rossko.offerPriority,
       timeoutMs: rossko.timeoutMs,
       requestsPerSecond: rossko.requestsPerSecond,
     });
+    setRosskoMarkupRules(rossko.markupRules);
   }, [rossko]);
 
-  useEffect(() => {
-    if (!payload.inventory?.isRunning && !payload.analytics?.isRunning) return;
-    const timer = window.setInterval(() => void loadStatus(), 5000);
-    return () => window.clearInterval(timer);
-  }, [payload.inventory?.isRunning, payload.analytics?.isRunning]);
-
-  async function runInventorySync() {
-    setRunning("inventory");
-    setRunResult(null);
-    try {
-      const response = await fetch("/api/local-inventory/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          includeProducts: true,
-          includeStores: true,
-          includeStock: true,
-          includeCounterparties: true,
-          includeDemands: true,
-          wait: false,
-        }),
-      });
-      const data = await safeReadJson<{ started?: boolean; status?: InventoryStatus; error?: string }>(response);
-      setRunResult({
-        title: "Складской импорт",
-        message: data?.started ? "Ручной импорт запущен." : safeMessage(data?.error, "Ручной импорт не запущен."),
-        tone: data?.started ? "success" : "warning",
-      });
-      setPayload((current) => ({ ...current, inventory: data?.status ?? current.inventory }));
-      void loadStatus();
-    } catch {
-      setRunResult({
-        title: "Складской импорт",
-        message: "Ручной импорт не запущен. Проверьте конфигурацию интеграции.",
-        tone: "danger",
-      });
-    } finally {
-      setRunning(null);
-    }
-  }
-
-  async function runAnalyticsSync() {
-    setRunning("analytics");
-    setRunResult(null);
-    try {
-      const response = await fetch("/api/analytics/customers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ forceFull: false }),
-      });
-      const data = await safeReadJson<{ started?: boolean; sync?: AnalyticsStatus; error?: string }>(response);
-      setRunResult({
-        title: "Аналитика клиентов",
-        message: data?.started ? "Ручной импорт запущен." : safeMessage(data?.error, "Ручной импорт не запущен."),
-        tone: data?.started ? "success" : "warning",
-      });
-      setPayload((current) => ({ ...current, analytics: data?.sync ?? current.analytics }));
-      void loadStatus();
-    } catch {
-      setRunResult({
-        title: "Аналитика клиентов",
-        message: "Ручной импорт не запущен. Проверьте конфигурацию интеграции.",
-        tone: "danger",
-      });
-    } finally {
-      setRunning(null);
-    }
-  }
 
   function updateTBankForm<K extends keyof TBankForm>(key: K, value: TBankForm[K]) {
     setTbankForm((current) => ({ ...current, [key]: value }));
@@ -472,7 +329,32 @@ export default function IntegrationsClient() {
       const data = await safeReadJson<RosskoStatus & { error?: string }>(response);
       if (!response.ok || !data) throw new Error(safeMessage(data?.error, "Настройки ROSSKO не сохранены."));
       setRossko(data);
-      setRunResult({ title: "ROSSKO", message: disconnect ? "ROSSKO отключён только для текущего филиала." : "Настройки ROSSKO сохранены для текущего филиала.", tone: "success" });
+      if (disconnect) {
+        setRosskoCheckout(null);
+        setRunResult({ title: "ROSSKO", message: "ROSSKO отключён только для текущего филиала.", tone: "success" });
+        return;
+      }
+
+      const testResponse = await fetch("/api/integrations/rossko/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verifySearch: true }),
+      });
+      const test = await safeReadJson<{
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        integration?: RosskoStatus;
+        checkout?: RosskoCheckoutOptions;
+        search?: { query: string; offers: number; stocks: number; prices: number; deliveries: number };
+      }>(testResponse);
+      if (test?.integration) setRossko(test.integration);
+      if (test?.checkout) setRosskoCheckout(test.checkout);
+      if (!testResponse.ok || !test?.ok) throw new Error(safeMessage(test?.error, "Настройки сохранены, но поиск ROSSKO не прошёл проверку."));
+      const offerText = typeof test.search?.offers === "number"
+        ? ` Предложений: ${test.search.offers}; складов: ${test.search.stocks}; цен: ${test.search.prices}; сроков: ${test.search.deliveries}.`
+        : "";
+      setRunResult({ title: "ROSSKO", message: `${test.message || "Настройки сохранены и проверены."}${offerText}`, tone: "success" });
     } catch (error) {
       setRunResult({ title: "ROSSKO", message: error instanceof Error ? error.message : "Настройки ROSSKO не сохранены.", tone: "danger" });
     } finally {
@@ -480,15 +362,40 @@ export default function IntegrationsClient() {
     }
   }
 
-  async function testRosskoConnection() {
+  async function loadRosskoCheckout() {
     setRunning("rossko-test");
     setRunResult(null);
     try {
-      const response = await fetch("/api/integrations/rossko/test", { method: "POST" });
-      const data = await safeReadJson<{ ok?: boolean; message?: string; error?: string; integration?: RosskoStatus }>(response);
+      const key1 = rosskoForm.key1.trim();
+      const key2 = rosskoForm.key2.trim();
+      if ((key1 || key2) && (!key1 || !key2)) throw new Error("Введите оба ключа API ROSSKO.");
+      if (!key1 && !key2 && !rossko?.configured) throw new Error("Введите KEY1 и KEY2 API ROSSKO.");
+      const response = await fetch("/api/integrations/rossko/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(key1 ? { key1 } : {}), ...(key2 ? { key2 } : {}) }),
+      });
+      const data = await safeReadJson<{ ok?: boolean; message?: string; error?: string; integration?: RosskoStatus; checkout?: RosskoCheckoutOptions }>(response);
       if (data?.integration) setRossko(data.integration);
       if (!response.ok || !data?.ok) throw new Error(safeMessage(data?.error, "Не удалось проверить ROSSKO."));
-      setRunResult({ title: "ROSSKO", message: data.message || "ROSSKO подключён.", tone: "success" });
+      if (!data.checkout) throw new Error("ROSSKO не вернул настройки оформления заказа.");
+      setRosskoCheckout(data.checkout);
+      setRosskoForm((current) => ({
+        ...current,
+        deliveryId: data.checkout!.delivery.some((row) => row.id === current.deliveryId) ? current.deliveryId : "",
+        addressId: data.checkout!.address.some((row) => row.id === current.addressId) ? current.addressId : "",
+        paymentId: data.checkout!.payment.some((row) => row.id === current.paymentId) ? current.paymentId : "",
+        requisiteId: data.checkout!.company.some((row) => row.id === current.requisiteId)
+          ? current.requisiteId
+          : data.checkout!.company.length === 1
+            ? data.checkout!.company[0].id
+            : "",
+      }));
+      setRunResult({
+        title: "ROSSKO",
+        message: data.checkout.company.length ? (data.message || "Ключи проверены, настройки загружены.") : "Ключи проверены. В аккаунте ROSSKO не найдены реквизиты — добавьте их в личном кабинете или обратитесь к менеджеру ROSSKO.",
+        tone: data.checkout.company.length ? "success" : "warning",
+      });
     } catch (error) {
       setRunResult({ title: "ROSSKO", message: error instanceof Error ? error.message : "Не удалось проверить ROSSKO.", tone: "danger" });
     } finally {
@@ -496,10 +403,33 @@ export default function IntegrationsClient() {
     }
   }
 
-  const inventoryTone = toneForStatus(payload.inventory);
-  const analyticsTone = toneForStatus(payload.analytics);
+  async function saveRosskoMarkup() {
+    setRunning("rossko-markup");
+    setRunResult(null);
+    const response = await fetch("/api/integrations/rossko/markup", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules: rosskoMarkupRules }),
+    });
+    const data = await safeReadJson<RosskoStatus & { error?: string }>(response);
+    if (response.ok && data) {
+      setRossko(data);
+      setRunResult({ title: "ROSSKO", message: "Филиальные правила наценки сохранены.", tone: "success" });
+    } else {
+      setRunResult({ title: "ROSSKO", message: safeMessage(data?.error, "Правила наценки не сохранены."), tone: "danger" });
+    }
+    setRunning(null);
+  }
+
   const tbankTone = tbank?.connected ? "success" as const : tbank?.configured ? "warning" as const : "neutral" as const;
   const rosskoTone = rossko?.connected ? "success" as const : rossko?.configured ? "warning" as const : "neutral" as const;
+  const selectedRosskoAddress = rosskoCheckout?.address.find((row) => row.id === rosskoForm.addressId);
+  const rosskoDeliveries = selectedRosskoAddress?.deliveryIds.length
+    ? (rosskoCheckout?.delivery.filter((row) => selectedRosskoAddress.deliveryIds.includes(row.id)) ?? [])
+    : (rosskoCheckout?.delivery ?? []);
+  const rosskoAddresses = rosskoForm.deliveryId
+    ? (rosskoCheckout?.address.filter((row) => !row.deliveryIds.length || row.deliveryIds.includes(rosskoForm.deliveryId)) ?? [])
+    : (rosskoCheckout?.address ?? []);
 
   return (
     <main className="eco-page">
@@ -518,7 +448,7 @@ export default function IntegrationsClient() {
               управление подключениями
             </EcoBadge>
           </div>
-          <p className="eco-page-subtitle">Подключения сгруппированы по бизнес-задаче. Личный Telegram сотрудника настраивается только в личном меню.</p>
+          <p className="eco-page-subtitle">Рабочие подключения принадлежат выбранному филиалу. Новый филиал начинает без скопированных секретов и сессий.</p>
         </div>
         <div className="eco-page-actions">
           <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--ghost">
@@ -533,9 +463,9 @@ export default function IntegrationsClient() {
       </section>
 
       <div className="eco-grid eco-grid--kpi">
-        <EcoKpi label="Основной источник" value="Локальная БД" tone="success" sub="Пользовательские сценарии работают без внешнего API." />
-        <EcoKpi label="Write-интеграция" value="Отключена" tone="warning" sub="Автоматическая запись во внешний сервис не используется." />
-        <EcoKpi label="Ручная синхронизация" value="Admin/debug" tone="neutral" sub="Запуск возможен только через feature flags." />
+        <EcoKpi label="Источник настроек" value="PostgreSQL" tone="success" sub="Реквизиты разрешаются только по активному филиалу." />
+        <EcoKpi label="Секреты" value="Зашифрованы" tone="success" sub="Маски и реальные значения не возвращаются из API." />
+        <EcoKpi label="Изоляция" value={branchName} tone="neutral" sub="Подключения другого филиала недоступны." />
       </div>
 
       {runResult && (
@@ -552,6 +482,13 @@ export default function IntegrationsClient() {
         </EcoCard>
       )}
 
+      <OperationalIntegrationsPanel
+        branchName={branchName}
+        canEditSecrets={canEditSecrets}
+        organizationConfigured={organizationConfigured}
+        employeesConfigured={employeesConfigured}
+      />
+
       <section id="finance" className="eco-integration-group">
         <header><div><p className="eco-page-kicker">Финансы</p><h2>Банковские подключения</h2></div><span>T-Bank, счета и безопасные лимиты платежей.</span></header>
       <EcoCard className="eco-tbank-settings">
@@ -562,40 +499,125 @@ export default function IntegrationsClient() {
             <p>Ключи, условия доставки и наценка работают только в текущем филиале. Поиск ИИ выполняется в режиме чтения.</p>
           </div>
           <EcoBadge tone={rosskoTone} dot>
-            {rossko?.connected ? "подключено" : rossko?.configured ? "требует проверки" : "не настроено"}
+            {rossko?.connected ? "подключено" : rossko?.configured ? "настройка не завершена" : "не настроено"}
           </EcoBadge>
         </div>
 
         {rosskoError && <div className="eco-form-error eco-tbank-settings-error">{rosskoError}</div>}
 
-        <div className="eco-tbank-settings-grid">
-          <label><span>Профиль ROSSKO</span><EcoInput value={rosskoForm.profile} onChange={(event) => updateRosskoForm("profile", event.target.value)} placeholder="например основной кабинет" /></label>
-          <label><span>Предпочитаемый склад</span><EcoInput value={rosskoForm.preferredStore} onChange={(event) => updateRosskoForm("preferredStore", event.target.value)} placeholder="идентификатор или название" /></label>
-          <label><span>Key 1</span><EcoInput type="password" value={rosskoForm.key1} onChange={(event) => updateRosskoForm("key1", event.target.value)} placeholder={rossko?.key1Configured ? "сохранён: ••••••••" : "вставьте Key 1"} /></label>
-          <label><span>Key 2</span><EcoInput type="password" value={rosskoForm.key2} onChange={(event) => updateRosskoForm("key2", event.target.value)} placeholder={rossko?.key2Configured ? "сохранён: ••••••••" : "вставьте Key 2"} /></label>
-          <label><span>Способ доставки</span><EcoInput value={rosskoForm.deliveryId} onChange={(event) => updateRosskoForm("deliveryId", event.target.value)} placeholder="delivery_id" /></label>
-          <label><span>Адрес доставки</span><EcoInput value={rosskoForm.addressId} onChange={(event) => updateRosskoForm("addressId", event.target.value)} placeholder="address_id" /></label>
-          <label><span>Способ оплаты</span><EcoInput value={rosskoForm.paymentId} onChange={(event) => updateRosskoForm("paymentId", event.target.value)} placeholder="payment_id" /></label>
-          <label><span>Реквизиты</span><EcoInput value={rosskoForm.requisiteId} onChange={(event) => updateRosskoForm("requisiteId", event.target.value)} placeholder="requisite_id" /></label>
-          <label><span>Контакт доставки</span><EcoInput value={rosskoForm.contactName} onChange={(event) => updateRosskoForm("contactName", event.target.value)} placeholder="ФИО" /></label>
-          <label><span>Телефон доставки</span><EcoInput value={rosskoForm.contactPhone} onChange={(event) => updateRosskoForm("contactPhone", event.target.value)} placeholder="+7…" /></label>
+        <div className="eco-tbank-settings-grid eco-rossko-key-grid">
+          <label>
+            <span>KEY1</span>
+            <EcoInput type="password" autoComplete="off" disabled={!canEditSecrets} value={rosskoForm.key1} onChange={(event) => updateRosskoForm("key1", event.target.value)} placeholder={rossko?.key1Configured ? "сохранён: ••••••••" : "вставьте KEY1"} />
+          </label>
+          <label>
+            <span>KEY2</span>
+            <EcoInput type="password" autoComplete="off" disabled={!canEditSecrets} value={rosskoForm.key2} onChange={(event) => updateRosskoForm("key2", event.target.value)} placeholder={rossko?.key2Configured ? "сохранён: ••••••••" : "вставьте KEY2"} />
+          </label>
+          <p className="eco-rossko-form-hint eco-tbank-settings-wide">Введите API-ключи ROSSKO. Они находятся в личном кабинете ROSSKO в разделе API либо выдаются персональным менеджером.</p>
         </div>
 
-        <div className="eco-tbank-settings-flags">
-          <label className="eco-check-row"><input type="checkbox" checked={rosskoForm.deliveryParts} onChange={(event) => updateRosskoForm("deliveryParts", event.target.checked)} /><span>Разрешить частичную поставку</span></label>
+        <div className="eco-rossko-key-actions">
+          <EcoButton type="button" onClick={() => void loadRosskoCheckout()} disabled={running !== null}>
+            <ShieldCheck size={16} />
+            {running === "rossko-test" ? "Проверяем и загружаем..." : "Проверить ключи и загрузить настройки"}
+          </EcoButton>
         </div>
+
+        {rosskoCheckout ? (
+          <>
+            <div className="eco-rossko-step-head"><strong>Настройки оформления заказа</strong><span>Выберите значения, которые вернул ROSSKO для этого аккаунта.</span></div>
+            {rosskoCheckout.company.length === 0 && (
+              <div className="eco-form-error eco-tbank-settings-error">В аккаунте ROSSKO не найдены реквизиты. Добавьте организацию и реквизиты в личном кабинете ROSSKO либо обратитесь к менеджеру ROSSKO.</div>
+            )}
+            <div className="eco-tbank-settings-grid">
+              <label>
+                <span>Организация для оформления заказа</span>
+                <EcoSelect value={rosskoForm.requisiteId} onChange={(event) => updateRosskoForm("requisiteId", event.target.value)} disabled={rosskoCheckout.company.length === 0}>
+                  <option value="">{rosskoCheckout.company.length ? "Выберите реквизиты ROSSKO" : "Реквизиты не найдены"}</option>
+                  {rosskoCheckout.company.map((company) => <option key={company.id} value={company.id}>{company.requisite ? `${company.name} · ${company.requisite}` : company.name}</option>)}
+                </EcoSelect>
+                <small className="eco-rossko-form-hint">Ничего вводить вручную не нужно. Список загружается из реквизитов, заранее созданных в личном кабинете ROSSKO.</small>
+              </label>
+              <label>
+                <span>Способ доставки</span>
+                <EcoSelect
+                  value={rosskoForm.deliveryId}
+                  onChange={(event) => setRosskoForm((current) => {
+                    const deliveryId = event.target.value;
+                    const addressStillFits = !current.addressId || !rosskoCheckout.address.find((row) => row.id === current.addressId)?.deliveryIds.length || rosskoCheckout.address.find((row) => row.id === current.addressId)?.deliveryIds.includes(deliveryId);
+                    return { ...current, deliveryId, addressId: addressStillFits ? current.addressId : "" };
+                  })}
+                >
+                  <option value="">Выберите способ доставки</option>
+                  {rosskoDeliveries.map((delivery) => <option key={delivery.id} value={delivery.id}>{delivery.name}</option>)}
+                </EcoSelect>
+                <small className="eco-rossko-form-hint">Выберите один из вариантов, доступных для вашего аккаунта и адреса.</small>
+              </label>
+              <label>
+                <span>Адрес доставки</span>
+                <EcoSelect value={rosskoForm.addressId} onChange={(event) => updateRosskoForm("addressId", event.target.value)}>
+                  <option value="">{rosskoForm.deliveryId ? "Самовывоз или выберите адрес" : "Выберите адрес из ROSSKO"}</option>
+                  {rosskoAddresses.map((address) => <option key={address.id} value={address.id}>{address.label}</option>)}
+                </EcoSelect>
+                <small className="eco-rossko-form-hint">Выберите адрес из списка ROSSKO. Адреса добавляются и изменяются в личном кабинете ROSSKO.</small>
+              </label>
+              <label>
+                <span>Способ оплаты</span>
+                <EcoSelect value={rosskoForm.paymentId} onChange={(event) => updateRosskoForm("paymentId", event.target.value)}>
+                  <option value="">Выберите способ оплаты</option>
+                  {rosskoCheckout.payment.map((payment) => <option key={payment.id} value={payment.id}>{payment.name}</option>)}
+                </EcoSelect>
+                <small className="eco-rossko-form-hint">Выберите вариант, который ROSSKO вернул для вашего аккаунта.</small>
+              </label>
+            </div>
+
+            <div className="eco-rossko-step-head"><strong>Контакт и поиск предложений</strong><span>Контакт передаётся при оформлении; склад берётся только из выбранного предложения GetSearch.</span></div>
+            <div className="eco-tbank-settings-grid">
+              <label><span>ФИО</span><EcoInput value={rosskoForm.contactName} onChange={(event) => updateRosskoForm("contactName", event.target.value)} placeholder="ФИО покупателя" /></label>
+              <label><span>Телефон</span><EcoInput value={rosskoForm.contactPhone} onChange={(event) => updateRosskoForm("contactPhone", event.target.value)} placeholder="+7…" /></label>
+              <label className="eco-tbank-settings-wide"><span>Комментарий к заказу</span><textarea className="eco-input" value={rosskoForm.contactComment} onChange={(event) => updateRosskoForm("contactComment", event.target.value)} placeholder="Необязательно; увидит оператор ROSSKO" maxLength={200} /></label>
+              <label>
+                <span>Приоритет предложения</span>
+                <EcoSelect value={rosskoForm.offerPriority} onChange={(event) => updateRosskoForm("offerPriority", event.target.value as RosskoForm["offerPriority"])}>
+                  <option value="optimal">Оптимальное предложение</option>
+                  <option value="fastest">Минимальный срок</option>
+                  <option value="lowest_price">Минимальная цена</option>
+                  <option value="local_stock">Локальный склад</option>
+                </EcoSelect>
+              </label>
+            </div>
+            <div className="eco-tbank-settings-flags">
+              <label className="eco-check-row"><input type="checkbox" checked={rosskoForm.deliveryParts} onChange={(event) => updateRosskoForm("deliveryParts", event.target.checked)} /><span>Разрешить частичную поставку</span></label>
+            </div>
+            <div className="eco-rossko-step-head"><strong>Филиальные правила наценки</strong><span>Используются существующим движком расчёта ROSSKO в ИИ‑помощнике; закупочная цена остаётся внутренней.</span></div>
+            <div className="eco-tbank-settings-grid">
+              {rosskoMarkupRules.map((rule, index) => (
+                <label key={`${rule.fromCents}-${index}`}>
+                  <span>{rule.toCents == null ? `От ${Math.round(rule.fromCents / 100).toLocaleString("ru-RU")} ₽` : `${Math.round(rule.fromCents / 100).toLocaleString("ru-RU")}–${Math.round(rule.toCents / 100).toLocaleString("ru-RU")} ₽`}</span>
+                  <EcoInput type="number" min={0} max={300} value={rule.marginPercent} onChange={(event) => setRosskoMarkupRules((current) => current.map((item, currentIndex) => currentIndex === index ? { ...item, marginPercent: Math.max(0, Math.min(300, Number(event.target.value) || 0)) } : item))} />
+                  <small className="eco-rossko-form-hint">Наценка, %</small>
+                </label>
+              ))}
+            </div>
+            <div className="eco-form-actions"><EcoButton type="button" variant="secondary" onClick={() => void saveRosskoMarkup()} disabled={running !== null || !rosskoMarkupRules.length}>{running === "rossko-markup" ? "Сохраняем наценки…" : "Сохранить наценки"}</EcoButton></div>
+          </>
+        ) : (
+          <p className="eco-rossko-awaiting">Сначала проверьте ключи: после этого ROSSKO загрузит доступные реквизиты, доставку, адреса и способы оплаты.</p>
+        )}
 
         <StatusRows rows={[
           ["Ключи", rossko?.key1Configured && rossko?.key2Configured ? "оба ключа сохранены в зашифрованном виде" : "нужны Key 1 и Key 2"],
           ["Последняя проверка", formatDateTime(rossko?.lastCheckedAt)],
+          ["Последний успех", formatDateTime(rossko?.lastSuccessAt)],
+          ["Последняя ошибка", rossko?.lastErrorAt ? `${formatDateTime(rossko.lastErrorAt)} · ${rossko.lastErrorMessage ?? "ошибка проверки"}` : "—"],
           ["Результат проверки", rossko?.lastCheckStatus === "ok" ? "авторизация подтверждена" : rossko?.lastCheckStatus === "error" ? "нужна проверка ключей или доступности" : "проверка ещё не выполнялась"],
-          ["Наценка", "используются правила ИИ-помощника текущего филиала"],
+          ["Выбор предложения", "склад (stock) берётся из выбранного предложения GetSearch"],
         ]} />
 
         <div className="eco-form-actions">
-          <EcoButton type="button" variant="primary" onClick={() => void saveRosskoSettings()} disabled={running !== null}><Building2 size={16} />{running === "rossko-save" ? "Сохраняем..." : "Сохранить ROSSKO"}</EcoButton>
-          <EcoButton type="button" onClick={() => void testRosskoConnection()} disabled={running !== null || !rossko?.configured}><ShieldCheck size={16} />{running === "rossko-test" ? "Проверяем..." : "Проверить подключение"}</EcoButton>
-          {rossko?.configured && <EcoButton type="button" variant="secondary" onClick={() => void saveRosskoSettings(true)} disabled={running !== null}>{running === "rossko-disconnect" ? "Отключаем..." : "Отключить филиал"}</EcoButton>}
+          <EcoButton type="button" variant="primary" onClick={() => void saveRosskoSettings()} disabled={running !== null || !rosskoCheckout}><Building2 size={16} />{running === "rossko-save" ? "Сохраняем и проверяем..." : "Сохранить и проверить поиск"}</EcoButton>
+          {canEditSecrets && rossko?.configured && <EcoButton type="button" variant="secondary" onClick={() => void saveRosskoSettings(true)} disabled={running !== null}>{running === "rossko-disconnect" ? "Отключаем..." : "Отключить филиал"}</EcoButton>}
         </div>
       </EcoCard>
 
@@ -697,110 +719,6 @@ export default function IntegrationsClient() {
       </EcoCard>
       </section>
 
-      <section id="inventory" className="eco-integration-group">
-        <header><div><p className="eco-page-kicker">Учёт и склад</p><h2>МойСклад и синхронизации</h2></div><span>Складские данные и аналитика клиентов в одном подключении.</span></header>
-      <div className="eco-cabinet-grid">
-        <EcoCard>
-          <div className="eco-card__head">
-            <div>
-              <div className="eco-page-kicker">МойСклад</div>
-              <h2 className="eco-stock-doc-title">Склад и документы</h2>
-            </div>
-            <EcoBadge tone={inventoryTone} dot>
-              {payload.inventory?.isRunning ? "выполняется" : phaseLabel(payload.inventory?.phase)}
-            </EcoBadge>
-          </div>
-
-          <StatusRows
-            rows={[
-              ["Последний старт", formatDateTime(payload.inventory?.startedAt)],
-              ["Последнее завершение", formatDateTime(payload.inventory?.finishedAt)],
-              ["Сообщение", safeMessage(payload.inventory?.error ?? payload.inventoryError ?? payload.inventory?.message, "Ожидание ручного запуска")],
-              ["Товары", numberValue(payload.inventory?.productsSynced)],
-              ["Услуги", numberValue(payload.inventory?.servicesSynced)],
-              ["Клиенты", numberValue(payload.inventory?.counterpartiesSynced)],
-              ["Склады", numberValue(payload.inventory?.storesSynced)],
-              ["Остатки", numberValue(payload.inventory?.stockRowsSynced)],
-              ["Отгрузки", numberValue(payload.inventory?.demandsSynced)],
-            ]}
-          />
-
-          <div className="eco-form-actions">
-            <EcoButton
-              type="button"
-              variant="secondary"
-              onClick={() => void runInventorySync()}
-              disabled={running !== null || payload.inventory?.isRunning}
-            >
-              <Database size={16} />
-              {running === "inventory" || payload.inventory?.isRunning ? "Выполняется..." : "Ручной импорт склада"}
-            </EcoButton>
-          </div>
-        </EcoCard>
-
-        <EcoCard>
-          <div className="eco-card__head">
-            <div>
-              <div className="eco-page-kicker">МойСклад</div>
-              <h2 className="eco-stock-doc-title">Аналитика клиентов</h2>
-            </div>
-            <EcoBadge tone={analyticsTone} dot>
-              {payload.analytics?.isRunning ? "выполняется" : phaseLabel(payload.analytics?.phase)}
-            </EcoBadge>
-          </div>
-
-          <StatusRows
-            rows={[
-              ["Последний старт", formatDateTime(payload.analytics?.startedAt)],
-              ["Последнее завершение", formatDateTime(payload.analytics?.finishedAt)],
-              ["Сообщение", safeMessage(payload.analytics?.error ?? payload.analyticsError ?? payload.analytics?.message, "Ожидание ручного запуска")],
-              ["Сканировано", numberValue(payload.analytics?.scannedDemands)],
-              ["Обработано", numberValue(payload.analytics?.processedDemands)],
-              ["Импортировано", numberValue(payload.analytics?.demandsSynced)],
-              ["Всего документов", numberValue(payload.analytics?.totalDemands)],
-              ["Последний документ", safeMessage(payload.analytics?.lastDemandName, "—")],
-            ]}
-          />
-
-          <div className="eco-form-actions">
-            <EcoButton
-              type="button"
-              variant="secondary"
-              onClick={() => void runAnalyticsSync()}
-              disabled={running !== null || payload.analytics?.isRunning}
-            >
-              <Activity size={16} />
-              {running === "analytics" || payload.analytics?.isRunning ? "Выполняется..." : "Ручной импорт аналитики"}
-            </EcoButton>
-          </div>
-        </EcoCard>
-      </div>
-      </section>
-
-      <section id="system" className="eco-integration-group">
-        <header><div><p className="eco-page-kicker">Система</p><h2>Техническая диагностика</h2></div><span>Служебные статусы для владельца платформы.</span></header>
-      <EcoCard>
-        <div className="eco-card__head--plain">
-          <div>
-            <div className="eco-page-kicker">Режим отключения</div>
-            <h2>Флаги внешней интеграции</h2>
-            <p>
-              Для штатной работы держите внешнее чтение, запись и автоматическую синхронизацию выключенными. Ручной запуск
-              используется только как контролируемый служебный сценарий.
-            </p>
-          </div>
-          <ShieldCheck size={22} />
-        </div>
-        <StatusRows
-          rows={[
-            ["MOYSKLAD_ENABLED", "false в основном окружении"],
-            ["MOYSKLAD_READ_ENABLED", "false для пользовательских страниц"],
-            ["MOYSKLAD_WRITE_ENABLED", "false: документы создаются локально"],
-            ["MOYSKLAD_SYNC_ENABLED", "false, кроме ручного admin/debug окна"],
-          ]}
-        />
-      </EcoCard>
-      </section>
     </main>
   );
 }

@@ -313,8 +313,8 @@ type VinLookupResult = {
     };
   } | null;
   openaiError?: string;
-  moySkladItems: VinLookupItem[];
-  moySkladError?: string;
+  legacyItems: VinLookupItem[];
+  legacyError?: string;
 };
 
 const FILTER_SECTION_META = {
@@ -1286,7 +1286,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const loadOrganizations = useCallback(async () => {
     setLoadingOrgs(true);
     try {
-      const res = await fetch("/api/moysklad/organizations");
+      const res = await fetch("/api/local-inventory/organizations");
       if (res.status === 401) {
         router.push("/login?from=/shipment/new");
         return;
@@ -1317,7 +1317,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setLoadingStores(true);
     try {
       const params = selectedOrg?.id ? `?organizationId=${encodeURIComponent(selectedOrg.id)}` : "";
-      const res = await fetch(`/api/moysklad/stores${params}`);
+      const res = await fetch(`/api/local-inventory/store-options${params}`);
       if (res.status === 401) {
         router.push("/login?from=/shipment/new");
         return;
@@ -1569,7 +1569,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       return;
     }
     let cancelled = false;
-    fetch(`/api/moysklad/product-cells?hrefs=${encodeURIComponent(positionAssortmentHrefs.join(","))}`)
+    fetch(`/api/local-inventory/product-cells?hrefs=${encodeURIComponent(positionAssortmentHrefs.join(","))}`)
       .then((r) => safeJson<Record<string, number | string>>(r, {}))
       .then((data) => {
         if (!cancelled && typeof data === "object" && data !== null) setCellByAssortment(data as Record<string, number | string>);
@@ -1600,7 +1600,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setAgentLoading(true);
     setAgentSearchError(null);
     const t = setTimeout(() => {
-      fetch(`/api/moysklad/counterparties?search=${encodeURIComponent(query)}&limit=20`)
+      fetch(`/api/local-inventory/counterparty-options?search=${encodeURIComponent(query)}&limit=20`)
         .then(async (r) => {
           const data = await safeJson<CounterpartiesJson>(r, {});
           if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить контрагентов");
@@ -1631,7 +1631,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     if (!authChecked || selectedAgent || !shouldSearchCounterparties(query)) return;
     setAgentLoading(true);
     setAgentSearchError(null);
-    fetch(`/api/moysklad/counterparties?search=${encodeURIComponent(query)}&limit=20`)
+    fetch(`/api/local-inventory/counterparty-options?search=${encodeURIComponent(query)}&limit=20`)
       .then(async (r) => {
         const data = await safeJson<CounterpartiesJson>(r, {});
         if (!r.ok) throw new Error(data.error ?? "Не удалось загрузить контрагентов");
@@ -2070,7 +2070,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setCreateAgentError(null);
     setCreateAgentLoading(true);
     try {
-      const res = await fetch("/api/moysklad/counterparties", {
+      const res = await fetch("/api/local-inventory/counterparty-options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2378,7 +2378,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       const data = await safeJson<VinLookupResult>(res, {
         vin: vinClean,
         decoded: null,
-        moySkladItems: [],
+        legacyItems: [],
         decodeError: "Пустой ответ подбора",
       });
       setVinLookupResult(data as VinLookupResult);
@@ -2423,7 +2423,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setVinLookupResult({
         vin: vinClean,
         decoded: null,
-        moySkladItems: [],
+        legacyItems: [],
         decodeError: "Ошибка запроса",
       });
     } finally {
@@ -2844,7 +2844,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            moyskladDemandId: nextId,
+            shipmentId: nextId,
             nextAction: applicable ? "Закрыть вопрос после визита" : "Подготовить документ к визиту",
           }),
         }).catch(() => undefined);
@@ -4775,9 +4775,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     {vinLookupResult.decoded.displacementL ? ` · ${vinLookupResult.decoded.displacementL} л` : ""}
                   </p>
                 )}
-                {vinLookupResult.moySkladItems.length > 0 ? (
+                {vinLookupResult.legacyItems.length > 0 ? (
                   <div className="eco-shipment-vin-offer-list">
-                    {vinLookupResult.moySkladItems.map((item, idx) => (
+                    {vinLookupResult.legacyItems.map((item, idx) => (
                       <div key={item.productId ?? `${item.name}-${idx}`} className="eco-shipment-vin-offer-row">
                         <span className="eco-shipment-vin-kind">{getVinLookupItemTypeLabel(item)}</span>
                         <div>

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const replacementsCount = await prisma.moySkladDemandSync.count({
+    const replacementsCount = await prisma.localDemand.count({
       where: { applicable: true },
     });
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       request,
       {
         replacementsCount: Math.max(replacementsCount, FALLBACK_REPLACEMENTS_COUNT),
-        source: "moysklad_demand_sync",
+        source: "local_demand",
         updatedAt: new Date().toISOString(),
       },
       {

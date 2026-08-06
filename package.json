@@ -11,6 +11,7 @@
     "start": "next start --hostname 0.0.0.0 --port ${PORT:-3000}",
     "lint": "eslint",
     "test:lookup": "node scripts/test-lookup.mjs",
+    "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",
@@ -20,6 +21,8 @@
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",
     "test:ai-answer-formatting": "node scripts/test-ai-answer-formatting.mjs",
     "test:ai-tool-loop-policy": "node scripts/test-ai-tool-loop-policy.mjs",
+    "test:ai-assistant-branch-context": "node scripts/test-ai-assistant-branch-context.mjs",
+    "test:branch-operational-integrations": "node scripts/test-branch-operational-integrations.mjs",
     "check:timeweb-only": "node scripts/check-timeweb-only.mjs",
     "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs",
     "test:branch-security-db": "node scripts/test-branch-security-db.mjs",
@@ -37,9 +40,8 @@
     "db:push": "prisma db push",
     "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
-    "import:moysklad": "node scripts/import-from-moysklad.mjs",
-    "sync:moysklad:last-days": "node scripts/sync-moysklad-last-days.mjs",
-    "moysklad:token": "node scripts/refresh-moysklad-token.mjs",
+    "check:moysklad-removed": "node scripts/check-moysklad-removed.mjs",
+    "migrate:branch-integrations-from-env": "node scripts/migrate-branch-integrations-from-env.mjs",
     "worker:messenger-media": "node scripts/messenger-media-worker.mjs"
   },
   "dependencies": {

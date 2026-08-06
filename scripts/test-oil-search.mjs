@@ -18,7 +18,7 @@ if (sae) params.set("sae", sae);
 const url = `${BASE}/api/oil-search?${params.toString()}`;
 
 async function main() {
-  console.log("Тест поиска масел по допуску (только МойСклад)");
+  console.log("Тест поиска масел по допуску в локальном каталоге");
   console.log("  approval:", approval);
   console.log("  sae:", sae);
   console.log("  URL:", url);

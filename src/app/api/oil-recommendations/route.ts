@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import {
   getCachedRequirements,
   setCachedRequirements,
-  fetchOilProductsFromMoySklad,
+  fetchOilProductsFromLocalCatalog,
   getOilRequirementsFromOpenAI,
   scoreAndMatch,
 } from "@/lib/oil-recommendations";
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const oils = await fetchOilProductsFromMoySklad(200);
+    const oils = await fetchOilProductsFromLocalCatalog(200);
     const { recommended, alternatives } = scoreAndMatch(requirements, oils, 10);
 
     const warning =

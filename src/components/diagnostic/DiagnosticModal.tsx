@@ -77,7 +77,7 @@ type DiagnosticRow = {
   summaryGreen: number;
   summaryYellow: number;
   summaryRed: number;
-  shipmentMoySkladId: string | null;
+  shipmentDraftId: string | null;
   positions: (DiagnosticPosition & { photos: DiagnosticPhoto[] })[];
   offers: DiagnosticOffer[];
 };
@@ -382,7 +382,7 @@ export type DiagnosticModalProps = {
   open: boolean;
   onClose: () => void;
   diagnosticId: string | null;
-  shipmentMoySkladId: string | null;
+  shipmentDraftId: string | null;
   /** Шапка из отгрузки */
   headerDraft: {
     vin: string;
@@ -391,7 +391,7 @@ export type DiagnosticModalProps = {
     year: string;
     licensePlate: string;
     mileage: string;
-    agentMoySkladId: string | null;
+    counterpartyId: string | null;
   };
   onDiagnosticCreated?: (id: string) => void;
   onAddedToShipment?: () => void;
@@ -401,7 +401,7 @@ export function DiagnosticModal({
   open,
   onClose,
   diagnosticId,
-  shipmentMoySkladId,
+  shipmentDraftId,
   headerDraft,
   onAddedToShipment,
 }: DiagnosticModalProps) {
@@ -984,7 +984,7 @@ export function DiagnosticModal({
     selections: { offerId: string; variantIndex: number }[],
     options?: { successMessage?: string }
   ): Promise<boolean> => {
-    if (!activeId || !shipmentMoySkladId) {
+    if (!activeId || !shipmentDraftId) {
       setToast("Нет привязанной отгрузки");
       return false;
     }

@@ -271,10 +271,10 @@ function validateOrganizationData(data: ReturnType<typeof normalizeOrganizationI
 async function linkedCounts(id: string) {
   const demandRefs = await prisma.localDemand.findMany({
     where: { organizationId: id },
-    select: { id: true, moyskladId: true },
+    select: { id: true },
   });
   const demandIds = demandRefs.map((demand) => demand.id);
-  const demandExternalIds = [...new Set(demandRefs.flatMap((demand) => [demand.id, demand.moyskladId].filter((value): value is string => Boolean(value))))];
+  const demandExternalIds = demandIds;
   const [
     stores,
     members,
@@ -300,12 +300,12 @@ async function linkedCounts(id: string) {
           where: {
             OR: [
               { shipmentDraftId: { in: demandIds } },
-              { shipmentMoySkladId: { in: demandExternalIds } },
+              { shipmentDraftId: { in: demandExternalIds } },
             ],
           },
         })
       : 0,
-    demandExternalIds.length > 0 ? prisma.crmDeal.count({ where: { moyskladDemandId: { in: demandExternalIds } } }) : 0,
+    demandExternalIds.length > 0 ? prisma.crmDeal.count({ where: { shipmentId: { in: demandExternalIds } } }) : 0,
   ]);
   return { stores, members, demands, closingDocuments, cashExpenseOrders, inventoryDocuments, stockProducts, diagnosticMaps, diagnostics, crmDeals };
 }

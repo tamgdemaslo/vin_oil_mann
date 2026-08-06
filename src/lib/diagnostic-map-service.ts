@@ -273,11 +273,11 @@ async function resolveDemandIds(shipmentId: string | null | undefined): Promise<
   if (!raw) return [];
   const demand = await prisma.localDemand.findFirst({
     where: {
-      OR: [{ id: raw }, { moyskladId: raw }, { name: raw }],
+      OR: [{ id: raw }, { name: raw }],
     },
-    select: { id: true, moyskladId: true, name: true },
+    select: { id: true, name: true },
   });
-  return [...new Set([raw, demand?.id, demand?.moyskladId, demand?.name].filter(Boolean) as string[])];
+  return [...new Set([raw, demand?.id, demand?.name].filter(Boolean) as string[])];
 }
 
 async function resolvePrimaryDemandId(shipmentId: string | null | undefined): Promise<string | null> {
@@ -285,7 +285,7 @@ async function resolvePrimaryDemandId(shipmentId: string | null | undefined): Pr
   if (!raw) return null;
   const demand = await prisma.localDemand.findFirst({
     where: {
-      OR: [{ id: raw }, { moyskladId: raw }, { name: raw }],
+      OR: [{ id: raw }, { name: raw }],
     },
     select: { id: true },
   });

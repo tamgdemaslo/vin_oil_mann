@@ -9,9 +9,7 @@ export async function POST(request: NextRequest) {
   if (!gate.ok) return gate.response;
 
   let body: {
-    shipmentMoySkladId?: string | null;
     shipmentDraftId?: string | null;
-    agentMoySkladId?: string | null;
     vin?: string | null;
     brand?: string | null;
     model?: string | null;
@@ -28,9 +26,7 @@ export async function POST(request: NextRequest) {
 
   const diagnostic = await prisma.diagnostic.create({
     data: {
-      shipmentMoySkladId: body.shipmentMoySkladId?.trim() || null,
       shipmentDraftId: body.shipmentDraftId?.trim() || null,
-      agentMoySkladId: body.agentMoySkladId?.trim() || null,
       vin: body.vin?.trim() || null,
       brand: body.brand?.trim() || null,
       model: body.model?.trim() || null,

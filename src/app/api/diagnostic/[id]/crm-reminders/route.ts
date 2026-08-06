@@ -91,13 +91,10 @@ export async function POST(
 
   if (!stage) return NextResponse.json({ error: "Не найдены стадии CRM" }, { status: 500 });
 
-  const counterparty = diagnostic.agentMoySkladId
-    ? await prisma.localCounterparty.findFirst({
-        where: {
-          OR: [{ id: diagnostic.agentMoySkladId }, { moyskladId: diagnostic.agentMoySkladId }],
-        },
-      })
+  const linkedDemand = diagnostic.shipmentDraftId
+    ? await prisma.localDemand.findUnique({ where: { id: diagnostic.shipmentDraftId }, include: { counterparty: true } })
     : null;
+  const counterparty = linkedDemand?.counterparty ?? null;
 
   const deadline = addDays(new Date(), dueDays);
   const created: { id: string; positionId: string }[] = [];
@@ -144,10 +141,7 @@ export async function POST(
         nextAction: "Связаться и предложить запись на следующий визит",
         stageId: stage.id,
         responsibleLogin: gate.session.user.login,
-        moyskladCounterpartyId: counterparty?.moyskladId ?? counterparty?.id ?? null,
-        moyskladCounterpartyName: counterparty?.name ?? null,
-        moyskladCounterpartyHref: counterparty?.moyskladHref ?? (counterparty ? `local://counterparty/${counterparty.id}` : null),
-        moyskladDemandId: diagnostic.shipmentMoySkladId,
+        shipmentId: diagnostic.shipmentDraftId,
         diagnosticId: diagnostic.id,
         caseStatus: "calculation_needed",
         caseType: "diagnostic",

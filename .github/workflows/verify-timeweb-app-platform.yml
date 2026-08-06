@@ -18,6 +18,21 @@ env:
   NODE_VERSION: "20"
 
 jobs:
+  migration-approval:
+    name: migration_approval_required
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require verified Timeweb backup and separate migration approval
+        env:
+          TIMEWEB_BRANCH_INTEGRATION_MIGRATION_APPROVAL: ${{ vars.TIMEWEB_BRANCH_INTEGRATION_MIGRATION_APPROVAL }}
+        run: |
+          set -euo pipefail
+          if [ "${TIMEWEB_BRANCH_INTEGRATION_MIGRATION_APPROVAL:-}" != "approved-with-verified-timeweb-backup" ]; then
+            echo "status=migration_approval_required"
+            echo "Set the repository variable only after the Timeweb PostgreSQL backup has been created, checksum-verified and separately approved."
+            exit 1
+          fi
+
   verify:
     name: Verify committed source
     runs-on: ubuntu-latest
@@ -51,6 +66,15 @@ jobs:
 
       - name: Verify AI tool policy
         run: npm run test:ai-tool-loop-policy
+
+      - name: Verify branch operational integrations
+        run: npm run test:branch-operational-integrations
+
+      - name: Verify branch isolation
+        run: npm run test:branch-isolation
+
+      - name: Verify ROSSKO branch consumers
+        run: npm run test:ai-assistant-branch-context && npm run test:rossko-api
 
       - name: TypeScript check
         run: npx tsc --noEmit

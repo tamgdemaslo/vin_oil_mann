@@ -3,13 +3,14 @@
  * Read-only audit for marked motor oil sold by volume.
  *
  * The script reads local shipment/product data and AQSI receipts/orders for one
- * date. It intentionally does not mutate local DB, MoySklad, AQSI, OFD or GIS MT.
+ * date. It intentionally does not mutate the local DB, AQSI, OFD or GIS MT.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
+import { createJiti } from "jiti";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -22,7 +23,9 @@ const PROBLEM_NAMES = ["Bardahl XTS 5W-30", "Bardahl XTS 5W-40"];
 const args = process.argv.slice(2);
 const COMPACT_OUTPUT = args.includes("--compact");
 const BRIEF_OUTPUT = args.includes("--brief");
+const TARGET_BRANCH_NAME = args.find((arg) => arg.startsWith("--branch="))?.slice("--branch=".length).trim() || "Дачная 6В";
 const TARGET_DATE = args.find((arg) => !arg.startsWith("--")) || localDateString(new Date());
+const jiti = createJiti(import.meta.url, { alias: { "@": path.join(root, "src") } });
 
 function loadEnvFile(file) {
   const fullPath = path.join(root, file);
@@ -235,13 +238,11 @@ async function aqsiFetchJson(url, apiKey, init = {}) {
   }
 }
 
-async function loadAqsiForDate(dateString) {
-  const apiKey = process.env.AQSI_API_KEY?.trim();
-  if (!apiKey) return { enabled: false, error: "AQSI_API_KEY is not configured" };
-
-  const baseUrl = process.env.AQSI_BASE_URL?.trim() || "https://api.aqsi.ru/pub";
-  const receiptsPath = process.env.AQSI_ORDERS_PATH?.trim() || "/v2/Receipts";
-  const pendingPath = process.env.AQSI_PENDING_ORDER_PATH?.trim() || "/v2/Orders/simple";
+async function loadAqsiForDate(dateString, config) {
+  const apiKey = config.apiKey;
+  const baseUrl = config.baseUrl;
+  const receiptsPath = config.ordersPath;
+  const pendingPath = config.pendingOrderPath;
   const paths = [
     { type: "receipts", path: receiptsPath, dateParams: true },
     { type: "pendingOrders", path: pendingPath, dateParams: false },
@@ -374,7 +375,6 @@ function productSummary(product) {
       : null;
   return {
     id: product.id,
-    moyskladId: product.moyskladId,
     name: product.name,
     article: product.article,
     code: product.code,
@@ -410,7 +410,6 @@ function compactProduct(product) {
   if (!product) return null;
   return {
     id: product.id,
-    moyskladId: product.moyskladId,
     name: product.name,
     code: product.code,
     article: product.article,
@@ -494,7 +493,6 @@ function compactReport(report) {
     problemProducts,
     todayTargetDemands: report.todayTargetDemands.map((demand) => ({
       id: demand.id,
-      moyskladId: demand.moyskladId,
       number: demand.number,
       momentAt: demand.momentAt,
       documentDate: demand.documentDate,
@@ -634,9 +632,30 @@ function briefReport(report, aqsi) {
 async function main() {
   const prisma = new PrismaClient();
   const yesterday = previousDateString(TARGET_DATE);
+  const branches = await prisma.branch.findMany({
+    where: { status: "active", OR: [{ name: TARGET_BRANCH_NAME }, { shortName: TARGET_BRANCH_NAME }] },
+    select: { id: true, name: true, businessGroupId: true, legacyOrganizationId: true },
+  });
+  if (branches.length !== 1) throw new Error(`Ожидался ровно один активный филиал «${TARGET_BRANCH_NAME}»`);
+  const branch = branches[0];
+  const tenant = {
+    mode: "branch",
+    branchId: branch.id,
+    organizationId: branch.legacyOrganizationId ?? branch.id,
+    allowedBranchIds: [branch.id],
+    businessGroupId: branch.businessGroupId,
+    userId: "system:marked-bulk-oil-audit",
+    permissions: ["system_audit"],
+  };
+  const [tenantStore, aqsiIntegration] = await Promise.all([
+    jiti.import("../src/lib/request-tenant-store.ts"),
+    jiti.import("../src/lib/aqsi-integration.ts"),
+  ]);
+  const aqsiConfig = await tenantStore.runWithRequestTenant(tenant, () => aqsiIntegration.resolveAqsiCashRegister());
 
   const problemProducts = await prisma.localProduct.findMany({
     where: {
+      branchId: branch.id,
       OR: [
         ...PROBLEM_NAMES.map((name) => ({ name: { contains: name, mode: "insensitive" } })),
         { name: { contains: "Bardahl", mode: "insensitive" } },
@@ -655,6 +674,7 @@ async function main() {
 
   const likelyBulkProducts = await prisma.localProduct.findMany({
     where: {
+      branchId: branch.id,
       OR: [
         { name: { contains: "розлив", mode: "insensitive" } },
         { name: { contains: "разлив", mode: "insensitive" } },
@@ -671,6 +691,7 @@ async function main() {
 
   const todayDemands = await prisma.localDemand.findMany({
     where: {
+      branchId: branch.id,
       documentDate: TARGET_DATE,
       applicable: true,
     },
@@ -708,6 +729,7 @@ async function main() {
 
   const oldBulkSales = await prisma.localDemandPosition.findMany({
     where: {
+      branchId: branch.id,
       demand: {
         documentDate: { lt: TARGET_DATE },
         applicable: true,
@@ -729,10 +751,11 @@ async function main() {
     take: 80,
   });
 
-  const aqsi = await loadAqsiForDate(TARGET_DATE);
+  const aqsi = await loadAqsiForDate(TARGET_DATE, aqsiConfig);
 
   const report = {
     generatedAt: new Date().toISOString(),
+    branch: { id: branch.id, name: branch.name },
     targetDate: TARGET_DATE,
     scope: {
       todayApplicableDemandCount: todayDemands.length,
@@ -750,7 +773,6 @@ async function main() {
       const aqsiMatches = findAqsiMatches(aqsi, demand, positionNames);
       return {
         id: demand.id,
-        moyskladId: demand.moyskladId,
         number: demand.name,
         momentAt: demand.momentAt,
         documentDate: demand.documentDate,

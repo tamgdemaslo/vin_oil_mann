@@ -50,7 +50,7 @@ export async function GET(
       vatEnabled: false,
       assortmentMeta: position.product
         ? {
-            href: position.product.moyskladHref ?? `local://${position.product.entityType}/${position.product.id}`,
+            href: `local://${position.product.entityType}/${position.product.id}`,
             type: position.product.entityType,
             mediaType: "application/json",
           }

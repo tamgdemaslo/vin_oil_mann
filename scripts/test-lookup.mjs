@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Тест подбора по VIN (POST /api/lookup): Parts Catalogs + OpenAI допуск/объём + поиск в МойСклад.
+ * Тест подбора по VIN (POST /api/lookup): Parts Catalogs + OpenAI допуск/объём + локальный каталог.
  * Запуск: сначала npm run dev, затем в другом терминале:
  *   node scripts/test-lookup.mjs [VIN]
  *   node scripts/test-lookup.mjs WBA5E7101FG155636
@@ -11,7 +11,7 @@ const VIN = (process.argv[2] || "WBA5E7101FG155636").replace(/\s/g, "").toUpperC
 const BASE = process.env.LOOKUP_TEST_BASE || "http://127.0.0.1:3000";
 
 async function main() {
-  console.log("Lookup test (VIN -> допуск, объём, фильтры, МойСклад)");
+  console.log("Lookup test (VIN -> допуск, объём, фильтры, локальный каталог)");
   console.log("VIN:", VIN);
   console.log("API:", BASE + "/api/lookup");
   console.log("");
@@ -57,9 +57,9 @@ async function main() {
   if (data.openaiError) console.log("  OpenAI ошибка:", data.openaiError);
 
   console.log("");
-  console.log("--- МойСклад ---");
-  if (data.moySkladError) console.log("  Ошибка/предупреждение:", data.moySkladError);
-  const items = data.moySkladItems ?? [];
+  console.log("--- Локальный каталог ---");
+  if (data.localCatalogError) console.log("  Ошибка/предупреждение:", data.localCatalogError);
+  const items = data.localCatalogItems ?? [];
   const filters = items.filter((p) => /фильтр|filter/i.test(p.name));
   const oils = items.filter((p) => !filters.includes(p) && /(масл|oil|atf)/i.test(p.name));
   const other = items.filter((p) => !filters.includes(p) && !oils.includes(p));

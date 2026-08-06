@@ -306,8 +306,8 @@ function productSnapshot(product: ProductWithStock) {
     avito: product.avito == null ? "" : product.avito ? "да" : "нет",
     custom_fields: JSON.stringify(product.attributes ?? {}),
     raw_external: JSON.stringify({
-      moyskladId: product.moyskladId,
-      moyskladHref: product.moyskladHref,
+      id: product.id,
+      localHref: undefined,
       externalCode: product.externalCode,
     }),
     created_at: product.createdAt.toISOString(),

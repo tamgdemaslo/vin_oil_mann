@@ -72,7 +72,6 @@ export default async function ManagementPage() {
 
   const integrations: ManagementCard[] = canManageIntegrations ? [
     { href: "/cabinet/integrations#finance", label: "Финансы · T-Bank", description: "Банковское подключение и платежи.", icon: Landmark },
-    { href: "/cabinet/integrations#inventory", label: "Учёт и склад · МойСклад", description: "Статусы складских синхронизаций.", icon: Warehouse },
     { href: "/records", label: "Запись и клиенты · YCLIENTS", description: "Рабочий журнал клиентских записей.", icon: UsersRound },
     { href: "/inventory/integrations/mann-pdf", label: "Поставщики и каталоги · MANN", description: "Импорт каталога применимости фильтров.", icon: PackageSearch },
     { href: "/cabinet/ai-assistant", label: "ИИ и внешние API", description: "Настройки ИИ-помощника и правил расчёта.", icon: Bot },

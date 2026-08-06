@@ -6,8 +6,9 @@ import { buildClientMessage, detectClientMessageMode, explicitCustomerRecommenda
 import { getSelectedAssistantQuote, saveAssistantQuoteSnapshot } from "./quotes";
 import { AI_ASSISTANT_STRUCTURED_RESPONSE_SCHEMA, parseAIAssistantStructuredResponse, structuredResponseToMarkdown } from "./structured-response";
 import { isAssistantCalculationTool, shouldFinalizeAssistantToolTurn } from "./tool-loop-policy";
-import { assistantFunctionTools, executeAssistantTool, safeAssistantJson, type AssistantToolSource } from "./tools";
+import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeAssistantJson, type AssistantToolSource } from "./tools";
 import { createOpenAIClient } from "@/lib/openai-client";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
 
 const MAX_MESSAGE_CHARS = 12_000;
@@ -143,12 +144,14 @@ async function createDeterministicClientMessage(input: {
   mode: ClientMessageMode;
   startedAt: number;
 }) {
+  const branchId = getScopedBranchId();
   const quote = await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId });
   const content = quote
     ? buildClientMessage(quote, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null)
     : null;
   const assistantMessage = await prisma.aIAssistantMessage.create({
     data: {
+      branchId,
       threadId: input.threadId,
       organizationId: input.organizationId,
       role: "assistant",
@@ -341,8 +344,10 @@ async function finalizeAfterTools(client: OpenAI, args: {
 }
 
 async function mandatoryTechnicalResearch(input: { client: OpenAI; runId: string; organizationId: string; message: string; history: Array<{ role: string; content: string }>; internalContext?: unknown; instructions: string; model: string; reasoning: string }): Promise<MandatoryResearch> {
+  const branchId = getScopedBranchId();
   const audit = await prisma.aIAssistantToolCall.create({
     data: {
+      branchId,
       runId: input.runId,
       organizationId: input.organizationId,
       toolName: "mandatory_technical_web_search",
@@ -392,6 +397,7 @@ function vinFromMessage(message: string) {
 }
 
 async function requiredVinContext(input: { runId: string; organizationId: string; actor: AssistantActor; vin: string | null }) {
+  const branchId = getScopedBranchId();
   if (!input.vin) return { results: [] as Array<Record<string, unknown>>, sources: [] as AssistantToolSource[], summaries: [] as Array<Record<string, unknown>> };
   const checks: Array<{ toolName: "lookup_vehicle" | "get_vehicle_service_history"; argumentsValue: Record<string, unknown> }> = [
     { toolName: "lookup_vehicle", argumentsValue: { input: input.vin, inputType: "vin" } },
@@ -401,7 +407,7 @@ async function requiredVinContext(input: { runId: string; organizationId: string
   const sources: AssistantToolSource[] = [];
   const summaries: Array<Record<string, unknown>> = [];
   for (const check of checks) {
-    const audit = await prisma.aIAssistantToolCall.create({ data: { runId: input.runId, organizationId: input.organizationId, toolName: check.toolName, argumentsJson: json(mask(check.argumentsValue)) } });
+    const audit = await prisma.aIAssistantToolCall.create({ data: { branchId, runId: input.runId, organizationId: input.organizationId, toolName: check.toolName, argumentsJson: json(mask(check.argumentsValue)) } });
     const startedAt = Date.now();
     try {
       const executed = await executeAssistantTool(check.toolName, check.argumentsValue, { organizationId: input.organizationId, actorId: input.actor.id, actorName: input.actor.name, actorRole: input.actor.role });
@@ -427,11 +433,11 @@ function usageTotals(responses: any[]) {
 }
 
 export async function createAssistantThread(input: { organizationId: string; actor: AssistantActor; title?: string }) {
-  return prisma.aIAssistantThread.create({ data: { organizationId: input.organizationId, createdById: input.actor.id, title: text(input.title, 120) || "Новый разговор" } });
+  return prisma.aIAssistantThread.create({ data: { branchId: getScopedBranchId(), organizationId: input.organizationId, createdById: input.actor.id, title: text(input.title, 120) || "Новый разговор" } });
 }
 
 export async function listAssistantThreads(organizationId: string, status: "active" | "archived" = "active") {
-  return prisma.aIAssistantThread.findMany({ where: { organizationId, status }, select: { id: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } }, orderBy: { lastMessageAt: "desc" }, take: 100 });
+  return prisma.aIAssistantThread.findMany({ where: { organizationId, status }, select: { id: true, branchId: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } }, orderBy: { lastMessageAt: "desc" }, take: 100 });
 }
 
 export async function setAssistantThreadStatus(input: { threadId: string; organizationId: string; status: "active" | "archived" }) {
@@ -449,7 +455,7 @@ export async function setAssistantThreadStatus(input: { threadId: string; organi
   return prisma.aIAssistantThread.update({
     where: { id: thread.id },
     data: { status: input.status },
-    select: { id: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } },
+    select: { id: true, branchId: true, title: true, status: true, createdById: true, lastMessageAt: true, createdAt: true, _count: { select: { messages: true } } },
   });
 }
 
@@ -457,7 +463,7 @@ export async function getAssistantThread(threadId: string, organizationId: strin
   await threadOrThrow(threadId, organizationId);
   await closeStaleAssistantRuns(threadId, organizationId);
   const [thread, messages, latestRun, sources, toolCalls, quotes] = await Promise.all([
-    prisma.aIAssistantThread.findFirst({ where: { id: threadId, organizationId }, select: { id: true, title: true, createdById: true, status: true, lastMessageAt: true, createdAt: true, updatedAt: true } }),
+    prisma.aIAssistantThread.findFirst({ where: { id: threadId, organizationId }, select: { id: true, branchId: true, title: true, createdById: true, status: true, lastMessageAt: true, createdAt: true, updatedAt: true } }),
     prisma.aIAssistantMessage.findMany({ where: { threadId, organizationId }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, role: true, content: true, citationsJson: true, attachmentsJson: true, runId: true, createdById: true, createdAt: true } }),
     prisma.aIAssistantRun.findFirst({ where: { threadId, organizationId }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, model: true, reasoning: true, errorMessage: true, inputTokens: true, outputTokens: true, durationMs: true, startedAt: true, completedAt: true, cancelledAt: true, toolSummaryJson: true } }),
     prisma.aIAssistantSource.findMany({ where: { run: { threadId, organizationId } }, orderBy: { createdAt: "desc" }, take: 80, select: { id: true, messageId: true, sourceType: true, title: true, url: true, excerpt: true, metadataJson: true, createdAt: true } }),
@@ -477,12 +483,13 @@ export async function runAssistantThread(input: { threadId: string; organization
   const message = text(input.message, MAX_MESSAGE_CHARS + 1);
   if (!message || message.length > MAX_MESSAGE_CHARS || message.includes("\u0000")) throw new Error("Сообщение слишком большое или содержит недопустимые символы");
   const config = adminAssistantConfig();
+  const branchId = getScopedBranchId();
   const thread = await threadOrThrow(input.threadId, input.organizationId);
   if (thread.status === "archived") throw new Error("Диалог находится в архиве. Восстановите его, чтобы продолжить работу.");
   await closeStaleAssistantRuns(thread.id, input.organizationId);
   if (await prisma.aIAssistantRun.findFirst({ where: { threadId: thread.id, organizationId: input.organizationId, status: { in: ["queued", "running"] } }, select: { id: true } })) throw new Error("Предыдущий запрос ещё выполняется");
-  const inputMessage = await prisma.aIAssistantMessage.create({ data: { threadId: thread.id, organizationId: input.organizationId, role: "user", content: message, createdById: input.actor.id } });
-  const run = await prisma.aIAssistantRun.create({ data: { threadId: thread.id, organizationId: input.organizationId, requestedById: input.actor.id, status: "running", model: config.model, reasoning: config.reasoning, inputMessageId: inputMessage.id } });
+  const inputMessage = await prisma.aIAssistantMessage.create({ data: { branchId, threadId: thread.id, organizationId: input.organizationId, role: "user", content: message, createdById: input.actor.id } });
+  const run = await prisma.aIAssistantRun.create({ data: { branchId, threadId: thread.id, organizationId: input.organizationId, requestedById: input.actor.id, status: "running", model: config.model, reasoning: config.reasoning, inputMessageId: inputMessage.id } });
   await prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { title: thread.title === "Новый разговор" ? titleForMessage(message) : thread.title, lastMessageAt: new Date() } });
   const clientMessageMode = detectClientMessageMode(message, input.clientMessageMode);
   const startedAt = run.startedAt.getTime();
@@ -555,7 +562,7 @@ export async function runAssistantThread(input: { threadId: string; organization
           continue;
         }
         toolCallCount += 1;
-        const audit = await prisma.aIAssistantToolCall.create({ data: { runId: run.id, organizationId: input.organizationId, toolName, argumentsJson: json(mask(argumentsValue)) } });
+        const audit = await prisma.aIAssistantToolCall.create({ data: { branchId, runId: run.id, organizationId: input.organizationId, toolName, argumentsJson: json(mask(argumentsValue)) } });
         const toolStartedAt = Date.now();
         try {
           const executed = await executeAssistantTool(toolName, argumentsValue, {
@@ -588,8 +595,9 @@ export async function runAssistantThread(input: { threadId: string; organization
         } catch (error) {
           const errorMessage = text(error instanceof Error ? error.message : String(error), 800) || "Инструмент недоступен";
           await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
-          toolSummaries.push({ toolName, status: "failed", error: errorMessage });
-          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage }) });
+          const code = error instanceof AssistantToolError ? error.code : undefined;
+          toolSummaries.push({ toolName, status: "failed", error: errorMessage, ...(code ? { code } : {}) });
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage, ...(code ? { code } : {}) }) });
         }
       }
       if (!limitReason && turn >= MAX_AGENT_ITERATIONS - 1) limitReason = "iterations";
@@ -646,6 +654,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     const citations = responses.flatMap(citationsFromResponse).filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
     const assistantMessage = await prisma.aIAssistantMessage.create({
       data: {
+        branchId,
         threadId: thread.id,
         organizationId: input.organizationId,
         role: "assistant",
@@ -657,7 +666,7 @@ export async function runAssistantThread(input: { threadId: string; organization
       },
     });
     const sources = sourcesFromResponses(responses, toolSources);
-    if (sources.length) await prisma.aIAssistantSource.createMany({ data: sources.map((source) => ({ runId: run.id, messageId: assistantMessage.id, organizationId: input.organizationId, sourceType: source.sourceType, title: source.title, url: source.url ?? null, excerpt: source.excerpt ?? null, metadataJson: safeAssistantJson(source.metadata ?? {}) })) });
+    if (sources.length) await prisma.aIAssistantSource.createMany({ data: sources.map((source) => ({ branchId, runId: run.id, messageId: assistantMessage.id, organizationId: input.organizationId, sourceType: source.sourceType, title: source.title, url: source.url ?? null, excerpt: source.excerpt ?? null, metadataJson: safeAssistantJson(source.metadata ?? {}) })) });
     const usage = usageTotals(responses);
     await Promise.all([
       prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "completed", responseId: text(response?.id, 180) || null, toolSummaryJson: json(toolSummaries), inputTokens: usage.inputTokens || null, outputTokens: usage.outputTokens || null, durationMs: Date.now() - startedAt, completedAt: new Date() } }),

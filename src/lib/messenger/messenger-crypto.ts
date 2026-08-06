@@ -21,6 +21,9 @@ function baseSecret() {
     const value = process.env[key]?.trim();
     if (value) return value;
   }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("В production не настроен master-key шифрования интеграций");
+  }
   return "eco-messenger-dev-secret-change-in-production";
 }
 

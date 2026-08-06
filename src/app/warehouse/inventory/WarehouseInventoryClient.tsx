@@ -475,7 +475,7 @@ export default function WarehouseInventoryClient({ sessionId }: WarehouseInvento
 
   const loadDictionaries = useCallback(async () => {
     const [orgData, storesData] = await Promise.all([
-      requestJson<{ organizations?: Organization[] }>("/api/moysklad/organizations"),
+      requestJson<{ organizations?: Organization[] }>("/api/local-inventory/organizations"),
       requestJson<{ stores?: Store[] }>("/api/local-inventory/stores"),
     ]);
     setOrganizations(orgData.organizations ?? []);

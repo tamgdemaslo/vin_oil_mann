@@ -20,6 +20,7 @@ import {
   PackagePlus,
   Pencil,
   Plus,
+  Printer,
   RefreshCw,
   RotateCcw,
   Save,
@@ -32,13 +33,14 @@ import MoneyInput from "@/components/MoneyInput";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
+import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
 
 type StockDocumentType = "receipt" | "writeoff";
 type StockDocumentStatus = "draft" | "posted" | "cancelled" | "needs_review" | "blocked";
 type AdjustmentType = "technical" | "expense";
 type FormMode = "new" | "edit" | "view";
 type SaveAction = "draft" | "conduct";
-type ReceiptAction = "open" | "edit" | "post" | "delete" | "duplicate" | "unpost" | "cancel" | "correction" | "history";
+type ReceiptAction = "open" | "edit" | "post" | "delete" | "duplicate" | "unpost" | "cancel" | "correction" | "history" | "print-labels";
 
 type StoreOption = { id: string; name: string };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
@@ -65,6 +67,7 @@ type KnownCell = { storeId: string; storeName: string; slotName: string; availab
 type Position = {
   localId: string;
   productId: string;
+  entityType: string;
   name: string;
   article: string;
   code: string;
@@ -119,6 +122,7 @@ type MovementRow = {
     article: string;
     code: string;
     brand: string;
+    entityType: string;
     quantity: number;
     price: number;
     slotName: string;
@@ -381,6 +385,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [editingDocument, setEditingDocument] = useState<MovementRow | null>(null);
   const [savingAction, setSavingAction] = useState<SaveAction | null>(null);
   const [receiptDialog, setReceiptDialog] = useState<ReceiptDialogState | null>(null);
+  const [priceLabelDocument, setPriceLabelDocument] = useState<MovementRow | null>(null);
   const [receiptActionBusy, setReceiptActionBusy] = useState<string | null>(null);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -525,6 +530,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setPositions(document.positions.map((position) => ({
       localId: makeLocalId(),
       productId: position.productId ?? "",
+      entityType: position.entityType,
       name: position.name,
       article: position.article || position.code,
       code: position.code,
@@ -799,6 +805,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         {
           localId: makeLocalId(),
           productId: product.id,
+          entityType: product.entityType,
           name: product.name,
           article: product.article || product.code,
           code: product.code,
@@ -1084,6 +1091,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       positions: positions.map((position) => ({
         id: position.localId,
         productId: position.productId,
+        entityType: position.entityType,
         name: position.name,
         article: position.article,
         code: position.code,
@@ -1197,7 +1205,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
           : `${title} ${nextDocument.name} сохранена как черновик.`
       );
-      await loadDocuments();
+      const refreshedDocuments = await loadDocuments();
+      const persistedDocument = refreshedDocuments.find((document) => document.id === nextDocument.id);
+      if (persistedDocument) setEditingDocument(persistedDocument);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1462,6 +1472,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
     if (action === "history") {
       void openReceiptHistory(document);
+      return;
+    }
+    if (action === "print-labels") {
+      setPriceLabelDocument(document);
     }
   }
 
@@ -1687,6 +1701,14 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   return (
     <div className="eco-stock-doc-page eco-receipt-page">
       {renderReceiptDialog()}
+      {priceLabelDocument && (
+        <PriceLabelPrintDialog
+          receiptId={priceLabelDocument.id}
+          receiptNumber={priceLabelDocument.name}
+          positions={priceLabelDocument.positions}
+          onClose={() => setPriceLabelDocument(null)}
+        />
+      )}
       {formOpen && (
         <div className="eco-receipt-drawer-backdrop">
           <aside role="dialog" aria-modal="true" className="eco-receipt-drawer">
@@ -1700,9 +1722,16 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                 </div>
                 <p>{isReceipt ? "Оприходование товаров на локальный склад" : "Корректировка остатков локального склада"}</p>
               </div>
-              <button type="button" className="eco-icon-btn eco-receipt-close" onClick={closeDocumentForm} aria-label="Закрыть">
-                <X size={18} />
-              </button>
+              <div className="eco-receipt-drawer-head-actions">
+                {isReceipt && editingDocument?.id && (
+                  <EcoButton type="button" size="sm" onClick={() => setPriceLabelDocument(editingDocument)}>
+                    <Printer size={15} /> Ценники
+                  </EcoButton>
+                )}
+                <button type="button" className="eco-icon-btn eco-receipt-close" onClick={closeDocumentForm} aria-label="Закрыть">
+                  <X size={18} />
+                </button>
+              </div>
             </header>
 
             <div className="eco-receipt-drawer-body">
@@ -2335,6 +2364,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             <History size={15} /> История
                           </EcoButton>
                         )}
+                        {isReceipt && (
+                          <EcoButton type="button" onClick={() => setPriceLabelDocument(editingDocument)}>
+                            <Printer size={15} /> Напечатать ценники
+                          </EcoButton>
+                        )}
                       </>
                     )}
                     <EcoButton type="button" variant="primary" onClick={closeDocumentForm}>Закрыть</EcoButton>
@@ -2595,6 +2629,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 >
                                   <option value="">Действия</option>
                                   <option value="open">Открыть</option>
+                                  <option value="print-labels">Напечатать ценники</option>
                                   {draft && <option value="edit">Редактировать</option>}
                                   {posted && <option value="edit">Редактировать…</option>}
                                   {draft && <option value="post">Провести</option>}

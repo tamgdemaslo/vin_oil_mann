@@ -25,7 +25,7 @@ export async function POST(
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
   const product = await prisma.localProduct.findFirst({
-    where: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
+    where: { branchId: branchAccess.context.branchId!, OR: [{ id }, { id: id }] },
     select: { id: true },
   });
   if (!product) return NextResponse.json({ error: "Товар не найден" }, { status: 404 });

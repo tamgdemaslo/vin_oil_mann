@@ -37,6 +37,9 @@ const requiredScopedModels = [
   "MessengerOutbox",
   "MessengerMediaJob",
   "TelegramUserSession",
+  "BranchIntegrationMigration",
+  "AqsiCashRegister",
+  "AqsiFiscalizationRecord",
   "InventorySession",
   "InventoryLedgerEntry",
   "LocalInventoryDocument",
@@ -101,8 +104,6 @@ requireText("src/lib/cashbox.ts", [/activeCashBranchId/, /branchId_serviceDate/]
 requireText("src/lib/shifts.ts", [/activeBranchId/, /where:\s*\{\s*branchId/]);
 requireText("src/lib/owner-dashboard.ts", [/branchId:\s*branch\.id/]);
 requireText("src/lib/branch-workers.ts", [/runWithRequestTenant/, /status:\s*"active"/, /organizationId/]);
-requireText("src/lib/local-inventory-sync.ts", [/branchSyncRuntime/, /Map<string, BranchSyncRuntime>/]);
-requireText("src/lib/moysklad-customer-analytics-sync.ts", [/branchAnalyticsSyncRuntime/]);
 requireText("src/lib/messenger/messenger-storage.ts", [/\["branches", getScopedBranchId\(\), \.\.\.parts\]/]);
 requireText("src/lib/vin-lookup-cache.ts", [
   /WHERE\s+branch_id\s*=\s*\$\{branchId\}[\s\S]*AND\s+vin\s*=\s*\$\{vin\}/,
@@ -119,6 +120,12 @@ requireText("prisma/migrations/20260728120000_branch_architecture_foundation/mig
 ]);
 
 const migration = read("prisma/migrations/20260728120000_branch_architecture_foundation/migration.sql");
+const allMigrations = fs.readdirSync(path.join(root, "prisma/migrations"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => path.join("prisma/migrations", entry.name, "migration.sql"))
+  .filter((file) => fs.existsSync(path.join(root, file)))
+  .map(read)
+  .join("\n");
 if (/railway/i.test(migration)) failures.push("Миграция не должна содержать Railway-ссылки или fallback");
 for (const file of ["src/lib/request-tenant-store.ts", "src/lib/crm.ts", "src/lib/piecework-rules.ts"]) {
   if (/branch-main/.test(read(file))) failures.push(`${file}: runtime branch-main fallback запрещён`);
@@ -127,7 +134,9 @@ for (const match of schema.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
   const [, model, body] = match;
   if (!/\bbranchId\s+String\b/.test(body) || controlPlaneModels.has(model)) continue;
   const table = body.match(/@@map\("([^"]+)"\)/)?.[1];
-  if (table && !migration.includes(`'${table}'`)) failures.push(`Migration: таблица ${table} не включена в backfill branch_id`);
+  if (table && !migration.includes(`'${table}'`) && !allMigrations.includes(`"${table}"`)) {
+    failures.push(`Migration: таблица ${table} не включена в branch foundation или более позднюю миграцию`);
+  }
 }
 
 if (failures.length) {

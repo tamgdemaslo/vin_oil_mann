@@ -64,7 +64,6 @@ function clientCaseWhere(searchParams: URLSearchParams) {
     where.OR = [{ snoozeUntil: null }, { snoozeUntil: { lte: now } }];
   }
   if (responsibleUserId) where.responsibleLogin = responsibleUserId;
-  if (clientId) where.moyskladCounterpartyId = clientId;
   if (conversationId) where.conversationId = conversationId;
   if (searchParams.get("overdue") === "1") {
     where.status = "open";
@@ -169,10 +168,7 @@ export async function POST(request: NextRequest) {
         nextAction: text(body.nextAction) ?? defaultNextActionForCaseStatus(requestedStatus),
         stageId: stage.id,
         responsibleLogin: text(body.responsibleUserId) ?? text(body.responsibleLogin) ?? session.user.login,
-        moyskladCounterpartyId: text(body.clientId) ?? text(body.counterpartyId),
-        moyskladCounterpartyName: text(body.customerName),
         yclientsRecordId: text(body.appointmentId),
-        moyskladDemandId: text(body.shipmentId),
         conversationId: text(body.conversationId),
         appointmentId: text(body.appointmentId),
         shipmentId: text(body.shipmentId),

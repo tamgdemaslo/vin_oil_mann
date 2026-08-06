@@ -35,7 +35,7 @@ Backend старой диагностики полностью лежит в `sr
 
 - `src/lib/diagnostic-seed-positions.ts` - seed/sync позиций из каталога с учетом vehicle hints.
 - `src/lib/diagnostic-regenerate-offers.ts` - пересчет summary counters и пересоздание `DiagnosticOffer`.
-- `src/lib/diagnostic-moysklad-resolve.ts` - подбор `LocalProduct` для вариантов офферов.
+- `src/lib/diagnostic-local_inventory-resolve.ts` - подбор `LocalProduct` для вариантов офферов.
 - `src/lib/diagnostic-photos.ts` - путь `.data/diagnostic-photos` или `DIAGNOSTIC_PHOTOS_PATH`, запись/удаление/ MIME фото.
 
 Связанные хвосты, не указанные в первичном списке, но завязанные на старую диагностику:
@@ -50,7 +50,7 @@ Backend старой диагностики полностью лежит в `sr
 
 Старые модели находятся в `prisma/schema.prisma`:
 
-- `Diagnostic` -> таблица `diagnostics`: связь с отгрузкой через `shipmentMoySkladId`, шапка авто, статус, публичный token, summary-счетчики.
+- `Diagnostic` -> таблица `diagnostics`: связь с отгрузкой через `shipmentLocalInventoryId`, шапка авто, статус, публичный token, summary-счетчики.
 - `DiagnosticPosition` -> `diagnostic_positions`: блок, node, статус, tags, measurement, recommendation, notes.
 - `DiagnosticPhoto` -> `diagnostic_photos`: `filePath`, caption, связь с позицией.
 - `DiagnosticOffer` -> `diagnostic_offers`: offerKey, variants JSON, selectedVariantIndex, addedToShipment, nextVisitOnly.
@@ -82,7 +82,7 @@ Backend старой диагностики полностью лежит в `sr
 
 - Старый `DiagnosticModal.tsx` целиком.
 - Старый `diagnostic-catalog.ts`, если новый модуль имеет свой каталог/схему.
-- Старую бизнес-логику `diagnostic-seed-positions.ts`, `diagnostic-regenerate-offers.ts`, `diagnostic-moysklad-resolve.ts`.
+- Старую бизнес-логику `diagnostic-seed-positions.ts`, `diagnostic-regenerate-offers.ts`, `diagnostic-local_inventory-resolve.ts`.
 - Старую реализацию хранения фото `diagnostic-photos.ts`, когда новый модуль возьмет на себя storage и migration старых файлов.
 - Старую реализацию public report в `src/app/report/[token]/page.tsx`, если новый модуль поставляет новый отчет.
 - Старые CSS-блоки `.eco-diagnostic-*` и `.client-report-*` после переключения UI.

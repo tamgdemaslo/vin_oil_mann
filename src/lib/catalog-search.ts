@@ -9,7 +9,7 @@ import {
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
 
-type MoySkladMeta = {
+type LocalEntityMeta = {
   href: string;
   type: string;
   mediaType: string;
@@ -114,7 +114,6 @@ export type CatalogMatchedField = {
 
 export type CatalogSearchItem = {
   id: string;
-  moyskladId?: string;
   name: string;
   article: string;
   code: string;
@@ -187,7 +186,7 @@ export type CatalogSearchItem = {
   slotName?: string;
   cost?: number;
   buyPriceCents?: number | null;
-  meta: MoySkladMeta;
+  meta: LocalEntityMeta;
   relevance: number;
   matchedFields: CatalogMatchedField[];
   highlights: Record<string, string[]>;
@@ -478,9 +477,9 @@ function decimalToNullableNumber(value: Prisma.Decimal | number | null | undefin
   return typeof value === "number" ? value : value.toNumber();
 }
 
-function entityMeta(entityType: string, moyskladId: string | null, href: string | null, localId: string): MoySkladMeta {
+function entityMeta(entityType: string, id: string | null, href: string | null, localId: string): LocalEntityMeta {
   const type = entityType || "product";
-  return { href: href || `local://${type}/${localId || moyskladId || ""}`, type, mediaType: "application/json" };
+  return { href: href || `local://${type}/${localId || id || ""}`, type, mediaType: "application/json" };
 }
 
 function getCellFromAttributes(input: unknown): string | undefined {
@@ -907,7 +906,6 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     : "";
   return {
     id: product.id,
-    moyskladId: product.moyskladId ?? undefined,
     name: product.name,
     article: product.article ?? "",
     code: product.code ?? "",
@@ -982,7 +980,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     slotName: firstStock?.slotName || undefined,
     buyPriceCents: firstStock?.buyPriceCents ?? product.buyPriceCents,
     cost: (firstStock?.buyPriceCents ?? product.buyPriceCents) != null ? (firstStock?.buyPriceCents ?? product.buyPriceCents ?? 0) / 100 : undefined,
-    meta: entityMeta(product.entityType, product.moyskladId, product.moyskladHref, product.id),
+    meta: entityMeta(product.entityType, product.id, null, product.id),
     relevance,
     matchedFields,
     highlights,
@@ -1001,7 +999,7 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
 async function resolveStoreId(params: CatalogSearchParams): Promise<string | null> {
   const storeId = params.warehouseId?.trim() || params.storeId?.trim() || "";
   if (storeId) {
-    const store = await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { moyskladId: storeId }] }, select: { id: true } });
+    const store = await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] }, select: { id: true } });
     return store?.id ?? null;
   }
   const storeName = params.storeName?.trim() ?? "";

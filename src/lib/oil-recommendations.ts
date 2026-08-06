@@ -15,7 +15,7 @@ const CACHE_TTL_MS = CACHE_DAYS * 24 * 60 * 60 * 1000;
 const cache = new Map<string, { requirements: OilRequirements; at: number }>();
 const OIL_PRODUCTS_CACHE_TTL_MS = Math.max(
   60_000,
-  parseInt(process.env.MOYSKLAD_LOOKUP_OIL_CACHE_MS ?? "1800000", 10) || 1_800_000
+  parseInt(process.env.LEGACY_LOOKUP_OIL_CACHE_MS ?? "1800000", 10) || 1_800_000
 );
 type BranchOilProductsCache = {
   snapshot: { at: number; products: OilProduct[] } | null;
@@ -286,11 +286,11 @@ function getCachedOilProductsSnapshot(): OilProduct[] | null {
 }
 
 export function warmOilProductsCache(): Promise<OilProduct[]> {
-  return fetchOilProductsFromMoySklad(1000, { forceRefresh: true });
+  return fetchOilProductsFromLocalCatalog(1000, { forceRefresh: true });
 }
 
 /** Совместимое имя: теперь загружает товары категории «масло» из локального каталога. */
-export async function fetchOilProductsFromMoySklad(
+export async function fetchOilProductsFromLocalCatalog(
   limit = 200,
   options?: { forceRefresh?: boolean }
 ): Promise<OilProduct[]> {
@@ -378,7 +378,7 @@ async function loadOilProductsFromLocalDb(limit = 200): Promise<OilProduct[]> {
       article: row.article ?? undefined,
       price: row.salePriceCents / 100,
       currency: row.currencyName ?? "руб.",
-      meta: { href: row.moyskladHref ?? `local://product/${row.id}` },
+      meta: { href: `local://product/${row.id}` },
       requirements_norm,
       volume_liters,
       imageHref: row.imageHref ?? undefined,
@@ -419,7 +419,7 @@ export async function fetchOilCandidatesByRequirements(requirements: OilRequirem
     return cloneOilProducts(cachedCandidates.products);
   }
 
-  const oils = await fetchOilProductsFromMoySklad(1000);
+  const oils = await fetchOilProductsFromLocalCatalog(1000);
   const enriched = enrichOilLineRequirements(oils);
   oilCandidatesCache.set(cacheKey, { at: Date.now(), products: cloneOilProducts(enriched) });
   return enriched;

@@ -7,4 +7,4 @@ and `DiagnosticOffer` data, plus old public report tokens that may already have
 been sent to clients.
 
 New user flows must use `src/app/api/diagnostics/**` and the local diagnostic map
-models. Do not add new UX features or MoySklad-dependent diagnostic behavior here.
+models. Do not add new UX features or external-integration-dependent behavior here.

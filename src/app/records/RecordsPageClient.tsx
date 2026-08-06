@@ -112,7 +112,7 @@ type CrmDealLink = {
   nextAction: string | null;
   responsibleLogin: string | null;
   yclientsRecordId: string | null;
-  moyskladDemandId: string | null;
+  shipmentId: string | null;
   nextContactAt: string | null;
   status: string;
   notes: string | null;
@@ -2203,7 +2203,6 @@ export default function RecordsPageClient() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: record.serviceTitle || `Запись ${record.startedAtText}`,
-            customerName: record.clientName,
             phone: record.phone,
             vehicle: vehicleLabel(record.vehicle),
             source: `Журнал записей / ${record.sourceLabel}`,
@@ -2212,9 +2211,9 @@ export default function RecordsPageClient() {
             nextContactAt: isPast ? "" : record.recordDateTime,
             notes,
             yclientsRecordId: String(record.id),
-            moyskladDemandId: shipments[0]?.id ?? "",
+            shipmentId: shipments[0]?.id ?? "",
             createLocalClient: true,
-            moyskladCounterpartyName: record.clientName,
+            customerName: record.clientName,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as CrmDealLink & { error?: string };

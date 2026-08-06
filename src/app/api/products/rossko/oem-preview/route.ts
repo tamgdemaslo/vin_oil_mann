@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
+import { rosskoIntegrationError } from "@/lib/rossko-integration";
 
 export const runtime = "nodejs";
 
@@ -110,8 +111,8 @@ function buildQuery(input: PreviewInput) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branch.ok) return branch.response;
 
   let body: PreviewInput;
   try {
@@ -124,26 +125,18 @@ export async function POST(request: NextRequest) {
   if (!query) return NextResponse.json({ error: "Заполните артикул, код или OEM Parts для поиска в ROSSKO" }, { status: 400 });
 
   try {
+    return await runWithBranchApiContext(branch.context, async () => {
     const cfg = await rosskoConfig();
-    let deliveryId = cfg.deliveryId ?? "";
-    let addressId = cfg.addressId ?? "";
-    if (!deliveryId || !addressId) {
-      try {
-        const details = await rosskoCheckoutDetails(cfg);
-        const suggested = suggestRosskoDefaults(details);
-        deliveryId = deliveryId || suggested.delivery_id || "";
-        addressId = addressId || suggested.address_id || "";
-      } catch {
-        // Validation below returns a user-readable setup error.
-      }
-    }
-    if (!deliveryId) return NextResponse.json({ error: "ROSSKO_DELIVERY_ID не задан" }, { status: 400 });
-    if (!addressId) return NextResponse.json({ error: "ROSSKO_ADDRESS_ID не задан" }, { status: 400 });
+    const deliveryId = cfg.deliveryId?.trim() || "";
+    const addressId = cfg.addressId?.trim() || "";
+    if (!deliveryId) return NextResponse.json({ error: "Выберите способ доставки в настройках ROSSKO." }, { status: 400 });
 
     const data = await rosskoSearch(cfg, { text: query, deliveryId, addressId });
     const items = normalizeItems(data, query);
     return NextResponse.json({ query, items, rawCount: items.length });
+    });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "ROSSKO не ответил" }, { status: 502 });
+    const safe = rosskoIntegrationError(error);
+    return NextResponse.json(safe, { status: safe.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 });
   }
 }

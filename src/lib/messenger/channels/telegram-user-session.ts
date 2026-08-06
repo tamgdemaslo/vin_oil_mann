@@ -14,7 +14,9 @@ import {
   safeStorageFileName,
 } from "../messenger-storage";
 import { getMessengerOrganizationId } from "../messenger-tenant";
-import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
+import { resolveTelegramUserCredentials } from "@/lib/telegram-user-integration";
+import { hasConsecutiveIntegrationFailures, notifyIntegrationOwner, recordIntegrationAudit } from "@/lib/integration-owner-notifications";
 import type { ChannelSendResult, MessengerChannelAdapter } from "./types";
 
 type SecretPayload = {
@@ -195,6 +197,8 @@ let schemaEnsurePromise: Promise<void> | null = null;
 type TelegramQrRuntimeAttempt = {
   accountId: string;
   sessionId: string;
+  branchId: string;
+  userId: string | null;
   phone: string | null;
   client: TelegramRuntimeClient;
   apiId: number;
@@ -225,16 +229,24 @@ type TelegramResolvedPeer = {
 
 const qrRuntimeAttempts = new Map<string, TelegramQrRuntimeAttempt>();
 
+function currentQrScope() {
+  const tenant = getRequestTenant();
+  return { branchId: getScopedBranchId(), userId: tenant?.userId ?? null };
+}
+
 function encryptionKey() {
-  const source = [
+  const configured = [
     process.env.TELEGRAM_SESSION_ENCRYPTION_KEY,
     process.env.MESSENGER_SETTINGS_SECRET,
     process.env.SESSION_SECRET,
     process.env.AUTH_SALT,
-    "eco-telegram-user-session",
   ]
     .filter(Boolean)
     .join(":");
+  if (!configured && process.env.NODE_ENV === "production") {
+    throw new Error("В production не настроен master-key шифрования Telegram session");
+  }
+  const source = configured || "eco-telegram-user-session";
   return crypto.createHash("sha256").update(source).digest();
 }
 
@@ -273,20 +285,6 @@ function normalizePhone(phone: string) {
   if (/^8\d{10}$/.test(compact)) return `+7${compact.slice(1)}`;
   if (/^7\d{10}$/.test(compact)) return `+${compact}`;
   return compact;
-}
-
-function configuredApiId() {
-  const raw = process.env.TELEGRAM_API_ID?.trim() ?? "";
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function configuredApiHash() {
-  return process.env.TELEGRAM_API_HASH?.trim() || null;
-}
-
-function isEnabled() {
-  return process.env.TELEGRAM_USER_SESSION_ENABLED === "true";
 }
 
 function telegramConnectTimeoutMs() {
@@ -334,8 +332,7 @@ function telegramSocksProxy(): TelegramSocksProxy | undefined {
 }
 
 function redact(value: string) {
-  const apiHash = configuredApiHash();
-  return apiHash ? value.split(apiHash).join("[TELEGRAM_API_HASH]") : value;
+  return value.replace(/\b[0-9a-f]{32}\b/gi, "[TELEGRAM_API_HASH]");
 }
 
 function maskPhone(phone: string) {
@@ -397,11 +394,8 @@ async function loadGramJs(): Promise<GramJsModule> {
   }
 }
 
-async function getClient(session = "") {
-  if (!isEnabled()) throw new Error("TELEGRAM_USER_SESSION_ENABLED=true не задан на backend.");
-  const apiId = configuredApiId();
-  const apiHash = configuredApiHash();
-  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+async function getClient(session = "", credentials?: { apiId: number; apiHash: string }) {
+  const { apiId, apiHash } = credentials ?? await resolveTelegramUserCredentials();
   const { TelegramClient, StringSession } = await loadGramJs();
   const proxy = telegramSocksProxy();
   const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
@@ -451,7 +445,6 @@ function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
 }
 
 function statusToConnection(status?: MessengerAccountStatus): MessengerConnection["connectionStatus"] {
-  if (!isEnabled()) return "disabled";
   if (status === "connected") return "connected";
   if (status === "error" || status === "needs_auth") return "error";
   return "not_connected";
@@ -592,21 +585,70 @@ async function updateAccountStatus(accountId: string, status: MessengerAccountSt
       AND organization_id = ${organizationId}
       AND branch_id = ${branchId}
   `;
+  if (status === "needs_auth" || status === "error") {
+    await recordIntegrationAudit({
+      channel: "telegram_user",
+      action: "telegram_user_sync_failed",
+      status: "error",
+      metadata: { accountId, code: status === "needs_auth" ? "REAUTH_REQUIRED" : "SYNC_FAILED" },
+    });
+    const repeated = status === "needs_auth" || await hasConsecutiveIntegrationFailures({
+      channel: "telegram_user",
+      failureAction: "telegram_user_sync_failed",
+      successAction: "telegram_user_sync_verified",
+      count: 3,
+    });
+    if (repeated) await notifyIntegrationOwner({
+      channel: "telegram_user",
+      eventKey: status === "needs_auth" ? "reauthorization_required" : "repeated_sync_failure",
+      entityId: accountId,
+      message: status === "needs_auth" ? "Рабочий Telegram филиала требует повторной авторизации." : "Три последовательные синхронизации рабочего Telegram завершились ошибкой.",
+      throttleMinutes: 180,
+    });
+  }
+}
+
+async function deactivateOtherTelegramAccounts(keepAccountId: string) {
+  const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
+  await prisma.$executeRaw`
+    UPDATE messenger_accounts
+    SET is_active = false,
+        enabled = false,
+        status = 'disconnected',
+        disconnected_at = now(),
+        updated_at = now()
+    WHERE branch_id = ${branchId}
+      AND organization_id = ${organizationId}
+      AND channel = 'telegram'
+      AND mode = 'user_session'
+      AND id <> ${keepAccountId}
+      AND status <> 'disconnected'
+  `;
+  await prisma.$executeRaw`
+    UPDATE telegram_user_sessions
+    SET status = 'disconnected',
+        qr_token_encrypted = NULL,
+        qr_expires_at = NULL,
+        updated_at = now()
+    WHERE branch_id = ${branchId}
+      AND organization_id = ${organizationId}
+      AND messenger_account_id <> ${keepAccountId}
+      AND status <> 'disconnected'
+  `;
 }
 
 export async function startTelegramUserAuth(phoneInput: string) {
   const phone = normalizePhone(phoneInput);
   if (!phone || phone.length < 8) throw new Error("Укажите рабочий Telegram-номер в международном формате.");
-  const apiId = configuredApiId();
-  const apiHash = configuredApiHash();
-  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  const { apiId, apiHash } = await resolveTelegramUserCredentials();
   await ensureTelegramUserSchema();
   const organizationId = getMessengerOrganizationId();
   const branchId = getScopedBranchId();
   const attemptId = crypto.randomUUID();
   const accountId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
-  const client = await getClient("");
+  const client = await getClient("", { apiId, apiHash });
   try {
     const { Api, version } = await loadGramJs();
     logAuthAttempt({
@@ -628,6 +670,7 @@ export async function startTelegramUserAuth(phoneInput: string) {
     const codeDelivery = sentCodeDelivery(result);
     const authExpiresAt = codeDelivery.timeout ? new Date(Date.now() + codeDelivery.timeout * 1000) : null;
     logCodeDelivery("sendCode", phone, codeDelivery);
+    await deactivateOtherTelegramAccounts(accountId);
     let rows = await prisma.$queryRaw<TelegramAccountRow[]>`
       SELECT
         id,
@@ -801,15 +844,13 @@ export async function resendTelegramUserCode(accountId: string) {
 
 export async function startTelegramUserQrAuth(phoneInput = "") {
   const phone = phoneInput.trim() ? normalizePhone(phoneInput) : null;
-  const apiId = configuredApiId();
-  const apiHash = configuredApiHash();
-  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  const { apiId, apiHash } = await resolveTelegramUserCredentials();
   await ensureTelegramUserSchema();
   cleanupQrRuntimeAttempts();
   const attemptId = crypto.randomUUID();
   const accountId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
-  const client = await getClient("");
+  const client = await getClient("", { apiId, apiHash });
   try {
     const { Api, version } = await loadGramJs();
     logAuthAttempt({
@@ -848,6 +889,7 @@ export async function startTelegramUserQrAuth(phoneInput = "") {
     const runtimeAttempt: TelegramQrRuntimeAttempt = {
       accountId,
       sessionId,
+      ...currentQrScope(),
       phone,
       client,
       apiId,
@@ -889,6 +931,8 @@ async function createOrUpdateQrSession(input: QrSessionInput) {
   const display = input.phone ?? "Telegram QR";
   const organizationId = getMessengerOrganizationId();
   const branchId = getScopedBranchId();
+  const { apiId, apiHash } = await resolveTelegramUserCredentials();
+  await deactivateOtherTelegramAccounts(input.accountId);
   await prisma.$executeRaw`
     INSERT INTO messenger_accounts
       (id, branch_id, organization_id, channel, mode, display_name, phone, is_active, enabled, status, metadata_json, created_at, updated_at)
@@ -911,8 +955,8 @@ async function createOrUpdateQrSession(input: QrSessionInput) {
       (id, branch_id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted, qr_token_encrypted, qr_expires_at,
        auth_attempt_id, auth_dc_id, status, created_at, updated_at)
     VALUES
-      (${input.sessionId}, ${branchId}, ${organizationId}, ${input.accountId}, ${input.phone ?? "qr"}, ${encryptedJson(String(configuredApiId()))}::jsonb,
-       ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(input.sessionString)}::jsonb,
+      (${input.sessionId}, ${branchId}, ${organizationId}, ${input.accountId}, ${input.phone ?? "qr"}, ${encryptedJson(String(apiId))}::jsonb,
+       ${encryptedJson(apiHash)}::jsonb, ${encryptedJson(input.sessionString)}::jsonb,
        ${encryptedJson(input.tokenBase64)}::jsonb, ${input.expiresAt}, ${input.attemptId}, NULL, 'waiting_qr', now(), now())
     ON CONFLICT (branch_id, messenger_account_id)
     DO UPDATE SET
@@ -1100,6 +1144,10 @@ export async function checkTelegramUserQrAuth(accountId: string) {
   cleanupQrRuntimeAttempts();
   const runtimeAttempt = qrRuntimeAttempts.get(accountId);
   if (runtimeAttempt) {
+    const scope = currentQrScope();
+    if (runtimeAttempt.branchId !== scope.branchId || runtimeAttempt.userId !== scope.userId) {
+      throw new Error("QR session принадлежит другому филиалу или пользователю");
+    }
     if (runtimeAttempt.finalizing) await runtimeAttempt.finalizing;
     if (runtimeAttempt.status === "pending") await saveIfQrClientAuthorized(runtimeAttempt);
     if (runtimeAttempt.status === "connected" && runtimeAttempt.account) {
@@ -1124,14 +1172,18 @@ export async function checkTelegramUserQrAuth(accountId: string) {
   const session = await getSessionByAccount(accountId);
   if (!session) throw new Error("QR session не найдена. Создайте QR заново.");
   const sessionString = decryptSecret(session.sessionEncrypted) ?? "";
-  const apiId = configuredApiId();
-  const apiHash = configuredApiHash();
-  if (!apiId || !apiHash) throw new Error("TELEGRAM_API_ID и TELEGRAM_API_HASH должны быть заданы на backend.");
+  const storedApiId = Number(decryptSecret(session.apiIdEncrypted));
+  const storedApiHash = decryptSecret(session.apiHashEncrypted);
+  const currentCredentials = Number.isInteger(storedApiId) && storedApiId > 0 && storedApiHash
+    ? { apiId: storedApiId, apiHash: storedApiHash }
+    : await resolveTelegramUserCredentials();
+  const { apiId, apiHash } = currentCredentials;
   if (!sessionString) throw new Error("QR session потеряна. Создайте QR заново.");
-  const client = await getClient(sessionString);
+  const client = await getClient(sessionString, currentCredentials);
   const adoptedAttempt: TelegramQrRuntimeAttempt = {
     accountId,
     sessionId: session.id,
+    ...currentQrScope(),
     phone: session.phone === "qr" ? null : session.phone,
     client,
     apiId,
@@ -1189,6 +1241,7 @@ export async function checkTelegramUserQrAuth(accountId: string) {
       const attempt: TelegramQrRuntimeAttempt = {
         accountId,
         sessionId: session.id,
+        ...currentQrScope(),
         phone,
         client,
         apiId,
@@ -1389,6 +1442,7 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
   const phone = userField(user, "phone") ? `+${userField(user, "phone")?.replace(/^\+/, "")}` : fallbackPhone;
   const organizationId = getMessengerOrganizationId();
   const branchId = getScopedBranchId();
+  const { apiId, apiHash } = await resolveTelegramUserCredentials();
   const existingAccounts = phone
     ? await prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id
@@ -1435,8 +1489,8 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
       (id, branch_id, organization_id, messenger_account_id, phone, api_id_encrypted, api_hash_encrypted, session_encrypted,
        qr_token_encrypted, qr_expires_at, status, last_authorized_at, error_message, created_at, updated_at)
     VALUES
-      (${crypto.randomUUID()}, ${branchId}, ${organizationId}, ${targetAccountId}, ${phone}, ${encryptedJson(String(configuredApiId()))}::jsonb,
-       ${encryptedJson(configuredApiHash() ?? "")}::jsonb, ${encryptedJson(sessionString)}::jsonb,
+      (${crypto.randomUUID()}, ${branchId}, ${organizationId}, ${targetAccountId}, ${phone}, ${encryptedJson(String(apiId))}::jsonb,
+       ${encryptedJson(apiHash)}::jsonb, ${encryptedJson(sessionString)}::jsonb,
        NULL, NULL, 'connected', now(), NULL, now(), now())
     ON CONFLICT (branch_id, messenger_account_id)
     DO UPDATE SET
@@ -1485,6 +1539,8 @@ async function saveAuthorizedTelegramSession(accountId: string, sessionString: s
   `;
   if (!accountRows[0]) throw new Error("Не удалось сохранить Telegram account.");
   const account = toPublicAccount(accountRows[0]);
+  await recordIntegrationAudit({ channel: "telegram_user", action: "telegram_user_connected", metadata: { accountId: account.id, mode: "user_session" } });
+  await notifyIntegrationOwner({ channel: "telegram_user", eventKey: "account_connected", entityId: account.id, message: "Рабочий Telegram филиала подключён по QR.", throttleMinutes: 5 });
   void syncTelegramUserAccount(account.id, 30).catch((error) => {
     console.warn("[messenger.telegram_user.sync]", {
       action: "post_auth_sync_failed",
@@ -2429,6 +2485,7 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
           AND organization_id = ${organizationId}
           AND branch_id = ${getScopedBranchId()}
       `;
+      await recordIntegrationAudit({ channel: "telegram_user", action: "telegram_user_sync_verified", metadata: { accountId: account.id } });
       logSyncState("dialogs_saved", { accountId: account.id, dialogsFetched: dialogs.length, conversationCount, messageCount, skippedCount, archivedCount });
       processed.push({ accountId: account.id, ok: true, conversationCount, messageCount, skippedCount, archivedCount });
     } catch (error) {
@@ -2692,9 +2749,9 @@ async function telegramConversationPeer(outbox: MessageOutbox): Promise<Telegram
       mc.metadata_json AS "metadataJson"
     FROM messenger_conversations mc
     LEFT JOIN local_counterparties client
-      ON client.id = mc.client_id OR client.moysklad_id = mc.client_id
+      ON client.id = mc.client_id OR client.legacy_id = mc.client_id
     LEFT JOIN local_counterparties supplier
-      ON supplier.id = mc.supplier_id OR supplier.moysklad_id = mc.supplier_id
+      ON supplier.id = mc.supplier_id OR supplier.legacy_id = mc.supplier_id
     WHERE mc.id = ${outbox.conversationId}
       AND mc.organization_id = ${outbox.organizationId ?? getMessengerOrganizationId()}
       AND mc.branch_id = ${getScopedBranchId()}
@@ -3020,20 +3077,25 @@ export async function disconnectTelegramUserAccount(accountId: string) {
     UPDATE telegram_user_sessions
     SET session_encrypted = NULL,
         phone_code_hash_encrypted = NULL,
+        qr_token_encrypted = NULL,
+        qr_expires_at = NULL,
         updated_at = now()
     WHERE messenger_account_id = ${accountId}
       AND organization_id = ${organizationId}
       AND branch_id = ${getScopedBranchId()}
   `;
+  await recordIntegrationAudit({ channel: "telegram_user", action: "telegram_user_disconnected", metadata: { accountId, historyPreserved: true } });
+  await notifyIntegrationOwner({ channel: "telegram_user", eventKey: "account_disconnected", entityId: accountId, message: "Рабочий Telegram филиала отключён. История переписки сохранена.", throttleMinutes: 5 });
   return { ok: true as const };
 }
 
 export async function getTelegramUserRuntimeConfig() {
   const account = await getActiveTelegramUserAccount();
+  const configured = await resolveTelegramUserCredentials().then(() => true).catch(() => false);
   return {
     mode: "user_session",
-    enabled: isEnabled(),
-    configured: Boolean(configuredApiId() && configuredApiHash()),
+    enabled: configured,
+    configured,
     connectionStatus: statusToConnection(account?.status),
     account,
   };
@@ -3041,8 +3103,7 @@ export async function getTelegramUserRuntimeConfig() {
 
 async function validateTelegramUserSessionConfig() {
   const config = await getTelegramUserRuntimeConfig();
-  if (!config.enabled) return { ok: false as const, status: "disabled" as const, error: "TELEGRAM_USER_SESSION_ENABLED=true не задан", details: config };
-  if (!config.configured) return { ok: false as const, status: "not_connected" as const, error: "TELEGRAM_API_ID/TELEGRAM_API_HASH не заданы", details: config };
+  if (!config.configured) return { ok: false as const, status: "not_connected" as const, error: "API ID/API Hash не настроены для текущего филиала", details: config };
   if (config.account?.status !== "connected") return { ok: false as const, status: config.connectionStatus, error: "Рабочий Telegram-аккаунт не подключён", details: config };
   return { ok: true as const, status: "connected" as const, details: config };
 }
@@ -3056,13 +3117,13 @@ export const telegramUserSessionAdapter: MessengerChannelAdapter = {
       type: "unknown",
       externalChatId: "telegram:user-session",
       displayName: "Рабочий Telegram-аккаунт",
-      isActive: isEnabled(),
-      connectionStatus: isEnabled() ? "not_connected" : "disabled",
+      isActive: true,
+      connectionStatus: "not_connected",
       label: "Telegram",
       config: {
         mode: "user_session",
-        enabled: isEnabled(),
-        configured: Boolean(configuredApiId() && configuredApiHash()),
+        enabled: true,
+        configured: false,
       },
     };
   },

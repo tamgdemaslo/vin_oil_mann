@@ -7,7 +7,7 @@ import { requireApiSessionWithShift } from "@/lib/api-session-shift";
 type VariantJson = {
   label: string;
   priceRub: number;
-  moySkladProductId?: string;
+  productId?: string;
 };
 
 function lineTotalCents(position: { quantity: Prisma.Decimal | number; priceCentsPerUnit: number; discount: Prisma.Decimal | number }) {
@@ -36,10 +36,10 @@ export async function POST(
   }
 
   const diagnostic = await prisma.diagnostic.findUnique({ where: { id: diagnosticId } });
-  if (!diagnostic?.shipmentMoySkladId) {
+  if (!diagnostic?.shipmentDraftId) {
     return NextResponse.json({ error: "У диагностики не привязана локальная отгрузка" }, { status: 400 });
   }
-  const shipmentId = diagnostic.shipmentMoySkladId;
+  const shipmentId = diagnostic.shipmentDraftId;
 
   const selections = Array.isArray(body.selections) ? body.selections : [];
   if (selections.length === 0) return NextResponse.json({ ok: true });
@@ -47,7 +47,7 @@ export async function POST(
   try {
     await prisma.$transaction(async (tx) => {
       const demand = await tx.localDemand.findFirst({
-        where: { OR: [{ id: shipmentId }, { moyskladId: shipmentId }] },
+        where: { OR: [{ id: shipmentId }, { id: shipmentId }] },
       });
       if (!demand) throw new Error("Локальная отгрузка для диагностики не найдена");
       const existingPositions = await tx.localDemandPosition.findMany({ where: { demandId: demand.id } });
@@ -67,10 +67,10 @@ export async function POST(
         const variants = offer.variants as unknown as VariantJson[];
         const idx = typeof sel.variantIndex === "number" ? sel.variantIndex : 0;
         const v = variants[idx];
-        if (!v?.moySkladProductId) continue;
+        if (!v?.productId) continue;
 
         const product = await tx.localProduct.findFirst({
-          where: { OR: [{ id: v.moySkladProductId }, { moyskladId: v.moySkladProductId }] },
+          where: { OR: [{ id: v.productId }, { id: v.productId }] },
         });
         if (!product) continue;
 
@@ -113,7 +113,7 @@ export async function POST(
         data: createdPositions.map((position) => ({
           demandId: demand.id,
           productId: position.productId,
-          assortmentMoyskladId: position.productId,
+          assortmentLegacyId: position.productId,
           assortmentType: "product",
           name: position.name,
           quantity: new Prisma.Decimal(1),

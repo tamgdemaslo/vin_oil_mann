@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getCachedPayrollSummary } from "@/lib/payroll";
 
 function isDatabaseUnavailable(error: unknown) {
@@ -38,67 +38,73 @@ function isDateKey(value: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходимо войти" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
-  const { searchParams } = new URL(request.url);
-  const dateFrom = searchParams.get("dateFrom") ?? "";
-  const dateTo = searchParams.get("dateTo") ?? "";
-  const user = searchParams.get("user") ?? undefined;
+  // Payroll reads settlements, rates and shipment data. Keep every one of
+  // those reads inside the same server-verified active-branch scope instead
+  // of relying on an incidental async context from the session helper.
+  return runWithBranchApiContext(access.context, async () => {
+    const session = { user: access.context.user };
+    const { searchParams } = new URL(request.url);
+    const dateFrom = searchParams.get("dateFrom") ?? "";
+    const dateTo = searchParams.get("dateTo") ?? "";
+    const user = searchParams.get("user") ?? undefined;
 
-  if (!dateFrom || !dateTo) {
-    return NextResponse.json({ error: "Укажите dateFrom и dateTo (YYYY-MM-DD)" }, { status: 400 });
-  }
-  if (!isDateKey(dateFrom) || !isDateKey(dateTo)) {
-    return NextResponse.json({ error: "Дата расчёта должна быть в формате YYYY-MM-DD" }, { status: 400 });
-  }
-  if (dateFrom > dateTo) {
-    return NextResponse.json({ error: "Дата начала расчёта не может быть позже даты окончания" }, { status: 400 });
-  }
-  if (session.user.role !== "owner" && user && user !== session.user.login) {
-    return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
-  }
-
-  const targetLogin = session.user.role === "owner" ? user : session.user.login;
-
-  try {
-    const summary = await getCachedPayrollSummary({
-      dateFrom,
-      dateTo,
-      targetLogin,
-    });
-    return NextResponse.json(summary);
-  } catch (error) {
-    if (isDatabaseUnavailable(error)) {
-      await sleep(1200);
-      try {
-        const summary = await getCachedPayrollSummary({
-          dateFrom,
-          dateTo,
-          targetLogin,
-        });
-        return NextResponse.json(summary);
-      } catch (retryError) {
-        if (isDatabaseUnavailable(retryError)) {
-          return NextResponse.json(
-            { error: "Расчет временно недоступен: нет соединения с базой. Попробуйте еще раз через несколько секунд." },
-            { status: 503 }
-          );
-        }
-        console.error("Payroll retry failed", retryError);
-        const detail = clientSafePayrollErrorMessage(retryError);
-        return NextResponse.json(
-          { error: detail ?? "Не удалось выполнить расчет зарплаты." },
-          { status: detail ? 502 : 500 }
-        );
-      }
+    if (!dateFrom || !dateTo) {
+      return NextResponse.json({ error: "Укажите dateFrom и dateTo (YYYY-MM-DD)" }, { status: 400 });
+    }
+    if (!isDateKey(dateFrom) || !isDateKey(dateTo)) {
+      return NextResponse.json({ error: "Дата расчёта должна быть в формате YYYY-MM-DD" }, { status: 400 });
+    }
+    if (dateFrom > dateTo) {
+      return NextResponse.json({ error: "Дата начала расчёта не может быть позже даты окончания" }, { status: 400 });
+    }
+    if (session.user.role !== "owner" && user && user !== session.user.login) {
+      return NextResponse.json({ error: "Доступ запрещён" }, { status: 403 });
     }
 
-    console.error("Payroll request failed", error);
-    const detail = clientSafePayrollErrorMessage(error);
-    return NextResponse.json(
-      { error: detail ?? "Не удалось выполнить расчет зарплаты." },
-      { status: detail ? 502 : 500 }
-    );
-  }
+    const targetLogin = session.user.role === "owner" ? user : session.user.login;
+
+    try {
+      const summary = await getCachedPayrollSummary({
+        dateFrom,
+        dateTo,
+        targetLogin,
+      });
+      return NextResponse.json(summary);
+    } catch (error) {
+      if (isDatabaseUnavailable(error)) {
+        await sleep(1200);
+        try {
+          const summary = await getCachedPayrollSummary({
+            dateFrom,
+            dateTo,
+            targetLogin,
+          });
+          return NextResponse.json(summary);
+        } catch (retryError) {
+          if (isDatabaseUnavailable(retryError)) {
+            return NextResponse.json(
+              { error: "Расчет временно недоступен: нет соединения с базой. Попробуйте еще раз через несколько секунд." },
+              { status: 503 }
+            );
+          }
+          console.error("Payroll retry failed", retryError);
+          const detail = clientSafePayrollErrorMessage(retryError);
+          return NextResponse.json(
+            { error: detail ?? "Не удалось выполнить расчет зарплаты." },
+            { status: detail ? 502 : 500 }
+          );
+        }
+      }
+
+      console.error("Payroll request failed", error);
+      const detail = clientSafePayrollErrorMessage(error);
+      return NextResponse.json(
+        { error: detail ?? "Не удалось выполнить расчет зарплаты." },
+        { status: detail ? 502 : 500 }
+      );
+    }
+  });
 }

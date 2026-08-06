@@ -192,7 +192,7 @@ function toPublicOilCard(row: LocalOilRow): PublicOilCard {
     price: row.salePriceCents / 100,
     currency: row.currencyName ?? "руб.",
     available: totalAvailable(row),
-    imageHref: hasLocalPhoto || row.imageHref ? `/api/moysklad/image?productId=${encodeURIComponent(row.id)}` : undefined,
+    imageHref: hasLocalPhoto || row.imageHref ? `/api/local-inventory/image?productId=${encodeURIComponent(row.id)}` : undefined,
   };
 }
 

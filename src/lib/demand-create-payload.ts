@@ -1,11 +1,11 @@
-import type { MoySkladMeta } from "@/lib/moysklad";
+import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 
 export type DemandPositionInput = {
-  assortment?: { meta: MoySkladMeta };
+  assortment?: { meta: LocalEntityMeta };
   name?: string;
   comment?: string;
   quantity: number;
-  price: number; // рубли за единицу → в теле МойСклад в копейках
+  price: number; // рубли за единицу
   discount?: number;
   vat?: number;
   vatEnabled?: boolean;
@@ -13,14 +13,14 @@ export type DemandPositionInput = {
 };
 
 export type CreateDemandBody = {
-  organization: { meta: MoySkladMeta };
-  agent: { meta: MoySkladMeta };
-  store: { meta: MoySkladMeta };
+  organization: { meta: LocalEntityMeta };
+  agent: { meta: LocalEntityMeta };
+  store: { meta: LocalEntityMeta };
   name?: string;
   description?: string;
   moment?: string;
   applicable?: boolean;
-  attributes?: { id: string; name?: string; meta?: MoySkladMeta; value: string | number | boolean | null | unknown }[];
+  attributes?: { id: string; name?: string; meta?: LocalEntityMeta; value: string | number | boolean | null | unknown }[];
   positions?: DemandPositionInput[];
 };
 

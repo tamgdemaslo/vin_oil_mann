@@ -13,7 +13,7 @@ function isMissingDiagnosticSchemaError(error: unknown): boolean {
   );
 }
 
-/** Найти диагностику по id отгрузки МойСклад (последняя по времени). */
+/** Найти последнюю диагностику по id локальной отгрузки. */
 export async function GET(request: NextRequest) {
   const gate = await requireApiSessionWithShift();
   if (!gate.ok) return gate.response;
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   let row = null;
   try {
     row = await prisma.diagnostic.findFirst({
-      where: { shipmentMoySkladId: shipmentId },
+      where: { shipmentDraftId: shipmentId },
       orderBy: { startedAt: "desc" },
       select: {
         id: true,

@@ -5,7 +5,7 @@ import { requireBranchContext } from "@/lib/branch-context";
 import type { User } from "@/lib/auth";
 
 export type CashExpenseOrderStatus = "draft" | "posted" | "cancelled";
-export type CashExpenseOrderSource = "local" | "moysklad_import" | "sync" | "payroll";
+export type CashExpenseOrderSource = "local" | "legacy_import" | "sync" | "payroll";
 export type CashExpensePaymentType = "cash" | "card";
 
 export type CashExpenseOrderOperation = {
@@ -31,7 +31,6 @@ export type CashExpenseOrderOperation = {
   source: CashExpenseOrderSource;
   comment?: string;
   attachmentUrl?: string;
-  moyskladCashoutHref?: string;
 };
 
 export type CashExpenseOrderListParams = {
@@ -60,7 +59,7 @@ export type CashExpenseOrderMutationParams = {
   attachmentUrl?: string;
   organizationId?: string;
   warehouseId?: string;
-  moyskladCashoutHref?: string;
+  localHref?: string;
 };
 
 const DEFAULT_EXPENSE_ITEM_NAMES = [
@@ -75,8 +74,8 @@ const DEFAULT_EXPENSE_ITEM_NAMES = [
 const orderInclude = {
   organization: { select: { name: true } },
   warehouse: { select: { name: true } },
-  expenseItem: { select: { id: true, name: true, moyskladHref: true } },
-  counterparty: { select: { id: true, name: true, moyskladHref: true } },
+  expenseItem: { select: { id: true, name: true } },
+  counterparty: { select: { id: true, name: true } },
 } satisfies Prisma.CashExpenseOrderInclude;
 
 type CashExpenseOrderRow = Prisma.CashExpenseOrderGetPayload<{ include: typeof orderInclude }>;
@@ -97,7 +96,7 @@ function normalizeStatus(value?: string, fallback: CashExpenseOrderStatus = "pos
 
 function normalizeSource(value?: string): CashExpenseOrderSource {
   if (value === "payroll") return "payroll";
-  if (value === "moysklad_import" || value === "sync") return value;
+  if (value === "legacy_import" || value === "sync") return value;
   return "local";
 }
 
@@ -165,7 +164,7 @@ async function resolveExpenseItem(branchId: string, params: {
 
   if (id) {
     const found = await prisma.cashExpenseItem.findFirst({
-      where: { branchId, OR: [{ id }, { moyskladId: id }] },
+      where: { branchId, id },
     });
     if (found) return found;
   }
@@ -179,12 +178,10 @@ async function resolveExpenseItem(branchId: string, params: {
     create: {
       branchId,
       name,
-      source: legacyHref(params.expenseItemMetaHref) ? "moysklad_import" : "local",
-      moyskladHref: legacyHref(params.expenseItemMetaHref),
+      source: legacyHref(params.expenseItemMetaHref) ? "legacy_import" : "local",
     },
     update: {
       isActive: true,
-      moyskladHref: legacyHref(params.expenseItemMetaHref) ?? undefined,
     },
   });
 }
@@ -195,8 +192,8 @@ async function resolveCounterparty(branchId: string, params: { counterpartyId?: 
     localReferenceId(params.counterpartyMetaHref, "counterparty");
   if (!id) return null;
   return prisma.localCounterparty.findFirst({
-    where: { branchId, OR: [{ id }, { moyskladId: id }] },
-    select: { id: true, name: true, moyskladHref: true },
+    where: { branchId, id },
+    select: { id: true, name: true },
   });
 }
 
@@ -299,9 +296,6 @@ export async function createCashExpenseOrder(
           postedBy: status === "posted" ? user.login : null,
           postedByName: status === "posted" ? user.name : null,
           source: "local",
-          moyskladCashoutHref: legacyHref(params.moyskladCashoutHref),
-          moyskladExpenseItemHref: legacyHref(params.expenseItemMetaHref ?? expenseItem.moyskladHref),
-          moyskladCounterpartyHref: legacyHref(params.counterpartyMetaHref ?? counterparty?.moyskladHref),
         },
         include: orderInclude,
       });
@@ -334,14 +328,14 @@ export async function updateCashExpenseOrderDraft(
       ? await resolveExpenseItem(current.branchId, {
           expenseItemId: params.expenseItemId ?? current.expenseItemId ?? undefined,
           expenseItemName: params.expenseItemName ?? current.expenseItemName,
-          expenseItemMetaHref: params.expenseItemMetaHref ?? current.moyskladExpenseItemHref ?? undefined,
+          expenseItemMetaHref: params.expenseItemMetaHref,
         })
       : null;
   const counterparty =
     params.counterpartyId || params.counterpartyMetaHref
       ? await resolveCounterparty(current.branchId, {
           counterpartyId: params.counterpartyId ?? current.counterpartyId ?? undefined,
-          counterpartyMetaHref: params.counterpartyMetaHref ?? current.moyskladCounterpartyHref ?? undefined,
+          counterpartyMetaHref: params.counterpartyMetaHref,
         })
       : null;
   const counterpartyName =
@@ -366,14 +360,6 @@ export async function updateCashExpenseOrderDraft(
       paymentType: params.paymentType == null ? undefined : normalizePaymentType(params.paymentType),
       attachmentUrl: params.attachmentUrl === undefined ? undefined : normalizeNullable(params.attachmentUrl),
       comment: params.comment === undefined ? undefined : normalizeNullable(params.comment),
-      moyskladExpenseItemHref:
-        params.expenseItemMetaHref === undefined
-          ? undefined
-          : legacyHref(params.expenseItemMetaHref ?? expenseItem?.moyskladHref),
-      moyskladCounterpartyHref:
-        params.counterpartyMetaHref === undefined
-          ? undefined
-          : legacyHref(params.counterpartyMetaHref ?? counterparty?.moyskladHref),
       createdBy: current.createdBy || user.login,
     },
     include: orderInclude,
@@ -479,12 +465,9 @@ export async function listCashExpenseOrderOperationsForShift(
 export function cashExpenseOrderToOperation(row: CashExpenseOrderRow): CashExpenseOrderOperation {
   const status = normalizeStatus(row.status, "draft");
   const source = normalizeSource(row.source);
-  const expenseItemHref =
-    row.moyskladExpenseItemHref ?? row.expenseItem?.moyskladHref ?? localExpenseItemMeta(row.expenseItemId ?? row.id).href;
+  const expenseItemHref = localExpenseItemMeta(row.expenseItemId ?? row.id).href;
   const counterpartyHref =
-    row.moyskladCounterpartyHref ??
-    row.counterparty?.moyskladHref ??
-    (row.counterpartyId ? `local://counterparty/${row.counterpartyId}` : undefined);
+    row.counterpartyId ? `local://counterparty/${row.counterpartyId}` : undefined;
 
   return {
     id: `expense_${row.id}`,
@@ -513,7 +496,6 @@ export function cashExpenseOrderToOperation(row: CashExpenseOrderRow): CashExpen
     source,
     comment: row.comment ?? undefined,
     attachmentUrl: row.attachmentUrl ?? undefined,
-    moyskladCashoutHref: row.moyskladCashoutHref ?? undefined,
   };
 }
 
@@ -537,7 +519,6 @@ export function cashExpenseOrderToCashout(row: CashExpenseOrderRow) {
     agentName: row.counterpartyName || row.counterparty?.name || "",
     expenseItemName: row.expenseItemName || row.expenseItem?.name || "",
     organizationName: row.organization?.name ?? "",
-    moyskladCashoutHref: row.moyskladCashoutHref ?? "",
     meta: orderMeta(row.id),
   };
 }

@@ -118,7 +118,7 @@ export async function fetchOrganizationRecord(rawDemand: unknown): Promise<Recor
     organizationId || organizationName
       ? {
           OR: [
-            ...(organizationId ? [{ id: organizationId }, { moyskladId: organizationId }] : []),
+            ...(organizationId ? [{ id: organizationId }] : []),
             ...(organizationName ? [{ name: organizationName }] : []),
           ],
         }
@@ -129,8 +129,6 @@ export async function fetchOrganizationRecord(rawDemand: unknown): Promise<Recor
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     select: {
       id: true,
-      moyskladId: true,
-      moyskladHref: true,
       name: true,
       fullLegalName: true,
       inn: true,
@@ -150,7 +148,7 @@ export async function fetchOrganizationRecord(rawDemand: unknown): Promise<Recor
   const localRaw = jsonRecord(localOrganization?.raw);
   const localRecord = localOrganization
     ? mergeOrgRecords(localRaw, {
-        id: localOrganization.moyskladId ?? localOrganization.id,
+        id: localOrganization.id,
         name: localOrganization.name,
         legalTitle: localOrganization.fullLegalName,
         inn: localOrganization.inn,
@@ -162,7 +160,7 @@ export async function fetchOrganizationRecord(rawDemand: unknown): Promise<Recor
         phone: localOrganization.phone,
         director: localOrganization.signatoryName,
         meta: {
-          href: localOrganization.moyskladHref ?? `local://organization/${localOrganization.id}`,
+          href: `local://organization/${localOrganization.id}`,
           type: "organization",
           mediaType: "application/json",
         },

@@ -12,12 +12,12 @@ export type BranchWorkerResult<T> = {
 export async function runForBranch<T>(branchId: string, operation: () => Promise<T>): Promise<T> {
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, status: "active" },
-    select: { id: true, legacyOrganizationId: true },
+    select: { id: true, businessGroupId: true, legacyOrganizationId: true },
   });
   if (!branch) throw new Error("Филиал не найден или отключён");
   const organizationId = branch.legacyOrganizationId ?? branch.id;
   return runWithRequestTenant(
-    { mode: "branch", branchId: branch.id, organizationId, allowedBranchIds: [branch.id] },
+    { mode: "branch", branchId: branch.id, organizationId, businessGroupId: branch.businessGroupId, allowedBranchIds: [branch.id] },
     operation
   );
 }
@@ -27,7 +27,7 @@ export async function runForActiveBranches<T>(
 ): Promise<BranchWorkerResult<T>[]> {
   const branches = await prisma.branch.findMany({
     where: { status: "active" },
-    select: { id: true, name: true, legacyOrganizationId: true },
+    select: { id: true, name: true, businessGroupId: true, legacyOrganizationId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
 
@@ -40,6 +40,7 @@ export async function runForActiveBranches<T>(
           mode: "branch",
           branchId: branch.id,
           organizationId,
+          businessGroupId: branch.businessGroupId,
           allowedBranchIds: [branch.id],
         },
         () => operation({ id: branch.id, name: branch.name, organizationId })

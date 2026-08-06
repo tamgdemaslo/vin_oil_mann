@@ -1,7 +1,7 @@
-import type { MoySkladMeta } from "@/lib/moysklad";
+import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 
 export type SupplyPositionInput = {
-  assortment: { meta: MoySkladMeta };
+  assortment: { meta: LocalEntityMeta };
   quantity: number;
   price: number;
   discount?: number;
@@ -10,9 +10,9 @@ export type SupplyPositionInput = {
 };
 
 export type CreateSupplyBody = {
-  organization: { meta: MoySkladMeta };
-  agent: { meta: MoySkladMeta };
-  store: { meta: MoySkladMeta };
+  organization: { meta: LocalEntityMeta };
+  agent: { meta: LocalEntityMeta };
+  store: { meta: LocalEntityMeta };
   name?: string;
   description?: string;
   moment?: string;

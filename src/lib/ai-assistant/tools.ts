@@ -1,8 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { DEFAULT_ROSSKO_MARKUP_RULES } from "@/lib/ai-agent/settings";
+import { DEFAULT_ROSSKO_MARKUP_RULES, getAgentSettings } from "@/lib/ai-agent/settings";
+import type { AIRosskoMarkupRule } from "@/lib/ai-agent/types";
+import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
 import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-identity";
-import { rosskoCheckoutDetails, rosskoConfig, rosskoSearch, suggestRosskoDefaults } from "@/lib/rossko";
+import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
@@ -16,6 +18,14 @@ export type AssistantToolSource = {
 };
 
 export type AssistantToolResult = { result: Record<string, unknown>; sources?: AssistantToolSource[] };
+
+/** A safe, user-facing failure passed into both trace and the model response. */
+export class AssistantToolError extends Error {
+  constructor(public readonly code: "ROSSKO_NOT_CONFIGURED" | "ROSSKO_AUTH_FAILED" | "ROSSKO_TEMPORARILY_UNAVAILABLE" | "ROSSKO_NO_RESULTS", message: string) {
+    super(message);
+    this.name = "AssistantToolError";
+  }
+}
 
 export const assistantFunctionTools = [
   {
@@ -167,10 +177,10 @@ function rubles(value: unknown) {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
 }
 
-function rosskoRetailPriceCents(purchaseCents: number | null) {
+function rosskoRetailPrice(purchaseCents: number | null, rules: AIRosskoMarkupRule[]) {
   if (purchaseCents == null) return null;
-  const rule = DEFAULT_ROSSKO_MARKUP_RULES.find((item) => purchaseCents >= item.fromCents && (item.toCents == null || purchaseCents < item.toCents)) ?? DEFAULT_ROSSKO_MARKUP_RULES.at(-1);
-  return rule ? Math.round(purchaseCents * (1 + rule.marginPercent / 100)) : null;
+  const rule = rules.find((item) => purchaseCents >= item.fromCents && (item.toCents == null || purchaseCents < item.toCents)) ?? rules.at(-1);
+  return rule ? { retailPriceCents: Math.round(purchaseCents * (1 + rule.marginPercent / 100)), appliedRule: rule } : null;
 }
 
 function catalogSearchFields(value: string): Prisma.LocalProductWhereInput[] {
@@ -343,7 +353,7 @@ async function findMannFilters(args: Record<string, unknown>): Promise<Assistant
 async function lookupClientHistory(args: Record<string, unknown>) {
   const clientId = text(args.clientId, 160);
   const limit = Math.max(1, Math.min(20, Math.round(number(args.limit, 10))));
-  const client = await prisma.localCounterparty.findFirst({ where: { OR: [{ id: clientId }, { moyskladId: clientId }] }, select: { id: true, name: true, phone: true, email: true } });
+  const client = await prisma.localCounterparty.findFirst({ where: { OR: [{ id: clientId }, { id: clientId }] }, select: { id: true, name: true, phone: true, email: true } });
   if (!client) return { result: { found: false, clientId } } satisfies AssistantToolResult;
   const demands = await prisma.localDemand.findMany({
     where: { counterpartyId: client.id },
@@ -393,34 +403,52 @@ async function stock(args: Record<string, unknown>) {
   return { result: { products: products.map((product) => ({ ...product, stock: product.stockBalances.map((row) => ({ store: row.store.name, quantity: Number(row.quantity), reserve: Number(row.reserve), available: Number(row.available) })) })) }, sources: [{ sourceType: "internal_catalog", title: "Локальные остатки" }] } satisfies AssistantToolResult;
 }
 
-async function rossko(args: Record<string, unknown>) {
+function rosskoFailure(error: unknown) {
+  if (error instanceof AssistantToolError) return error;
+  if (error instanceof IntegrationNotConfiguredForBranch) {
+    return new AssistantToolError("ROSSKO_NOT_CONFIGURED", "ROSSKO не подключён для этого филиала. Откройте Кабинет → Интеграции и добавьте ключи.");
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/(auth|authoriz|ключ|key1|key2|access denied|forbidden|401|403)/i.test(message)) {
+    return new AssistantToolError("ROSSKO_AUTH_FAILED", "ROSSKO не принял ключи этого филиала. Проверьте подключение в Кабинете → Интеграции.");
+  }
+  return new AssistantToolError("ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO временно недоступен. Повторите поиск позже или используйте локальный каталог.");
+}
+
+async function rossko(args: Record<string, unknown>, context: ToolContext) {
   const article = text(args.article, 80);
   const brand = text(args.brand, 80);
-  const config = await rosskoConfig();
-  let deliveryId = config.deliveryId || "";
-  let addressId = config.addressId || "";
-  if (!deliveryId || !addressId) {
-    const defaults = suggestRosskoDefaults(await rosskoCheckoutDetails(config));
-    deliveryId ||= defaults.delivery_id || "";
-    addressId ||= defaults.address_id || "";
+  try {
+    const settings = await getAgentSettings(context.organizationId);
+    if (!settings.rosskoSearchEnabled) {
+      throw new AssistantToolError("ROSSKO_NOT_CONFIGURED", "Поиск ROSSKO выключен для этого филиала.");
+    }
+    const config = await rosskoConfig();
+    const deliveryId = config.deliveryId || "";
+    const addressId = config.addressId || "";
+    if (!deliveryId) throw new AssistantToolError("ROSSKO_NOT_CONFIGURED", "Для ROSSKO этого филиала не настроен способ доставки.");
+    const raw = await rosskoSearch(config, { text: [brand, article].filter(Boolean).join(" "), deliveryId, addressId });
+    const offers = offerRows(raw).map((row, index) => {
+      const purchasePriceCents = rubles(row.price ?? row.Price ?? row.cost ?? row.Cost);
+      const retail = rosskoRetailPrice(purchasePriceCents, settings.rosskoMarkupRules || DEFAULT_ROSSKO_MARKUP_RULES);
+      return {
+        id: text(row.id ?? row.ID, 80) || `offer-${index + 1}`,
+        brand: text(row.brand ?? row.Brand, 80) || brand || null,
+        article: text(row.partnumber ?? row.partNumber ?? row.article, 80) || article,
+        name: text(row.name ?? row.Name, 180) || null,
+        purchasePriceCents,
+        retailPriceCents: retail?.retailPriceCents ?? null,
+        retailPriceRub: retail ? retail.retailPriceCents / 100 : null,
+        appliedMarkupRule: retail?.appliedRule ?? null,
+        stock: text(row.stock ?? row.Stock ?? row.count ?? row.quantity, 80) || "уточняется",
+        delivery: text(row.delivery ?? row.delivery_time ?? row.period, 100) || "уточняется",
+      };
+    }).filter((offer, index, list) => list.findIndex((other) => `${other.brand}:${other.article}:${other.purchasePriceCents}:${other.delivery}` === `${offer.brand}:${offer.article}:${offer.purchasePriceCents}:${offer.delivery}`) === index).slice(0, 12);
+    if (!offers.length) throw new AssistantToolError("ROSSKO_NO_RESULTS", "ROSSKO не вернул предложений по этому номеру для выбранного филиала.");
+    return { result: { found: true, article, brand: brand || null, offers, validForHours: 24, mode: "read_only_search" }, sources: [{ sourceType: "rossko", title: "ROSSKO · read-only поиск", excerpt: `Артикул: ${article}` }] } satisfies AssistantToolResult;
+  } catch (error) {
+    throw rosskoFailure(error);
   }
-  if (!deliveryId) throw new Error("Для ROSSKO не настроен способ доставки");
-  const raw = await rosskoSearch(config, { text: [brand, article].filter(Boolean).join(" "), deliveryId, addressId });
-  const offers = offerRows(raw).map((row, index) => {
-    const purchasePriceCents = rubles(row.price ?? row.Price ?? row.cost ?? row.Cost);
-    return {
-      id: text(row.id ?? row.ID, 80) || `offer-${index + 1}`,
-      brand: text(row.brand ?? row.Brand, 80) || brand || null,
-      article: text(row.partnumber ?? row.partNumber ?? row.article, 80) || article,
-      name: text(row.name ?? row.Name, 180) || null,
-      purchasePriceCents,
-      retailPriceCents: rosskoRetailPriceCents(purchasePriceCents),
-      retailPriceRub: rosskoRetailPriceCents(purchasePriceCents) == null ? null : rosskoRetailPriceCents(purchasePriceCents)! / 100,
-      stock: text(row.stock ?? row.Stock ?? row.count ?? row.quantity, 80) || "уточняется",
-      delivery: text(row.delivery ?? row.delivery_time ?? row.period, 100) || "уточняется",
-    };
-  }).filter((offer, index, list) => list.findIndex((other) => `${other.brand}:${other.article}:${other.purchasePriceCents}:${other.delivery}` === `${offer.brand}:${offer.article}:${offer.purchasePriceCents}:${offer.delivery}`) === index).slice(0, 12);
-  return { result: { found: offers.length > 0, article, brand: brand || null, offers, validForHours: 24, mode: "read_only_search" }, sources: [{ sourceType: "rossko", title: "ROSSKO · read-only поиск", excerpt: `Артикул: ${article}` }] } satisfies AssistantToolResult;
 }
 
 function serviceSearchQueries(request: string) {
@@ -503,7 +531,7 @@ async function automaticLocalFluidSelection(args: Record<string, unknown>, conte
   })), requiredSpec, requiredLiters);
 }
 
-async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>) {
+async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>, context: ToolContext) {
   const ids = [...new Set(itemValues.map((item) => text(item.productId, 160)).filter(Boolean))];
   const products = await prisma.localProduct.findMany({ where: { id: { in: ids }, archived: false }, select: { id: true, entityType: true, name: true, article: true, salePriceCents: true } });
   const byId = new Map(products.map((item) => [item.id, item]));
@@ -516,7 +544,7 @@ async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItem
     const totalCents = Math.round(product.salePriceCents * quantity);
     return { source: "local", productId, type: product.entityType, name: product.name, article: product.article, quantity, unitPriceCents: product.salePriceCents, totalCents };
   });
-  const supplierResults = await Promise.all(rosskoItems.map(async (item) => ({ item, search: await rossko({ article: text(item.article, 80), brand: text(item.brand, 80) }) })));
+  const supplierResults = await Promise.all(rosskoItems.map(async (item) => ({ item, search: await rossko({ article: text(item.article, 80), brand: text(item.brand, 80) }, context) })));
   const rosskoLines = supplierResults.map(({ item, search }) => {
     const offers = Array.isArray(search.result.offers) ? search.result.offers as Array<Record<string, unknown>> : [];
     const selectedOfferId = text(item.offerId, 100);
@@ -535,15 +563,15 @@ async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItem
   return { lines, totalCents, totalRub: totalCents / 100, validUntil, localCount: localLines.length, supplierResults };
 }
 
-async function quotePreview(args: Record<string, unknown>) {
+async function quotePreview(args: Record<string, unknown>, context: ToolContext) {
   const itemValues = quoteInputRows(args.items, 30);
   const rosskoItems = quoteInputRows(args.rosskoItems, 12);
   if (!itemValues.length && !rosskoItems.length) throw new Error("Для предварительного расчёта нужна хотя бы одна позиция");
-  const base = await quoteLines(itemValues, rosskoItems);
+  const base = await quoteLines(itemValues, rosskoItems, context);
   const maximumItems = quoteInputRows(args.maximumItems, 30);
   const maximumRosskoItems = quoteInputRows(args.maximumRosskoItems, 12);
   const hasMaximum = maximumItems.length > 0 || maximumRosskoItems.length > 0;
-  const maximum = hasMaximum ? await quoteLines(maximumItems, maximumRosskoItems) : null;
+  const maximum = hasMaximum ? await quoteLines(maximumItems, maximumRosskoItems, context) : null;
   if (maximum && maximum.totalCents < base.totalCents) throw new Error("Верхняя граница расчёта не может быть ниже базовой суммы");
   return {
     result: {
@@ -583,7 +611,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
     ];
     if (fallbackArticle) rosskoItems = rosskoItems.filter((item) => normalizedArticle(item.article) !== fallbackArticle);
   }
-  const material = await quoteLines([...selectedProducts, ...consumables], rosskoItems);
+  const material = await quoteLines([...selectedProducts, ...consumables], rosskoItems, context);
   const appliedRule = await resolveLaborPrice({
     organizationId: context.organizationId,
     locationId,
@@ -685,9 +713,9 @@ export async function executeAssistantTool(name: string, argumentsValue: unknown
   if (name === "find_mann_filters") return findMannFilters(args);
   if (name === "search_local_catalog") return searchCatalog(args);
   if (name === "get_stock") return stock(args);
-  if (name === "search_rossko") return rossko(args);
+  if (name === "search_rossko") return rossko(args, context);
   if (name === "find_service_options") return findServiceOptions(args);
-  if (name === "calculate_quote_preview") return quotePreview(args);
+  if (name === "calculate_quote_preview") return quotePreview(args, context);
   if (name === "calculate_service_quote_v2") return serviceQuoteV2(args, context);
   if (name === "audit_legacy_client_agent") return auditLegacyClientAgent(args, context.organizationId);
   throw new Error(`Недоступный инструмент: ${name}`);

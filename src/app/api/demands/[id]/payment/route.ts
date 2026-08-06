@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { syncAqsiPendingOrder, type AqsiPendingOrderItem } from "@/lib/aqsi";
-import { getSession } from "@/lib/auth";
+import { type AqsiPendingOrderItem } from "@/lib/aqsi";
+import { submitAqsiFiscalization } from "@/lib/aqsi-fiscalization";
+import { getAqsiMarkingBypassPassword } from "@/lib/aqsi-integration";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { getCurrentShift } from "@/lib/cashbox";
 import { applyBulkOilSaleMovements } from "@/lib/local-inventory-admin";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 import {
@@ -17,7 +20,7 @@ import {
   normalizeProductMarkingSettings,
   productMarkingDefaultForGroup,
 } from "@/lib/product-marking";
-import { toMoyskladMomentString } from "@/lib/time";
+import { toServiceMomentString } from "@/lib/time";
 
 type Meta = { href: string; type: string; mediaType: string };
 
@@ -94,8 +97,8 @@ function normalizeCodes(value: string | string[] | undefined): string[] {
   return typeof value === "string" ? parseMarkingCodesInput(value) : [];
 }
 
-function hasCorrectBypassPassword(password?: string): boolean {
-  const expected = process.env.AQSI_MARKING_BYPASS_PASSWORD?.trim();
+async function hasCorrectBypassPassword(password?: string, registerId?: string | null): Promise<boolean> {
+  const expected = await getAqsiMarkingBypassPassword(registerId);
   if (!expected) return false;
   return password?.trim() === expected;
 }
@@ -113,13 +116,13 @@ function pickRawAgent(raw: unknown): DemandAgent | undefined {
   return agent && typeof agent === "object" ? (agent as DemandAgent) : undefined;
 }
 
-function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): BuildAqsiResult | NextResponse {
+function buildAqsiItems(rows: OrderPosition[], body: PaymentBody, bypassPasswordAccepted: boolean): BuildAqsiResult | NextResponse {
   const bypassIds = new Set(
     Array.isArray(body.markingBypassPositionIds)
       ? body.markingBypassPositionIds.map((id) => String(id).trim()).filter(Boolean)
       : []
   );
-  if (bypassIds.size > 0 && !hasCorrectBypassPassword(body.markingBypassPassword)) {
+  if (bypassIds.size > 0 && !bypassPasswordAccepted) {
     return NextResponse.json(
       { error: "Неверный пароль для пропуска маркировки" },
       { status: 403 }
@@ -295,24 +298,38 @@ function buildAqsiItems(rows: OrderPosition[], body: PaymentBody): BuildAqsiResu
 
 async function sendAqsiOrder(input: {
   id: string;
+  registerId?: string | null;
   number: string;
   comment?: string | null;
   customer?: string | null;
   customerContact?: string | null;
   items: AqsiPendingOrderItem[];
 }) {
-  const aqsi = await syncAqsiPendingOrder({
+  const submission = await submitAqsiFiscalization({
     id: input.id,
+    registerId: input.registerId,
     number: input.number,
-    dateTime: toMoyskladMomentString(),
+    dateTime: toServiceMomentString(),
     comment: input.comment ?? "",
     customer: input.customer ?? "",
     customerContact: input.customerContact ?? undefined,
     items: input.items,
   });
 
+  if (submission.pending) {
+    return NextResponse.json({
+      ok: true,
+      pending: true,
+      fiscalizationRecordId: submission.recordId,
+      status: submission.status,
+      message: "Отгрузка сохранена и ожидает повторной отправки в AQSI.",
+    }, { status: 202 });
+  }
+  const aqsi = submission.result;
   return NextResponse.json({
     ok: true,
+    pending: false,
+    fiscalizationRecordId: submission.recordId,
     orderId: aqsi.orderId,
     uid: aqsi.uid,
     status: aqsi.status,
@@ -350,12 +367,16 @@ async function trySendLocalDemand(
     productMarkingStatus: position.product?.markingStatus,
     productMarkingSettings: position.product?.markingSettings,
   }));
-  const built = buildAqsiItems(rows, body);
+  const currentShift = await getCurrentShift();
+  const bypassPasswordAccepted = !body.markingBypassPositionIds?.length
+    || await hasCorrectBypassPassword(body.markingBypassPassword, currentShift?.aqsiRegisterId);
+  const built = buildAqsiItems(rows, body, bypassPasswordAccepted);
   if (built instanceof NextResponse) return built;
 
   const agent = pickRawAgent(loaded.data.raw);
   const response = await sendAqsiOrder({
     id: loaded.data.header.id,
+    registerId: currentShift?.aqsiRegisterId,
     number: loaded.data.header.name || loaded.data.header.id,
     comment: loaded.data.header.description ?? "",
     customer: loaded.data.header.agentName ?? "",
@@ -370,10 +391,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  }
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
   const { id } = await params;
   if (!id) {
@@ -387,17 +406,16 @@ export async function POST(
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  try {
-    const localResponse = await trySendLocalDemand(id, body, session.user);
-    if (localResponse) return localResponse;
-    return NextResponse.json({ error: "Локальная отгрузка не найдена" }, { status: 404 });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Не удалось отправить заказ в AQSI",
-      },
-      { status: 502 }
-    );
-  }
+  return runWithBranchApiContext(access.context, async () => {
+    try {
+      const localResponse = await trySendLocalDemand(id, body, access.context.user);
+      if (localResponse) return localResponse;
+      return NextResponse.json({ error: "Локальная отгрузка не найдена" }, { status: 404 });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Не удалось отправить заказ в AQSI" },
+        { status: 502 }
+      );
+    }
+  });
 }

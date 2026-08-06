@@ -14,11 +14,6 @@ export function toLocalDateString(dt: Date): string {
   return toServiceDateInput(dt);
 }
 
-/** Возвращает локальные дату и время в формате МойСклад: YYYY-MM-DD HH:mm:ss */
-export function toMoyskladMomentString(dt = new Date()): string {
-  return toServiceMomentString(dt);
-}
-
 /** Возвращает локальные дату и время для AQSI без UTC-сдвига: YYYY-MM-DDTHH:mm:ss */
 export function toAqsiDateTimeString(dt = new Date()): string {
   return toServiceMomentString(dt).replace(" ", "T");
@@ -56,4 +51,4 @@ export function nowInAppTz(): Date {
   return new Date(serviceNow.replace(" ", "T"));
 }
 
-export { APP_TZ };
+export { APP_TZ, toServiceMomentString };

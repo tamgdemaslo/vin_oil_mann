@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -63,6 +64,7 @@ export async function saveAssistantQuoteSnapshot(input: {
   argumentsValue: unknown;
   preview: QuotePreviewResult;
 }) {
+  const branchId = getScopedBranchId();
   const args = object(input.argumentsValue);
   const totalCents = integer(input.preview.totalCents);
   if (totalCents <= 0) throw new Error("Предварительный расчёт не содержит корректной итоговой суммы");
@@ -90,6 +92,7 @@ export async function saveAssistantQuoteSnapshot(input: {
     });
     return tx.aIAssistantQuote.create({
       data: {
+        branchId,
         organizationId: input.organizationId,
         threadId: input.threadId,
         runId: input.runId,

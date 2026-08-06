@@ -429,7 +429,7 @@ async function upsertCommunicationIdentity(
 async function loadClient(id: string | null | undefined) {
   if (!id) return null;
   return prisma.localCounterparty.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { id },
   });
 }
 
@@ -439,8 +439,6 @@ async function loadClientCases(client: LocalCounterparty, conversationId: string
       status: "open",
       OR: [
         { conversationId },
-        { moyskladCounterpartyId: client.id },
-        ...(client.moyskladId ? [{ moyskladCounterpartyId: client.moyskladId }] : []),
         ...(client.normalizedPhone ? [{ phoneNormalized: client.normalizedPhone }] : []),
         { notes: { contains: `conversation:${conversationId}` } },
       ],
@@ -495,7 +493,7 @@ async function loadClientContext(row: ConversationContextRow, client: LocalCount
     where: {
       OR: [
         { counterpartyId: client.id },
-        ...(client.moyskladId ? [{ agentMoyskladId: client.moyskladId }] : []),
+        ...(client.id ? [{ counterpartyId: client.id }] : []),
         { id: row.relatedShipmentId ?? "__none__" },
       ],
     },
@@ -506,7 +504,7 @@ async function loadClientContext(row: ConversationContextRow, client: LocalCount
     where: {
       OR: [
         { clientId: client.id },
-        ...(client.moyskladId ? [{ clientId: client.moyskladId }] : []),
+        ...(client.id ? [{ clientId: client.id }] : []),
         ...(client.phone ? [{ clientPhone: { contains: client.phone.slice(-6) } }] : []),
         { id: row.relatedDiagnosticId ?? "__none__" },
       ],
@@ -861,8 +859,6 @@ export async function createAndLinkClient(
         category: "INDIVIDUAL",
         phone,
         normalizedPhone: normalizedPhone || null,
-        moyskladId: null,
-        moyskladHref: null,
         email: null,
         inn: null,
         archived: false,
@@ -1066,9 +1062,6 @@ export async function createCaseForConversation(
         nextAction: defaultNextActionForCaseStatus("calculation_needed"),
         stageId: stage.id,
         responsibleLogin: cleanOptional(input.responsibleLogin) || actor?.login || null,
-        moyskladCounterpartyId: client.id,
-        moyskladCounterpartyName: client.name,
-        moyskladCounterpartyHref: client.moyskladHref,
         conversationId: row.id,
         caseStatus: "calculation_needed",
         caseType: "message",
@@ -1231,9 +1224,9 @@ export async function createShipmentForConversation(
   if (!organization) throw new MessengerContextError("Организация не найдена в локальной БД", 409);
   if (!store) throw new MessengerContextError("Склад не найден в локальной БД", 409);
   const body: CreateDemandBody = {
-    organization: { meta: localMeta("organization", organization.id, organization.moyskladHref) },
-    store: { meta: localMeta("store", store.id, store.moyskladHref) },
-    agent: { meta: localMeta("counterparty", client.id, client.moyskladHref) },
+    organization: { meta: localMeta("organization", organization.id) },
+    store: { meta: localMeta("store", store.id) },
+    agent: { meta: localMeta("counterparty", client.id) },
     applicable: false,
     description: cleanOptional(input.description) || `Черновик из Messenger, conversation:${row.id}`,
     positions: [],
@@ -1294,9 +1287,6 @@ export async function createTaskForConversation(
         nextAction: title,
         stageId: stage.id,
         responsibleLogin: cleanOptional(input.responsibleLogin) || row.assignedToId || actor?.login || null,
-        moyskladCounterpartyId: client?.id ?? null,
-        moyskladCounterpartyName: client?.name ?? null,
-        moyskladCounterpartyHref: client?.moyskladHref ?? null,
         nextContactAt: cleanOptional(input.dueAt) ? new Date(input.dueAt as string) : null,
         notes: [`messenger task`, `conversation:${row.id}`, cleanOptional(input.priority) ? `priority:${input.priority}` : null].filter(Boolean).join("\n"),
         createdByLogin: actor?.login || "messenger",

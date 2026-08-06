@@ -3,6 +3,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const reportPath = path.join(root, "docs/branch-integration-audit.md");
+const reportDate = "2026-08-06";
 
 function filesBelow(directory) {
   const result = [];
@@ -19,7 +20,7 @@ function source(relative) {
   return fs.readFileSync(path.join(root, relative), "utf8");
 }
 
-const forbiddenRuntimeEnv = /process\.env\.(?:YCLIENTS_[A-Z0-9_]+|ROSSKO_[A-Z0-9_]+|MOYSKLAD_(?:LOGIN|PASSWORD|TOKEN|BEARER|PREFER_BEARER))/g;
+const forbiddenRuntimeEnv = /process\.env\.(?:YCLIENTS_[A-Z0-9_]+|ROSSKO_[A-Z0-9_]+|AQSI_[A-Z0-9_]+|TELEGRAM_API_ID|TELEGRAM_API_HASH|TELEGRAM_USER_SESSION_ENABLED)/g;
 const knownLeakedSecrets = ["mz5bf2yp97nbs4s45e9j"];
 const runtimeFindings = [];
 for (const file of filesBelow(path.join(root, "src")).filter((item) => /\.(?:ts|tsx|js|mjs)$/.test(item))) {
@@ -38,8 +39,13 @@ const checks = [
   ["YCLIENTS AI", "src/lib/ai-agent/yclients.ts", ["getYclientsBranchConfig"]],
   ["YCLIENTS dashboard", "src/app/api/dashboard/operations/route.ts", ["getYclientsBranchConfig", "yclientsRuntimeUserTokens"]],
   ["ROSSKO", "src/lib/rossko.ts", ["getBranchIntegrationValues", '"rossko"']],
-  ["MoySklad", "src/lib/moysklad.ts", ["getBranchIntegrationValues", '"moysklad"']],
-  ["MoySklad rehearsal mutation guard", "src/lib/moysklad.ts", ['assertExternalSideEffectAllowed("moysklad_mutation")']],
+  ["AQSI", "src/lib/aqsi.ts", ["resolveAqsiCashRegister", "aqsiFetchJson"]],
+  ["AQSI durable fiscalization", "src/lib/aqsi-fiscalization.ts", ["branchId_idempotencyKey", 'status: "retry"', "nextAttemptAt"]],
+  ["Telegram user credentials", "src/lib/telegram-user-integration.ts", ["resolveBranchIntegration", 'const CHANNEL = "telegram_user"']],
+  ["Telegram QR branch/user scope", "src/lib/messenger/channels/telegram-user-session.ts", ["currentQrScope", "QR session принадлежит другому филиалу или пользователю"]],
+  ["Integration role policy", "src/lib/integration-access.ts", ["canViewBranchIntegrationSettings", "canManageBranchIntegrationSecrets", 'context.groupRole === "group_owner"']],
+  ["Owner integration notifications", "src/lib/integration-owner-notifications.ts", ["dedupeKey", "throttleMinutes", "recipientUserIds"]],
+  ["Owner integration activity", "src/app/api/integrations/activity/route.ts", ["canManageBranchIntegrationSecrets", "listIntegrationActivity"]],
   ["YCLIENTS rehearsal mutation guard", "src/app/api/yclients/route.ts", ['assertExternalSideEffectAllowed("yclients_mutation")']],
   ["ROSSKO rehearsal order guard", "src/lib/rossko.ts", ['assertExternalSideEffectAllowed("rossko_order")']],
   ["T-Bank rehearsal mutation guard", "src/lib/tbank.ts", ['assertExternalSideEffectAllowed("payment_mutation")', 'assertExternalSideEffectAllowed("tbank_mutation")']],
@@ -72,13 +78,13 @@ const maintenanceEnv = filesBelow(path.join(root, "scripts"))
 const rows = [...checks, ...legacyWebhooks];
 const blockers = [...runtimeFindings.map((finding) => ({ ...finding, status: "BLOCKER" })), ...rows.filter((row) => row.status === "BLOCKER")];
 const markdown = `# Аудит филиальной изоляции интеграций\n\n` +
-  `Сгенерировано 2026-07-28. Runtime env/secret blockers: **${runtimeFindings.length}**; structural blockers: **${rows.filter((row) => row.status === "BLOCKER").length}**.\n\n` +
+  `Сгенерировано ${reportDate}. Runtime env/secret blockers: **${runtimeFindings.length}**; structural blockers: **${rows.filter((row) => row.status === "BLOCKER").length}**.\n\n` +
   `| integration/path | file | status | evidence |\n|---|---|---|---|\n` +
   rows.map((row) => `| ${row.name} | \`${row.file}\` | ${row.status} | ${row.notes} |`).join("\n") +
   `\n\n## Runtime credential scan\n\n` +
-  (runtimeFindings.length ? runtimeFindings.map((row) => `- BLOCKER \`${row.file}\`: ${row.token}`).join("\n") : "No YCLIENTS, ROSSKO, or MoySklad credential env fallback and no known hardcoded provider secret under `src/`.") +
+  (runtimeFindings.length ? runtimeFindings.map((row) => `- BLOCKER \`${row.file}\`: ${row.token}`).join("\n") : "No YCLIENTS, ROSSKO, AQSI or working Telegram credential env fallback and no known hardcoded provider secret under `src/`.") +
   `\n\n## Maintenance-only scripts\n\n` +
-  `The following scripts still accept operator-supplied MoySklad environment credentials. They are classified **ADMIN_ONLY**, are not imported by request runtime, and must not be used as a production fallback. Production execution requires a separate reviewed branch-aware migration/import procedure:\n\n` +
+  `The following scripts are classified **ADMIN_ONLY**, are not imported by request runtime, and must not be used as a production fallback. Production execution requires a separate reviewed branch-aware procedure:\n\n` +
   (maintenanceEnv.length ? maintenanceEnv.map((file) => `- \`${file}\``).join("\n") : "- none") +
   `\n\nProvider credentials are stored as encrypted \`IntegrationCredential\` rows selected by active \`branchId\` and organization. A missing row is an explicit not-configured state; no silent global fallback is permitted.\n`;
 

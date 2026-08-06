@@ -27,11 +27,8 @@ const LEGACY_DEAL_SELECT = {
   amountCents: true,
   stageId: true,
   responsibleLogin: true,
-  moyskladCounterpartyId: true,
-  moyskladCounterpartyName: true,
-  moyskladCounterpartyHref: true,
   yclientsRecordId: true,
-  moyskladDemandId: true,
+  shipmentId: true,
   nextContactAt: true,
   snoozeUntil: true,
   status: true,
@@ -107,7 +104,7 @@ function parseCounterparty(value: unknown): CounterpartyLink | null {
 
 async function createLocalCounterpartyForDeal(body: Record<string, unknown>): Promise<CounterpartyLink | { error: string }> {
   const name =
-    parseOptionalString(body.moyskladCounterpartyName) ??
+    parseOptionalString(body.customerName) ??
     parseOptionalString(body.customerName) ??
     parseOptionalString(body.title);
   if (!name) return { error: "Укажите имя клиента для сохранения в локальной CRM" };
@@ -254,11 +251,8 @@ async function loadStagesWithLegacyDeals(): Promise<CrmStageWithDeals> {
       NULL::text AS "nextAction",
       stage_id AS "stageId",
       responsible_login AS "responsibleLogin",
-      moysklad_counterparty_id AS "moyskladCounterpartyId",
-      moysklad_counterparty_name AS "moyskladCounterpartyName",
-      moysklad_counterparty_href AS "moyskladCounterpartyHref",
       yclients_record_id AS "yclientsRecordId",
-      moysklad_demand_id AS "moyskladDemandId",
+      NULL::text AS "shipmentId",
       NULL::text AS "suppliesNote",
       NULL::text AS "suppliesSupplier",
       NULL::timestamp AS "suppliesExpectedAt",
@@ -327,9 +321,9 @@ export async function POST(request: NextRequest) {
     const phoneNormalized = normalizePhoneKey(parseOptionalString(body.phone));
     const clientType = parseClientType(body.clientType);
     const firstStage = await getFirstCrmStage();
-    let counterparty = parseCounterparty(body.moyskladCounterparty);
+    let counterparty = parseCounterparty(body.legacyCounterparty);
     const yclientsRecordId = parseOptionalString(body.yclientsRecordId);
-    const moyskladDemandId = parseOptionalString(body.moyskladDemandId);
+    const shipmentId = parseOptionalString(body.shipmentId);
 
     if (yclientsRecordId && body.forceNew !== true) {
       const existing = await prisma.crmDeal.findFirst({
@@ -341,7 +335,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!counterparty && (body.createMoyskladCounterparty === true || body.createLocalClient === true)) {
+    if (!counterparty && (body.createLegacyCounterparty === true || body.createLocalClient === true)) {
       const createdCounterparty = await createLocalCounterpartyForDeal(body as Record<string, unknown>);
       if ("error" in createdCounterparty) {
         return NextResponse.json({ error: createdCounterparty.error }, { status: 502 });
@@ -367,7 +361,7 @@ export async function POST(request: NextRequest) {
     const nextContactAt = parsedNextContactAt ?? nextActionAt;
     const parsedSuppliesExpectedAt = parseDate(body.suppliesExpectedAt);
     const suppliesExpectedAt = caseStatus === "waiting_parts" && !parsedSuppliesExpectedAt ? defaultDeadline(24) : parsedSuppliesExpectedAt;
-    const caseType = parseCaseType(body.type ?? body.caseType ?? (body.conversationId ? "message" : moyskladDemandId ? "shipment" : "manual"));
+    const caseType = parseCaseType(body.type ?? body.caseType ?? (body.conversationId ? "message" : shipmentId ? "shipment" : "manual"));
     const lastOutboundMessageAt = parseDate(body.lastOutboundMessageAt) ?? (caseStatus === "calculation_sent" ? new Date() : null);
     const lastClientMessageAt = parseDate(body.lastClientMessageAt) ?? null;
 
@@ -383,14 +377,10 @@ export async function POST(request: NextRequest) {
       nextAction: parseOptionalString(body.nextAction),
       stageId,
       responsibleLogin: parseOptionalString(body.responsibleLogin) ?? session.user.login,
-      moyskladCounterpartyId: counterparty?.id ?? null,
-      moyskladCounterpartyName: counterparty?.name ?? null,
-      moyskladCounterpartyHref: counterparty?.meta.href ?? null,
       yclientsRecordId,
-      moyskladDemandId,
+      shipmentId,
       conversationId: parseOptionalString(body.conversationId),
       appointmentId: parseOptionalString(body.appointmentId) ?? yclientsRecordId,
-      shipmentId: parseOptionalString(body.shipmentId) ?? moyskladDemandId,
       precheckId: parseOptionalString(body.precheckId),
       diagnosticId: parseOptionalString(body.diagnosticId),
       procurementId: parseOptionalString(body.procurementId),

@@ -300,7 +300,7 @@ export function isPieceworkRole(role: string): role is PieceworkRole {
   return role === "master" || role === "admin";
 }
 
-export function extractMoyskladEntityId(href?: string): string | null {
+export function extractLocalEntityId(href?: string): string | null {
   if (!href) return null;
   const cleanHref = href.split(/[?#]/)[0] ?? href;
   const parts = cleanHref.split("/").filter(Boolean);

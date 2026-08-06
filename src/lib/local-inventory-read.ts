@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
-type MoySkladMeta = {
+type LocalEntityMeta = {
   href: string;
   type: string;
   mediaType: string;
@@ -216,10 +216,10 @@ function productMatchesSearchFields(
   return true;
 }
 
-function entityMeta(entityType: string, moyskladId: string | null, href: string | null, localId: string): MoySkladMeta {
+function entityMeta(entityType: string, localId: string): LocalEntityMeta {
   const safeType = entityType || "product";
   return {
-    href: href || `local://${safeType}/${localId || moyskladId || ""}`,
+    href: `local://${safeType}/${localId}`,
     type: safeType,
     mediaType: "application/json",
   };
@@ -264,7 +264,7 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
   const entityType = params.entityType?.trim() ?? "";
   const searchTokens = splitSearchTokens(search).slice(0, 6);
   const storeName = params.storeName?.trim() ?? "";
-  const storeMoyskladId = params.storeId?.trim() ?? "";
+  const storeId = params.storeId?.trim() ?? "";
   const [normalizedSearchIds, normalizedOemIds, normalizedLegacyMannIds] = await Promise.all([
     search ? findNormalizedProductIds([search]) : Promise.resolve([]),
     oem ? findNormalizedProductIds([oem]) : Promise.resolve([]),
@@ -338,9 +338,9 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
     });
   }
 
-  const store = storeMoyskladId
+  const store = storeId
     ? await prisma.localStore.findFirst({
-        where: { OR: [{ id: storeMoyskladId }, { moyskladId: storeMoyskladId }] },
+        where: { id: storeId },
         select: { id: true },
       })
     : storeName
@@ -374,9 +374,9 @@ export async function searchLocalProducts(params: LocalProductSearchParams) {
         const quantity = decimalToNumber(stock?.quantity);
         const reserve = decimalToNumber(stock?.reserve);
         const available = decimalToNumber(stock?.available);
-        const meta = entityMeta(product.entityType, product.moyskladId, product.moyskladHref, product.id);
+        const meta = entityMeta(product.entityType, product.id);
         return {
-          id: product.moyskladId ?? product.id,
+          id: product.id,
           name: product.name,
           article: product.article ?? undefined,
           code: product.code ?? undefined,
@@ -441,9 +441,9 @@ export async function searchLocalCounterparties(params: { search?: string; limit
 
   return {
     counterparties: counterparties.map((counterparty) => ({
-      id: counterparty.moyskladId ?? counterparty.id,
+      id: counterparty.id,
       name: counterparty.name,
-      meta: entityMeta("counterparty", counterparty.moyskladId, counterparty.moyskladHref, counterparty.id),
+      meta: entityMeta("counterparty", counterparty.id),
     })),
   };
 }
@@ -455,10 +455,10 @@ export async function listLocalStores() {
   });
   return {
     stores: stores.map((store) => ({
-      id: store.moyskladId ?? store.id,
+      id: store.id,
       name: store.name,
       isMain: store.isMain,
-      meta: entityMeta("store", store.moyskladId, store.moyskladHref, store.id),
+      meta: entityMeta("store", store.id),
     })),
   };
 }
@@ -482,7 +482,7 @@ export async function loadLocalStockByAssortment(params: {
   const storeName = params.storeName?.trim() ?? "";
   const store = storeLookup
     ? await prisma.localStore.findFirst({
-        where: { OR: [{ id: storeLookup }, { moyskladId: storeLookup }] },
+        where: { id: storeLookup },
       })
     : storeName
       ? await prisma.localStore.findFirst({ where: { name: { equals: storeName, mode: "insensitive" } } })
@@ -492,14 +492,13 @@ export async function loadLocalStockByAssortment(params: {
   const ids = params.assortmentHrefs.map(extractEntityId).filter((id): id is string => Boolean(id));
   const products = ids.length
     ? await prisma.localProduct.findMany({
-        where: { OR: [{ id: { in: ids } }, { moyskladId: { in: ids } }] },
+        where: { id: { in: ids } },
         include: { stockBalances: { where: { storeId: store.id }, take: 1 } },
       })
     : [];
   const byId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     byId.set(product.id, product);
-    if (product.moyskladId) byId.set(product.moyskladId, product);
   }
 
   const stockByAssortment: Record<
@@ -526,12 +525,11 @@ export async function loadLocalStockByAssortment(params: {
 export async function loadLocalProductCells(hrefs: string[]) {
   const ids = hrefs.map(extractEntityId).filter((id): id is string => Boolean(id));
   const products = ids.length
-    ? await prisma.localProduct.findMany({ where: { OR: [{ id: { in: ids } }, { moyskladId: { in: ids } }] } })
+    ? await prisma.localProduct.findMany({ where: { id: { in: ids } } })
     : [];
   const byId = new Map<string, (typeof products)[number]>();
   for (const product of products) {
     byId.set(product.id, product);
-    if (product.moyskladId) byId.set(product.moyskladId, product);
   }
   const cells: Record<string, number | string> = {};
   for (const href of hrefs) {
@@ -573,7 +571,7 @@ function isPlateAttributeName(name: string | undefined): boolean {
 }
 
 function demandPlateText(attributes: unknown): string {
-  const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
+  const attrId = "";
   const parts: string[] = [];
   for (const attr of jsonArray(attributes)) {
     const id = typeof attr.id === "string" ? attr.id : "";
@@ -711,7 +709,7 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
     ]);
     return {
       meta: { size: total, limit, offset },
-      rows: rows.map((row) => localDemandToMoySkladShape(row)),
+      rows: rows.map((row) => localDemandToApiShape(row)),
     };
   }
 
@@ -739,15 +737,13 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
 
   return {
     meta: { size: filtered.length, limit, offset },
-    rows: filtered.slice(offset, offset + limit).map((row) => localDemandToMoySkladShape(row)),
+    rows: filtered.slice(offset, offset + limit).map((row) => localDemandToApiShape(row)),
   };
 }
 
 type LocalDemandWithRelations = Awaited<ReturnType<typeof prisma.localDemand.findMany>>[number] & {
   counterparty?: {
     id: string;
-    moyskladId: string | null;
-    moyskladHref: string | null;
     name: string;
     phone: string | null;
     normalizedPhone?: string | null;
@@ -755,18 +751,16 @@ type LocalDemandWithRelations = Awaited<ReturnType<typeof prisma.localDemand.fin
     searchText?: string | null;
   } | null;
   store?: {
-    moyskladId: string | null;
-    moyskladHref: string | null;
     name: string;
   } | null;
 };
 
-function localDemandToMoySkladShape(row: LocalDemandWithRelations) {
+function localDemandToApiShape(row: LocalDemandWithRelations) {
   const counterpartyMeta = row.counterparty
-    ? entityMeta("counterparty", row.counterparty.moyskladId, row.counterparty.moyskladHref, row.counterparty.id)
+    ? entityMeta("counterparty", row.counterparty.id)
     : undefined;
   return {
-    id: row.moyskladId ?? row.id,
+    id: row.id,
     name: row.name,
     moment: row.momentAt.toISOString(),
     applicable: row.applicable,
@@ -775,7 +769,6 @@ function localDemandToMoySkladShape(row: LocalDemandWithRelations) {
     agent: row.counterparty
       ? {
           id: row.counterparty.id,
-          moyskladId: row.counterparty.moyskladId ?? undefined,
           name: row.counterparty.name,
           phone: row.counterparty.phone ?? undefined,
           phones: phonesRawArray(row.counterparty.phonesRaw).map((phone) => ({ phone })),
@@ -783,11 +776,9 @@ function localDemandToMoySkladShape(row: LocalDemandWithRelations) {
         }
       : row.agentNameSnapshot
         ? {
-            id: row.agentMoyskladId ?? undefined,
+            id: undefined,
             name: row.agentNameSnapshot,
-            meta: row.agentMoyskladId
-              ? entityMeta("counterparty", row.agentMoyskladId, null, row.agentMoyskladId)
-              : undefined,
+            meta: undefined,
           }
         : undefined,
     organization: row.organizationName ? { name: row.organizationName } : undefined,

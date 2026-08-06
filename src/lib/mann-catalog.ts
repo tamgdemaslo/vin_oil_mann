@@ -992,10 +992,10 @@ function productHasMannArticle(
   return null;
 }
 
-function localProductMeta(product: { id: string; entityType?: string | null; moyskladHref?: string | null }) {
+function localProductMeta(product: { id: string; entityType?: string | null; localHref?: string | null }) {
   const type = product.entityType || "product";
   return {
-    href: product.moyskladHref || `local://${type}/${product.id}`,
+    href: `local://${type}/${product.id}`,
     type,
     mediaType: "application/json",
   };
@@ -1045,7 +1045,7 @@ export async function matchMannArticlesToLocalProducts(params: {
   if (normalizedArticles.length === 0) return [];
 
   const store = params.warehouseId
-    ? await prisma.localStore.findFirst({ where: { branchId, OR: [{ id: params.warehouseId }, { moyskladId: params.warehouseId }] }, select: { id: true } })
+    ? await prisma.localStore.findFirst({ where: { branchId, OR: [{ id: params.warehouseId }, { id: params.warehouseId }] }, select: { id: true } })
     : null;
   const stockInclude = { where: store?.id ? { storeId: store.id } : undefined, take: store?.id ? 1 : 5 };
 

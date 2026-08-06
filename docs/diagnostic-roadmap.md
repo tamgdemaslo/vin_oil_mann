@@ -17,7 +17,7 @@
 - `src/app/api/diagnostic/**/route.ts` — backend диагностики.
 - `src/lib/diagnostic-seed-positions.ts` — первичное создание позиций диагностики.
 - `src/lib/diagnostic-regenerate-offers.ts` — пересчет счетчиков и офферов.
-- `src/lib/diagnostic-moysklad-resolve.ts` — подбор локальных товаров для офферов.
+- `src/lib/diagnostic-local_inventory-resolve.ts` — подбор локальных товаров для офферов.
 - `src/lib/diagnostic-photos.ts` — хранение и удаление фото.
 - `prisma/schema.prisma` — модели `Diagnostic`, `DiagnosticPosition`, `DiagnosticPhoto`, `DiagnosticOffer`.
 - `prisma/migrations/20260202000000_add_diagnostic_module/migration.sql` — миграция диагностического модуля.
@@ -347,9 +347,9 @@ Hotkeys включены для desktop/tablet viewport и не перехват
 1. Пользователь отмечает офферы красной зоны.
 2. Для каждого выбранного оффера выбирается вариант.
 3. Frontend отправляет `selections: [{ offerId, variantIndex }]`.
-4. Backend проверяет, что у диагностики есть `shipmentMoySkladId`.
-5. Backend ищет локальную отгрузку по `LocalDemand.id` или `LocalDemand.moyskladId`.
-6. Для каждого варианта берется `moySkladProductId`, который на самом деле является id локального товара.
+4. Backend проверяет, что у диагностики есть `shipmentLocalInventoryId`.
+5. Backend ищет локальную отгрузку по `LocalDemand.id` или `LocalDemand.local_inventoryId`.
+6. Для каждого варианта используется `productId` локального товара.
 7. Если отгрузка проведена (`applicable`) и есть склад, backend проверяет остаток и списывает 1 шт.
 8. Backend создает `LocalDemandPosition` с `raw.source = diagnostic-offer`.
 9. Backend пересчитывает `LocalDemand.sumCents`.
@@ -395,8 +395,8 @@ Hotkeys включены для desktop/tablet viewport и не перехват
 
 | Поле | Источник из новой отгрузки | Источник из существующей отгрузки |
 |---|---|---|
-| `shipmentMoySkladId` | Id созданной/существующей локальной отгрузки. | Id текущей отгрузки из route. |
-| `agentMoySkladId` | `selectedAgent.id`. | `data.raw.agent.id`, если есть. |
+| `shipmentLocalInventoryId` | Id созданной/существующей локальной отгрузки. | Id текущей отгрузки из route. |
+| `agentLocalInventoryId` | `selectedAgent.id`. | `data.raw.agent.id`, если есть. |
 | `vin` | Поле VIN без пробелов, uppercase. | Документный VIN без пробелов, uppercase. |
 | `brand` | VIN decode `make` или первое слово `модель авто`. | VIN decode `make` или первое слово `модель авто`. |
 | `model` | VIN decode `model` или остаток `модель авто`. | VIN decode `model` или остаток `модель авто`. |
@@ -409,7 +409,7 @@ Hotkeys включены для desktop/tablet viewport и не перехват
 
 | Сущность | Поля |
 |---|---|
-| `Diagnostic` | `id`, `shipmentMoySkladId`, `shipmentDraftId`, `agentMoySkladId`, `vin`, `brand`, `model`, `year`, `licensePlate`, `mileage`, `mechanicLogin`, `status`, `startedAt`, `completedAt`, `clientReportSentAt`, `clientReportToken`, `clientWantsReminder`, `summaryGreen`, `summaryYellow`, `summaryRed`, `createdAt`, `updatedAt`. |
+| `Diagnostic` | `id`, `shipmentLocalInventoryId`, `shipmentDraftId`, `agentLocalInventoryId`, `vin`, `brand`, `model`, `year`, `licensePlate`, `mileage`, `mechanicLogin`, `status`, `startedAt`, `completedAt`, `clientReportSentAt`, `clientReportToken`, `clientWantsReminder`, `summaryGreen`, `summaryYellow`, `summaryRed`, `createdAt`, `updatedAt`. |
 | `DiagnosticPosition` | `id`, `diagnosticId`, `block`, `node`, `status`, `tags`, `measurementValue`, `measurementUnit`, `recommendation`, `notes`, `createdAt`, `updatedAt`. |
 | `DiagnosticPhoto` | `id`, `positionId`, `filePath`, `caption`, `createdAt`. |
 | `DiagnosticOffer` | `id`, `diagnosticId`, `relatedPositionId`, `offerKey`, `title`, `variants`, `selectedVariantIndex`, `addedToShipment`, `nextVisitOnly`, `createdAt`. |
@@ -483,4 +483,4 @@ Hotkeys включены для desktop/tablet viewport и не перехват
 - `nextVisitOnly` оффер для салонного фильтра создается, но в текущей сводке не отображается отдельным списком офферов, только желтая зона показывает рекомендации.
 - Внутренний endpoint фото всегда отдает `image/jpeg`, даже если файл сохранен как `png`, `webp` или `gif`; публичный endpoint MIME определяет корректно.
 - `clientWantsReminder` сохраняется, но сценарий фактического напоминания через 6 месяцев в коде этого раздела не реализован.
-- История отгрузок берется из `moySkladDemandSync` по `agentMetaHref contains agentMoySkladId`; локальные отгрузки нового ядра могут не попасть в историю.
+- История отгрузок берется из `LocalDemand` по `counterpartyId`; записи нового ядра учитываются в той же модели.

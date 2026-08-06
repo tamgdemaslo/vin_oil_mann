@@ -355,8 +355,8 @@
       "requiredChanges": "none"
     },
     {
-      "modelName": "MoySkladDemandSync",
-      "purpose": "moy sklad demand sync",
+      "modelName": "LocalInventoryDemandSync",
+      "purpose": "retired demand sync",
       "scope": "BRANCH_SCOPED",
       "hasBranchId": true,
       "hasBusinessGroupId": false,
@@ -367,8 +367,8 @@
       "requiredChanges": "add/justify Branch relation"
     },
     {
-      "modelName": "MoySkladDemandPositionSync",
-      "purpose": "moy sklad demand position sync",
+      "modelName": "LocalInventoryDemandPositionSync",
+      "purpose": "retired demand position sync",
       "scope": "BRANCH_SCOPED",
       "hasBranchId": true,
       "hasBusinessGroupId": false,
@@ -379,8 +379,8 @@
       "requiredChanges": "add/justify Branch relation"
     },
     {
-      "modelName": "MoySkladAnalyticsSyncState",
-      "purpose": "moy sklad analytics sync state",
+      "modelName": "LocalInventoryAnalyticsSyncState",
+      "purpose": "retired analytics sync state",
       "scope": "BRANCH_SCOPED",
       "hasBranchId": true,
       "hasBusinessGroupId": false,

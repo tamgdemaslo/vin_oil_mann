@@ -123,9 +123,9 @@ export async function POST(request: NextRequest) {
         const comment = typeof body.comment === "string" ? body.comment : undefined;
         const attachmentUrl =
           typeof body.attachmentUrl === "string" ? body.attachmentUrl : undefined;
-        const moyskladCashoutHref =
-          typeof body.moyskladCashoutHref === "string"
-            ? body.moyskladCashoutHref
+        const legacyCashoutHref =
+          typeof body.legacyCashoutHref === "string"
+            ? body.legacyCashoutHref
             : undefined;
         const status = body.status === "draft" ? "draft" : "posted";
         if (!shiftId) {
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
           status,
           comment,
           attachmentUrl,
-          moyskladCashoutHref,
+          legacyCashoutHref,
         });
         return NextResponse.json({ operation: op });
       }

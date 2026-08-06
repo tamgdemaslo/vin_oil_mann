@@ -453,7 +453,7 @@ export async function getLocalInventoryFinance(params: FinanceParams = {}): Prom
       });
       addTopProduct(
         topProducts,
-        product.productId ?? position.assortmentMoyskladId ?? position.name,
+        product.productId ?? position.productId ?? position.name,
         product,
         demand.id,
         quantity,

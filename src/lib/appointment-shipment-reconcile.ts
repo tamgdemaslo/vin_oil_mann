@@ -42,7 +42,6 @@ export type AppointmentLike = JsonRecord & {
 
 export type ShipmentLike = {
   id: string;
-  moyskladId?: string | null;
   name: string;
   momentAt: Date | string;
   documentDate: string;
@@ -50,7 +49,6 @@ export type ShipmentLike = {
   sumCents?: number;
   description?: string | null;
   counterpartyId?: string | null;
-  agentMoyskladId?: string | null;
   agentNameSnapshot?: string | null;
   organizationId?: string | null;
   attributes?: unknown;
@@ -58,7 +56,6 @@ export type ShipmentLike = {
   positions?: unknown[];
   counterparty?: {
     id?: string;
-    moyskladId?: string | null;
     name?: string | null;
     phone?: string | null;
     normalizedPhone?: string | null;
@@ -352,10 +349,10 @@ function demandClientKeys(demand: ShipmentLike): string[] {
   const values = [
     demand.counterpartyId,
     demand.counterparty?.id,
-    demand.counterparty?.moyskladId,
-    demand.agentMoyskladId,
+    demand.counterparty?.id,
+    demand.counterpartyId,
     raw.counterpartyId,
-    raw.agentMoyskladId,
+    raw.counterpartyId,
     raw.agentId,
     raw.yclientsClientId,
     nestedValue(raw, ["sourceRecord", "clientId"]),
@@ -556,7 +553,7 @@ function scoreShipmentCandidate(
   demand: ShipmentLike,
   appointmentId: string
 ): ScoredCandidate | null {
-  const demandIds = uniqueStrings([demand.id, demand.moyskladId]);
+  const demandIds = uniqueStrings([demand.id, demand.id]);
   const direct =
     demandAppointmentRefs(demand).includes(appointmentId) ||
     appointmentShipmentRefs(appointment).some((ref) => demandIds.includes(ref));

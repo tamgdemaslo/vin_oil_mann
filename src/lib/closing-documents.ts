@@ -620,7 +620,7 @@ export async function buildClosingDocumentPayload(
   options: BuildOptions
 ): Promise<ClosingDocumentPayload | null> {
   const demand = await prisma.localDemand.findFirst({
-    where: { OR: [{ id: shipmentId }, { moyskladId: shipmentId }] },
+    where: { OR: [{ id: shipmentId }, { id: shipmentId }] },
     include: {
       organization: true,
       counterparty: true,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { aiAssistantApiError, requireAIAssistantAccess } from "@/lib/ai-assistant/access";
+import { aiAssistantApiError, requireAIAssistantBaseAccess, resolveAIAssistantThreadAccess, runWithAIAssistantBranchContext } from "@/lib/ai-assistant/access";
 import { runAssistantThread } from "@/lib/ai-assistant/runner";
 
 export const runtime = "nodejs";
@@ -12,19 +12,20 @@ const messageSchema = z.object({
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireAIAssistantAccess();
-  if ("response" in access) return access.response;
+  const baseAccess = await requireAIAssistantBaseAccess();
+  if ("response" in baseAccess) return baseAccess.response;
   try {
     const { id } = await params;
     const body = messageSchema.parse(await request.json());
-    const result = await runAssistantThread({
+    const access = await resolveAIAssistantThreadAccess(baseAccess, id);
+    const result = await runWithAIAssistantBranchContext(access, () => runAssistantThread({
       threadId: id,
       organizationId: access.organizationId,
       actor: { id: access.actorId, name: access.session.user.name, role: access.session.user.role },
       message: body.message,
       selectedQuoteId: body.selectedQuoteId,
       clientMessageMode: body.clientMessageMode,
-    });
+    }));
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Введите сообщение до 12 000 символов" }, { status: 422 });

@@ -169,7 +169,7 @@ async function loadCounterparty(input: ContactActionInput) {
   const id = contactId(input);
   if (!id) return null;
   return prisma.localCounterparty.findFirst({
-    where: { OR: [{ id }, { moyskladId: id }] },
+    where: { OR: [{ id }, { id: id }] },
     select: { id: true, name: true, phone: true, normalizedPhone: true, counterpartyTypeName: true },
   });
 }

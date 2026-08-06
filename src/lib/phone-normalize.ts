@@ -1,5 +1,5 @@
 /**
- * Нормализация телефона для склейки клиентов (аналитика МойСклад).
+ * Нормализация телефона для склейки клиентов в локальной аналитике.
  * Правила: убрать пробелы, скобки, тире, +; 8XXXXXXXXXX → 7XXXXXXXXXX.
  */
 
@@ -38,7 +38,7 @@ export function phoneKeysEqual(left: string | undefined | null, right: string | 
   return Boolean(a && b && a === b);
 }
 
-/** Фрагмент контрагента из МойСклад (отгрузка expand=agent / counterparty). */
+/** Фрагмент контрагента из локальной отгрузки. */
 export type CounterpartyPhoneSource = {
   phone?: string;
   phones?: Array<{ phone?: string } | string>;
@@ -95,7 +95,7 @@ export function extractRawPhoneFromAgent(agent: CounterpartyPhoneSource): string
 }
 
 /**
- * Нормализованный ключ клиента: перебирает все источники по правилам МойСклад,
+ * Нормализованный ключ клиента: перебирает все известные источники,
  * возвращает первый номер, который удаётся нормализовать.
  */
 export function pickNormalizedPhoneFromCounterparty(agent: CounterpartyPhoneSource): string | null {

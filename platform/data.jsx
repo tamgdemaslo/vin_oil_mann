@@ -118,7 +118,6 @@ const CASH_SHIFT = {
 };
 
 const INTEGRATIONS = [
-  { id: 'moysklad', name: 'МойСклад', status: 'ok', last: '14:48' },
   { id: 'aqsi', name: 'AQSI', status: 'ok', last: '14:50' },
   { id: 'rossko', name: 'Россько', status: 'warn', last: '13:12' },
   { id: 'yclients', name: 'YCLIENTS', status: 'ok', last: '14:49' },

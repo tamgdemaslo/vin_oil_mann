@@ -33,7 +33,6 @@ import { formatServiceDate } from "@/lib/date-time";
 
 type CounterpartyRow = {
   id: string;
-  moyskladId?: string | null;
   source?: "local" | "snapshot" | "supplier" | string;
   name: string;
   displayName: string;
@@ -592,7 +591,7 @@ export default function CounterpartiesClient() {
 
   useEffect(() => {
     if (!initialCounterpartyId || openedCounterpartyId === initialCounterpartyId) return;
-    const existingRow = rows.find((row) => row.id === initialCounterpartyId || row.moyskladId === initialCounterpartyId);
+    const existingRow = rows.find((row) => row.id === initialCounterpartyId || row.id === initialCounterpartyId);
     if (existingRow) {
       setDetailRow(existingRow);
       setOpenedCounterpartyId(initialCounterpartyId);

@@ -275,8 +275,8 @@ export type OfferVariant = {
   label: string;
   /** Цена по умолчанию для прайса, ₽ */
   defaultPriceRub: number;
-  /** Подсказки поиска товара в МойСклад */
-  moySkladSearchHints?: string[];
+  /** Подсказки поиска товара в локальном каталоге */
+  catalogSearchHints?: string[];
 };
 
 export type OfferTemplate = {
@@ -291,41 +291,41 @@ export const RED_NODE_OFFERS: Partial<Record<string, OfferTemplate>> = {
     offerKey: "atf_change",
     title: "Замена ATF",
     variants: [
-      { label: "Аппаратная замена ATF", defaultPriceRub: 8500, moySkladSearchHints: ["ATF", "Dexron", "Toyota ATF WS"] },
-      { label: "Частичная замена ATF", defaultPriceRub: 4500, moySkladSearchHints: ["ATF"] },
+      { label: "Аппаратная замена ATF", defaultPriceRub: 8500, catalogSearchHints: ["ATF", "Dexron", "Toyota ATF WS"] },
+      { label: "Частичная замена ATF", defaultPriceRub: 4500, catalogSearchHints: ["ATF"] },
     ],
   },
   brake_fluid: {
     offerKey: "brake_fluid_change",
     title: "Замена тормозной жидкости",
-    variants: [{ label: "Замена тормозной жидкости", defaultPriceRub: 2500, moySkladSearchHints: ["тормозная жидкость", "DOT 4"] }],
+    variants: [{ label: "Замена тормозной жидкости", defaultPriceRub: 2500, catalogSearchHints: ["тормозная жидкость", "DOT 4"] }],
   },
   front_diff: {
     offerKey: "front_diff_oil",
     title: "Замена масла переднего редуктора",
-    variants: [{ label: "Замена масла переднего редуктора", defaultPriceRub: 3500, moySkladSearchHints: ["редуктор передний"] }],
+    variants: [{ label: "Замена масла переднего редуктора", defaultPriceRub: 3500, catalogSearchHints: ["редуктор передний"] }],
   },
   rear_diff: {
     offerKey: "rear_diff_oil",
     title: "Замена масла заднего редуктора",
-    variants: [{ label: "Замена масла заднего редуктора", defaultPriceRub: 3500, moySkladSearchHints: ["редуктор задний"] }],
+    variants: [{ label: "Замена масла заднего редуктора", defaultPriceRub: 3500, catalogSearchHints: ["редуктор задний"] }],
   },
   transfer_case: {
     offerKey: "transfer_case_oil",
     title: "Замена масла раздатки",
-    variants: [{ label: "Замена масла раздаточной коробки", defaultPriceRub: 4000, moySkladSearchHints: ["раздатка"] }],
+    variants: [{ label: "Замена масла раздаточной коробки", defaultPriceRub: 4000, catalogSearchHints: ["раздатка"] }],
   },
   engine_oil: {
     offerKey: "engine_oil_change",
     title: "Замена моторного масла и фильтра",
     variants: [
-      { label: "Стандартное ТО (масло + фильтр)", defaultPriceRub: 5500, moySkladSearchHints: ["моторное масло 5W"] },
+      { label: "Стандартное ТО (масло + фильтр)", defaultPriceRub: 5500, catalogSearchHints: ["моторное масло 5W"] },
     ],
   },
   coolant: {
     offerKey: "coolant_replace",
     title: "Замена охлаждающей жидкости",
-    variants: [{ label: "Замена антифриза", defaultPriceRub: 4800, moySkladSearchHints: ["антифриз", "охлаждающая"] }],
+    variants: [{ label: "Замена антифриза", defaultPriceRub: 4800, catalogSearchHints: ["антифриз", "охлаждающая"] }],
   },
 };
 
@@ -334,7 +334,7 @@ export const SURVEY_NEXT_VISIT_OFFERS: Partial<Record<string, OfferTemplate>> = 
   survey_cabin_filter: {
     offerKey: "cabin_filter_replace_next_visit",
     title: "Замена салонного фильтра (на следующий визит)",
-    variants: [{ label: "Салонный фильтр", defaultPriceRub: 1200, moySkladSearchHints: ["салонный фильтр"] }],
+    variants: [{ label: "Салонный фильтр", defaultPriceRub: 1200, catalogSearchHints: ["салонный фильтр"] }],
   },
 };
 

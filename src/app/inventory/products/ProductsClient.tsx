@@ -65,7 +65,6 @@ type ProductPhoto = {
 
 type ProductRow = {
   id: string;
-  moyskladId?: string;
   name: string;
   article: string;
   code: string;
@@ -518,7 +517,7 @@ const productEditorSections: Array<{ id: ProductEditorSectionId; label: string; 
   {
     id: "technical",
     label: "Тех. поля",
-    aliases: ["технические", "uuid", "id", "external", "moysklad", "интеграции", "служебные"],
+    aliases: ["технические", "uuid", "id", "external", "legacy", "интеграции", "служебные"],
   },
 ];
 
@@ -924,7 +923,7 @@ function matchedEditorSection(needle: string): ProductEditorSectionId | null {
   if (/(sae|вязк|api|acea|ilsac|atf|объем|объ[её]м|фасов)/i.test(needle)) return "oil";
   if (/(цен|марж|остат|доступ|резерв|поставщик|ндс|ячейк|валют|склад)/i.test(needle)) return "pricing";
   if (/(опис|страна|тн|тнвэд|вес|авито|модификац|коммент)/i.test(needle)) return "extra";
-  if (/(uuid|id|external|moysklad|мойсклад|raw|legacy|служеб|техничес)/i.test(needle)) return "technical";
+  if (/(uuid|id|external|legacy|raw|служеб|техничес)/i.test(needle)) return "technical";
   return productEditorSections.find((section) => sectionMatchesSearch(section, needle))?.id ?? null;
 }
 
@@ -4280,7 +4279,7 @@ export default function ProductsClient() {
                     </summary>
                     <div className="product-editor-readonly-grid">
                       {editingId ? <span><b>local id</b><em>{editingId}</em></span> : null}
-                      {editingProduct?.moyskladId ? <span><b>moysklad id</b><em>{editingProduct.moyskladId}</em></span> : null}
+                      {editingProduct?.id ? <span><b>legacy id</b><em>{editingProduct.id}</em></span> : null}
                     </div>
                     <div className="product-editor-grid">
                       {technicalFieldLabels.map((field) => renderField(field.key, field.label, {

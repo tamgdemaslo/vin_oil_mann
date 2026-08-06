@@ -76,6 +76,8 @@ model Branch {
   stockTransfersOut      BranchStockTransfer[]        @relation("StockTransferSource")
   stockTransfersIn       BranchStockTransfer[]        @relation("StockTransferDestination")
   integrationCredentials IntegrationCredential[]
+  aqsiCashRegisters      AqsiCashRegister[]
+  integrationMigrations  BranchIntegrationMigration[]
 
   @@unique([businessGroupId, slug])
   @@index([businessGroupId, status])
@@ -530,23 +532,23 @@ model PayrollPeriod {
 }
 
 model PayrollPeriodEmployee {
-  id               String   @id @default(cuid())
-  branchId         String   @default("branch-main") @map("branch_id")
-  periodId         String   @map("period_id")
+  id               String        @id @default(cuid())
+  branchId         String        @default("branch-main") @map("branch_id")
+  periodId         String        @map("period_id")
   period           PayrollPeriod @relation(fields: [branchId, periodId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  employeeLogin    String   @map("employee_login")
-  employeeName     String   @map("employee_name")
-  employeeRole     String   @map("employee_role")
-  shiftTotalCents  Int      @map("shift_total_cents")
-  pieceworkCents   Int      @map("piecework_cents")
-  adjustmentsCents Int      @map("adjustments_cents")
-  paidOutCents     Int      @map("paid_out_cents")
-  remainingCents   Int      @map("remaining_cents")
-  totalCents       Int      @map("total_cents")
-  shiftsCount      Int      @map("shifts_count")
-  status           String   @default("closed")
-  snapshotJson     Json     @map("snapshot_json")
-  createdAt        DateTime @default(now()) @map("created_at")
+  employeeLogin    String        @map("employee_login")
+  employeeName     String        @map("employee_name")
+  employeeRole     String        @map("employee_role")
+  shiftTotalCents  Int           @map("shift_total_cents")
+  pieceworkCents   Int           @map("piecework_cents")
+  adjustmentsCents Int           @map("adjustments_cents")
+  paidOutCents     Int           @map("paid_out_cents")
+  remainingCents   Int           @map("remaining_cents")
+  totalCents       Int           @map("total_cents")
+  shiftsCount      Int           @map("shifts_count")
+  status           String        @default("closed")
+  snapshotJson     Json          @map("snapshot_json")
+  createdAt        DateTime      @default(now()) @map("created_at")
 
   @@unique([branchId, periodId, employeeLogin])
   @@index([employeeLogin])
@@ -555,22 +557,22 @@ model PayrollPeriodEmployee {
 }
 
 model PayrollAccrualLine {
-  id               String   @id @default(cuid())
-  branchId         String   @default("branch-main") @map("branch_id")
-  periodId         String   @map("period_id")
+  id               String        @id @default(cuid())
+  branchId         String        @default("branch-main") @map("branch_id")
+  periodId         String        @map("period_id")
   period           PayrollPeriod @relation(fields: [branchId, periodId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  employeeLogin    String   @map("employee_login")
-  lineType         String   @map("line_type")
-  sourceType       String   @map("source_type")
-  sourceId         String?  @map("source_id")
-  reversalOfLineId String?  @map("reversal_of_line_id")
+  employeeLogin    String        @map("employee_login")
+  lineType         String        @map("line_type")
+  sourceType       String        @map("source_type")
+  sourceId         String?       @map("source_id")
+  reversalOfLineId String?       @map("reversal_of_line_id")
   date             String?
   title            String
-  quantity         Decimal? @db.Decimal(12, 3)
-  amountCents      Int      @map("amount_cents")
-  status           String   @default("CONFIRMED")
-  snapshotJson     Json?    @map("snapshot_json")
-  createdAt        DateTime @default(now()) @map("created_at")
+  quantity         Decimal?      @db.Decimal(12, 3)
+  amountCents      Int           @map("amount_cents")
+  status           String        @default("CONFIRMED")
+  snapshotJson     Json?         @map("snapshot_json")
+  createdAt        DateTime      @default(now()) @map("created_at")
 
   @@index([periodId, employeeLogin])
   @@index([sourceType, sourceId])
@@ -584,87 +586,6 @@ model AuthPassword {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("auth_passwords")
-}
-
-/// Слепок отгрузок МойСклад для аналитики по клиентам (только applicable)
-model MoySkladDemandSync {
-  branchId          String   @default("branch-main") @map("branch_id")
-  id                String   @id
-  documentDate      String   @map("document_date")
-  momentAt          DateTime @map("moment_at")
-  applicable        Boolean
-  sumCents          Int      @map("sum_cents")
-  name              String
-  agentMetaHref     String?  @map("agent_meta_href")
-  agentNameSnapshot String?  @map("agent_name_snapshot")
-  phonesRaw         Json?    @map("phones_raw")
-  normalizedPhone   String?  @map("normalized_phone")
-  hasIncompleteCost Boolean  @default(false) @map("has_incomplete_cost")
-  positionCount     Int      @default(0) @map("position_count")
-  /**
-   * Прибыль по строкам документа (копейки), считается при синхронизации
-   */
-  profitCents       Int      @default(0) @map("profit_cents")
-  /**
-   * Услуги в документе по порядку первого вхождения: [{ "id", "name" }]
-   */
-  documentServices  Json?    @map("document_services")
-  syncedAt          DateTime @default(now()) @map("synced_at")
-
-  positions MoySkladDemandPositionSync[]
-
-  @@index([normalizedPhone])
-  @@index([documentDate])
-  @@index([momentAt])
-  @@index([branchId])
-  @@map("moysklad_demand_sync")
-}
-
-/// Позиции отгрузки для сегментации по услугам и расчёта себестоимости
-model MoySkladDemandPositionSync {
-  branchId             String             @default("branch-main") @map("branch_id")
-  id                   String             @id
-  demandId             String             @map("demand_id")
-  demand               MoySkladDemandSync @relation(fields: [demandId], references: [id], onDelete: Cascade)
-  assortmentType       String             @map("assortment_type")
-  assortmentId         String?            @map("assortment_id")
-  name                 String
-  quantity             Float
-  priceCentsPerUnit    Int                @map("price_cents_per_unit")
-  discount             Float              @default(0)
-  buyPriceCentsPerUnit Int?               @map("buy_price_cents_per_unit")
-  lineIncompleteCost   Boolean            @default(false) @map("line_incomplete_cost")
-
-  @@index([demandId])
-  @@index([assortmentType, assortmentId])
-  @@index([branchId])
-  @@map("moysklad_demand_position_sync")
-}
-
-/// Состояние синхронизации (одна строка)
-model MoySkladAnalyticsSyncState {
-  branchId             String    @default("branch-main") @map("branch_id")
-  id                   String
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-  lastSyncedAt         DateTime? @map("last_synced_at")
-  lastError            String?   @map("last_error") @db.Text
-  demandsSynced        Int       @default(0) @map("demands_synced")
-  syncRunning          Boolean   @default(false) @map("sync_running")
-  syncMode             String?   @map("sync_mode")
-  syncPhase            String?   @map("sync_phase")
-  syncStartedAt        DateTime? @map("sync_started_at")
-  syncFinishedAt       DateTime? @map("sync_finished_at")
-  syncHeartbeatAt      DateTime? @map("sync_heartbeat_at")
-  syncTotalDemands     Int?      @map("sync_total_demands")
-  syncProcessedDemands Int       @default(0) @map("sync_processed_demands")
-  syncScannedDemands   Int       @default(0) @map("sync_scanned_demands")
-  syncLastDemandId     String?   @map("sync_last_demand_id")
-  syncLastDemandName   String?   @map("sync_last_demand_name")
-  syncMessage          String?   @map("sync_message") @db.Text
-
-  @@id([branchId, id])
-  @@index([branchId])
-  @@map("moysklad_analytics_sync_state")
 }
 
 /// Пороги статусов аналитики (singleton id = default)
@@ -791,49 +712,45 @@ model CrmStage {
 }
 
 model CrmDeal {
-  id                       String    @id @default(cuid())
-  branchId                 String    @default("branch-main") @map("branch_id")
-  organizationId           String?   @map("organization_id")
-  title                    String
-  customerName             String?   @map("customer_name")
-  phoneNormalized          String?   @map("phone_normalized")
-  vehicle                  String?
-  source                   String?
-  amountCents              Int?      @map("amount_cents")
-  clientType               String?   @map("client_type")
-  nextAction               String?   @map("next_action")
-  stageId                  String    @map("stage_id")
-  responsibleLogin         String?   @map("responsible_login")
-  moyskladCounterpartyId   String?   @map("moysklad_counterparty_id")
-  moyskladCounterpartyName String?   @map("moysklad_counterparty_name")
-  moyskladCounterpartyHref String?   @map("moysklad_counterparty_href") @db.Text
-  yclientsRecordId         String?   @map("yclients_record_id")
-  moyskladDemandId         String?   @map("moysklad_demand_id")
-  conversationId           String?   @map("conversation_id")
-  appointmentId            String?   @map("appointment_id")
-  shipmentId               String?   @map("shipment_id")
-  precheckId               String?   @map("precheck_id")
-  diagnosticId             String?   @map("diagnostic_id")
-  procurementId            String?   @map("procurement_id")
-  caseStatus               String    @default("calculation_needed") @map("case_status")
-  caseType                 String    @default("manual") @map("case_type")
-  priority                 Int       @default(50)
-  caseKey                  String?   @map("case_key")
-  suppliesNote             String?   @map("supplies_note") @db.Text
-  suppliesSupplier         String?   @map("supplies_supplier")
-  suppliesExpectedAt       DateTime? @map("supplies_expected_at")
-  nextActionAt             DateTime? @map("next_action_at")
-  nextContactAt            DateTime? @map("next_contact_at")
-  snoozeUntil              DateTime? @map("snooze_until")
-  lastClientMessageAt      DateTime? @map("last_client_message_at")
-  lastOutboundMessageAt    DateTime? @map("last_outbound_message_at")
-  closedAt                 DateTime? @map("closed_at")
-  status                   String    @default("open") // open | won | lost
-  closeReason              String?   @map("close_reason")
-  notes                    String?   @db.Text
-  createdByLogin           String    @map("created_by_login")
-  createdAt                DateTime  @default(now()) @map("created_at")
-  updatedAt                DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(cuid())
+  branchId              String    @default("branch-main") @map("branch_id")
+  organizationId        String?   @map("organization_id")
+  title                 String
+  customerName          String?   @map("customer_name")
+  phoneNormalized       String?   @map("phone_normalized")
+  vehicle               String?
+  source                String?
+  amountCents           Int?      @map("amount_cents")
+  clientType            String?   @map("client_type")
+  nextAction            String?   @map("next_action")
+  stageId               String    @map("stage_id")
+  responsibleLogin      String?   @map("responsible_login")
+  yclientsRecordId      String?   @map("yclients_record_id")
+  conversationId        String?   @map("conversation_id")
+  appointmentId         String?   @map("appointment_id")
+  shipmentId            String?   @map("shipment_id")
+  precheckId            String?   @map("precheck_id")
+  diagnosticId          String?   @map("diagnostic_id")
+  procurementId         String?   @map("procurement_id")
+  caseStatus            String    @default("calculation_needed") @map("case_status")
+  caseType              String    @default("manual") @map("case_type")
+  priority              Int       @default(50)
+  caseKey               String?   @map("case_key")
+  suppliesNote          String?   @map("supplies_note") @db.Text
+  suppliesSupplier      String?   @map("supplies_supplier")
+  suppliesExpectedAt    DateTime? @map("supplies_expected_at")
+  nextActionAt          DateTime? @map("next_action_at")
+  nextContactAt         DateTime? @map("next_contact_at")
+  snoozeUntil           DateTime? @map("snooze_until")
+  lastClientMessageAt   DateTime? @map("last_client_message_at")
+  lastOutboundMessageAt DateTime? @map("last_outbound_message_at")
+  closedAt              DateTime? @map("closed_at")
+  status                String    @default("open") // open | won | lost
+  closeReason           String?   @map("close_reason")
+  notes                 String?   @db.Text
+  createdByLogin        String    @map("created_by_login")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   stage CrmStage @relation(fields: [stageId], references: [id])
 
@@ -842,7 +759,6 @@ model CrmDeal {
 
   @@unique([branchId, caseKey])
   @@index([phoneNormalized])
-  @@index([moyskladCounterpartyId])
   @@index([conversationId])
   @@index([appointmentId])
   @@index([shipmentId])
@@ -978,11 +894,11 @@ model MessengerAccount {
   webhookSubscriptions WebhookSubscription[]
   syncCursors          MessengerSyncCursor[]
 
+  @@unique([branchId, id])
   @@index([organizationId, channel, mode, status])
   @@index([channel, mode])
   @@index([status])
   @@index([branchId])
-  @@unique([branchId, id])
   @@map("messenger_accounts")
 }
 
@@ -1312,6 +1228,90 @@ model IntegrationCredential {
   @@map("integration_credentials")
 }
 
+/// Независимый статус переноса конкретной интеграции из server env в филиальную БД.
+model BranchIntegrationMigration {
+  id             String    @id @default(cuid())
+  branchId       String    @map("branch_id")
+  branch         Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  organizationId String    @map("organization_id")
+  provider       String
+  source         String    @default("server_env")
+  status         String    @default("NOT_STARTED")
+  lastErrorCode  String?   @map("last_error_code")
+  metadataJson   Json      @default("{}") @map("metadata_json")
+  migratedAt     DateTime? @map("migrated_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([branchId, provider])
+  @@index([branchId, status])
+  @@map("branch_integration_migrations")
+}
+
+/// Физическая касса AQSI. Секреты хранятся одним AES-GCM payload, настройки — отдельно.
+model AqsiCashRegister {
+  id                   String    @id @default(cuid())
+  branchId             String    @map("branch_id")
+  branch               Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  businessGroupId      String    @map("business_group_id")
+  organizationId       String    @map("organization_id")
+  name                 String
+  isDefault            Boolean   @default(false) @map("is_default")
+  enabled              Boolean   @default(true)
+  credentialsEncrypted Json      @map("credentials_encrypted")
+  settingsJson         Json      @default("{}") @map("settings_json")
+  status               String    @default("not_tested")
+  lastSuccessAt        DateTime? @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt          DateTime? @map("last_error_at") @db.Timestamptz(6)
+  lastErrorCode        String?   @map("last_error_code")
+  lastErrorMessage     String?   @map("last_error_message") @db.Text
+  createdById          String?   @map("created_by_id")
+  updatedById          String?   @map("updated_by_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  cashShifts           CashShift[]
+  fiscalizationRecords AqsiFiscalizationRecord[]
+
+  @@unique([branchId, id])
+  @@unique([branchId, name])
+  @@index([branchId, enabled, isDefault])
+  @@index([organizationId, status])
+  @@map("aqsi_cash_registers")
+}
+
+/// Durable outbox для отложенного заказа/фискализации AQSI.
+model AqsiFiscalizationRecord {
+  id                    String           @id @default(cuid())
+  branchId              String           @map("branch_id")
+  organizationId        String           @map("organization_id")
+  registerId            String           @map("register_id")
+  register              AqsiCashRegister @relation(fields: [branchId, registerId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  documentType          String           @default("local_demand") @map("document_type")
+  documentId            String           @map("document_id")
+  idempotencyKey        String           @map("idempotency_key")
+  payloadJson           Json             @map("payload_json")
+  status                String           @default("pending")
+  attempts              Int              @default(0)
+  nextAttemptAt         DateTime?        @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt         DateTime?        @map("last_attempt_at") @db.Timestamptz(6)
+  completedAt           DateTime?        @map("completed_at") @db.Timestamptz(6)
+  externalOrderId       String?          @map("external_order_id")
+  externalUid           String?          @map("external_uid")
+  externalReceiptNumber String?          @map("external_receipt_number")
+  safeResponseJson      Json?            @map("safe_response_json")
+  errorCode             String?          @map("error_code")
+  errorMessage          String?          @map("error_message") @db.Text
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([branchId, idempotencyKey])
+  @@index([branchId, status, nextAttemptAt])
+  @@index([branchId, documentType, documentId])
+  @@index([registerId, status])
+  @@map("aqsi_fiscalization_records")
+}
+
 model IntegrationOnboardingSession {
   id                 String    @id
   branchId           String    @default("branch-main") @map("branch_id")
@@ -1403,12 +1403,12 @@ model MessengerAttachment {
   message   MessengerMessage    @relation(fields: [branchId, messageId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
   mediaJobs MessengerMediaJob[]
 
+  @@unique([branchId, id])
   @@index([messageId])
   @@index([organizationId, channel])
   @@index([organizationId, messengerAccountId, status])
   @@index([organizationId, channel, externalMessageId])
   @@index([branchId])
-  @@unique([branchId, id])
   @@map("messenger_attachments")
 }
 
@@ -1718,11 +1718,9 @@ enum DiagnosticPositionStatus {
 }
 
 model Diagnostic {
-  id                 String  @id @default(uuid())
-  branchId           String  @default("branch-main") @map("branch_id")
-  shipmentMoySkladId String? @map("shipment_moysklad_id")
-  shipmentDraftId    String? @map("shipment_draft_id")
-  agentMoySkladId    String? @map("agent_moysklad_id")
+  id              String  @id @default(uuid())
+  branchId        String  @default("branch-main") @map("branch_id")
+  shipmentDraftId String? @map("shipment_draft_id")
 
   vin          String?
   brand        String?
@@ -1750,10 +1748,8 @@ model Diagnostic {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([vin])
-  @@index([agentMoySkladId])
-  @@index([shipmentMoySkladId])
   @@unique([branchId, id])
+  @@index([vin])
   @@map("diagnostics")
 }
 
@@ -1908,11 +1904,11 @@ model DiagnosticMapSession {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([branchId, id])
   @@index([demandId])
   @@index([clientId])
   @@index([vin])
   @@index([status])
-  @@unique([branchId, id])
   @@map("diagnostic_map_sessions")
 }
 
@@ -2021,10 +2017,8 @@ model DiagnosticMapRecommendationAction {
 
 /// Локальный справочник организаций для документов.
 model LocalOrganization {
-  id           String  @id @default(cuid())
-  moyskladId   String? @unique @map("moysklad_id")
-  moyskladHref String? @map("moysklad_href") @db.Text
-  name         String
+  id   String @id @default(cuid())
+  name String
 
   entityType    String  @default("legal_entity") @map("entity_type")
   fullLegalName String? @map("full_legal_name") @db.Text
@@ -2100,12 +2094,10 @@ model OrganizationMember {
   @@map("organization_members")
 }
 
-/// Справочник складов, импортированный из МойСклад и пригодный для дальнейшей локальной работы.
+/// Справочник складов для дальнейшей локальной работы.
 model LocalStore {
   id             String             @id @default(cuid())
   branchId       String             @default("branch-main") @map("branch_id")
-  moyskladId     String?            @map("moysklad_id")
-  moyskladHref   String?            @map("moysklad_href") @db.Text
   name           String
   organizationId String?            @map("organization_id")
   organization   LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -2125,11 +2117,10 @@ model LocalStore {
   inventoryLines         InventoryLine[]
   inventoryLocks         InventoryLock[]
 
+  @@unique([branchId, id])
   @@index([name])
   @@index([branchId, archived])
   @@index([organizationId])
-  @@unique([branchId, moyskladId])
-  @@unique([branchId, id])
   @@map("local_stores")
 }
 
@@ -2137,8 +2128,6 @@ model LocalStore {
 model LocalProduct {
   id                        String    @id @default(cuid())
   branchId                  String    @default("branch-main") @map("branch_id")
-  moyskladId                String?   @map("moysklad_id")
-  moyskladHref              String?   @map("moysklad_href") @db.Text
   entityType                String    @default("product") @map("entity_type")
   name                      String
   article                   String?
@@ -2223,8 +2212,9 @@ model LocalProduct {
   markingAuditLogs           ProductMarkingAuditLog[]
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
-  supplierCounterparty       LocalCounterparty? @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+  supplierCounterparty       LocalCounterparty?               @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@unique([branchId, id])
   @@index([entityType])
   @@index([branchId, archived])
   @@index([branchId, archived, updatedAt])
@@ -2250,12 +2240,10 @@ model LocalProduct {
   @@index([branchId, sourceProductId])
   @@index([branchId, copyBatchId])
   @@index([branchId, priceNeedsSetup])
-  @@unique([branchId, moyskladId])
   @@index([branchId, code])
   @@index([branchId, barcodeEan13])
   @@index([branchId, barcodeEan8])
   @@index([branchId, barcodeCode128])
-  @@unique([branchId, id])
   @@index([updatedAt])
   @@map("local_products")
 }
@@ -2263,25 +2251,25 @@ model LocalProduct {
 /// Audit and idempotency boundary for copying catalog cards between branches.
 /// This model is intentionally not branch-scoped: one batch belongs to two branches.
 model BranchProductCopyBatch {
-  id                     String                  @id @default(cuid())
-  businessGroupId        String                  @map("business_group_id")
-  sourceBranchId         String                  @map("source_branch_id")
-  targetBranchId         String                  @map("target_branch_id")
-  createdById            String                  @map("created_by_id")
-  idempotencyKey         String                  @unique @map("idempotency_key")
-  status                 String                  @default("PENDING")
-  optionsJson            Json                    @default("{}") @map("options_json")
-  totalSelected          Int                     @default(0) @map("total_selected")
-  totalCreated           Int                     @default(0) @map("total_created")
-  totalUpdated           Int                     @default(0) @map("total_updated")
-  totalSkipped           Int                     @default(0) @map("total_skipped")
-  totalFailed            Int                     @default(0) @map("total_failed")
-  totalPriceNeedsSetup   Int                     @default(0) @map("total_price_needs_setup")
-  totalSuppliersUnmapped Int                     @default(0) @map("total_suppliers_unmapped")
-  startedAt              DateTime?               @map("started_at")
-  completedAt            DateTime?               @map("completed_at")
-  createdAt              DateTime                @default(now()) @map("created_at")
-  updatedAt              DateTime                @updatedAt @map("updated_at")
+  id                     String    @id @default(cuid())
+  businessGroupId        String    @map("business_group_id")
+  sourceBranchId         String    @map("source_branch_id")
+  targetBranchId         String    @map("target_branch_id")
+  createdById            String    @map("created_by_id")
+  idempotencyKey         String    @unique @map("idempotency_key")
+  status                 String    @default("PENDING")
+  optionsJson            Json      @default("{}") @map("options_json")
+  totalSelected          Int       @default(0) @map("total_selected")
+  totalCreated           Int       @default(0) @map("total_created")
+  totalUpdated           Int       @default(0) @map("total_updated")
+  totalSkipped           Int       @default(0) @map("total_skipped")
+  totalFailed            Int       @default(0) @map("total_failed")
+  totalPriceNeedsSetup   Int       @default(0) @map("total_price_needs_setup")
+  totalSuppliersUnmapped Int       @default(0) @map("total_suppliers_unmapped")
+  startedAt              DateTime? @map("started_at")
+  completedAt            DateTime? @map("completed_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
   items BranchProductCopyItem[]
 
@@ -2294,19 +2282,19 @@ model BranchProductCopyBatch {
 
 /// Per-source-card result within a copy batch. It also makes retries traceable.
 model BranchProductCopyItem {
-  id               String                 @id @default(cuid())
-  batchId          String                 @map("batch_id")
-  sourceProductId  String                 @map("source_product_id")
-  targetProductId  String?                @map("target_product_id")
-  matchingMethod   String?                @map("matching_method")
-  action           String                 @default("PENDING")
-  status           String                 @default("PENDING")
-  reason           String?                @db.Text
-  copiedFieldsJson Json?                  @map("copied_fields_json")
-  errorCode        String?                @map("error_code")
-  errorMessage     String?                @map("error_message") @db.Text
-  createdAt        DateTime               @default(now()) @map("created_at")
-  updatedAt        DateTime               @updatedAt @map("updated_at")
+  id               String   @id @default(cuid())
+  batchId          String   @map("batch_id")
+  sourceProductId  String   @map("source_product_id")
+  targetProductId  String?  @map("target_product_id")
+  matchingMethod   String?  @map("matching_method")
+  action           String   @default("PENDING")
+  status           String   @default("PENDING")
+  reason           String?  @db.Text
+  copiedFieldsJson Json?    @map("copied_fields_json")
+  errorCode        String?  @map("error_code")
+  errorMessage     String?  @map("error_message") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   batch BranchProductCopyBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
@@ -2730,20 +2718,18 @@ model LocalStockBalance {
 model LocalCounterparty {
   id                   String    @id @default(cuid())
   branchId             String    @default("branch-main") @map("branch_id")
-  moyskladId           String?   @map("moysklad_id")
-  moyskladHref         String?   @map("moysklad_href") @db.Text
   name                 String
   /// Canonical name for new counterparty workflows; name is retained for legacy integrations.
   displayName          String    @default("") @map("display_name")
   /// Business role in the local branch: INDIVIDUAL by default, SUPPLIER for product suppliers.
   category             String    @default("INDIVIDUAL")
   /// Supplier legal form: LEGAL_ENTITY, SOLE_PROPRIETOR, or OTHER.
-  legalForm            String?  @map("legal_form")
-  fullName             String?  @map("full_name") @db.Text
-  actualAddress        String?  @map("actual_address") @db.Text
-  contactPerson        String?  @map("contact_person")
-  contactPhone         String?  @map("contact_phone")
-  bankDetailsJson      Json?    @map("bank_details_json")
+  legalForm            String?   @map("legal_form")
+  fullName             String?   @map("full_name") @db.Text
+  actualAddress        String?   @map("actual_address") @db.Text
+  contactPerson        String?   @map("contact_person")
+  contactPhone         String?   @map("contact_phone")
+  bankDetailsJson      Json?     @map("bank_details_json")
   /// Mirrors the operational state for API consumers; archived remains for legacy workflows.
   status               String    @default("ACTIVE")
   phone                String?
@@ -2780,8 +2766,9 @@ model LocalCounterparty {
   demands            LocalDemand[]
   inventoryDocuments LocalInventoryDocument[]
   cashExpenseOrders  CashExpenseOrder[]
-  suppliedProducts   LocalProduct[] @relation("ProductSupplierCounterparty")
+  suppliedProducts   LocalProduct[]           @relation("ProductSupplierCounterparty")
 
+  @@unique([branchId, id])
   @@index([name])
   @@index([branchId, archived])
   @@index([branchId, category])
@@ -2790,8 +2777,6 @@ model LocalCounterparty {
   @@index([branchId, normalizedPhone])
   @@index([normalizedPhone])
   @@index([inn])
-  @@unique([branchId, moyskladId])
-  @@unique([branchId, id])
   @@map("local_counterparties")
 }
 
@@ -2826,12 +2811,16 @@ model CashShift {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  aqsiRegisterId String?           @map("aqsi_register_id")
+  aqsiRegister   AqsiCashRegister? @relation(fields: [branchId, aqsiRegisterId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
+
   withdrawals CashWithdrawal[]
 
   @@unique([branchId, serviceDate])
   @@index([status])
   @@index([openedAt])
   @@index([closedAt])
+  @@index([branchId, aqsiRegisterId, status])
   @@map("cash_shifts")
 }
 
@@ -2859,26 +2848,23 @@ model CashWithdrawal {
 
 /// Локальный справочник статей расхода для кассовых расходных ордеров.
 model CashExpenseItem {
-  id           String   @id @default(cuid())
-  branchId     String   @default("branch-main") @map("branch_id")
-  name         String
-  isActive     Boolean  @default(true) @map("is_active")
-  source       String   @default("local")
-  moyskladId   String?  @map("moysklad_id")
-  moyskladHref String?  @map("moysklad_href") @db.Text
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(cuid())
+  branchId  String   @default("branch-main") @map("branch_id")
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  source    String   @default("local")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   orders CashExpenseOrder[]
 
   @@unique([branchId, name])
-  @@unique([branchId, moyskladId])
   @@index([isActive])
   @@index([source])
   @@map("cash_expense_items")
 }
 
-/// Локальный расходный ордер кассы. МойСклад-поля остаются nullable для импорта/синхронизации.
+/// Локальный расходный ордер кассы.
 model CashExpenseOrder {
   id             String             @id @default(cuid())
   branchId       String             @default("branch-main") @map("branch_id")
@@ -2924,28 +2910,21 @@ model CashExpenseOrder {
   cancelledByName String?   @map("cancelled_by_name")
   cancelReason    String?   @map("cancel_reason") @db.Text
 
-  source                   String    @default("local")
-  sourceType               String?   @map("source_type")
-  sourceId                 String?   @map("source_id")
-  employeeId               String?   @map("employee_id")
-  payrollPeriodId          String?   @map("payroll_period_id")
-  payrollPeriodFrom        String?   @map("payroll_period_from")
-  payrollPeriodTo          String?   @map("payroll_period_to")
-  moyskladId               String?   @map("moysklad_id")
-  moyskladHref             String?   @map("moysklad_href") @db.Text
-  moyskladMetaHref         String?   @map("moysklad_meta_href") @db.Text
-  externalCode             String?   @map("external_code")
-  moyskladCashoutHref      String?   @map("moysklad_cashout_href") @db.Text
-  moyskladExpenseItemHref  String?   @map("moysklad_expense_item_href") @db.Text
-  moyskladCounterpartyHref String?   @map("moysklad_counterparty_href") @db.Text
-  syncedAt                 DateTime? @map("synced_at")
-  syncStatus               String?   @map("sync_status")
-  syncError                String?   @map("sync_error") @db.Text
+  source            String    @default("local")
+  sourceType        String?   @map("source_type")
+  sourceId          String?   @map("source_id")
+  employeeId        String?   @map("employee_id")
+  payrollPeriodId   String?   @map("payroll_period_id")
+  payrollPeriodFrom String?   @map("payroll_period_from")
+  payrollPeriodTo   String?   @map("payroll_period_to")
+  externalCode      String?   @map("external_code")
+  syncedAt          DateTime? @map("synced_at")
+  syncStatus        String?   @map("sync_status")
+  syncError         String?   @map("sync_error") @db.Text
 
   supplierInvoicePayments LocalSupplierInvoicePayment[]
 
   @@unique([branchId, number])
-  @@unique([branchId, moyskladId])
   @@index([shiftId])
   @@index([status])
   @@index([expenseDate])
@@ -2962,12 +2941,10 @@ model CashExpenseOrder {
   @@map("cash_expense_orders")
 }
 
-/// Локальные отгрузки. На первом этапе это зеркало МойСклад, дальше станет рабочей сущностью.
+/// Локальные отгрузки — рабочая сущность собственной PostgreSQL.
 model LocalDemand {
   id           String   @id @default(cuid())
   branchId     String   @default("branch-main") @map("branch_id")
-  moyskladId   String?  @map("moysklad_id")
-  moyskladHref String?  @map("moysklad_href") @db.Text
   name         String
   momentAt     DateTime @map("moment_at")
   documentDate String   @map("document_date")
@@ -2977,12 +2954,10 @@ model LocalDemand {
 
   counterpartyId    String?            @map("counterparty_id")
   counterparty      LocalCounterparty? @relation(fields: [branchId, counterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  agentMoyskladId   String?            @map("agent_moysklad_id")
   agentNameSnapshot String?            @map("agent_name_snapshot")
 
   storeId           String?            @map("store_id")
   store             LocalStore?        @relation(fields: [branchId, storeId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  storeMoyskladId   String?            @map("store_moysklad_id")
   storeNameSnapshot String?            @map("store_name_snapshot")
   organizationId    String?            @map("organization_id")
   organization      LocalOrganization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -3000,16 +2975,14 @@ model LocalDemand {
   revisions              ShipmentRevision[]
   inventoryLedgerEntries InventoryLedgerEntry[]
 
-  @@index([branchId, name])
-  @@unique([branchId, moyskladId])
   @@unique([branchId, id])
+  @@index([branchId, name])
   @@index([documentDate])
   @@index([branchId, documentDate])
   @@index([momentAt])
   @@index([branchId, momentAt])
   @@index([applicable])
   @@index([counterpartyId])
-  @@index([agentMoyskladId])
   @@index([storeId])
   @@index([organizationId])
   @@map("local_demands")
@@ -3194,6 +3167,7 @@ model InventoryLine {
   movementLinks InventoryMovementLink[]
   auditLogs     InventoryAuditLog[]
 
+  @@unique([branchId, id])
   @@index([inventorySessionId])
   @@index([productId])
   @@index([warehouseId])
@@ -3202,7 +3176,6 @@ model InventoryLine {
   @@index([status])
   @@index([requiresRecount])
   @@index([branchId])
-  @@unique([branchId, id])
   @@map("inventory_lines")
 }
 
@@ -3429,10 +3402,8 @@ model LocalDemandPosition {
   id                   String        @id @default(cuid())
   demandId             String        @map("demand_id")
   demand               LocalDemand   @relation(fields: [branchId, demandId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
-  moyskladPositionId   String?       @map("moysklad_position_id")
   productId            String?       @map("product_id")
   product              LocalProduct? @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
-  assortmentMoyskladId String?       @map("assortment_moysklad_id")
   assortmentType       String        @map("assortment_type")
   name                 String
   quantity             Decimal       @default(0) @db.Decimal(14, 3)
@@ -3446,9 +3417,7 @@ model LocalDemandPosition {
 
   @@index([demandId])
   @@index([productId])
-  @@index([assortmentType, assortmentMoyskladId])
   @@index([branchId])
-  @@unique([branchId, moyskladPositionId])
   @@map("local_demand_positions")
 }
 
@@ -3495,27 +3464,24 @@ model LocalInventoryDocument {
   store             LocalStore? @relation(fields: [storeId], references: [id], onDelete: SetNull)
   storeNameSnapshot String?     @map("store_name_snapshot")
 
-  createdByLogin   String?   @map("created_by_login")
-  createdByName    String?   @map("created_by_name")
-  raw              Json?
-  source           String    @default("local")
-  moyskladId       String?   @map("moysklad_id")
-  moyskladHref     String?   @map("moysklad_href") @db.Text
-  moyskladMetaHref String?   @map("moysklad_meta_href") @db.Text
-  externalCode     String?   @map("external_code")
-  syncedAt         DateTime? @map("synced_at")
-  syncStatus       String?   @map("sync_status")
-  syncError        String?   @map("sync_error") @db.Text
-  isDeleted        Boolean   @default(false) @map("is_deleted")
-  deletedAt        DateTime? @map("deleted_at")
-  deletedById      String?   @map("deleted_by_id")
-  deletedByName    String?   @map("deleted_by_name")
-  cancelledAt      DateTime? @map("cancelled_at")
-  cancelledById    String?   @map("cancelled_by_id")
-  cancelledByName  String?   @map("cancelled_by_name")
-  correctionOfId   String?   @map("correction_of_id")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdByLogin  String?   @map("created_by_login")
+  createdByName   String?   @map("created_by_name")
+  raw             Json?
+  source          String    @default("local")
+  externalCode    String?   @map("external_code")
+  syncedAt        DateTime? @map("synced_at")
+  syncStatus      String?   @map("sync_status")
+  syncError       String?   @map("sync_error") @db.Text
+  isDeleted       Boolean   @default(false) @map("is_deleted")
+  deletedAt       DateTime? @map("deleted_at")
+  deletedById     String?   @map("deleted_by_id")
+  deletedByName   String?   @map("deleted_by_name")
+  cancelledAt     DateTime? @map("cancelled_at")
+  cancelledById   String?   @map("cancelled_by_id")
+  cancelledByName String?   @map("cancelled_by_name")
+  correctionOfId  String?   @map("correction_of_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   correctionOf    LocalInventoryDocument?          @relation("LocalInventoryDocumentCorrections", fields: [correctionOfId], references: [id], onDelete: SetNull)
   corrections     LocalInventoryDocument[]         @relation("LocalInventoryDocumentCorrections")
@@ -3539,7 +3505,6 @@ model LocalInventoryDocument {
   @@index([isDeleted])
   @@index([correctionOfId])
   @@index([branchId])
-  @@unique([branchId, moyskladId])
   @@map("local_inventory_documents")
 }
 
@@ -3568,25 +3533,22 @@ model LocalInventoryDocumentAuditLog {
 
 /// Позиции локального складского документа.
 model LocalInventoryDocumentPosition {
-  branchId           String                 @default("branch-main") @map("branch_id")
-  id                 String                 @id @default(cuid())
-  documentId         String                 @map("document_id")
-  document           LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  productId          String?                @map("product_id")
-  product            LocalProduct?          @relation(fields: [productId], references: [id], onDelete: SetNull)
-  productName        String                 @map("product_name")
-  quantity           Decimal                @default(0) @db.Decimal(14, 3)
-  priceCentsPerUnit  Int                    @default(0) @map("price_cents_per_unit")
-  slotName           String?                @map("slot_name")
-  raw                Json?
-  source             String                 @default("local")
-  moyskladPositionId String?                @map("moysklad_position_id")
-  moyskladHref       String?                @map("moysklad_href") @db.Text
-  moyskladMetaHref   String?                @map("moysklad_meta_href") @db.Text
-  externalCode       String?                @map("external_code")
-  syncedAt           DateTime?              @map("synced_at")
-  syncStatus         String?                @map("sync_status")
-  syncError          String?                @map("sync_error") @db.Text
+  branchId          String                 @default("branch-main") @map("branch_id")
+  id                String                 @id @default(cuid())
+  documentId        String                 @map("document_id")
+  document          LocalInventoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  productId         String?                @map("product_id")
+  product           LocalProduct?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName       String                 @map("product_name")
+  quantity          Decimal                @default(0) @db.Decimal(14, 3)
+  priceCentsPerUnit Int                    @default(0) @map("price_cents_per_unit")
+  slotName          String?                @map("slot_name")
+  raw               Json?
+  source            String                 @default("local")
+  externalCode      String?                @map("external_code")
+  syncedAt          DateTime?              @map("synced_at")
+  syncStatus        String?                @map("sync_status")
+  syncError         String?                @map("sync_error") @db.Text
 
   @@index([documentId])
   @@index([productId])
@@ -3595,7 +3557,6 @@ model LocalInventoryDocumentPosition {
   @@index([syncedAt])
   @@index([syncStatus])
   @@index([branchId])
-  @@unique([branchId, moyskladPositionId])
   @@map("local_inventory_document_positions")
 }
 
@@ -3617,9 +3578,6 @@ model LocalSupplierInvoice {
   createdBy                String?                @map("created_by")
   counterpartyNameSnapshot String?                @map("counterparty_name_snapshot")
   raw                      Json?
-  moyskladId               String?                @map("moysklad_id")
-  moyskladHref             String?                @map("moysklad_href") @db.Text
-  moyskladMetaHref         String?                @map("moysklad_meta_href") @db.Text
   externalCode             String?                @map("external_code")
   syncedAt                 DateTime?              @map("synced_at")
   syncStatus               String?                @map("sync_status")
@@ -3639,7 +3597,6 @@ model LocalSupplierInvoice {
   @@index([syncedAt])
   @@index([syncStatus])
   @@index([branchId])
-  @@unique([branchId, moyskladId])
   @@map("local_supplier_invoices")
 }
 
@@ -3660,9 +3617,6 @@ model LocalSupplierInvoicePayment {
   createdByName      String?              @map("created_by_name")
   raw                Json?
   source             String               @default("local")
-  moyskladId         String?              @map("moysklad_id")
-  moyskladHref       String?              @map("moysklad_href") @db.Text
-  moyskladMetaHref   String?              @map("moysklad_meta_href") @db.Text
   externalCode       String?              @map("external_code")
   syncedAt           DateTime?            @map("synced_at")
   syncStatus         String?              @map("sync_status")
@@ -3677,7 +3631,6 @@ model LocalSupplierInvoicePayment {
   @@index([syncedAt])
   @@index([syncStatus])
   @@index([branchId])
-  @@unique([branchId, moyskladId])
   @@map("local_supplier_invoice_payments")
 }
 
@@ -3715,8 +3668,8 @@ model TBankIntegration {
   accounts TBankSettlementAccount[]
   payments SupplierInvoiceTBankPayment[]
 
-  @@index([branchId])
   @@unique([branchId, organizationId])
+  @@index([branchId])
   @@map("tbank_integrations")
 }
 
@@ -3794,12 +3747,12 @@ model SupplierInvoiceTBankPayment {
 
   webhookEvents TBankWebhookEvent[]
 
+  @@unique([branchId, idempotencyKey])
   @@index([organizationId, status])
   @@index([supplierInvoiceId])
   @@index([tbankDocumentId])
   @@index([tbankPaymentId])
   @@index([branchId])
-  @@unique([branchId, idempotencyKey])
   @@map("supplier_invoice_tbank_payments")
 }
 
@@ -3820,38 +3773,13 @@ model TBankWebhookEvent {
   processedAt                   DateTime?                    @map("processed_at")
   createdAt                     DateTime                     @default(now()) @map("created_at")
 
+  @@unique([branchId, eventId])
   @@index([organizationId, createdAt])
   @@index([supplierInvoiceTBankPaymentId])
   @@index([tbankDocumentId])
   @@index([tbankPaymentId])
   @@index([branchId])
-  @@unique([branchId, eventId])
   @@map("tbank_webhook_events")
-}
-
-/// Состояние импорта локального складского зеркала.
-model LocalInventorySyncState {
-  branchId             String    @default("branch-main") @map("branch_id")
-  id                   String    @default("default")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-  lastSyncedAt         DateTime? @map("last_synced_at")
-  lastError            String?   @map("last_error") @db.Text
-  productsSynced       Int       @default(0) @map("products_synced")
-  servicesSynced       Int       @default(0) @map("services_synced")
-  counterpartiesSynced Int       @default(0) @map("counterparties_synced")
-  storesSynced         Int       @default(0) @map("stores_synced")
-  stockRowsSynced      Int       @default(0) @map("stock_rows_synced")
-  demandsSynced        Int       @default(0) @map("demands_synced")
-  syncRunning          Boolean   @default(false) @map("sync_running")
-  syncMode             String?   @map("sync_mode")
-  syncPhase            String?   @map("sync_phase")
-  syncStartedAt        DateTime? @map("sync_started_at")
-  syncFinishedAt       DateTime? @map("sync_finished_at")
-  syncMessage          String?   @map("sync_message") @db.Text
-
-  @@id([branchId, id])
-  @@index([branchId])
-  @@map("local_inventory_sync_state")
 }
 
 /// Настройки клиентского ИИ-агента. Все решения и цены привязаны к организации,
@@ -3894,8 +3822,8 @@ model AIAgentSetting {
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@index([enabled, mode])
   @@unique([branchId, organizationId])
+  @@index([enabled, mode])
   @@map("ai_agent_settings")
 }
 

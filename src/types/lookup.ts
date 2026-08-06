@@ -43,7 +43,7 @@ export type VinDecoded = {
 export type OilInfo = {
   approval: string;
   fillVolumeLiters: string;
-  /** Дополнительно: структуры требований от OpenAI, чтобы расширять поиск в МойСклад по SAE/ACEA/API/ILSAC */
+  /** Дополнительно: структуры требований от OpenAI для поиска в локальном каталоге по SAE/ACEA/API/ILSAC */
   sae?: string[];
   acea?: string[];
   api?: string[];
@@ -67,8 +67,8 @@ export type OilInfo = {
   rawText?: string;
 };
 
-/** Один вариант товара из МойСклад: название, цена, количество, склад, ячейка */
-export type MoySkladItem = {
+/** Один вариант товара из локального каталога: название, цена, количество, склад, ячейка */
+export type LocalItem = {
   name: string;
   article?: string;
   price: number;
@@ -88,6 +88,6 @@ export type LookupResult = {
   decodeError?: string;
   oilInfo: OilInfo | null;
   openaiError?: string;
-  moySkladItems: MoySkladItem[];
-  moySkladError?: string;
+  legacyItems: LocalItem[];
+  legacyError?: string;
 };

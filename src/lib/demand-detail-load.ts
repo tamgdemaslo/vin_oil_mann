@@ -1,4 +1,4 @@
-import type { MoySkladMeta } from "@/lib/moysklad";
+import type { LocalEntityMeta } from "@/lib/local-entity-meta";
 
 export type DemandDetailHeader = {
   id: string;
@@ -19,7 +19,7 @@ export type DemandDetailAttribute = {
   id: string;
   name: string;
   type: string;
-  meta: MoySkladMeta;
+  meta: LocalEntityMeta;
   value: unknown;
 };
 
@@ -37,7 +37,7 @@ export type DemandDetailPosition = {
     intransit?: number;
     available?: number;
   };
-  assortmentMeta?: MoySkladMeta;
+  assortmentMeta?: LocalEntityMeta;
   product?: {
     id: string;
     name: string;
@@ -62,10 +62,10 @@ export type DemandDetailPayload = {
   rawPositions: unknown;
 };
 
-/** Legacy-загрузчик live МойСклад отключен для обычного runtime. Используйте loadLocalDemandDetailPayload. */
+/** Устаревший live-загрузчик отключен для обычного runtime. Используйте loadLocalDemandDetailPayload. */
 export async function loadDemandDetailPayload(
   id: string
 ): Promise<{ ok: true; data: DemandDetailPayload } | { ok: false; error: string }> {
   void id;
-  return { ok: false, error: "Live-загрузка отгрузок МойСклад отключена. Используйте локальную БД." };
+  return { ok: false, error: "Live-загрузка отгрузок отключена. Используйте локальную БД." };
 }

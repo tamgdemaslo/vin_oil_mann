@@ -76,7 +76,7 @@ function attributeText(row: DemandRow, matches: (name: string) => boolean): stri
 
 function getPlateDisplay(row: DemandRow): string {
   const attrs = row.attributes ?? [];
-  const attrId = process.env.MOYSKLAD_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
+  const attrId = process.env.LEGACY_DEMAND_PLATE_ATTRIBUTE_ID?.trim();
   if (attrId) {
     const hit = attrs.find((a) => a.id === attrId);
     const v = hit?.value;
@@ -346,7 +346,7 @@ export default async function ShipmentListPage({
   const draftCount = rows.length - postedCount;
   const totalSum = rows.reduce((sum, row) => sum + (row.sum || 0), 0);
   const emptyMessage = dateFrom || dateTo
-    ? `За период ${periodLabel(dateFrom, dateTo)} отгрузки не найдены. Если это старые документы 2025/2024 года, возможно, нужен полный импорт отгрузок из МойСклад.`
+    ? `За период ${periodLabel(dateFrom, dateTo)} отгрузки не найдены.`
     : "Ничего не найдено";
 
   return (

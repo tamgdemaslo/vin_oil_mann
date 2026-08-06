@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { aiAssistantApiError, requireAIAssistantAccess } from "@/lib/ai-assistant/access";
+import { aiAssistantApiError, requireAIAssistantAccess, runWithAIAssistantBranchContext } from "@/lib/ai-assistant/access";
 
 const MAX_COMMENT = 1_000;
 
@@ -68,10 +68,10 @@ export async function GET() {
   const access = await requireAIAssistantAccess();
   if ("response" in access) return access.response;
   try {
-    const rules = await prisma.aIAssistantLaborPricingRule.findMany({
+    const rules = await runWithAIAssistantBranchContext(access, () => prisma.aIAssistantLaborPricingRule.findMany({
       where: { organizationId: access.organizationId },
       orderBy: [{ locationId: "asc" }, { serviceFamily: "asc" }, { procedureType: "asc" }, { materialsOwner: "asc" }, { updatedAt: "desc" }],
-    });
+    }));
     return NextResponse.json({ rules });
   } catch (error) { return aiAssistantApiError(error); }
 }
@@ -80,7 +80,8 @@ export async function POST(request: Request) {
   const access = await requireAIAssistantAccess();
   if ("response" in access) return access.response;
   try {
-    const rule = await prisma.aIAssistantLaborPricingRule.create({ data: { organizationId: access.organizationId, createdById: access.actorId, updatedById: access.actorId, ...payload(await request.json()) } });
+    const data = payload(await request.json());
+    const rule = await runWithAIAssistantBranchContext(access, () => prisma.aIAssistantLaborPricingRule.create({ data: { organizationId: access.organizationId, createdById: access.actorId, updatedById: access.actorId, ...data } }));
     return NextResponse.json({ rule }, { status: 201 });
   } catch (error) { return aiAssistantApiError(error); }
 }
@@ -92,9 +93,9 @@ export async function PATCH(request: Request) {
     const body = object(await request.json());
     const id = text(body.id, 160);
     if (!id) throw new Error("Не найдено правило для изменения");
-    const existing = await prisma.aIAssistantLaborPricingRule.findFirst({ where: { id, organizationId: access.organizationId }, select: { id: true } });
+    const existing = await runWithAIAssistantBranchContext(access, () => prisma.aIAssistantLaborPricingRule.findFirst({ where: { id, organizationId: access.organizationId }, select: { id: true } }));
     if (!existing) throw new Error("Правило не найдено");
-    const rule = await prisma.aIAssistantLaborPricingRule.update({ where: { id }, data: { ...payload(body), updatedById: access.actorId } });
+    const rule = await runWithAIAssistantBranchContext(access, () => prisma.aIAssistantLaborPricingRule.update({ where: { id }, data: { ...payload(body), updatedById: access.actorId } }));
     return NextResponse.json({ rule });
   } catch (error) { return aiAssistantApiError(error); }
 }
@@ -105,7 +106,7 @@ export async function DELETE(request: Request) {
   try {
     const id = text(new URL(request.url).searchParams.get("id"), 160);
     if (!id) throw new Error("Не найдено правило для удаления");
-    const result = await prisma.aIAssistantLaborPricingRule.updateMany({ where: { id, organizationId: access.organizationId }, data: { active: false, updatedById: access.actorId } });
+    const result = await runWithAIAssistantBranchContext(access, () => prisma.aIAssistantLaborPricingRule.updateMany({ where: { id, organizationId: access.organizationId }, data: { active: false, updatedById: access.actorId } }));
     if (!result.count) throw new Error("Правило не найдено");
     return NextResponse.json({ ok: true });
   } catch (error) { return aiAssistantApiError(error); }

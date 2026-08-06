@@ -256,7 +256,7 @@ type ProductWithStock = Prisma.LocalProductGetPayload<{
 }>;
 type SalesPosition = Prisma.LocalDemandPositionGetPayload<{
   include: {
-    demand: { select: { id: true; documentDate: true; momentAt: true; counterpartyId: true; agentMoyskladId: true } };
+    demand: { select: { id: true; documentDate: true; momentAt: true; counterpartyId: true } };
     product: { select: { buyPriceCents: true; entityType: true } };
   };
 }>;
@@ -998,7 +998,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
 
   const [organizations, storeOptions, optionProducts] = await Promise.all([
     prisma.localOrganization.findMany({ where: { isActive: true }, orderBy: [{ name: "asc" }], select: { id: true, name: true } }),
-    prisma.localStore.findMany({ where: { archived: false }, orderBy: [{ name: "asc" }], select: { id: true, moyskladId: true, name: true, organizationId: true } }),
+    prisma.localStore.findMany({ where: { archived: false }, orderBy: [{ name: "asc" }], select: { id: true, name: true, organizationId: true } }),
     prisma.localProduct.findMany({
       where: { entityType: { not: "service" } },
       select: { groupPath: true, brand: true, legacySupplierName: true, supplierAttribute: true, supplierCounterparty: { select: { name: true, displayName: true } }, entityType: true },
@@ -1009,7 +1009,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
   const warehouseFilter = filters.warehouseId;
   const scopedStores = storeOptions.filter((store) => {
     if (filters.organizationId && store.organizationId !== filters.organizationId) return false;
-    if (warehouseFilter && store.id !== warehouseFilter && store.moyskladId !== warehouseFilter) return false;
+    if (warehouseFilter && store.id !== warehouseFilter && store.id !== warehouseFilter) return false;
     return true;
   });
   const hasScopeFilter = Boolean(filters.organizationId || filters.warehouseId);
@@ -1034,7 +1034,6 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
       ? {
           OR: [
             { id: params.productId },
-            { moyskladId: params.productId },
           ],
         }
       : {}),
@@ -1091,7 +1090,7 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
             demand: { is: demandPeriodScope },
           },
           include: {
-            demand: { select: { id: true, documentDate: true, momentAt: true, counterpartyId: true, agentMoyskladId: true } },
+            demand: { select: { id: true, documentDate: true, momentAt: true, counterpartyId: true } },
             product: { select: { buyPriceCents: true, entityType: true } },
           },
           orderBy: [{ demand: { momentAt: "desc" } }],
@@ -1155,8 +1154,8 @@ export async function getWarehouseProductAnalytics(params: WarehouseAnalyticsPar
     metric.soldQuantity += quantity;
     metric.salesCount += 1;
     metric.salesDocuments.add(position.demand.id);
-    if (position.demand.counterpartyId || position.demand.agentMoyskladId) {
-      metric.clients.add(position.demand.counterpartyId ?? position.demand.agentMoyskladId ?? "");
+    if (position.demand.counterpartyId || position.demand.counterpartyId) {
+      metric.clients.add(position.demand.counterpartyId ?? position.demand.counterpartyId ?? "");
     }
     metric.revenueCents += revenueCents;
     if (costCents == null || profitCents == null) {

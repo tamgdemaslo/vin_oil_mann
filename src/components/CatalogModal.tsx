@@ -42,7 +42,7 @@ export function CatalogModal({ open, onClose, storeId, onSelect }: CatalogModalP
       if (oem.trim()) query.set("oem", oem.trim());
       if (params.trim()) query.set("params", params.trim());
       query.set("limit", "50");
-      const res = await fetch(`/api/moysklad/assortment?${query.toString()}`);
+      const res = await fetch(`/api/local-inventory/catalog?${query.toString()}`);
       const data = await res.json();
       setError(data.error ?? null);
       if (res.ok && Array.isArray(data.rows)) {

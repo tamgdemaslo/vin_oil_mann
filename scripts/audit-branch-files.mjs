@@ -15,7 +15,6 @@ const checks = [
   ["Private diagnostic photo", "src/app/api/diagnostics/[id]/photos/[photoId]/route.ts", ["requireApiSessionWithShift()"]],
   ["Private vehicle photo", "src/app/api/diagnostics/[id]/vehicle-photo/route.ts", ["requireApiSessionWithShift()"]],
   ["Public diagnostic photo", "src/app/api/diagnostics/public/[token]/photos/[photoId]/route.ts", ["publicToken: token", "photoId"]],
-  ["MoySklad image proxy", "src/app/api/moysklad/image/route.ts", ["getSession()", "requireBranchApi", "branchId:"]],
 ].map(([name, file, markers]) => {
   const contents = read(file);
   const missing = markers.filter((marker) => !contents.includes(marker));

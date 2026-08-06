@@ -48,7 +48,7 @@
 
 Предлагаемая карта полей:
 
-- `Diagnostic.shipmentMoySkladId` -> только legacy-reference, не переносить как
+- `Diagnostic.shipmentLocalInventoryId` -> только legacy-reference, не переносить как
   зависимость нового API.
 - `DiagnosticPosition.block` -> `DiagnosticMapItem.blockCode` с человекочитаемым
   snapshot title из нового каталога.

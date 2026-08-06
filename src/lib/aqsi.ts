@@ -6,6 +6,7 @@ import {
   AQSI_UNIT_CODE_PIECE,
 } from "@/lib/marking";
 import { toAqsiDateTimeString } from "@/lib/time";
+import { resolveAqsiCashRegister, type AqsiResolvedConfig } from "@/lib/aqsi-integration";
 
 export type OrdersTotals = {
   cashTotal: number;
@@ -27,6 +28,7 @@ export type AqsiPendingOrderItem = {
 
 export type SyncAqsiPendingOrderInput = {
   id: string;
+  registerId?: string | null;
   number: string;
   dateTime?: string | null;
   comment?: string | null;
@@ -45,21 +47,17 @@ export type SyncAqsiPendingOrderResult = {
   raw: unknown;
 };
 
-type AqsiConfig = {
-  apiKey: string;
-  baseUrl: string;
-  ordersPath: string;
-  pendingOrderPath: string;
-  devicesPath: string;
-  deviceId?: string;
-  shopId?: string;
-  cashierId?: string;
-};
+type AqsiConfig = AqsiResolvedConfig;
 
 type AqsiDevice = {
   id?: string | number;
   shopId?: string | number | null;
+  name?: string | null;
+  title?: string | null;
+  serial?: string | null;
 };
+
+export type AqsiDeviceOption = { id: string; label: string; shopId?: string };
 
 type AqsiRecord = Record<string, unknown>;
 
@@ -79,24 +77,6 @@ type AqsiPayment = AqsiRecord & {
   methodName?: string;
   isCash?: boolean;
 };
-
-function getAqsiConfig(): AqsiConfig {
-  const apiKey = process.env.AQSI_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("Не настроен AQSI_API_KEY в .env.local");
-  }
-  return {
-    apiKey,
-    // Swagger aQsi: базовый URL боевого сервера https://api.aqsi.ru/pub
-    baseUrl: process.env.AQSI_BASE_URL?.trim() || "https://api.aqsi.ru/pub",
-    ordersPath: process.env.AQSI_ORDERS_PATH?.trim() || "/v2/Receipts",
-    pendingOrderPath: process.env.AQSI_PENDING_ORDER_PATH?.trim() || "/v2/Orders/simple",
-    devicesPath: process.env.AQSI_DEVICES_PATH?.trim() || "/v1/Devices",
-    deviceId: process.env.AQSI_DEVICE_ID?.trim() || undefined,
-    shopId: process.env.AQSI_SHOP_ID?.trim() || undefined,
-    cashierId: process.env.AQSI_CASHIER_ID?.trim() || undefined,
-  };
-}
 
 function getAqsiHeaders(apiKey: string): Record<string, string> {
   const clientKey = apiKey.startsWith("Application ") ? apiKey : `Application ${apiKey}`;
@@ -129,8 +109,8 @@ function extractAqsiError(rawText: string, statusText: string): string {
   return detail;
 }
 
-async function aqsiFetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const { apiKey, baseUrl } = getAqsiConfig();
+export async function aqsiFetchJson<T>(config: AqsiConfig, path: string, init?: RequestInit): Promise<T> {
+  const { apiKey, baseUrl } = config;
   const res = await fetch(buildAqsiUrl(baseUrl, path), {
     ...init,
     headers: { ...getAqsiHeaders(apiKey), ...init?.headers },
@@ -142,13 +122,13 @@ async function aqsiFetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     const detail = extractAqsiError(rawText, res.statusText);
     const hint =
       res.status === 401
-        ? " Проверьте AQSI_API_KEY в .env.local."
+        ? " Проверьте API-ключ кассы в Управление → Интеграции."
         : res.status === 404
-          ? " Проверьте AQSI_BASE_URL и путь к эндпоинту AQSI."
+          ? " Проверьте адрес и путь API кассы в Управление → Интеграции."
           : "";
     // Логируем, чтобы в терминале видеть причину отказа AQSI (обычно 4xx/412).
     // Это помогает быстрее локализовать некорректные параметры запроса.
-    console.error(`[aqsiFetchJson] ${path} -> ${res.status}. ${detail}${hint}`);
+    console.error("[aqsiFetchJson] provider request failed", { path, status: res.status });
     throw new Error(`AQSI ответил ${res.status}. ${detail}${hint}`);
   }
 
@@ -214,9 +194,10 @@ function sumFromPayments(payments: AqsiPayment[]): { cash: number; card: number 
 export async function getOrdersTotalsForDate(params: {
   serviceDate: string;
   timezone: string;
+  registerId?: string | null;
 }): Promise<OrdersTotals> {
   const { serviceDate } = params;
-  const { apiKey, baseUrl, ordersPath } = getAqsiConfig();
+  const { apiKey, baseUrl, ordersPath } = await resolveAqsiCashRegister(params.registerId);
 
   // Собираем URL вручную, чтобы не терять суффикс `/pub` у baseUrl
   const urlStr = buildAqsiUrl(baseUrl, ordersPath);
@@ -246,9 +227,9 @@ export async function getOrdersTotalsForDate(params: {
       const detail = extractAqsiError(rawText, res.statusText);
       const hint =
         res.status === 401
-          ? " Проверьте AQSI_API_KEY в .env.local (Настройки → Интеграции → Интеграция по внешнему API)."
+          ? " Проверьте API-ключ кассы в Управление → Интеграции."
           : res.status === 404
-            ? " Проверьте AQSI_BASE_URL и AQSI_ORDERS_PATH в .env.local."
+            ? " Проверьте адрес и путь чеков AQSI в настройках кассы."
             : res.status === 400
               ? " Часто это «история чеков за последние 6 месяцев» — укажите дату смены не старше 6 месяцев."
               : "";
@@ -328,11 +309,33 @@ function normalizeString(value?: string | null, maxLength?: number): string | un
   return typeof maxLength === "number" ? trimmed.slice(0, maxLength) : trimmed;
 }
 
-async function resolveAqsiBinding(config: AqsiConfig): Promise<{
+async function fetchAqsiDeviceRows(config: AqsiConfig) {
+  const devicesData = await aqsiFetchJson<{ devices?: AqsiDevice[] } | AqsiDevice[]>(config,
+    config.devicesPath,
+    { method: "GET" }
+  );
+  return Array.isArray(devicesData)
+    ? devicesData
+    : Array.isArray(devicesData?.devices)
+      ? devicesData.devices
+      : [];
+}
+
+function publicAqsiDevices(devices: AqsiDevice[]): AqsiDeviceOption[] {
+  return devices.flatMap((device) => {
+    if (device.id == null) return [];
+    const id = String(device.id);
+    const shopId = device.shopId == null ? undefined : String(device.shopId);
+    const name = device.name?.trim() || device.title?.trim() || device.serial?.trim();
+    return [{ id, shopId, label: name ? `${name} · ${id}` : `Устройство ${id}` }];
+  });
+}
+
+function resolveAqsiBindingFromDevices(config: AqsiConfig, devices: AqsiDevice[]): {
   deviceId?: string;
   shopId?: string;
   cashierId?: string;
-}> {
+} {
   if (config.deviceId || (config.shopId && config.cashierId)) {
     return {
       deviceId: config.deviceId,
@@ -340,16 +343,6 @@ async function resolveAqsiBinding(config: AqsiConfig): Promise<{
       cashierId: config.cashierId,
     };
   }
-
-  const devicesData = await aqsiFetchJson<{ devices?: AqsiDevice[] } | AqsiDevice[]>(
-    config.devicesPath,
-    { method: "GET" }
-  );
-  const devices = Array.isArray(devicesData)
-    ? devicesData
-    : Array.isArray(devicesData?.devices)
-      ? devicesData.devices
-      : [];
 
   if (devices.length === 1 && devices[0]?.id != null) {
     const discoveredShopId =
@@ -369,12 +362,35 @@ async function resolveAqsiBinding(config: AqsiConfig): Promise<{
   }
 
   if (devices.length === 0) {
-    throw new Error("В AQSI не найдено ни одного устройства. Укажите AQSI_DEVICE_ID в .env.local.");
+    throw new Error("В AQSI не найдено ни одного устройства. Укажите устройство в настройках кассы.");
   }
 
   throw new Error(
-    "В AQSI найдено несколько устройств. Укажите AQSI_DEVICE_ID в .env.local, чтобы понять, куда отправлять заказ."
+    "В AQSI найдено несколько устройств. Выберите устройство в настройках кассы."
   );
+}
+
+async function resolveAqsiBinding(config: AqsiConfig) {
+  if (config.deviceId || (config.shopId && config.cashierId)) return resolveAqsiBindingFromDevices(config, []);
+  return resolveAqsiBindingFromDevices(config, await fetchAqsiDeviceRows(config));
+}
+
+/**
+ * Проверяет не только доступность API, но и однозначность кассы/магазина.
+ * Фискальные документы при этом не создаются.
+ */
+export async function validateAqsiConfig(config: AqsiResolvedConfig) {
+  const rows = await fetchAqsiDeviceRows(config);
+  if (rows.length === 0) throw new Error("В AQSI не найдено ни одного устройства. Укажите устройство в настройках кассы.");
+  if (config.deviceId && !rows.some((device) => device.id != null && String(device.id) === config.deviceId)) {
+    throw new Error("Выбранное устройство AQSI недоступно этому ключу.");
+  }
+  const needsDevice = !config.deviceId && !(config.shopId && config.cashierId) && rows.length > 1;
+  return {
+    binding: needsDevice ? null : resolveAqsiBindingFromDevices(config, rows),
+    devices: publicAqsiDevices(rows),
+    needsDevice,
+  };
 }
 
 export async function syncAqsiPendingOrder(
@@ -430,7 +446,7 @@ export async function syncAqsiPendingOrder(
     throw new Error("В отгрузке нет позиций с количеством и ценой для отправки в AQSI.");
   }
 
-  const config = getAqsiConfig();
+  const config = await resolveAqsiCashRegister(input.registerId);
   const binding = await resolveAqsiBinding(config);
   const orderId = normalizeString(input.id)!;
   const payload: Record<string, unknown> = {
@@ -528,7 +544,7 @@ export async function syncAqsiPendingOrder(
   let lastError: unknown;
   for (let attempt = 0; attempt < fallbackPayloads.length; attempt += 1) {
     try {
-      await aqsiFetchJson(config.pendingOrderPath, {
+      await aqsiFetchJson(config, config.pendingOrderPath, {
         method: "POST",
         body: JSON.stringify(fallbackPayloads[attempt]),
       });
@@ -556,7 +572,7 @@ export async function syncAqsiPendingOrder(
   }
 
   try {
-    const raw = await aqsiFetchJson<Record<string, unknown>>(
+    const raw = await aqsiFetchJson<Record<string, unknown>>(config,
       `${config.pendingOrderPath}/${encodeURIComponent(orderId)}`,
       { method: "GET" }
     );

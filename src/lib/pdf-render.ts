@@ -215,7 +215,7 @@ async function waitForFonts(cdp: CdpClient, sessionId: string): Promise<void> {
   );
 }
 
-export async function renderPagePdf(url: string, readySelector: string): Promise<Buffer> {
+async function renderPdfUrl(url: string, readySelector: string): Promise<Buffer> {
   const chromePath = await findChromeExecutable();
   if (!chromePath) throw new Error("Chrome/Chromium не найден на сервере. Укажите CHROME_PATH для генерации PDF.");
 
@@ -282,6 +282,16 @@ export async function renderPagePdf(url: string, readySelector: string): Promise
       void rm(userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 250 }).catch(() => {});
     }, 500);
   }
+}
+
+export async function renderPagePdf(url: string, readySelector: string): Promise<Buffer> {
+  return renderPdfUrl(url, readySelector);
+}
+
+/** Renders a self-contained print document without routing through the app shell. */
+export async function renderHtmlPdf(html: string, readySelector: string): Promise<Buffer> {
+  const url = `data:text/html;base64,${Buffer.from(html, "utf8").toString("base64")}`;
+  return renderPdfUrl(url, readySelector);
 }
 
 export function requestOriginFromHeaders(headers: Headers, fallbackOrigin: string): string {

@@ -284,7 +284,6 @@ async function fetchLocalPosterHistory(params: {
     select: {
       id: true,
       counterpartyId: true,
-      agentMoyskladId: true,
       counterparty: { select: { normalizedPhone: true } },
     },
   });
@@ -294,7 +293,6 @@ async function fetchLocalPosterHistory(params: {
   const or = [
     { id: current.id },
     current.counterpartyId ? { counterpartyId: current.counterpartyId } : null,
-    current.agentMoyskladId ? { agentMoyskladId: current.agentMoyskladId } : null,
     phoneKey ? { counterparty: { is: { normalizedPhone: phoneKey } } } : null,
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
 
@@ -438,37 +436,6 @@ export async function buildJobOrderPosterModel(
     sinceVisit = localHistory.sinceVisit;
   }
 
-  if (historyRows.length === 0 && phoneKey) {
-    try {
-      const synced = await prisma.moySkladDemandSync.findMany({
-        where: { normalizedPhone: phoneKey },
-        include: { positions: true },
-        orderBy: { momentAt: "asc" },
-        take: 12,
-      });
-      visits = Math.max(synced.length, 1);
-      if (synced.length > 0) {
-        sinceVisit = synced[0]!.documentDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2.$1");
-      }
-      const syncedWindow = synced.slice(-5);
-      historyRows = syncedWindow.map((d) => {
-        const docDate = d.documentDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3.$2.$1");
-        let note = pickNoteForSyncedDemand(
-          d.name,
-          d.positions.map((p) => ({ name: p.name, assortmentType: p.assortmentType }))
-        );
-        if (d.id === demandId) {
-          const liveOil = pickJournalOilNoteFromRawRows(rawRows);
-          if (liveOil) note = liveOil;
-        }
-        const km = d.id === demandId ? (mileage > 0 ? mileage : null) : null;
-        return { date: docDate, km, note };
-      });
-    } catch {
-      historyRows = [];
-    }
-  }
-
   if (historyRows.length === 0) {
     const oilNote = pickJournalOilNoteFromRawRows(rawRows);
     const nm = header.name?.trim() ?? "";
@@ -544,24 +511,6 @@ export async function buildJobOrderPosterModel(
   if (/^\d{2}\.\d{2}\.\d{4}$/.test(sinceVisit)) {
     lifetimeSinceYear = sinceVisit.slice(-4);
   }
-  if (phoneKey) {
-    try {
-      const agg = await prisma.moySkladDemandSync.aggregate({
-        where: { normalizedPhone: phoneKey, applicable: true },
-        _count: { id: true },
-        _min: { documentDate: true },
-      });
-      const c = agg._count.id;
-      if (c > 0) lifetimeVisits = c;
-      const md = agg._min.documentDate;
-      if (md && /^\d{4}-\d{2}-\d{2}$/.test(md)) {
-        lifetimeSinceYear = md.slice(0, 4);
-      }
-    } catch {
-      /* оставляем по журналу */
-    }
-  }
-
   return {
     number: header.name?.trim() || demandId,
     date: formatDemandDateRu(header.moment),

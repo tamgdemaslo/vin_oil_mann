@@ -205,7 +205,6 @@ function cellFor(product: { cell?: string | null }, balance?: { slotName?: strin
 function productMatchesScope(
   product: {
     id: string;
-    moyskladId?: string | null;
     groupPath?: string | null;
     brand?: string | null;
     cell?: string | null;
@@ -232,7 +231,7 @@ function productMatchesScope(
     return scope.cells.includes(cell);
   }
   if (scope.type === "PRODUCTS") {
-    return scope.productIds.includes(product.id) || (!!product.moyskladId && scope.productIds.includes(product.moyskladId));
+    return scope.productIds.includes(product.id) || (!!product.id && scope.productIds.includes(product.id));
   }
   return true;
 }
@@ -1619,7 +1618,7 @@ export async function addInventoryProduct(
     const productId = cleanText(body.productId);
     const ean = cleanText(body.ean);
     let product = productId
-      ? await tx.localProduct.findFirst({ where: { OR: [{ id: productId }, { moyskladId: productId }] } })
+      ? await tx.localProduct.findFirst({ where: { OR: [{ id: productId }, { id: productId }] } })
       : null;
     if (!product && ean) {
       product = await tx.localProduct.findFirst({

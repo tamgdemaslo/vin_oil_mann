@@ -1,54 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { RosskoCheckoutPart, rosskoCheckout, rosskoCheckoutDetails, rosskoConfig, suggestRosskoDefaults } from "@/lib/rossko";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { RosskoCheckoutPart, RosskoError, rosskoCheckout, rosskoCheckoutDetails, rosskoCheckoutOptions, rosskoConfig, validateRosskoCheckoutSelection } from "@/lib/rossko";
+import { rosskoIntegrationError } from "@/lib/rossko-integration";
 
 export const runtime = "nodejs";
 
 type BodyPart = Partial<RosskoCheckoutPart>;
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  }
+  const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branch.ok) return branch.response;
 
   try {
     const body = (await request.json()) as {
-      delivery_id?: string;
-      address_id?: string;
-      payment_id?: string;
-      requisite_id?: string;
-      contact_name?: string;
-      contact_phone?: string;
       comment?: string;
-      delivery_parts?: boolean;
       parts?: BodyPart[];
     };
+    return await runWithBranchApiContext(branch.context, async () => {
     const cfg = await rosskoConfig();
-    let deliveryId = (cfg.deliveryId || body.delivery_id || "").trim();
-    let addressId = (cfg.addressId || body.address_id || "").trim();
-    let paymentId = (cfg.paymentId || body.payment_id || "").trim();
-    let requisiteId = (cfg.requisiteId || body.requisite_id || "").trim();
-    const contactName = (cfg.contactName || body.contact_name || "").trim();
-    const contactPhone = (cfg.contactPhone || body.contact_phone || "").trim();
-    const deliveryParts = body.delivery_parts !== undefined ? !!body.delivery_parts : cfg.deliveryParts;
+    const deliveryId = cfg.deliveryId?.trim() || "";
+    const addressId = cfg.addressId?.trim() || "";
+    const paymentId = cfg.paymentId?.trim() || "";
+    const requisiteId = cfg.requisiteId?.trim() || "";
+    const contactName = cfg.contactName?.trim() || "";
+    const contactPhone = cfg.contactPhone?.trim() || "";
 
-    if (!deliveryId || !addressId || !paymentId || !requisiteId) {
-      try {
-        const details = await rosskoCheckoutDetails(cfg);
-        const suggested = suggestRosskoDefaults(details);
-        deliveryId = deliveryId || suggested.delivery_id || "";
-        addressId = addressId || suggested.address_id || "";
-        paymentId = paymentId || suggested.payment_id || "";
-        requisiteId = requisiteId || suggested.requisite_id || "";
-      } catch {
-        // Validation below will report the missing checkout settings.
-      }
-    }
+    const selectionErrors = validateRosskoCheckoutSelection(
+      rosskoCheckoutOptions(await rosskoCheckoutDetails(cfg)),
+      cfg
+    );
+    if (selectionErrors.length) throw new RosskoError(selectionErrors.join(" "));
 
     const missing: string[] = [];
     if (!deliveryId) missing.push("ROSSKO_DELIVERY_ID");
-    if (!addressId) missing.push("ROSSKO_ADDRESS_ID");
     if (!paymentId) missing.push("ROSSKO_PAYMENT_ID");
     if (!contactName) missing.push("ROSSKO_CONTACT_NAME");
     if (!contactPhone) missing.push("ROSSKO_CONTACT_PHONE");
@@ -85,13 +69,14 @@ export async function POST(request: NextRequest) {
       requisiteId: requisiteId || undefined,
       contactName,
       contactPhone,
-      comment: (body.comment || "").trim() || undefined,
-      deliveryParts,
+      comment: [cfg.contactComment, body.comment].map((value) => value?.trim()).filter(Boolean).join(" · ").slice(0, 200) || undefined,
+      deliveryParts: cfg.deliveryParts,
       parts,
     });
     return NextResponse.json({ ok: true, data });
+    });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 502 });
+    const safe = rosskoIntegrationError(e);
+    return NextResponse.json(safe, { status: safe.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 });
   }
 }

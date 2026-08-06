@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type OpenAI from "openai";
-import type { LookupResult, MoySkladItem, OilInfo, VinDecoded } from "@/types/lookup";
+import type { LookupResult, LocalItem, OilInfo, VinDecoded } from "@/types/lookup";
 import type { OilProduct, OilRecommendationItem, OilRequirements, VinDecodeResponse } from "@/types/oil";
 import { prisma } from "@/lib/db";
 import { buildRequirementsNorm, normalizeACEA, normalizeSAE } from "@/lib/oil-normalizer";
@@ -606,9 +606,9 @@ async function findLocalProductsByTerms(rawTerms: string[], limit = 80) {
 
 function localProductsToLookupItems(
   products: LocalLookupProduct[],
-  lookupKind: MoySkladItem["lookupKind"]
-): MoySkladItem[] {
-  const items: MoySkladItem[] = [];
+  lookupKind: LocalItem["lookupKind"]
+): LocalItem[] {
+  const items: LocalItem[] = [];
   for (const product of products) {
     const base = {
       name: product.name,
@@ -645,10 +645,10 @@ function parsePackVolumeLiters(value?: string | null): number | undefined {
 }
 
 /** Быстрый поиск фильтров по локальному каталогу: OEM, Mann, артикул и поисковый текст. */
-async function searchMoySkladProductsByTerms(
+async function searchLocalProductsByTerms(
   rawTerms: string[],
   lookupKind: FilterLookupKind
-): Promise<{ items: MoySkladItem[]; error?: string }> {
+): Promise<{ items: LocalItem[]; error?: string }> {
   try {
     const products = await findLocalProductsByTerms(rawTerms, 80);
     return { items: localProductsToLookupItems(products, lookupKind) };
@@ -660,10 +660,10 @@ async function searchMoySkladProductsByTerms(
   }
 }
 
-/** Получить остатки по списку productId и собрать MoySkladItem[] (один элемент на склад). */
+/** Получить остатки по списку productId и собрать LocalItem[] (один элемент на склад). */
 async function getStockItemsForProducts(
   productInfos: Array<{ id: string; name: string; article?: string; price: number; currency: string; volumeLiters?: number; imageHref?: string }>
-): Promise<MoySkladItem[]> {
+): Promise<LocalItem[]> {
   if (productInfos.length === 0) return [];
   const ids = productInfos.map((product) => product.id);
   const products = await prisma.localProduct.findMany({
@@ -895,8 +895,8 @@ function extractTypedFilterTerms(oilInfo: OilInfo): FilterSearchGroup[] {
   return groups.filter((group) => group.terms.length > 0);
 }
 
-function dedupeLookupItems(items: MoySkladItem[]): MoySkladItem[] {
-  const map = new Map<string, MoySkladItem>();
+function dedupeLookupItems(items: LocalItem[]): LocalItem[] {
+  const map = new Map<string, LocalItem>();
   for (const item of items) {
     const key = [
       item.lookupKind ?? "",
@@ -1166,13 +1166,13 @@ function oilInfoToRequirements(oilInfo: OilInfo): OilRequirements | null {
   };
 }
 
-async function findFilterItems(oilInfo: OilInfo): Promise<{ items: MoySkladItem[]; error?: string }> {
+async function findFilterItems(oilInfo: OilInfo): Promise<{ items: LocalItem[]; error?: string }> {
   const filterGroups = extractTypedFilterTerms(oilInfo);
   if (filterGroups.length === 0) return { items: [] };
 
-  const groupResults: Array<{ items: MoySkladItem[]; error?: string }> = [];
+  const groupResults: Array<{ items: LocalItem[]; error?: string }> = [];
   for (const group of filterGroups) {
-    groupResults.push(await searchMoySkladProductsByTerms(group.terms, group.kind));
+    groupResults.push(await searchLocalProductsByTerms(group.terms, group.kind));
   }
 
   const items = dedupeLookupItems(groupResults.flatMap((group) => group.items));
@@ -1252,7 +1252,7 @@ function buildOilSearchStrategies(requirements: OilRequirements): Array<{ label:
   return strategies;
 }
 
-async function findOilItems(oilInfo: OilInfo): Promise<{ items: MoySkladItem[]; error?: string }> {
+async function findOilItems(oilInfo: OilInfo): Promise<{ items: LocalItem[]; error?: string }> {
   const requirements = oilInfoToRequirements(oilInfo);
   if (!requirements) return { items: [] };
 
@@ -1262,7 +1262,7 @@ async function findOilItems(oilInfo: OilInfo): Promise<{ items: MoySkladItem[]; 
   }
 
   try {
-    let firstNonEmptyItems: MoySkladItem[] | null = null;
+    let firstNonEmptyItems: LocalItem[] | null = null;
     for (const strategy of strategies) {
       // Используем тот же точечный поиск по допускам, что и /api/oil-search.
       // Полный скан каталога тяжёлый и иногда возвращал 0, после чего UI писал "масла нет".
@@ -1521,7 +1521,7 @@ export async function POST(request: NextRequest) {
       vin: vin.replace(/\s/g, "").toUpperCase(),
       decoded: null,
       oilInfo: null,
-      moySkladItems: [],
+      legacyItems: [],
     };
 
     const cached = hasVehicleOverrides ? null : getCachedLookupResult(result.vin);
@@ -1612,18 +1612,18 @@ export async function POST(request: NextRequest) {
 
     if (result.oilInfo) {
       const filterStartedAt = performance.now();
-      const filterPromise = findFilterItems(result.oilInfo).finally(() => markTiming("moyskladFiltersMs", filterStartedAt));
+      const filterPromise = findFilterItems(result.oilInfo).finally(() => markTiming("legacyFiltersMs", filterStartedAt));
       const oilStartedAt = performance.now();
-      const oilPromise = findOilItems(result.oilInfo).finally(() => markTiming("moyskladOilsMs", oilStartedAt));
+      const oilPromise = findOilItems(result.oilInfo).finally(() => markTiming("legacyOilsMs", oilStartedAt));
       const [filterOutcome, oilOutcome] = await Promise.all([filterPromise, oilPromise]);
 
       const filterItems = filterOutcome.items;
       const oilItems = oilOutcome.items;
-      if (filterOutcome.error) result.moySkladError = filterOutcome.error;
-      if (!result.moySkladError && oilOutcome.error) result.moySkladError = oilOutcome.error;
+      if (filterOutcome.error) result.legacyError = filterOutcome.error;
+      if (!result.legacyError && oilOutcome.error) result.legacyError = oilOutcome.error;
 
-      result.moySkladItems = [...filterItems, ...oilItems];
-      if (result.moySkladItems.length === 0 && !result.moySkladError) {
+      result.legacyItems = [...filterItems, ...oilItems];
+      if (result.legacyItems.length === 0 && !result.legacyError) {
         const hasFilterOem = Boolean(
           result.oilInfo.oilFilterOem ||
             result.oilInfo.fuelFilterOem ||
@@ -1638,12 +1638,12 @@ export async function POST(request: NextRequest) {
             (result.oilInfo.api?.length ?? 0) > 0 ||
             (result.oilInfo.ilsac?.length ?? 0) > 0
         );
-        result.moySkladError = hasFilterOem || hasOilParams
+        result.legacyError = hasFilterOem || hasOilParams
           ? "По этим параметрам в локальном каталоге позиций не найдено."
           : "Не удалось определить параметры масла/фильтров по VIN. Проверьте VIN или полноту данных в каталогах.";
       }
     } else {
-      result.moySkladError = "Не удалось определить параметры масла/фильтров по VIN. Проверьте VIN или полноту данных в каталогах.";
+      result.legacyError = "Не удалось определить параметры масла/фильтров по VIN. Проверьте VIN или полноту данных в каталогах.";
     }
 
     setCachedLookupResult(result.vin, result);

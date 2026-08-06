@@ -19,7 +19,7 @@ export async function GET(
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
-      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
+      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { id: id }] },
     },
     select: {
       data: true,
@@ -51,7 +51,7 @@ export async function DELETE(
   const photo = await prisma.localProductPhoto.findFirst({
     where: {
       id: photoId,
-      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { moyskladId: id }] },
+      product: { branchId: branchAccess.context.branchId!, OR: [{ id }, { id: id }] },
     },
     select: { id: true },
   });

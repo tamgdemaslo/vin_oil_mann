@@ -34,8 +34,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(10, Math.max(1, parseInt(request.nextUrl.searchParams.get("limit") ?? "5", 10) || 5));
   const last10 = phoneKey.slice(-10);
 
-  const [localDemands, synced] = await Promise.all([
-    prisma.localDemand.findMany({
+  const localDemands = await prisma.localDemand.findMany({
       where: {
         OR: [
           { counterparty: { normalizedPhone: { contains: phoneKey, mode: "insensitive" } } },
@@ -46,13 +45,7 @@ export async function GET(request: NextRequest) {
       include: { counterparty: true },
       orderBy: { momentAt: "desc" },
       take: limit,
-    }),
-    prisma.moySkladDemandSync.findMany({
-      where: { normalizedPhone: phoneKey },
-      orderBy: { momentAt: "desc" },
-      take: limit,
-    }),
-  ]);
+    });
 
   const rows = dedupe([
     ...localDemands.map((row) => ({
@@ -63,15 +56,6 @@ export async function GET(request: NextRequest) {
       sumCents: row.sumCents,
       applicable: row.applicable,
       agentName: row.counterparty?.name ?? row.agentNameSnapshot ?? undefined,
-    })),
-    ...synced.map((row) => ({
-      id: row.id,
-      name: row.name,
-      documentDate: row.documentDate,
-      momentAt: row.momentAt.toISOString(),
-      sumCents: row.sumCents,
-      applicable: row.applicable,
-      agentName: row.agentNameSnapshot ?? undefined,
     })),
   ]).slice(0, limit);
 

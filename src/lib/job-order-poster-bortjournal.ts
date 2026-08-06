@@ -12,7 +12,7 @@ export type PosterBortJournalFromMs = {
   sinceVisitRu: string;
 };
 
-export async function fetchPosterBortJournalFromMoySklad(params: {
+export async function fetchPosterBortJournalFromLocal(params: {
   agentHref: string;
   currentDemandId: string;
   currentVin: string;

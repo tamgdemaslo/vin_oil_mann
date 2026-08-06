@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Тест OpenAI: запрос требований к маслу по данным автомобиля (без VIN, без МойСклад).
+ * Тест OpenAI: запрос требований к маслу по данным автомобиля без внешнего складского сервиса.
  * Запуск: node scripts/test-openai-oil.mjs [марка] [модель] [год]
  * Пример: node scripts/test-openai-oil.mjs Auris "Hybrid ZZE150L" 2015
  * По умолчанию: Toyota Auris Hybrid (как в логах lookup).

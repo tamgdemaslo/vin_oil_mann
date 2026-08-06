@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { aiAssistantApiError, requireAIAssistantAccess } from "@/lib/ai-assistant/access";
+import { aiAssistantApiError, requireAIAssistantBaseAccess, resolveAIAssistantThreadAccess, runWithAIAssistantBranchContext } from "@/lib/ai-assistant/access";
 import { getAssistantThread, setAssistantThreadStatus } from "@/lib/ai-assistant/runner";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireAIAssistantAccess();
-  if ("response" in access) return access.response;
+  const baseAccess = await requireAIAssistantBaseAccess();
+  if ("response" in baseAccess) return baseAccess.response;
   try {
     const { id } = await params;
-    return NextResponse.json(await getAssistantThread(id, access.organizationId));
+    const access = await resolveAIAssistantThreadAccess(baseAccess, id);
+    const payload = await runWithAIAssistantBranchContext(access, () => getAssistantThread(id, access.organizationId));
+    return NextResponse.json({ ...payload, branch: { id: access.branchId, name: access.branchName } });
   } catch (error) {
     return aiAssistantApiError(error);
   }
@@ -19,12 +21,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 const statusSchema = z.object({ status: z.enum(["active", "archived"]) });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireAIAssistantAccess();
-  if ("response" in access) return access.response;
+  const baseAccess = await requireAIAssistantBaseAccess();
+  if ("response" in baseAccess) return baseAccess.response;
   try {
     const { id } = await params;
     const body = statusSchema.parse(await request.json());
-    const thread = await setAssistantThreadStatus({ threadId: id, organizationId: access.organizationId, status: body.status });
+    const access = await resolveAIAssistantThreadAccess(baseAccess, id);
+    const thread = await runWithAIAssistantBranchContext(access, () => setAssistantThreadStatus({ threadId: id, organizationId: access.organizationId, status: body.status }));
     return NextResponse.json({ thread });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Некорректный статус диалога" }, { status: 422 });

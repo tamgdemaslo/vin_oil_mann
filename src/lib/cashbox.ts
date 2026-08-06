@@ -34,6 +34,7 @@ export type CashUserSnapshot = {
 
 export type CashShift = {
   id: string;
+  aqsiRegisterId?: string;
   serviceDate: string; // YYYY-MM-DD в часовом поясе сервиса
   timezone: string;
   status: CashShiftStatus;
@@ -88,7 +89,7 @@ export type CashExpense = CashOperationBase & {
   expenseItemMetaHref?: string;
   paymentType: CashExpensePaymentType;
   attachmentUrl?: string;
-  moyskladCashoutHref?: string;
+  legacyCashoutHref?: string;
 };
 
 export type CashOperation = CashWithdrawal | CashExpense;
@@ -191,6 +192,7 @@ function snapshotFromFields(params: {
 function shiftRowToCashShift(row: CashShiftRow): CashShift {
   return {
     id: row.id,
+    aqsiRegisterId: row.aqsiRegisterId ?? undefined,
     serviceDate: row.serviceDate,
     timezone: row.timezone,
     status: row.status === "closed" ? "closed" : "open",
@@ -405,7 +407,7 @@ export async function listOperationsForShift(
     .filter((op) => op.type === "expense")
     .map((op) =>
       op.type === "expense" && !op.status
-        ? { ...op, status: "posted" as CashExpenseOrderStatus, source: "moysklad_import" as CashExpenseOrderSource }
+        ? { ...op, status: "posted" as CashExpenseOrderStatus, source: "legacy_import" as CashExpenseOrderSource }
         : op
     );
   const withdrawals = await prisma.cashWithdrawal.findMany({
@@ -479,6 +481,11 @@ export async function openShift(openingCash: number): Promise<CashShift> {
   }
 
   await ensureAdminWorkShiftOpened(user);
+  const defaultAqsiRegister = await prisma.aqsiCashRegister.findFirst({
+    where: { branchId, enabled: true },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+    select: { id: true },
+  });
 
   try {
     const shift = await prisma.cashShift.create({
@@ -493,6 +500,7 @@ export async function openShift(openingCash: number): Promise<CashShift> {
         openedByName: user.name,
         openedByRole: user.role,
         openingCashCents: centsFromRub(openingCash),
+        aqsiRegisterId: defaultAqsiRegister?.id ?? null,
         source: "local",
       },
     });
@@ -552,7 +560,7 @@ export async function addExpense(params: {
   status?: CashExpenseOrderStatus;
   comment?: string;
   attachmentUrl?: string;
-  moyskladCashoutHref?: string;
+  legacyCashoutHref?: string;
 }): Promise<CashExpense> {
   const user = await requireSessionUser();
   assertOwnerOrAdmin(user);
@@ -589,7 +597,7 @@ export async function addExpense(params: {
       status: params.status ?? "posted",
       comment: params.comment,
       attachmentUrl: params.attachmentUrl,
-      moyskladCashoutHref: params.moyskladCashoutHref,
+      localHref: params.legacyCashoutHref,
     },
     user
   );

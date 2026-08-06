@@ -4,7 +4,6 @@ import {
   type ComputedPositionForProfit,
 } from "@/lib/customer-analytics-profit";
 import { prisma } from "@/lib/db";
-import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { CustomerAnalyticsResolvedSettings } from "@/lib/customer-analytics-settings";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 
@@ -36,7 +35,6 @@ const demandSelect = {
       id: true,
       productId: true,
       product: { select: { name: true } },
-      assortmentMoyskladId: true,
       assortmentType: true,
       name: true,
       quantity: true,
@@ -61,12 +59,11 @@ type CounterpartyAnalyticsRow = Prisma.LocalCounterpartyGetPayload<{ select: typ
 type CrmDealAnalyticsRow = {
   id: string;
   title: string;
-  customerName: string | null;
   phoneNormalized: string | null;
   vehicle: string | null;
   source: string | null;
   responsibleLogin: string | null;
-  moyskladCounterpartyName: string | null;
+  customerName: string | null;
   yclientsRecordId: string | null;
   nextContactAt: Date | null;
   status: string;
@@ -497,7 +494,7 @@ function addVehicle(acc: ClientAccumulator, vehicle: VehicleSummary | null) {
 
 function serviceRefFromPosition(p: LocalDemandPositionWithProduct): { id: string; name: string } | null {
   if (p.assortmentType !== "service") return null;
-  const id = p.productId ?? (p.assortmentMoyskladId ? `ms:${p.assortmentMoyskladId}` : `name:${p.name.toLowerCase()}`);
+  const id = p.productId ?? `name:${p.name.toLowerCase()}`;
   return { id, name: p.product?.name ?? p.name };
 }
 
@@ -975,7 +972,7 @@ function buildAccumulators(params: {
     const key = clientKeyFromCrmDeal(deal);
     const acc = getOrCreateAccumulator(clients, key, normalizedPhone, normalizedPhone);
     const source = crmSource(deal);
-    addName(acc, deal.customerName ?? deal.moyskladCounterpartyName ?? deal.title, 2);
+    addName(acc, deal.customerName ?? deal.customerName ?? deal.title, 2);
     acc.sources.add(source);
     acc.crmDealIds.add(deal.id);
     acc.crmDeals.push(deal);
@@ -1007,12 +1004,11 @@ async function loadCrmDealsForAnalytics(): Promise<CrmDealAnalyticsRow[]> {
     select: {
       id: true,
       title: true,
-      customerName: true,
       phoneNormalized: true,
       vehicle: true,
       source: true,
       responsibleLogin: true,
-      moyskladCounterpartyName: true,
+      customerName: true,
       yclientsRecordId: true,
       nextContactAt: true,
       status: true,
@@ -1035,11 +1031,10 @@ export async function loadCustomerAnalyticsPayload(params: {
   settings: CustomerAnalyticsResolvedSettings;
 }): Promise<CustomerAnalyticsPayload> {
   const { dateFrom, dateTo, serviceIds, settings } = params;
-  const branchId = getScopedBranchId();
   const serviceIdSet = new Set(serviceIds.filter(Boolean));
   const todayYmd = getAnalyticsTodayYmd();
 
-  const [demands, counterparties, crmDeals, localSyncState, moySkladAnalyticsState] = await Promise.all([
+  const [demands, counterparties, crmDeals] = await Promise.all([
     prisma.localDemand.findMany({
       where: { applicable: true },
       select: demandSelect,
@@ -1051,8 +1046,6 @@ export async function loadCustomerAnalyticsPayload(params: {
       orderBy: { updatedAt: "desc" },
     }),
     loadCrmDealsForAnalytics(),
-    prisma.localInventorySyncState.findUnique({ where: { branchId_id: { branchId, id: "default" } } }).catch(() => null),
-    prisma.moySkladAnalyticsSyncState.findUnique({ where: { branchId_id: { branchId, id: "default" } } }).catch(() => null),
   ]);
 
   const accumulators = buildAccumulators({ counterparties, demands, crmDeals });
@@ -1073,12 +1066,12 @@ export async function loadCustomerAnalyticsPayload(params: {
     visitDefinition: "Визит = проведённая локальная отгрузка. Записи CRM и YCLIENTS показываются отдельно и не смешиваются с визитами.",
     revenueDefinition: "Выручка = сумма проведённых локальных отгрузок за выбранный период. Прибыль считается по локальным закупочным ценам позиций, если они заполнены.",
     sync: {
-      lastSyncedAt: moySkladAnalyticsState?.lastSyncedAt?.toISOString() ?? null,
-      lastError: moySkladAnalyticsState?.lastError ?? null,
-      demandsSynced: moySkladAnalyticsState?.demandsSynced ?? 0,
-      localLastSyncedAt: localSyncState?.lastSyncedAt?.toISOString() ?? null,
-      localLastError: localSyncState?.lastError ?? null,
-      localDemandsSynced: localSyncState?.demandsSynced ?? 0,
+      lastSyncedAt: null,
+      lastError: null,
+      demandsSynced: 0,
+      localLastSyncedAt: null,
+      localLastError: null,
+      localDemandsSynced: 0,
     },
     services: buildServiceOptions(demands),
     sources: [

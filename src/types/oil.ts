@@ -32,7 +32,7 @@ export type OilRequirements = {
   source_hint?: string;
 };
 
-/** Нормализованные допуски товара из МойСклад */
+/** Нормализованные допуски товара из локального каталога */
 export type RequirementsNorm = {
   sae: string[];
   oem: string[];
@@ -41,7 +41,7 @@ export type RequirementsNorm = {
   ilsac: string[];
 };
 
-/** Товар масла из МойСклад с нормализованными требованиями */
+/** Товар масла из локального каталога с нормализованными требованиями */
 export type OilProduct = {
   id: string;
   name: string;
