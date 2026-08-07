@@ -3,6 +3,11 @@ import { z } from "zod";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { disconnectTelegramUserCredentials, getTelegramUserIntegrationStatus, saveTelegramUserIntegration } from "@/lib/telegram-user-integration";
 import { canManageBranchIntegrationSecrets, canViewBranchIntegrationSettings } from "@/lib/integration-access";
+import {
+  INTEGRATION_STORAGE_NOT_CONFIGURED_CODE,
+  INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE,
+  isIntegrationEncryptionConfigurationError,
+} from "@/lib/messenger/messenger-crypto";
 
 export const runtime = "nodejs";
 
@@ -41,6 +46,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json(status);
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Проверьте настройки Telegram" }, { status: 422 });
+    if (isIntegrationEncryptionConfigurationError(error)) {
+      return NextResponse.json(
+        { error: INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE, code: INTEGRATION_STORAGE_NOT_CONFIGURED_CODE },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: error instanceof Error ? error.message : "Настройки Telegram не сохранены" }, { status: 422 });
   }
 }

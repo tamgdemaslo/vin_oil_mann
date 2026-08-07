@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
+import { assertIntegrationEncryptionConfigured, decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { hasConsecutiveIntegrationFailures, notifyIntegrationOwner } from "@/lib/integration-owner-notifications";
 
@@ -194,6 +194,7 @@ export async function getAqsiIntegrationStatus() {
 }
 
 export async function saveAqsiCashRegister(input: AqsiRegisterInput, actorId?: string | null) {
+  assertIntegrationEncryptionConfigured();
   const tenant = tenantOrThrow();
   const requestedName = text(input.name, "Основная касса", 120);
   const existing = input.id

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { resolveBranchIntegration, IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
-import { encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
+import { assertIntegrationEncryptionConfigured, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { notifyIntegrationOwner } from "@/lib/integration-owner-notifications";
 
@@ -108,6 +108,7 @@ async function saveValue(key: (typeof KEYS)[number], value: string, actorId?: st
 
 /** Пустые поля не стирают сохранённые секреты. */
 export async function saveTelegramUserIntegration(input: { apiId?: string; apiHash?: string }, actorId?: string | null) {
+  assertIntegrationEncryptionConfigured();
   const before = await currentValues();
   const apiId = input.apiId?.trim() ?? "";
   const apiHash = input.apiHash?.trim() ?? "";

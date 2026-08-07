@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Plus, QrCode, RefreshCw, Save, TestTube2, Unplug } from "lucide-react";
 import { EcoBadge, EcoButton, EcoCard, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { safeReadJson } from "@/lib/http-json";
@@ -160,28 +160,33 @@ export default function OperationalIntegrationsPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activity, setActivity] = useState<IntegrationActivity[]>([]);
+  const telegramCredentialsFormRef = useRef<HTMLFormElement>(null);
 
   const selected = useMemo(() => aqsi?.registers.find((row) => row.id === aqsiForm.id) ?? null, [aqsi, aqsiForm.id]);
 
   const load = useCallback(async () => {
-    const [aqsiRes, telegramRes, rosskoRes] = await Promise.all([
-      fetch("/api/integrations/aqsi", { cache: "no-store" }),
-      fetch("/api/integrations/telegram-user", { cache: "no-store" }),
-      fetch("/api/integrations/rossko", { cache: "no-store" }),
-    ]);
-    const aqsiData = await safeReadJson<AqsiStatus & { error?: string }>(aqsiRes);
-    const telegramData = await safeReadJson<TelegramStatus & { error?: string }>(telegramRes);
-    const rosskoData = await safeReadJson<{ configured?: boolean }>(rosskoRes);
-    if (aqsiRes.ok && aqsiData) {
-      setAqsi(aqsiData);
-      setAqsiForm((current) => current.id ? current : aqsiData.registers[0] ? registerForm(aqsiData.registers[0]) : EMPTY_AQSI);
-    }
-    if (telegramRes.ok && telegramData) setTelegram(telegramData);
-    if (rosskoRes.ok) setRosskoConfigured(rosskoData?.configured === true);
-    if (canEditSecrets) {
-      const activityRes = await fetch("/api/integrations/activity", { cache: "no-store" });
-      const activityData = await safeReadJson<{ items?: IntegrationActivity[] }>(activityRes);
-      if (activityRes.ok) setActivity(activityData?.items ?? []);
+    try {
+      const [aqsiRes, telegramRes, rosskoRes] = await Promise.all([
+        fetch("/api/integrations/aqsi", { cache: "no-store" }),
+        fetch("/api/integrations/telegram-user", { cache: "no-store" }),
+        fetch("/api/integrations/rossko", { cache: "no-store" }),
+      ]);
+      const aqsiData = await safeReadJson<AqsiStatus & { error?: string }>(aqsiRes);
+      const telegramData = await safeReadJson<TelegramStatus & { error?: string }>(telegramRes);
+      const rosskoData = await safeReadJson<{ configured?: boolean }>(rosskoRes);
+      if (aqsiRes.ok && aqsiData) {
+        setAqsi(aqsiData);
+        setAqsiForm((current) => current.id ? current : aqsiData.registers[0] ? registerForm(aqsiData.registers[0]) : EMPTY_AQSI);
+      }
+      if (telegramRes.ok && telegramData) setTelegram(telegramData);
+      if (rosskoRes.ok) setRosskoConfigured(rosskoData?.configured === true);
+      if (canEditSecrets) {
+        const activityRes = await fetch("/api/integrations/activity", { cache: "no-store" });
+        const activityData = await safeReadJson<{ items?: IntegrationActivity[] }>(activityRes);
+        if (activityRes.ok) setActivity(activityData?.items ?? []);
+      }
+    } catch {
+      setMessage("Связь с сервером временно прервалась. Обновите статус и повторите действие.");
     }
   }, [canEditSecrets]);
 
@@ -192,32 +197,42 @@ export default function OperationalIntegrationsPanel({
 
   async function saveAqsi() {
     setBusy("aqsi-save"); setMessage(null);
-    const { apiKey, markingBypassPassword, enabled, ...nonSecretForm } = aqsiForm;
-    const payload = canEditSecrets ? { ...nonSecretForm, apiKey, markingBypassPassword, enabled } : nonSecretForm;
-    const response = await fetch("/api/integrations/aqsi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await safeReadJson<AqsiStatus & { error?: string }>(response);
-    if (response.ok && data) {
-      setAqsi(data);
-      const saved = data.registers.find((row) => row.id === aqsiForm.id) ?? data.registers.find((row) => row.name === aqsiForm.name) ?? data.registers[0];
-      if (saved) setAqsiForm(registerForm(saved));
-      setMessage("Настройки кассы AQSI сохранены для текущего филиала.");
-    } else setMessage(data?.error ?? "Настройки AQSI не сохранены.");
-    setBusy(null);
+    try {
+      const { apiKey, markingBypassPassword, enabled, ...nonSecretForm } = aqsiForm;
+      const payload = canEditSecrets ? { ...nonSecretForm, apiKey, markingBypassPassword, enabled } : nonSecretForm;
+      const response = await fetch("/api/integrations/aqsi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await safeReadJson<AqsiStatus & { error?: string }>(response);
+      if (response.ok && data) {
+        setAqsi(data);
+        const saved = data.registers.find((row) => row.id === aqsiForm.id) ?? data.registers.find((row) => row.name === aqsiForm.name) ?? data.registers[0];
+        if (saved) setAqsiForm(registerForm(saved));
+        setMessage("Настройки кассы AQSI сохранены для текущего филиала.");
+      } else setMessage(data?.error ?? "Настройки AQSI не сохранены.");
+    } catch {
+      setMessage("Связь с сервером прервалась. Настройки AQSI не сохранены; повторите после восстановления соединения.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function testAqsi() {
     if (!aqsiForm.id && !aqsiForm.apiKey.trim()) { setMessage("Введите API-ключ AQSI для безопасной проверки."); return; }
     setBusy("aqsi-test"); setMessage(null);
-    const response = await fetch("/api/integrations/aqsi/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...aqsiForm, registerId: aqsiForm.id || undefined, apiKey: aqsiForm.apiKey || undefined }) });
-    const data = await safeReadJson<{ message?: string; error?: string; integration?: AqsiStatus; devices?: AqsiDevice[]; binding?: { deviceId?: string; shopId?: string; cashierId?: string } }>(response);
-    if (data?.integration) setAqsi(data.integration);
-    if (response.ok && data?.devices) {
-      setAqsiDevices(data.devices);
-      if (!aqsiForm.deviceId && data.binding?.deviceId) setAqsiForm((current) => ({ ...current, deviceId: data.binding!.deviceId ?? "", shopId: data.binding!.shopId ?? current.shopId }));
+    try {
+      const response = await fetch("/api/integrations/aqsi/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...aqsiForm, registerId: aqsiForm.id || undefined, apiKey: aqsiForm.apiKey || undefined }) });
+      const data = await safeReadJson<{ message?: string; error?: string; integration?: AqsiStatus; devices?: AqsiDevice[]; binding?: { deviceId?: string; shopId?: string; cashierId?: string } }>(response);
+      if (data?.integration) setAqsi(data.integration);
+      if (response.ok && data?.devices) {
+        setAqsiDevices(data.devices);
+        if (!aqsiForm.deviceId && data.binding?.deviceId) setAqsiForm((current) => ({ ...current, deviceId: data.binding!.deviceId ?? "", shopId: data.binding!.shopId ?? current.shopId }));
+      }
+      setMessage(response.ok ? data?.message ?? "AQSI отвечает." : data?.error ?? "Проверка AQSI не выполнена.");
+      await load();
+    } catch {
+      setMessage("Связь с сервером прервалась во время проверки AQSI. Повторите после восстановления соединения.");
+    } finally {
+      setBusy(null);
     }
-    setMessage(response.ok ? data?.message ?? "AQSI отвечает." : data?.error ?? "Проверка AQSI не выполнена.");
-    setBusy(null);
-    await load();
   }
 
   async function disconnectAqsi() {
@@ -244,14 +259,37 @@ export default function OperationalIntegrationsPanel({
   }
 
   async function saveTelegram() {
+    const nativeForm = telegramCredentialsFormRef.current;
+    const nativeValues = nativeForm ? new FormData(nativeForm) : null;
+    const credentials = {
+      apiId: String(nativeValues?.get("apiId") ?? telegramForm.apiId).trim(),
+      apiHash: String(nativeValues?.get("apiHash") ?? telegramForm.apiHash).trim(),
+    };
+    if (!credentials.apiId || !credentials.apiHash) {
+      setMessage("Введите API ID и API Hash Telegram в оба поля.");
+      return;
+    }
+    if (!/^\d+$/.test(credentials.apiId) || Number(credentials.apiId) <= 0) {
+      setMessage("API ID Telegram должен быть положительным числом.");
+      return;
+    }
+    if (credentials.apiHash.length < 16) {
+      setMessage("Проверьте API Hash Telegram: значение выглядит слишком коротким.");
+      return;
+    }
     setBusy("telegram-save"); setMessage(null);
-    const response = await fetch("/api/integrations/telegram-user", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(telegramForm) });
-    const data = await safeReadJson<TelegramStatus & { error?: string }>(response);
-    if (response.ok && data) {
-      setTelegram(data); setTelegramForm({ apiId: "", apiHash: "" });
-      setMessage("API-реквизиты Telegram сохранены. Теперь подключите рабочий аккаунт по QR.");
-    } else setMessage(data?.error ?? "Настройки Telegram не сохранены.");
-    setBusy(null);
+    try {
+      const response = await fetch("/api/integrations/telegram-user", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
+      const data = await safeReadJson<TelegramStatus & { error?: string }>(response);
+      if (response.ok && data) {
+        setTelegram(data); setTelegramForm({ apiId: "", apiHash: "" });
+        setMessage("API-реквизиты Telegram сохранены. Теперь подключите рабочий аккаунт по QR.");
+      } else setMessage(data?.error ?? "Настройки Telegram не сохранены.");
+    } catch {
+      setMessage("Связь с сервером прервалась. Реквизиты Telegram не сохранены; повторите после восстановления соединения.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function checkTelegram() {
@@ -352,18 +390,20 @@ export default function OperationalIntegrationsPanel({
 
         <EcoCard>
           <div className="eco-card__head"><div><div className="eco-page-kicker">Рабочий аккаунт</div><h2>Telegram по QR</h2><p>Один рабочий user account на филиал. История сохраняется при отключении.</p></div><EcoBadge tone={telegram?.account?.status === "connected" ? "success" : telegram?.configured ? "warning" : "neutral"} dot>{label(telegram?.status ?? "not_configured", Boolean(telegram?.configured))}</EcoBadge></div>
-          <div className="eco-tbank-settings-grid">
-            <label><span>API ID</span><EcoInput type="password" autoComplete="off" value={telegramForm.apiId} disabled={!canEditSecrets} placeholder={telegram?.apiIdConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiId: e.target.value }))} /></label>
-            <label><span>API Hash</span><EcoInput type="password" autoComplete="off" value={telegramForm.apiHash} disabled={!canEditSecrets} placeholder={telegram?.apiHashConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiHash: e.target.value }))} /></label>
-          </div>
-          {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>{telegram.account.displayName} · {telegram.account.phoneMasked ?? telegram.account.username ?? "номер скрыт"}</span></div> : null}
-          {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>Последний успех: {dateTime(telegram.account.lastSyncAt)} · последняя ошибка: {telegram.account.lastError ? `${dateTime(telegram.account.updatedAt)} · ${telegram.account.lastError}` : "—"}</span></div> : null}
-          <div className="eco-messenger-settings-actions">
-            {canEditSecrets ? <EcoButton type="button" onClick={() => void saveTelegram()} disabled={busy !== null}><Save size={15} />{busy === "telegram-save" ? "Сохраняем…" : "Сохранить реквизиты"}</EcoButton> : null}
-            {telegram?.account?.status === "connected" ? <EcoButton type="button" variant="secondary" onClick={() => void checkTelegram()} disabled={busy !== null}><TestTube2 size={15} />{busy === "telegram-check" ? "Проверяем…" : "Проверить"}</EcoButton> : null}
-            {canEditSecrets && telegram?.account?.status !== "disconnected" ? <EcoButton type="button" variant="ghost" onClick={() => void disconnectTelegram()} disabled={busy !== null}><Unplug size={15} />{busy === "telegram-disconnect" ? "Отключаем…" : "Отключить"}</EcoButton> : null}
-            <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary"><QrCode size={15} />Открыть подключение по QR</Link>
-          </div>
+          <form ref={telegramCredentialsFormRef} onSubmit={(event) => { event.preventDefault(); void saveTelegram(); }}>
+            <div className="eco-tbank-settings-grid">
+              <label><span>API ID</span><EcoInput name="apiId" type="password" autoComplete="off" value={telegramForm.apiId} disabled={!canEditSecrets} placeholder={telegram?.apiIdConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiId: e.target.value }))} /></label>
+              <label><span>API Hash</span><EcoInput name="apiHash" type="password" autoComplete="off" value={telegramForm.apiHash} disabled={!canEditSecrets} placeholder={telegram?.apiHashConfigured ? "сохранён: ••••••••" : "my.telegram.org"} onChange={(e) => setTelegramForm((v) => ({ ...v, apiHash: e.target.value }))} /></label>
+            </div>
+            {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>{telegram.account.displayName} · {telegram.account.phoneMasked ?? telegram.account.username ?? "номер скрыт"}</span></div> : null}
+            {telegram?.account ? <div className="eco-integration-note eco-integration-note--info"><span>Последний успех: {dateTime(telegram.account.lastSyncAt)} · последняя ошибка: {telegram.account.lastError ? `${dateTime(telegram.account.updatedAt)} · ${telegram.account.lastError}` : "—"}</span></div> : null}
+            <div className="eco-messenger-settings-actions">
+              {canEditSecrets ? <EcoButton type="submit" disabled={busy !== null}><Save size={15} />{busy === "telegram-save" ? "Сохраняем…" : "Сохранить реквизиты"}</EcoButton> : null}
+              {telegram?.account?.status === "connected" ? <EcoButton type="button" variant="secondary" onClick={() => void checkTelegram()} disabled={busy !== null}><TestTube2 size={15} />{busy === "telegram-check" ? "Проверяем…" : "Проверить"}</EcoButton> : null}
+              {canEditSecrets && telegram?.account?.status !== "disconnected" ? <EcoButton type="button" variant="ghost" onClick={() => void disconnectTelegram()} disabled={busy !== null}><Unplug size={15} />{busy === "telegram-disconnect" ? "Отключаем…" : "Отключить"}</EcoButton> : null}
+              <Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary"><QrCode size={15} />Открыть подключение по QR</Link>
+            </div>
+          </form>
         </EcoCard>
       </div>
       {canEditSecrets ? (

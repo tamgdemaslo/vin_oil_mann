@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { startTelegramUserQrAuth } from "@/lib/messenger/channels/telegram-user-session";
 import { requireTelegramOwnerBranchApi } from "@/lib/telegram-user-route-access";
 import { runWithBranchApiContext } from "@/lib/branch-api";
+import {
+  INTEGRATION_STORAGE_NOT_CONFIGURED_CODE,
+  INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE,
+  isIntegrationEncryptionConfigurationError,
+} from "@/lib/messenger/messenger-crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +30,12 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : "Не удалось создать QR Telegram",
     });
+    if (isIntegrationEncryptionConfigurationError(error)) {
+      return NextResponse.json(
+        { ok: false, error: INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE, code: INTEGRATION_STORAGE_NOT_CONFIGURED_CODE },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Не удалось создать QR Telegram" }, { status: 400 });
   }
 }

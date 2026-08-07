@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
-import { decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
+import { assertIntegrationEncryptionConfigured, decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/messenger/messenger-crypto";
 import { prisma } from "@/lib/db";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
@@ -211,6 +211,7 @@ async function saveValue(key: RosskoCredentialKey, value: string, actorId?: stri
 
 /** Blank key fields mean "keep the existing encrypted key", never erase it. */
 export async function saveRosskoIntegration(input: RosskoIntegrationInput, actorId?: string | null) {
+  assertIntegrationEncryptionConfigured();
   const saved: Array<{ key: RosskoCredentialKey; result: "created" | "updated" }> = [];
   for (const key of ["key1", "key2", ...SETTING_KEYS] as RosskoCredentialKey[]) {
     const value = text(input[key], key.startsWith("key") ? 1_000 : 500);

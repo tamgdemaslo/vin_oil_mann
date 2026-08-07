@@ -5,6 +5,7 @@ import type { Attachment, MessageOutbox, MessengerAccount, MessengerAccountStatu
 import { enqueueMessengerMediaJob, refreshMessageAttachmentsJson } from "../messenger-media";
 import { isPhotoAttachmentType, messengerAttachmentDisplayName } from "../messenger-attachment-normalization";
 import { ensureMessengerIntegrationCoreSchema } from "../messenger-schema";
+import { assertIntegrationEncryptionConfigured } from "../messenger-crypto";
 import {
   messengerObjectKey,
   messengerStorageProxyUrl,
@@ -236,6 +237,7 @@ function currentQrScope() {
 
 function encryptionKey() {
   const configured = [
+    process.env.MESSENGER_CREDENTIAL_ENCRYPTION_KEY,
     process.env.TELEGRAM_SESSION_ENCRYPTION_KEY,
     process.env.MESSENGER_SETTINGS_SECRET,
     process.env.SESSION_SECRET,
@@ -843,6 +845,7 @@ export async function resendTelegramUserCode(accountId: string) {
 }
 
 export async function startTelegramUserQrAuth(phoneInput = "") {
+  assertIntegrationEncryptionConfigured();
   const phone = phoneInput.trim() ? normalizePhone(phoneInput) : null;
   const { apiId, apiHash } = await resolveTelegramUserCredentials();
   await ensureTelegramUserSchema();

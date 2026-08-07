@@ -58,8 +58,14 @@ expect("src/lib/aqsi-fiscalization.ts", [
 ]);
 expect("src/app/api/cron/aqsi-fiscalization-retry/route.ts", [/runForActiveBranches/, /retryDueAqsiFiscalizations/, /CRON_SECRET/]);
 expect("src/lib/aqsi-integration.ts", [/assertRegisterCanChange/, /status:\s*"open"/, /credentialsEncrypted/, /isDefault/]);
+expect("src/lib/messenger/messenger-crypto.ts", [
+  /INTEGRATION_STORAGE_NOT_CONFIGURED_CODE/,
+  /IntegrationEncryptionConfigurationError/,
+  /assertIntegrationEncryptionConfigured/,
+  /MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
+]);
 expect("src/lib/aqsi.ts", [/validateAqsiConfig/, /resolveAqsiBinding/, /publicAqsiDevices/, /needsDevice/]);
-expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/alerts\.map/, /retryFiscalization/, /disconnectAqsi/, /Мастер настройки нового филиала/, /Уведомления и журнал изменений/]);
+expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/alerts\.map/, /retryFiscalization/, /disconnectAqsi/, /Связь с сервером прервалась/, /Мастер настройки нового филиала/, /Уведомления и журнал изменений/]);
 expect("src/lib/integration-access.ts", [/group_owner/, /group_admin/, /branch_owner/, /integrations\.manage/]);
 expect("src/lib/integration-owner-notifications.ts", [/dedupeKey/, /throttleMinutes/, /recipientUserIds/, /listIntegrationActivity/]);
 expect("src/app/api/integrations/activity/route.ts", [/canManageBranchIntegrationSecrets/, /listIntegrationActivity/]);
@@ -68,7 +74,18 @@ expect("src/lib/messenger/channels/telegram-user-session.ts", [
   /QR session принадлежит другому филиалу или пользователю/,
   /deactivateOtherTelegramAccounts/,
   /resolveTelegramUserCredentials/,
+  /process\.env\.MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
+  /assertIntegrationEncryptionConfigured\(\)/,
 ]);
+
+for (const route of [
+  "src/app/api/integrations/aqsi/route.ts",
+  "src/app/api/integrations/telegram-user/route.ts",
+  "src/app/api/integrations/rossko/route.ts",
+  "src/app/api/messenger/telegram-user/start-qr/route.ts",
+]) {
+  expect(route, [/INTEGRATION_STORAGE_NOT_CONFIGURED_CODE/, /status:\s*503/]);
+}
 
 for (const route of ["start-auth", "start-qr", "check-qr", "resend-code", "confirm-code", "confirm-password", "disconnect"]) {
   expect(`src/app/api/messenger/telegram-user/${route}/route.ts`, [/requireTelegramOwnerBranchApi/, /runWithBranchApiContext/]);

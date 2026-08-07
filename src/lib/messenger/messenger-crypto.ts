@@ -16,19 +16,41 @@ const SECRET_KEY_SOURCES = [
   "AUTH_SALT",
 ] as const;
 
+export const INTEGRATION_STORAGE_NOT_CONFIGURED_CODE = "INTEGRATION_STORAGE_NOT_CONFIGURED";
+export const INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE =
+  "Защищённое хранилище интеграций не настроено в Timeweb. Добавьте MESSENGER_CREDENTIAL_ENCRYPTION_KEY и повторите сохранение.";
+
+export class IntegrationEncryptionConfigurationError extends Error {
+  readonly code = INTEGRATION_STORAGE_NOT_CONFIGURED_CODE;
+
+  constructor() {
+    super(INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE);
+    this.name = "IntegrationEncryptionConfigurationError";
+  }
+}
+
 function baseSecret() {
   for (const key of SECRET_KEY_SOURCES) {
     const value = process.env[key]?.trim();
     if (value) return value;
   }
   if (process.env.NODE_ENV === "production") {
-    throw new Error("В production не настроен master-key шифрования интеграций");
+    throw new IntegrationEncryptionConfigurationError();
   }
   return "eco-messenger-dev-secret-change-in-production";
 }
 
 function encryptionKey() {
   return crypto.createHash("sha256").update(baseSecret(), "utf8").digest();
+}
+
+export function assertIntegrationEncryptionConfigured() {
+  encryptionKey();
+}
+
+export function isIntegrationEncryptionConfigurationError(error: unknown): error is IntegrationEncryptionConfigurationError {
+  return error instanceof IntegrationEncryptionConfigurationError
+    || (error instanceof Error && error.name === "IntegrationEncryptionConfigurationError");
 }
 
 export function encryptIntegrationSecret(value: string): EncryptedSecretPayload {

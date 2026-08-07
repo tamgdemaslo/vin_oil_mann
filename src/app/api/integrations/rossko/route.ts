@@ -5,6 +5,11 @@ import { disconnectRosskoIntegration, getRosskoIntegrationStatus, saveRosskoInte
 import { RosskoError, type RosskoConfig, rosskoCheckoutDetails, rosskoCheckoutOptions, rosskoConfig, validateRosskoCheckoutSelection } from "@/lib/rossko";
 import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
 import { canManageBranchIntegrationSecrets, canViewBranchIntegrationSettings } from "@/lib/integration-access";
+import {
+  INTEGRATION_STORAGE_NOT_CONFIGURED_CODE,
+  INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE,
+  isIntegrationEncryptionConfigurationError,
+} from "@/lib/messenger/messenger-crypto";
 
 export const runtime = "nodejs";
 
@@ -87,6 +92,12 @@ export async function PATCH(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Проверьте значения настроек ROSSKO" }, { status: 422 });
     if (error instanceof RosskoError) return NextResponse.json({ error: error.message }, { status: 422 });
+    if (isIntegrationEncryptionConfigurationError(error)) {
+      return NextResponse.json(
+        { error: INTEGRATION_STORAGE_NOT_CONFIGURED_MESSAGE, code: INTEGRATION_STORAGE_NOT_CONFIGURED_CODE },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Не удалось сохранить настройки ROSSKO" }, { status: 500 });
   }
 }
