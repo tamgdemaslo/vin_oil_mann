@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
 
 export async function POST() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  if (session.user.role !== "owner") {
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  if (access.context.user.role !== "owner") {
     return NextResponse.json({ error: "Прямой платёж доступен только владельцу." }, { status: 403 });
   }
   return NextResponse.json(

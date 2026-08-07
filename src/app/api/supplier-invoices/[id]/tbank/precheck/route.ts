@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { precheckTBankDraft } from "@/lib/tbank";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
   let body: unknown = {};
   try {
     body = await request.json();
@@ -15,5 +15,7 @@ export async function POST(
     body = {};
   }
   const { id } = await params;
-  return NextResponse.json(await precheckTBankDraft(id, body as Parameters<typeof precheckTBankDraft>[1], session.user));
+  return runWithBranchApiContext(access.context, async () =>
+    NextResponse.json(await precheckTBankDraft(id, body as Parameters<typeof precheckTBankDraft>[1], access.context.user))
+  );
 }

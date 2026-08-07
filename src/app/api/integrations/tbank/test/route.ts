@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { testTBankIntegration } from "@/lib/tbank";
 
 export async function POST() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  const result = await testTBankIntegration(session.user);
-  if (!result.ok) return NextResponse.json({ error: result.error, integration: result.integration }, { status: result.status });
-  return NextResponse.json(result);
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  return runWithBranchApiContext(access.context, async () => {
+    const result = await testTBankIntegration(access.context.user);
+    if (!result.ok) return NextResponse.json({ error: result.error, integration: result.integration }, { status: result.status });
+    return NextResponse.json(result);
+  });
 }

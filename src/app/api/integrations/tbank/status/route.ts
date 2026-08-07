@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getTBankIntegrationStatus, saveTBankIntegrationSettings } from "@/lib/tbank";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  return NextResponse.json(await getTBankIntegrationStatus());
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+  return runWithBranchApiContext(access.context, async () =>
+    NextResponse.json(await getTBankIntegrationStatus())
+  );
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
   let body: unknown;
   try {
@@ -19,7 +21,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  const result = await saveTBankIntegrationSettings(body as Parameters<typeof saveTBankIntegrationSettings>[0], session.user);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-  return NextResponse.json(result.integration);
+  return runWithBranchApiContext(access.context, async () => {
+    const result = await saveTBankIntegrationSettings(
+      body as Parameters<typeof saveTBankIntegrationSettings>[0],
+      access.context.user
+    );
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+    return NextResponse.json(result.integration);
+  });
 }

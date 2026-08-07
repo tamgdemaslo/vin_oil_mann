@@ -106,6 +106,19 @@ expect("src/app/api/rossko/order/route.ts", [/requireBranchApi/, /rosskoConfig\(
 expect("src/lib/ai-assistant/config.ts", [/OPENAI_API_KEY/]);
 reject("src/lib/branches.ts", [/integrationCredential\.create/, /aqsiCashRegister\.create/, /telegramUserSession\.create/]);
 
+// The integrations page also loads T-Bank. Its resolver uses getScopedBranchId,
+// so every entry route must establish the same trusted branch context first.
+for (const route of [
+  "src/app/api/integrations/tbank/status/route.ts",
+  "src/app/api/integrations/tbank/test/route.ts",
+  "src/app/api/supplier-invoices/[id]/tbank/create-draft/route.ts",
+  "src/app/api/supplier-invoices/[id]/tbank/payments/route.ts",
+  "src/app/api/supplier-invoices/[id]/tbank/payments/[paymentId]/refresh-status/route.ts",
+  "src/app/api/supplier-invoices/[id]/tbank/precheck/route.ts",
+]) {
+  expect(route, [/requireBranchApi/, /runWithBranchApiContext/]);
+}
+
 if (failures.length) {
   console.error(`Branch operational integration checks failed:\n- ${failures.join("\n- ")}`);
   process.exit(1);
