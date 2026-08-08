@@ -64,6 +64,9 @@ expect("src/lib/messenger/messenger-crypto.ts", [
   /assertIntegrationEncryptionConfigured/,
   /MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
 ]);
+expect("src/lib/system-release.ts", [
+  /REQUIRED_RUNTIME_CONFIG[\s\S]*MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
+]);
 expect("src/lib/aqsi.ts", [/validateAqsiConfig/, /resolveAqsiBinding/, /publicAqsiDevices/, /needsDevice/]);
 expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/alerts\.map/, /retryFiscalization/, /disconnectAqsi/, /Связь с сервером прервалась/, /Мастер настройки нового филиала/, /Уведомления и журнал изменений/]);
 expect("src/lib/integration-access.ts", [/group_owner/, /group_admin/, /branch_owner/, /integrations\.manage/]);

@@ -14,11 +14,13 @@ or connect to a production host.
 - Health endpoint: `/api/health/ready`.
 
 Set production values as App Platform variables. At minimum the application
-requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, and `APP_ORIGIN`; use
-`.env.example` as the complete variable inventory. `OPENAI_API_KEY` is a
-server-side Timeweb runtime secret: never set `NEXT_PUBLIC_OPENAI_API_KEY`, a
-Docker build argument, or a GitHub Actions variable. Secrets must stay in the
-Timeweb control panel.
+requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, `APP_ORIGIN`, and
+`MESSENGER_CREDENTIAL_ENCRYPTION_KEY`; use `.env.example` as the complete
+variable inventory. The encryption key is required for branch-scoped AQSI,
+Telegram, ROSSKO, and T-Bank credentials. `OPENAI_API_KEY` is a server-side
+Timeweb runtime secret: never set `NEXT_PUBLIC_OPENAI_API_KEY`, a Docker build
+argument, or a GitHub Actions variable. Secrets must stay in the Timeweb
+control panel.
 
 The platform filesystem is replaced on every deployment. Do not use
 `/app/.data` as the durable source of business files: store them in PostgreSQL

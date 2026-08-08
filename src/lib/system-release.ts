@@ -2,7 +2,11 @@ import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { prisma } from "@/lib/db";
 
-const REQUIRED_RUNTIME_CONFIG = ["DATABASE_URL", "APP_ORIGIN"] as const;
+const REQUIRED_RUNTIME_CONFIG = [
+  "DATABASE_URL",
+  "APP_ORIGIN",
+  "MESSENGER_CREDENTIAL_ENCRYPTION_KEY",
+] as const;
 
 function configured(name: string) {
   return Boolean(process.env[name]?.trim());
