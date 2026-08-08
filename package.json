@@ -23,6 +23,7 @@
     "test:ai-tool-loop-policy": "node scripts/test-ai-tool-loop-policy.mjs",
     "test:ai-assistant-branch-context": "node scripts/test-ai-assistant-branch-context.mjs",
     "test:branch-operational-integrations": "node scripts/test-branch-operational-integrations.mjs",
+    "test:cash-shift-policy": "node scripts/test-cash-shift-policy.mjs",
     "check:timeweb-only": "node scripts/check-timeweb-only.mjs",
     "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs",
     "test:branch-security-db": "node scripts/test-branch-security-db.mjs",

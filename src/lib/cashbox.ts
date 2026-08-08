@@ -472,10 +472,13 @@ export async function openShift(openingCash: number): Promise<CashShift> {
         : `Есть незакрытая кассовая смена за ${existingOpenShift.serviceDate}. Закройте её перед открытием новой.`
     );
   }
-  const existingForServiceDate = await prisma.cashShift.findUnique({
-    where: { branchId_serviceDate: { branchId, serviceDate } },
-    select: { id: true },
-  });
+  const canRepeatCashShiftToday = user.role === "owner";
+  const existingForServiceDate = canRepeatCashShiftToday
+    ? null
+    : await prisma.cashShift.findFirst({
+        where: { branchId, serviceDate },
+        select: { id: true },
+      });
   if (existingForServiceDate) {
     throw new Error("Кассовая смена на сегодня уже была открыта и закрыта");
   }
@@ -507,7 +510,11 @@ export async function openShift(openingCash: number): Promise<CashShift> {
     return shiftRowToCashShift(shift);
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      throw new Error("Кассовая смена уже открыта или уже была открыта сегодня");
+      throw new Error(
+        canRepeatCashShiftToday
+          ? "Кассовая смена уже открыта"
+          : "Кассовая смена уже открыта или уже была открыта сегодня"
+      );
     }
     throw error;
   }

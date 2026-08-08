@@ -100,7 +100,7 @@ requireText("src/proxy.ts", [/branchId === "all"/, /concrete_branch_required/, /
 requireText("src/app/api/session/active-branch/route.ts", [/selectActiveBranch/]);
 requireText("src/lib/local-inventory-admin.ts", [/branchId/]);
 requireText("src/lib/local-demand-write.ts", [/resolveDemandBranchScope/, /where:\s*\{\s*branchId/]);
-requireText("src/lib/cashbox.ts", [/activeCashBranchId/, /branchId_serviceDate/]);
+requireText("src/lib/cashbox.ts", [/activeCashBranchId/, /where:\s*\{\s*branchId,\s*serviceDate\s*\}/]);
 requireText("src/lib/shifts.ts", [/activeBranchId/, /where:\s*\{\s*branchId/]);
 requireText("src/lib/owner-dashboard.ts", [/branchId:\s*branch\.id/]);
 requireText("src/lib/branch-workers.ts", [/runWithRequestTenant/, /status:\s*"active"/, /organizationId/]);
@@ -117,6 +117,13 @@ requireText("prisma/migrations/20260728120000_branch_architecture_foundation/mig
   /FOREIGN KEY \(branch_id\)/,
   /cash_shifts_branch_id_service_date_key/,
   /set_branch_from_organization_id/,
+]);
+requireText("prisma/migrations/20260808130000_owner_repeat_cash_shifts/migration.sql", [
+  /approved-with-verified-timeweb-backup/,
+  /DROP INDEX IF EXISTS "cash_shifts_branch_id_service_date_key"/,
+  /CREATE INDEX "cash_shifts_branch_id_service_date_idx"/,
+  /CREATE UNIQUE INDEX "cash_shifts_non_owner_service_date_key"/,
+  /COALESCE\("opened_by_role", ''\) <> 'owner'/,
 ]);
 
 const migration = read("prisma/migrations/20260728120000_branch_architecture_foundation/migration.sql");

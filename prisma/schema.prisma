@@ -2816,7 +2816,7 @@ model CashShift {
 
   withdrawals CashWithdrawal[]
 
-  @@unique([branchId, serviceDate])
+  @@index([branchId, serviceDate], map: "cash_shifts_branch_id_service_date_idx")
   @@index([status])
   @@index([openedAt])
   @@index([closedAt])
