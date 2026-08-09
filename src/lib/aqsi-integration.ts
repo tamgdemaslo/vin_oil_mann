@@ -52,6 +52,24 @@ function text(value: unknown, fallback = "", max = 1_000) {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : fallback;
 }
 
+const AQSI_CASHIER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function normalizeAqsiCashierId(value: unknown): string | undefined {
+  const candidate = text(value, "", 200);
+  return AQSI_CASHIER_UUID.test(candidate) ? candidate.toLowerCase() : undefined;
+}
+
+function optionalAqsiCashierId(value: unknown, previous?: string) {
+  if (value === undefined) return previous;
+  const candidate = text(value, "", 200);
+  if (!candidate) return undefined;
+  const normalized = normalizeAqsiCashierId(candidate);
+  if (!normalized) {
+    throw new Error("Идентификатор кассира AQSI должен быть UUID. Оставьте поле пустым, если привязки к кассиру не требуется.");
+  }
+  return normalized;
+}
+
 function optionalText(value: unknown, previous?: string) {
   if (value === undefined) return previous;
   return text(value) || undefined;
@@ -77,7 +95,9 @@ function settingsFrom(value: unknown) {
     devicesPath: text(row.devicesPath, "/v1/Devices"),
     deviceId: text(row.deviceId) || undefined,
     shopId: text(row.shopId) || undefined,
-    cashierId: text(row.cashierId) || undefined,
+    // Старые настройки могли содержать ФИО вместо UUID. Не отправляем такое
+    // значение провайдеру: device/shop достаточно для привязки заказа.
+    cashierId: normalizeAqsiCashierId(row.cashierId),
   };
 }
 
@@ -214,7 +234,7 @@ export async function saveAqsiCashRegister(input: AqsiRegisterInput, actorId?: s
     devicesPath: text(input.devicesPath, previousSettings.devicesPath),
     deviceId: optionalText(input.deviceId, previousSettings.deviceId),
     shopId: optionalText(input.shopId, previousSettings.shopId),
-    cashierId: optionalText(input.cashierId, previousSettings.cashierId),
+    cashierId: optionalAqsiCashierId(input.cashierId, previousSettings.cashierId),
   };
   const id = existing?.id ?? randomUUID();
   const shouldDefault = input.isDefault ?? existing?.isDefault ?? !(await prisma.aqsiCashRegister.count({ where: { branchId: tenant.branchId, enabled: true } }));

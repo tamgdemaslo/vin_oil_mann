@@ -57,7 +57,7 @@ expect("src/lib/aqsi-fiscalization.ts", [
   /notifyIntegrationOwner/,
 ]);
 expect("src/app/api/cron/aqsi-fiscalization-retry/route.ts", [/runForActiveBranches/, /retryDueAqsiFiscalizations/, /CRON_SECRET/]);
-expect("src/lib/aqsi-integration.ts", [/assertRegisterCanChange/, /status:\s*"open"/, /credentialsEncrypted/, /isDefault/]);
+expect("src/lib/aqsi-integration.ts", [/assertRegisterCanChange/, /status:\s*"open"/, /credentialsEncrypted/, /isDefault/, /normalizeAqsiCashierId/, /должен быть UUID/]);
 expect("src/lib/messenger/messenger-crypto.ts", [
   /INTEGRATION_STORAGE_NOT_CONFIGURED_CODE/,
   /IntegrationEncryptionConfigurationError/,
@@ -67,7 +67,7 @@ expect("src/lib/messenger/messenger-crypto.ts", [
 expect("src/lib/system-release.ts", [
   /REQUIRED_RUNTIME_CONFIG[\s\S]*MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
 ]);
-expect("src/lib/aqsi.ts", [/validateAqsiConfig/, /resolveAqsiBinding/, /publicAqsiDevices/, /needsDevice/]);
+expect("src/lib/aqsi.ts", [/validateAqsiConfig/, /resolveAqsiBinding/, /publicAqsiDevices/, /needsDevice/, /normalizeAqsiCashierId/]);
 expect("src/app/cabinet/integrations/OperationalIntegrationsPanel.tsx", [/alerts\.map/, /retryFiscalization/, /disconnectAqsi/, /Связь с сервером прервалась/, /Мастер настройки нового филиала/, /Уведомления и журнал изменений/]);
 expect("src/lib/integration-access.ts", [/group_owner/, /group_admin/, /branch_owner/, /integrations\.manage/]);
 expect("src/lib/integration-owner-notifications.ts", [/dedupeKey/, /throttleMinutes/, /recipientUserIds/, /listIntegrationActivity/]);

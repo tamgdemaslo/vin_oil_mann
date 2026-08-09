@@ -6,7 +6,11 @@ import {
   AQSI_UNIT_CODE_PIECE,
 } from "@/lib/marking";
 import { toAqsiDateTimeString } from "@/lib/time";
-import { resolveAqsiCashRegister, type AqsiResolvedConfig } from "@/lib/aqsi-integration";
+import {
+  normalizeAqsiCashierId,
+  resolveAqsiCashRegister,
+  type AqsiResolvedConfig,
+} from "@/lib/aqsi-integration";
 
 export type OrdersTotals = {
   cashTotal: number;
@@ -362,11 +366,12 @@ function resolveAqsiBindingFromDevices(config: AqsiConfig, devices: AqsiDevice[]
   shopId?: string;
   cashierId?: string;
 } {
-  if (config.deviceId || (config.shopId && config.cashierId)) {
+  const cashierId = normalizeAqsiCashierId(config.cashierId);
+  if (config.deviceId || (config.shopId && cashierId)) {
     return {
       deviceId: config.deviceId,
       shopId: config.shopId,
-      cashierId: config.cashierId,
+      cashierId,
     };
   }
 
@@ -377,13 +382,13 @@ function resolveAqsiBindingFromDevices(config: AqsiConfig, devices: AqsiDevice[]
     if (discoveredShopId) {
       return {
         shopId: discoveredShopId,
-        cashierId: config.cashierId,
+        cashierId,
       };
     }
 
     return {
       deviceId: String(devices[0].id),
-      cashierId: config.cashierId,
+      cashierId,
     };
   }
 
@@ -397,7 +402,9 @@ function resolveAqsiBindingFromDevices(config: AqsiConfig, devices: AqsiDevice[]
 }
 
 async function resolveAqsiBinding(config: AqsiConfig) {
-  if (config.deviceId || (config.shopId && config.cashierId)) return resolveAqsiBindingFromDevices(config, []);
+  if (config.deviceId || (config.shopId && normalizeAqsiCashierId(config.cashierId))) {
+    return resolveAqsiBindingFromDevices(config, []);
+  }
   return resolveAqsiBindingFromDevices(config, await fetchAqsiDeviceRows(config));
 }
 
@@ -411,7 +418,10 @@ export async function validateAqsiConfig(config: AqsiResolvedConfig) {
   if (config.deviceId && !rows.some((device) => device.id != null && String(device.id) === config.deviceId)) {
     throw new Error("Выбранное устройство AQSI недоступно этому ключу.");
   }
-  const needsDevice = !config.deviceId && !(config.shopId && config.cashierId) && rows.length > 1;
+  const needsDevice =
+    !config.deviceId &&
+    !(config.shopId && normalizeAqsiCashierId(config.cashierId)) &&
+    rows.length > 1;
   return {
     binding: needsDevice ? null : resolveAqsiBindingFromDevices(config, rows),
     devices: publicAqsiDevices(rows),
