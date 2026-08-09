@@ -1162,7 +1162,7 @@ type CounterpartyListRow = ReturnType<typeof mapCounterparty>;
 type CounterpartyRowsCacheEntry = { key: string; expiresAt: number; rows: CounterpartyListRow[] };
 type CounterpartyAdminCache = { rows: CounterpartyRowsCacheEntry | null };
 type StoreAdminList = {
-  stores: Array<{ id: string; branchId: string; name: string; archived: boolean; meta: ReturnType<typeof localMeta> }>;
+  stores: Array<{ id: string; branchId: string; name: string; isMain: boolean; archived: boolean; meta: ReturnType<typeof localMeta> }>;
 };
 type StockDocumentAdminList = {
   meta: { total: number; limit: number; offset: number };
@@ -3656,13 +3656,14 @@ export async function listLocalStoresForAdmin(options: { branchIds?: string[] } 
 
   const stores = await prisma.localStore.findMany({
     where: { branchId: { in: branchIds }, archived: false },
-    orderBy: [{ name: "asc" }],
+    orderBy: [{ isMain: "desc" }, { name: "asc" }],
   });
   const value = {
     stores: stores.map((store) => ({
       id: store.id,
       branchId: store.branchId,
       name: store.name,
+      isMain: store.isMain,
       archived: store.archived,
       meta: localMeta("store", store.id),
     })),

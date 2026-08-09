@@ -27,6 +27,7 @@ import {
   Search,
   Square,
   Trash2,
+  Warehouse,
   X,
 } from "lucide-react";
 import MoneyInput from "@/components/MoneyInput";
@@ -42,7 +43,7 @@ type FormMode = "new" | "edit" | "view";
 type SaveAction = "draft" | "conduct";
 type ReceiptAction = "open" | "edit" | "post" | "delete" | "duplicate" | "unpost" | "cancel" | "correction" | "history" | "print-labels";
 
-type StoreOption = { id: string; name: string };
+type StoreOption = { id: string; name: string; isMain?: boolean };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
 type ProductOption = {
   id: string;
@@ -602,8 +603,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить склады");
       const nextStores = Array.isArray(data?.stores) ? data.stores : [];
       setStores(nextStores);
-      setSelectedStoreId((prev) => prev || nextStores[0]?.id || "");
-      if (nextStores.length === 0) setStoresError("В локальной базе нет доступных складов");
+      setSelectedStoreId((prev) => {
+        if (prev && nextStores.some((store) => store.id === prev)) return prev;
+        return nextStores.find((store) => store.isMain)?.id ?? nextStores[0]?.id ?? "";
+      });
     } catch (e) {
       setStores([]);
       setStoresError(e instanceof Error ? e.message : "Не удалось загрузить склады");
@@ -1774,6 +1777,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           <small>{storesError}</small>
                           <button type="button" onClick={() => void loadStores()}>Повторить загрузку складов</button>
                         </div>
+                      ) : stores.length === 0 ? (
+                        <div className="eco-receipt-field-state is-warning">
+                          <strong>В филиале ещё нет склада</strong>
+                          <small>Создайте склад в настройках филиала, чтобы провести документ.</small>
+                          <Link href="/cabinet/branches?tab=warehouses">Управление складами</Link>
+                        </div>
                       ) : (
                         <EcoSelect
                           value={selectedStoreId}
@@ -2487,6 +2496,17 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <RefreshCw size={15} />
             Повторить
           </EcoButton>
+        </section>
+      )}
+
+      {!storesLoading && !storesError && !allBranchesMode && stores.length === 0 && (
+        <section className="eco-receipt-state-card is-warning">
+          <Warehouse size={20} />
+          <div>
+            <h2>В филиале ещё нет складов</h2>
+            <p>Создайте основной склад для этого филиала. Остатки и движения других филиалов не будут перенесены.</p>
+          </div>
+          <Link href="/cabinet/branches?tab=warehouses" className="eco-btn eco-btn--primary">Создать склад</Link>
         </section>
       )}
 

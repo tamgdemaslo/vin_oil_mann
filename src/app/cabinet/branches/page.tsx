@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Building2, Check, MessageSquareText, Plus, Save, UserPlus, UsersRound } from "lucide-react";
+import { Archive, Building2, Check, MessageSquareText, Pencil, Plus, Save, Star, UserPlus, UsersRound, Warehouse } from "lucide-react";
 import { safeReadJson } from "@/lib/http-json";
 
 type Branch = {
@@ -48,7 +48,18 @@ type Membership = {
 
 type PublicUser = { login: string; name: string; role: string };
 type Organization = { id: string; name: string; fullLegalName?: string; inn?: string; isActive: boolean };
-type BranchTab = "overview" | "employees" | "channels";
+type WarehouseRow = {
+  id: string;
+  branchId: string;
+  name: string;
+  shortName: string;
+  address: string;
+  comment: string;
+  isMain: boolean;
+  archived: boolean;
+};
+
+type BranchTab = "overview" | "employees" | "channels" | "warehouses";
 
 const BRANCH_ROLES = [
   ["branch_owner", "Владелец филиала"],
@@ -67,7 +78,7 @@ function queryState(): { branchId: string | null; tab: BranchTab } {
   if (typeof window === "undefined") return { branchId: null, tab: "overview" };
   const params = new URLSearchParams(window.location.search);
   const rawTab = params.get("tab");
-  const tab: BranchTab = rawTab === "employees" || rawTab === "channels" ? rawTab : "overview";
+  const tab: BranchTab = rawTab === "employees" || rawTab === "channels" || rawTab === "warehouses" ? rawTab : "overview";
   return { branchId: params.get("branch"), tab };
 }
 
@@ -79,12 +90,17 @@ export default function BranchesPage() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [warehouses, setWarehouses] = useState<WarehouseRow[]>([]);
   const [tab, setTab] = useState<BranchTab>("overview");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [warehousesLoading, setWarehousesLoading] = useState(false);
+  const [canManageWarehouses, setCanManageWarehouses] = useState(false);
+  const [warehouseFormOpen, setWarehouseFormOpen] = useState(false);
+  const [editingWarehouse, setEditingWarehouse] = useState<WarehouseRow | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -144,6 +160,21 @@ export default function BranchesPage() {
     setDetailLoading(false);
   }, []);
 
+  const loadWarehouses = useCallback(async (branchId: string) => {
+    setWarehousesLoading(true);
+    const response = await fetch(`/api/branches/${encodeURIComponent(branchId)}/warehouses`, { cache: "no-store" });
+    const payload = await safeReadJson<{ warehouses?: WarehouseRow[]; canManage?: boolean; error?: string }>(response);
+    if (!response.ok) {
+      setError(payload?.error ?? "Не удалось загрузить склады филиала");
+      setWarehouses([]);
+      setCanManageWarehouses(false);
+    } else {
+      setWarehouses(payload?.warehouses ?? []);
+      setCanManageWarehouses(Boolean(payload?.canManage));
+    }
+    setWarehousesLoading(false);
+  }, []);
+
   useEffect(() => {
     // These callbacks start remote reads; their state updates happen as the requests settle.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -156,12 +187,20 @@ export default function BranchesPage() {
     if (selectedBranchId) void loadBranch(selectedBranchId);
   }, [loadBranch, selectedBranchId]);
 
+  useEffect(() => {
+    // This starts a remote read; the state updates happen when the request settles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (selectedBranchId && tab === "warehouses") void loadWarehouses(selectedBranchId);
+  }, [loadWarehouses, selectedBranchId, tab]);
+
   const assignedLogins = useMemo(() => new Set(memberships.filter((membership) => membership.status === "active").map((membership) => membership.user.login)), [memberships]);
 
   function chooseBranch(branchId: string) {
     setSelectedBranchId(branchId);
     setTab("overview");
     setNotice("");
+    setWarehouseFormOpen(false);
+    setEditingWarehouse(null);
     updateLocation(branchId, "overview");
   }
 
@@ -169,6 +208,76 @@ export default function BranchesPage() {
     setTab(nextTab);
     setNotice("");
     updateLocation(selectedBranchId, nextTab);
+  }
+
+  function openWarehouseForm(warehouse?: WarehouseRow) {
+    setEditingWarehouse(warehouse ?? null);
+    setWarehouseFormOpen(true);
+    setError("");
+  }
+
+  async function saveWarehouse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedBranchId) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    const form = new FormData(event.currentTarget);
+    const warehouseId = editingWarehouse?.id;
+    const body = Object.fromEntries(form.entries()) as Record<string, FormDataEntryValue>;
+    body.isMain = form.get("isMain") === "true" ? "true" : "false";
+    const response = await fetch(
+      warehouseId
+        ? `/api/branches/${encodeURIComponent(selectedBranchId)}/warehouses/${encodeURIComponent(warehouseId)}`
+        : `/api/branches/${encodeURIComponent(selectedBranchId)}/warehouses`,
+      {
+        method: warehouseId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    const payload = await safeReadJson<{ error?: string }>(response);
+    if (!response.ok) {
+      setError(payload?.error ?? "Не удалось сохранить склад");
+    } else {
+      setWarehouseFormOpen(false);
+      setEditingWarehouse(null);
+      await loadWarehouses(selectedBranchId);
+      setNotice(warehouseId ? "Настройки склада сохранены." : "Склад создан. Остатки и движения других филиалов не копировались.");
+    }
+    setSaving(false);
+  }
+
+  async function setMainWarehouse(warehouse: WarehouseRow) {
+    if (!selectedBranchId || warehouse.isMain) return;
+    setSaving(true);
+    setError("");
+    const response = await fetch(`/api/branches/${encodeURIComponent(selectedBranchId)}/warehouses/${encodeURIComponent(warehouse.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_main" }),
+    });
+    const payload = await safeReadJson<{ error?: string }>(response);
+    if (!response.ok) setError(payload?.error ?? "Не удалось назначить основной склад");
+    else {
+      await loadWarehouses(selectedBranchId);
+      setNotice(`Склад «${warehouse.name}» назначен основным.`);
+    }
+    setSaving(false);
+  }
+
+  async function archiveWarehouse(warehouse: WarehouseRow) {
+    if (!selectedBranchId || !window.confirm(`Переместить склад «${warehouse.name}» в архив? Новые документы на него больше не оформляются.`)) return;
+    setSaving(true);
+    setError("");
+    const response = await fetch(`/api/branches/${encodeURIComponent(selectedBranchId)}/warehouses/${encodeURIComponent(warehouse.id)}`, { method: "DELETE" });
+    const payload = await safeReadJson<{ error?: string }>(response);
+    if (!response.ok) setError(payload?.error ?? "Не удалось архивировать склад");
+    else {
+      await loadWarehouses(selectedBranchId);
+      setNotice(`Склад «${warehouse.name}» перемещён в архив.`);
+    }
+    setSaving(false);
   }
 
   async function createBranch(event: FormEvent<HTMLFormElement>) {
@@ -327,6 +436,7 @@ export default function BranchesPage() {
               <header className="eco-branch-detail__head"><div><p className="eco-page-kicker">Физическая точка</p><h2>{branchName(details)}</h2><span>{details.address || "Адрес не заполнен"}</span></div><span className={`eco-branches-page__status is-${details.status}`}>{details.status === "active" ? "Активен" : "Архив"}</span></header>
               <nav className="eco-branch-tabs" aria-label="Настройки филиала">
                 <button type="button" onClick={() => chooseTab("overview")} className={tab === "overview" ? "is-active" : ""}>Основное</button>
+                <button type="button" onClick={() => chooseTab("warehouses")} className={tab === "warehouses" ? "is-active" : ""}><Warehouse aria-hidden size={15} />Склады</button>
                 <button type="button" onClick={() => chooseTab("employees")} className={tab === "employees" ? "is-active" : ""}><UsersRound aria-hidden size={15} />Сотрудники</button>
                 <button type="button" onClick={() => chooseTab("channels")} className={tab === "channels" ? "is-active" : ""}><MessageSquareText aria-hidden size={15} />Каналы связи</button>
               </nav>
@@ -345,6 +455,69 @@ export default function BranchesPage() {
                   </div>
                   <div className="eco-branch-editor__actions"><Link href="/cabinet/organizations" className="eco-btn eco-btn--quiet">Открыть организации</Link>{canManage && <button type="button" className="eco-btn eco-btn--secondary" onClick={() => void continueOnboarding()} disabled={saving}>Продолжить мастер настройки</button>}{canManage && <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><Save aria-hidden className="eco-icon" />{saving ? "Сохраняем…" : "Сохранить филиал"}</button>}</div>
                 </form>
+              )}
+
+              {tab === "warehouses" && (
+                <section className="eco-branch-warehouses">
+                  <header className="eco-branch-warehouses__head">
+                    <div>
+                      <p className="eco-page-kicker">Локальные остатки</p>
+                      <h3>Склады филиала</h3>
+                      <span>Каждый склад принадлежит только этому филиалу. Создание склада не переносит остатки и движения.</span>
+                    </div>
+                    {canManageWarehouses && <button type="button" className="eco-btn eco-btn--primary" onClick={() => openWarehouseForm()} disabled={saving}><Plus aria-hidden className="eco-icon" />Создать склад</button>}
+                  </header>
+
+                  {warehouseFormOpen && (
+                    <form className="eco-warehouse-editor" key={`warehouse-${editingWarehouse?.id ?? "new"}`} onSubmit={saveWarehouse}>
+                      <div className="eco-branch-form-grid">
+                        <label>Название *<input name="name" required defaultValue={editingWarehouse?.name ?? "Основной склад"} disabled={!canManageWarehouses || saving} /></label>
+                        <label>Короткое название<input name="shortName" defaultValue={editingWarehouse?.shortName ?? ""} placeholder="Основной" disabled={!canManageWarehouses || saving} /></label>
+                        <label className="is-wide">Адрес<input name="address" defaultValue={editingWarehouse?.address ?? details.address ?? ""} placeholder="По умолчанию — адрес филиала" disabled={!canManageWarehouses || saving} /></label>
+                        <label className="is-wide">Комментарий<textarea name="comment" defaultValue={editingWarehouse?.comment ?? ""} placeholder="Например: выдача и хранение масел" disabled={!canManageWarehouses || saving} /></label>
+                        <label className="eco-warehouse-editor__main"><input type="checkbox" name="isMain" value="true" defaultChecked={editingWarehouse?.isMain ?? warehouses.every((warehouse) => warehouse.archived)} disabled={!canManageWarehouses || saving} /><span>Основной склад филиала</span><small>Первый активный склад назначается основным автоматически.</small></label>
+                      </div>
+                      <div className="eco-branch-editor__actions">
+                        <button type="button" className="eco-btn eco-btn--quiet" onClick={() => { setWarehouseFormOpen(false); setEditingWarehouse(null); }} disabled={saving}>Отменить</button>
+                        {canManageWarehouses && <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><Save aria-hidden className="eco-icon" />{saving ? "Сохраняем…" : editingWarehouse ? "Сохранить склад" : "Создать склад"}</button>}
+                      </div>
+                    </form>
+                  )}
+
+                  {warehousesLoading ? <div className="eco-branch-empty"><Warehouse aria-hidden size={28} /><strong>Загружаем склады…</strong></div> : warehouses.length === 0 ? (
+                    <div className="eco-branch-empty eco-warehouse-empty">
+                      <Warehouse aria-hidden size={30} />
+                      <strong>В филиале ещё нет складов</strong>
+                      <span>Создайте первый склад, чтобы проводить приёмки и вести остатки этого филиала отдельно.</span>
+                      {canManageWarehouses && <button type="button" className="eco-btn eco-btn--primary" onClick={() => openWarehouseForm()}><Plus aria-hidden className="eco-icon" />Создать основной склад</button>}
+                    </div>
+                  ) : (
+                    <div className="eco-warehouse-list">
+                      {warehouses.map((warehouse) => (
+                        <article key={warehouse.id} className={warehouse.archived ? "is-archived" : ""}>
+                          <div className="eco-warehouse-list__identity">
+                            <div><Warehouse aria-hidden size={19} /></div>
+                            <span>
+                              <strong>{warehouse.name}</strong>
+                              <small>{warehouse.shortName || warehouse.address || "Адрес не указан"}</small>
+                              {warehouse.comment && <em>{warehouse.comment}</em>}
+                            </span>
+                          </div>
+                          <div className="eco-warehouse-list__meta">
+                            {warehouse.archived ? <span className="eco-warehouse-status is-archived">В архиве</span> : warehouse.isMain ? <span className="eco-warehouse-status is-main"><Star aria-hidden size={13} />Основной</span> : <span className="eco-warehouse-status">Активен</span>}
+                            {canManageWarehouses && !warehouse.archived && (
+                              <div className="eco-warehouse-list__actions">
+                                {!warehouse.isMain && <button type="button" className="eco-btn eco-btn--quiet" onClick={() => void setMainWarehouse(warehouse)} disabled={saving}>Сделать основным</button>}
+                                <button type="button" className="eco-btn eco-btn--quiet" onClick={() => openWarehouseForm(warehouse)} disabled={saving}><Pencil aria-hidden className="eco-icon" />Изменить</button>
+                                <button type="button" className="eco-btn eco-btn--quiet is-danger" onClick={() => void archiveWarehouse(warehouse)} disabled={saving}><Archive aria-hidden className="eco-icon" />В архив</button>
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
               )}
 
               {tab === "employees" && (
