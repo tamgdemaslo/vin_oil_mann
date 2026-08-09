@@ -24,6 +24,19 @@ export function runWithBranchApiContext<T>(context: BranchContext, operation: ()
   return runWithRequestTenant(requestTenantFromBranchContext(context), operation);
 }
 
+/**
+ * Branch ids resolved from the signed server-side branch context.  Route
+ * handlers may pass these ids to read-only aggregate queries; never derive
+ * this scope from a client parameter.
+ */
+export function readableBranchIds(context: BranchContext) {
+  return context.mode === "all"
+    ? context.branches.map((branch) => branch.id)
+    : context.branchId
+      ? [context.branchId]
+      : [];
+}
+
 export async function requireBranchApi(options: { allowAll?: boolean; requireActive?: boolean } = {}) {
   try {
     const context = await requireBranchContext(options);

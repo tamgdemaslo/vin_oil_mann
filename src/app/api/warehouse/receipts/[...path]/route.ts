@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { readableBranchIds, requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import {
   cancelLocalReceipt,
   checkReceiptRollbackSafety,
@@ -85,57 +85,69 @@ function priceLabelsPdfHtml(preview: PriceLabelPreview, origin: string) {
   </style></head><body>${markup}</body></html>`;
 }
 
-async function receiptFromList(id: string) {
-  const list = await listLocalStockDocuments({ type: "receipt", limit: 100 });
+async function receiptFromList(id: string, branchIds: string[]) {
+  const list = await listLocalStockDocuments({ type: "receipt", limit: 100, branchIds });
   return list.documents.find((document) => document.id === id) ?? null;
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ requireActive: false });
+  if (!access.ok) return access.response;
 
-  const { path = [] } = await params;
-  const [id, action, subaction] = path;
-  if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
+  return runWithBranchApiContext(access.context, async () => {
+    const { path = [] } = await params;
+    const [id, action, subaction] = path;
+    if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
-  if (action === "audit") {
-    const result = await listReceiptAudit(id, session.user);
-    if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
-    return NextResponse.json({ audit: result.audit });
-  }
-  if (action || subaction) return NextResponse.json({ error: "Неизвестное действие" }, { status: 404 });
+    if (action === "audit") {
+      const result = await listReceiptAudit(id, session.user);
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
+      return NextResponse.json({ audit: result.audit });
+    }
+    if (action || subaction) return NextResponse.json({ error: "Неизвестное действие" }, { status: 404 });
 
-  const receipt = await receiptFromList(id);
-  if (!receipt) return NextResponse.json({ error: "Приёмка не найдена" }, { status: 404 });
-  return NextResponse.json({ receipt });
+    const receipt = await receiptFromList(id, readableBranchIds(access.context));
+    if (!receipt) return NextResponse.json({ error: "Приёмка не найдена" }, { status: 404 });
+    return NextResponse.json({ receipt });
+  });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
-  const { path = [] } = await params;
-  const [id, action, subaction] = path;
-  if (!id || action || subaction) return NextResponse.json({ error: "Некорректный адрес приёмки" }, { status: 400 });
+  return runWithBranchApiContext(access.context, async () => {
+    const { path = [] } = await params;
+    const [id, action, subaction] = path;
+    if (!id || action || subaction) return NextResponse.json({ error: "Некорректный адрес приёмки" }, { status: 400 });
 
-  const body = await jsonBody(request);
-  const result = await updateLocalStockDocument(id, { ...(body as object), type: "receipt" }, session.user);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
-  return NextResponse.json(result.document);
+    const body = await jsonBody(request);
+    const result = await updateLocalStockDocument(id, { ...(body as object), type: "receipt" }, session.user);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
+    return NextResponse.json(result.document);
+  });
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
-  const { path = [] } = await params;
-  const [id, action] = path;
-  if (!id || action) return NextResponse.json({ error: "Некорректный адрес приёмки" }, { status: 400 });
+  return runWithBranchApiContext(access.context, async () => {
+    const { path = [] } = await params;
+    const [id, action] = path;
+    if (!id || action) return NextResponse.json({ error: "Некорректный адрес приёмки" }, { status: 400 });
 
-  const body = await jsonBody(request);
-  const result = await softDeleteDraftReceipt(id, body as { invoiceAction?: string }, session.user);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
-  return NextResponse.json({ message: result.message });
+    const body = await jsonBody(request);
+    const result = await softDeleteDraftReceipt(id, body as { invoiceAction?: string }, session.user);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: errorStatus(result) });
+    return NextResponse.json({ message: result.message });
+  });
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -187,6 +199,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
   }
 
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
+
+  return runWithBranchApiContext(access.context, async () => {
   if (subaction) return NextResponse.json({ error: "Неизвестное действие" }, { status: 404 });
 
   if (action === "post") {
@@ -221,4 +237,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   return NextResponse.json({ error: "Неизвестное действие" }, { status: 404 });
+  });
 }

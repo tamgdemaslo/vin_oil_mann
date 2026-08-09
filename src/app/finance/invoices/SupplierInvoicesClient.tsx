@@ -98,6 +98,8 @@ type TBankPayment = {
 
 type SupplierInvoice = {
   id: string;
+  branchId: string;
+  branchName?: string;
   number: string;
   invoiceDate: string;
   dueDate: string;
@@ -200,7 +202,7 @@ type TBankPrecheck = {
 };
 
 type InvoiceResponse = {
-  meta?: { total: number; limit: number; offset: number };
+  meta?: { total: number; limit: number; offset: number; mode?: "branch" | "all" };
   invoices?: SupplierInvoice[];
   error?: string;
 };
@@ -354,6 +356,7 @@ export default function SupplierInvoicesClient() {
   const requestedInvoiceId = searchParams.get("invoice");
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
   const [total, setTotal] = useState(0);
+  const [allBranchesMode, setAllBranchesMode] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortBy, setSortBy] = useState<SortBy>("invoiceDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -436,6 +439,7 @@ export default function SupplierInvoicesClient() {
       const rows = Array.isArray(data?.invoices) ? data.invoices : [];
       setInvoices(rows);
       setTotal(data?.meta?.total ?? rows.length);
+      setAllBranchesMode(data?.meta?.mode === "all");
       setSelectedIds((current) => current.filter((id) => rows.some((invoice) => invoice.id === id)));
       if (requestedInvoiceId && rows.some((invoice) => invoice.id === requestedInvoiceId)) {
         setOpenId(requestedInvoiceId);
@@ -443,6 +447,7 @@ export default function SupplierInvoicesClient() {
     } catch (e) {
       setInvoices([]);
       setTotal(0);
+      setAllBranchesMode(false);
       setError(e instanceof Error ? e.message : "Не удалось загрузить счета поставщиков");
     } finally {
       setLoading(false);
@@ -483,6 +488,10 @@ export default function SupplierInvoicesClient() {
   }
 
   function openInvoice(invoice: SupplierInvoice, paymentMode?: "full" | "partial") {
+    if (allBranchesMode) {
+      setNotice("В режиме «Все филиалы» счета доступны только для просмотра. Выберите конкретный филиал для действий.");
+      return;
+    }
     setOpenId(invoice.id);
     setPaymentAmount(paymentMode === "partial" ? "" : paymentAmountInput(invoice.remaining));
     setPaymentDate(todayInput());
@@ -908,6 +917,13 @@ export default function SupplierInvoicesClient() {
           </div>
         </div>
 
+        {allBranchesMode && (
+          <div className="eco-invoices-empty" role="status">
+            <strong>Режим «Все филиалы»</strong>
+            <span>Показан сводный реестр. Оплата, отмена и переход к приёмке доступны после выбора конкретного филиала.</span>
+          </div>
+        )}
+
         {selectedIds.length > 0 && (
           <div className="eco-invoices-bulkbar">
             <strong>{selectedIds.length} выбрано</strong>
@@ -975,6 +991,7 @@ export default function SupplierInvoicesClient() {
                   </th>
                   <th>{renderSortLabel("№ / дата", "invoiceDate")}</th>
                   <th>{renderSortLabel("Поставщик", "supplier")}</th>
+                  {allBranchesMode && <th>Филиал</th>}
                   <th>Основание / складской документ</th>
                   <th className="l-money">{renderSortLabel("Сумма", "sum")}</th>
                   <th className="l-money">Оплачено</th>
@@ -1008,6 +1025,7 @@ export default function SupplierInvoicesClient() {
                         <div className="eco-invoices-primary">{invoice.counterpartyName || "без поставщика"}</div>
                         <div className="eco-invoices-secondary">{invoice.document.storeName || "склад не указан"}</div>
                       </td>
+                      {allBranchesMode && <td><div className="eco-invoices-primary">{invoice.branchName || invoice.branchId}</div></td>}
                       <td>
                         {invoice.document?.id ? (
                           <Link
@@ -1051,9 +1069,11 @@ export default function SupplierInvoicesClient() {
                               <CreditCard aria-hidden className="eco-icon" />
                             </button>
                           )}
-                          <Link href={`/inventory/receipts?document=${invoice.document.id}`} className="eco-icon-btn" title="Открыть приёмку" aria-label="Открыть приёмку">
-                            <ExternalLink aria-hidden className="eco-icon" />
-                          </Link>
+                          {!allBranchesMode && (
+                            <Link href={`/inventory/receipts?document=${invoice.document.id}`} className="eco-icon-btn" title="Открыть приёмку" aria-label="Открыть приёмку">
+                              <ExternalLink aria-hidden className="eco-icon" />
+                            </Link>
+                          )}
                           {invoice.status !== "paid" && invoice.status !== "cancelled" && (
                             <button type="button" className="eco-icon-btn" onClick={() => void cancelInvoice(invoice)} title="Отменить" aria-label="Отменить">
                               <Ban aria-hidden className="eco-icon" />

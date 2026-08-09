@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { toServiceDateInput } from "@/lib/date-time";
 import { createLocalStockDocument, listLocalStockDocuments } from "@/lib/local-inventory-admin";
 import { type CreateSupplyBody } from "@/lib/supply-create-payload";
@@ -9,35 +10,41 @@ import { prisma } from "@/lib/db";
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: false });
+  if (!access.ok) return access.response;
 
   const search = request.nextUrl.searchParams.get("search") ?? "";
   const limit = Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "30", 10) || 30);
   const offset = Math.max(0, parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
 
-  const local = await listLocalStockDocuments({ type: "receipt", search, limit, offset });
-  return NextResponse.json({
-    meta: { size: local.meta.total, limit, offset, source: "local" },
-    rows: local.documents.map((document) => ({
-      id: document.id,
-      name: document.name,
-      moment: document.moment,
-      applicable: document.applicable,
-      sum: Math.round(document.sum * 100),
-      payedSum: document.invoice?.status === "paid" ? Math.round(document.sum * 100) : 0,
-      incomingNumber: document.invoice?.number ?? "",
-      incomingDate: document.invoice?.invoiceDate ?? document.documentDate,
-      description: document.description,
-      href: `local://receipt/${document.id}`,
-      agentName: document.counterpartyName,
-      organizationName: "",
-      storeName: document.storeName,
-    })),
+  return runWithBranchApiContext(access.context, async () => {
+    const local = await listLocalStockDocuments({ type: "receipt", search, limit, offset });
+    return NextResponse.json({
+      meta: { size: local.meta.total, limit, offset, source: "local" },
+      rows: local.documents.map((document) => ({
+        id: document.id,
+        name: document.name,
+        moment: document.moment,
+        applicable: document.applicable,
+        sum: Math.round(document.sum * 100),
+        payedSum: document.invoice?.status === "paid" ? Math.round(document.sum * 100) : 0,
+        incomingNumber: document.invoice?.number ?? "",
+        incomingDate: document.invoice?.invoiceDate ?? document.documentDate,
+        description: document.description,
+        href: `local://receipt/${document.id}`,
+        agentName: document.counterpartyName,
+        organizationName: "",
+        storeName: document.storeName,
+      })),
+    });
   });
 }
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!access.ok) return access.response;
 
   let body: CreateSupplyBody;
   try {
@@ -49,6 +56,7 @@ export async function POST(request: NextRequest) {
   if (!body.organization?.meta?.href || !body.agent?.meta?.href || !body.store?.meta?.href) {
     return NextResponse.json({ error: "Укажите организацию, поставщика и склад (meta.href)" }, { status: 400 });
   }
+  return runWithBranchApiContext(access.context, async () => {
   const organizationId = extractLocalEntityId(body.organization.meta.href) ?? body.organization.meta.href;
   const storeId = extractLocalEntityId(body.store.meta.href) ?? body.store.meta.href;
   const [organization, store] = await Promise.all([
@@ -98,5 +106,6 @@ export async function POST(request: NextRequest) {
       return sum + quantity * price * (1 - Math.min(100, Math.max(0, discount)) / 100);
     }, 0) * 100),
     href: `local://receipt/${result.document.id}`,
+  });
   });
 }

@@ -6,7 +6,7 @@ import { requireBranchApi } from "@/lib/branch-api";
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  const branchAccess = await requireBranchApi({ requireActive: false });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: false });
   if (!branchAccess.ok) return branchAccess.response;
 
   const includeArchived = request.nextUrl.searchParams.get("archived") === "1";

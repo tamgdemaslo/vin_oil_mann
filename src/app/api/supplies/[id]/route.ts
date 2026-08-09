@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 
 export async function GET(
@@ -8,7 +9,10 @@ export async function GET(
 ) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const access = await requireBranchApi({ allowAll: false, requireActive: false });
+  if (!access.ok) return access.response;
 
+  return runWithBranchApiContext(access.context, async () => {
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
 
@@ -56,5 +60,6 @@ export async function GET(
           }
         : undefined,
     })),
+  });
   });
 }

@@ -3,6 +3,7 @@ import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
@@ -1161,12 +1162,13 @@ type CounterpartyListRow = ReturnType<typeof mapCounterparty>;
 type CounterpartyRowsCacheEntry = { key: string; expiresAt: number; rows: CounterpartyListRow[] };
 type CounterpartyAdminCache = { rows: CounterpartyRowsCacheEntry | null };
 type StoreAdminList = {
-  stores: Array<{ id: string; name: string; archived: boolean; meta: ReturnType<typeof localMeta> }>;
+  stores: Array<{ id: string; branchId: string; name: string; archived: boolean; meta: ReturnType<typeof localMeta> }>;
 };
 type StockDocumentAdminList = {
   meta: { total: number; limit: number; offset: number };
   documents: Array<{
     id: string;
+    branchId: string;
     type: string;
     name: string;
     moment: string;
@@ -1241,7 +1243,7 @@ type LocalRestockNeedsList = {
 };
 type CacheEntry<T> = { key: string; expiresAt: number; value: T };
 type InventoryListsCache = {
-  stores: { expiresAt: number; value: StoreAdminList } | null;
+  stores: Map<string, CacheEntry<StoreAdminList>>;
   stockDocuments: Map<string, CacheEntry<StockDocumentAdminList>>;
   supplierInvoices: Map<string, CacheEntry<SupplierInvoiceAdminList>>;
   restockNeeds: Map<string, CacheEntry<LocalRestockNeedsList>>;
@@ -1275,14 +1277,36 @@ const counterpartyAdminCache = ((globalThis as typeof globalThis & {
 const inventoryListsCache = ((globalThis as typeof globalThis & {
   __localInventoryListsCache?: InventoryListsCache;
 }).__localInventoryListsCache ??= {
-  stores: null,
+  stores: new Map<string, CacheEntry<StoreAdminList>>(),
   stockDocuments: new Map<string, CacheEntry<StockDocumentAdminList>>(),
   supplierInvoices: new Map<string, CacheEntry<SupplierInvoiceAdminList>>(),
   restockNeeds: new Map<string, CacheEntry<LocalRestockNeedsList>>(),
 });
+inventoryListsCache.stores ??= new Map<string, CacheEntry<StoreAdminList>>();
 inventoryListsCache.stockDocuments ??= new Map<string, CacheEntry<StockDocumentAdminList>>();
 inventoryListsCache.supplierInvoices ??= new Map<string, CacheEntry<SupplierInvoiceAdminList>>();
 inventoryListsCache.restockNeeds ??= new Map<string, CacheEntry<LocalRestockNeedsList>>();
+
+/**
+ * Only accepts a scope already resolved from the signed server-side branch
+ * context.  A client-provided branch id must never widen a document list.
+ */
+function trustedReadableBranchIds(requested?: string[]) {
+  const tenant = getRequestTenant();
+  if (!tenant || tenant.mode === "denied") throw new Error("Контекст филиала обязателен для работы со складскими документами");
+  const ids = [...new Set(requested?.filter(Boolean) ?? [])].sort();
+  if (tenant.mode === "branch") {
+    if (!tenant.branchId) throw new Error("Активный филиал не выбран");
+    if (ids.length && (ids.length !== 1 || ids[0] !== tenant.branchId)) {
+      throw new Error("Попытка доступа к данным другого филиала");
+    }
+    return [tenant.branchId];
+  }
+  if (!ids.length || ids.some((id) => !tenant.allowedBranchIds.includes(id))) {
+    throw new Error("В режиме «Все филиалы» требуется разрешённый серверный scope");
+  }
+  return ids;
+}
 
 function normalizeProductSort(value?: string): ProductSortKey {
   return value && productSortKeys.has(value as ProductSortKey) ? (value as ProductSortKey) : "name";
@@ -1483,6 +1507,7 @@ function invalidateRestockNeedsLists() {
 
 export function invalidateWarehouseReadCaches() {
   invalidateProductFilterOptions();
+  inventoryListsCache.stores.clear();
   invalidateStockDocumentLists();
   invalidateSupplierInvoiceLists();
   invalidateRestockNeedsLists();
@@ -2575,6 +2600,7 @@ export async function listLocalRestockNeeds(params: {
   dateFrom?: string | null;
   dateTo?: string | null;
 }): Promise<LocalRestockNeedsList> {
+  const branchId = getScopedBranchId();
   const mode = normalizeRestockMode(params.mode);
   const timezone = process.env.APP_TIMEZONE?.trim() || "Europe/Kaliningrad";
   const rawDateFrom = params.dateFrom?.trim() || "";
@@ -2589,7 +2615,7 @@ export async function listLocalRestockNeeds(params: {
     if (dateFrom > dateTo) throw new Error("Дата начала не может быть позже даты окончания");
   }
 
-  const cacheKey = JSON.stringify({ mode, dateFrom, dateTo });
+  const cacheKey = JSON.stringify({ branchId, mode, dateFrom, dateTo });
   const now = Date.now();
   if (params.refresh) {
     invalidateProductFilterOptions();
@@ -3616,25 +3642,27 @@ export async function updateLocalAdminCounterparty(id: string, body: Counterpart
   return { ok: true as const, counterparty: mapCounterparty(counterparty) };
 }
 
-export async function listLocalStoresForAdmin(): Promise<StoreAdminList> {
+export async function listLocalStoresForAdmin(options: { branchIds?: string[] } = {}): Promise<StoreAdminList> {
+  const branchIds = trustedReadableBranchIds(options.branchIds);
+  const cacheKey = JSON.stringify({ branchIds });
   const now = Date.now();
-  if (inventoryListsCache.stores && inventoryListsCache.stores.expiresAt > now) {
-    return inventoryListsCache.stores.value;
-  }
+  const cached = inventoryListsCache.stores.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.value;
 
   const stores = await prisma.localStore.findMany({
-    where: { archived: false },
+    where: { branchId: { in: branchIds }, archived: false },
     orderBy: [{ name: "asc" }],
   });
   const value = {
     stores: stores.map((store) => ({
       id: store.id,
+      branchId: store.branchId,
       name: store.name,
       archived: store.archived,
       meta: localMeta("store", store.id),
     })),
   };
-  inventoryListsCache.stores = { expiresAt: now + STORE_ROWS_CACHE_MS, value };
+  inventoryListsCache.stores.set(cacheKey, { key: cacheKey, expiresAt: now + STORE_ROWS_CACHE_MS, value });
   return value;
 }
 
@@ -3852,6 +3880,7 @@ export function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
     : Math.max(0, invoice.sumCents - paidAmountCents);
   return {
     id: invoice.id,
+    branchId: invoice.branchId,
     number: invoice.number ?? "",
     invoiceDate: invoice.invoiceDate,
     dueDate: invoice.dueDate ?? "",
@@ -3885,6 +3914,7 @@ export function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
     updatedAt: invoice.updatedAt.toISOString(),
     document: {
       id: document.id,
+      branchId: document.branchId,
       name: document.name,
       type: document.type,
       documentDate: document.documentDate,
@@ -3950,6 +3980,7 @@ export function mapSupplierInvoice(invoice: SupplierInvoiceWithDocument) {
 }
 
 export async function createLocalSupplierInvoiceForReceipt(body: SupplierInvoiceInput, user?: ActingUser) {
+  getScopedBranchId();
   const documentId = body.documentId?.trim() ?? "";
   if (!documentId) return { ok: false as const, error: "Не выбрана приёмка" };
   const document = await prisma.localInventoryDocument.findFirst({
@@ -4004,7 +4035,10 @@ export async function listLocalSupplierInvoices(params: {
   sortDir?: string;
   limit?: number;
   offset?: number;
+  /** Trusted branch scope from the server resolver; never accepted from the client. */
+  branchIds?: string[];
 }): Promise<SupplierInvoiceAdminList> {
+  const branchIds = trustedReadableBranchIds(params.branchIds);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
   const offset = Math.max(0, params.offset ?? 0);
   const search = params.search?.trim() ?? "";
@@ -4049,6 +4083,7 @@ export async function listLocalSupplierInvoices(params: {
     sortDir,
     limit,
     offset,
+    branchIds,
   });
   const now = Date.now();
   const cached = inventoryListsCache.supplierInvoices.get(cacheKey);
@@ -4112,6 +4147,7 @@ export async function listLocalSupplierInvoices(params: {
   }
 
   const where: Prisma.LocalSupplierInvoiceWhereInput = {
+    branchId: { in: branchIds },
     ...(and.length ? { AND: and } : {}),
   };
   const orderBy: Prisma.LocalSupplierInvoiceOrderByWithRelationInput[] =
@@ -4151,6 +4187,7 @@ export async function createLocalSupplierInvoicePayment(
   body: SupplierInvoicePaymentInput,
   user: User
 ) {
+  getScopedBranchId();
   const id = invoiceId?.trim();
   if (!id) return { ok: false as const, error: "Не выбран счёт поставщика" };
 
@@ -4243,6 +4280,7 @@ export async function createLocalSupplierInvoicePayment(
 }
 
 export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status: string, user?: ActingUser) {
+  getScopedBranchId();
   const id = invoiceId?.trim();
   if (!id) return { ok: false as const, error: "Не выбран счёт поставщика" };
   const nextStatus = normalizeSupplierInvoiceStatus(status);
@@ -4280,6 +4318,7 @@ export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status
 }
 
 export async function createLocalStockDocument(body: StockDocumentInput, user?: ActingUser) {
+  getScopedBranchId();
   const type = body.type === "receipt" || body.type === "writeoff" ? body.type : null;
   if (!type) return { ok: false as const, error: "Неизвестный тип складского документа" };
   const storeId = body.storeId?.trim() ?? "";
@@ -4553,6 +4592,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
 }
 
 export async function updateLocalStockDocument(documentId: string, body: StockDocumentInput, user?: ActingUser) {
+  getScopedBranchId();
   const id = documentId?.trim();
   if (!id) return { ok: false as const, error: "Не выбран складской документ" };
 
@@ -4944,6 +4984,7 @@ function receiptPositionsByProduct(document: StockDocumentForAction) {
 }
 
 async function loadReceiptForAction(documentId: string) {
+  getScopedBranchId();
   const id = documentId?.trim();
   if (!id) return null;
   return prisma.localInventoryDocument.findFirst({
@@ -5551,17 +5592,21 @@ export async function listLocalStockDocuments(params: {
   search?: string;
   limit?: number;
   offset?: number;
+  /** Trusted branch scope from the server resolver; never accepted from the client. */
+  branchIds?: string[];
 }): Promise<StockDocumentAdminList> {
+  const branchIds = trustedReadableBranchIds(params.branchIds);
   const limit = Math.min(100, Math.max(1, params.limit ?? 30));
   const offset = Math.max(0, params.offset ?? 0);
   const search = params.search?.trim() ?? "";
   const type = params.type === "receipt" || params.type === "writeoff" ? params.type : "";
-  const cacheKey = JSON.stringify({ type, search, limit, offset });
+  const cacheKey = JSON.stringify({ type, search, limit, offset, branchIds });
   const now = Date.now();
   const cached = inventoryListsCache.stockDocuments.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.value;
 
   const where: Prisma.LocalInventoryDocumentWhereInput = {
+    branchId: { in: branchIds },
     isDeleted: false,
     ...(type ? { type } : {}),
     ...(search
@@ -5604,6 +5649,7 @@ export async function listLocalStockDocuments(params: {
     meta: { total, limit, offset },
     documents: documents.map((document) => ({
       id: document.id,
+      branchId: document.branchId,
       type: document.type,
       name: document.name,
       moment: document.momentAt.toISOString(),

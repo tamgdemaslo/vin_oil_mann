@@ -85,6 +85,8 @@ type Position = {
 
 type MovementRow = {
   id: string;
+  branchId: string;
+  branchName?: string;
   type: string;
   name: string;
   moment: string;
@@ -375,6 +377,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [adjustmentReason, setAdjustmentReason] = useState("");
 
   const [documents, setDocuments] = useState<MovementRow[]>([]);
+  const [allBranchesMode, setAllBranchesMode] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -518,6 +521,10 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   }
 
   function openDocumentForm() {
+    if (allBranchesMode) {
+      setInfo("В режиме «Все филиалы» журнал доступен только для просмотра. Выберите конкретный филиал для создания документа.");
+      return;
+    }
     resetDocumentForm();
     setInfo(null);
     setFormOpen(true);
@@ -630,13 +637,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     try {
       const params = new URLSearchParams({ type, limit: "30" });
       const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
-      const data = await readJson<{ documents?: MovementRow[]; error?: string }>(res);
+      const data = await readJson<{ documents?: MovementRow[]; meta?: { mode?: "branch" | "all" }; error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
       const nextDocuments = Array.isArray(data?.documents) ? data.documents : [];
       setDocuments(nextDocuments);
+      setAllBranchesMode(data?.meta?.mode === "all");
       return nextDocuments;
     } catch (e) {
       setDocumentsError(e instanceof Error ? e.message : "Не удалось загрузить журнал");
+      setAllBranchesMode(false);
       return [];
     } finally {
       setDocumentsLoading(false);
@@ -1069,6 +1078,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   function buildCurrentDocument(data: { id?: string; name?: string; status?: StockDocumentStatus; applicable?: boolean; invoice?: MovementRow["invoice"] | null }): MovementRow {
     return {
       id: data.id || editingDocument?.id || "",
+      branchId: editingDocument?.branchId ?? "",
       type,
       name: data.name || editingDocument?.name || "",
       moment: editingDocument?.moment || toServiceMomentString(),
@@ -2506,7 +2516,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           <div className="grow" />
           <span className="l-meta">{documents.length} строк · {formatMoney(documentStats.sum)} ₽</span>
           <div className="eco-row-actions is-visible">
-            <EcoButton type="button" onClick={openDocumentForm} size="sm" variant="primary">
+            <EcoButton type="button" onClick={openDocumentForm} size="sm" variant="primary" disabled={allBranchesMode}>
               <PackagePlus size={14} />
               {actionLabel}
             </EcoButton>
@@ -2521,6 +2531,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           <div className="eco-receipt-inline-state is-success eco-receipt-page-message">
             <CheckCircle2 size={18} />
             <span>{info}</span>
+          </div>
+        )}
+        {allBranchesMode && (
+          <div className="eco-receipt-inline-state is-success eco-receipt-page-message" role="status">
+            <Eye size={18} />
+            <span>Режим «Все филиалы»: показан общий журнал с указанием филиала. Создание и изменение документов отключены.</span>
           </div>
         )}
         {(documentsError || formError) && !formOpen && (
@@ -2554,7 +2570,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <PackagePlus size={30} />
             <h2>{isReceipt ? "Приёмок пока нет" : "Корректировок пока нет"}</h2>
             <p>{isReceipt ? "Создайте первую приёмку, чтобы оприходовать товары на локальный склад." : "Создайте техническую корректировку или обычное списание, чтобы изменить остаток документом."}</p>
-            <EcoButton type="button" variant="primary" onClick={openDocumentForm}>
+            <EcoButton type="button" variant="primary" onClick={openDocumentForm} disabled={allBranchesMode}>
               <FilePlus2 size={15} />
               {actionLabel}
             </EcoButton>
@@ -2568,6 +2584,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                 <tr>
                   <th>№ / дата</th>
                   <th>{isReceipt ? "Поставщик" : "Тип / причина"}</th>
+                  {allBranchesMode && <th>Филиал</th>}
                   <th>Склад</th>
                   <th>Позиций</th>
                   <th>{isReceipt ? "Счёт / основание" : "Влияние"}</th>
@@ -2598,6 +2615,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           <strong>{isReceipt ? document.counterpartyName || "без поставщика" : document.adjustmentReason || "без причины"}</strong>
                           <span>{isReceipt ? document.description || "поступление локального склада" : document.description || adjustment.label}</span>
                         </td>
+                        {allBranchesMode && <td>{document.branchName || document.branchId}</td>}
                         <td>{document.storeName || "склад не указан"}</td>
                         <td className="l-number">{document.positionsCount} · {formatQty(document.totalQuantity)} шт.</td>
                         <td>
@@ -2620,7 +2638,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 {rowBusy ? <Loader2 size={15} /> : <MoreHorizontal size={15} />}
                                 <select
                                   value=""
-                                  disabled={rowBusy}
+                                  disabled={rowBusy || allBranchesMode}
                                   aria-label={`Действия ${document.name}`}
                                   onChange={(event) => {
                                     handleDocumentAction(document, event.target.value as ReceiptAction);
@@ -2646,17 +2664,17 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 </select>
                               </label>
                               {!document.invoice && (
-                                <button type="button" title="Создать счёт" aria-label="Создать счёт" onClick={() => startInvoiceForDocument(document)}>
+                                <button type="button" title="Создать счёт" aria-label="Создать счёт" onClick={() => startInvoiceForDocument(document)} disabled={allBranchesMode}>
                                   <FilePlus2 size={16} />
                                 </button>
                               )}
                             </div>
                           ) : (
                             <div className="eco-receipt-table-actions">
-                              <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)}>
+                              <button type="button" title={document.applicable ? "Открыть" : "Редактировать"} aria-label={document.applicable ? "Открыть" : "Редактировать"} onClick={() => openExistingDocument(document)} disabled={allBranchesMode}>
                                 {document.applicable ? <Eye size={16} /> : <Pencil size={16} />}
                               </button>
-                              <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)}>
+                              <button type="button" title="Создать на основе" aria-label="Создать на основе" onClick={() => copyFromDocument(document)} disabled={allBranchesMode}>
                                 <Copy size={16} />
                               </button>
                             </div>

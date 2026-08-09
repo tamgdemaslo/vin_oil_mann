@@ -250,6 +250,7 @@ export default function PlatformShell() {
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
   const [branches, setBranches] = useState<ShellBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState<ShellBranch | null>(null);
   const [canViewAllBranches, setCanViewAllBranches] = useState(false);
   const [branchSwitching, setBranchSwitching] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -293,6 +294,7 @@ export default function PlatformShell() {
         const branchContext = sessionData?.branchContext ?? null;
         setBranches(branchContext?.branches ?? []);
         setSelectedBranchId(branchContext?.activeBranchId ?? "");
+        setSelectedBranch(branchContext?.activeBranch ?? null);
         setCanViewAllBranches(Boolean(sessionData?.navigation?.canViewAllBranches ?? branchContext?.groupRole));
       } catch {
         if (cancelled) return;
@@ -303,6 +305,7 @@ export default function PlatformShell() {
         setNotificationCounts(null);
         setBranches([]);
         setSelectedBranchId("");
+        setSelectedBranch(null);
         setCanViewAllBranches(false);
       } finally {
         if (!cancelled) setLoading(false);
@@ -555,6 +558,7 @@ export default function PlatformShell() {
         setBranches((current) => current.map((branch) => branch.id === nextBranch.id ? nextBranch : branch));
       }
       setSelectedBranchId(nextBranchId);
+      setSelectedBranch(nextBranch ?? null);
       setBranchMenuOpen(false);
       window.location.href = nextBranchId === "all" ? "/owner" : pathname;
     } finally {
@@ -596,7 +600,9 @@ export default function PlatformShell() {
         : `Кассовая смена активна${formatTime(currentCashShift?.openedAt) ? ` с ${formatTime(currentCashShift?.openedAt)}` : ""}`
       : "Смена не начата";
   const context = routeContext(pathname);
-  const activeBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;
+  const activeBranch = selectedBranch?.id === selectedBranchId
+    ? selectedBranch
+    : branches.find((branch) => branch.id === selectedBranchId) ?? null;
   const activeBranchLabel = selectedBranchId === "all"
     ? "Все филиалы"
     : activeBranch ? branchLabel(activeBranch) : "Филиал не выбран";

@@ -27,6 +27,8 @@
     "check:timeweb-only": "node scripts/check-timeweb-only.mjs",
     "test:branch-isolation": "node scripts/check-branch-isolation.mjs && node scripts/test-branch-scope-policy.mjs && node scripts/test-branch-production-guards.mjs",
     "test:branch-security-db": "node scripts/test-branch-security-db.mjs",
+    "test:inventory-document-branch-isolation": "node scripts/test-inventory-document-branch-isolation.mjs",
+    "audit:inventory-branch-isolation": "node scripts/audit-inventory-branch-isolation.mjs",
     "audit:branch-models": "node scripts/generate-branch-model-classification.mjs",
     "audit:branch-raw-sql": "node scripts/audit-branch-raw-sql.mjs --strict",
     "audit:branch-unique": "node scripts/audit-branch-unique.mjs",
