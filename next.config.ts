@@ -6,6 +6,9 @@ const projectRoot = path.resolve(__dirname);
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/*": ["./assets/price-label-fonts/**/*"],
+  },
   serverExternalPackages: ["telegram"],
   turbopack: {
     root: projectRoot,

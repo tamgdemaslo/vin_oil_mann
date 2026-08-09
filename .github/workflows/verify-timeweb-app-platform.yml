@@ -81,3 +81,6 @@ jobs:
 
       - name: Next.js production build
         run: npm run build
+
+      - name: Verify price-label font assets in standalone build
+        run: npm run test:price-label-pdf-artifact

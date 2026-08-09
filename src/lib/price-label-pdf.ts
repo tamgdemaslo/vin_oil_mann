@@ -1,4 +1,5 @@
-import { existsSync } from "fs";
+import { readFile, stat } from "fs/promises";
+import { join } from "path";
 import PDFDocument from "pdfkit";
 import type { PriceLabel, PriceLabelLegalEntity } from "@/lib/price-labels";
 
@@ -7,31 +8,78 @@ const PAGE_WIDTH = mm(50);
 const PAGE_HEIGHT = mm(30);
 const PADDING_X = mm(1.85);
 
-type LabelFonts = { regular: string; bold: string };
+export type PriceLabelFonts = { regular: Buffer; bold: Buffer };
 
-const FONT_CANDIDATES: LabelFonts[] = [
-  {
-    regular: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    bold: "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-  },
-  {
-    regular: "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    bold: "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
-  },
-  {
-    regular: "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-    bold: "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-  },
-  {
-    regular: "/System/Library/Fonts/Supplemental/Arial.ttf",
-    bold: "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-  },
-];
+export const PRICE_LABEL_FONT_ASSET_DIR = "assets/price-label-fonts";
 
-function resolveFonts(): LabelFonts {
-  const fonts = FONT_CANDIDATES.find((candidate) => existsSync(candidate.regular) && existsSync(candidate.bold));
-  if (!fonts) throw new Error("Не найден шрифт для печати ценников.");
-  return fonts;
+type PriceLabelFontPaths = { regular: string; bold: string };
+type PriceLabelFontDiagnostic = {
+  cwd: string;
+  expectedPath: string[];
+  regularPath: string;
+  regularExists: boolean;
+  boldPath: string;
+  boldExists: boolean;
+};
+
+let cachedFonts: PriceLabelFonts | null = null;
+let fontDiagnosticLogged = false;
+
+function priceLabelFontPaths(): PriceLabelFontPaths {
+  const assetsDir = join(process.cwd(), PRICE_LABEL_FONT_ASSET_DIR);
+  return {
+    regular: join(assetsDir, "Inter-Regular.ttf"),
+    bold: join(assetsDir, "Inter-Bold.ttf"),
+  };
+}
+
+async function fileExists(path: string) {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function logFontDiagnosticOnce(diagnostic: PriceLabelFontDiagnostic) {
+  if (fontDiagnosticLogged) return;
+  fontDiagnosticLogged = true;
+  console.info("priceLabelFontDiagnostic", diagnostic);
+}
+
+/** Loads the two Inter assets shipped with the application, never system fonts or HTTP. */
+export async function getPriceLabelFonts(): Promise<PriceLabelFonts> {
+  if (cachedFonts) return cachedFonts;
+
+  const paths = priceLabelFontPaths();
+  const diagnostic: PriceLabelFontDiagnostic = {
+    cwd: process.cwd(),
+    expectedPath: [paths.regular, paths.bold],
+    regularPath: paths.regular,
+    regularExists: await fileExists(paths.regular),
+    boldPath: paths.bold,
+    boldExists: await fileExists(paths.bold),
+  };
+  logFontDiagnosticOnce(diagnostic);
+  if (!diagnostic.regularExists || !diagnostic.boldExists) {
+    console.error("PRICE_LABEL_FONT_ASSET_MISSING", diagnostic);
+    throw new Error("PRICE_LABEL_FONT_ASSET_MISSING");
+  }
+
+  let regular: Buffer;
+  let bold: Buffer;
+  try {
+    [regular, bold] = await Promise.all([readFile(paths.regular), readFile(paths.bold)]);
+  } catch {
+    console.error("PRICE_LABEL_FONT_ASSET_MISSING", diagnostic);
+    throw new Error("PRICE_LABEL_FONT_ASSET_MISSING");
+  }
+  if (!regular.length || !bold.length) {
+    console.error("PRICE_LABEL_FONT_ASSET_MISSING", diagnostic);
+    throw new Error("PRICE_LABEL_FONT_ASSET_MISSING");
+  }
+  cachedFonts = { regular, bold };
+  return cachedFonts;
 }
 
 function formatPrice(cents: number) {
@@ -39,7 +87,7 @@ function formatPrice(cents: number) {
   return `${value.toLocaleString("ru-RU", {
     minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
     maximumFractionDigits: 2,
-  })} руб.`;
+  })} ₽`;
 }
 
 function textSizeToFit(doc: PDFKit.PDFDocument, text: string, width: number, preferred: number, minimum: number) {
@@ -105,10 +153,10 @@ function drawPriceLabel(doc: PDFKit.PDFDocument, label: PriceLabel, legalEntity:
 }
 
 /** Generates a printer-ready 50 x 30 mm PDF without an external browser process. */
-export function renderPriceLabelsPdf(labels: PriceLabel[], legalEntity: PriceLabelLegalEntity): Promise<Buffer> {
-  if (!labels.length) return Promise.reject(new Error("Для печати не выбраны ценники."));
+export async function renderPriceLabelsPdf(labels: PriceLabel[], legalEntity: PriceLabelLegalEntity): Promise<Buffer> {
+  if (!labels.length) throw new Error("Для печати не выбраны ценники.");
 
-  const fonts = resolveFonts();
+  const fonts = await getPriceLabelFonts();
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
     const document = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: "Ценники" } });
