@@ -12,46 +12,13 @@ import {
   unpostLocalReceipt,
   updateLocalStockDocument,
 } from "@/lib/local-inventory-admin";
-import { parsePriceLabelRequest, preparePriceLabels, recordPriceLabelsGenerated, type PriceLabelPreview } from "@/lib/price-labels";
-import { PRICE_LABEL_ARTWORK_CSS } from "@/components/receipts/PriceLabelArtwork";
-import { renderHtmlPdf } from "@/lib/pdf-render";
+import { parsePriceLabelRequest, preparePriceLabels, recordPriceLabelsGenerated } from "@/lib/price-labels";
+import { renderPriceLabelsPdf } from "@/lib/price-label-pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type RouteParams = { params: Promise<{ path?: string[] }> };
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!);
-}
-
-function priceLabelNameFontSize(name: string) {
-  const calculated = Math.sqrt(9_000 / Math.max(name.length, 1));
-  return `${Math.max(5.5, Math.min(10.4, calculated)).toFixed(2)}pt`;
-}
-
-function priceLabelPrice(priceCents: number) {
-  const value = priceCents / 100;
-  return `${value.toLocaleString("ru-RU", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 2,
-  })} ₽`;
-}
-
-function priceLabelArtworkHtml(label: PriceLabelPreview["labels"][number], legalEntity: NonNullable<PriceLabelPreview["legalEntity"]>) {
-  const article = label.article
-    ? `<span class="price-label-artwork__article">Арт. ${escapeHtml(label.article)}</span>`
-    : "<span></span>";
-  return `<section class="price-label-artwork" style="--price-label-name-size: ${priceLabelNameFontSize(label.name)}" aria-label="Ценник ${escapeHtml(label.name)}">
-    <header class="price-label-artwork__brand">ТАМ, ГДЕ МАСЛО<span>.</span></header>
-    <div class="price-label-artwork__rule" aria-hidden="true"></div>
-    <div class="price-label-artwork__main">
-      <strong class="price-label-artwork__name">${escapeHtml(label.name)}</strong>
-      <div class="price-label-artwork__price-row">${article}<strong class="price-label-artwork__price">${escapeHtml(priceLabelPrice(label.priceCents))}</strong></div>
-    </div>
-    <footer class="price-label-artwork__legal"><span>${escapeHtml(legalEntity.name)}</span><span>ИНН ${escapeHtml(legalEntity.inn)}</span></footer>
-  </section>`;
-}
 
 async function jsonBody(request: NextRequest) {
   try {
@@ -66,21 +33,6 @@ function errorStatus(result: { status?: number; notFound?: boolean } | object) {
   if (result.status) return result.status;
   if (result.notFound) return 404;
   return 400;
-}
-
-function priceLabelsPdfHtml(preview: PriceLabelPreview) {
-  if (!preview.legalEntity) throw new Error("Price labels require a legal entity");
-  const pages = preview.labels.flatMap((label) => Array.from({ length: label.copies }, () => label));
-  const markup = `<main id="price-labels-print-mount" data-price-labels-ready="true">${pages.map((label) => `<div class="price-label-print-page">${priceLabelArtworkHtml(label, preview.legalEntity!)}</div>`).join("")}</main>`;
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Ценники</title><style>
-    ${PRICE_LABEL_ARTWORK_CSS}
-    @page { size: 50mm 30mm; margin: 0; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    #price-labels-print-mount { display: block; width: 50mm; }
-    .price-label-print-page { width: 50mm; height: 30mm; break-after: page; page-break-after: always; overflow: hidden; }
-    .price-label-print-page:last-child { break-after: auto; page-break-after: auto; }
-    .price-label-artwork { font-family: "DejaVu Sans", Arial, Helvetica, sans-serif; }
-  </style></head><body>${markup}</body></html>`;
 }
 
 async function receiptFromList(id: string, branchIds: string[]) {
@@ -176,10 +128,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
       try {
-        const pdf = await renderHtmlPdf(
-          priceLabelsPdfHtml(preview),
-          "[data-price-labels-ready='true']"
-        );
+        if (!preview.legalEntity) throw new Error("Для печати не определена организация.");
+        const pdf = await renderPriceLabelsPdf(preview.labels, preview.legalEntity);
         await recordPriceLabelsGenerated({ receiptId: id, context: access.context, request: parsed, preview });
         const date = new Date().toISOString().slice(0, 10);
         const safeReceiptNumber = (preview.receiptNumber || "receipt").replace(/[^A-Za-zА-Яа-яЁё0-9._-]+/g, "-").slice(0, 80);
