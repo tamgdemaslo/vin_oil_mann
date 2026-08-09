@@ -27,15 +27,9 @@ if [ ! -f "$STANDALONE_ROOT/server.js" ]; then
   exit 1
 fi
 
-# A standalone Next.js server resolves public and static assets relative to its
-# own working directory. Timeweb leaves these directories at the project root,
-# so copy them into the runtime tree before starting the server.
-mkdir -p "$STANDALONE_ROOT/.next/static"
-cp -R "$APP_ROOT/.next/static/." "$STANDALONE_ROOT/.next/static/"
-
-if [ -d "$APP_ROOT/public" ]; then
-  mkdir -p "$STANDALONE_ROOT/public"
-  cp -R "$APP_ROOT/public/." "$STANDALONE_ROOT/public/"
+if [ ! -d "$STANDALONE_ROOT/.next/static" ]; then
+  echo "Standalone static assets not found: $STANDALONE_ROOT/.next/static" >&2
+  exit 1
 fi
 
 cd "$STANDALONE_ROOT"
