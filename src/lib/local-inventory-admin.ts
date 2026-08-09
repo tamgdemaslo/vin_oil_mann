@@ -229,6 +229,7 @@ type StockDocumentInput = {
     productId?: string;
     quantity?: number;
     price?: number;
+    salePrice?: number;
     slotName?: string;
     makeDefaultCell?: boolean;
   }[];
@@ -4370,10 +4371,14 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     const priceCents = type === "writeoff" && inputPriceCents <= 0
       ? product.buyPriceCents ?? 0
       : inputPriceCents;
+    const salePriceCents = type === "receipt" && position.salePrice !== undefined
+      ? Math.max(0, centsFromRub(position.salePrice))
+      : null;
     return {
       product,
       quantity: new Prisma.Decimal(quantity),
       priceCents,
+      salePriceCents,
       slotName: position.slotName?.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
@@ -4453,6 +4458,17 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         };
       }),
     });
+
+    if (type === "receipt") {
+      for (const position of positions) {
+        if ("error" in position) throw new Error(position.error);
+        if (position.salePriceCents === null || position.salePriceCents === position.product.salePriceCents) continue;
+        await tx.localProduct.update({
+          where: { id: position.product.id },
+          data: { salePriceCents: position.salePriceCents, syncedAt: new Date() },
+        });
+      }
+    }
 
     if (invoiceRequested) {
       await tx.localSupplierInvoice.create({
@@ -4668,10 +4684,14 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     const priceCents = type === "writeoff" && inputPriceCents <= 0
       ? product.buyPriceCents ?? 0
       : inputPriceCents;
+    const salePriceCents = type === "receipt" && position.salePrice !== undefined
+      ? Math.max(0, centsFromRub(position.salePrice))
+      : null;
     return {
       product,
       quantity: new Prisma.Decimal(quantity),
       priceCents,
+      salePriceCents,
       slotName: position.slotName?.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
@@ -4763,6 +4783,17 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
         };
       }),
     });
+
+    if (type === "receipt") {
+      for (const position of positions) {
+        if ("error" in position) throw new Error(position.error);
+        if (position.salePriceCents === null || position.salePriceCents === position.product.salePriceCents) continue;
+        await tx.localProduct.update({
+          where: { id: position.product.id },
+          data: { salePriceCents: position.salePriceCents, syncedAt: new Date() },
+        });
+      }
+    }
 
     if (invoiceRequested) {
       await tx.localSupplierInvoice.upsert({
@@ -5713,6 +5744,9 @@ export async function listLocalStockDocuments(params: {
           entityType: position.product?.entityType ?? "",
           quantity: position.quantity.toNumber(),
           price: position.priceCentsPerUnit / 100,
+          salePrice: Number.isFinite(Number(raw.salePrice))
+            ? Number(raw.salePrice)
+            : (position.product?.salePriceCents ?? 0) / 100,
           slotName: position.slotName ?? "",
           defaultCell: position.product?.cell ?? "",
           slotStoreId,

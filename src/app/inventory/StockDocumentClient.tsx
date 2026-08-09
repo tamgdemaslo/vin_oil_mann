@@ -75,6 +75,7 @@ type Position = {
   brand: string;
   quantity: number;
   price: number;
+  salePrice: number;
   slotName: string;
   slotStoreId: string;
   defaultCell: string;
@@ -128,6 +129,7 @@ type MovementRow = {
     entityType: string;
     quantity: number;
     price: number;
+    salePrice: number;
     slotName: string;
     defaultCell?: string;
     slotStoreId?: string;
@@ -257,6 +259,20 @@ function formatMoney(value: number | null | undefined) {
 
 function formatQty(value: number) {
   return value.toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+}
+
+function formatPercent(value: number) {
+  return value.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+}
+
+function formatProfitMoney(value: number) {
+  return value.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+}
+
+function receiptProfit(position: Pick<Position, "price" | "salePrice">) {
+  const amount = Number(position.salePrice) - Number(position.price);
+  const margin = Number(position.salePrice) > 0 ? (amount / Number(position.salePrice)) * 100 : null;
+  return { amount, margin };
 }
 
 function formatMoment(value: string) {
@@ -545,6 +561,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       brand: position.brand,
       quantity: position.quantity,
       price: position.price,
+      salePrice: position.salePrice,
       slotName: position.slotName,
       slotStoreId: position.slotStoreId || (position.slotName ? document.storeId : ""),
       defaultCell: position.defaultCell || "",
@@ -824,6 +841,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           brand: product.brand || product.supplierName || "",
           quantity: 1,
           price: isReceipt ? product.buyPrice ?? 0 : product.buyPrice ?? product.salePrice ?? 0,
+          salePrice: product.salePrice ?? 0,
           slotName,
           slotStoreId: slotStoreForProduct(product),
           defaultCell,
@@ -1111,6 +1129,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         brand: position.brand,
         quantity: position.quantity,
         price: position.price,
+        salePrice: position.salePrice,
         slotName: position.slotName,
         defaultCell: position.defaultCell,
         slotStoreId: position.slotStoreId,
@@ -1185,6 +1204,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
               productId: position.productId,
               quantity: Number(position.quantity) || 0,
               price: Number(position.price) || 0,
+              salePrice: isReceipt ? Math.max(0, Number(position.salePrice) || 0) : undefined,
               slotName: position.slotName || undefined,
               makeDefaultCell: position.makeDefaultCell,
             })),
@@ -1723,8 +1743,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         />
       )}
       {formOpen && (
-        <div className="eco-receipt-drawer-backdrop">
-          <aside role="dialog" aria-modal="true" className="eco-receipt-drawer">
+        <div className={`eco-receipt-drawer-backdrop${isReceipt ? " is-workspace" : ""}`}>
+          <aside role="dialog" aria-modal="true" className={`eco-receipt-drawer${isReceipt ? " is-workspace" : ""}`}>
             <header className="eco-receipt-drawer-head">
               <div>
                 <div className="eco-title-row">
@@ -2136,10 +2156,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         <tr>
                           <th className="eco-receipt-select-col" aria-label="Выбор строк" />
                           <th>Товар</th>
-                          <th>Артикул / код</th>
+                          {!isReceipt && <th>Артикул / код</th>}
                           <th>Текущий остаток</th>
                           <th>Кол-во</th>
                           <th>{productPriceLabel}</th>
+                          {isReceipt && <th>Цена продажи</th>}
                           <th>Сумма</th>
                           <th>Ячейка</th>
                           <th>Действия</th>
@@ -2155,6 +2176,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             ? sameStoreCells.filter((cell) => cell.slotName.toLowerCase() !== position.slotName.toLowerCase()).length
                             : 0;
                           const selected = selectedPositionIds.includes(position.localId);
+                          const profit = receiptProfit(position);
                           return (
                           <tr key={position.localId} className={selected ? "is-selected" : undefined}>
                             <td className="eco-receipt-select-cell">
@@ -2182,7 +2204,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                               </a>
                               <span>{[position.brand, position.article, position.code].filter(Boolean).join(" · ") || "без дополнительных данных"}</span>
                             </td>
-                            <td className="l-mono">{position.article || position.code || "—"}</td>
+                            {!isReceipt && <td className="l-mono">{position.article || position.code || "—"}</td>}
                             <td className="l-number">{position.availableKnown ? formatQty(position.available) : "—"}</td>
                             <td>
                               <input
@@ -2202,6 +2224,25 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                                 disabled={readOnly}
                               />
                             </td>
+                            {isReceipt && (
+                              <td className="eco-receipt-sale-price-cell">
+                                <MoneyInput
+                                  value={position.salePrice}
+                                  onValueChange={(salePrice) => updatePosition(position.localId, { salePrice: Math.max(0, salePrice) })}
+                                  className="eco-input l-money"
+                                  disabled={readOnly}
+                                  aria-label={`Цена продажи: ${position.name}`}
+                                />
+                                <small
+                                  className={profit.amount > 0 ? "is-positive" : profit.amount < 0 ? "is-negative" : undefined}
+                                  title="Прибыль с единицы и маржинальность от цены продажи"
+                                >
+                                  {position.salePrice > 0
+                                    ? `${profit.amount > 0 ? "+" : ""}${formatProfitMoney(profit.amount)} ₽ · ${profit.margin == null ? "—" : `${formatPercent(profit.margin)}%`}`
+                                    : "Цена не задана"}
+                                </small>
+                              </td>
+                            )}
                             <td className="l-number l-sum">{formatMoney(position.quantity * position.price)} ₽</td>
                             <td className="eco-receipt-cell-cell">
                               <div className="eco-receipt-cell-wrap">
@@ -2274,7 +2315,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   </div>
 
                   <div className="eco-receipt-position-cards">
-                    {positions.map((position) => (
+                    {positions.map((position) => {
+                      const profit = receiptProfit(position);
+                      return (
                       <div key={position.localId} className="eco-receipt-position-card">
                         <div>
                           <a
@@ -2302,14 +2345,30 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             </button>
                           </div>
                         )}
-                        <label>
+                        <label className="is-quantity">
                           Кол-во
                           <input type="number" min={0} step={0.001} value={position.quantity} disabled={readOnly} onChange={(event) => updatePosition(position.localId, { quantity: Number(event.target.value) || 0 })} />
                         </label>
-                        <label>
+                        <label className="is-buy-price">
                           {productPriceLabel}
                           <MoneyInput value={position.price} onValueChange={(price) => updatePosition(position.localId, { price })} className="eco-input l-money" disabled={readOnly} />
                         </label>
+                        {isReceipt && (
+                          <label className="is-sale-price">
+                            Цена продажи
+                            <MoneyInput
+                              value={position.salePrice}
+                              onValueChange={(salePrice) => updatePosition(position.localId, { salePrice: Math.max(0, salePrice) })}
+                              className="eco-input l-money"
+                              disabled={readOnly}
+                            />
+                            <small className={profit.amount > 0 ? "is-positive" : profit.amount < 0 ? "is-negative" : undefined}>
+                              {position.salePrice > 0
+                                ? `Прибыль ${profit.amount > 0 ? "+" : ""}${formatProfitMoney(profit.amount)} ₽ · ${profit.margin == null ? "—" : `${formatPercent(profit.margin)}%`}`
+                                : "Цена продажи не задана"}
+                            </small>
+                          </label>
+                        )}
                         <div className="eco-receipt-position-card-total">
                           <span>Сумма</span>
                           <strong>{formatMoney(position.quantity * position.price)} ₽</strong>
@@ -2320,7 +2379,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                           </button>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <label className="eco-receipt-field is-wide">

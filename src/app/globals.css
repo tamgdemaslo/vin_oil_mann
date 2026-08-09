@@ -21868,6 +21868,25 @@ select.eco-input::-ms-expand,
   box-shadow: -20px 0 70px rgba(10, 10, 10, 0.18);
 }
 
+.eco-receipt-drawer-backdrop.is-workspace {
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 2vw, 28px);
+}
+
+.eco-receipt-drawer.is-workspace {
+  width: min(1560px, 100%);
+  height: min(1100px, 100%);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(10, 10, 10, 0.22);
+  overflow: hidden;
+}
+
+.eco-receipt-drawer.is-workspace .eco-receipt-drawer-body {
+  grid-template-columns: minmax(0, 1fr) 230px;
+}
+
 .eco-receipt-drawer-head,
 .eco-receipt-drawer-footer {
   flex: 0 0 auto;
@@ -22549,6 +22568,37 @@ select.eco-input::-ms-expand,
   font-variant-numeric: tabular-nums;
 }
 
+.eco-receipt-drawer.is-workspace .eco-receipt-position-table table {
+  min-width: 1050px;
+}
+
+.eco-receipt-sale-price-cell {
+  min-width: 142px;
+}
+
+.eco-receipt-sale-price-cell small,
+.eco-receipt-position-card .is-sale-price small {
+  display: block;
+  margin-top: 5px;
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.eco-receipt-sale-price-cell small.is-positive,
+.eco-receipt-position-card .is-sale-price small.is-positive {
+  color: var(--eco-success);
+}
+
+.eco-receipt-sale-price-cell small.is-negative,
+.eco-receipt-position-card .is-sale-price small.is-negative {
+  color: var(--eco-danger);
+}
+
 .eco-receipt-position-table .l-sum {
   color: var(--eco-ink);
   font-weight: 780;
@@ -22667,6 +22717,91 @@ select.eco-input::-ms-expand,
 
 .eco-receipt-position-cards {
   display: none;
+}
+
+.eco-receipt-position-card {
+  gap: 10px;
+  padding: 12px;
+  background: var(--eco-surface);
+  border: 1px solid var(--eco-line);
+  border-radius: 6px;
+}
+
+.eco-receipt-position-card > div:first-child strong {
+  display: block;
+  color: var(--eco-ink);
+  font-weight: 760;
+}
+
+.eco-receipt-position-card > div:first-child span {
+  display: block;
+  margin-top: 3px;
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-receipt-card-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--eco-line);
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-receipt-position-card label {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eco-receipt-position-card input:not(.eco-input),
+.eco-receipt-position-card .eco-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-receipt-position-card-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--eco-line);
+}
+
+.eco-receipt-position-card-total span {
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-receipt-position-card-total strong {
+  color: var(--eco-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-receipt-position-card > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  color: var(--eco-danger);
+  background: var(--eco-danger-tint);
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  font-weight: 760;
 }
 
 .eco-receipt-summary {
@@ -22933,6 +23068,43 @@ select.eco-input::-ms-expand,
   }
 }
 
+@media (max-width: 1460px) {
+  .eco-receipt-drawer.is-workspace .eco-receipt-drawer-body {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-receipt-drawer.is-workspace .eco-receipt-summary {
+    position: static;
+  }
+
+  .eco-receipt-drawer.is-workspace .eco-receipt-summary dl {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-table {
+    display: none;
+  }
+
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-cards {
+    display: grid;
+    gap: 10px;
+  }
+
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card > div:first-child,
+  .eco-receipt-drawer.is-workspace .eco-receipt-card-cell,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card-total,
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card > button {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 980px) {
   .eco-receipt-drawer {
     width: 100vw;
@@ -23026,87 +23198,14 @@ select.eco-input::-ms-expand,
 
   .eco-receipt-position-card {
     display: grid;
-    gap: 10px;
-    padding: 12px;
-    background: var(--eco-surface);
-    border: 1px solid var(--eco-line);
-    border-radius: 6px;
   }
 
-  .eco-receipt-position-card > div:first-child strong {
-    display: block;
-    color: var(--eco-ink);
-    font-weight: 760;
+  .eco-receipt-drawer.is-workspace .eco-receipt-summary dl {
+    grid-template-columns: 1fr;
   }
 
-  .eco-receipt-position-card > div:first-child span {
-    display: block;
-    margin-top: 3px;
-    color: var(--eco-muted);
-    font-size: 12px;
-  }
-
-  .eco-receipt-card-cell {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 0;
-    border-top: 1px solid var(--eco-line);
-    border-bottom: 1px solid var(--eco-line);
-  }
-
-  .eco-receipt-position-card label {
-    display: grid;
-    gap: 5px;
-    color: var(--eco-muted);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .eco-receipt-position-card input:not(.eco-input),
-  .eco-receipt-position-card .eco-input {
-    width: 100%;
-    height: 36px;
-    padding: 0 10px;
-    border: 1px solid var(--eco-line-strong);
-    border-radius: 4px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .eco-receipt-position-card-total {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding-top: 8px;
-    border-top: 1px solid var(--eco-line);
-  }
-
-  .eco-receipt-position-card-total span {
-    color: var(--eco-muted);
-    font-size: 12px;
-  }
-
-  .eco-receipt-position-card-total strong {
-    color: var(--eco-ink);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .eco-receipt-position-card > button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    height: 34px;
-    color: var(--eco-danger);
-    background: var(--eco-danger-tint);
-    border: 1px solid #fecaca;
-    border-radius: 4px;
-    font-weight: 760;
+  .eco-receipt-drawer.is-workspace .eco-receipt-position-card {
+    grid-template-columns: 1fr;
   }
 
   .eco-receipt-drawer-footer {
