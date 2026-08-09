@@ -320,5 +320,12 @@ export function safeAqsiError(error: unknown) {
   if (/(401|403|ключ|authoriz|auth)/i.test(message)) return { code: "AQSI_AUTH_FAILED", message: "AQSI не принял ключ этой кассы" };
   if (/timeout|fetch|connect|network/i.test(message)) return { code: "AQSI_TEMPORARILY_UNAVAILABLE", message: "AQSI временно недоступен" };
   if (/(устройств|device|несколько устройств)/i.test(message)) return { code: "AQSI_DEVICE_REQUIRED", message: "Выберите устройство AQSI для этой кассы" };
+  if (/AQSI ответил (400|412)/.test(message)) {
+    const detail = message.replace(/^AQSI ответил (400|412)\.\s*/, "").trim().slice(0, 1_000);
+    return {
+      code: "AQSI_ORDER_REJECTED",
+      message: detail ? `AQSI отклонила отложенный заказ: ${detail}` : "AQSI отклонила отложенный заказ. Проверьте позиции и настройки кассы.",
+    };
+  }
   return { code: "AQSI_CHECK_FAILED", message: "Проверка AQSI не выполнена. Проверьте настройки кассы." };
 }

@@ -94,19 +94,45 @@ function buildAqsiUrl(baseUrl: string, path: string): string {
 }
 
 function extractAqsiError(rawText: string, statusText: string): string {
-  let detail = rawText.slice(0, 300) || statusText;
+  const fallback = rawText.slice(0, 1_000) || statusText;
   try {
-    const errJson = JSON.parse(rawText) as Record<string, unknown>;
-    const errMsg =
-      errJson?.message ??
-      errJson?.error ??
-      errJson?.detail ??
-      (Array.isArray(errJson?.errors) ? (errJson.errors[0] as string) : undefined);
-    if (errMsg && typeof errMsg === "string") detail = errMsg;
+    const parsed = JSON.parse(rawText) as unknown;
+    const details = new Set<string>();
+    const visit = (value: unknown, path?: string) => {
+      if (typeof value === "string") {
+        const text = value.trim();
+        if (text) details.add(path ? `${path}: ${text}` : text);
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => visit(item, path ? `${path}[${index}]` : undefined));
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      const row = value as Record<string, unknown>;
+      for (const key of ["message", "error", "detail", "reason", "code"]) {
+        if (typeof row[key] === "string") visit(row[key], key === "code" ? undefined : path);
+      }
+      if (row.errors !== undefined) visit(row.errors, "errors");
+    };
+    visit(parsed);
+    const detail = Array.from(details).join("; ").slice(0, 1_000);
+    return detail || fallback;
   } catch {
-    // Оставляем detail как rawText.
+    return fallback;
   }
-  return detail;
+}
+
+function numericAqsiId(value: string | undefined, entityName: string): number | undefined {
+  if (!value) return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Идентификатор ${entityName} AQSI должен состоять только из цифр. Проверьте настройки кассы.`);
+  }
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    throw new Error(`Идентификатор ${entityName} AQSI имеет недопустимое значение. Проверьте настройки кассы.`);
+  }
+  return id;
 }
 
 export async function aqsiFetchJson<T>(config: AqsiConfig, path: string, init?: RequestInit): Promise<T> {
@@ -126,9 +152,9 @@ export async function aqsiFetchJson<T>(config: AqsiConfig, path: string, init?: 
         : res.status === 404
           ? " Проверьте адрес и путь API кассы в Управление → Интеграции."
           : "";
-    // Логируем, чтобы в терминале видеть причину отказа AQSI (обычно 4xx/412).
-    // Это помогает быстрее локализовать некорректные параметры запроса.
-    console.error("[aqsiFetchJson] provider request failed", { path, status: res.status });
+    // AQSI отдаёт 412 и для ошибок проверок заказа. Без detail невозможно
+    // отличить неверную позицию от закрытой смены или недоступной кассы.
+    console.error("[aqsiFetchJson] provider request failed", { path, status: res.status, detail });
     throw new Error(`AQSI ответил ${res.status}. ${detail}${hint}`);
   }
 
@@ -466,8 +492,12 @@ export async function syncAqsiPendingOrder(
 
   const comment = normalizeString(input.comment, 1024);
   if (comment) payload.comment = comment;
-  if (binding.deviceId) payload.device = binding.deviceId;
-  if (binding.shopId) payload.shop = binding.shopId;
+  // В V2 AQSI ждёт числовые идентификаторы device и shop (int64), хотя UI
+  // хранит их строками, чтобы без потерь показывать значения в формах.
+  const deviceId = numericAqsiId(binding.deviceId, "устройства");
+  const shopId = numericAqsiId(binding.shopId, "магазина");
+  if (deviceId !== undefined) payload.device = deviceId;
+  if (shopId !== undefined) payload.shop = shopId;
   if (binding.cashierId) payload.cashier = binding.cashierId;
 
   const basePositionPayload = items.map((item) => ({
