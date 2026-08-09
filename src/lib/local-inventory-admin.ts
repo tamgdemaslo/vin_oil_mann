@@ -1282,7 +1282,12 @@ const inventoryListsCache = ((globalThis as typeof globalThis & {
   supplierInvoices: new Map<string, CacheEntry<SupplierInvoiceAdminList>>(),
   restockNeeds: new Map<string, CacheEntry<LocalRestockNeedsList>>(),
 });
-inventoryListsCache.stores ??= new Map<string, CacheEntry<StoreAdminList>>();
+// The cache lives on globalThis in development. Convert the pre-branch cache
+// shape ({ expiresAt, value }) during hot reload instead of crashing the
+// stores endpoint while a user has the app open.
+if (!(inventoryListsCache.stores instanceof Map)) {
+  inventoryListsCache.stores = new Map<string, CacheEntry<StoreAdminList>>();
+}
 inventoryListsCache.stockDocuments ??= new Map<string, CacheEntry<StockDocumentAdminList>>();
 inventoryListsCache.supplierInvoices ??= new Map<string, CacheEntry<SupplierInvoiceAdminList>>();
 inventoryListsCache.restockNeeds ??= new Map<string, CacheEntry<LocalRestockNeedsList>>();

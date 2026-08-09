@@ -8,6 +8,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 const inventory = read("src/lib/local-inventory-admin.ts");
 assert.match(inventory, /function trustedReadableBranchIds\(/, "document lists must require server branch scope");
+assert.match(inventory, /inventoryListsCache\.stores instanceof Map/, "store cache must tolerate a hot-reloaded legacy cache shape");
 assert.match(inventory, /branchId: \{ in: branchIds \}/, "document and invoice lists must query explicit branch ids");
 assert.match(inventory, /JSON\.stringify\(\{ type, search, limit, offset, branchIds \}\)/, "receipt cache key must include branch scope");
 assert.match(inventory, /branchIds,\n\s*\}\);\n\s*const now = Date\.now\(\);\n\s*const cached = inventoryListsCache\.supplierInvoices/, "invoice cache key must include branch scope");
