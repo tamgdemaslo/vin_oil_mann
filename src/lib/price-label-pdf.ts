@@ -159,7 +159,18 @@ export async function renderPriceLabelsPdf(labels: PriceLabel[], legalEntity: Pr
   const fonts = await getPriceLabelFonts();
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const document = new PDFDocument({ autoFirstPage: false, compress: true, info: { Title: "Ценники" } });
+    const documentOptions = {
+      autoFirstPage: false,
+      compress: true,
+      // PDFKit otherwise initializes its built-in Helvetica before the Inter
+      // fonts below are registered. The standalone bundle intentionally ships
+      // only the bundled Inter assets, not PDFKit's AFM data directory.
+      font: fonts.regular,
+      info: { Title: "Ценники" },
+    };
+    // @types/pdfkit currently narrows `font` to a path, while PDFKit itself
+    // supports an in-memory Buffer (which is required for standalone builds).
+    const document = new PDFDocument(documentOptions as unknown as PDFKit.PDFDocumentOptions);
     document.registerFont("PriceLabelRegular", fonts.regular);
     document.registerFont("PriceLabelBold", fonts.bold);
     document.on("data", (chunk: Buffer) => chunks.push(chunk));
