@@ -13,7 +13,7 @@ import {
   updateLocalStockDocument,
 } from "@/lib/local-inventory-admin";
 import { parsePriceLabelRequest, preparePriceLabels, recordPriceLabelsGenerated } from "@/lib/price-labels";
-import { renderPriceLabelsPdf } from "@/lib/price-label-pdf";
+import { priceLabelPdfFilename, renderPriceLabelsPdf } from "@/lib/price-label-pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,11 +132,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const pdf = await renderPriceLabelsPdf(preview.labels, preview.legalEntity);
         await recordPriceLabelsGenerated({ receiptId: id, context: access.context, request: parsed, preview });
         const date = new Date().toISOString().slice(0, 10);
-        const safeReceiptNumber = (preview.receiptNumber || "receipt").replace(/[^A-Za-zА-Яа-яЁё0-9._-]+/g, "-").slice(0, 80);
+        const filename = priceLabelPdfFilename(preview.receiptNumber, date);
         return new NextResponse(new Uint8Array(pdf), {
           headers: {
             "Content-Type": "application/pdf",
-            "Content-Disposition": `inline; filename="price-labels-${safeReceiptNumber}-${date}.pdf"`,
+            "Content-Disposition": `inline; filename="${filename}"`,
             "Cache-Control": "no-store",
           },
         });

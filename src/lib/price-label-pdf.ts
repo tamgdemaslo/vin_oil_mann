@@ -12,6 +12,18 @@ export type PriceLabelFonts = { regular: Buffer; bold: Buffer };
 
 export const PRICE_LABEL_FONT_ASSET_DIR = "assets/price-label-fonts";
 
+/**
+ * HTTP headers accept only byte strings. Receipt numbers may include Cyrillic
+ * (for example, "ПР-20260809-001"), so keep the download filename ASCII-only.
+ */
+export function priceLabelPdfFilename(receiptNumber: string | null | undefined, date: string) {
+  const receiptPart = (receiptNumber || "receipt")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "receipt";
+  return `price-labels-${receiptPart}-${date}.pdf`;
+}
+
 type PriceLabelFontPaths = { regular: string; bold: string };
 type PriceLabelFontDiagnostic = {
   cwd: string;

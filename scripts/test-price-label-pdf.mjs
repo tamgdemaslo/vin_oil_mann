@@ -25,10 +25,13 @@ fs.readFileSync = function readFileSyncWithoutHelvetica(...args) {
 };
 
 try {
-  const { getPriceLabelFonts, renderPriceLabelsPdf } = await jiti.import(resolve(projectRoot, "src/lib/price-label-pdf.ts"));
+  const { getPriceLabelFonts, priceLabelPdfFilename, renderPriceLabelsPdf } = await jiti.import(resolve(projectRoot, "src/lib/price-label-pdf.ts"));
   const fonts = await getPriceLabelFonts();
   assert.ok(Buffer.isBuffer(fonts.regular) && fonts.regular.length > 0, "Regular font asset не загружен");
   assert.ok(Buffer.isBuffer(fonts.bold) && fonts.bold.length > 0, "Bold font asset не загружен");
+  const filename = priceLabelPdfFilename("ПР-20260809-001", "2026-08-09");
+  assert.equal(filename, "price-labels-20260809-001-2026-08-09.pdf", "Имя PDF должно быть ASCII-совместимым");
+  assert.doesNotThrow(() => new Headers({ "Content-Disposition": `inline; filename="${filename}"` }));
 
   const pdf = await renderPriceLabelsPdf(
     [{
