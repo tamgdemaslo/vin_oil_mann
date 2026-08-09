@@ -3,6 +3,7 @@ import { access, mkdir, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
+import chromium from "@sparticuz/chromium";
 import { WebSocket } from "undici";
 
 type CdpResponse = {
@@ -27,6 +28,11 @@ type CdpStreamReadResult = {
   base64Encoded?: boolean;
 };
 
+type ChromeExecutable = {
+  path: string;
+  source: "bundled" | "system";
+};
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   process.env.NEXT_CHROME_PATH,
@@ -46,6 +52,12 @@ const CHROME_CANDIDATES = [
   "/usr/bin/google-chrome",
   "/usr/bin/chromium-browser",
   "/usr/bin/chromium",
+].filter(Boolean) as string[];
+
+const CHROME_WRAPPER_CANDIDATES = [
+  process.env.CHROME_WRAPPER,
+  "/usr/bin/dbus-run-session",
+  "dbus-run-session",
 ].filter(Boolean) as string[];
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -76,8 +88,29 @@ function canLaunchExecutable(candidate: string): Promise<boolean> {
   });
 }
 
-async function findChromeExecutable(): Promise<string | null> {
+async function findChromeExecutable(): Promise<ChromeExecutable | null> {
+  if (process.platform === "linux") {
+    try {
+      const bundledPath = await chromium.executablePath();
+      if (bundledPath) return { path: bundledPath, source: "bundled" };
+    } catch (error) {
+      console.warn("[pdf-render] bundled Chromium unavailable", { error });
+    }
+  }
+
   for (const candidate of [...new Set(CHROME_CANDIDATES)]) {
+    try {
+      await access(candidate);
+      return { path: candidate, source: "system" };
+    } catch {
+      if (await canLaunchExecutable(candidate)) return { path: candidate, source: "system" };
+    }
+  }
+  return null;
+}
+
+async function findChromeWrapperExecutable(): Promise<string | null> {
+  for (const candidate of [...new Set(CHROME_WRAPPER_CANDIDATES)]) {
     try {
       await access(candidate);
       return candidate;
@@ -86,6 +119,79 @@ async function findChromeExecutable(): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function prepareChromeRuntimeEnv(userDataDir: string): Promise<NodeJS.ProcessEnv> {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("DBUS_")) delete env[key];
+  }
+
+  const runtimeDir = join(userDataDir, "runtime");
+  const cacheDir = join(userDataDir, "cache");
+  const configDir = join(userDataDir, "config");
+  const crashDir = join(userDataDir, "crash-dumps");
+  await Promise.all([
+    mkdir(runtimeDir, { recursive: true, mode: 0o700 }),
+    mkdir(cacheDir, { recursive: true }),
+    mkdir(configDir, { recursive: true }),
+    mkdir(crashDir, { recursive: true }),
+  ]);
+
+  return {
+    ...env,
+    HOME: userDataDir,
+    TMPDIR: env.TMPDIR || tmpdir(),
+    XDG_RUNTIME_DIR: runtimeDir,
+    XDG_CACHE_HOME: cacheDir,
+    XDG_CONFIG_HOME: configDir,
+    NO_AT_BRIDGE: "1",
+    GTK_USE_PORTAL: "0",
+  };
+}
+
+function chromeServerFlags(userDataDir: string, source: ChromeExecutable["source"]): string[] {
+  const bundledArgs = source === "bundled"
+    ? chromium.args.filter((arg) => !arg.startsWith("--disable-features=") && arg !== "--single-process")
+    : [];
+  const disabledFeatures = source === "bundled"
+    ? "AudioServiceOutOfProcess,IsolateOrigins,site-per-process,Translate,BackForwardCache,MediaRouter,OptimizationHints"
+    : "Translate,BackForwardCache,MediaRouter,OptimizationHints";
+
+  return [
+    ...bundledArgs,
+    ...(source === "system" ? ["--headless=new"] : []),
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    "--disable-background-networking",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-extensions",
+    "--disable-sync",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-accelerated-2d-canvas",
+    `--disable-features=${disabledFeatures}`,
+    "--hide-scrollbars",
+    "--metrics-recording-only",
+    "--mute-audio",
+    "--no-proxy-server",
+    "--no-default-browser-check",
+    "--no-first-run",
+    "--password-store=basic",
+    "--proxy-bypass-list=<-loopback>",
+    "--force-color-profile=srgb",
+    `--crash-dumps-dir=${join(userDataDir, "crash-dumps")}`,
+    `--user-data-dir=${userDataDir}`,
+  ];
+}
+
+async function chromeSpawnConfig(chrome: ChromeExecutable, chromeArgs: string[]) {
+  const wrapperPath = chrome.source === "system" ? await findChromeWrapperExecutable() : null;
+  if (!wrapperPath) return { command: chrome.path, args: chromeArgs };
+  return { command: wrapperPath, args: ["--", chrome.path, ...chromeArgs] };
 }
 
 function waitForDevtools(chrome: ChildProcessWithoutNullStreams): Promise<string> {
@@ -216,27 +322,19 @@ async function waitForFonts(cdp: CdpClient, sessionId: string): Promise<void> {
 }
 
 async function renderPdfUrl(url: string, readySelector: string): Promise<Buffer> {
-  const chromePath = await findChromeExecutable();
-  if (!chromePath) throw new Error("Chrome/Chromium не найден на сервере. Укажите CHROME_PATH для генерации PDF.");
+  const chromeExecutable = await findChromeExecutable();
+  if (!chromeExecutable) throw new Error("Chrome/Chromium не найден на сервере. Укажите CHROME_PATH для генерации PDF.");
 
   const userDataDir = join(tmpdir(), `tgm-pdf-${randomUUID()}`);
   await mkdir(userDataDir, { recursive: true });
-  const chrome = spawn(chromePath, [
-    "--headless=new",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-gpu",
-    "--disable-dev-shm-usage",
-    "--disable-background-networking",
-    "--disable-extensions",
-    "--hide-scrollbars",
-    "--mute-audio",
-    "--no-first-run",
-    "--force-color-profile=srgb",
+  const chromeEnv = await prepareChromeRuntimeEnv(userDataDir);
+  const launch = await chromeSpawnConfig(chromeExecutable, [
+    ...chromeServerFlags(userDataDir, chromeExecutable.source),
     "--remote-debugging-port=0",
-    `--user-data-dir=${userDataDir}`,
+    "--remote-debugging-address=127.0.0.1",
     "about:blank",
   ]);
+  const chrome = spawn(launch.command, launch.args, { env: chromeEnv });
 
   let cdp: CdpClient | null = null;
   try {

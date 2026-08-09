@@ -68,20 +68,18 @@ function errorStatus(result: { status?: number; notFound?: boolean } | object) {
   return 400;
 }
 
-function priceLabelsPdfHtml(preview: PriceLabelPreview, origin: string) {
+function priceLabelsPdfHtml(preview: PriceLabelPreview) {
   if (!preview.legalEntity) throw new Error("Price labels require a legal entity");
   const pages = preview.labels.flatMap((label) => Array.from({ length: label.copies }, () => label));
   const markup = `<main id="price-labels-print-mount" data-price-labels-ready="true">${pages.map((label) => `<div class="price-label-print-page">${priceLabelArtworkHtml(label, preview.legalEntity!)}</div>`).join("")}</main>`;
-  const fontBase = origin.replace(/\/$/, "");
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Ценники</title><style>
-    @font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: block; src: url("${fontBase}/fonts/diagnostic/02-UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7W0Q5n-wU.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-    @font-face { font-family: Inter; font-style: normal; font-weight: 100 900; font-display: block; src: url("${fontBase}/fonts/diagnostic/07-UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+20BD, U+2116; }
     ${PRICE_LABEL_ARTWORK_CSS}
     @page { size: 50mm 30mm; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
     #price-labels-print-mount { display: block; width: 50mm; }
     .price-label-print-page { width: 50mm; height: 30mm; break-after: page; page-break-after: always; overflow: hidden; }
     .price-label-print-page:last-child { break-after: auto; page-break-after: auto; }
+    .price-label-artwork { font-family: "DejaVu Sans", Arial, Helvetica, sans-serif; }
   </style></head><body>${markup}</body></html>`;
 }
 
@@ -179,7 +177,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
       try {
         const pdf = await renderHtmlPdf(
-          priceLabelsPdfHtml(preview, request.nextUrl.origin),
+          priceLabelsPdfHtml(preview),
           "[data-price-labels-ready='true']"
         );
         await recordPriceLabelsGenerated({ receiptId: id, context: access.context, request: parsed, preview });
