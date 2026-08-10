@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { User } from "@/lib/auth";
 import type { BranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
-import { createLocalAdminProduct } from "@/lib/local-inventory-admin";
+import { createLocalAdminProduct, supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
 
 const MAX_IMPORT_ROWS = 240;
@@ -481,9 +481,8 @@ export async function executeRosskoProductImport(input: {
           where: {
             branchId,
             id: { in: supplierIds },
-            category: "SUPPLIER",
             archived: false,
-            status: "ACTIVE",
+            AND: [supplierCounterpartyIdentityWhere()],
           },
           select: { id: true },
         })

@@ -58,8 +58,9 @@ assert.deepEqual(inferRosskoFilterType("Diesel fuel filter"), { type: "fuel", co
 assert.deepEqual(inferRosskoFilterType("Фильтр масляный"), { type: "oil", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Комплект деталей"), { type: "other", confidence: "low" });
 
-const [service, oemService, batchService, executeRoute, previewRoute, manualOemRoute, dialog, supplierPicker, schema] = await Promise.all([
+const [service, inventoryService, oemService, batchService, executeRoute, previewRoute, manualOemRoute, dialog, supplierPicker, schema] = await Promise.all([
   readFile("src/lib/rossko-product-import.ts", "utf8"),
+  readFile("src/lib/local-inventory-admin.ts", "utf8"),
   readFile("src/lib/product-oem-rossko.ts", "utf8"),
   readFile("src/lib/product-oem-batches.ts", "utf8"),
   readFile("src/app/api/products/rossko/import/execute/route.ts", "utf8"),
@@ -74,6 +75,10 @@ assert.doesNotMatch(service, /const payload[\s\S]*?oemParts:\s*/);
 assert.doesNotMatch(service, /GreenLight|Грин Лайт/);
 assert.match(service, /supplierCounterpartyId:\s*supplier\?\.id/);
 assert.match(service, /id:\s*\{\s*in:\s*supplierIds\s*\}/);
+assert.match(service, /supplierCounterpartyIdentityWhere/);
+assert.match(inventoryService, /companyType:\s*\{\s*equals:\s*"supplier"/);
+assert.match(inventoryService, /counterpartyTypeName:\s*\{\s*contains:\s*"поставщик"/);
+assert.match(inventoryService, /resolveProductSupplierCounterparty[\s\S]*supplierCounterpartyIdentityWhere/);
 assert.match(service, /minimumBalance:\s*0/);
 assert.match(service, /origin:\s*"IMPORT"/);
 assert.match(service, /PRODUCTS_IMPORTED_FROM_ROSSKO_ORDER/);

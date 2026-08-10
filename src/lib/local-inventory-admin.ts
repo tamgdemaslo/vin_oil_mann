@@ -1586,7 +1586,7 @@ async function resolveProductSupplierCounterparty(
     where: {
       id,
       branchId,
-      category: "SUPPLIER",
+      AND: [supplierCounterpartyIdentityWhere()],
       OR: [
         { archived: false },
         ...(options.allowExistingArchivedId === id ? [{ id }] : []),
@@ -1598,6 +1598,21 @@ async function resolveProductSupplierCounterparty(
     return { ok: false as const, error: "Выберите активного поставщика текущего филиала" };
   }
   return { ok: true as const, id: supplier.id, name: supplier.displayName || supplier.name };
+}
+
+/**
+ * Older branch imports marked suppliers through companyType/counterpartyTypeName
+ * before category became canonical. Keep one compatibility rule for selectors,
+ * product validation and imports until those rows are normalized in the DB.
+ */
+export function supplierCounterpartyIdentityWhere(): Prisma.LocalCounterpartyWhereInput {
+  return {
+    OR: [
+      { category: "SUPPLIER" },
+      { companyType: { equals: "supplier", mode: "insensitive" } },
+      { counterpartyTypeName: { contains: "поставщик", mode: "insensitive" } },
+    ],
+  };
 }
 
 export async function getLocalAdminProduct(id: string, branchId: string) {
@@ -3287,21 +3302,23 @@ export async function listActiveSuppliers(params: { branchId: string; search?: s
   const suppliers = await prisma.localCounterparty.findMany({
     where: {
       branchId: params.branchId,
-      category: "SUPPLIER",
       archived: false,
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { fullName: { contains: search, mode: "insensitive" } },
-              { inn: { contains: search, mode: "insensitive" } },
-              { contactPerson: { contains: search, mode: "insensitive" } },
-              { contactPhone: { contains: search, mode: "insensitive" } },
-              { phone: { contains: search, mode: "insensitive" } },
-              { searchText: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      AND: [
+        supplierCounterpartyIdentityWhere(),
+        ...(search
+          ? [{
+              OR: [
+                { name: { contains: search, mode: "insensitive" as const } },
+                { fullName: { contains: search, mode: "insensitive" as const } },
+                { inn: { contains: search, mode: "insensitive" as const } },
+                { contactPerson: { contains: search, mode: "insensitive" as const } },
+                { contactPhone: { contains: search, mode: "insensitive" as const } },
+                { phone: { contains: search, mode: "insensitive" as const } },
+                { searchText: { contains: search, mode: "insensitive" as const } },
+              ],
+            }]
+          : []),
+      ],
     },
     select: {
       id: true,
@@ -3329,7 +3346,7 @@ export async function quickCreateSupplier(body: CounterpartyInput, branchId: str
   const normalizedName = normalizeSupplierDuplicateValue(name);
   const normalizedPhone = normalizePhoneKey(phone);
   const candidates = await prisma.localCounterparty.findMany({
-    where: { branchId, category: "SUPPLIER", archived: false },
+    where: { branchId, archived: false, AND: [supplierCounterpartyIdentityWhere()] },
     select: {
       id: true,
       name: true,
