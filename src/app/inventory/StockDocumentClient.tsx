@@ -16,6 +16,7 @@ import {
   History,
   Loader2,
   MapPin,
+  Minus,
   MoreHorizontal,
   PackagePlus,
   Pencil,
@@ -377,6 +378,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
 
   const [productSearch, setProductSearch] = useState("");
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [productQuantities, setProductQuantities] = useState<Record<string, number>>({});
   const [productsSearching, setProductsSearching] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -515,6 +517,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setCounterpartySearch("");
     setProductSearch("");
     setProducts([]);
+    setProductQuantities({});
     setDocumentDate(today);
     setCreateInvoice(false);
     setInvoiceNumber("");
@@ -816,8 +819,18 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     return "ok";
   }
 
-  function addProduct(product: ProductOption) {
+  function productSearchQuantity(productId: string) {
+    return Math.max(1, Math.floor(Number(productQuantities[productId]) || 1));
+  }
+
+  function setProductSearchQuantity(productId: string, quantity: number) {
+    const nextQuantity = Math.max(1, Math.min(999999, Math.floor(Number(quantity) || 1)));
+    setProductQuantities((prev) => ({ ...prev, [productId]: nextQuantity }));
+  }
+
+  function addProduct(product: ProductOption, requestedQuantity = 1) {
     if (readOnly) return;
+    const quantityToAdd = Math.max(1, Math.floor(Number(requestedQuantity) || 1));
     const slotName = slotForStore(product);
     const defaultCell = cleanCell(product.cell);
     setPositions((prev) => {
@@ -825,7 +838,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       if (existing) {
         return prev.map((position) =>
           position.productId === product.id
-            ? { ...position, quantity: position.quantity + 1 }
+            ? { ...position, quantity: position.quantity + quantityToAdd }
             : position
         );
       }
@@ -839,7 +852,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           article: product.article || product.code,
           code: product.code,
           brand: product.brand || product.supplierName || "",
-          quantity: 1,
+          quantity: quantityToAdd,
           price: isReceipt ? product.buyPrice ?? 0 : product.buyPrice ?? product.salePrice ?? 0,
           salePrice: product.salePrice ?? 0,
           slotName,
@@ -854,6 +867,11 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     });
     setProductSearch("");
     setProducts([]);
+    setProductQuantities((prev) => {
+      const next = { ...prev };
+      delete next[product.id];
+      return next;
+    });
     setNewProductOpen(false);
   }
 
@@ -2034,7 +2052,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && products[0]) {
                           event.preventDefault();
-                          addProduct(products[0]);
+                          addProduct(products[0], isReceipt ? productSearchQuantity(products[0].id) : 1);
                         }
                       }}
                       placeholder="Поиск по названию, артикулу, коду, OEM или штрихкоду…"
@@ -2051,7 +2069,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                         </>
                       )}
                       {productsError && <div className="eco-receipt-result-hint is-error">{productsError}</div>}
-                      {products.map((product) => (
+                      {products.map((product) => {
+                        const requestedQuantity = productSearchQuantity(product.id);
+                        return (
                         <div key={product.id} className="eco-receipt-product-row">
                           <div>
                             <strong>{product.name}</strong>
@@ -2070,9 +2090,50 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                             <div><dt>Закупка</dt><dd>{formatMoney(product.buyPrice)} ₽</dd></div>
                             <div><dt>Продажа</dt><dd>{formatMoney(product.salePrice)} ₽</dd></div>
                           </dl>
-                          <button type="button" onClick={() => addProduct(product)}>Добавить</button>
+                          {isReceipt ? (
+                            <div className="eco-receipt-product-row-actions">
+                              <div className="eco-receipt-quantity-stepper" role="group" aria-label={`Количество товара: ${product.name}`}>
+                                <button
+                                  type="button"
+                                  onClick={() => setProductSearchQuantity(product.id, requestedQuantity - 1)}
+                                  disabled={requestedQuantity <= 1}
+                                  aria-label={`Уменьшить количество товара ${product.name}`}
+                                >
+                                  <Minus size={14} />
+                                </button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={999999}
+                                  step={1}
+                                  value={requestedQuantity}
+                                  onChange={(event) => setProductSearchQuantity(product.id, Number(event.target.value))}
+                                  aria-label={`Количество товара ${product.name}`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setProductSearchQuantity(product.id, requestedQuantity + 1)}
+                                  aria-label={`Увеличить количество товара ${product.name}`}
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                className="eco-receipt-product-add"
+                                onClick={() => addProduct(product, requestedQuantity)}
+                              >
+                                {requestedQuantity > 1 ? `Добавить ${requestedQuantity} шт.` : "Добавить"}
+                              </button>
+                            </div>
+                          ) : (
+                            <button type="button" className="eco-receipt-product-add" onClick={() => addProduct(product)}>
+                              Добавить
+                            </button>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                       {!productsSearching && products.length === 0 && productSearch.trim().length >= 2 && (
                         <div className="eco-receipt-empty-result">
                           <strong>Товар не найден</strong>
