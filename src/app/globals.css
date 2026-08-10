@@ -61756,3 +61756,176 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-management-card { transition: none; }
   .eco-management-card:hover { transform: none; }
 }
+
+/* ROSSKO order → catalog card import. This surface is intentionally separate
+   from receipt and stock-movement interfaces: it only creates zero-stock cards. */
+.rossko-import-backdrop {
+  position: fixed;
+  z-index: 132;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 10, 10, .48);
+}
+.rossko-import-backdrop__dismiss { position: absolute; z-index: 0; inset: 0; width: 100%; border: 0; background: transparent; cursor: default; }
+.rossko-import-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(1480px, 100%);
+  max-height: calc(100dvh - 40px);
+  min-height: min(680px, calc(100dvh - 40px));
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 8px;
+  background: var(--eco-surface);
+  box-shadow: 0 4px 14px rgba(10, 10, 10, .14);
+  color: var(--eco-ink);
+}
+.rossko-import-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px 22px 14px; border-bottom: 1px solid var(--eco-line); }
+.rossko-import-header h2 { margin: 4px 0 3px; font-size: 21px; line-height: 1.25; letter-spacing: -.015em; }
+.rossko-import-header p, .rossko-import-section-head p, .rossko-import-result p { margin: 0; color: var(--eco-muted); font-size: 12px; line-height: 1.45; }
+.rossko-import-header__context { display: inline-flex; align-items: center; gap: 6px; color: var(--eco-rust); font-size: 10px; font-weight: 800; letter-spacing: .055em; text-transform: uppercase; }
+.rossko-import-close { display: inline-grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border: 1px solid var(--eco-line); border-radius: 5px; background: var(--eco-surface); color: var(--eco-muted); cursor: pointer; }
+.rossko-import-close:hover { border-color: var(--eco-line-strong); color: var(--eco-ink); }
+.rossko-import-close:disabled { cursor: wait; opacity: .5; }
+.rossko-import-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--eco-line); background: var(--eco-surface-sunk); }
+.rossko-import-steps span { display: flex; min-height: 38px; align-items: center; justify-content: center; gap: 7px; border-right: 1px solid var(--eco-line); color: var(--eco-muted); font-size: 11px; font-weight: 750; }
+.rossko-import-steps span:last-child { border-right: 0; }
+.rossko-import-steps b { display: inline-grid; width: 19px; height: 19px; place-items: center; border: 1px solid var(--eco-line-strong); border-radius: 50%; font-size: 9px; }
+.rossko-import-steps .is-active { background: var(--eco-surface); color: var(--eco-rust); }
+.rossko-import-steps .is-active b { border-color: var(--eco-rust); background: var(--eco-rust); color: #fff; }
+.rossko-import-steps .is-done { color: var(--eco-success); }
+.rossko-import-steps .is-done b { border-color: var(--eco-success); background: var(--eco-success-tint); }
+
+.rossko-import-order-step { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; padding: 22px; }
+.rossko-import-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+.rossko-import-section-head h3, .rossko-import-result h3 { margin: 0 0 3px; font-size: 17px; }
+.rossko-import-orders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rossko-import-order { display: grid; grid-template-columns: auto minmax(145px, 1fr) auto; align-items: center; gap: 12px; min-height: 76px; border: 1px solid var(--eco-line); border-radius: 7px; padding: 11px 12px; background: var(--eco-surface); cursor: pointer; }
+.rossko-import-order:hover { border-color: var(--eco-line-strong); background: var(--eco-hover); }
+.rossko-import-order.is-selected { border-color: color-mix(in srgb, var(--eco-rust) 52%, var(--eco-line)); box-shadow: inset 3px 0 0 var(--eco-rust); }
+.rossko-import-order input { accent-color: var(--eco-rust); }
+.rossko-import-order > span { display: grid; min-width: 0; gap: 3px; }
+.rossko-import-order > span b { font-size: 13px; }
+.rossko-import-order small, .rossko-import-order em { color: var(--eco-muted); font-size: 10px; font-style: normal; }
+.rossko-import-order dl { display: flex; gap: 18px; margin: 0; }
+.rossko-import-order dl div { display: grid; gap: 2px; }
+.rossko-import-order dt { color: var(--eco-muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.rossko-import-order dd { margin: 0; font-size: 11px; font-weight: 750; }
+.rossko-import-order > em { grid-column: 2 / -1; }
+.rossko-import-empty-orders { display: grid; min-height: 190px; place-items: center; align-content: center; gap: 6px; border: 1px dashed var(--eco-line-strong); border-radius: 7px; color: var(--eco-muted); text-align: center; }
+.rossko-import-empty-orders strong { color: var(--eco-ink-2); font-size: 13px; }
+.rossko-import-empty-orders span { font-size: 11px; }
+.rossko-import-manual-order { display: flex; align-items: end; gap: 8px; margin-top: 14px; padding: 13px; border: 1px solid var(--eco-line); border-radius: 7px; background: var(--eco-surface-sunk); }
+.rossko-import-manual-order label { display: grid; min-width: min(320px, 100%); gap: 5px; color: var(--eco-ink-2); font-size: 11px; font-weight: 750; }
+.rossko-import-manual-order input, .rossko-import-toolbar input, .rossko-import-toolbar select, .rossko-import-table input:not([type="checkbox"]), .rossko-import-table textarea, .rossko-import-table select, .rossko-import-oem-row textarea { min-height: 32px; border: 1px solid var(--eco-line-strong); border-radius: 4px; padding: 6px 8px; background: var(--eco-surface); color: var(--eco-ink); font: inherit; font-size: 11px; }
+.rossko-import-manual-order input:focus, .rossko-import-toolbar input:focus, .rossko-import-toolbar select:focus, .rossko-import-table input:focus, .rossko-import-table textarea:focus, .rossko-import-table select:focus, .rossko-import-oem-row textarea:focus { border-color: var(--eco-rust); outline: 2px solid color-mix(in srgb, var(--eco-rust) 16%, transparent); outline-offset: 1px; }
+
+.rossko-import-preview { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.rossko-import-preview__topline { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--eco-line); }
+.rossko-import-preview__topline > div { display: grid; gap: 2px; }
+.rossko-import-preview__topline strong { font-size: 13px; }
+.rossko-import-preview__topline span { color: var(--eco-muted); font-size: 10px; }
+.rossko-import-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--eco-line); }
+.rossko-import-summary > span { display: flex; min-height: 49px; align-items: center; justify-content: center; gap: 8px; border-right: 1px solid var(--eco-line); }
+.rossko-import-summary > span:last-child { border-right: 0; }
+.rossko-import-summary em { color: var(--eco-muted); font-size: 10px; font-style: normal; font-weight: 700; }
+.rossko-import-summary b { font-size: 17px; }
+.rossko-import-summary .is-selected { background: var(--eco-success-tint); color: var(--eco-success); }
+.rossko-import-summary .is-selected em { color: var(--eco-success); }
+.rossko-import-blocker, .rossko-import-error { display: flex; align-items: flex-start; gap: 8px; margin: 10px 16px 0; border: 1px solid color-mix(in srgb, var(--eco-danger) 28%, var(--eco-line)); border-radius: 5px; padding: 9px 10px; background: var(--eco-danger-tint); color: var(--eco-danger); font-size: 11px; line-height: 1.4; }
+.rossko-import-blocker > div { display: grid; gap: 2px; }
+.rossko-import-blocker svg, .rossko-import-error svg { flex: 0 0 auto; }
+.rossko-import-toolbar { display: grid; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--eco-line); background: var(--eco-surface-sunk); }
+.rossko-import-toolbar__actions, .rossko-import-toolbar__filters, .rossko-import-status-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rossko-import-toolbar__filters { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(150px, 220px) minmax(180px, 280px); }
+.rossko-import-search { display: flex; min-width: 0; align-items: center; gap: 6px; border: 1px solid var(--eco-line-strong); border-radius: 4px; padding-left: 8px; background: var(--eco-surface); color: var(--eco-muted); }
+.rossko-import-search input { width: 100%; border: 0; outline: 0; }
+.rossko-import-status-filters button { min-height: 27px; border: 1px solid var(--eco-line); border-radius: 4px; padding: 0 8px; background: var(--eco-surface); color: var(--eco-muted); cursor: pointer; font: inherit; font-size: 10px; font-weight: 750; }
+.rossko-import-status-filters button:hover, .rossko-import-status-filters button.is-active { border-color: var(--eco-line-strong); color: var(--eco-ink); }
+.rossko-import-status-filters button.is-active { background: var(--eco-surface-deep); }
+
+.rossko-import-table-wrap { position: relative; min-height: 0; flex: 1; overflow: auto; background: var(--eco-surface); }
+.rossko-import-table { width: 100%; min-width: 1400px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 11px; }
+.rossko-import-table th { position: sticky; z-index: 3; top: 0; height: 36px; border-right: 1px solid var(--eco-line); border-bottom: 1px solid var(--eco-line-strong); padding: 6px 7px; background: var(--eco-surface-sunk); color: var(--eco-muted); font-size: 9px; font-weight: 800; letter-spacing: .03em; text-align: left; text-transform: uppercase; }
+.rossko-import-table th:nth-child(1) { width: 58px; }
+.rossko-import-table th:nth-child(2) { width: 145px; }
+.rossko-import-table th:nth-child(3) { width: 120px; }
+.rossko-import-table th:nth-child(4) { width: 125px; }
+.rossko-import-table th:nth-child(5) { width: 250px; }
+.rossko-import-table th:nth-child(6) { width: 220px; }
+.rossko-import-table th:nth-child(7) { width: 110px; }
+.rossko-import-table th:nth-child(8) { width: 115px; }
+.rossko-import-table th:nth-child(9) { width: 125px; }
+.rossko-import-table th:nth-child(10) { width: 130px; }
+.rossko-import-table td { height: 74px; border-right: 1px solid var(--eco-line); border-bottom: 1px solid var(--eco-line); padding: 7px; vertical-align: top; }
+.rossko-import-table tr.is-selected > td { background: color-mix(in srgb, var(--eco-success) 5%, var(--eco-surface)); }
+.rossko-import-table tr.is-exists { opacity: .67; }
+.rossko-import-table td > input:not([type="checkbox"]), .rossko-import-table td > textarea, .rossko-import-table td > select { width: 100%; }
+.rossko-import-table td > textarea { min-height: 54px; resize: vertical; }
+.rossko-import-table td > small { display: block; margin-top: 5px; color: var(--eco-muted); font-size: 9px; line-height: 1.35; }
+.rossko-import-table td > b { display: block; color: var(--eco-ink-2); font-size: 11px; }
+.rossko-import-table input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--eco-success); }
+.rossko-import-table .is-number { text-align: right; }
+.rossko-import-status { display: inline-flex; max-width: 100%; min-height: 21px; align-items: center; border-radius: 4px; padding: 3px 6px; color: var(--eco-muted); background: var(--eco-surface-deep); font-size: 9px; font-weight: 800; line-height: 1.15; }
+.rossko-import-status.is-new { color: var(--eco-success); background: var(--eco-success-tint); }
+.rossko-import-status.is-review, .rossko-import-status.is-possible_duplicate { color: var(--eco-warning); background: var(--eco-warning-tint); }
+.rossko-import-status.is-error { color: var(--eco-danger); background: var(--eco-danger-tint); }
+.rossko-import-oem-button { display: inline-flex; align-items: center; gap: 4px; border: 0; padding: 3px 0; background: transparent; color: var(--eco-rust); cursor: pointer; font: inherit; font-size: 10px; font-weight: 750; }
+.rossko-import-oem-row td { height: auto; padding: 10px 16px 12px; background: var(--eco-surface-sunk); }
+.rossko-import-oem-row label { display: grid; gap: 5px; color: var(--eco-ink-2); font-size: 10px; font-weight: 750; }
+.rossko-import-oem-row textarea { width: 100%; min-height: 58px; resize: vertical; }
+.rossko-import-oem-row small { display: flex !important; align-items: center; gap: 5px; color: var(--eco-warning) !important; }
+.rossko-import-money-input { text-align: right; font-weight: 750 !important; }
+.rossko-import-table .has-price-warning input { border-color: color-mix(in srgb, var(--eco-warning) 55%, var(--eco-line)); background: var(--eco-warning-tint); }
+.rossko-import-table .has-price-warning small { color: var(--eco-warning); }
+.rossko-import-supplier { display: inline-flex; border: 1px solid var(--eco-line); border-radius: 4px; padding: 4px 6px; background: var(--eco-surface-sunk); color: var(--eco-ink-2); font-size: 9px; font-weight: 750; }
+.rossko-import-no-rows { display: grid; min-height: 180px; place-items: center; color: var(--eco-muted); font-size: 12px; }
+
+.rossko-import-footer { display: flex; align-items: center; justify-content: flex-end; gap: 7px; margin-top: auto; padding-top: 18px; }
+.rossko-import-preview__footer { margin: 0; padding: 10px 16px; border-top: 1px solid var(--eco-line-strong); background: var(--eco-surface); }
+.rossko-import-preview__footer > span { margin-right: auto; color: var(--eco-muted); font-size: 10px; font-weight: 700; }
+.rossko-import-result { display: grid; min-height: 0; flex: 1; place-items: center; align-content: center; gap: 12px; overflow-y: auto; padding: 30px; text-align: center; }
+.rossko-import-result__icon { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid color-mix(in srgb, var(--eco-success) 32%, var(--eco-line)); border-radius: 50%; background: var(--eco-success-tint); color: var(--eco-success); }
+.rossko-import-result__icon.has-warning { border-color: color-mix(in srgb, var(--eco-warning) 38%, var(--eco-line)); background: var(--eco-warning-tint); color: var(--eco-warning); }
+.rossko-import-result__stats { display: grid; width: min(720px, 100%); grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 8px 0; border: 1px solid var(--eco-line); border-radius: 7px; }
+.rossko-import-result__stats div { display: grid; gap: 4px; padding: 13px 8px; border-right: 1px solid var(--eco-line); }
+.rossko-import-result__stats div:last-child { border-right: 0; }
+.rossko-import-result__stats dt { color: var(--eco-muted); font-size: 9px; font-weight: 700; }
+.rossko-import-result__stats dd { margin: 0; font-size: 20px; font-weight: 800; }
+.rossko-import-result .rossko-import-footer { justify-content: center; }
+
+@media (max-width: 900px) {
+  .rossko-import-backdrop { padding: 0; }
+  .rossko-import-dialog { width: 100%; max-height: 100dvh; min-height: 100dvh; border: 0; border-radius: 0; }
+  .rossko-import-orders { grid-template-columns: 1fr; }
+  .rossko-import-toolbar__filters { grid-template-columns: 1fr; }
+  .rossko-import-result__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rossko-import-result__stats div { border-bottom: 1px solid var(--eco-line); }
+  .rossko-import-result__stats div:nth-child(even) { border-right: 0; }
+  .rossko-import-footer { flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .rossko-import-header, .rossko-import-order-step { padding: 14px; }
+  .rossko-import-header p { max-width: 36ch; }
+  .rossko-import-steps span { font-size: 0; }
+  .rossko-import-steps b { font-size: 9px; }
+  .rossko-import-order { grid-template-columns: auto 1fr; }
+  .rossko-import-order dl { grid-column: 2; }
+  .rossko-import-manual-order { align-items: stretch; flex-direction: column; }
+  .rossko-import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rossko-import-summary > span { border-bottom: 1px solid var(--eco-line); }
+  .rossko-import-preview__topline { align-items: flex-start; }
+  .rossko-import-preview__topline > div { min-width: 0; }
+  .rossko-import-preview__topline span { overflow-wrap: anywhere; }
+  .rossko-import-preview__footer > span { width: 100%; }
+  .rossko-import-result { padding: 20px 14px; }
+  .rossko-import-result__stats { grid-template-columns: 1fr; }
+  .rossko-import-result__stats div { border-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rossko-import-dialog *, .rossko-import-dialog *::before, .rossko-import-dialog *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}

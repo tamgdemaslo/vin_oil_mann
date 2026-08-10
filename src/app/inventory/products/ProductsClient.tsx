@@ -24,6 +24,7 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Truck,
   Trash2,
   Undo2,
   Upload,
@@ -31,6 +32,8 @@ import {
 } from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
 import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranchDialog";
+import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
+import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
 import {
   bulkOilSetupProblems,
   deriveProductMarkingStatus,
@@ -1511,6 +1514,9 @@ export default function ProductsClient() {
   const [info, setInfo] = useState<string | null>(null);
   const [toast, setToast] = useState<ProductToast | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [rosskoImportOpen, setRosskoImportOpen] = useState(false);
+  const [rosskoLastImportVisible, setRosskoLastImportVisible] = useState(false);
+  const [listViewRevision, setListViewRevision] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -1571,6 +1577,7 @@ export default function ProductsClient() {
   const loadMoreTargetRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
   const initialLoadStartedRef = useRef(false);
+  const skipNextListLoadRef = useRef(false);
 
   const setActionMenuButtonRef = useCallback((id: string, node: HTMLButtonElement | null) => {
     if (node) {
@@ -1679,7 +1686,7 @@ export default function ProductsClient() {
     }, 0),
     [filters]
   );
-  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId);
+  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || rosskoLastImportVisible;
   const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
   const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
   const filtersLayoutClass = [
@@ -1788,6 +1795,7 @@ export default function ProductsClient() {
   }
 
   async function load(nextSearch = search, nextSort = sort, nextDirection = direction, nextFilters = filters) {
+    setRosskoLastImportVisible(false);
     listAbortRef.current?.abort();
     loadMoreAbortRef.current?.abort();
     const controller = new AbortController();
@@ -2003,6 +2011,10 @@ export default function ProductsClient() {
   }, []);
 
   useEffect(() => {
+    if (skipNextListLoadRef.current) {
+      skipNextListLoadRef.current = false;
+      return;
+    }
     const delay = initialLoadStartedRef.current ? 320 : 0;
     initialLoadStartedRef.current = true;
     const timer = window.setTimeout(() => {
@@ -2010,7 +2022,7 @@ export default function ProductsClient() {
     }, delay);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sort, direction, filters, originFilter, copyBatchId]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, listViewRevision]);
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -2075,6 +2087,22 @@ export default function ProductsClient() {
       }
       return changed ? next : prev;
     });
+  }
+
+  function showRosskoCreatedProducts(products: RosskoImportCreatedProduct[]) {
+    const createdRows = products as unknown as ProductRow[];
+    skipNextListLoadRef.current = true;
+    setRosskoImportOpen(false);
+    setSearch("");
+    setFilters(emptyFilters);
+    setOriginFilter("all");
+    setCopyBatchId("");
+    setRosskoLastImportVisible(true);
+    setListViewRevision((current) => current + 1);
+    setRows(createdRows);
+    setMeta(null);
+    setMatchedOutsideFilters(0);
+    setToast({ message: `Показаны товары последнего импорта ROSSKO: ${createdRows.length}` });
   }
 
   function updateMarkingForm(patch: Partial<ProductForm>) {
@@ -4463,6 +4491,12 @@ export default function ProductsClient() {
 
       {renderImportWizard()}
 
+      <RosskoProductImportDialog
+        open={rosskoImportOpen}
+        onClose={() => setRosskoImportOpen(false)}
+        onShowCreated={showRosskoCreatedProducts}
+      />
+
       {toast ? (
         <div className="eco-product-toast" role="status" aria-live="polite">
           <span>{toast.message}</span>
@@ -4531,6 +4565,10 @@ export default function ProductsClient() {
             <button type="button" className="eco-btn" onClick={openImportWizard}>
               <Upload aria-hidden className="eco-icon" />
               Импорт
+            </button>
+            <button type="button" className="eco-btn" onClick={() => setRosskoImportOpen(true)}>
+              <Truck aria-hidden className="eco-icon" />
+              Импорт из ROSSKO
             </button>
             <button
               type="button"
@@ -4686,13 +4724,19 @@ export default function ProductsClient() {
         {(hasActiveSearchOrFilters || selectedProductIds.length > 0) ? (
           <div className="eco-products-strip">
             <div className="eco-products-chips">
+              {rosskoLastImportVisible ? (
+                <button type="button" className="eco-pill is-active eco-filter-chip" onClick={() => void load()}>
+                  <span>Последний импорт ROSSKO</span>
+                  <X aria-hidden className="eco-icon" />
+                </button>
+              ) : null}
               {activeFilterChips().map((chip) => (
                 <button key={chip.key} type="button" className="eco-pill is-active eco-filter-chip" onClick={chip.onRemove}>
                   <span>{chip.label}</span>
                   <X aria-hidden className="eco-icon" />
                 </button>
               ))}
-              {hasActiveSearchOrFilters && (
+              {hasActiveSearchOrFilters && !rosskoLastImportVisible && (
                 <button type="button" className="eco-pill is-dashed" onClick={resetAll}>
                   × Сбросить всё
                 </button>

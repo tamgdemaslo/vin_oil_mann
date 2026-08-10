@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test:lookup": "node scripts/test-lookup.mjs",
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
+    "test:rossko-product-import": "node scripts/test-rossko-product-import.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",

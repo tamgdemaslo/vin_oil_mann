@@ -1,0 +1,699 @@
+import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import type { User } from "@/lib/auth";
+import type { BranchContext } from "@/lib/branch-context";
+import { prisma } from "@/lib/db";
+import { createLocalAdminProduct } from "@/lib/local-inventory-admin";
+import { mergeProductCrossReferences, splitProductCrossReferences } from "@/lib/product-cross-references";
+import { rosskoConfig, rosskoOrders, rosskoSearch, type RosskoConfig } from "@/lib/rossko";
+
+export const ROSSKO_PRODUCT_SUPPLIER_LABEL = "ООО «Грин Лайт»";
+const ROSSKO_PRODUCT_SUPPLIER_IDENTITY = "ооогринлайт";
+const MAX_IMPORT_ROWS = 240;
+
+export type RosskoImportStatus = "EXISTS" | "NEW" | "REVIEW" | "POSSIBLE_DUPLICATE" | "ERROR";
+export type RosskoFilterType = "oil" | "air" | "cabin" | "fuel" | "other";
+
+export type RosskoOrderLine = {
+  rowId: string;
+  orderId: string;
+  brand: string;
+  article: string;
+  sourceName: string;
+  categoryText: string;
+  quantity: number;
+  purchasePriceCents: number | null;
+  delivery: string;
+  stock: string;
+};
+
+export type RosskoImportPreviewRow = RosskoOrderLine & {
+  status: RosskoImportStatus;
+  statusReason: string;
+  selected: boolean;
+  name: string;
+  category: string;
+  filterType: RosskoFilterType;
+  oemParts: string[];
+  recommendedRetailCents: number | null;
+  retailPriceCents: number | null;
+  existingProductId: string | null;
+  existingProductName: string | null;
+  warnings: string[];
+};
+
+export type RosskoImportPreview = {
+  order: {
+    id: string;
+    positions: number;
+    totalCents: number;
+    supplierName: string;
+  };
+  supplier: { id: string; name: string } | null;
+  blocker: string | null;
+  categories: string[];
+  rows: RosskoImportPreviewRow[];
+  summary: RosskoImportSummary;
+};
+
+export type RosskoImportSummary = {
+  total: number;
+  exists: number;
+  new: number;
+  review: number;
+  possibleDuplicate: number;
+  error: number;
+  selected: number;
+};
+
+export type RosskoImportExecuteRow = {
+  rowId?: string;
+  selected?: boolean;
+  brand?: string;
+  article?: string;
+  name?: string;
+  category?: string;
+  oemParts?: string[] | string;
+  retailPriceCents?: number;
+};
+
+export type RosskoImportCreatedProduct = {
+  id: string;
+  name: string;
+  article: string;
+  brand: string;
+  groupPath: string;
+  salePrice: number;
+  buyPrice: number | null;
+  supplierName: string;
+  oemParts: string;
+  totalQuantity: number;
+  totalAvailable: number;
+  stock: unknown[];
+  origin: string;
+};
+
+export type RosskoImportExecuteResult = {
+  orderId: string;
+  selected: number;
+  created: number;
+  skipped: number;
+  failed: number;
+  createdProducts: RosskoImportCreatedProduct[];
+  rows: Array<{
+    rowId: string;
+    status: "CREATED" | "SKIPPED_DUPLICATE" | "FAILED";
+    productId: string | null;
+    message: string;
+  }>;
+};
+
+export class RosskoProductImportError extends Error {
+  constructor(
+    message: string,
+    public readonly status = 400,
+    public readonly code = "rossko_product_import_invalid",
+  ) {
+    super(message);
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function readText(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const exact = text(row[key]);
+    if (exact) return exact;
+    const entry = Object.entries(row).find(([candidate]) => candidate.toLocaleLowerCase("ru-RU") === key.toLocaleLowerCase("ru-RU"));
+    const value = entry ? text(entry[1]) : "";
+    if (value) return value;
+  }
+  return "";
+}
+
+function numberValue(value: unknown): number | null {
+  const parsed = Number(String(value ?? "").replace(/\s+/g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readNumber(row: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const exact = numberValue(row[key]);
+    if (exact != null) return exact;
+    const entry = Object.entries(row).find(([candidate]) => candidate.toLocaleLowerCase("ru-RU") === key.toLocaleLowerCase("ru-RU"));
+    const value = entry ? numberValue(entry[1]) : null;
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function collectRecords(root: unknown, limit = 1600): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  const seen = new Set<unknown>();
+  const queue: unknown[] = [root];
+  while (queue.length && rows.length < limit) {
+    const current = queue.shift();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+    const item = record(current);
+    if (!item) continue;
+    rows.push(item);
+    for (const value of Object.values(item)) if (value && typeof value === "object") queue.push(value);
+  }
+  return rows;
+}
+
+export function normalizeRosskoBrand(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[ёЁ]/g, "Е")
+    .toLocaleUpperCase("ru-RU")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function normalizeRosskoArticle(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[–—−]/g, "-")
+    .toLocaleUpperCase("ru-RU")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function normalizeLegalEntityName(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[ёЁ]/g, "Е")
+    .toLocaleLowerCase("ru-RU")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function recommendedRosskoRetailCents(purchasePriceCents: number | null): number | null {
+  if (purchasePriceCents == null || !Number.isFinite(purchasePriceCents) || purchasePriceCents < 0) return null;
+  return purchasePriceCents <= 100_000
+    ? Math.round(purchasePriceCents + 40_000)
+    : Math.round(purchasePriceCents * 1.5);
+}
+
+function rowId(orderId: string, brand: string, article: string, occurrence: number): string {
+  return createHash("sha256")
+    .update(`${orderId}\u0000${normalizeRosskoBrand(brand)}\u0000${normalizeRosskoArticle(article)}\u0000${occurrence}`)
+    .digest("base64url")
+    .slice(0, 22);
+}
+
+export function extractRosskoOrderLines(data: unknown, orderId: string): RosskoOrderLine[] {
+  const rows = collectRecords(data);
+  const occurrences = new Map<string, number>();
+  const result: RosskoOrderLine[] = [];
+
+  for (const row of rows) {
+    const article = readText(row, ["partnumber", "partNumber", "article", "supplierArticle", "code"]);
+    const brand = readText(row, ["brand", "brandName", "producer", "manufacturer"]);
+    const quantity = readNumber(row, ["count", "quantity", "qty", "orderedQty", "amount"]);
+    if (!article || !brand || quantity == null || quantity <= 0) continue;
+
+    const purchaseRub = readNumber(row, ["price", "cost", "buyPrice", "purchasePrice", "unitPrice"]);
+    const sourceName = readText(row, ["name", "partName", "title", "caption", "description"]) || `${brand} ${article}`;
+    const categoryText = readText(row, ["category", "categoryName", "parttype", "partType", "group", "groupName"]);
+    const identity = `${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
+    const occurrence = (occurrences.get(identity) ?? 0) + 1;
+    occurrences.set(identity, occurrence);
+    result.push({
+      rowId: rowId(orderId, brand, article, occurrence),
+      orderId,
+      brand: brand.trim(),
+      article: article.trim().replace(/[–—−]/g, "-"),
+      sourceName,
+      categoryText,
+      quantity: Math.max(1, Math.floor(quantity)),
+      purchasePriceCents: purchaseRub == null || purchaseRub < 0 ? null : Math.round(purchaseRub * 100),
+      delivery: readText(row, ["delivery", "deliveryLabel", "deliveryDate", "dateDelivery"]),
+      stock: readText(row, ["stock", "stockId", "warehouse"]),
+    });
+    if (result.length >= MAX_IMPORT_ROWS) break;
+  }
+
+  const exactSeen = new Set<string>();
+  return result.filter((line) => {
+    const key = [normalizeRosskoBrand(line.brand), normalizeRosskoArticle(line.article), line.quantity, line.purchasePriceCents ?? ""].join(":");
+    if (exactSeen.has(key)) return false;
+    exactSeen.add(key);
+    return true;
+  }).map((line, index, all) => {
+    const occurrence = all.slice(0, index + 1).filter((candidate) =>
+      normalizeRosskoBrand(candidate.brand) === normalizeRosskoBrand(line.brand) &&
+      normalizeRosskoArticle(candidate.article) === normalizeRosskoArticle(line.article)
+    ).length;
+    return { ...line, rowId: rowId(orderId, line.brand, line.article, occurrence) };
+  });
+}
+
+const OEM_KEY_RE = /^(?:oem|oe|oemnumber|oenumber|cross|crossnumber|crossnumbers|analog|analogue|originalnumber|originalnumbers|references?)$/i;
+
+function oemValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(oemValues);
+  const nested = record(value);
+  if (nested) return Object.values(nested).flatMap(oemValues);
+  return splitProductCrossReferences(value);
+}
+
+export function extractRosskoOemNumbers(data: unknown, brand: string, article: string): string[] {
+  const brandKey = normalizeRosskoBrand(brand);
+  const articleKey = normalizeRosskoArticle(article);
+  const exactRows = collectRecords(data).filter((row) => {
+    const rowArticle = readText(row, ["partnumber", "partNumber", "article", "code"]);
+    const rowBrand = readText(row, ["brand", "brandName", "producer", "manufacturer"]);
+    return normalizeRosskoArticle(rowArticle) === articleKey && (!rowBrand || normalizeRosskoBrand(rowBrand) === brandKey);
+  });
+  const sourceRows = exactRows.length ? exactRows : collectRecords(data);
+  const merged = mergeProductCrossReferences(null, sourceRows.flatMap((row) =>
+    Object.entries(row)
+      .filter(([key]) => OEM_KEY_RE.test(key.replace(/[_\s-]+/g, "")))
+      .flatMap(([, value]) => oemValues(value))
+  ));
+  return splitProductCrossReferences(merged);
+}
+
+function displayArticleCandidates(data: unknown, brand: string, article: string): string[] {
+  const brandKey = normalizeRosskoBrand(brand);
+  const articleKey = normalizeRosskoArticle(article);
+  return collectRecords(data).flatMap((row) => {
+    const candidate = readText(row, ["partnumber", "partNumber", "article", "code"]);
+    const candidateBrand = readText(row, ["brand", "brandName", "producer", "manufacturer"]);
+    if (!candidate || normalizeRosskoArticle(candidate) !== articleKey) return [];
+    if (candidateBrand && normalizeRosskoBrand(candidateBrand) !== brandKey) return [];
+    return [candidate.replace(/[–—−]/g, "-").trim()];
+  });
+}
+
+function displayArticleScore(value: string): number {
+  return Number(value.includes("/")) * 6 + Number(/\s/.test(value)) * 3 + Number(value.includes("-")) * 2 + value.length / 100;
+}
+
+export function preferredRosskoArticle(data: unknown, brand: string, article: string): string {
+  return [article, ...displayArticleCandidates(data, brand, article)]
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .sort((left, right) => displayArticleScore(right) - displayArticleScore(left))[0] ?? article;
+}
+
+export function inferRosskoFilterType(value: unknown): { type: RosskoFilterType; confidence: "high" | "low" } {
+  const source = String(value ?? "").normalize("NFKC").replace(/[ёЁ]/g, "е").toLocaleLowerCase("ru-RU");
+  if (/(салон|cabin|pollen|interior)/i.test(source)) return { type: "cabin", confidence: "high" };
+  if (/(топлив|fuel|diesel)/i.test(source)) return { type: "fuel", confidence: "high" };
+  if (/(воздуш|air\s*filter|filter\s*air)/i.test(source)) return { type: "air", confidence: "high" };
+  if (/(маслян|масляный|моторн.{0,12}фильтр|oil\s*filter|filter\s*oil)/i.test(source)) return { type: "oil", confidence: "high" };
+  return { type: "other", confidence: "low" };
+}
+
+const FILTER_TYPE_LABELS: Record<Exclude<RosskoFilterType, "other">, string> = {
+  oil: "Масляный фильтр",
+  air: "Воздушный фильтр",
+  cabin: "Салонный фильтр",
+  fuel: "Топливный фильтр",
+};
+
+function summary(rows: RosskoImportPreviewRow[]): RosskoImportSummary {
+  return {
+    total: rows.length,
+    exists: rows.filter((row) => row.status === "EXISTS").length,
+    new: rows.filter((row) => row.status === "NEW").length,
+    review: rows.filter((row) => row.status === "REVIEW").length,
+    possibleDuplicate: rows.filter((row) => row.status === "POSSIBLE_DUPLICATE").length,
+    error: rows.filter((row) => row.status === "ERROR").length,
+    selected: rows.filter((row) => row.selected).length,
+  };
+}
+
+type CatalogIdentityRow = {
+  id: string;
+  name: string;
+  brand: string | null;
+  article: string | null;
+  groupPath: string | null;
+};
+
+function mostFrequentDisplays(rows: CatalogIdentityRow[], keyOf: (row: CatalogIdentityRow) => string, valueOf: (row: CatalogIdentityRow) => string) {
+  const counts = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const value = valueOf(row).trim();
+    if (!key || !value) continue;
+    const byValue = counts.get(key) ?? new Map<string, number>();
+    byValue.set(value, (byValue.get(value) ?? 0) + 1);
+    counts.set(key, byValue);
+  }
+  return new Map([...counts].map(([key, values]) => [
+    key,
+    [...values].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ru"))[0]?.[0] ?? "",
+  ]));
+}
+
+function categoryByType(products: CatalogIdentityRow[]) {
+  const counts = new Map<RosskoFilterType, Map<string, number>>();
+  for (const product of products) {
+    const group = product.groupPath?.trim() ?? "";
+    if (!group) continue;
+    const inferred = inferRosskoFilterType(`${group} ${product.name}`);
+    if (inferred.type === "other") continue;
+    const byGroup = counts.get(inferred.type) ?? new Map<string, number>();
+    byGroup.set(group, (byGroup.get(group) ?? 0) + 1);
+    counts.set(inferred.type, byGroup);
+  }
+  return new Map([...counts].map(([type, groups]) => [
+    type,
+    [...groups].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ru"))[0]?.[0] ?? "",
+  ]));
+}
+
+async function resolveRosskoSupplier(branchId: string) {
+  const suppliers = await prisma.localCounterparty.findMany({
+    where: { branchId, category: "SUPPLIER", archived: false, status: "ACTIVE" },
+    select: { id: true, name: true, displayName: true, fullName: true },
+    take: 1000,
+  });
+  const matches = suppliers.filter((supplier) =>
+    [supplier.name, supplier.displayName, supplier.fullName]
+      .some((value) => normalizeLegalEntityName(value) === ROSSKO_PRODUCT_SUPPLIER_IDENTITY)
+  );
+  if (matches.length !== 1) return null;
+  return { id: matches[0].id, name: matches[0].displayName || matches[0].name };
+}
+
+async function mapWithConcurrency<T, R>(values: T[], concurrency: number, operation: (value: T, index: number) => Promise<R>): Promise<R[]> {
+  const result = new Array<R>(values.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (cursor < values.length) {
+      const index = cursor++;
+      result[index] = await operation(values[index], index);
+    }
+  }));
+  return result;
+}
+
+async function enrichLine(cfg: RosskoConfig, line: RosskoOrderLine) {
+  if (!cfg.deliveryId) return { article: line.article, oemParts: [] as string[], warning: "В настройках ROSSKO не выбран способ доставки: OEM не загружены." };
+  try {
+    const data = await rosskoSearch(cfg, { text: line.article, deliveryId: cfg.deliveryId, addressId: cfg.addressId });
+    return {
+      article: preferredRosskoArticle(data, line.brand, line.article),
+      oemParts: extractRosskoOemNumbers(data, line.brand, line.article),
+      warning: "",
+    };
+  } catch {
+    return { article: line.article, oemParts: [] as string[], warning: "ROSSKO не вернул дополнительные OEM для этой позиции." };
+  }
+}
+
+export async function previewRosskoProductImport(input: { branchId: string; orderId: string }): Promise<RosskoImportPreview> {
+  const orderId = input.orderId.trim();
+  if (!/^\d+$/.test(orderId)) throw new RosskoProductImportError("Укажите номер заказа ROSSKO");
+
+  const [cfg, products, supplier] = await Promise.all([
+    rosskoConfig(),
+    prisma.localProduct.findMany({
+      where: { branchId: input.branchId, archived: false, entityType: "product", article: { not: null } },
+      select: { id: true, name: true, brand: true, article: true, groupPath: true },
+      take: 20_000,
+    }),
+    resolveRosskoSupplier(input.branchId),
+  ]);
+  const orderData = await rosskoOrders(cfg, [Number(orderId)]);
+  const lines = extractRosskoOrderLines(orderData, orderId);
+  if (!lines.length) throw new RosskoProductImportError("В ответе ROSSKO не удалось найти позиции выбранного заказа", 422, "rossko_order_positions_missing");
+
+  const brandDisplays = mostFrequentDisplays(products, (row) => normalizeRosskoBrand(row.brand), (row) => row.brand ?? "");
+  const groupByType = categoryByType(products);
+  const categories = [...new Set(products.map((row) => row.groupPath?.trim()).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => left.localeCompare(right, "ru", { numeric: true, sensitivity: "base" }));
+  const exact = new Map<string, CatalogIdentityRow>();
+  const byArticle = new Map<string, CatalogIdentityRow[]>();
+  for (const product of products) {
+    const articleKey = normalizeRosskoArticle(product.article);
+    const brandKey = normalizeRosskoBrand(product.brand);
+    if (!articleKey) continue;
+    if (brandKey && !exact.has(`${brandKey}:${articleKey}`)) exact.set(`${brandKey}:${articleKey}`, product);
+    byArticle.set(articleKey, [...(byArticle.get(articleKey) ?? []), product]);
+  }
+
+  const enrichments = await mapWithConcurrency(lines, Math.max(1, Math.min(6, Math.ceil(cfg.requestsPerSecond))), (line) => enrichLine(cfg, line));
+  const rows = lines.map<RosskoImportPreviewRow>((source, index) => {
+    const enrichment = enrichments[index];
+    const article = enrichment.article;
+    const brandKey = normalizeRosskoBrand(source.brand);
+    const articleKey = normalizeRosskoArticle(article);
+    const brand = brandDisplays.get(brandKey) || source.brand.trim();
+    const duplicate = exact.get(`${brandKey}:${articleKey}`) ?? null;
+    const possible = !duplicate ? (byArticle.get(articleKey) ?? [])[0] ?? null : null;
+    const inferred = inferRosskoFilterType(`${source.categoryText} ${source.sourceName}`);
+    const category = inferred.type === "other" ? "" : groupByType.get(inferred.type) ?? "";
+    const name = inferred.type === "other"
+      ? `${brand} ${article}`.trim()
+      : `${FILTER_TYPE_LABELS[inferred.type]} ${brand} ${article}`.replace(/\s+/g, " ").trim();
+    const recommendedRetailCents = recommendedRosskoRetailCents(source.purchasePriceCents);
+    const missing: string[] = [];
+    if (!brandKey) missing.push("бренд");
+    if (!articleKey) missing.push("артикул");
+    if (!source.sourceName.trim()) missing.push("название");
+    if (source.purchasePriceCents == null) missing.push("закупочная цена");
+
+    let status: RosskoImportStatus = "NEW";
+    let statusReason = "Данные готовы к созданию";
+    if (missing.length) {
+      status = "ERROR";
+      statusReason = `Недостаточно данных: ${missing.join(", ")}`;
+    } else if (duplicate) {
+      status = "EXISTS";
+      statusReason = "Бренд и нормализованный артикул уже есть в текущем филиале";
+    } else if (possible) {
+      status = "POSSIBLE_DUPLICATE";
+      statusReason = `Похожий артикул найден у карточки «${possible.name}»`;
+    } else if (!category || inferred.confidence === "low") {
+      status = "REVIEW";
+      statusReason = "Не удалось уверенно определить категорию фильтра";
+    }
+
+    return {
+      ...source,
+      brand,
+      article,
+      status,
+      statusReason,
+      selected: status === "NEW",
+      name,
+      category,
+      filterType: inferred.type,
+      oemParts: enrichment.oemParts,
+      recommendedRetailCents,
+      retailPriceCents: recommendedRetailCents,
+      existingProductId: duplicate?.id ?? possible?.id ?? null,
+      existingProductName: duplicate?.name ?? possible?.name ?? null,
+      warnings: [enrichment.warning].filter(Boolean),
+    };
+  });
+
+  return {
+    order: {
+      id: orderId,
+      positions: rows.length,
+      totalCents: rows.reduce((total, row) => total + (row.purchasePriceCents ?? 0) * row.quantity, 0),
+      supplierName: ROSSKO_PRODUCT_SUPPLIER_LABEL,
+    },
+    supplier,
+    blocker: supplier ? null : `Не найден поставщик ${ROSSKO_PRODUCT_SUPPLIER_LABEL}.`,
+    categories,
+    rows,
+    summary: summary(rows),
+  };
+}
+
+function editableOemParts(value: RosskoImportExecuteRow["oemParts"]): string[] {
+  return splitProductCrossReferences(Array.isArray(value) ? value.join(";") : value);
+}
+
+function cleanEditedText(value: unknown, max: number): string {
+  return String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").slice(0, max);
+}
+
+type DuplicateProductRow = { id: string; name: string };
+
+async function duplicateByBrandArticle(branchId: string, brand: string, article: string) {
+  const brandKey = normalizeRosskoBrand(brand).toLocaleLowerCase("ru-RU");
+  const articleKey = normalizeRosskoArticle(article).toLocaleLowerCase("ru-RU");
+  if (!brandKey || !articleKey) return null;
+  const rows = await prisma.$queryRaw<DuplicateProductRow[]>(Prisma.sql`
+    SELECT id, name
+    FROM local_products
+    WHERE branch_id = ${branchId}
+      AND archived = false
+      AND regexp_replace(replace(lower(COALESCE(brand, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') = ${brandKey}
+      AND regexp_replace(replace(lower(COALESCE(article, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') = ${articleKey}
+    LIMIT 1
+  `);
+  return rows[0] ?? null;
+}
+
+async function withIdentityLock<T>(branchId: string, brand: string, article: string, operation: () => Promise<T>): Promise<T> {
+  const lockKey = `rossko-product:${branchId}:${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    return operation();
+  }, { maxWait: 10_000, timeout: 30_000 });
+}
+
+function asCreatedProduct(value: unknown): RosskoImportCreatedProduct {
+  const product = value as RosskoImportCreatedProduct;
+  return { ...product, origin: "IMPORT" };
+}
+
+export async function executeRosskoProductImport(input: {
+  context: BranchContext;
+  actor: User;
+  orderId: string;
+  rows: RosskoImportExecuteRow[];
+}): Promise<RosskoImportExecuteResult> {
+  const branchId = input.context.branchId;
+  if (!branchId) throw new RosskoProductImportError("Выберите филиал, в каталог которого нужно импортировать товары.", 409, "concrete_branch_required");
+  const orderId = input.orderId.trim();
+  if (!/^\d+$/.test(orderId)) throw new RosskoProductImportError("Укажите номер заказа ROSSKO");
+  const selected = input.rows.filter((row) => row?.selected !== false && cleanEditedText(row?.rowId, 40)).slice(0, MAX_IMPORT_ROWS);
+  if (!selected.length) throw new RosskoProductImportError("Выберите хотя бы одну готовую позицию");
+
+  const [cfg, supplier, categories] = await Promise.all([
+    rosskoConfig(),
+    resolveRosskoSupplier(branchId),
+    prisma.localProduct.findMany({
+      where: { branchId, archived: false, groupPath: { not: null } },
+      distinct: ["groupPath"],
+      select: { groupPath: true },
+      take: 2000,
+    }),
+  ]);
+  if (!supplier) throw new RosskoProductImportError(`Не найден поставщик ${ROSSKO_PRODUCT_SUPPLIER_LABEL}.`, 409, "rossko_supplier_missing");
+
+  const orderLines = extractRosskoOrderLines(await rosskoOrders(cfg, [Number(orderId)]), orderId);
+  const sourceById = new Map(orderLines.map((line) => [line.rowId, line]));
+  const allowedCategories = new Set(categories.map((row) => row.groupPath?.trim()).filter((value): value is string => Boolean(value)));
+  const results: RosskoImportExecuteResult["rows"] = [];
+  const createdProducts: RosskoImportCreatedProduct[] = [];
+
+  await mapWithConcurrency(selected, 3, async (edited) => {
+    const id = cleanEditedText(edited.rowId, 40);
+    const source = sourceById.get(id);
+    if (!source) {
+      results.push({ rowId: id, status: "FAILED", productId: null, message: "Позиция больше не найдена в заказе ROSSKO" });
+      return;
+    }
+
+    const brand = cleanEditedText(edited.brand || source.brand, 100);
+    const article = cleanEditedText(edited.article || source.article, 120).replace(/[–—−]/g, "-");
+    const name = cleanEditedText(edited.name, 240);
+    const category = cleanEditedText(edited.category, 300);
+    const retailPriceCents = Number(edited.retailPriceCents);
+    const validation: string[] = [];
+    if (!normalizeRosskoBrand(brand)) validation.push("бренд");
+    if (!normalizeRosskoArticle(article)) validation.push("артикул");
+    if (!name) validation.push("наименование");
+    if (!category || !allowedCategories.has(category)) validation.push("категория из каталога филиала");
+    if (!Number.isInteger(retailPriceCents) || retailPriceCents < 0) validation.push("розничная цена");
+    if (source.purchasePriceCents == null) validation.push("закупочная цена заказа");
+    if (validation.length) {
+      results.push({ rowId: id, status: "FAILED", productId: null, message: `Проверьте поля: ${validation.join(", ")}` });
+      return;
+    }
+
+    try {
+      const outcome = await withIdentityLock(branchId, brand, article, async () => {
+        const duplicate = await duplicateByBrandArticle(branchId, brand, article);
+        if (duplicate) return { duplicate } as const;
+
+        const oemParts = mergeProductCrossReferences(null, editableOemParts(edited.oemParts));
+        const payload: Parameters<typeof createLocalAdminProduct>[0] = {
+          name,
+          entityType: "product",
+          article,
+          groupPath: category,
+          uomName: "шт",
+          salePrice: retailPriceCents / 100,
+          buyPrice: source.purchasePriceCents! / 100,
+          currencyName: "руб.",
+          minimumBalance: 0,
+          supplierCounterpartyId: supplier.id,
+          brand,
+          oemParts: oemParts ?? undefined,
+          rosskoPartNumber: article,
+          rosskoBrand: brand,
+          supplierAttribute: supplier.name,
+          markingEnabled: false,
+          markingMode: "NOT_MARKED",
+        };
+        const created = await createLocalAdminProduct(payload, input.actor, branchId);
+        if (!created.ok) throw new RosskoProductImportError(created.error);
+        await prisma.localProduct.update({
+          where: { id: created.product.id },
+          data: {
+            origin: "IMPORT",
+            createdById: input.context.userId,
+            raw: {
+              source: "ROSSKO_ORDER_IMPORT",
+              rosskoOrderId: orderId,
+              rosskoRowId: id,
+              quantityOrdered: source.quantity,
+              importedAt: new Date().toISOString(),
+            },
+          },
+        });
+        return { created: asCreatedProduct(created.product) } as const;
+      });
+
+      if ("duplicate" in outcome && outcome.duplicate) {
+        const duplicate = outcome.duplicate;
+        results.push({ rowId: id, status: "SKIPPED_DUPLICATE", productId: duplicate.id, message: `Уже существует: ${duplicate.name}` });
+      } else {
+        createdProducts.push(outcome.created);
+        results.push({ rowId: id, status: "CREATED", productId: outcome.created.id, message: "Товар создан, остаток 0" });
+      }
+    } catch (error) {
+      console.error("ROSSKO product row import failed", { orderId, rowId: id, error });
+      results.push({
+        rowId: id,
+        status: "FAILED",
+        productId: null,
+        message: error instanceof RosskoProductImportError ? error.message : "Не удалось создать карточку товара",
+      });
+    }
+  });
+
+  const created = results.filter((row) => row.status === "CREATED").length;
+  const skipped = results.filter((row) => row.status === "SKIPPED_DUPLICATE").length;
+  const failed = results.filter((row) => row.status === "FAILED").length;
+  await prisma.branchAuditLog.create({
+    data: {
+      businessGroupId: input.context.businessGroupId,
+      branchId,
+      userId: input.context.userId,
+      action: "PRODUCTS_IMPORTED_FROM_ROSSKO_ORDER",
+      entityType: "product_import",
+      entityId: orderId,
+      metadata: {
+        rosskoOrderReference: orderId,
+        selectedPositionCount: selected.length,
+        createdCount: created,
+        skippedCount: skipped,
+        failedCount: failed,
+      },
+    },
+  });
+
+  return { orderId, selected: selected.length, created, skipped, failed, createdProducts, rows: results };
+}
