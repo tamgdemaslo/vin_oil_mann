@@ -31,7 +31,7 @@ const BRANCH_SCOPED_MODELS = new Set([
   "LocalInventoryDocumentPosition", "LocalSupplierInvoice", "LocalSupplierInvoicePayment",
   "CustomerAnalyticsSettings", "VinLookupCache", "WebhookSubscription", "CommunicationConsent",
   "NotificationLog", "ClientNotificationPreference", "OrganizationMember",
-  "ProductMannPomanMigrationAudit", "ProductImportJob", "ProductImportRow", "ClosingDocument",
+  "ProductMannPomanMigrationAudit", "ProductImportJob", "ProductImportRow", "ProductOemBatch", "ProductOemBatchItem", "ClosingDocument",
   "ClosingDocumentNumberSequence", "LocalDemandPosition", "DemandAttributeDefinition",
   "TBankIntegration", "TBankSettlementAccount", "SupplierInvoiceTBankPayment", "TBankWebhookEvent",
 ]);

@@ -4,11 +4,8 @@ import type { User } from "@/lib/auth";
 import type { BranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
 import { createLocalAdminProduct } from "@/lib/local-inventory-admin";
-import { mergeProductCrossReferences, splitProductCrossReferences } from "@/lib/product-cross-references";
-import { rosskoConfig, rosskoOrders, rosskoSearch, type RosskoConfig } from "@/lib/rossko";
+import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
 
-export const ROSSKO_PRODUCT_SUPPLIER_LABEL = "ООО «Грин Лайт»";
-const ROSSKO_PRODUCT_SUPPLIER_IDENTITY = "ооогринлайт";
 const MAX_IMPORT_ROWS = 240;
 
 export type RosskoImportStatus = "EXISTS" | "NEW" | "REVIEW" | "POSSIBLE_DUPLICATE" | "ERROR";
@@ -34,7 +31,9 @@ export type RosskoImportPreviewRow = RosskoOrderLine & {
   name: string;
   category: string;
   filterType: RosskoFilterType;
-  oemParts: string[];
+  supplierCounterpartyId: string;
+  supplierName: string;
+  supplierInn: string;
   recommendedRetailCents: number | null;
   retailPriceCents: number | null;
   existingProductId: string | null;
@@ -47,10 +46,7 @@ export type RosskoImportPreview = {
     id: string;
     positions: number;
     totalCents: number;
-    supplierName: string;
   };
-  supplier: { id: string; name: string } | null;
-  blocker: string | null;
   categories: string[];
   rows: RosskoImportPreviewRow[];
   summary: RosskoImportSummary;
@@ -73,7 +69,7 @@ export type RosskoImportExecuteRow = {
   article?: string;
   name?: string;
   category?: string;
-  oemParts?: string[] | string;
+  supplierCounterpartyId?: string;
   retailPriceCents?: number;
 };
 
@@ -189,14 +185,6 @@ export function normalizeRosskoArticle(value: unknown): string {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-export function normalizeLegalEntityName(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFKC")
-    .replace(/[ёЁ]/g, "Е")
-    .toLocaleLowerCase("ru-RU")
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
 export function recommendedRosskoRetailCents(purchasePriceCents: number | null): number | null {
   if (purchasePriceCents == null || !Number.isFinite(purchasePriceCents) || purchasePriceCents < 0) return null;
   return purchasePriceCents <= 100_000
@@ -256,54 +244,6 @@ export function extractRosskoOrderLines(data: unknown, orderId: string): RosskoO
     ).length;
     return { ...line, rowId: rowId(orderId, line.brand, line.article, occurrence) };
   });
-}
-
-const OEM_KEY_RE = /^(?:oem|oe|oemnumber|oenumber|cross|crossnumber|crossnumbers|analog|analogue|originalnumber|originalnumbers|references?)$/i;
-
-function oemValues(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(oemValues);
-  const nested = record(value);
-  if (nested) return Object.values(nested).flatMap(oemValues);
-  return splitProductCrossReferences(value);
-}
-
-export function extractRosskoOemNumbers(data: unknown, brand: string, article: string): string[] {
-  const brandKey = normalizeRosskoBrand(brand);
-  const articleKey = normalizeRosskoArticle(article);
-  const exactRows = collectRecords(data).filter((row) => {
-    const rowArticle = readText(row, ["partnumber", "partNumber", "article", "code"]);
-    const rowBrand = readText(row, ["brand", "brandName", "producer", "manufacturer"]);
-    return normalizeRosskoArticle(rowArticle) === articleKey && (!rowBrand || normalizeRosskoBrand(rowBrand) === brandKey);
-  });
-  const sourceRows = exactRows.length ? exactRows : collectRecords(data);
-  const merged = mergeProductCrossReferences(null, sourceRows.flatMap((row) =>
-    Object.entries(row)
-      .filter(([key]) => OEM_KEY_RE.test(key.replace(/[_\s-]+/g, "")))
-      .flatMap(([, value]) => oemValues(value))
-  ));
-  return splitProductCrossReferences(merged);
-}
-
-function displayArticleCandidates(data: unknown, brand: string, article: string): string[] {
-  const brandKey = normalizeRosskoBrand(brand);
-  const articleKey = normalizeRosskoArticle(article);
-  return collectRecords(data).flatMap((row) => {
-    const candidate = readText(row, ["partnumber", "partNumber", "article", "code"]);
-    const candidateBrand = readText(row, ["brand", "brandName", "producer", "manufacturer"]);
-    if (!candidate || normalizeRosskoArticle(candidate) !== articleKey) return [];
-    if (candidateBrand && normalizeRosskoBrand(candidateBrand) !== brandKey) return [];
-    return [candidate.replace(/[–—−]/g, "-").trim()];
-  });
-}
-
-function displayArticleScore(value: string): number {
-  return Number(value.includes("/")) * 6 + Number(/\s/.test(value)) * 3 + Number(value.includes("-")) * 2 + value.length / 100;
-}
-
-export function preferredRosskoArticle(data: unknown, brand: string, article: string): string {
-  return [article, ...displayArticleCandidates(data, brand, article)]
-    .filter((value, index, all) => all.indexOf(value) === index)
-    .sort((left, right) => displayArticleScore(right) - displayArticleScore(left))[0] ?? article;
 }
 
 export function inferRosskoFilterType(value: unknown): { type: RosskoFilterType; confidence: "high" | "low" } {
@@ -375,20 +315,6 @@ function categoryByType(products: CatalogIdentityRow[]) {
   ]));
 }
 
-async function resolveRosskoSupplier(branchId: string) {
-  const suppliers = await prisma.localCounterparty.findMany({
-    where: { branchId, category: "SUPPLIER", archived: false, status: "ACTIVE" },
-    select: { id: true, name: true, displayName: true, fullName: true },
-    take: 1000,
-  });
-  const matches = suppliers.filter((supplier) =>
-    [supplier.name, supplier.displayName, supplier.fullName]
-      .some((value) => normalizeLegalEntityName(value) === ROSSKO_PRODUCT_SUPPLIER_IDENTITY)
-  );
-  if (matches.length !== 1) return null;
-  return { id: matches[0].id, name: matches[0].displayName || matches[0].name };
-}
-
 async function mapWithConcurrency<T, R>(values: T[], concurrency: number, operation: (value: T, index: number) => Promise<R>): Promise<R[]> {
   const result = new Array<R>(values.length);
   let cursor = 0;
@@ -401,32 +327,17 @@ async function mapWithConcurrency<T, R>(values: T[], concurrency: number, operat
   return result;
 }
 
-async function enrichLine(cfg: RosskoConfig, line: RosskoOrderLine) {
-  if (!cfg.deliveryId) return { article: line.article, oemParts: [] as string[], warning: "В настройках ROSSKO не выбран способ доставки: OEM не загружены." };
-  try {
-    const data = await rosskoSearch(cfg, { text: line.article, deliveryId: cfg.deliveryId, addressId: cfg.addressId });
-    return {
-      article: preferredRosskoArticle(data, line.brand, line.article),
-      oemParts: extractRosskoOemNumbers(data, line.brand, line.article),
-      warning: "",
-    };
-  } catch {
-    return { article: line.article, oemParts: [] as string[], warning: "ROSSKO не вернул дополнительные OEM для этой позиции." };
-  }
-}
-
 export async function previewRosskoProductImport(input: { branchId: string; orderId: string }): Promise<RosskoImportPreview> {
   const orderId = input.orderId.trim();
   if (!/^\d+$/.test(orderId)) throw new RosskoProductImportError("Укажите номер заказа ROSSKO");
 
-  const [cfg, products, supplier] = await Promise.all([
+  const [cfg, products] = await Promise.all([
     rosskoConfig(),
     prisma.localProduct.findMany({
       where: { branchId: input.branchId, archived: false, entityType: "product", article: { not: null } },
       select: { id: true, name: true, brand: true, article: true, groupPath: true },
       take: 20_000,
     }),
-    resolveRosskoSupplier(input.branchId),
   ]);
   const orderData = await rosskoOrders(cfg, [Number(orderId)]);
   const lines = extractRosskoOrderLines(orderData, orderId);
@@ -446,10 +357,8 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
     byArticle.set(articleKey, [...(byArticle.get(articleKey) ?? []), product]);
   }
 
-  const enrichments = await mapWithConcurrency(lines, Math.max(1, Math.min(6, Math.ceil(cfg.requestsPerSecond))), (line) => enrichLine(cfg, line));
-  const rows = lines.map<RosskoImportPreviewRow>((source, index) => {
-    const enrichment = enrichments[index];
-    const article = enrichment.article;
+  const rows = lines.map<RosskoImportPreviewRow>((source) => {
+    const article = source.article;
     const brandKey = normalizeRosskoBrand(source.brand);
     const articleKey = normalizeRosskoArticle(article);
     const brand = brandDisplays.get(brandKey) || source.brand.trim();
@@ -493,12 +402,14 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
       name,
       category,
       filterType: inferred.type,
-      oemParts: enrichment.oemParts,
+      supplierCounterpartyId: "",
+      supplierName: "",
+      supplierInn: "",
       recommendedRetailCents,
       retailPriceCents: recommendedRetailCents,
       existingProductId: duplicate?.id ?? possible?.id ?? null,
       existingProductName: duplicate?.name ?? possible?.name ?? null,
-      warnings: [enrichment.warning].filter(Boolean),
+      warnings: [],
     };
   });
 
@@ -507,18 +418,11 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
       id: orderId,
       positions: rows.length,
       totalCents: rows.reduce((total, row) => total + (row.purchasePriceCents ?? 0) * row.quantity, 0),
-      supplierName: ROSSKO_PRODUCT_SUPPLIER_LABEL,
     },
-    supplier,
-    blocker: supplier ? null : `Не найден поставщик ${ROSSKO_PRODUCT_SUPPLIER_LABEL}.`,
     categories,
     rows,
     summary: summary(rows),
   };
-}
-
-function editableOemParts(value: RosskoImportExecuteRow["oemParts"]): string[] {
-  return splitProductCrossReferences(Array.isArray(value) ? value.join(";") : value);
 }
 
 function cleanEditedText(value: unknown, max: number): string {
@@ -569,9 +473,21 @@ export async function executeRosskoProductImport(input: {
   const selected = input.rows.filter((row) => row?.selected !== false && cleanEditedText(row?.rowId, 40)).slice(0, MAX_IMPORT_ROWS);
   if (!selected.length) throw new RosskoProductImportError("Выберите хотя бы одну готовую позицию");
 
-  const [cfg, supplier, categories] = await Promise.all([
+  const supplierIds = [...new Set(selected.map((row) => cleanEditedText(row.supplierCounterpartyId, 80)).filter(Boolean))];
+  const [cfg, suppliers, categories] = await Promise.all([
     rosskoConfig(),
-    resolveRosskoSupplier(branchId),
+    supplierIds.length
+      ? prisma.localCounterparty.findMany({
+          where: {
+            branchId,
+            id: { in: supplierIds },
+            category: "SUPPLIER",
+            archived: false,
+            status: "ACTIVE",
+          },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
     prisma.localProduct.findMany({
       where: { branchId, archived: false, groupPath: { not: null } },
       distinct: ["groupPath"],
@@ -579,10 +495,9 @@ export async function executeRosskoProductImport(input: {
       take: 2000,
     }),
   ]);
-  if (!supplier) throw new RosskoProductImportError(`Не найден поставщик ${ROSSKO_PRODUCT_SUPPLIER_LABEL}.`, 409, "rossko_supplier_missing");
-
   const orderLines = extractRosskoOrderLines(await rosskoOrders(cfg, [Number(orderId)]), orderId);
   const sourceById = new Map(orderLines.map((line) => [line.rowId, line]));
+  const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
   const allowedCategories = new Set(categories.map((row) => row.groupPath?.trim()).filter((value): value is string => Boolean(value)));
   const results: RosskoImportExecuteResult["rows"] = [];
   const createdProducts: RosskoImportCreatedProduct[] = [];
@@ -599,6 +514,8 @@ export async function executeRosskoProductImport(input: {
     const article = cleanEditedText(edited.article || source.article, 120).replace(/[–—−]/g, "-");
     const name = cleanEditedText(edited.name, 240);
     const category = cleanEditedText(edited.category, 300);
+    const supplierId = cleanEditedText(edited.supplierCounterpartyId, 80);
+    const supplier = supplierId ? supplierById.get(supplierId) ?? null : null;
     const retailPriceCents = Number(edited.retailPriceCents);
     const validation: string[] = [];
     if (!normalizeRosskoBrand(brand)) validation.push("бренд");
@@ -607,6 +524,7 @@ export async function executeRosskoProductImport(input: {
     if (!category || !allowedCategories.has(category)) validation.push("категория из каталога филиала");
     if (!Number.isInteger(retailPriceCents) || retailPriceCents < 0) validation.push("розничная цена");
     if (source.purchasePriceCents == null) validation.push("закупочная цена заказа");
+    if (supplierId && !supplier) validation.push("действующий поставщик из текущего филиала");
     if (validation.length) {
       results.push({ rowId: id, status: "FAILED", productId: null, message: `Проверьте поля: ${validation.join(", ")}` });
       return;
@@ -617,7 +535,6 @@ export async function executeRosskoProductImport(input: {
         const duplicate = await duplicateByBrandArticle(branchId, brand, article);
         if (duplicate) return { duplicate } as const;
 
-        const oemParts = mergeProductCrossReferences(null, editableOemParts(edited.oemParts));
         const payload: Parameters<typeof createLocalAdminProduct>[0] = {
           name,
           entityType: "product",
@@ -628,12 +545,10 @@ export async function executeRosskoProductImport(input: {
           buyPrice: source.purchasePriceCents! / 100,
           currencyName: "руб.",
           minimumBalance: 0,
-          supplierCounterpartyId: supplier.id,
+          supplierCounterpartyId: supplier?.id,
           brand,
-          oemParts: oemParts ?? undefined,
           rosskoPartNumber: article,
           rosskoBrand: brand,
-          supplierAttribute: supplier.name,
           markingEnabled: false,
           markingMode: "NOT_MARKED",
         };
@@ -691,6 +606,7 @@ export async function executeRosskoProductImport(input: {
         createdCount: created,
         skippedCount: skipped,
         failedCount: failed,
+        supplierCounterpartyIds: supplierIds,
       },
     },
   });

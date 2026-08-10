@@ -7,21 +7,19 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
 const {
-  extractRosskoOemNumbers,
   extractRosskoOrderLines,
   inferRosskoFilterType,
-  normalizeLegalEntityName,
   normalizeRosskoArticle,
   normalizeRosskoBrand,
-  preferredRosskoArticle,
   recommendedRosskoRetailCents,
 } = await jiti.import("../src/lib/rossko-product-import.ts");
+const { buildRosskoOemQuery } = await jiti.import("../src/lib/product-oem-rossko.ts");
 
 assert.equal(normalizeRosskoBrand("  Mann-Filter "), "MANNFILTER");
 assert.equal(normalizeRosskoBrand("Ёлка"), normalizeRosskoBrand("елка"));
 assert.equal(normalizeRosskoArticle("W 811/80"), normalizeRosskoArticle("w811-80"));
 assert.equal(normalizeRosskoArticle("OC—90"), normalizeRosskoArticle("OC 90"));
-assert.equal(normalizeLegalEntityName("ООО «Грин Лайт»"), normalizeLegalEntityName('ООО "ГРИНЛАЙТ"'));
+assert.equal(buildRosskoOemQuery({ article: "W 811/80", oem: "1520865F0A" }), "W 811/80");
 
 assert.equal(recommendedRosskoRetailCents(60_000), 100_000);
 assert.equal(recommendedRosskoRetailCents(100_000), 140_000);
@@ -54,29 +52,28 @@ assert.deepEqual(
 assert.equal(new Set(lines.map((line) => line.rowId)).size, 2);
 assert.equal(extractRosskoOrderLines(orderPayload, "123456")[0]?.rowId, lines[0]?.rowId);
 
-const searchPayload = {
-  SearchResults: {
-    Parts: [
-      { brand: "MANN-FILTER", partnumber: "W 811/80", oem: ["15208-65F0A", "1520865F0A"], crossNumbers: { number: ["90915-YZZE1", "15208-65F0A"] } },
-      { brand: "OTHER", partnumber: "W 811/80", oem: ["SHOULD-NOT-MATCH"] },
-    ],
-  },
-};
-assert.equal(preferredRosskoArticle(searchPayload, "MANN-FILTER", "W81180"), "W 811/80");
-assert.deepEqual(extractRosskoOemNumbers(searchPayload, "MANN-FILTER", "W81180"), ["1520865F0A", "90915YZZE1"]);
-
 assert.deepEqual(inferRosskoFilterType("Фильтр салона угольный"), { type: "cabin", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Air filter panel"), { type: "air", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Diesel fuel filter"), { type: "fuel", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Фильтр масляный"), { type: "oil", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Комплект деталей"), { type: "other", confidence: "low" });
 
-const [service, executeRoute, previewRoute] = await Promise.all([
+const [service, oemService, batchService, executeRoute, previewRoute, manualOemRoute, dialog, supplierPicker, schema] = await Promise.all([
   readFile("src/lib/rossko-product-import.ts", "utf8"),
+  readFile("src/lib/product-oem-rossko.ts", "utf8"),
+  readFile("src/lib/product-oem-batches.ts", "utf8"),
   readFile("src/app/api/products/rossko/import/execute/route.ts", "utf8"),
   readFile("src/app/api/products/rossko/import/preview/route.ts", "utf8"),
+  readFile("src/app/api/products/rossko/oem-preview/route.ts", "utf8"),
+  readFile("src/components/products/RosskoProductImportDialog.tsx", "utf8"),
+  readFile("src/components/products/ProductSupplierPicker.tsx", "utf8"),
+  readFile("prisma/schema.prisma", "utf8"),
 ]);
-assert.match(service, /supplierCounterpartyId:\s*supplier\.id/);
+assert.doesNotMatch(service, /rosskoSearch/);
+assert.doesNotMatch(service, /const payload[\s\S]*?oemParts:\s*/);
+assert.doesNotMatch(service, /GreenLight|Грин Лайт/);
+assert.match(service, /supplierCounterpartyId:\s*supplier\?\.id/);
+assert.match(service, /id:\s*\{\s*in:\s*supplierIds\s*\}/);
 assert.match(service, /minimumBalance:\s*0/);
 assert.match(service, /origin:\s*"IMPORT"/);
 assert.match(service, /PRODUCTS_IMPORTED_FROM_ROSSKO_ORDER/);
@@ -85,5 +82,21 @@ assert.doesNotMatch(service, /stockBalance\.(?:create|update|upsert)/i);
 assert.doesNotMatch(service, /inventory(?:Document|Movement|Receipt)\.(?:create|update|upsert)/i);
 assert.match(executeRoute, /requireBranchApi/);
 assert.match(previewRoute, /requireBranchApi/);
+assert.match(oemService, /fillProductOemFromRossko/);
+assert.match(oemService, /mergeProductCrossReferences/);
+assert.match(oemService, /SKIPPED_ALREADY_FILLED/);
+assert.match(manualOemRoute, /searchRosskoOemCandidates/);
+assert.match(batchService, /fillProductOemFromRossko/);
+assert.match(batchService, /processedItems/);
+assert.match(batchService, /NO_RESULTS/);
+assert.match(batchService, /ERROR/);
+assert.match(batchService, /PRODUCT_OEM_BATCH_RETRYABLE_ITEM_STATUSES/);
+assert.match(dialog, /После импорта/);
+assert.match(dialog, /supplierCounterpartyId/);
+assert.match(dialog, /Заполнить OEM для/);
+assert.match(supplierPicker, /\/api\/suppliers\?/);
+assert.match(supplierPicker, /\/api\/suppliers\/quick-create/);
+assert.match(schema, /model ProductOemBatch/);
+assert.match(schema, /model ProductOemBatchItem/);
 
 console.log("ROSSKO order product import contract — passed");

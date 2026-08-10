@@ -32,8 +32,11 @@ import {
 } from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
 import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranchDialog";
+import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
 import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
+import type { ProductOemBatchView } from "@/lib/product-oem-batches";
+import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import {
   bulkOilSetupProblems,
   deriveProductMarkingStatus,
@@ -996,20 +999,6 @@ function hiddenCharacteristicLabels(form: ProductForm) {
   return filledLabels(form, [...oilCharacteristicFields, ...filterCharacteristicFields]);
 }
 
-function mergeTextList(existing: string, additions: string[]) {
-  const normalized = new Set<string>();
-  const result: string[] = [];
-  for (const raw of [existing, ...additions].join("\n").split(/[\n,;]+/)) {
-    const value = raw.trim();
-    if (!value) continue;
-    const key = normalizeFieldSearch(value);
-    if (normalized.has(key)) continue;
-    normalized.add(key);
-    result.push(value);
-  }
-  return result.join("\n");
-}
-
 function isMarkingEnabled(form: ProductForm): boolean {
   return form.markingEnabled === "true";
 }
@@ -1516,6 +1505,8 @@ export default function ProductsClient() {
   const [formOpen, setFormOpen] = useState(false);
   const [rosskoImportOpen, setRosskoImportOpen] = useState(false);
   const [rosskoLastImportVisible, setRosskoLastImportVisible] = useState(false);
+  const [oemBatchDialog, setOemBatchDialog] = useState<{ productIds: string[]; source: string; existingBatchId?: string } | null>(null);
+  const [knownOemBatch, setKnownOemBatch] = useState<ProductOemBatchView | null>(null);
   const [listViewRevision, setListViewRevision] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
@@ -1694,6 +1685,28 @@ export default function ProductsClient() {
     filtersCollapsed ? "is-filter-collapsed" : "",
     filtersDrawerOpen ? "is-filter-drawer-open" : "",
   ].filter(Boolean).join(" ");
+  const loadKnownOemBatch = useCallback(async (batchId?: string) => {
+    try {
+      const response = await fetch(batchId
+        ? `/api/products/oem-batches/${encodeURIComponent(batchId)}`
+        : "/api/products/oem-batches?active=1&limit=1", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json() as { batch?: ProductOemBatchView; batches?: ProductOemBatchView[] };
+      const next = data.batch ?? data.batches?.[0] ?? null;
+      if (next) setKnownOemBatch(next);
+    } catch {
+      // The catalog remains usable when progress restoration is temporarily unavailable.
+    }
+  }, []);
+
+  useEffect(() => { void loadKnownOemBatch(); }, [loadKnownOemBatch]);
+
+  useEffect(() => {
+    if (!knownOemBatch || !["QUEUED", "RUNNING"].includes(knownOemBatch.status)) return;
+    const timer = window.setInterval(() => void loadKnownOemBatch(knownOemBatch.id), 3_000);
+    return () => window.clearInterval(timer);
+  }, [knownOemBatch, loadKnownOemBatch]);
+
   const formDirty = useMemo(
     () => isProductFormDirty(form, formBaseline),
     [form, formBaseline]
@@ -2103,6 +2116,11 @@ export default function ProductsClient() {
     setMeta(null);
     setMatchedOutsideFilters(0);
     setToast({ message: `Показаны товары последнего импорта ROSSKO: ${createdRows.length}` });
+  }
+
+  function startOemForImportedProducts(productIds: string[]) {
+    setRosskoImportOpen(false);
+    setOemBatchDialog({ productIds, source: "ROSSKO_IMPORT" });
   }
 
   function updateMarkingForm(patch: Partial<ProductForm>) {
@@ -2897,7 +2915,7 @@ export default function ProductsClient() {
       return;
     }
     updateForm({
-      oemParts: mergeTextList(form.oemParts, selected.flatMap((item) => [item.oem, item.partNumber].filter(Boolean))),
+      oemParts: mergeProductCrossReferences(form.oemParts, selected.flatMap((item) => [item.oem, item.partNumber].filter(Boolean))) ?? "",
       rosskoBrand: form.rosskoBrand || selected.find((item) => item.brand)?.brand || "",
       rosskoPartNumber: form.rosskoPartNumber || selected.find((item) => item.partNumber)?.partNumber || "",
     });
@@ -4495,6 +4513,16 @@ export default function ProductsClient() {
         open={rosskoImportOpen}
         onClose={() => setRosskoImportOpen(false)}
         onShowCreated={showRosskoCreatedProducts}
+        onStartOem={startOemForImportedProducts}
+      />
+
+      <ProductOemBatchPanel
+        open={Boolean(oemBatchDialog)}
+        productIds={oemBatchDialog?.productIds ?? []}
+        source={oemBatchDialog?.source ?? "CATALOG"}
+        existingBatchId={oemBatchDialog?.existingBatchId ?? null}
+        onClose={() => setOemBatchDialog(null)}
+        onBatchChange={setKnownOemBatch}
       />
 
       {toast ? (
@@ -4743,11 +4771,20 @@ export default function ProductsClient() {
               )}
             </div>
             <div className="eco-products-strip-meta">
-              {selectedProductIds.length > 0 ? <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span> : null}
+              {selectedProductIds.length > 0 ? <>
+                <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span>
+                <button type="button" className="eco-btn eco-btn--compact" onClick={() => setOemBatchDialog({ productIds: selectedProductIds, source: "CATALOG" })}>Заполнить OEM</button>
+              </> : null}
               <span>{visibleProductsLabel} из {totalProductsLabel}</span>
             </div>
           </div>
         ) : null}
+
+        {knownOemBatch ? <div className={`eco-oem-batch-banner ${["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "is-active" : knownOemBatch.status === "COMPLETED" ? "is-success" : "has-warning"}`}>
+          <div><b>{["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "Заполняем OEM в фоне" : knownOemBatch.status === "COMPLETED" ? "Заполнение OEM завершено" : "OEM заполнены с замечаниями"}</b><span>{knownOemBatch.processedItems} из {knownOemBatch.totalItems} обработано · {knownOemBatch.completedItems} заполнено{knownOemBatch.errorItems + knownOemBatch.noResultsItems ? ` · ${knownOemBatch.errorItems + knownOemBatch.noResultsItems} требуют внимания` : ""}</span></div>
+          <div className="eco-oem-batch-banner__bar"><i style={{ width: `${knownOemBatch.totalItems ? Math.round(knownOemBatch.processedItems / knownOemBatch.totalItems * 100) : 0}%` }} /></div>
+          <button type="button" className="eco-btn" onClick={() => setOemBatchDialog({ productIds: [], source: knownOemBatch.source, existingBatchId: knownOemBatch.id })}>Открыть</button>
+        </div> : null}
 
         {((error && !(error === "Не удалось выполнить поиск" && rows.length === 0)) || info) && (
           <div className={`eco-products-notice ${error ? "is-error" : "is-success"}`}>

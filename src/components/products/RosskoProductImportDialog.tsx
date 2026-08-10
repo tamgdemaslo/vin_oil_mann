@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
+  DatabaseZap,
   Loader2,
   PackageCheck,
   RefreshCw,
@@ -20,6 +19,7 @@ import type {
   RosskoImportPreviewRow,
   RosskoImportStatus,
 } from "@/lib/rossko-product-import";
+import ProductSupplierPicker, { type ProductSupplierChoice } from "@/components/products/ProductSupplierPicker";
 
 const ROSSKO_ORDERS_STORAGE_KEY = "vin-oil-restock-rossko-orders";
 
@@ -107,10 +107,12 @@ export default function RosskoProductImportDialog({
   open,
   onClose,
   onShowCreated,
+  onStartOem,
 }: {
   open: boolean;
   onClose: () => void;
   onShowCreated: (products: RosskoImportCreatedProduct[]) => void;
+  onStartOem: (productIds: string[]) => void;
 }) {
   const [orders, setOrders] = useState<OrderChoice[]>([]);
   const [orderId, setOrderId] = useState("");
@@ -121,7 +123,7 @@ export default function RosskoProductImportDialog({
   const [query, setQuery] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [expandedOemRowId, setExpandedOemRowId] = useState<string | null>(null);
+  const [defaultSupplier, setDefaultSupplier] = useState<ProductSupplierChoice | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,10 +154,17 @@ export default function RosskoProductImportDialog({
       if (filter !== "all" && row.status !== filter) return false;
       if (brandFilter && row.brand !== brandFilter) return false;
       if (categoryFilter && row.category !== categoryFilter) return false;
-      if (needle && ![row.brand, row.article, row.name, row.sourceName, ...row.oemParts].join(" ").toLocaleLowerCase("ru-RU").includes(needle)) return false;
+      if (needle && ![row.brand, row.article, row.name, row.sourceName, row.supplierName, row.supplierInn].join(" ").toLocaleLowerCase("ru-RU").includes(needle)) return false;
       return true;
     });
   }, [brandFilter, categoryFilter, filter, query, rows]);
+  const resultSupplierLabel = useMemo(() => {
+    if (!result) return "";
+    const createdRowIds = new Set(result.rows.filter((row) => row.status === "CREATED").map((row) => row.rowId));
+    const names = [...new Set(rows.filter((row) => createdRowIds.has(row.rowId)).map((row) => row.supplierName || "Не выбран").filter(Boolean))];
+    if (!names.length) return "Не выбран";
+    return names.length === 1 ? names[0] : `Разные поставщики (${names.length})`;
+  }, [result, rows]);
 
   async function loadPreview(id = orderId) {
     const cleanId = id.trim();
@@ -181,6 +190,7 @@ export default function RosskoProductImportDialog({
       setQuery("");
       setBrandFilter("");
       setCategoryFilter("");
+      setDefaultSupplier(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Не удалось проверить заказ ROSSKO");
     } finally {
@@ -216,8 +226,18 @@ export default function RosskoProductImportDialog({
     })));
   }
 
+  function applyDefaultSupplier(supplier: ProductSupplierChoice | null) {
+    setDefaultSupplier(supplier);
+    setRows((current) => current.map((row) => row.selected && row.status !== "EXISTS" && row.status !== "ERROR" ? {
+      ...row,
+      supplierCounterpartyId: supplier?.id ?? "",
+      supplierName: supplier?.displayName ?? "",
+      supplierInn: supplier?.inn ?? "",
+    } : row));
+  }
+
   async function executeImport() {
-    if (!preview || !summary.selected || creating || preview.blocker) return;
+    if (!preview || !summary.selected || creating) return;
     setCreating(true);
     setError(null);
     try {
@@ -234,7 +254,7 @@ export default function RosskoProductImportDialog({
             article: row.article,
             name: row.name,
             category: row.category,
-            oemParts: row.oemParts,
+            supplierCounterpartyId: row.supplierCounterpartyId,
             retailPriceCents: row.retailPriceCents,
           })),
         }),
@@ -296,7 +316,7 @@ export default function RosskoProductImportDialog({
                     <input type="radio" name="rossko-order" checked={orderId === order.id} onChange={() => setOrderId(order.id)} />
                     <span><b>№ {order.id}</b><small>{dateLabel(order.orderedAt)}</small></span>
                     <dl><div><dt>Позиций</dt><dd>{order.positions}</dd></div><div><dt>Сумма</dt><dd>{order.total > 0 ? `${order.total.toLocaleString("ru-RU")} ₽` : "уточняется"}</dd></div></dl>
-                    <em>ООО «Грин Лайт»</em>
+                    <em>Поставщик выбирается на шаге проверки</em>
                   </label>
                 ))}
               </div>
@@ -333,6 +353,12 @@ export default function RosskoProductImportDialog({
               <div><dt>Требует проверки</dt><dd>{summary.review + summary.possibleDuplicate}</dd></div>
               <div><dt>Ошибок</dt><dd>{result.failed}</dd></div>
             </dl>
+            <p className="rossko-import-result__supplier">Поставщик: <b>{resultSupplierLabel}</b></p>
+            {result.createdProducts.length ? <div className="rossko-import-result__oem">
+              <DatabaseZap size={20} />
+              <div><b>OEM Parts пока не заполнялись</b><span>Без OEM: {result.createdProducts.length}. Это отдельная фоновая операция; импорт уже завершён.</span></div>
+              <button type="button" className="eco-btn eco-btn--primary" onClick={() => onStartOem(result.createdProducts.map((product) => product.id))}>Заполнить OEM для {result.createdProducts.length}</button>
+            </div> : null}
             {error ? <div className="rossko-import-error"><AlertTriangle size={16} />{error}</div> : null}
             <footer className="rossko-import-footer">
               <button type="button" className="eco-btn" onClick={onClose}>Вернуться к товарам</button>
@@ -347,11 +373,9 @@ export default function RosskoProductImportDialog({
         ) : (
           <div className="rossko-import-preview">
             <div className="rossko-import-preview__topline">
-              <div><strong>Заказ № {preview.order.id}</strong><span>{preview.order.positions} позиций · {money(preview.order.totalCents)} · ООО «Грин Лайт»</span></div>
+              <div><strong>Заказ № {preview.order.id}</strong><span>{preview.order.positions} позиций · {money(preview.order.totalCents)} · OEM будут заполняться отдельно</span></div>
               <button type="button" className="eco-btn" onClick={() => { setPreview(null); setRows([]); setError(null); }} disabled={creating}>Выбрать другой</button>
             </div>
-
-            {preview.blocker ? <div className="rossko-import-blocker"><AlertTriangle size={18} /><div><b>Импорт заблокирован</b><span>{preview.blocker}</span></div></div> : null}
 
             <div className="rossko-import-summary">
               <span><em>Всего</em><b>{summary.total}</b></span>
@@ -362,13 +386,17 @@ export default function RosskoProductImportDialog({
             </div>
 
             <div className="rossko-import-toolbar">
+              <div className="rossko-import-default-supplier">
+                <div><b>Поставщик для выбранных позиций</b><span>Выбор здесь применяется ко всем отмеченным новым товарам. Ниже можно изменить отдельные строки.</span></div>
+                <ProductSupplierPicker value={defaultSupplier} onChange={applyDefaultSupplier} placeholder="Выбрать из базы" />
+              </div>
               <div className="rossko-import-toolbar__actions">
                 <button type="button" className="eco-btn" onClick={selectAllNew}>Выбрать все новые</button>
                 <button type="button" className="eco-btn" onClick={clearSelection}>Снять выбор</button>
                 <button type="button" className="eco-btn" onClick={recalculateRetail}><RefreshCw size={14} /> Пересчитать цены</button>
               </div>
               <div className="rossko-import-toolbar__filters">
-                <label className="rossko-import-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Бренд, артикул, OEM…" /></label>
+                <label className="rossko-import-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Бренд, артикул, поставщик…" /></label>
                 <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Все бренды</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select>
                 <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">Все категории</option>{preview.categories.map((category) => <option key={category}>{category}</option>)}</select>
               </div>
@@ -395,14 +423,17 @@ export default function RosskoProductImportDialog({
                         <td><input value={row.article} onChange={(event) => patchRow(row.rowId, { article: event.target.value })} disabled={row.status === "EXISTS"} /></td>
                         <td><textarea rows={2} value={row.name} onChange={(event) => patchRow(row.rowId, { name: event.target.value })} disabled={row.status === "EXISTS"} /></td>
                         <td><select value={row.category} onChange={(event) => patchRow(row.rowId, { category: event.target.value })} disabled={row.status === "EXISTS"}><option value="">Выберите…</option>{preview.categories.map((category) => <option key={category}>{category}</option>)}</select></td>
-                        <td><button type="button" className="rossko-import-oem-button" onClick={() => setExpandedOemRowId((current) => current === row.rowId ? null : row.rowId)}>{row.oemParts.length ? `${row.oemParts.length} номеров` : "Нет OEM"}{expandedOemRowId === row.rowId ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button></td>
+                        <td><span className="rossko-import-oem-pending" title="OEM Parts не запрашиваются во время импорта. Их можно заполнить фоново после создания товара.">После импорта</span></td>
                         <td className="is-number"><b>{money(row.purchasePriceCents)}</b><small>{row.quantity} шт. в заказе</small></td>
                         <td className={belowRecommended ? "has-price-warning" : ""}><input className="rossko-import-money-input" inputMode="decimal" value={row.retailPriceCents == null ? "" : row.retailPriceCents / 100} onChange={(event) => { const value = Number(event.target.value.replace(",", ".")); patchRow(row.rowId, { retailPriceCents: Number.isFinite(value) ? Math.round(value * 100) : null }); }} disabled={row.status === "EXISTS"} />{belowRecommended ? <small>Ниже рекомендации на {money(row.recommendedRetailCents! - row.retailPriceCents!)}</small> : <small>мин. {money(row.recommendedRetailCents)}</small>}</td>
-                        <td><span className="rossko-import-supplier">ООО «Грин Лайт»</span></td>
+                        <td><ProductSupplierPicker
+                          compact
+                          disabled={row.status === "EXISTS"}
+                          value={row.supplierCounterpartyId ? { id: row.supplierCounterpartyId, displayName: row.supplierName, inn: row.supplierInn, legalForm: "", status: "ACTIVE" } : null}
+                          onChange={(supplier) => patchRow(row.rowId, { supplierCounterpartyId: supplier?.id ?? "", supplierName: supplier?.displayName ?? "", supplierInn: supplier?.inn ?? "" })}
+                          placeholder="Без поставщика"
+                        /></td>
                       </tr>,
-                      expandedOemRowId === row.rowId ? (
-                        <tr key={`${row.rowId}-oem`} className="rossko-import-oem-row"><td colSpan={10}><label><span>OEM Part / кросс-номера / аналоги</span><textarea value={row.oemParts.join("; ")} onChange={(event) => patchRow(row.rowId, { oemParts: event.target.value.split(/[;,\n]+/).map((value) => value.trim()).filter(Boolean) })} placeholder="ROSSKO не вернул OEM — можно добавить вручную" disabled={row.status === "EXISTS"} /></label>{row.warnings.map((warning) => <small key={warning}><AlertTriangle size={13} />{warning}</small>)}</td></tr>
-                      ) : null,
                     ];
                   })}
                 </tbody>
@@ -414,7 +445,7 @@ export default function RosskoProductImportDialog({
             <footer className="rossko-import-footer rossko-import-preview__footer">
               <span>{summary.selected ? `Выбрано ${summary.selected} из ${summary.total}` : "Выберите готовые позиции"}</span>
               <button type="button" className="eco-btn" onClick={onClose} disabled={creating}>Закрыть</button>
-              <button type="button" className="eco-btn eco-btn--primary" onClick={() => void executeImport()} disabled={!summary.selected || creating || Boolean(preview.blocker)}>
+              <button type="button" className="eco-btn eco-btn--primary" onClick={() => void executeImport()} disabled={!summary.selected || creating}>
                 {creating ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
                 {creating ? "Создаём товары…" : `Создать ${summary.selected} товаров`}
               </button>

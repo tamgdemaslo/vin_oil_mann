@@ -2212,6 +2212,7 @@ model LocalProduct {
   markingAuditLogs           ProductMarkingAuditLog[]
   mannLinks                  ProductMannLink[]
   mannPomanMigrationAudits   ProductMannPomanMigrationAudit[]
+  oemBatchItems              ProductOemBatchItem[]
   supplierCounterparty       LocalCounterparty?               @relation("ProductSupplierCounterparty", fields: [branchId, supplierCounterpartyId], references: [branchId, id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([branchId, id])
@@ -2672,6 +2673,59 @@ model ProductImportRow {
   @@index([status])
   @@index([branchId])
   @@map("product_import_rows")
+}
+
+/// Durable background run that fills OEM Parts for catalog products through ROSSKO.
+model ProductOemBatch {
+  id                 String    @id @default(cuid())
+  branchId           String    @default("branch-main") @map("branch_id")
+  createdById        String?   @map("created_by_id")
+  source             String    @default("CATALOG")
+  status             String    @default("QUEUED")
+  totalItems         Int       @default(0) @map("total_items")
+  processedItems     Int       @default(0) @map("processed_items")
+  completedItems     Int       @default(0) @map("completed_items")
+  noResultsItems     Int       @default(0) @map("no_results_items")
+  errorItems         Int       @default(0) @map("error_items")
+  skippedItems       Int       @default(0) @map("skipped_items")
+  currentProductId   String?   @map("current_product_id")
+  currentProductName String?   @map("current_product_name")
+  startedAt          DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt         DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items ProductOemBatchItem[]
+
+  @@unique([branchId, id])
+  @@index([branchId, status, createdAt])
+  @@index([branchId, createdAt])
+  @@map("product_oem_batches")
+}
+
+model ProductOemBatchItem {
+  id           String    @id @default(cuid())
+  branchId     String    @default("branch-main") @map("branch_id")
+  batchId      String    @map("batch_id")
+  productId    String    @map("product_id")
+  status       String    @default("PENDING")
+  attempts     Int       @default(0)
+  foundCount   Int       @default(0) @map("found_count")
+  errorMessage String?   @map("error_message") @db.Text
+  startedAt    DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  batch   ProductOemBatch @relation(fields: [branchId, batchId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+  product LocalProduct    @relation(fields: [branchId, productId], references: [branchId, id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([branchId, id])
+  @@unique([batchId, productId])
+  @@index([branchId, status, createdAt])
+  @@index([batchId, status])
+  @@index([branchId, productId])
+  @@map("product_oem_batch_items")
 }
 
 model LocalProductPhoto {
