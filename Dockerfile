@@ -5,7 +5,11 @@ FROM node:20-bookworm-slim AS dependencies
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
-RUN apt-get update \
+RUN sed -i \
+    -e 's|http://deb.debian.org/debian-security|http://mirror.yandex.ru/debian-security|g' \
+    -e 's|http://deb.debian.org/debian|http://mirror.yandex.ru/debian|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*
 
@@ -44,7 +48,11 @@ ENV NODE_ENV=production \
 
 # Keep the large Chromium/system layer independent from per-release metadata so
 # subsequent deploys can reuse it instead of downloading and exporting it again.
-RUN apt-get update \
+RUN sed -i \
+    -e 's|http://deb.debian.org/debian-security|http://mirror.yandex.ru/debian-security|g' \
+    -e 's|http://deb.debian.org/debian|http://mirror.yandex.ru/debian|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates chromium curl fonts-dejavu-core openssl \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1001 app \
