@@ -1,4 +1,3 @@
-import { Inter } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
@@ -11,12 +10,6 @@ import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
 import "./tags-print.css";
 
 export const dynamic = "force-dynamic";
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-});
 
 const tagPageCss = `
 @media print {
@@ -72,7 +65,7 @@ export default async function ShipmentUnderHoodTagsPage({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: tagPageCss }} />
-      <div id="tags-print-mount" className={`tags-print-root ${inter.className}`}>
+      <div id="tags-print-mount" className="tags-print-root eco-print-inter-font">
         <PosterAutoPrint enabled={autoprint} />
         <div className="tags-sheet">
           <UnderHoodTags data={data} />

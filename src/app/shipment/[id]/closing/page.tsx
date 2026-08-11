@@ -1,4 +1,3 @@
-import { Inter } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
@@ -6,12 +5,6 @@ import { buildClosingDocumentPayload, loadClosingDocument, type ClosingDocumentT
 import { ClosingDocumentPrint, ClosingDocumentStyles } from "@/components/closing-documents/ClosingDocumentPrint";
 import { ClosingDocumentToolbar } from "@/components/closing-documents/ClosingDocumentToolbar";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  display: "swap",
-});
 
 function isClosingType(value: string | undefined): value is ClosingDocumentType {
   return value === "closing_work_order" || value === "work_act" || value === "upd_print";
@@ -134,7 +127,7 @@ export default async function ClosingDocumentPage({
   return (
     <>
       <ClosingDocumentStyles />
-      <main className={`cdoc-screen ${inter.className}`}>
+      <main className="cdoc-screen eco-print-inter-font">
         <PosterAutoPrint enabled={sp.autoprint === "1"} />
         {sp.pdf !== "1" ? (
           <ClosingDocumentToolbar shipmentId={id} documentId={existing?.id} pdfHref={pdfHref} />

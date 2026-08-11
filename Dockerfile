@@ -30,9 +30,29 @@ ENV APP_RELEASE=$APP_RELEASE \
     APP_EXPECTED_MIGRATION=$APP_EXPECTED_MIGRATION
 
 COPY . ./
-RUN npx next build --webpack
+RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
+  npx next build --webpack
 
 FROM node:20-bookworm-slim AS app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    CHROME_PATH=/usr/bin/chromium \
+    APP_DATA_DIR=/app/.data
+
+# Keep the large Chromium/system layer independent from per-release metadata so
+# subsequent deploys can reuse it instead of downloading and exporting it again.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates chromium fonts-dejavu-core openssl \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 1001 app \
+  && useradd --uid 1001 --gid app --create-home app \
+  && mkdir -p /app/.data \
+  && chown app:app /app/.data
+
+WORKDIR /app
 
 ARG APP_RELEASE=development
 ARG APP_COMMIT_SHA=unknown
@@ -53,26 +73,11 @@ LABEL org.opencontainers.image.title="Eco Platform" \
       ru.tamgdemaslo.expected-migration=$APP_EXPECTED_MIGRATION \
       ru.tamgdemaslo.tests=$APP_TEST_RESULT
 
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000 \
-    HOSTNAME=0.0.0.0 \
-    CHROME_PATH=/usr/bin/chromium \
-    APP_RELEASE=$APP_RELEASE \
+ENV APP_RELEASE=$APP_RELEASE \
     APP_COMMIT_SHA=$APP_COMMIT_SHA \
     APP_BUILT_AT=$APP_BUILT_AT \
-    APP_EXPECTED_MIGRATION=$APP_EXPECTED_MIGRATION \
-    APP_DATA_DIR=/app/.data
+    APP_EXPECTED_MIGRATION=$APP_EXPECTED_MIGRATION
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates chromium fonts-dejavu-core openssl \
-  && rm -rf /var/lib/apt/lists/* \
-  && groupadd --gid 1001 app \
-  && useradd --uid 1001 --gid app --create-home app \
-  && mkdir -p /app/.data \
-  && chown app:app /app/.data
-
-WORKDIR /app
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public

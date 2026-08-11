@@ -1,4 +1,3 @@
-import { Inter } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
@@ -9,12 +8,6 @@ import OrderPoster from "@/components/print/OrderPoster";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
 
 export const dynamic = "force-dynamic";
-
-const inter = Inter({
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-});
 
 const posterShellCss = `
 .poster-print-root {
@@ -216,7 +209,7 @@ export default async function ShipmentPosterPrintPage({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: posterShellCss }} />
-      <div id="poster-print-mount" className={`poster-print-root ${inter.className}`}>
+      <div id="poster-print-mount" className="poster-print-root eco-print-inter-font">
         <PosterAutoPrint enabled={autoprint} />
         <div className="poster-sheet print-document">
           <OrderPoster data={data} />

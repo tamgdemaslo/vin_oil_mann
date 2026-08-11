@@ -17,6 +17,10 @@
   --eco-z-nested-dialog: 150;
 }
 
+.eco-print-inter-font {
+  font-family: Inter, "Open Sans", Roboto, Arial, sans-serif;
+}
+
 /* Cross-branch product copy: a focused operational dialog, intentionally
    separate from stock-transfer surfaces. */
 .eco-copy-dialog-backdrop {
