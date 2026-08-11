@@ -89,10 +89,4 @@ RUN chmod 755 /usr/local/bin/start-app
 USER app
 EXPOSE 3000
 
-# Timeweb checks Dockerfile applications from localhost. Declare the probe in
-# the image so it does not depend on panel-side probe generation or extra tools
-# such as curl being present in the runtime image.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=6 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
-
 CMD ["/usr/local/bin/start-app"]
