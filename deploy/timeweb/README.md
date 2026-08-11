@@ -11,7 +11,8 @@ or connect to a production host.
   application on port `3000`).
 - Branch: `main`.
 - Auto-deploy: enabled.
-- Health endpoint: `/api/health/ready`.
+- Health endpoint: `/api/health/live` (declared as `HEALTHCHECK` in the
+  `Dockerfile`). Verify `/api/health/ready` separately after each release.
 
 Set production values as App Platform variables. At minimum the application
 requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, `APP_ORIGIN`, and
