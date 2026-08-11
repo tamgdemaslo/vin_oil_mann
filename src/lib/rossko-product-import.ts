@@ -7,6 +7,7 @@ import { createLocalAdminProduct, supplierCounterpartyIdentityWhere } from "@/li
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
 
 const MAX_IMPORT_ROWS = 240;
+const ROSSKO_IMPORT_CONCURRENCY = 1;
 
 export type RosskoImportStatus = "EXISTS" | "NEW" | "REVIEW" | "POSSIBLE_DUPLICATE" | "ERROR";
 export type RosskoFilterType = "oil" | "air" | "cabin" | "fuel" | "other";
@@ -450,7 +451,9 @@ async function duplicateByBrandArticle(branchId: string, brand: string, article:
 async function withIdentityLock<T>(branchId: string, brand: string, article: string, operation: () => Promise<T>): Promise<T> {
   const lockKey = `rossko-product:${branchId}:${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
+    `);
     return operation();
   }, { maxWait: 10_000, timeout: 30_000 });
 }
@@ -501,7 +504,7 @@ export async function executeRosskoProductImport(input: {
   const results: RosskoImportExecuteResult["rows"] = [];
   const createdProducts: RosskoImportCreatedProduct[] = [];
 
-  await mapWithConcurrency(selected, 3, async (edited) => {
+  await mapWithConcurrency(selected, ROSSKO_IMPORT_CONCURRENCY, async (edited) => {
     const id = cleanEditedText(edited.rowId, 40);
     const source = sourceById.get(id);
     if (!source) {
