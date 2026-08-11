@@ -11,8 +11,9 @@ or connect to a production host.
   application on port `3000`).
 - Branch: `main`.
 - Auto-deploy: enabled.
-- Leave the App Platform health-check path empty. Verify `/api/health/live` and
-  `/api/health/ready` separately after each release.
+- Health endpoint: `/api/health/live`. The runtime image includes `curl` for
+  Timeweb's container-side probe. Verify `/api/health/ready` separately after
+  each release.
 
 Set production values as App Platform variables. At minimum the application
 requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, `APP_ORIGIN`, and

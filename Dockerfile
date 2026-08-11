@@ -45,7 +45,7 @@ ENV NODE_ENV=production \
 # Keep the large Chromium/system layer independent from per-release metadata so
 # subsequent deploys can reuse it instead of downloading and exporting it again.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates chromium fonts-dejavu-core openssl \
+  && apt-get install -y --no-install-recommends ca-certificates chromium curl fonts-dejavu-core openssl \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1001 app \
   && useradd --uid 1001 --gid app --create-home app \
