@@ -99,6 +99,8 @@ assert.match(batchService, /processedItems/);
 assert.match(batchService, /NO_RESULTS/);
 assert.match(batchService, /ERROR/);
 assert.match(batchService, /PRODUCT_OEM_BATCH_RETRYABLE_ITEM_STATUSES/);
+assert.match(batchService, /create:\s*productIds\.map\(\(productId\)\s*=>\s*\(\{\s*productId\s*\}\)\)/);
+assert.doesNotMatch(batchService, /create:\s*productIds\.map\(\(productId\)\s*=>\s*\(\{[^}]*branchId:/);
 assert.match(dialog, /После импорта/);
 assert.match(dialog, /supplierCounterpartyId/);
 assert.match(dialog, /Заполнить OEM для/);

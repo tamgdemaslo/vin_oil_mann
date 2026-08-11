@@ -131,7 +131,7 @@ export async function createProductOemBatch(input: {
       source,
       totalItems: productIds.length,
       items: {
-        create: productIds.map((productId) => ({ branchId: input.branchId, productId })),
+        create: productIds.map((productId) => ({ productId })),
       },
     },
     include: batchInclude,
