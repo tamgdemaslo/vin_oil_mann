@@ -38,6 +38,13 @@ export async function GET(request: NextRequest) {
     stock: sp.get("stock") ?? undefined,
     markingProblems: sp.get("markingProblems") === "1" || sp.get("markingProblems") === "true",
     priceMissing: sp.get("priceMissing") === "1" || sp.get("priceMissing") === "true",
+    oemParts: sp.get("oemParts") === "filled" || sp.get("oemParts") === "missing"
+      ? sp.get("oemParts") as CatalogSearchParams["oemParts"]
+      : "all",
+    oemBatchId: sp.get("oemBatchId") ?? undefined,
+    oemEnrichmentResult: ["remaining", "error", "no_results", "missing_source"].includes(sp.get("oemEnrichmentResult") ?? "")
+      ? sp.get("oemEnrichmentResult") as CatalogSearchParams["oemEnrichmentResult"]
+      : undefined,
     origin: ["MANUAL", "BRANCH_COPY", "IMPORT", "SYNC"].includes(sp.get("origin") ?? "")
       ? sp.get("origin") ?? undefined
       : undefined,

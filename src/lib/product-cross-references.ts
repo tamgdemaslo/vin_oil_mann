@@ -55,6 +55,14 @@ export function splitProductCrossReferences(value: unknown): string[] {
   return result;
 }
 
+export function productCrossReferenceCount(value: unknown): number {
+  return splitProductCrossReferences(value).length;
+}
+
+export function hasProductCrossReferences(value: unknown): boolean {
+  return productCrossReferenceCount(value) > 0;
+}
+
 export function mergeProductCrossReferences(
   existing: unknown,
   additions: Array<unknown>

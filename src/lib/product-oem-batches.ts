@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/db";
+import { resolveCatalogProductSelection } from "@/lib/catalog-search";
 import { fillProductOemFromRossko } from "@/lib/product-oem-rossko";
 
 export const PRODUCT_OEM_BATCH_ACTIVE_STATUSES = ["QUEUED", "RUNNING"] as const;
-export const PRODUCT_OEM_BATCH_RETRYABLE_ITEM_STATUSES = ["NO_RESULTS", "ERROR"] as const;
-const PRODUCT_OEM_BATCH_TERMINAL_ITEM_STATUSES = ["COMPLETED", "NO_RESULTS", "ERROR", "SKIPPED_ALREADY_FILLED"] as const;
+export const PRODUCT_OEM_BATCH_RETRYABLE_ITEM_STATUSES = ["FAILED", "ERROR"] as const;
+const PRODUCT_OEM_BATCH_TERMINAL_ITEM_STATUSES = ["COMPLETED", "NO_RESULTS", "FAILED", "ERROR", "MISSING_SOURCE_DATA", "SKIPPED_ALREADY_FILLED"] as const;
 const MAX_BATCH_PRODUCTS = 500;
 
 export type ProductOemBatchStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_ERRORS" | "CANCELLED" | "FAILED";
-export type ProductOemBatchItemStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "NO_RESULTS" | "ERROR" | "SKIPPED_ALREADY_FILLED";
+export type ProductOemBatchItemStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "NO_RESULTS" | "FAILED" | "ERROR" | "MISSING_SOURCE_DATA" | "SKIPPED_ALREADY_FILLED";
 
 export type ProductOemBatchView = {
   id: string;
@@ -18,6 +19,8 @@ export type ProductOemBatchView = {
   completedItems: number;
   noResultsItems: number;
   errorItems: number;
+  missingSourceItems: number;
+  remainingItems: number;
   skippedItems: number;
   currentProductId: string | null;
   currentProductName: string | null;
@@ -38,6 +41,28 @@ export type ProductOemBatchView = {
 
 function uniqueProductIds(values: unknown[]) {
   return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))].slice(0, MAX_BATCH_PRODUCTS + 1);
+}
+
+async function validatedProductIds(branchId: string, values: unknown[]) {
+  const productIds = uniqueProductIds(values);
+  if (!productIds.length) throw new Error("Выберите хотя бы один товар");
+  if (productIds.length > MAX_BATCH_PRODUCTS) throw new Error(`За один запуск можно обработать не более ${MAX_BATCH_PRODUCTS} товаров`);
+  const products = await prisma.localProduct.findMany({
+    where: { branchId, id: { in: productIds }, archived: false },
+    select: { id: true },
+  });
+  const found = new Set(products.map((product) => product.id));
+  if (productIds.some((id) => !found.has(id))) throw new Error("Часть выбранных товаров не найдена в текущем филиале");
+  return productIds;
+}
+
+async function resolveBatchProductIds(input: { branchId: string; productIds?: unknown[]; selection?: unknown }) {
+  if (Array.isArray(input.productIds) && input.productIds.length) return validatedProductIds(input.branchId, input.productIds);
+  if (input.selection) {
+    const resolved = await resolveCatalogProductSelection(input.selection, MAX_BATCH_PRODUCTS);
+    return validatedProductIds(input.branchId, resolved.productIds);
+  }
+  throw new Error("Выберите хотя бы один товар");
 }
 
 function safeError(error: unknown) {
@@ -70,6 +95,7 @@ function view(batch: {
     product: { name: string; article: string | null };
   }>;
 }): ProductOemBatchView {
+  const missingSourceItems = batch.items.filter((item) => item.status === "MISSING_SOURCE_DATA").length;
   return {
     id: batch.id,
     source: batch.source,
@@ -79,6 +105,8 @@ function view(batch: {
     completedItems: batch.completedItems,
     noResultsItems: batch.noResultsItems,
     errorItems: batch.errorItems,
+    missingSourceItems,
+    remainingItems: batch.noResultsItems + batch.errorItems + missingSourceItems,
     skippedItems: batch.skippedItems,
     currentProductId: batch.currentProductId,
     currentProductName: batch.currentProductName,
@@ -111,17 +139,7 @@ export async function createProductOemBatch(input: {
   productIds: unknown[];
   source?: string;
 }) {
-  const productIds = uniqueProductIds(input.productIds);
-  if (!productIds.length) throw new Error("Выберите хотя бы один товар");
-  if (productIds.length > MAX_BATCH_PRODUCTS) throw new Error(`За один запуск можно обработать не более ${MAX_BATCH_PRODUCTS} товаров`);
-
-  const products = await prisma.localProduct.findMany({
-    where: { branchId: input.branchId, id: { in: productIds }, archived: false, entityType: "product" },
-    select: { id: true },
-  });
-  const found = new Set(products.map((product) => product.id));
-  const missing = productIds.filter((id) => !found.has(id));
-  if (missing.length) throw new Error("Часть выбранных товаров не найдена в текущем филиале");
+  const productIds = await validatedProductIds(input.branchId, input.productIds);
 
   const source = String(input.source ?? "CATALOG").trim().toUpperCase().slice(0, 40) || "CATALOG";
   const batch = await prisma.productOemBatch.create({
@@ -137,6 +155,37 @@ export async function createProductOemBatch(input: {
     include: batchInclude,
   });
   return view(batch);
+}
+
+export async function previewProductOemBatch(input: {
+  branchId: string;
+  productIds?: unknown[];
+  selection?: unknown;
+}) {
+  const productIds = await resolveBatchProductIds(input);
+  const products = await prisma.localProduct.findMany({
+    where: { branchId: input.branchId, id: { in: productIds } },
+    select: { id: true, name: true, article: true },
+  });
+  const byId = new Map(products.map((product) => [product.id, product]));
+  return {
+    total: productIds.length,
+    items: productIds.slice(0, 8).flatMap((id) => {
+      const product = byId.get(id);
+      return product ? [{ id: product.id, name: product.name, article: product.article ?? "" }] : [];
+    }),
+  };
+}
+
+export async function createProductOemBatchFromSelection(input: {
+  branchId: string;
+  createdById?: string | null;
+  productIds?: unknown[];
+  selection?: unknown;
+  source?: string;
+}) {
+  const productIds = await resolveBatchProductIds(input);
+  return createProductOemBatch({ ...input, productIds });
 }
 
 export async function getProductOemBatch(branchId: string, batchId: string) {
@@ -187,7 +236,8 @@ async function refreshBatchCounters(branchId: string, batchId: string) {
   const count = (status: string) => items.filter((item) => item.status === status).length;
   const completedItems = count("COMPLETED");
   const noResultsItems = count("NO_RESULTS");
-  const errorItems = count("ERROR");
+  const errorItems = count("FAILED") + count("ERROR");
+  const missingSourceItems = count("MISSING_SOURCE_DATA");
   const skippedItems = count("SKIPPED_ALREADY_FILLED");
   const processedItems = items.filter((item) => PRODUCT_OEM_BATCH_TERMINAL_ITEM_STATUSES.includes(item.status as never)).length;
   const finished = processedItems === items.length;
@@ -199,7 +249,7 @@ async function refreshBatchCounters(branchId: string, batchId: string) {
       noResultsItems,
       errorItems,
       skippedItems,
-      status: finished ? (errorItems || noResultsItems ? "COMPLETED_WITH_ERRORS" : "COMPLETED") : "RUNNING",
+      status: finished ? (errorItems || noResultsItems || missingSourceItems ? "COMPLETED_WITH_ERRORS" : "COMPLETED") : "RUNNING",
       currentProductId: finished ? null : undefined,
       currentProductName: finished ? null : undefined,
       finishedAt: finished ? new Date() : null,
@@ -246,14 +296,18 @@ export async function processNextProductOemItem(branchId: string) {
         data: {
           status: result.status,
           foundCount: result.foundCount,
-          errorMessage: result.status === "NO_RESULTS" ? "ROSSKO не вернул OEM для этого товара" : null,
+          errorMessage: result.status === "NO_RESULTS"
+            ? "ROSSKO не вернул OEM для этого товара"
+            : result.status === "MISSING_SOURCE_DATA"
+              ? result.reason
+              : null,
           finishedAt: new Date(),
         },
       });
     } catch (error) {
       await prisma.productOemBatchItem.updateMany({
         where: { branchId, id: candidate.id, status: "PROCESSING" },
-        data: { status: "ERROR", errorMessage: safeError(error), finishedAt: new Date() },
+        data: { status: "FAILED", errorMessage: safeError(error), finishedAt: new Date() },
       });
     }
 

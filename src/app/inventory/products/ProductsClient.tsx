@@ -36,7 +36,7 @@ import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
 import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
 import type { ProductOemBatchView } from "@/lib/product-oem-batches";
-import { mergeProductCrossReferences } from "@/lib/product-cross-references";
+import { mergeProductCrossReferences, splitProductCrossReferences } from "@/lib/product-cross-references";
 import {
   bulkOilSetupProblems,
   deriveProductMarkingStatus,
@@ -114,6 +114,8 @@ type ProductRow = {
   rosskoMin: string;
   supplierAttribute: string;
   oemParts: string;
+  oemPartsCount?: number;
+  oemPartsPreview?: string[];
   cell: string;
   mannCharacteristicName: string;
   imageHref: string;
@@ -152,6 +154,8 @@ type ProductSortKey =
   | "updatedAt";
 type SortDirection = "asc" | "desc";
 type StockFilter = "all" | "inStock" | "outOfStock";
+type OemPartsFilter = "all" | "filled" | "missing";
+type OemEnrichmentResultFilter = "remaining" | "error" | "no_results" | "missing_source";
 type ProductOriginFilter = "all" | "MANUAL" | "BRANCH_COPY" | "IMPORT" | "SYNC";
 
 const productOriginLabels: Record<ProductOriginFilter, string> = {
@@ -174,6 +178,7 @@ type ProductFilters = {
   stock: StockFilter;
   markingProblems: boolean;
   priceMissing: boolean;
+  oemParts: OemPartsFilter;
 };
 
 type ProductFacetOption = {
@@ -222,6 +227,13 @@ type ProductToast = {
   actionLabel?: string;
   onAction?: () => void;
 };
+type ProductOemBatchDialogState = {
+  productIds: string[];
+  selection?: Record<string, unknown>;
+  source: string;
+  existingBatchId?: string;
+};
+type OemEnrichmentResultState = { batchId: string; result: OemEnrichmentResultFilter } | null;
 type ProductGroupKind = "oil" | "filter" | "other";
 type ActionMenuPosition = {
   top: number;
@@ -551,6 +563,7 @@ const emptyFilters: ProductFilters = {
   stock: "all",
   markingProblems: false,
   priceMissing: false,
+  oemParts: "all",
 };
 
 const emptyFilterOptions: ProductFilterOptions = {
@@ -580,6 +593,11 @@ const stockOptions: Array<{ value: StockFilter; label: string }> = [
   { value: "all", label: "Все остатки" },
   { value: "inStock", label: "В наличии" },
   { value: "outOfStock", label: "Нет на остатке" },
+];
+const oemPartsOptions: Array<{ value: OemPartsFilter; label: string }> = [
+  { value: "all", label: "Все" },
+  { value: "filled", label: "Заполнены" },
+  { value: "missing", label: "Не заполнены" },
 ];
 const PRODUCT_PAGE_LIMIT = 50;
 const NEW_GROUP_VALUE = "__new_group__";
@@ -800,7 +818,7 @@ function uniqueGroupsByLabel(groups: string[]) {
   return result;
 }
 
-type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing">;
+type MultiFilterKey = Exclude<keyof ProductFilters, "stock" | "markingProblems" | "priceMissing" | "oemParts">;
 type FacetKey = "group" | "brand" | "sae" | "supplier" | "apiSpec" | "acea" | "packageVolume" | "entityType";
 type FacetOrderState = Record<FacetKey, Map<string, number>>;
 type FacetPreviewPinState = Record<FacetKey, Set<string>>;
@@ -1487,11 +1505,19 @@ export default function ProductsClient() {
     ? searchOrigin as ProductOriginFilter
     : "all";
   const initialCopyBatchId = searchParams.get("copyBatchId")?.trim() ?? "";
+  const initialOemParts = searchParams.get("oemParts") === "filled" || searchParams.get("oemParts") === "missing"
+    ? searchParams.get("oemParts") as OemPartsFilter
+    : "all";
+  const initialOemBatchId = searchParams.get("oemBatchId")?.trim() ?? "";
+  const initialOemResultValue = searchParams.get("oemEnrichmentResult")?.trim() ?? "";
+  const initialOemResult: OemEnrichmentResultState = initialOemBatchId && ["remaining", "error", "no_results", "missing_source"].includes(initialOemResultValue)
+    ? { batchId: initialOemBatchId, result: initialOemResultValue as OemEnrichmentResultFilter }
+    : null;
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [meta, setMeta] = useState<ProductListMeta | null>(null);
   const [matchedOutsideFilters, setMatchedOutsideFilters] = useState(0);
   const [search, setSearch] = useState(initialSearch);
-  const [filters, setFilters] = useState<ProductFilters>(emptyFilters);
+  const [filters, setFilters] = useState<ProductFilters>({ ...emptyFilters, oemParts: initialOemParts });
   const [originFilter, setOriginFilter] = useState<ProductOriginFilter>(initialOrigin);
   const [copyBatchId, setCopyBatchId] = useState(initialCopyBatchId);
   const [sort, setSort] = useState<ProductSortKey>("name");
@@ -1505,8 +1531,10 @@ export default function ProductsClient() {
   const [formOpen, setFormOpen] = useState(false);
   const [rosskoImportOpen, setRosskoImportOpen] = useState(false);
   const [rosskoLastImportVisible, setRosskoLastImportVisible] = useState(false);
-  const [oemBatchDialog, setOemBatchDialog] = useState<{ productIds: string[]; source: string; existingBatchId?: string } | null>(null);
+  const [oemBatchDialog, setOemBatchDialog] = useState<ProductOemBatchDialogState | null>(null);
   const [knownOemBatch, setKnownOemBatch] = useState<ProductOemBatchView | null>(null);
+  const [oemEnrichmentResult, setOemEnrichmentResult] = useState<OemEnrichmentResultState>(initialOemResult);
+  const [oemDetailsProduct, setOemDetailsProduct] = useState<ProductRow | null>(null);
   const [listViewRevision, setListViewRevision] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeProduct, setActiveProduct] = useState<ProductRow | null>(null);
@@ -1536,6 +1564,7 @@ export default function ProductsClient() {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [allFilteredProductsSelected, setAllFilteredProductsSelected] = useState(false);
   const [canCopyProducts, setCanCopyProducts] = useState(false);
   const [copyProductIds, setCopyProductIds] = useState<string[] | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -1569,6 +1598,7 @@ export default function ProductsClient() {
   const loadingMoreRef = useRef(false);
   const initialLoadStartedRef = useRef(false);
   const skipNextListLoadRef = useRef(false);
+  const handledTerminalOemBatchesRef = useRef<Set<string>>(new Set());
 
   const setActionMenuButtonRef = useCallback((id: string, node: HTMLButtonElement | null) => {
     if (node) {
@@ -1672,12 +1702,15 @@ export default function ProductsClient() {
   const activeFiltersCount = useMemo(
     () => Object.entries(filters).reduce((count, [key, value]) => {
       if (key === "stock") return count + (value !== "all" ? 1 : 0);
+      if (key === "oemParts") return count + (value !== "all" ? 1 : 0);
       if (key === "markingProblems" || key === "priceMissing") return count + (value === true ? 1 : 0);
       return count + (Array.isArray(value) ? value.length : 0);
     }, 0),
     [filters]
   );
-  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || rosskoLastImportVisible;
+  const hasActiveSearchOrFilters = Boolean(search.trim()) || activeFiltersCount > 0 || originFilter !== "all" || Boolean(copyBatchId) || Boolean(oemEnrichmentResult) || rosskoLastImportVisible;
+  const selectedProductsCount = allFilteredProductsSelected ? (meta?.total ?? rows.length) : selectedProductIds.length;
+  const allVisibleProductsSelected = rows.length > 0 && (allFilteredProductsSelected || rows.every((row) => selectedProductIds.includes(row.id)));
   const totalProductsLabel = (meta?.total ?? rows.length).toLocaleString("ru-RU");
   const visibleProductsLabel = `${rows.length.toLocaleString("ru-RU")}${meta?.hasMore ? "+" : ""}`;
   const filtersLayoutClass = [
@@ -1706,6 +1739,35 @@ export default function ProductsClient() {
     const timer = window.setInterval(() => void loadKnownOemBatch(knownOemBatch.id), 3_000);
     return () => window.clearInterval(timer);
   }, [knownOemBatch, loadKnownOemBatch]);
+
+  const handleOemBatchChange = useCallback((batch: ProductOemBatchView) => {
+    setKnownOemBatch(batch);
+    if (["QUEUED", "RUNNING"].includes(batch.status) || handledTerminalOemBatchesRef.current.has(batch.id)) return;
+    handledTerminalOemBatchesRef.current.add(batch.id);
+    setSelectedProductIds([]);
+    setAllFilteredProductsSelected(false);
+    setListViewRevision((current) => current + 1);
+    setToast({
+      message: `Обработано ${batch.processedItems.toLocaleString("ru-RU")}. OEM заполнены у ${batch.completedItems.toLocaleString("ru-RU")}. Осталось без OEM — ${batch.remainingItems.toLocaleString("ru-RU")}.`,
+    });
+  }, []);
+
+  const showOemEnrichmentResult = useCallback((batchId: string, result: OemEnrichmentResultFilter) => {
+    setFilters((prev) => ({ ...prev, oemParts: "missing" }));
+    setOemEnrichmentResult({ batchId, result });
+    setOemBatchDialog(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("oemParts", "missing");
+      url.searchParams.set("oemBatchId", batchId);
+      url.searchParams.set("oemEnrichmentResult", result);
+      window.history.replaceState(null, "", url);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (knownOemBatch && !["QUEUED", "RUNNING"].includes(knownOemBatch.status)) handleOemBatchChange(knownOemBatch);
+  }, [handleOemBatchChange, knownOemBatch]);
 
   const formDirty = useMemo(
     () => isProductFormDirty(form, formBaseline),
@@ -1794,6 +1856,9 @@ export default function ProductsClient() {
       if (key === "stock") {
         const stockValue = value as StockFilter;
         if (stockValue !== "all") params.set(key, stockValue);
+      } else if (key === "oemParts") {
+        const oemPartsValue = value as OemPartsFilter;
+        if (oemPartsValue !== "all") params.set(key, oemPartsValue);
       } else if (key === "markingProblems") {
         if (value === true) params.set(key, "1");
       } else if (key === "priceMissing") {
@@ -1804,7 +1869,24 @@ export default function ProductsClient() {
     }
     if (originFilter !== "all") params.set("origin", originFilter);
     if (copyBatchId) params.set("copyBatchId", copyBatchId);
+    if (oemEnrichmentResult) {
+      params.set("oemBatchId", oemEnrichmentResult.batchId);
+      params.set("oemEnrichmentResult", oemEnrichmentResult.result);
+    }
     return params;
+  }
+
+  function buildCatalogSelectionSnapshot(): Record<string, unknown> {
+    return {
+      q: search.trim(),
+      ...filters,
+      origin: originFilter,
+      copyBatchId,
+      oemBatchId: oemEnrichmentResult?.batchId ?? "",
+      oemEnrichmentResult: oemEnrichmentResult?.result ?? "all",
+      sort,
+      direction,
+    };
   }
 
   async function load(nextSearch = search, nextSort = sort, nextDirection = direction, nextFilters = filters) {
@@ -2035,7 +2117,12 @@ export default function ProductsClient() {
     }, delay);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sort, direction, filters, originFilter, copyBatchId, listViewRevision]);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult, listViewRevision]);
+
+  useEffect(() => {
+    setSelectedProductIds([]);
+    setAllFilteredProductsSelected(false);
+  }, [search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult]);
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -2073,7 +2160,7 @@ export default function ProductsClient() {
     observer.observe(target);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters, originFilter, copyBatchId]);
+  }, [meta?.hasMore, rows.length, loading, loadingMore, search, sort, direction, filters, originFilter, copyBatchId, oemEnrichmentResult]);
 
 
   function updateForm(patch: Partial<ProductForm>) {
@@ -2274,6 +2361,16 @@ export default function ProductsClient() {
     }
   }
 
+  function clearOemEnrichmentResultFilter() {
+    setOemEnrichmentResult(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("oemBatchId");
+      url.searchParams.delete("oemEnrichmentResult");
+      window.history.replaceState(null, "", url);
+    }
+  }
+
   function pinFacetPreviewValue(key: FacetKey, value: string) {
     const stableKey = facetStableKey(key, value);
     if (stableKey) facetPreviewPinsRef.current[key].add(stableKey);
@@ -2281,6 +2378,18 @@ export default function ProductsClient() {
 
   function changeStockFilter(value: StockFilter) {
     setFilters((prev) => ({ ...prev, stock: value }));
+    closeFilterDrawerOnMobile();
+  }
+
+  function changeOemPartsFilter(value: OemPartsFilter) {
+    setFilters((prev) => ({ ...prev, oemParts: value }));
+    if (value !== "missing") clearOemEnrichmentResultFilter();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (value === "all") url.searchParams.delete("oemParts");
+      else url.searchParams.set("oemParts", value);
+      window.history.replaceState(null, "", url);
+    }
     closeFilterDrawerOnMobile();
   }
 
@@ -2309,6 +2418,12 @@ export default function ProductsClient() {
     setFilters(emptyFilters);
     setOriginFilter("all");
     setCopyBatchId("");
+    clearOemEnrichmentResultFilter();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("oemParts");
+      window.history.replaceState(null, "", url);
+    }
   }
 
   function resetAll() {
@@ -2316,6 +2431,12 @@ export default function ProductsClient() {
     setFilters(emptyFilters);
     setOriginFilter("all");
     setCopyBatchId("");
+    clearOemEnrichmentResultFilter();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("oemParts");
+      window.history.replaceState(null, "", url);
+    }
   }
 
   function buildExportParams(scope: "all" | "current" | "selected" | "active" | "archived") {
@@ -2495,19 +2616,38 @@ export default function ProductsClient() {
   }
 
   function toggleProductSelection(id: string) {
-    setSelectedProductIds((prev) => (
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    ));
+    if (allFilteredProductsSelected) {
+      setAllFilteredProductsSelected(false);
+      setSelectedProductIds(rows.map((row) => row.id).filter((rowId) => rowId !== id));
+      return;
+    }
+    setSelectedProductIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
   }
 
   function toggleVisibleProductsSelection() {
     const visibleIds = rows.map((row) => row.id);
-    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedProductIds.includes(id));
+    const allSelected = allFilteredProductsSelected || (visibleIds.length > 0 && visibleIds.every((id) => selectedProductIds.includes(id)));
+    setAllFilteredProductsSelected(false);
     setSelectedProductIds((prev) => (
       allSelected
         ? prev.filter((id) => !visibleIds.includes(id))
         : [...new Set([...prev, ...visibleIds])]
     ));
+  }
+
+  function selectAllFilteredProducts() {
+    if (!(meta?.total ?? 0)) return;
+    setAllFilteredProductsSelected(true);
+    setSelectedProductIds([]);
+  }
+
+  function openOemBatchForSelection() {
+    if (!selectedProductsCount) return;
+    setOemBatchDialog({
+      productIds: allFilteredProductsSelected ? [] : selectedProductIds,
+      selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
+      source: filters.oemParts === "missing" ? "CATALOG_OEM_MISSING" : "CATALOG",
+    });
   }
 
   function removeFilterValue(key: MultiFilterKey, value: string) {
@@ -2682,6 +2822,26 @@ export default function ProductsClient() {
         onRemove: () => setFilters((prev) => ({ ...prev, priceMissing: false })),
       });
     }
+    if (filters.oemParts !== "all") {
+      chips.push({
+        key: "oemParts",
+        label: `OEM Parts: ${oemPartsOptions.find((option) => option.value === filters.oemParts)?.label ?? filters.oemParts}`,
+        onRemove: () => changeOemPartsFilter("all"),
+      });
+    }
+    if (oemEnrichmentResult) {
+      const resultLabels: Record<OemEnrichmentResultFilter, string> = {
+        remaining: "Оставшиеся без OEM",
+        error: "Ошибка",
+        no_results: "ROSSKO ничего не нашёл",
+        missing_source: "Не хватает бренда/артикула",
+      };
+      chips.push({
+        key: "oemEnrichmentResult",
+        label: `OEM enrichment result: ${resultLabels[oemEnrichmentResult.result]}`,
+        onRemove: clearOemEnrichmentResultFilter,
+      });
+    }
     if (originFilter !== "all") {
       chips.push({
         key: "origin",
@@ -2729,7 +2889,7 @@ export default function ProductsClient() {
   function renderSkeletonRows() {
     return Array.from({ length: 7 }, (_, index) => (
       <tr key={`skeleton-${index}`} className="eco-product-skeleton-row">
-        {Array.from({ length: 9 }, (_cell, cellIndex) => (
+        {Array.from({ length: 10 }, (_cell, cellIndex) => (
           <td key={cellIndex}>
             <span className="eco-product-skeleton-line" />
           </td>
@@ -4516,13 +4676,39 @@ export default function ProductsClient() {
         onStartOem={startOemForImportedProducts}
       />
 
+      {oemDetailsProduct ? createPortal(
+        <div className="eco-oem-details-backdrop" role="presentation" onMouseDown={() => setOemDetailsProduct(null)}>
+          <aside className="eco-oem-details-drawer" role="dialog" aria-modal="true" aria-labelledby="eco-oem-details-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><span>OEM Parts</span><h2 id="eco-oem-details-title">{oemDetailsProduct.name}</h2></div>
+              <button type="button" onClick={() => setOemDetailsProduct(null)} aria-label="Закрыть"><X aria-hidden className="eco-icon" /></button>
+            </header>
+            <div className="eco-oem-details-list">
+              {splitProductCrossReferences(oemDetailsProduct.oemParts).slice(0, 12).map((value) => <code key={value}>{value}</code>)}
+            </div>
+            {splitProductCrossReferences(oemDetailsProduct.oemParts).length > 12 ? <p>Показаны первые 12 из {splitProductCrossReferences(oemDetailsProduct.oemParts).length}.</p> : null}
+            <footer>
+              <button type="button" className="eco-btn" onClick={() => setOemDetailsProduct(null)}>Закрыть</button>
+              <button type="button" className="eco-btn eco-btn--primary" onClick={() => {
+                const product = oemDetailsProduct;
+                setOemDetailsProduct(null);
+                openProductEditor(product);
+              }}>Открыть карточку товара</button>
+            </footer>
+          </aside>
+        </div>,
+        document.body
+      ) : null}
+
       <ProductOemBatchPanel
         open={Boolean(oemBatchDialog)}
         productIds={oemBatchDialog?.productIds ?? []}
+        selection={oemBatchDialog?.selection ?? null}
         source={oemBatchDialog?.source ?? "CATALOG"}
         existingBatchId={oemBatchDialog?.existingBatchId ?? null}
         onClose={() => setOemBatchDialog(null)}
-        onBatchChange={setKnownOemBatch}
+        onBatchChange={handleOemBatchChange}
+        onShowResult={showOemEnrichmentResult}
       />
 
       {toast ? (
@@ -4678,6 +4864,18 @@ export default function ProductsClient() {
             </div>
 
             <div className="eco-filter-group">
+              <div className="eco-filter-title">OEM Parts</div>
+              <select
+                className="eco-input"
+                value={filters.oemParts}
+                onChange={(event) => changeOemPartsFilter(event.target.value as OemPartsFilter)}
+                aria-label="Фильтр OEM Parts"
+              >
+                {oemPartsOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+
+            <div className="eco-filter-group">
               <div className="eco-filter-title">Маркировка</div>
               <button
                 type="button"
@@ -4749,7 +4947,7 @@ export default function ProductsClient() {
               {activeFiltersCount > 0 ? <b>{activeFiltersCount}</b> : null}
             </button>
 
-        {(hasActiveSearchOrFilters || selectedProductIds.length > 0) ? (
+        {(hasActiveSearchOrFilters || selectedProductsCount > 0) ? (
           <div className="eco-products-strip">
             <div className="eco-products-chips">
               {rosskoLastImportVisible ? (
@@ -4771,9 +4969,12 @@ export default function ProductsClient() {
               )}
             </div>
             <div className="eco-products-strip-meta">
-              {selectedProductIds.length > 0 ? <>
-                <span>Выбрано: {selectedProductIds.length.toLocaleString("ru-RU")}</span>
-                <button type="button" className="eco-btn eco-btn--compact" onClick={() => setOemBatchDialog({ productIds: selectedProductIds, source: "CATALOG" })}>Заполнить OEM</button>
+              {selectedProductsCount > 0 ? <>
+                <span>{allFilteredProductsSelected
+                  ? `Выбрано ${selectedProductsCount.toLocaleString("ru-RU")} товаров`
+                  : `Выбрано ${selectedProductsCount.toLocaleString("ru-RU")} товаров на этой странице`}</span>
+                {!allFilteredProductsSelected && (meta?.total ?? 0) > selectedProductsCount ? <button type="button" className="eco-products-select-all" onClick={selectAllFilteredProducts}>Выбрать все {(meta?.total ?? 0).toLocaleString("ru-RU")} товаров</button> : null}
+                <button type="button" className="eco-btn eco-btn--compact" onClick={openOemBatchForSelection}>Заполнить OEM Parts из ROSSKO</button>
               </> : null}
               <span>{visibleProductsLabel} из {totalProductsLabel}</span>
             </div>
@@ -4781,7 +4982,7 @@ export default function ProductsClient() {
         ) : null}
 
         {knownOemBatch ? <div className={`eco-oem-batch-banner ${["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "is-active" : knownOemBatch.status === "COMPLETED" ? "is-success" : "has-warning"}`}>
-          <div><b>{["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "Заполняем OEM в фоне" : knownOemBatch.status === "COMPLETED" ? "Заполнение OEM завершено" : "OEM заполнены с замечаниями"}</b><span>{knownOemBatch.processedItems} из {knownOemBatch.totalItems} обработано · {knownOemBatch.completedItems} заполнено{knownOemBatch.errorItems + knownOemBatch.noResultsItems ? ` · ${knownOemBatch.errorItems + knownOemBatch.noResultsItems} требуют внимания` : ""}</span></div>
+          <div><b>{["QUEUED", "RUNNING"].includes(knownOemBatch.status) ? "Заполняем OEM в фоне" : knownOemBatch.status === "COMPLETED" ? "Заполнение OEM завершено" : "OEM заполнены с замечаниями"}</b><span>{knownOemBatch.processedItems} из {knownOemBatch.totalItems} обработано · {knownOemBatch.completedItems} заполнено{knownOemBatch.remainingItems ? ` · ${knownOemBatch.remainingItems} требуют внимания` : ""}</span></div>
           <div className="eco-oem-batch-banner__bar"><i style={{ width: `${knownOemBatch.totalItems ? Math.round(knownOemBatch.processedItems / knownOemBatch.totalItems * 100) : 0}%` }} /></div>
           <button type="button" className="eco-btn" onClick={() => setOemBatchDialog({ productIds: [], source: knownOemBatch.source, existingBatchId: knownOemBatch.id })}>Открыть</button>
         </div> : null}
@@ -4799,13 +5000,14 @@ export default function ProductsClient() {
                 <th style={{ width: 42 }}>
                   <input
                     type="checkbox"
-                    checked={rows.length > 0 && rows.every((row) => selectedProductIds.includes(row.id))}
+                    checked={allVisibleProductsSelected}
                     onChange={toggleVisibleProductsSelection}
                     aria-label="Выбрать видимые товары"
                   />
                 </th>
                 <th>{sortHeader("Название / категория", "name")}</th>
                 <th>Ячейка</th>
+                <th>OEM</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Остаток", "quantity", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Доступно", "available", "right")}</th>
                 <th style={{ textAlign: "right" }}>{sortHeader("Закуп.", "buyPrice", "right")}</th>
@@ -4820,7 +5022,7 @@ export default function ProductsClient() {
               )}
               {!loading && error === "Не удалось выполнить поиск" && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <div className="eco-products-empty is-error">
                       <strong>Не удалось выполнить поиск</strong>
                       <span>Попробуйте обновить страницу или изменить запрос.</span>
@@ -4833,7 +5035,7 @@ export default function ProductsClient() {
               )}
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <div className="eco-products-empty">
                       <strong>{emptyStateCopy().title}</strong>
                       <span>{emptyStateCopy().text}</span>
@@ -4858,12 +5060,13 @@ export default function ProductsClient() {
               )}
               {!loading && !(error === "Не удалось выполнить поиск" && rows.length === 0) && rows.map((row) => {
                 const markingBadge = productMarkingListBadge(row);
+                const normalizedOemParts = splitProductCrossReferences(row.oemParts);
                 return (
                 <tr key={row.id} className={row.archived ? "is-archived" : ""}>
                   <td>
                     <input
                       type="checkbox"
-                      checked={selectedProductIds.includes(row.id)}
+                      checked={allFilteredProductsSelected || selectedProductIds.includes(row.id)}
                       onChange={() => toggleProductSelection(row.id)}
                       aria-label={`Выбрать ${row.name}`}
                     />
@@ -4888,6 +5091,9 @@ export default function ProductsClient() {
                     </div>
                   </td>
                   <td className="eco-product-cell">{row.cell || "—"}</td>
+                  <td className="eco-product-oem-cell">
+                    {normalizedOemParts.length ? <button type="button" onClick={() => setOemDetailsProduct(row)} aria-label={`Показать ${normalizedOemParts.length} OEM для ${row.name}`}>{normalizedOemParts.length} OEM</button> : <span title="OEM Parts не заполнены">—</span>}
+                  </td>
                   <td className="eco-product-number">
                     <span className={`eco-stock-badge ${row.totalQuantity > 0 ? "is-positive" : "is-empty"}`}>{formatQty(row.totalQuantity)}</span>
                   </td>

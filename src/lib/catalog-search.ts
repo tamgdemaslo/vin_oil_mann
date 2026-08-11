@@ -8,6 +8,7 @@ import {
   type ProductMarkingMode,
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
+import { splitProductCrossReferences } from "@/lib/product-cross-references";
 
 type LocalEntityMeta = {
   href: string;
@@ -19,6 +20,8 @@ type ProductAttribute = { id?: string; name?: string; value?: unknown; meta?: { 
 
 export type CatalogSearchContext = "products" | "shipment";
 export type CatalogSearchType = "product" | "service" | "all";
+export type CatalogOemPartsFilter = "all" | "filled" | "missing";
+export type CatalogOemEnrichmentResultFilter = "all" | "remaining" | "error" | "no_results" | "missing_source";
 
 export type CatalogSearchParams = {
   q?: string;
@@ -40,6 +43,9 @@ export type CatalogSearchParams = {
   stock?: string;
   markingProblems?: boolean;
   priceMissing?: boolean;
+  oemParts?: CatalogOemPartsFilter;
+  oemBatchId?: string;
+  oemEnrichmentResult?: CatalogOemEnrichmentResultFilter;
   origin?: string;
   copyBatchId?: string;
   inStock?: boolean;
@@ -53,6 +59,8 @@ export type CatalogSearchParams = {
   mannName?: string;
   params?: string;
   strictNameOem?: boolean;
+  /** Server-only override used to resolve a complete bulk-selection snapshot. */
+  internalLimit?: number;
 };
 
 type CatalogProduct = Prisma.LocalProductGetPayload<{
@@ -158,6 +166,8 @@ export type CatalogSearchItem = {
   rosskoMin: string;
   supplierAttribute: string;
   oemParts: string;
+  oemPartsCount: number;
+  oemPartsPreview: string[];
   cell: string;
   mannCharacteristicName: string;
   imageHref: string;
@@ -233,6 +243,7 @@ export type CatalogSearchResult = {
       stock: StockFilter;
       markingProblems: boolean;
       priceMissing: boolean;
+      oemParts: CatalogOemPartsFilter;
     };
     filterOptions: {
       brands: string[];
@@ -747,6 +758,28 @@ function normalizeStockFilter(value?: string): StockFilter {
   return value === "inStock" || value === "outOfStock" ? value : "all";
 }
 
+function normalizeOemPartsFilter(value?: string): CatalogOemPartsFilter {
+  return value === "filled" || value === "missing" ? value : "all";
+}
+
+function normalizeOemEnrichmentResultFilter(value?: string): CatalogOemEnrichmentResultFilter {
+  return value === "remaining" || value === "error" || value === "no_results" || value === "missing_source" ? value : "all";
+}
+
+function oemEnrichmentStatusFilter(params: CatalogSearchParams): Prisma.LocalProductWhereInput {
+  const batchId = params.oemBatchId?.trim() ?? "";
+  const result = normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult);
+  if (!batchId || result === "all") return {};
+  const statuses = result === "remaining"
+    ? ["FAILED", "ERROR", "NO_RESULTS", "MISSING_SOURCE_DATA"]
+    : result === "error"
+      ? ["FAILED", "ERROR"]
+      : result === "no_results"
+        ? ["NO_RESULTS"]
+        : ["MISSING_SOURCE_DATA"];
+  return { oemBatchItems: { some: { batchId, status: { in: statuses } } } };
+}
+
 function normalizeType(value?: string): CatalogSearchType {
   if (value === "product" || value === "service" || value === "all") return value;
   return "all";
@@ -792,6 +825,8 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
     return false;
   }
   if (filters.priceMissing && !item.priceNeedsSetup) return false;
+  if (filters.oemParts === "filled" && item.oemPartsCount === 0) return false;
+  if (filters.oemParts === "missing" && item.oemPartsCount > 0) return false;
   return true;
 }
 
@@ -886,6 +921,7 @@ function compareItems(a: CatalogSearchItem, b: CatalogSearchItem, sort: SortKey,
 }
 
 function mapProduct(product: CatalogProduct, relevance: number, matchedFields: CatalogMatchedField[]): CatalogSearchItem {
+  const normalizedOemParts = splitProductCrossReferences(product.oemParts);
   const stock = product.stockBalances.map((balance) => ({
     storeId: balance.storeId,
     storeName: balance.store?.name ?? "",
@@ -950,6 +986,8 @@ function mapProduct(product: CatalogProduct, relevance: number, matchedFields: C
     rosskoMin: product.rosskoMin ?? "",
     supplierAttribute: product.supplierAttribute ?? "",
     oemParts: product.oemParts ?? "",
+    oemPartsCount: normalizedOemParts.length,
+    oemPartsPreview: normalizedOemParts.slice(0, 8),
     cell: firstStock?.slotName || product.cell || getCellFromAttributes(product.attributes) || "",
     mannCharacteristicName: product.mannCharacteristicName ?? "",
     imageHref: product.imageHref ?? "",
@@ -1018,7 +1056,10 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
   const q = [params.q, params.oem, params.mannName, params.params].filter(Boolean).join(" ");
   const normalizedQuery = normalizeSearchText(q);
   const tokens = tokenize(q);
-  const limit = Math.min(100, Math.max(1, params.limit ?? (context === "shipment" ? 50 : 30)));
+  const publicLimit = params.limit ?? (context === "shipment" ? 50 : 30);
+  const limit = params.internalLimit == null
+    ? Math.min(100, Math.max(1, publicLimit))
+    : Math.min(5001, Math.max(1, params.internalLimit));
   const offset = Math.max(0, params.offset ?? (Number(params.cursor ?? 0) || 0));
   const type = normalizeType(params.type ?? params.entityType);
   const sort = normalizeSort(params.sort);
@@ -1035,6 +1076,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     stock: params.inStock ? "inStock" : normalizeStockFilter(params.stock),
     markingProblems: params.markingProblems === true,
     priceMissing: params.priceMissing === true,
+    oemParts: normalizeOemPartsFilter(params.oemParts),
   };
   const storeId = await resolveStoreId(params);
   const strictNameOem = params.strictNameOem === true && Boolean(params.q?.trim());
@@ -1048,6 +1090,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
             ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
             ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
+            ...oemEnrichmentStatusFilter(params),
             id: { in: strictCandidateIds },
           },
           include: {
@@ -1064,7 +1107,9 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
             supplierCounterparty: { select: { name: true, displayName: true } },
           },
           orderBy: [{ name: "asc" }],
-          take: Math.min(1000, Math.max(limit * 30, 100)),
+          take: params.internalLimit != null || filters.oemParts !== "all"
+            ? 5001
+            : Math.min(1000, Math.max(limit * 30, 100)),
         })
       : [];
     const scored = products.flatMap((product) => {
@@ -1114,12 +1159,14 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     ...(params.origin && params.origin !== "all" ? { origin: params.origin } : {}),
     ...(params.copyBatchId ? { copyBatchId: params.copyBatchId } : {}),
     ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
+    ...oemEnrichmentStatusFilter(params),
     ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
   };
   // Without a search query, facets and totals must be calculated across the
   // whole branch catalog. Limiting candidates before applying filters makes
   // exact totals depend on the first alphabetical page (often exactly 100).
-  const candidateTake = catalogCandidateTake(tokens.length, limit);
+  const needsCompleteOemResult = filters.oemParts !== "all" || normalizeOemEnrichmentResultFilter(params.oemEnrichmentResult) !== "all" || params.internalLimit != null;
+  const candidateTake = needsCompleteOemResult ? undefined : catalogCandidateTake(tokens.length, limit);
   const products = await prisma.localProduct.findMany({
     where,
     include: {
@@ -1179,4 +1226,80 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       facets,
     },
   };
+}
+
+export type CatalogProductSelectionSnapshot = Omit<CatalogSearchParams, "limit" | "offset" | "cursor" | "internalLimit" | "context">;
+
+function selectionSnapshotRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Не удалось прочитать условия выбора товаров");
+  return value as Record<string, unknown>;
+}
+
+function selectionString(value: unknown, maxLength = 240): string | undefined {
+  const result = typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+  return result || undefined;
+}
+
+function selectionValues(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result = [...new Set(value.map((item) => selectionString(item, 120)).filter((item): item is string => Boolean(item)))].slice(0, 50);
+  return result.length ? result : undefined;
+}
+
+export function normalizeCatalogProductSelectionSnapshot(value: unknown): CatalogProductSelectionSnapshot {
+  const input = selectionSnapshotRecord(value);
+  const type = input.type === "product" || input.type === "service" || input.type === "all" ? input.type : undefined;
+  const stock = input.stock === "inStock" || input.stock === "outOfStock" || input.stock === "all" ? input.stock : undefined;
+  const oemParts = normalizeOemPartsFilter(selectionString(input.oemParts));
+  const oemEnrichmentResult = normalizeOemEnrichmentResultFilter(selectionString(input.oemEnrichmentResult));
+  const origin = ["MANUAL", "BRANCH_COPY", "IMPORT", "SYNC"].includes(String(input.origin ?? "")) ? String(input.origin) : undefined;
+  const sort = selectionString(input.sort, 30);
+  const direction = input.direction === "desc" ? "desc" : input.direction === "asc" ? "asc" : undefined;
+  return {
+    q: selectionString(input.q, 500),
+    warehouseId: selectionString(input.warehouseId),
+    storeId: selectionString(input.storeId),
+    storeName: selectionString(input.storeName),
+    type,
+    entityType: selectionString(input.entityType, 40),
+    categoryId: selectionString(input.categoryId),
+    group: selectionValues(input.group),
+    brand: selectionValues(input.brand),
+    sae: selectionValues(input.sae),
+    supplier: selectionValues(input.supplier),
+    apiSpec: selectionValues(input.apiSpec),
+    acea: selectionValues(input.acea),
+    packageVolume: selectionValues(input.packageVolume),
+    stock,
+    markingProblems: input.markingProblems === true,
+    priceMissing: input.priceMissing === true,
+    oemParts,
+    oemBatchId: selectionString(input.oemBatchId),
+    oemEnrichmentResult,
+    origin,
+    copyBatchId: selectionString(input.copyBatchId),
+    inStock: input.inStock === true,
+    includeArchived: input.includeArchived === true,
+    sort,
+    direction,
+    oem: selectionString(input.oem, 500),
+    mannName: selectionString(input.mannName, 500),
+    params: selectionString(input.params, 500),
+    strictNameOem: input.strictNameOem === true,
+  };
+}
+
+export async function resolveCatalogProductSelection(value: unknown, maximum: number) {
+  const maxProducts = Math.max(1, Math.min(Math.trunc(maximum), 5000));
+  const snapshot = normalizeCatalogProductSelectionSnapshot(value);
+  const result = await searchCatalog({
+    ...snapshot,
+    context: "products",
+    offset: 0,
+    internalLimit: maxProducts + 1,
+  });
+  if (result.total > maxProducts || result.items.length > maxProducts) {
+    throw new Error(`За один запуск можно обработать не более ${maxProducts} товаров. Уточните фильтры`);
+  }
+  return { snapshot, total: result.total, productIds: result.items.map((item) => item.id) };
 }

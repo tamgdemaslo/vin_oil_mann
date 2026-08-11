@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
-import { createProductOemBatch, listProductOemBatches } from "@/lib/product-oem-batches";
+import { createProductOemBatchFromSelection, listProductOemBatches } from "@/lib/product-oem-batches";
 import { kickProductOemWorker } from "@/lib/product-oem-worker";
 
 export const runtime = "nodejs";
@@ -30,10 +30,11 @@ export async function POST(request: NextRequest) {
   if (!branch.ok) return branch.response;
   try {
     const body = await request.json();
-    const batch = await runWithBranchApiContext(branch.context, () => createProductOemBatch({
+    const batch = await runWithBranchApiContext(branch.context, () => createProductOemBatchFromSelection({
       branchId: branch.context.branchId!,
       createdById: branch.context.userId,
-      productIds: Array.isArray(body?.productIds) ? body.productIds : [],
+      productIds: Array.isArray(body?.productIds) ? body.productIds : undefined,
+      selection: body?.selection,
       source: String(body?.source ?? "CATALOG"),
     }));
     kickProductOemWorker();

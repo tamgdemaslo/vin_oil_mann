@@ -15224,6 +15224,15 @@ select.eco-input::-ms-expand,
   font-weight: 750;
 }
 
+.eco-products-select-all {
+  color: var(--eco-rust);
+  font-weight: 850;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.eco-products-select-all:hover { color: var(--eco-ink); }
+
 .eco-filter-chip {
   gap: 6px;
   max-width: 320px;
@@ -15310,6 +15319,11 @@ select.eco-input::-ms-expand,
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
+
+.eco-product-oem-cell { min-width: 74px; white-space: nowrap; }
+.eco-product-oem-cell button { border-bottom: 1px dashed currentColor; color: var(--eco-rust); font-size: 11px; font-weight: 850; }
+.eco-product-oem-cell button:hover { color: var(--eco-ink); }
+.eco-product-oem-cell > span { color: var(--eco-faint); cursor: help; }
 
 .eco-product-name-cell {
   min-width: 320px;
@@ -62286,6 +62300,11 @@ html.tgm-print-active .tgm-client-report .qr {
 .oem-batch-confirm > svg { color: var(--eco-rust); }
 .oem-batch-confirm h3 { margin: 0; font-size: 17px; }
 .oem-batch-confirm > p { max-width: 58ch; margin: 0; color: var(--eco-muted); font-size: 12px; line-height: 1.5; }
+.oem-batch-preview-list { display: grid; width: min(520px, 100%); border: 1px solid var(--eco-line); border-radius: 6px; text-align: left; }
+.oem-batch-preview-list > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 7px 9px; border-bottom: 1px solid var(--eco-line); }
+.oem-batch-preview-list b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.oem-batch-preview-list small, .oem-batch-preview-list em { color: var(--eco-muted); font-size: 9px; font-style: normal; }
+.oem-batch-preview-list em { padding: 7px 9px; text-align: center; }
 .oem-batch-confirm__note { display: flex; max-width: 520px; align-items: flex-start; gap: 7px; margin-top: 7px; border: 1px solid var(--eco-line); border-radius: 6px; padding: 9px; background: var(--eco-surface-sunk); color: var(--eco-muted); font-size: 10px; line-height: 1.4; text-align: left; }
 .oem-batch-confirm__note svg { flex: 0 0 auto; color: var(--eco-warning); }
 .oem-batch-loading { min-height: 220px; color: var(--eco-muted); font-size: 12px; }
@@ -62298,7 +62317,7 @@ html.tgm-print-active .tgm-client-report .qr {
 .oem-batch-progress__heading > strong { font-size: 23px; }
 .oem-batch-progress__bar, .eco-oem-batch-banner__bar { overflow: hidden; height: 7px; border-radius: 999px; background: var(--eco-surface-deep); }
 .oem-batch-progress__bar i, .eco-oem-batch-banner__bar i { display: block; height: 100%; border-radius: inherit; background: var(--eco-rust); transition: width .25s ease; }
-.oem-batch-progress dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; border: 1px solid var(--eco-line); border-radius: 7px; }
+.oem-batch-progress dl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0; border: 1px solid var(--eco-line); border-radius: 7px; }
 .oem-batch-progress dl div { display: grid; gap: 3px; padding: 10px 7px; border-right: 1px solid var(--eco-line); text-align: center; }
 .oem-batch-progress dl div:last-child { border-right: 0; }
 .oem-batch-progress dt { color: var(--eco-muted); font-size: 9px; }
@@ -62312,6 +62331,12 @@ html.tgm-print-active .tgm-client-report .qr {
 .oem-batch-issues article span { color: var(--eco-muted); font-size: 9px; }
 .oem-batch-issues article p { grid-column: 1 / -1; margin: 0; color: var(--eco-danger); font-size: 9px; }
 .oem-batch-background-note { margin: 0; color: var(--eco-muted); font-size: 10px; text-align: center; }
+.oem-batch-result-summary { display: grid; gap: 4px; border: 1px solid color-mix(in srgb, var(--eco-info) 28%, var(--eco-line)); border-radius: 7px; padding: 11px; background: var(--eco-info-tint); font-size: 11px; }
+.oem-batch-result-summary > div { margin-top: 5px; }
+.oem-batch-result-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.oem-batch-result-filters > span { color: var(--eco-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.oem-batch-result-filters button { border: 1px solid var(--eco-line); border-radius: 5px; padding: 5px 7px; background: var(--eco-surface-sunk); color: var(--eco-ink-2); font-size: 9px; font-weight: 750; }
+.oem-batch-result-filters button:hover { border-color: var(--eco-line-strong); background: var(--eco-hover); }
 .oem-batch-error { display: flex; align-items: flex-start; gap: 7px; margin: 0 20px 12px; border: 1px solid color-mix(in srgb, var(--eco-danger) 30%, var(--eco-line)); border-radius: 6px; padding: 8px 9px; background: var(--eco-danger-tint); color: var(--eco-danger); font-size: 11px; }
 .oem-batch-panel > footer { display: flex; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--eco-line); padding: 12px 16px; }
 .eco-oem-batch-banner { display: grid; grid-template-columns: minmax(210px, auto) minmax(160px, 1fr) auto; align-items: center; gap: 14px; margin: 0 0 9px; border: 1px solid var(--eco-line); border-radius: 7px; padding: 9px 10px; background: var(--eco-surface-sunk); }
@@ -62321,6 +62346,17 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-oem-batch-banner > div:first-child { display: grid; gap: 2px; }
 .eco-oem-batch-banner b { font-size: 11px; }
 .eco-oem-batch-banner span { color: var(--eco-muted); font-size: 9px; }
+
+.eco-oem-details-backdrop { position: fixed; z-index: 95; inset: 0; display: flex; justify-content: flex-end; background: color-mix(in srgb, var(--eco-ink) 34%, transparent); }
+.eco-oem-details-drawer { display: flex; width: min(420px, 100%); height: 100%; flex-direction: column; border-left: 1px solid var(--eco-line-strong); background: var(--eco-surface); box-shadow: var(--eco-shadow-lg); }
+.eco-oem-details-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--eco-line); padding: 18px; }
+.eco-oem-details-drawer > header span { color: var(--eco-rust); font-size: 9px; font-weight: 850; text-transform: uppercase; }
+.eco-oem-details-drawer > header h2 { margin: 3px 0 0; color: var(--eco-ink); font-size: 17px; line-height: 1.25; }
+.eco-oem-details-drawer > header button { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 5px; color: var(--eco-muted); }
+.eco-oem-details-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; overflow-y: auto; padding: 18px; }
+.eco-oem-details-list code { overflow: hidden; border: 1px solid var(--eco-line); border-radius: 5px; padding: 8px; background: var(--eco-surface-sunk); color: var(--eco-ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.eco-oem-details-drawer > p { margin: 0; padding: 0 18px; color: var(--eco-muted); font-size: 10px; }
+.eco-oem-details-drawer > footer { display: flex; justify-content: flex-end; gap: 7px; margin-top: auto; border-top: 1px solid var(--eco-line); padding: 14px 18px; }
 
 @media (max-width: 720px) {
   .rossko-import-default-supplier { align-items: stretch; flex-direction: column; }

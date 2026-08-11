@@ -28,6 +28,7 @@ export type RosskoOemCandidate = {
 export type FillProductOemResult =
   | { status: "COMPLETED"; productId: string; foundCount: number; oemParts: string }
   | { status: "NO_RESULTS"; productId: string; foundCount: 0; oemParts: string }
+  | { status: "MISSING_SOURCE_DATA"; productId: string; foundCount: 0; oemParts: string; reason: string }
   | { status: "SKIPPED_ALREADY_FILLED"; productId: string; foundCount: number; oemParts: string };
 
 function text(value: unknown) {
@@ -132,6 +133,7 @@ export async function fillProductOemFromRossko(input: {
       brand: true,
       groupPath: true,
       rosskoPartNumber: true,
+      rosskoBrand: true,
       mannName: true,
     },
   });
@@ -147,11 +149,24 @@ export async function fillProductOemFromRossko(input: {
     };
   }
 
+  const sourceArticle = product.rosskoPartNumber?.trim() || product.article?.trim() || product.code?.trim() || product.oem?.trim() || "";
+  const sourceBrand = product.rosskoBrand?.trim() || product.brand?.trim() || "";
+  if (!sourceArticle || !sourceBrand) {
+    const missing = [!sourceBrand ? "бренд" : "", !sourceArticle ? "артикул" : ""].filter(Boolean).join(" и ");
+    return {
+      status: "MISSING_SOURCE_DATA",
+      productId: product.id,
+      foundCount: 0,
+      oemParts: product.oemParts ?? "",
+      reason: missing.includes(" и ") ? `Не указаны ${missing}` : `Не указан ${missing}`,
+    };
+  }
+
   const search = await searchRosskoOemCandidates({
-    article: product.article ?? "",
+    article: sourceArticle,
     code: product.code ?? "",
     oem: product.oem ?? "",
-    brand: product.brand ?? "",
+    brand: sourceBrand,
     category: product.groupPath ?? "",
     productName: product.name,
     supplierCode: product.rosskoPartNumber ?? "",
