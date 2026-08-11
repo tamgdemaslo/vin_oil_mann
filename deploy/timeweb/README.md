@@ -14,6 +14,9 @@ or connect to a production host.
 - Health endpoint: `/api/health/live`. The runtime image includes `curl` for
   Timeweb's container-side probe. Verify `/api/health/ready` separately after
   each release.
+- App Platform starts Docker builds in a clean environment. The Dockerfile uses
+  BuildKit caches where the platform supports them and retries npm downloads so
+  a short registry timeout does not abort an otherwise healthy deployment.
 
 Set production values as App Platform variables. At minimum the application
 requires `DEPLOYMENT_PROVIDER=timeweb`, `DATABASE_URL`, `APP_ORIGIN`, and

@@ -14,7 +14,15 @@ RUN sed -i \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci \
+    --no-audit \
+    --no-fund \
+    --fetch-retries=5 \
+    --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=10000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=300000
 
 # Prisma generation is isolated from application source so it remains cached
 # when only TypeScript/React files change.
