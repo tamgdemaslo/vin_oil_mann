@@ -1008,6 +1008,11 @@ async function resolveStoreId(params: CatalogSearchParams): Promise<string | nul
   return store?.id ?? null;
 }
 
+export function catalogCandidateTake(tokenCount: number, limit: number): number | undefined {
+  if (tokenCount <= 0) return undefined;
+  return Math.min(2000, Math.max(limit * 30, 300));
+}
+
 export async function searchCatalog(params: CatalogSearchParams): Promise<CatalogSearchResult> {
   const context = params.context === "shipment" ? "shipment" : "products";
   const q = [params.q, params.oem, params.mannName, params.params].filter(Boolean).join(" ");
@@ -1111,7 +1116,10 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
     ...(params.priceMissing ? { priceNeedsSetup: true } : {}),
     ...mergeSearchCandidateWhere(searchCandidateWhere(tokens, params), normalizedCandidateIds),
   };
-  const take = tokens.length ? Math.min(2000, Math.max(limit * 30, 300)) : Math.min(500, Math.max(limit + offset, 100));
+  // Without a search query, facets and totals must be calculated across the
+  // whole branch catalog. Limiting candidates before applying filters makes
+  // exact totals depend on the first alphabetical page (often exactly 100).
+  const candidateTake = catalogCandidateTake(tokens.length, limit);
   const products = await prisma.localProduct.findMany({
     where,
     include: {
@@ -1128,7 +1136,7 @@ export async function searchCatalog(params: CatalogSearchParams): Promise<Catalo
       supplierCounterparty: { select: { name: true, displayName: true } },
     },
     orderBy: [{ name: "asc" }],
-    take,
+    ...(candidateTake === undefined ? {} : { take: candidateTake }),
   });
 
   const scored = products.flatMap((product) => {

@@ -11,6 +11,7 @@
     "start": "sh deploy/timeweb/start-app.sh",
     "lint": "eslint",
     "test:lookup": "node scripts/test-lookup.mjs",
+    "test:catalog-search": "node scripts/test-catalog-search.mjs",
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
     "test:rossko-product-import": "node scripts/test-rossko-product-import.mjs",
     "test:rossko-receipt": "node scripts/test-rossko-receipt.mjs",
