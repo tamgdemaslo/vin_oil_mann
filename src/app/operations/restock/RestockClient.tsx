@@ -152,16 +152,51 @@ type QuickOrderPreview = {
   createdAt: number;
   items: QuickOrderItem[];
 };
-type ImportedRosskoLine = {
-  partnumber: string;
+type RosskoReceiptAction = "MATCHED_EXISTING" | "CREATE_PRODUCT" | "FULLY_RECEIVED" | "AMBIGUOUS_PRODUCT" | "AMBIGUOUS_SOURCE_LINE" | "SOURCE_STATUS_WARNING" | "INVALID_LINE";
+type RosskoReceiptPreviewLine = {
+  sourceLineKey: string;
+  partGuid: string;
+  article: string;
   brand: string;
   name: string;
-  count: number;
-  price: number | null;
-  delivery: string;
-  stock: string;
-  expectedAt?: number;
+  orderedQty: number;
+  alreadyReceivedQty: number;
+  remainingQty: number;
+  receiveQty: number;
+  purchasePrice: number;
+  rosskoStatus: number | null;
+  rosskoStatusLabel: string;
+  product: { id: string; name: string; article: string; matchType: string } | null;
+  action: RosskoReceiptAction;
+  warnings: string[];
 };
+type RosskoReceiptPreview = {
+  order: { id: string; createdAt: string | null; totalPrice: number | null; stockAddress: string | null };
+  supplier: { id: string | null; name: string; willCreate: boolean };
+  store: { id: string; name: string };
+  stores: Array<{ id: string; name: string; isMain: boolean }>;
+  summary: {
+    sourceLines: number;
+    readyLines: number;
+    alreadyFullyReceivedLines: number;
+    unmatchedLines: number;
+    ambiguousLines: number;
+    orderedQty: number;
+    alreadyReceivedQty: number;
+    remainingQty: number;
+  };
+  lines: RosskoReceiptPreviewLine[];
+};
+type RosskoReceiptDraftResult = {
+  documentId: string;
+  documentNumber: string;
+  positionsCount: number;
+  totalQuantity: number;
+  totalSum: number;
+  store: { id: string; name: string };
+  idempotent: boolean;
+};
+type ReceiptProductOption = { id: string; name: string; article: string; brand?: string; entityType: string };
 type SupplierStat = {
   name: string;
   count: number;
@@ -190,7 +225,6 @@ const LS_ROSSKO_CART = "vin-oil-restock-rossko-cart";
 const LS_ROSSKO_ORDERS = "vin-oil-restock-rossko-orders";
 const LS_ROSSKO_CACHE = "vin-oil-restock-rossko-search-cache";
 const LS_ROSSKO_OFFER_QTY = "vin-oil-restock-rossko-offer-qty";
-const ROSSKO_SUPPLIER_FIXED = 'ООО "ГРИНЛАЙТ"';
 const DEFAULT_RSSK_CONTACT_NAME = "ИП Елисеенко Илья Сергеевич";
 const DEFAULT_RSSK_CONTACT_PHONE = "+79058677833";
 
@@ -575,80 +609,6 @@ function extractRosskoOrderId(data: unknown): string {
   return "";
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function readString(row: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = row[key];
-    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
-  }
-  return "";
-}
-
-function readNumber(row: Record<string, unknown>, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = toNum(row[key]);
-    if (value !== null) return value;
-  }
-  return null;
-}
-
-function collectRecords(root: unknown, limit = 500): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
-  const seen = new Set<unknown>();
-  const queue: unknown[] = [root];
-  while (queue.length && out.length < limit) {
-    const cur = queue.shift();
-    if (!cur || seen.has(cur)) continue;
-    seen.add(cur);
-    if (Array.isArray(cur)) {
-      queue.push(...cur);
-      continue;
-    }
-    const record = asRecord(cur);
-    if (!record) continue;
-    out.push(record);
-    queue.push(...Object.values(record));
-  }
-  return out;
-}
-
-function extractRosskoOrderLines(data: unknown): ImportedRosskoLine[] {
-  const records = collectRecords(data);
-  const lines: ImportedRosskoLine[] = [];
-  const seen = new Set<string>();
-  for (const row of records) {
-    const partnumber = readString(row, ["partnumber", "PartNumber", "article", "Article", "supplierArticle", "code", "Code"]);
-    const brand = readString(row, ["brand", "Brand", "producer", "Producer", "manufacturer", "Manufacturer"]);
-    const countRaw = readNumber(row, ["count", "Count", "quantity", "Quantity", "qty", "Qty", "orderedQty", "OrderedQty", "amount", "Amount"]);
-    if (!partnumber || !brand || countRaw === null || countRaw <= 0) continue;
-    const name = readString(row, ["name", "Name", "title", "Title", "caption", "Caption"]) || `${brand} ${partnumber}`;
-    const price = readNumber(row, ["price", "Price", "cost", "Cost", "buyPrice", "BuyPrice"]);
-    const delivery = readString(row, ["delivery", "Delivery", "deliveryLabel", "DeliveryLabel", "deliveryDate", "DeliveryDate", "dateDelivery", "DateDelivery"]) || "уточняется";
-    const stock = readString(row, ["stock", "Stock", "stock_id", "stockId", "StockID", "warehouse", "Warehouse"]) || "imported";
-    const key = `${brand.toLowerCase()}||${partnumber.toLowerCase()}||${stock}||${countRaw}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    lines.push({
-      partnumber,
-      brand,
-      name,
-      count: Math.max(1, Math.floor(countRaw)),
-      price,
-      delivery,
-      stock,
-      expectedAt: expectedAtFromDelivery(delivery),
-    });
-  }
-  return lines;
-}
-
-function normalizedSku(value: unknown): string {
-  return String(value ?? "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9]+/g, "");
-}
-
 function supplierStatFor(name: string, rows: RestockItem[]): SupplierStat {
   return {
     name,
@@ -837,7 +797,7 @@ export default function RestockClient() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [offerDrawerProductId, setOfferDrawerProductId] = useState<string | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
-  const [receiptDraftBusy, setReceiptDraftBusy] = useState(false);
+  const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     setQtyByProduct(loadJson<Record<string, number>>(LS_QTY, {}));
@@ -1514,91 +1474,6 @@ export default function RestockClient() {
     if (item && !current?.results && !current?.loading) void rosskoSearch(line.productId, item);
   }
 
-  async function createReceiptDraftFromRosskoCart() {
-    const lines = rosskoCart
-      .filter((line) => line.productId && Number(line.count) > 0)
-      .map((line) => ({
-        productId: line.productId,
-        quantity: Math.max(1, Math.floor(Number(line.count || 1))),
-        price: Number(line.price || 0),
-        raw: {
-          source: "ROSSKO",
-          partnumber: line.partnumber,
-          brand: line.brand,
-          stock: line.stock,
-          delivery: line.delivery,
-        },
-      }));
-    if (!lines.length) return;
-    setReceiptDraftBusy(true);
-    try {
-      const res = await fetch("/api/local-inventory/movements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          type: "receipt",
-          applicable: false,
-          counterpartyId: `supplier:${encodeURIComponent(ROSSKO_SUPPLIER_FIXED)}`,
-          documentDate: toServiceDateInput(new Date()),
-          description: "Черновик приёмки из корзины ROSSKO. Остатки не увеличены.",
-          positions: lines,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error || !data.id) throw new Error(data.error || "Не удалось создать черновик приёмки");
-      showToast("Черновик приёмки создан");
-      window.location.href = `/inventory/receipts?document=${encodeURIComponent(data.id)}&open=edit`;
-    } catch (e) {
-      console.warn("ROSSKO receipt draft failed", e);
-      showToast(e instanceof Error ? e.message : "Не удалось создать черновик приёмки");
-    } finally {
-      setReceiptDraftBusy(false);
-    }
-  }
-
-  async function createReceiptDraftFromSupplierLine(line: SupplierOrderLine) {
-    if (!line.productId || line.remainingQty <= 0) return;
-    setReceiptDraftBusy(true);
-    try {
-      const res = await fetch("/api/local-inventory/movements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          type: "receipt",
-          applicable: false,
-          counterpartyId: `supplier:${encodeURIComponent(ROSSKO_SUPPLIER_FIXED)}`,
-          documentDate: toServiceDateInput(new Date()),
-          description: `Черновик приёмки из заказа ROSSKO${line.externalOrderId ? ` #${line.externalOrderId}` : ""}. Остатки не увеличены.`,
-          positions: [
-            {
-              productId: line.productId,
-              quantity: Math.max(1, Math.floor(Number(line.remainingQty || 1))),
-              price: Number(line.price || 0),
-              raw: {
-                source: "ROSSKO",
-                orderId: line.orderId,
-                externalOrderId: line.externalOrderId,
-                partnumber: line.partnumber,
-                brand: line.brand,
-                stock: line.stock,
-                delivery: line.delivery,
-              },
-            },
-          ],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error || !data.id) throw new Error(data.error || "Не удалось создать черновик приёмки");
-      showToast("Черновик приёмки создан");
-      window.location.href = `/inventory/receipts?document=${encodeURIComponent(data.id)}&open=edit`;
-    } catch (e) {
-      console.warn("ROSSKO incoming receipt draft failed", e);
-      showToast(e instanceof Error ? e.message : "Не удалось создать черновик приёмки");
-    } finally {
-      setReceiptDraftBusy(false);
-    }
-  }
-
   async function importRosskoOrderByNumber() {
     const id = importOrderId.trim();
     if (!/^\d+$/.test(id) || importOrderBusy) {
@@ -1612,68 +1487,59 @@ export default function RestockClient() {
     }
     setImportOrderBusy(true);
     try {
-      const res = await fetch(`/api/rossko/orders?ids=${encodeURIComponent(id)}`, { headers: { Accept: "application/json" } });
-      const data = await res.json();
+      const res = await fetch(`/api/rossko/orders/${encodeURIComponent(id)}/receipt-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: "{}",
+      });
+      const data = await res.json() as RosskoReceiptPreview & { error?: string };
       if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-      const imported = extractRosskoOrderLines(data.data);
-      if (!imported.length) throw new Error("В ответе ROSSKO не удалось найти строки заказа");
-      const localOrderId = uuidLike("rossko_order");
-      const orderedAt = Date.now();
-      const lines: SupplierOrderLine[] = [];
-      let skipped = 0;
-      for (const row of imported) {
-        const sku = normalizedSku(row.partnumber);
-        const item = items.find((candidate) => {
-          const code = normalizedSku(candidate.code);
-          const name = normalizedSku(candidate.name);
-          return (code && code === sku) || (code && sku.includes(code)) || (code && code.includes(sku)) || (sku.length > 4 && name.includes(sku));
-        });
-        if (!item) {
-          skipped += 1;
-          continue;
-        }
-        lines.push({
-          productId: item.productId,
-          title: String(item.name ?? row.name),
-          code: String(item.code ?? row.partnumber),
-          partnumber: row.partnumber,
-          brand: row.brand,
-          stock: row.stock,
-          count: row.count,
-          price: row.price,
-          delivery: row.delivery,
-          available: null,
-          city: "",
-          offerName: row.name,
-          orderId: localOrderId,
-          orderedAt,
-          remoteStatus: "ordered",
-          id: uuidLike("rossko_line"),
-          externalOrderId: id,
-          supplier: "ROSSKO",
-          orderedQty: row.count,
-          receivedQty: 0,
-          remainingQty: row.count,
-          status: "ordered",
-          expectedAt: row.expectedAt,
-        });
-      }
-      if (!lines.length) throw new Error("Строки заказа не сопоставились с локальными товарами по артикулу");
+      if (!data.lines.length) throw new Error("В ответе ROSSKO не удалось найти строки заказа");
+      const localOrderId = `rossko_order:${id}`;
+      const orderedAt = data.order.createdAt ? new Date(data.order.createdAt).getTime() : Date.now();
+      const lines: SupplierOrderLine[] = data.lines.map((line) => ({
+        productId: line.product?.id ?? "",
+        title: line.product?.name ?? line.name,
+        code: line.product?.article ?? line.article,
+        partnumber: line.article,
+        brand: line.brand,
+        stock: data.order.stockAddress ?? "",
+        count: line.orderedQty,
+        price: line.purchasePrice,
+        delivery: line.rosskoStatusLabel,
+        available: null,
+        city: "",
+        offerName: line.name,
+        orderId: localOrderId,
+        orderedAt,
+        remoteStatus: "ordered",
+        id: line.sourceLineKey,
+        externalOrderId: id,
+        supplier: "ROSSKO",
+        orderedQty: line.orderedQty,
+        receivedQty: line.alreadyReceivedQty,
+        remainingQty: line.remainingQty,
+        status: line.remainingQty <= 0 ? "received" : line.alreadyReceivedQty > 0 ? "partially_received" : "ordered",
+      }));
+      const status: SupplierOrderStatus = lines.every((line) => line.remainingQty <= 0)
+        ? "received"
+        : lines.some((line) => line.receivedQty > 0)
+          ? "partially_received"
+          : "ordered";
       const order: SupplierOrder = {
         id: localOrderId,
         supplier: "ROSSKO",
         supplierType: "ROSSKO",
         externalOrderId: id,
-        status: "ordered",
+        status,
         createdAt: orderedAt,
         orderedAt,
-        expectedAt: lines.map((line) => line.expectedAt).filter((x): x is number => typeof x === "number").sort((a, b) => a - b)[0],
         lines,
         comment: "Импортирован из ROSSKO по номеру заказа",
       };
       persistRosskoOrders([order, ...rosskoOrders]);
       setIncomingOpen(true);
-      showToast(`Заказ #${id} добавлен: ${lines.length} строк${skipped ? `, не сопоставлено ${skipped}` : ""}`);
+      showToast(`Заказ #${id} добавлен: ${lines.length} строк`);
     } catch (e) {
       console.warn("ROSSKO order import failed", e);
       showToast(e instanceof Error ? e.message : "Не удалось добавить заказ ROSSKO");
@@ -1711,12 +1577,12 @@ export default function RestockClient() {
       if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
       const orderId = extractRosskoOrderId(data.data);
       const orderedAt = Date.now();
-      const localOrderId = uuidLike("rossko_order");
-      const linesForOrder: SupplierOrderLine[] = rosskoCart.map((line) => {
+      const localOrderId = orderId ? `rossko_order:${orderId}` : uuidLike("rossko_order");
+      const linesForOrder: SupplierOrderLine[] = rosskoCart.map((line, index) => {
         const count = Math.max(1, Math.floor(Number(line.count || 1)));
         return {
           ...line,
-          id: uuidLike("rossko_line"),
+          id: `${localOrderId}:pending:${index + 1}`,
           orderId: localOrderId,
           externalOrderId: orderId,
           supplier: "ROSSKO" as const,
@@ -2137,14 +2003,12 @@ export default function RestockClient() {
           totalQty={rosskoCartTotal}
           totalSum={rosskoCartSum}
           checkoutBusy={checkoutBusy}
-          receiptDraftBusy={receiptDraftBusy}
           onClose={() => setCartOpen(false)}
           onQty={updateCartQty}
           onDelete={(idx) => persistRosskoCart(rosskoCart.filter((_, i) => i !== idx))}
           onClear={() => persistRosskoCart([])}
           onReplace={replaceRosskoOffer}
           onCheckout={() => void checkoutRosskoCart()}
-          onReceiptDraft={() => void createReceiptDraftFromRosskoCart()}
         />
       )}
 
@@ -2167,9 +2031,19 @@ export default function RestockClient() {
       {incomingOpen && (
         <IncomingFiltersDrawer
           orders={rosskoOrders}
-          receiptDraftBusy={receiptDraftBusy}
-          onReceipt={(line) => void createReceiptDraftFromSupplierLine(line)}
+          onReceipt={(order) => {
+            setIncomingOpen(false);
+            setReceiptOrderId(order.externalOrderId);
+          }}
           onClose={() => setIncomingOpen(false)}
+        />
+      )}
+
+      {receiptOrderId && (
+        <RosskoReceiptDrawer
+          orderId={receiptOrderId}
+          onClose={() => setReceiptOrderId(null)}
+          onCreated={() => showToast("Черновик приёмки создан")}
         />
       )}
 
@@ -2308,20 +2182,354 @@ function QuickOrderPreviewDrawer({
   );
 }
 
+function receiptActionLabel(action: RosskoReceiptAction) {
+  if (action === "MATCHED_EXISTING") return "Найден в каталоге";
+  if (action === "CREATE_PRODUCT") return "Будет создан товар";
+  if (action === "AMBIGUOUS_PRODUCT") return "Найдено несколько похожих товаров";
+  if (action === "FULLY_RECEIVED") return "Уже принято полностью";
+  if (action === "AMBIGUOUS_SOURCE_LINE") return "Неоднозначная строка ROSSKO";
+  if (action === "SOURCE_STATUS_WARNING") return "Нужно подтвердить фактическое получение";
+  return "Строка заполнена не полностью";
+}
+
+function receiptActionTone(action: RosskoReceiptAction): "neutral" | "success" | "warning" | "danger" | "info" {
+  if (action === "MATCHED_EXISTING" || action === "FULLY_RECEIVED") return "success";
+  if (action === "CREATE_PRODUCT") return "info";
+  if (action === "INVALID_LINE" || action === "AMBIGUOUS_SOURCE_LINE") return "danger";
+  return "warning";
+}
+
+function RosskoReceiptDrawer({
+  orderId,
+  onClose,
+  onCreated,
+}: {
+  orderId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [preview, setPreview] = useState<RosskoReceiptPreview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [storeId, setStoreId] = useState("");
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [selectedProducts, setSelectedProducts] = useState<Record<string, string>>({});
+  const [pickerLineKey, setPickerLineKey] = useState<string | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [productOptions, setProductOptions] = useState<ReceiptProductOption[]>([]);
+  const [productsBusy, setProductsBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [created, setCreated] = useState<RosskoReceiptDraftResult | null>(null);
+
+  const loadPreview = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/rossko/orders/${encodeURIComponent(orderId)}/receipt-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(storeId ? { storeId } : {}),
+      });
+      const data = await response.json() as RosskoReceiptPreview & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error || "Не удалось загрузить заказ ROSSKO");
+      setPreview(data);
+      setStoreId((current) => current || data.store.id);
+      setEnabled(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty > 0])));
+      setQuantities(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty])));
+      setSelectedProducts({});
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось загрузить заказ ROSSKO");
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId, storeId]);
+
+  useEffect(() => {
+    void loadPreview();
+    // The selected store does not affect source quantities; it is submitted with the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId]);
+
+  async function searchReceiptProducts(line: RosskoReceiptPreviewLine, queryOverride?: string) {
+    const query = (queryOverride ?? (productSearch || `${line.brand} ${line.article}`)).trim();
+    if (query.length < 2) return;
+    setProductsBusy(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ search: query, limit: "30" });
+      const response = await fetch(`/api/local-inventory/products?${params.toString()}`, { cache: "no-store" });
+      const data = await response.json() as { products?: ReceiptProductOption[]; error?: string };
+      if (!response.ok) throw new Error(data.error || "Не удалось найти товары");
+      setProductOptions((data.products ?? []).filter((product) => product.entityType !== "service"));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось найти товары");
+    } finally {
+      setProductsBusy(false);
+    }
+  }
+
+  function toggleLine(line: RosskoReceiptPreviewLine, checked: boolean) {
+    setEnabled((current) => ({ ...current, [line.sourceLineKey]: checked }));
+    setQuantities((current) => ({
+      ...current,
+      [line.sourceLineKey]: checked ? Math.max(1, current[line.sourceLineKey] || line.remainingQty) : 0,
+    }));
+  }
+
+  async function createDraft() {
+    if (!preview || saving) return;
+    const lines = preview.lines
+      .filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0)
+      .map((line) => ({
+        sourceLineKey: line.sourceLineKey,
+        receiveQty: Number(quantities[line.sourceLineKey]),
+        selectedProductId: selectedProducts[line.sourceLineKey] || null,
+        createProduct: !line.product && line.action !== "AMBIGUOUS_PRODUCT",
+      }));
+    if (!lines.length) {
+      setError("Выберите хотя бы одну позицию и укажите фактически принятое количество.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/rossko/orders/${encodeURIComponent(orderId)}/receipt-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ storeId, lines }),
+      });
+      const data = await response.json() as RosskoReceiptDraftResult & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error || "Не удалось создать черновик приёмки");
+      setCreated(data);
+      onCreated();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Не удалось создать черновик приёмки");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectedLines = preview?.lines.filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0) ?? [];
+  const selectedQty = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0), 0);
+  const selectedSum = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0) * line.purchasePrice, 0);
+  const allReceived = Boolean(preview?.lines.length && preview.lines.every((line) => line.remainingQty <= 0));
+
+  return (
+    <div className="eco-restock-cart-shell" role="presentation">
+      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть приёмку ROSSKO" onClick={onClose} />
+      <aside className="eco-restock-cart-drawer eco-restock-receipt-drawer" role="dialog" aria-modal="true" aria-labelledby="rossko-receipt-title">
+        <header className="eco-restock-cart-head">
+          <div>
+            <span>Приёмка от поставщика</span>
+            <h2 id="rossko-receipt-title">Заказ ROSSKO №{orderId}</h2>
+            {preview?.order.createdAt && <p>Создан {formatServiceTime(preview.order.createdAt)}</p>}
+          </div>
+          <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть">
+            <X size={18} />
+          </button>
+        </header>
+
+        {created ? (
+          <div className="eco-restock-receipt-success">
+            <CheckCircle2 size={34} />
+            <div>
+              <h3>Черновик приёмки создан</h3>
+              <p>Остатки не изменены. Проверьте документ и проведите его штатной кнопкой приёмки.</p>
+            </div>
+            <dl>
+              <div><dt>Документ</dt><dd>{created.documentNumber}</dd></div>
+              <div><dt>Позиции</dt><dd>{created.positionsCount}</dd></div>
+              <div><dt>Количество</dt><dd>{fmtNum(created.totalQuantity)}</dd></div>
+              <div><dt>Сумма</dt><dd>{fmtMoney(created.totalSum)} ₽</dd></div>
+              <div><dt>Склад</dt><dd>{created.store.name}</dd></div>
+            </dl>
+            {created.idempotent && <EcoBadge tone="info">Повторный запрос — открыт ранее созданный черновик</EcoBadge>}
+          </div>
+        ) : loading ? (
+          <div className="eco-restock-receipt-loading" aria-live="polite">
+            <Loader2 size={24} className="eco-spin" />
+            <strong>Получаем заказ и сверяем приёмки…</strong>
+            <span>Количество, цены и сопоставление считаются на сервере.</span>
+          </div>
+        ) : preview ? (
+          <>
+            <div className="eco-restock-receipt-meta">
+              <div><span>Поставщик</span><strong>{preview.supplier.name}</strong>{preview.supplier.willCreate && <small>mapping будет создан при сохранении</small>}</div>
+              <label>
+                <span>Склад</span>
+                <select value={storeId} onChange={(event) => setStoreId(event.target.value)}>
+                  {preview.stores.map((store) => <option key={store.id} value={store.id}>{store.name}{store.isMain ? " · основной" : ""}</option>)}
+                </select>
+              </label>
+              <div><span>Источник</span><strong>ROSSKO</strong><small>{preview.order.stockAddress || "Адрес склада не указан"}</small></div>
+              <div><span>Осталось</span><strong>{fmtNum(preview.summary.remainingQty)} шт.</strong><small>принято {fmtNum(preview.summary.alreadyReceivedQty)} из {fmtNum(preview.summary.orderedQty)}</small></div>
+            </div>
+
+            <div className="eco-restock-cart-body eco-restock-receipt-body">
+              {allReceived ? (
+                <div className="eco-restock-cart-empty">
+                  <PackageCheck size={30} />
+                  <strong>Заказ полностью принят</strong>
+                  <span>Все проведённые приёмки уже покрывают количество заказа ROSSKO.</span>
+                </div>
+              ) : (
+                <div className="eco-restock-receipt-table-wrap">
+                  <table className="eco-restock-receipt-table">
+                    <thead>
+                      <tr>
+                        <th aria-label="Выбрать" />
+                        <th>Товар</th>
+                        <th>Артикул</th>
+                        <th>Статус ROSSKO</th>
+                        <th className="l-number">Заказано</th>
+                        <th className="l-number">Уже принято</th>
+                        <th className="l-number">Осталось</th>
+                        <th className="l-number">Принимаем</th>
+                        <th>Товар в каталоге</th>
+                        <th className="l-number">Закупка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.lines.map((line) => {
+                        const blocked = line.action === "FULLY_RECEIVED" || line.action === "INVALID_LINE" || line.action === "AMBIGUOUS_SOURCE_LINE";
+                        const needsProduct = line.action === "AMBIGUOUS_PRODUCT" && !selectedProducts[line.sourceLineKey];
+                        const pickerOpen = pickerLineKey === line.sourceLineKey;
+                        return (
+                          <Fragment key={line.sourceLineKey}>
+                            <tr className={blocked ? "is-disabled" : line.warnings.length ? "has-warning" : ""}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(enabled[line.sourceLineKey])}
+                                  disabled={blocked || needsProduct}
+                                  onChange={(event) => toggleLine(line, event.target.checked)}
+                                  aria-label={`Принять ${line.name}`}
+                                />
+                              </td>
+                              <td className="eco-restock-receipt-product"><strong>{line.name}</strong><span>{line.brand}</span></td>
+                              <td className="l-mono">{line.article}</td>
+                              <td><span className={line.action === "SOURCE_STATUS_WARNING" ? "eco-restock-source-warning" : ""}>{line.rosskoStatusLabel}</span></td>
+                              <td className="l-number">{fmtNum(line.orderedQty)}</td>
+                              <td className="l-number">{fmtNum(line.alreadyReceivedQty)}</td>
+                              <td className="l-number"><strong>{fmtNum(line.remainingQty)}</strong></td>
+                              <td className="l-number">
+                                <EcoInput
+                                  type="number"
+                                  min={0}
+                                  max={line.remainingQty}
+                                  step={1}
+                                  value={quantities[line.sourceLineKey] ?? 0}
+                                  disabled={!enabled[line.sourceLineKey] || blocked}
+                                  onChange={(event) => setQuantities((current) => ({
+                                    ...current,
+                                    [line.sourceLineKey]: Math.max(0, Math.min(line.remainingQty, parseInt(event.target.value, 10) || 0)),
+                                  }))}
+                                  aria-label={`Фактически принято: ${line.name}`}
+                                />
+                              </td>
+                              <td className="eco-restock-receipt-match">
+                                <EcoBadge tone={receiptActionTone(line.action)}>{receiptActionLabel(line.action)}</EcoBadge>
+                                {line.product && <small>{line.product.name}</small>}
+                                {selectedProducts[line.sourceLineKey] && <small>Товар выбран вручную</small>}
+                                {line.action === "AMBIGUOUS_PRODUCT" && (
+                                  <EcoButton
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => {
+                                      setPickerLineKey(pickerOpen ? null : line.sourceLineKey);
+                                      setProductSearch(`${line.brand} ${line.article}`);
+                                      if (!pickerOpen) void searchReceiptProducts(line, `${line.brand} ${line.article}`);
+                                    }}
+                                  >
+                                    Выбрать товар
+                                  </EcoButton>
+                                )}
+                              </td>
+                              <td className="l-number">{fmtMoney(line.purchasePrice)} ₽</td>
+                            </tr>
+                            {(line.warnings.length > 0 || pickerOpen) && (
+                              <tr className="eco-restock-receipt-detail-row">
+                                <td />
+                                <td colSpan={9}>
+                                  {line.warnings.map((warning) => <p key={warning}><AlertTriangle size={14} />{warning}</p>)}
+                                  {pickerOpen && (
+                                    <div className="eco-restock-receipt-picker">
+                                      <EcoInput value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Название, артикул или бренд" />
+                                      <EcoButton type="button" size="sm" onClick={() => void searchReceiptProducts(line)} disabled={productsBusy}>
+                                        {productsBusy ? <Loader2 size={14} className="eco-spin" /> : <Search size={14} />}
+                                        Найти
+                                      </EcoButton>
+                                      <select
+                                        value={selectedProducts[line.sourceLineKey] ?? ""}
+                                        onChange={(event) => {
+                                          const productId = event.target.value;
+                                          setSelectedProducts((current) => ({ ...current, [line.sourceLineKey]: productId }));
+                                          if (productId) toggleLine(line, true);
+                                        }}
+                                      >
+                                        <option value="">Выберите товар из каталога</option>
+                                        {productOptions.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.brand || "без бренда"} · {product.article || "без артикула"}</option>)}
+                                      </select>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
+
+        {error && <div className="eco-restock-receipt-error" role="alert"><AlertTriangle size={16} /><span>{error}</span></div>}
+        <footer className="eco-restock-cart-footer eco-restock-receipt-footer">
+          {created ? (
+            <>
+              <EcoButton type="button" onClick={onClose}>Закрыть</EcoButton>
+              <Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>
+                Открыть приёмку
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="eco-restock-receipt-totals">
+                <span>{selectedLines.length} поз. · {fmtNum(selectedQty)} шт.</span>
+                <strong>{fmtMoney(selectedSum)} ₽</strong>
+              </div>
+              <EcoButton type="button" onClick={onClose}>Отмена</EcoButton>
+              {error && !preview && <EcoButton type="button" onClick={() => void loadPreview()}>Повторить</EcoButton>}
+              <EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || allReceived || !selectedLines.length || saving}>
+                {saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
+                Создать черновик приёмки
+              </EcoButton>
+            </>
+          )}
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
 function IncomingFiltersDrawer({
   orders,
-  receiptDraftBusy,
   onReceipt,
   onClose,
 }: {
   orders: SupplierOrder[];
-  receiptDraftBusy: boolean;
-  onReceipt: (line: SupplierOrderLine) => void;
+  onReceipt: (order: SupplierOrder) => void;
   onClose: () => void;
 }) {
-  const lines = orders
-    .flatMap((order) => order.lines.map((line) => ({ order, line })))
-    .filter(({ order, line }) => !["cancelled", "failed", "received"].includes(order.status) && !["cancelled", "failed", "received"].includes(line.status));
+  const activeOrders = orders.filter((order) => !["cancelled", "failed"].includes(order.status));
+  const totalRemaining = activeOrders.reduce(
+    (sum, order) => sum + order.lines.reduce((lineSum, line) => lineSum + Math.max(0, line.remainingQty), 0),
+    0,
+  );
   return (
     <div className="eco-restock-cart-shell" role="presentation">
       <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть поставки" onClick={onClose} />
@@ -2330,34 +2538,39 @@ function IncomingFiltersDrawer({
           <div>
             <span>Фильтры в пути</span>
             <h2>ROSSKO</h2>
-            <p>{lines.length} строк · {fmtNum(lines.reduce((sum, row) => sum + row.line.remainingQty, 0))} шт.</p>
+            <p>{activeOrders.length} заказов · осталось принять {fmtNum(totalRemaining)} шт.</p>
           </div>
           <button type="button" className="eco-icon-btn" onClick={onClose} aria-label="Закрыть">
             <X size={18} />
           </button>
         </header>
         <div className="eco-restock-cart-body">
-          {lines.length ? (
+          {activeOrders.length ? (
             <div className="eco-restock-incoming-list">
-              {lines.map(({ order, line }) => {
-                const bucket = expectedBucket(line.expectedAt);
+              {activeOrders.map((order) => {
+                const remaining = order.lines.reduce((sum, line) => sum + Math.max(0, line.remainingQty), 0);
+                const received = order.lines.reduce((sum, line) => sum + Math.max(0, line.receivedQty), 0);
+                const ordered = order.lines.reduce((sum, line) => sum + Math.max(0, line.orderedQty), 0);
+                const bucket = expectedBucket(order.expectedAt);
                 const label = bucket === "today" ? "Ожидается сегодня" : bucket === "tomorrow" ? "Ожидается завтра" : bucket === "overdue" ? "Просрочено" : bucket === "later" ? "Ожидается позже" : "Срок уточняется";
                 return (
-                  <article key={line.id} className={`eco-restock-incoming-line is-${bucket}`}>
+                  <article key={order.id} className={`eco-restock-incoming-line is-${bucket}`}>
                     <div>
-                      <strong>{line.title}</strong>
-                      <span>{line.code || "без кода"} · {line.brand} {line.partnumber}</span>
+                      <strong>Заказ ROSSKO №{order.externalOrderId || order.id.slice(-6)}</strong>
+                      <span>{order.lines.slice(0, 3).map((line) => `${line.brand} ${line.partnumber}`).join(" · ")}{order.lines.length > 3 ? ` · ещё ${order.lines.length - 3}` : ""}</span>
                     </div>
                     <dl>
-                      <div><dt>Количество</dt><dd>{fmtNum(line.remainingQty)}</dd></div>
-                      <div><dt>Заказ</dt><dd>{order.externalOrderId || order.id.slice(-6)}</dd></div>
-                      <div><dt>Срок</dt><dd>{line.delivery || label}</dd></div>
+                      <div><dt>Заказано</dt><dd>{fmtNum(ordered)}</dd></div>
+                      <div><dt>Принято</dt><dd>{fmtNum(received)}</dd></div>
+                      <div><dt>Осталось</dt><dd>{fmtNum(remaining)}</dd></div>
                     </dl>
                     <div className="eco-restock-incoming-line__actions">
-                      <EcoBadge tone={bucket === "overdue" ? "danger" : bucket === "today" ? "success" : "info"}>{label}</EcoBadge>
-                      <EcoButton type="button" size="sm" onClick={() => onReceipt(line)} disabled={receiptDraftBusy}>
-                        {receiptDraftBusy ? <Loader2 size={14} className="eco-spin" /> : <FilePlus2 size={14} />}
-                        Приёмка
+                      <EcoBadge tone={remaining <= 0 ? "success" : bucket === "overdue" ? "danger" : bucket === "today" ? "success" : "info"}>
+                        {remaining <= 0 ? "Принят полностью" : label}
+                      </EcoBadge>
+                      <EcoButton type="button" size="sm" onClick={() => onReceipt(order)} disabled={!order.externalOrderId}>
+                        <PackageCheck size={14} />
+                        {remaining <= 0 ? "Проверить приёмку" : "Принять на склад"}
                       </EcoButton>
                     </div>
                   </article>
@@ -2448,27 +2661,23 @@ function RosskoCartDrawer({
   totalQty,
   totalSum,
   checkoutBusy,
-  receiptDraftBusy,
   onClose,
   onQty,
   onDelete,
   onClear,
   onReplace,
   onCheckout,
-  onReceiptDraft,
 }: {
   lines: RosskoCartLine[];
   totalQty: number;
   totalSum: number;
   checkoutBusy: boolean;
-  receiptDraftBusy: boolean;
   onClose: () => void;
   onQty: (idx: number, count: number) => void;
   onDelete: (idx: number) => void;
   onClear: () => void;
   onReplace: (line: RosskoCartLine) => void;
   onCheckout: () => void;
-  onReceiptDraft: () => void;
 }) {
   return (
     <div className="eco-restock-cart-shell" role="presentation">
@@ -2552,10 +2761,6 @@ function RosskoCartDrawer({
           )}
           <EcoButton type="button" onClick={onClose}>
             Закрыть
-          </EcoButton>
-          <EcoButton type="button" onClick={onReceiptDraft} disabled={!lines.length || receiptDraftBusy} variant="primary">
-            {receiptDraftBusy ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />}
-            Создать черновик приёмки
           </EcoButton>
           <EcoButton type="button" onClick={onCheckout} disabled={!lines.length || checkoutBusy} className="eco-restock-order-btn">
             {checkoutBusy ? <Loader2 size={15} className="eco-spin" /> : <PackageCheck size={15} />}
@@ -2894,7 +3099,7 @@ function RosskoItemsTable({
       <div className="eco-restock-empty-state">
         <PackageSearch size={28} />
         <strong>Нет позиций для ROSSKO</strong>
-        <span>Проверьте поставщика в карточках товаров: ожидается {ROSSKO_SUPPLIER_FIXED}.</span>
+        <span>Проверьте mapping поставщика ROSSKO в карточках товаров текущего филиала.</span>
       </div>
     );
   }

@@ -432,11 +432,16 @@ function cleanEditedText(value: unknown, max: number): string {
 
 type DuplicateProductRow = { id: string; name: string };
 
-async function duplicateByBrandArticle(branchId: string, brand: string, article: string) {
+async function duplicateByBrandArticle(
+  client: Prisma.TransactionClient,
+  branchId: string,
+  brand: string,
+  article: string,
+) {
   const brandKey = normalizeRosskoBrand(brand).toLocaleLowerCase("ru-RU");
   const articleKey = normalizeRosskoArticle(article).toLocaleLowerCase("ru-RU");
   if (!brandKey || !articleKey) return null;
-  const rows = await prisma.$queryRaw<DuplicateProductRow[]>(Prisma.sql`
+  const rows = await client.$queryRaw<DuplicateProductRow[]>(Prisma.sql`
     SELECT id, name
     FROM local_products
     WHERE branch_id = ${branchId}
@@ -448,19 +453,123 @@ async function duplicateByBrandArticle(branchId: string, brand: string, article:
   return rows[0] ?? null;
 }
 
-async function withIdentityLock<T>(branchId: string, brand: string, article: string, operation: () => Promise<T>): Promise<T> {
+async function lockRosskoProductIdentity(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+  brand: string,
+  article: string,
+) {
   const lockKey = `rossko-product:${branchId}:${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
-  return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
-    `);
-    return operation();
-  }, { maxWait: 10_000, timeout: 30_000 });
+  await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
+    SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
+  `);
 }
 
 function asCreatedProduct(value: unknown): RosskoImportCreatedProduct {
   const product = value as RosskoImportCreatedProduct;
   return { ...product, origin: "IMPORT" };
+}
+
+export type ResolveOrCreateRosskoLocalProductInput = {
+  context: BranchContext;
+  actor: User;
+  orderId: string;
+  sourceLineKey: string;
+  partGuid?: string | null;
+  brand: string;
+  article: string;
+  name: string;
+  category?: string | null;
+  purchasePriceCents: number;
+  retailPriceCents?: number | null;
+  supplierCounterpartyId?: string | null;
+  transaction?: Prisma.TransactionClient;
+};
+
+export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRosskoLocalProductInput) {
+  const branchId = input.context.branchId;
+  if (!branchId) throw new RosskoProductImportError("Выберите филиал, в каталог которого нужно импортировать товары.", 409, "concrete_branch_required");
+  const brand = cleanEditedText(input.brand, 100);
+  const article = cleanEditedText(input.article, 120).replace(/[–—−]/g, "-");
+  const name = cleanEditedText(input.name, 240) || `${brand} ${article}`.trim();
+  const category = cleanEditedText(input.category, 300);
+  const purchasePriceCents = Math.max(0, Math.round(Number(input.purchasePriceCents) || 0));
+  const retailPriceCents = Number.isInteger(input.retailPriceCents)
+    ? Math.max(0, Number(input.retailPriceCents))
+    : recommendedRosskoRetailCents(purchasePriceCents) ?? purchasePriceCents;
+  if (!normalizeRosskoBrand(brand) || !normalizeRosskoArticle(article) || !name) {
+    throw new RosskoProductImportError("Для создания товара ROSSKO нужны бренд, артикул и наименование", 422, "rossko_product_source_invalid");
+  }
+
+  const operation = async (tx: Prisma.TransactionClient) => {
+    await lockRosskoProductIdentity(tx, branchId, brand, article);
+    const duplicate = await duplicateByBrandArticle(tx, branchId, brand, article);
+    if (duplicate) {
+      await tx.branchAuditLog.create({
+        data: {
+          businessGroupId: input.context.businessGroupId,
+          branchId,
+          userId: input.context.userId,
+          action: "ROSSKO_PRODUCT_MATCHED",
+          entityType: "local_product",
+          entityId: duplicate.id,
+          metadata: { orderId: input.orderId, sourceLineKey: input.sourceLineKey, matchType: "normalized_brand_article" },
+        },
+      });
+      return { created: false as const, product: { id: duplicate.id, name: duplicate.name } };
+    }
+
+    const payload: Parameters<typeof createLocalAdminProduct>[0] = {
+      name,
+      entityType: "product",
+      article,
+      groupPath: category || undefined,
+      uomName: "шт",
+      salePrice: retailPriceCents / 100,
+      buyPrice: purchasePriceCents / 100,
+      currencyName: "руб.",
+      minimumBalance: 0,
+      supplierCounterpartyId: input.supplierCounterpartyId || undefined,
+      brand,
+      rosskoPartNumber: article,
+      rosskoBrand: brand,
+      markingEnabled: false,
+      markingMode: "NOT_MARKED",
+    };
+    const created = await createLocalAdminProduct(payload, input.actor, branchId, { transaction: tx });
+    if (!created.ok) throw new RosskoProductImportError(created.error);
+    await tx.localProduct.update({
+      where: { id: created.product.id },
+      data: {
+        origin: "IMPORT",
+        createdById: input.context.userId,
+        raw: {
+          source: "ROSSKO_ORDER_IMPORT",
+          sourceProvider: "rossko",
+          rosskoOrderId: input.orderId,
+          rosskoPartGuid: input.partGuid ?? null,
+          rosskoSourceLineKey: input.sourceLineKey,
+          importedAt: new Date().toISOString(),
+        },
+      },
+    });
+    await tx.branchAuditLog.create({
+      data: {
+        businessGroupId: input.context.businessGroupId,
+        branchId,
+        userId: input.context.userId,
+        action: "ROSSKO_PRODUCT_CREATED",
+        entityType: "local_product",
+        entityId: created.product.id,
+        metadata: { orderId: input.orderId, sourceLineKey: input.sourceLineKey },
+      },
+    });
+    return { created: true as const, product: asCreatedProduct(created.product) };
+  };
+
+  return input.transaction
+    ? operation(input.transaction)
+    : prisma.$transaction(operation, { maxWait: 10_000, timeout: 30_000 });
 }
 
 export async function executeRosskoProductImport(input: {
@@ -533,52 +642,25 @@ export async function executeRosskoProductImport(input: {
     }
 
     try {
-      const outcome = await withIdentityLock(branchId, brand, article, async () => {
-        const duplicate = await duplicateByBrandArticle(branchId, brand, article);
-        if (duplicate) return { duplicate } as const;
-
-        const payload: Parameters<typeof createLocalAdminProduct>[0] = {
-          name,
-          entityType: "product",
-          article,
-          groupPath: category,
-          uomName: "шт",
-          salePrice: retailPriceCents / 100,
-          buyPrice: source.purchasePriceCents! / 100,
-          currencyName: "руб.",
-          minimumBalance: 0,
-          supplierCounterpartyId: supplier?.id,
-          brand,
-          rosskoPartNumber: article,
-          rosskoBrand: brand,
-          markingEnabled: false,
-          markingMode: "NOT_MARKED",
-        };
-        const created = await createLocalAdminProduct(payload, input.actor, branchId);
-        if (!created.ok) throw new RosskoProductImportError(created.error);
-        await prisma.localProduct.update({
-          where: { id: created.product.id },
-          data: {
-            origin: "IMPORT",
-            createdById: input.context.userId,
-            raw: {
-              source: "ROSSKO_ORDER_IMPORT",
-              rosskoOrderId: orderId,
-              rosskoRowId: id,
-              quantityOrdered: source.quantity,
-              importedAt: new Date().toISOString(),
-            },
-          },
-        });
-        return { created: asCreatedProduct(created.product) } as const;
+      const outcome = await resolveOrCreateRosskoLocalProduct({
+        context: input.context,
+        actor: input.actor,
+        orderId,
+        sourceLineKey: id,
+        brand,
+        article,
+        name,
+        category,
+        purchasePriceCents: source.purchasePriceCents!,
+        retailPriceCents,
+        supplierCounterpartyId: supplier?.id,
       });
 
-      if ("duplicate" in outcome && outcome.duplicate) {
-        const duplicate = outcome.duplicate;
-        results.push({ rowId: id, status: "SKIPPED_DUPLICATE", productId: duplicate.id, message: `Уже существует: ${duplicate.name}` });
+      if (!outcome.created) {
+        results.push({ rowId: id, status: "SKIPPED_DUPLICATE", productId: outcome.product.id, message: `Уже существует: ${outcome.product.name}` });
       } else {
-        createdProducts.push(outcome.created);
-        results.push({ rowId: id, status: "CREATED", productId: outcome.created.id, message: "Товар создан, остаток 0" });
+        createdProducts.push(outcome.product);
+        results.push({ rowId: id, status: "CREATED", productId: outcome.product.id, message: "Товар создан, остаток 0" });
       }
     } catch (error) {
       console.error("ROSSKO product row import failed", { orderId, rowId: id, error });

@@ -68,6 +68,7 @@ type KnownCell = { storeId: string; storeName: string; slotName: string; availab
 
 type Position = {
   localId: string;
+  documentPositionId?: string;
   productId: string;
   entityType: string;
   name: string;
@@ -556,6 +557,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     setFormMode(mode);
     setPositions(document.positions.map((position) => ({
       localId: makeLocalId(),
+      documentPositionId: position.id,
       productId: position.productId ?? "",
       entityType: position.entityType,
       name: position.name,
@@ -1219,6 +1221,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                 }
               : undefined,
             positions: positions.map((position) => ({
+              id: position.documentPositionId,
               productId: position.productId,
               quantity: Number(position.quantity) || 0,
               price: Number(position.price) || 0,

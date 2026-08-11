@@ -24667,6 +24667,318 @@ select.eco-input::-ms-expand,
   font-weight: 800;
 }
 
+.eco-restock-receipt-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100vw);
+}
+
+.eco-restock-receipt-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--eco-line);
+  border-bottom: 1px solid var(--eco-line);
+}
+
+.eco-restock-receipt-meta > div,
+.eco-restock-receipt-meta > label {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 72px;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--eco-soft);
+}
+
+.eco-restock-receipt-meta span {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eco-restock-receipt-meta strong {
+  overflow: hidden;
+  color: var(--eco-ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-meta small {
+  overflow: hidden;
+  color: var(--eco-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-meta select,
+.eco-restock-receipt-picker select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 6px;
+  color: var(--eco-ink);
+  background: var(--eco-surface);
+  font: inherit;
+}
+
+.eco-restock-receipt-meta select:focus-visible,
+.eco-restock-receipt-picker select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--eco-rust) 65%, transparent);
+  outline-offset: 1px;
+}
+
+.eco-restock-receipt-body {
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.eco-restock-receipt-table-wrap {
+  min-height: 100%;
+  overflow: auto;
+}
+
+.eco-restock-receipt-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  color: var(--eco-ink);
+  font-size: 12px;
+}
+
+.eco-restock-receipt-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--eco-line-strong);
+  color: var(--eco-muted);
+  background: var(--eco-soft);
+  font-size: 10px;
+  font-weight: 850;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--eco-line);
+  vertical-align: middle;
+}
+
+.eco-restock-receipt-table tr.has-warning > td {
+  background: color-mix(in srgb, #fffbeb 72%, var(--eco-surface));
+}
+
+.eco-restock-receipt-table tr.is-disabled > td {
+  color: var(--eco-muted);
+  background: var(--eco-surface-sunk);
+}
+
+.eco-restock-receipt-table .l-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-table .l-mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-table .eco-input {
+  width: 72px;
+  min-height: 34px;
+  text-align: right;
+}
+
+.eco-restock-receipt-product {
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.eco-restock-receipt-product strong,
+.eco-restock-receipt-product span,
+.eco-restock-receipt-match small {
+  display: block;
+}
+
+.eco-restock-receipt-product strong {
+  line-height: 1.3;
+}
+
+.eco-restock-receipt-product span,
+.eco-restock-receipt-match small {
+  margin-top: 3px;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-restock-receipt-match {
+  min-width: 190px;
+}
+
+.eco-restock-receipt-match .eco-btn {
+  margin-top: 7px;
+}
+
+.eco-restock-source-warning {
+  color: #92400e;
+  font-weight: 800;
+}
+
+.eco-restock-receipt-detail-row td {
+  padding-top: 8px;
+  padding-bottom: 10px;
+  background: color-mix(in srgb, #fffbeb 72%, var(--eco-surface));
+}
+
+.eco-restock-receipt-detail-row p {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 5px;
+  color: #854d0e;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.eco-restock-receipt-detail-row p svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.eco-restock-receipt-picker {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) auto minmax(320px, 1.2fr);
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.eco-restock-receipt-loading,
+.eco-restock-receipt-success {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 320px;
+  padding: 28px;
+  color: var(--eco-muted);
+  text-align: center;
+}
+
+.eco-restock-receipt-loading strong,
+.eco-restock-receipt-success h3 {
+  margin: 0;
+  color: var(--eco-ink);
+  font-size: 18px;
+}
+
+.eco-restock-receipt-loading span,
+.eco-restock-receipt-success p {
+  max-width: 58ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.eco-restock-receipt-success > svg {
+  color: #047857;
+}
+
+.eco-restock-receipt-success dl {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px;
+  margin: 14px 0 0;
+  background: var(--eco-line);
+}
+
+.eco-restock-receipt-success dl > div {
+  min-width: 132px;
+  padding: 10px 12px;
+  background: var(--eco-soft);
+}
+
+.eco-restock-receipt-success dt {
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eco-restock-receipt-success dd {
+  margin: 3px 0 0;
+  color: var(--eco-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.eco-restock-receipt-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  color: #991b1b;
+  background: #fef2f2;
+  border-top: 1px solid #fecaca;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.eco-restock-receipt-error svg {
+  flex: 0 0 auto;
+}
+
+.eco-restock-receipt-footer {
+  flex: 0 0 auto;
+}
+
+.eco-restock-receipt-totals {
+  display: grid;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.eco-restock-receipt-totals span {
+  color: var(--eco-muted);
+  font-size: 12px;
+}
+
+.eco-restock-receipt-totals strong {
+  color: var(--eco-ink);
+  font-size: 15px;
+}
+
+@media (max-width: 760px) {
+  .eco-restock-receipt-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-restock-receipt-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-restock-receipt-footer .eco-btn,
+  .eco-restock-receipt-footer > a {
+    width: 100%;
+  }
+
+  .eco-restock-receipt-totals {
+    width: 100%;
+  }
+}
+
 .eco-restock-icon-danger {
   display: grid;
   place-items: center;

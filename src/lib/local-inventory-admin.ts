@@ -226,6 +226,7 @@ type StockDocumentInput = {
   adjustmentReason?: string;
   applicable?: boolean;
   positions?: {
+    id?: string;
     productId?: string;
     quantity?: number;
     price?: number;
@@ -240,6 +241,22 @@ type StockDocumentInput = {
     dueDate?: string;
     status?: string;
   } | null;
+};
+
+export type StockDocumentSourceMetadata = {
+  source: string;
+  externalCode: string;
+  raw: Record<string, unknown>;
+  positions: Array<{
+    source: string;
+    externalCode: string;
+    raw: Record<string, unknown>;
+  }>;
+};
+
+type StockDocumentCreateOptions = {
+  transaction?: Prisma.TransactionClient;
+  sourceMetadata?: StockDocumentSourceMetadata;
 };
 
 type SupplierInvoiceInput = {
@@ -459,9 +476,11 @@ async function writeProductMarkingAudit(input: {
   oldValue: unknown;
   newValue: unknown;
   actor?: ActingUser | null;
+  transaction?: Prisma.TransactionClient;
 }) {
   if (!productMarkingSnapshotChanged(input.oldValue, input.newValue)) return;
-  await prisma.productMarkingAuditLog.create({
+  const client = input.transaction ?? prisma;
+  await client.productMarkingAuditLog.create({
     data: {
       productId: input.productId,
       oldValue: toJson(input.oldValue),
@@ -1576,13 +1595,14 @@ async function getProductRowsForAdmin(branchId: string, includeArchived?: boolea
 async function resolveProductSupplierCounterparty(
   supplierCounterpartyId: string | null | undefined,
   branchId: string,
-  options: { allowExistingArchivedId?: string | null } = {}
+  options: { allowExistingArchivedId?: string | null; transaction?: Prisma.TransactionClient } = {}
 ) {
   if (supplierCounterpartyId === undefined) return { ok: true as const, id: undefined, name: undefined };
   const id = supplierCounterpartyId?.trim() || null;
   if (!id) return { ok: true as const, id: null, name: "" };
 
-  const supplier = await prisma.localCounterparty.findFirst({
+  const client = options.transaction ?? prisma;
+  const supplier = await client.localCounterparty.findFirst({
     where: {
       id,
       branchId,
@@ -2684,7 +2704,12 @@ export async function listLocalRestockNeeds(params: {
   return value;
 }
 
-export async function createLocalAdminProduct(body: ProductInput, actor: ActingUser | null | undefined, branchId: string) {
+export async function createLocalAdminProduct(
+  body: ProductInput,
+  actor: ActingUser | null | undefined,
+  branchId: string,
+  options: { transaction?: Prisma.TransactionClient } = {},
+) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите название товара" };
   const entityType = body.entityType?.trim() || "product";
@@ -2701,7 +2726,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
   const minPriceCurrencyName = cleanText(body.minPriceCurrencyName);
   const countryName = cleanText(body.countryName);
   const vatLabel = cleanText(body.vatLabel);
-  const supplierResult = await resolveProductSupplierCounterparty(body.supplierCounterpartyId, branchId);
+  const supplierResult = await resolveProductSupplierCounterparty(body.supplierCounterpartyId, branchId, options);
   if (!supplierResult.ok) return supplierResult;
   const supplierCounterpartyId = supplierResult.id ?? null;
   const legacySupplierName = cleanText(body.legacySupplierName);
@@ -2728,7 +2753,8 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
   const marking = normalizeProductMarkingData(body, undefined, uomName, groupPath);
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
-  const product = await prisma.localProduct.create({
+  const client = options.transaction ?? prisma;
+  const product = await client.localProduct.create({
     data: {
       branchId,
       name,
@@ -2830,6 +2856,7 @@ export async function createLocalAdminProduct(body: ProductInput, actor: ActingU
       }),
       newValue: productMarkingSnapshot(product),
       actor,
+      transaction: options.transaction,
     });
   }
   invalidateProductFilterOptions();
@@ -3338,14 +3365,19 @@ export async function listActiveSuppliers(params: { branchId: string; search?: s
   return { suppliers: suppliers.map(supplierSummary) };
 }
 
-export async function quickCreateSupplier(body: CounterpartyInput, branchId: string) {
+export async function quickCreateSupplier(
+  body: CounterpartyInput,
+  branchId: string,
+  options: { transaction?: Prisma.TransactionClient; rawMetadata?: Record<string, unknown> } = {},
+) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите название поставщика" };
   const inn = cleanText(body.inn);
   const phone = cleanText(body.contactPhone) ?? cleanText(body.phone);
   const normalizedName = normalizeSupplierDuplicateValue(name);
   const normalizedPhone = normalizePhoneKey(phone);
-  const candidates = await prisma.localCounterparty.findMany({
+  const client = options.transaction ?? prisma;
+  const candidates = await client.localCounterparty.findMany({
     where: { branchId, archived: false, AND: [supplierCounterpartyIdentityWhere()] },
     select: {
       id: true,
@@ -3383,10 +3415,14 @@ export async function quickCreateSupplier(body: CounterpartyInput, branchId: str
     companyType: "supplier",
     legalTitle: body.legalTitle ?? name,
     contactPhone: body.contactPhone ?? phone,
-  }, branchId);
+  }, branchId, options);
 }
 
-export async function createLocalAdminCounterparty(body: CounterpartyInput, branchId: string) {
+export async function createLocalAdminCounterparty(
+  body: CounterpartyInput,
+  branchId: string,
+  options: { transaction?: Prisma.TransactionClient; rawMetadata?: Record<string, unknown> } = {},
+) {
   const name = body.name?.trim() ?? "";
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
   const category = normalizeCounterpartyCategory(body.category);
@@ -3426,6 +3462,7 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
   const vehicleYear = cleanText(body.vehicleYear);
   const rawPayload = {
     ...body,
+    ...(options.rawMetadata ?? {}),
     additionalPhone,
     comment,
     vehicle: {
@@ -3435,7 +3472,8 @@ export async function createLocalAdminCounterparty(body: CounterpartyInput, bran
       year: vehicleYear,
     },
   };
-  const counterparty = await prisma.localCounterparty.create({
+  const client = options.transaction ?? prisma;
+  const counterparty = await client.localCounterparty.create({
     data: {
       branchId,
       name,
@@ -3690,7 +3728,12 @@ export async function listLocalStoresForAdmin(options: { branchIds?: string[] } 
   return value;
 }
 
-async function nextStockDocumentName(type: LocalStockDocumentType, documentDate: string, adjustmentType?: LocalAdjustmentType | null) {
+async function nextStockDocumentName(
+  type: LocalStockDocumentType,
+  documentDate: string,
+  adjustmentType?: LocalAdjustmentType | null,
+  transaction?: Prisma.TransactionClient,
+) {
   const prefix = type === "receipt" ? "ПР" : adjustmentType === "technical" ? "ТК" : "СП";
   const where: Prisma.LocalInventoryDocumentWhereInput = { type, documentDate };
   if (type === "writeoff") {
@@ -3700,14 +3743,16 @@ async function nextStockDocumentName(type: LocalStockDocumentType, documentDate:
       where.OR = [{ adjustmentType: "expense" }, { adjustmentType: null }];
     }
   }
-  const count = await prisma.localInventoryDocument.count({
+  const client = transaction ?? prisma;
+  const count = await client.localInventoryDocument.count({
     where,
   });
   return `${prefix}-${documentDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
 
-async function nextSupplierInvoiceNumber(invoiceDate: string) {
-  const count = await prisma.localSupplierInvoice.count({ where: { invoiceDate } });
+async function nextSupplierInvoiceNumber(invoiceDate: string, transaction?: Prisma.TransactionClient) {
+  const client = transaction ?? prisma;
+  const count = await client.localSupplierInvoice.count({ where: { invoiceDate } });
   return `СЧ-${invoiceDate.replaceAll("-", "")}-${String(count + 1).padStart(3, "0")}`;
 }
 
@@ -4341,9 +4386,10 @@ export async function updateLocalSupplierInvoiceStatus(invoiceId: string, status
   return { ok: true as const, invoice: mapSupplierInvoice(updated) };
 }
 
-export async function createLocalStockDocument(body: StockDocumentInput, user?: ActingUser) {
+export async function createLocalStockDocument(body: StockDocumentInput, user?: ActingUser, options?: StockDocumentCreateOptions) {
   getScopedBranchId();
   const type = body.type === "receipt" || body.type === "writeoff" ? body.type : null;
+  const client = options?.transaction ?? prisma;
   if (!type) return { ok: false as const, error: "Неизвестный тип складского документа" };
   const storeId = body.storeId?.trim() ?? "";
   const applicable = body.applicable !== false;
@@ -4356,7 +4402,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if (reasonError) return { ok: false as const, error: reasonError };
   }
   const store = storeId
-    ? await prisma.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] } })
+    ? await client.localStore.findFirst({ where: { OR: [{ id: storeId }, { id: storeId }] } })
     : null;
   if (storeId && !store) return { ok: false as const, error: "Склад не найден в локальной БД" };
   if (applicable && !store) return { ok: false as const, error: "Выберите склад" };
@@ -4368,9 +4414,12 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   if (inputPositions.length === 0) {
     return { ok: false as const, error: "Добавьте хотя бы одну позицию с количеством больше нуля" };
   }
+  if (options?.sourceMetadata && options.sourceMetadata.positions.length !== inputPositions.length) {
+    return { ok: false as const, error: "Source metadata не соответствует позициям складского документа" };
+  }
 
   const productIds = [...new Set(inputPositions.map((position) => position.productId!.trim()))];
-  const products = await prisma.localProduct.findMany({
+  const products = await client.localProduct.findMany({
     where: { OR: [{ id: { in: productIds } }, { id: { in: productIds } }] },
   });
   const productByAnyId = new Map<string, (typeof products)[number]>();
@@ -4379,7 +4428,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     if (product.id) productByAnyId.set(product.id, product);
   }
 
-  const positions = inputPositions.map((position) => {
+  const positions = inputPositions.map((position, index) => {
     const product = productByAnyId.get(position.productId!.trim());
     if (!product) return { error: `Товар не найден: ${position.productId}` as const };
     if (!isStockTrackedType(product.entityType)) return { error: `Позиция не является складским товаром: ${product.name}` as const };
@@ -4399,6 +4448,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
       slotName: position.slotName?.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
+      sourceMetadata: options?.sourceMetadata?.positions[index] ?? null,
     };
   });
   const positionError = positions.find((position) => "error" in position);
@@ -4409,19 +4459,19 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
   const counterpartyId = body.counterpartyId?.trim();
   const supplierSnapshotName = supplierSnapshotNameFromId(counterpartyId);
   const counterparty = counterpartyId && !supplierSnapshotName
-    ? await prisma.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
+    ? await client.localCounterparty.findFirst({ where: { OR: [{ id: counterpartyId }, { id: counterpartyId }] } })
     : null;
   const sumCents = positions.reduce((sum, position) => {
     if ("error" in position) return sum;
     return sum + Math.round(position.quantity.toNumber() * position.priceCents);
   }, 0);
-  const name = await nextStockDocumentName(type, documentDate, adjustmentType);
+  const name = await nextStockDocumentName(type, documentDate, adjustmentType, options?.transaction);
   const invoiceRequested = type === "receipt" && body.invoice?.create === true;
   const invoiceDate = invoiceRequested ? documentDateFromInput(body.invoice?.invoiceDate || documentDate) : null;
   const invoiceDueDate = invoiceRequested ? optionalDocumentDateFromInput(body.invoice?.dueDate) : null;
   const invoiceStatus = invoiceRequested ? normalizeSupplierInvoiceStatus(body.invoice?.status) : null;
   const invoiceNumber = invoiceRequested
-    ? body.invoice?.number?.trim() || await nextSupplierInvoiceNumber(invoiceDate!)
+    ? body.invoice?.number?.trim() || await nextSupplierInvoiceNumber(invoiceDate!, options?.transaction)
     : null;
 
   let created: {
@@ -4436,7 +4486,7 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     affectsManagementProfit: boolean;
   };
   try {
-    created = await prisma.$transaction(async (tx) => {
+    const createDocument = async (tx: Prisma.TransactionClient) => {
       const document = await tx.localInventoryDocument.create({
       data: {
         type,
@@ -4457,7 +4507,9 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
         storeNameSnapshot: store?.name ?? null,
         createdByLogin: user?.login ?? null,
         createdByName: user?.name ?? null,
-        raw: toJson(body),
+        source: options?.sourceMetadata?.source ?? "local",
+        externalCode: options?.sourceMetadata?.externalCode ?? null,
+        raw: toJson(options?.sourceMetadata?.raw ?? body),
       },
     });
 
@@ -4471,7 +4523,9 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
           quantity: position.quantity,
           priceCentsPerUnit: position.priceCents,
           slotName: position.slotName,
-          raw: toJson(position.raw),
+          source: position.sourceMetadata?.source ?? "local",
+          externalCode: position.sourceMetadata?.externalCode ?? null,
+          raw: toJson(position.sourceMetadata?.raw ?? position.raw),
         };
       }),
     });
@@ -4598,7 +4652,10 @@ export async function createLocalStockDocument(body: StockDocumentInput, user?: 
     });
 
       return document;
-    });
+    };
+    created = options?.transaction
+      ? await createDocument(options.transaction)
+      : await prisma.$transaction(createDocument);
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось провести складской документ" };
   }
@@ -4691,9 +4748,30 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
     productByAnyId.set(product.id, product);
     if (product.id) productByAnyId.set(product.id, product);
   }
+  const currentPositionById = new Map(current.positions.map((position) => [position.id, position]));
+  const currentPositionsByProduct = new Map<string, typeof current.positions>();
+  for (const position of current.positions) {
+    if (!position.productId) continue;
+    currentPositionsByProduct.set(position.productId, [...(currentPositionsByProduct.get(position.productId) ?? []), position]);
+  }
+  const inputCountByProduct = new Map<string, number>();
+  for (const position of inputPositions) {
+    const productId = position.productId!.trim();
+    inputCountByProduct.set(productId, (inputCountByProduct.get(productId) ?? 0) + 1);
+  }
 
   const positions = inputPositions.map((position) => {
-    const product = productByAnyId.get(position.productId!.trim());
+    const sourcePositionId = position.id?.trim() ?? "";
+    const productId = position.productId!.trim();
+    const sourcePosition = sourcePositionId
+      ? currentPositionById.get(sourcePositionId) ?? null
+      : current.source === "rossko" && inputCountByProduct.get(productId) === 1 && currentPositionsByProduct.get(productId)?.length === 1
+        ? currentPositionsByProduct.get(productId)![0]
+        : null;
+    if (sourcePositionId && !sourcePosition) {
+      return { error: "Позиция складского документа не найдена" as const };
+    }
+    const product = productByAnyId.get(productId);
     if (!product) return { error: `Товар не найден: ${position.productId}` as const };
     if (!isStockTrackedType(product.entityType)) return { error: `Позиция не является складским товаром: ${product.name}` as const };
     const quantity = Number(position.quantity) || 0;
@@ -4712,6 +4790,7 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
       slotName: position.slotName?.trim() || null,
       makeDefaultCell: position.makeDefaultCell === true,
       raw: position,
+      sourcePosition,
     };
   });
   const positionError = positions.find((position) => "error" in position);
@@ -4781,7 +4860,13 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
         storeNameSnapshot: store?.name ?? null,
         createdByLogin: user?.login ?? current.createdByLogin,
         createdByName: user?.name ?? current.createdByName,
-        raw: toJson(body),
+        raw: current.source === "rossko"
+          ? toJson({
+              ...jsonRecord(current.raw),
+              lastEditedAt: new Date().toISOString(),
+              lastEditedBy: user?.login ?? null,
+            })
+          : toJson(body),
       },
     });
 
@@ -4796,7 +4881,15 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
           quantity: position.quantity,
           priceCentsPerUnit: position.priceCents,
           slotName: position.slotName,
-          raw: toJson(position.raw),
+          source: position.sourcePosition?.source ?? "local",
+          externalCode: position.sourcePosition?.externalCode ?? null,
+          raw: position.sourcePosition
+            ? toJson({
+                ...jsonRecord(position.sourcePosition.raw),
+                salePrice: position.raw.salePrice,
+                makeDefaultCell: position.raw.makeDefaultCell,
+              })
+            : toJson(position.raw),
         };
       }),
     });
@@ -5720,6 +5813,8 @@ export async function listLocalStockDocuments(params: {
       isDeleted: document.isDeleted,
       cancelledAt: document.cancelledAt?.toISOString() ?? null,
       deletedAt: document.deletedAt?.toISOString() ?? null,
+      source: document.source,
+      externalCode: document.externalCode,
       storeId: document.storeId ?? "",
       storeName: document.store?.name ?? document.storeNameSnapshot ?? "",
       counterpartyId: document.counterpartyId ?? "",
@@ -5753,6 +5848,8 @@ export async function listLocalStockDocuments(params: {
           : "";
         return {
           id: position.id,
+          source: position.source,
+          externalCode: position.externalCode,
           productId: position.productId,
           name: position.productName,
           article: position.product?.article ?? "",
