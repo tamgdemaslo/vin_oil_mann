@@ -78,12 +78,13 @@ assert.throws(
   "oversized orders must fail instead of being silently truncated",
 );
 
-const [service, inventory, importer, previewRoute, draftRoute, ui, stockDocumentUi, schema] = await Promise.all([
+const [service, inventory, importer, previewRoute, draftRoute, ui, restockUi, stockDocumentUi, schema] = await Promise.all([
   readFile("src/lib/rossko-receipt.ts", "utf8"),
   readFile("src/lib/local-inventory-admin.ts", "utf8"),
   readFile("src/lib/rossko-product-import.ts", "utf8"),
   readFile("src/app/api/rossko/orders/[orderId]/receipt-preview/route.ts", "utf8"),
   readFile("src/app/api/rossko/orders/[orderId]/receipt-draft/route.ts", "utf8"),
+  readFile("src/components/receipts/RosskoReceiptWorkspace.tsx", "utf8"),
   readFile("src/app/operations/restock/RestockClient.tsx", "utf8"),
   readFile("src/app/inventory/StockDocumentClient.tsx", "utf8"),
   readFile("prisma/schema.prisma", "utf8"),
@@ -144,6 +145,10 @@ assert.match(ui, /Принять на склад/);
 assert.match(ui, /Заказ ROSSKO №/);
 assert.match(ui, /Создать черновик приёмки/);
 assert.match(ui, /Открыть приёмку/);
+assert.match(stockDocumentUi, /Принять из ROSSKO/);
+assert.match(stockDocumentUi, /RosskoReceiptWorkspace/);
+assert.doesNotMatch(restockUi, /onClick=\{\(\) => setIncomingOpen\(true\)\}/, "receipt workspace must not open from replenishment");
+assert.doesNotMatch(restockUi, /<span>№ ROSSKO<\/span>/, "ROSSKO receipt order input belongs to inventory receipts");
 assert.doesNotMatch(ui, /ООО\s*["«]?ГРИНЛАЙТ/i);
 assert.match(schema, /source\s+String\s+@default\("local"\)/);
 assert.match(schema, /externalCode\s+String\?/);

@@ -28,6 +28,7 @@ import {
   Search,
   Square,
   Trash2,
+  Truck,
   Warehouse,
   X,
 } from "lucide-react";
@@ -36,6 +37,7 @@ import { ContactActionButton } from "@/components/messenger/ContactActionButton"
 import { EcoBadge, EcoButton, EcoInput, EcoSelect } from "@/components/platform/EcoUI";
 import { formatServiceDate, formatServiceDateTime, toServiceDateInput, toServiceMomentString } from "@/lib/date-time";
 import PriceLabelPrintDialog from "@/components/receipts/PriceLabelPrintDialog";
+import RosskoReceiptWorkspace from "@/components/receipts/RosskoReceiptWorkspace";
 
 type StockDocumentType = "receipt" | "writeoff";
 type StockDocumentStatus = "draft" | "posted" | "cancelled" | "needs_review" | "blocked";
@@ -409,6 +411,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [savingAction, setSavingAction] = useState<SaveAction | null>(null);
   const [receiptDialog, setReceiptDialog] = useState<ReceiptDialogState | null>(null);
   const [priceLabelDocument, setPriceLabelDocument] = useState<MovementRow | null>(null);
+  const [rosskoReceiptOpen, setRosskoReceiptOpen] = useState(false);
   const [receiptActionBusy, setReceiptActionBusy] = useState<string | null>(null);
   const [invoiceSaving, setInvoiceSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1763,6 +1766,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           onClose={() => setPriceLabelDocument(null)}
         />
       )}
+      {isReceipt && rosskoReceiptOpen && (
+        <RosskoReceiptWorkspace
+          onClose={() => setRosskoReceiptOpen(false)}
+          onCreated={(result) => {
+            setInfo(`Черновик приёмки ${result.documentNumber} создан из заказа ROSSKO.`);
+            void loadDocuments();
+          }}
+        />
+      )}
       {formOpen && (
         <div className={`eco-receipt-drawer-backdrop${isReceipt ? " is-workspace" : ""}`}>
           <aside role="dialog" aria-modal="true" className={`eco-receipt-drawer${isReceipt ? " is-workspace" : ""}`}>
@@ -2567,6 +2579,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <RefreshCw size={15} />
             Обновить
           </EcoButton>
+          {isReceipt && (
+            <EcoButton type="button" onClick={() => setRosskoReceiptOpen(true)} disabled={allBranchesMode}>
+              <Truck size={15} />
+              Принять из ROSSKO
+            </EcoButton>
+          )}
           <EcoButton type="button" variant="primary" onClick={openDocumentForm}>
             <FilePlus2 size={15} />
             {actionLabel}
