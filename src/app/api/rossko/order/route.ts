@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import { extractRosskoOrderId, trackRosskoOrderSeeds } from "@/lib/rossko-incoming";
 import { RosskoCheckoutPart, RosskoError, rosskoCheckout, rosskoCheckoutDetails, rosskoCheckoutOptions, rosskoConfig, validateRosskoCheckoutSelection } from "@/lib/rossko";
 import { rosskoIntegrationError } from "@/lib/rossko-integration";
 
 export const runtime = "nodejs";
 
-type BodyPart = Partial<RosskoCheckoutPart>;
+type BodyPart = Partial<RosskoCheckoutPart> & {
+  productId?: string;
+  title?: string;
+  offerName?: string;
+  delivery?: string;
+  price?: number | null;
+  expectedAt?: number | string | null;
+};
 
 export async function POST(request: NextRequest) {
   const branch = await requireBranchApi({ allowAll: false, requireActive: true });
@@ -73,7 +81,34 @@ export async function POST(request: NextRequest) {
       deliveryParts: cfg.deliveryParts,
       parts,
     });
-    return NextResponse.json({ ok: true, data });
+    const orderId = extractRosskoOrderId(data);
+    let trackingWarning: string | null = null;
+    if (orderId) {
+      try {
+        await trackRosskoOrderSeeds({
+          context: branch.context,
+          actor: branch.context.user,
+          orders: [{
+            externalOrderId: orderId,
+            createdAt: Date.now(),
+            orderedAt: Date.now(),
+            comment: body.comment,
+            lines: (Array.isArray(body.parts) ? body.parts : []).map((part) => ({
+              productId: part.productId,
+              name: part.title || part.offerName,
+              brand: part.brand,
+              partnumber: part.partnumber,
+              count: part.count,
+              expectedAt: part.expectedAt,
+            })),
+          }],
+        });
+      } catch (error) {
+        trackingWarning = error instanceof Error ? error.message : "Заказ создан, но пока не добавлен в серверное отслеживание";
+        console.error("ROSSKO order tracking failed after checkout", error);
+      }
+    }
+    return NextResponse.json({ ok: true, data, trackingWarning });
     });
   } catch (e) {
     const safe = rosskoIntegrationError(e);

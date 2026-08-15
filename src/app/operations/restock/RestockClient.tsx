@@ -112,6 +112,27 @@ type SupplierOrder = {
   lines: SupplierOrderLine[];
   comment?: string;
 };
+type ServerIncomingOrder = {
+  externalOrderId: string;
+  createdAt: string | null;
+  expectedDate: string | null;
+  status: string;
+  statusLabel: string;
+  summary: { activeIncomingQty: number };
+  lines: Array<{
+    sourceLineKey: string;
+    productId: string;
+    name: string;
+    brand: string;
+    article: string;
+    orderedQty: number;
+    postedReceivedQty: number;
+    activeIncomingQty: number;
+    expectedDate: string | null;
+    state: string;
+  }>;
+};
+type ServerIncomingResponse = { orders?: ServerIncomingOrder[]; updatedAt?: string | null; error?: string };
 type ProcurementCoverage = {
   available: number;
   reserve: number;
@@ -546,6 +567,47 @@ function normalizeSupplierOrders(orders: SupplierOrder[]): SupplierOrder[] {
   return normalized;
 }
 
+function supplierOrdersFromServer(orders: ServerIncomingOrder[]): SupplierOrder[] {
+  return normalizeSupplierOrders(orders.map((order) => {
+    const orderedAt = order.createdAt ? new Date(order.createdAt).getTime() : Date.now();
+    const lines: SupplierOrderLine[] = order.lines.map((line) => ({
+      id: line.sourceLineKey,
+      orderId: `rossko_order:${order.externalOrderId}`,
+      externalOrderId: order.externalOrderId,
+      supplier: "ROSSKO",
+      productId: line.productId,
+      partnumber: line.article,
+      brand: line.brand,
+      stock: "ROSSKO",
+      count: line.activeIncomingQty,
+      title: line.name,
+      code: line.article,
+      price: null,
+      delivery: line.expectedDate ? new Date(line.expectedDate).toLocaleDateString("ru-RU") : "уточняется",
+      available: null,
+      city: "",
+      offerName: `${line.brand} ${line.article}`.trim(),
+      orderedQty: line.orderedQty,
+      receivedQty: line.postedReceivedQty,
+      remainingQty: line.activeIncomingQty,
+      status: line.postedReceivedQty > 0 ? "partially_received" : line.activeIncomingQty > 0 ? "confirmed" : "received",
+      expectedAt: line.expectedDate ? new Date(line.expectedDate).getTime() : undefined,
+    }));
+    return {
+      id: `rossko_order:${order.externalOrderId}`,
+      supplier: "ROSSKO",
+      supplierType: "ROSSKO",
+      externalOrderId: order.externalOrderId,
+      status: order.status === "closed" ? "received" : lines.some((line) => line.receivedQty > 0) ? "partially_received" : "confirmed",
+      createdAt: orderedAt,
+      orderedAt,
+      expectedAt: order.expectedDate ? new Date(order.expectedDate).getTime() : undefined,
+      lines,
+      comment: order.statusLabel,
+    };
+  }));
+}
+
 function cartKey(line: Pick<RosskoCartLine, "productId" | "partnumber" | "brand" | "stock">): string {
   return `${line.productId}||${line.brand}||${line.partnumber}||${line.stock}`;
 }
@@ -737,6 +799,8 @@ export default function RestockClient() {
   const [rosskoState, setRosskoState] = useState<Record<string, RosskoSearchState>>({});
   const [rosskoCart, setRosskoCart] = useState<RosskoCartLine[]>([]);
   const [rosskoOrders, setRosskoOrders] = useState<SupplierOrder[]>([]);
+  const [incomingUpdatedAt, setIncomingUpdatedAt] = useState<string | null>(null);
+  const [incomingLoading, setIncomingLoading] = useState(false);
   const [rosskoOfferQty, setRosskoOfferQty] = useState<Record<string, number>>({});
   const [rosskoAddState, setRosskoAddState] = useState<Record<string, "loading" | "success" | "error">>({});
   const [rosskoHealth, setRosskoHealth] = useState<RosskoHealth>({ status: "checking" });
@@ -754,7 +818,6 @@ export default function RestockClient() {
     setQtyByProduct(loadJson<Record<string, number>>(LS_QTY, {}));
     setExcluded(loadJson<Record<string, boolean>>(LS_EXC, {}));
     setRosskoCart(normalizeRosskoCart(loadJson<RosskoCartLine[]>(LS_ROSSKO_CART, [])));
-    setRosskoOrders(normalizeSupplierOrders(loadJson<SupplierOrder[]>(LS_ROSSKO_ORDERS, [])));
     setRosskoOfferQty(loadJson<Record<string, number>>(LS_ROSSKO_OFFER_QTY, {}));
   }, []);
 
@@ -779,6 +842,37 @@ export default function RestockClient() {
     setRosskoOrders(normalized);
     saveJson(LS_ROSSKO_ORDERS, normalized);
   }, []);
+
+  const loadServerIncomingOrders = useCallback(async (legacyOrders: SupplierOrder[] = [], sync = true) => {
+    setIncomingLoading(true);
+    try {
+      const response = legacyOrders.length
+        ? await fetch("/api/rossko/incoming-orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ orders: legacyOrders, sync }),
+          })
+        : await fetch(`/api/rossko/incoming-orders?sync=${sync ? "1" : "0"}`, { cache: "no-store" });
+      const data = await response.json() as ServerIncomingResponse;
+      if (!response.ok || data.error) throw new Error(data.error || "Не удалось обновить заказы ROSSKO");
+      const normalized = supplierOrdersFromServer(Array.isArray(data.orders) ? data.orders : []);
+      setRosskoOrders(normalized);
+      setIncomingUpdatedAt(data.updatedAt ?? null);
+      saveJson(LS_ROSSKO_ORDERS, normalized);
+    } catch (cause) {
+      console.warn("ROSSKO incoming sync failed", cause);
+      const fallback = normalizeSupplierOrders(legacyOrders);
+      if (fallback.length) setRosskoOrders(fallback);
+    } finally {
+      setIncomingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const legacy = normalizeSupplierOrders(loadJson<SupplierOrder[]>(LS_ROSSKO_ORDERS, []));
+    setRosskoOrders(legacy);
+    void loadServerIncomingOrders(legacy, true);
+  }, [loadServerIncomingOrders]);
 
   const persistRosskoOfferQty = useCallback((next: Record<string, number>) => {
     setRosskoOfferQty(next);
@@ -1426,7 +1520,7 @@ export default function RestockClient() {
   }
 
   async function checkoutRosskoCart() {
-    const lines = rosskoCart
+      const lines = rosskoCart
       .map((x) => ({
         partnumber: x.partnumber,
         brand: x.brand,
@@ -1434,6 +1528,11 @@ export default function RestockClient() {
         count: Math.max(1, Math.floor(Number(x.count || 1))),
         comment: String(x.code || "").slice(0, 50),
         productId: x.productId,
+        title: x.title,
+        offerName: x.offerName,
+        delivery: x.delivery,
+        price: x.price,
+        expectedAt: expectedAtFromDelivery(x.delivery),
       }))
       .filter((x) => x.partnumber && x.brand && x.stock && x.count > 0);
     if (!lines.length) return;
@@ -1485,6 +1584,7 @@ export default function RestockClient() {
         comment: `Заказ из Пополнение остатков (${toServiceDateInput(new Date())})`,
       };
       persistRosskoOrders([supplierOrder, ...rosskoOrders]);
+      await loadServerIncomingOrders([supplierOrder, ...rosskoOrders], true);
       persistRosskoCart([]);
       setCartOpen(false);
       showToast(`Заказ ROSSKO сформирован${orderId ? ` #${orderId}` : ""}`);
@@ -1760,6 +1860,10 @@ export default function RestockClient() {
               <span>Завтра {fmtNum(incomingSummary.tomorrow)}</span>
               <span>Позже {fmtNum(incomingSummary.later)}</span>
               {!!incomingSummary.overdue && <strong>Просрочено {fmtNum(incomingSummary.overdue)}</strong>}
+              <button type="button" onClick={() => void loadServerIncomingOrders([], true)} disabled={incomingLoading}>
+                {incomingLoading ? <Loader2 size={13} className="eco-spin" /> : <RefreshCw size={13} />}
+                {incomingUpdatedAt ? `Статусы: ${fmtTime(new Date(incomingUpdatedAt).getTime())}` : "Обновить статусы заказов"}
+              </button>
             </div>
             <RosskoStatusPanel
               health={rosskoHealth}

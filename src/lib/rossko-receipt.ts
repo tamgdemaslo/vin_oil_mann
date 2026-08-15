@@ -16,28 +16,13 @@ import {
   resolveOrCreateRosskoLocalProduct,
 } from "@/lib/rossko-product-import";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
+import {
+  calculateRosskoIncomingQuantities,
+  normalizeRosskoOrderPartStatus,
+} from "@/lib/rossko-order-status";
 
 const MAX_RECEIPT_LINES = 240;
 const ROSSKO_SOURCE = "rossko";
-const SOURCE_STATUS_WARNINGS = new Set([7, 8, 9, 32, 33, 34, 35, 36]);
-
-const ROSSKO_STATUS_LABELS: Record<number, string> = {
-  0: "Ждёт подтверждения",
-  1: "Комплектуется",
-  2: "Отгружено",
-  3: "Готово к отгрузке",
-  5: "Ожидаем поступление",
-  6: "На складе филиала",
-  7: "Нет в наличии",
-  8: "Отменён клиентом",
-  9: "Просрочен",
-  31: "Ожидаем товар на складе",
-  32: "Возврат на согласовании",
-  33: "Товар на экспертизе",
-  34: "Возврат отклонён",
-  35: "Возврат частично отклонён",
-  36: "Товар возвращён",
-};
 
 export type NormalizedRosskoOrderPart = {
   guid: string;
@@ -49,6 +34,7 @@ export type NormalizedRosskoOrderPart = {
   orderedQty: number;
   price: number;
   deliveryDays: number | null;
+  deliveryDate: Date | null;
   status: number | null;
   comment: string | null;
   raw: unknown;
@@ -57,6 +43,8 @@ export type NormalizedRosskoOrderPart = {
 export type NormalizedRosskoOrder = {
   id: string;
   createdAt: Date | null;
+  deliveryDate: Date | null;
+  deliveryType: string | null;
   totalPrice: number | null;
   paymentStatus: string | null;
   stockAddress: string | null;
@@ -67,6 +55,8 @@ export type RosskoReceiptLineAction =
   | "MATCHED_EXISTING"
   | "CREATE_PRODUCT"
   | "FULLY_RECEIVED"
+  | "PROVIDER_CLOSED"
+  | "CLOSED_MANUALLY"
   | "AMBIGUOUS_PRODUCT"
   | "AMBIGUOUS_SOURCE_LINE"
   | "SOURCE_STATUS_WARNING"
@@ -80,6 +70,8 @@ export type RosskoReceiptPreviewLine = {
   name: string;
   orderedQty: number;
   alreadyReceivedQty: number;
+  manualClosedQty: number;
+  providerClosedQty: number;
   remainingQty: number;
   receiveQty: number;
   purchasePrice: number;
@@ -100,6 +92,8 @@ export type RosskoReceiptPreview = {
   order: {
     id: string;
     createdAt: string | null;
+    deliveryDate: string | null;
+    deliveryType: string | null;
     totalPrice: number | null;
     stockAddress: string | null;
   };
@@ -114,6 +108,9 @@ export type RosskoReceiptPreview = {
     ambiguousLines: number;
     orderedQty: number;
     alreadyReceivedQty: number;
+    manualClosedQty: number;
+    providerClosedQty: number;
+    closedQty: number;
     remainingQty: number;
   };
   lines: RosskoReceiptPreviewLine[];
@@ -241,6 +238,8 @@ export function normalizeRosskoOrder(payload: unknown, requestedOrderId: string)
       "ROSSKO_ORDER_TOO_LARGE",
     );
   }
+  const orderDeliveryDate = parseRosskoDate(valueAt(order, "delivery_date"));
+  const detail = record(valueAt(order, "detail"));
   const parts = sourceParts.map<NormalizedRosskoOrderPart>((part) => {
     const article = textAt(part, "partnumber").replace(/[–—−]/g, "-");
     const brand = textAt(part, "brand");
@@ -258,6 +257,7 @@ export function normalizeRosskoOrder(payload: unknown, requestedOrderId: string)
       orderedQty: quantity == null ? Number.NaN : quantity,
       price: price == null ? Number.NaN : price,
       deliveryDays: delivery == null ? null : delivery,
+      deliveryDate: parseRosskoDate(valueAt(part, "delivery_date")) ?? orderDeliveryDate,
       status: status == null || !Number.isInteger(status) ? null : status,
       comment: textAt(part, "comment") || null,
       raw: part,
@@ -267,6 +267,8 @@ export function normalizeRosskoOrder(payload: unknown, requestedOrderId: string)
   return {
     id: textAt(order, "id"),
     createdAt: parseRosskoDate(valueAt(order, "created_date")),
+    deliveryDate: orderDeliveryDate,
+    deliveryType: detail ? textAt(detail, "delivery_type") || null : null,
     totalPrice: numericAt(order, "total_price"),
     paymentStatus: textAt(order, "payment_status") || null,
     stockAddress: textAt(order, "stock_address") || null,
@@ -275,11 +277,8 @@ export function normalizeRosskoOrder(payload: unknown, requestedOrderId: string)
 }
 
 export function rosskoStatusPresentation(status: number | null) {
-  if (status == null) return { label: "Статус не передан", warning: false };
-  return {
-    label: ROSSKO_STATUS_LABELS[status] ?? `Неизвестный статус (${status})`,
-    warning: SOURCE_STATUS_WARNINGS.has(status) || !(status in ROSSKO_STATUS_LABELS),
-  };
+  const normalized = normalizeRosskoOrderPartStatus(status);
+  return { label: normalized.label, warning: normalized.warning };
 }
 
 type SourcePartGroup = { part: NormalizedRosskoOrderPart; ambiguous: boolean; duplicateCount: number };
@@ -456,13 +455,39 @@ async function loadReceiptHistory(tx: ReceiptDb, branchId: string, orderId: stri
   });
 }
 
+async function loadManualClosedQuantityByLine(tx: ReceiptDb, branchId: string, orderId: string) {
+  const events = await tx.branchAuditLog.findMany({
+    where: {
+      branchId,
+      entityType: "rossko_order",
+      entityId: orderId,
+      action: "ROSSKO_ORDER_LINES_CLOSED_MANUALLY",
+    },
+    select: { metadata: true },
+    orderBy: [{ createdAt: "asc" }],
+  });
+  const result = new Map<string, number>();
+  for (const event of events) {
+    const metadata = record(event.metadata);
+    const lines = Array.isArray(metadata?.lines) ? metadata.lines : [];
+    for (const rawLine of lines) {
+      const line = record(rawLine);
+      const sourceLineKey = text(line?.sourceLineKey);
+      const quantity = numeric(line?.quantity) ?? 0;
+      if (!sourceLineKey || quantity <= 0) continue;
+      result.set(sourceLineKey, (result.get(sourceLineKey) ?? 0) + quantity);
+    }
+  }
+  return result;
+}
+
 async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order: NormalizedRosskoOrder, selectedStoreId?: string) {
   const branchId = context.branchId!;
   const groups = groupRosskoOrderParts(order.parts);
   const sourceLineKeys = groups.map(({ part }) => part.guid
     ? rosskoSourceLineKey(order.id, part.guid)
     : `rossko:${order.id}:invalid:${shortHash(stableJson(part.raw))}`);
-  const [stores, supplier, products, history] = await Promise.all([
+  const [stores, supplier, products, history, manualClosedByLine] = await Promise.all([
     tx.localStore.findMany({
       where: { branchId, archived: false },
       select: { id: true, name: true, isMain: true },
@@ -475,6 +500,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       take: 20_000,
     }),
     loadReceiptHistory(tx, branchId, order.id, sourceLineKeys),
+    loadManualClosedQuantityByLine(tx, branchId, order.id),
   ]);
   if (!stores.length) throw new RosskoReceiptError("В активном филиале нет доступного склада", 409, "LOCAL_STORE_REQUIRED");
   const store = selectedStoreId ? stores.find((candidate) => candidate.id === selectedStoreId) : stores[0];
@@ -489,24 +515,33 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       const posted = position.document.status === "posted" && position.document.applicable && !position.document.cancelledAt && !position.document.isDeleted;
       return posted ? sum + position.quantity.toNumber() : sum;
     }, 0);
-    const orderedQty = Number.isFinite(part.orderedQty) ? part.orderedQty : 0;
-    const remainingQty = Math.max(orderedQty - alreadyReceivedQty, 0);
+    const quantities = calculateRosskoIncomingQuantities({
+      orderedQty: Number.isFinite(part.orderedQty) ? part.orderedQty : 0,
+      postedReceivedQty: alreadyReceivedQty,
+      manualClosedQty: manualClosedByLine.get(sourceLineKey) ?? 0,
+      sourceStatus: part.status,
+    });
+    const { orderedQty, manualClosedQty, providerClosedQty, activeIncomingQty: remainingQty } = quantities;
     const latestPrice = relevantHistory[0]?.priceCentsPerUnit == null ? null : relevantHistory[0].priceCentsPerUnit / 100;
     const priceDeviation = latestPrice != null && Number.isFinite(part.price) && Math.abs(latestPrice - part.price) > 0.00001
       ? { previousPrice: latestPrice, currentPrice: part.price }
       : null;
     const match = productMatch(part, products);
-    const status = rosskoStatusPresentation(part.status);
+    const status = quantities.status;
     const warnings: string[] = [];
     if (duplicateCount > 1 && !ambiguous) warnings.push("ROSSKO вернул строку повторно; одинаковые копии объединены.");
     if (ambiguous) warnings.push("ROSSKO вернул разные строки с одинаковым GUID. Автоматическая приёмка отключена.");
-    if (status.warning) warnings.push(`Статус ROSSKO: ${status.label}. Подтвердите фактическое получение количеством.`);
+    if (providerClosedQty > 0) warnings.push(`Закрыто автоматически: ROSSKO — ${status.label.toLocaleLowerCase("ru-RU")}.`);
+    else if (manualClosedQty > 0) warnings.push(`Локально закрыто ${manualClosedQty} шт. Оставшееся количество больше не учитывается как товар в пути.`);
+    else if (status.warning) warnings.push(`Статус ROSSKO: ${status.label}. Позиция требует проверки.`);
     if (priceDeviation) warnings.push(`Цена ROSSKO изменилась: было ${priceDeviation.previousPrice} ₽ → сейчас ${priceDeviation.currentPrice} ₽.`);
 
     let action: RosskoReceiptLineAction;
     if (!validSourcePart(part)) action = "INVALID_LINE";
     else if (ambiguous) action = "AMBIGUOUS_SOURCE_LINE";
-    else if (remainingQty <= 0) action = "FULLY_RECEIVED";
+    else if (alreadyReceivedQty >= orderedQty) action = "FULLY_RECEIVED";
+    else if (providerClosedQty > 0 && remainingQty <= 0) action = "PROVIDER_CLOSED";
+    else if (manualClosedQty > 0 && remainingQty <= 0) action = "CLOSED_MANUALLY";
     else if (match.ambiguous) action = "AMBIGUOUS_PRODUCT";
     else if (status.warning) action = "SOURCE_STATUS_WARNING";
     else if (!match.product) action = "CREATE_PRODUCT";
@@ -523,6 +558,8 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       name: part.name,
       orderedQty,
       alreadyReceivedQty,
+      manualClosedQty,
+      providerClosedQty,
       remainingQty,
       receiveQty: defaultReceiveQty,
       purchasePrice: Number.isFinite(part.price) ? part.price : 0,
@@ -544,6 +581,8 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     order: {
       id: order.id,
       createdAt: order.createdAt?.toISOString() ?? null,
+      deliveryDate: order.deliveryDate?.toISOString() ?? null,
+      deliveryType: order.deliveryType,
       totalPrice: order.totalPrice,
       stockAddress: order.stockAddress,
     },
@@ -552,12 +591,15 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
     stores,
     summary: {
       sourceLines: lines.length,
-      readyLines: lines.filter((line) => ["MATCHED_EXISTING", "CREATE_PRODUCT", "SOURCE_STATUS_WARNING"].includes(line.action) && line.remainingQty > 0).length,
+      readyLines: lines.filter((line) => ["MATCHED_EXISTING", "CREATE_PRODUCT"].includes(line.action) && line.remainingQty > 0).length,
       alreadyFullyReceivedLines: lines.filter((line) => line.action === "FULLY_RECEIVED").length,
       unmatchedLines: lines.filter((line) => line.action === "CREATE_PRODUCT").length,
       ambiguousLines: lines.filter((line) => line.action === "AMBIGUOUS_PRODUCT" || line.action === "AMBIGUOUS_SOURCE_LINE").length,
       orderedQty: lines.reduce((sum, line) => sum + line.orderedQty, 0),
       alreadyReceivedQty: lines.reduce((sum, line) => sum + line.alreadyReceivedQty, 0),
+      manualClosedQty: lines.reduce((sum, line) => sum + line.manualClosedQty, 0),
+      providerClosedQty: lines.reduce((sum, line) => sum + line.providerClosedQty, 0),
+      closedQty: lines.reduce((sum, line) => sum + line.manualClosedQty + line.providerClosedQty, 0),
       remainingQty: lines.reduce((sum, line) => sum + line.remainingQty, 0),
     },
     lines,
@@ -766,6 +808,14 @@ export async function createRosskoReceiptDraft(input: {
       if (!item.line) throw new RosskoReceiptError("Позиция больше не найдена в заказе ROSSKO", 409, "SOURCE_LINE_NOT_FOUND");
       if (item.line.action === "INVALID_LINE" || item.line.action === "AMBIGUOUS_SOURCE_LINE") {
         throw new RosskoReceiptError("Нельзя автоматически принять неоднозначную source-позицию ROSSKO", 409, item.line.action);
+      }
+      if (["PROVIDER_CLOSED", "CLOSED_MANUALLY"].includes(item.line.action) || !normalizeRosskoOrderPartStatus(item.line.rosskoStatus).receivable) {
+        throw new RosskoReceiptError(
+          `Позиция со статусом «${item.line.rosskoStatusLabel}» не может попасть в приёмку. Обновите статус ROSSKO или закройте её локально.`,
+          409,
+          "ROSSKO_LINE_NOT_RECEIVABLE",
+          { sourceLineKey: item.line.sourceLineKey, sourceStatus: item.line.rosskoStatus },
+        );
       }
       const openDraftQty = pending.get(item.line.sourceLineKey) ?? 0;
       const availableToDraft = Math.max(0, item.line.remainingQty - openDraftQty);
