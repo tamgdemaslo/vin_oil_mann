@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { retryMessageOutbox } from "@/lib/messenger/messenger-outbox";
 
 function messengerError(error: unknown) {
@@ -11,13 +11,15 @@ function messengerError(error: unknown) {
 }
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string; messageId: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
   const { id, messageId } = await params;
-  try {
-    const outbox = await retryMessageOutbox({ conversationId: id, messageId });
-    return NextResponse.json({ ok: outbox.status !== "failed", outbox });
-  } catch (error) {
-    return messengerError(error);
-  }
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    try {
+      const outbox = await retryMessageOutbox({ conversationId: id, messageId });
+      return NextResponse.json({ ok: outbox.status !== "failed", outbox });
+    } catch (error) {
+      return messengerError(error);
+    }
+  });
 }

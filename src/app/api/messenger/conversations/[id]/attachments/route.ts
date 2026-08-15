@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { listMessages } from "@/lib/messenger/messenger-gateway";
 import { enqueueMessageOutbox, processOutboxItem } from "@/lib/messenger/messenger-outbox";
@@ -59,19 +59,21 @@ function errorResponse(error: unknown) {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  await ensureMessengerIntegrationCoreSchema();
-  const storage = messengerStorageStatus();
-  if (!storage.configured) {
-    return NextResponse.json({ error: "Object storage для Messenger не настроен", storage }, { status: 503 });
-  }
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
 
-  const { id: conversationId } = await params;
-  const organizationId = getMessengerOrganizationId();
-  const branchId = getScopedBranchId();
-  try {
-    const conversations = await prisma.$queryRaw<ConversationRow[]>`
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    await ensureMessengerIntegrationCoreSchema();
+    const storage = messengerStorageStatus();
+    if (!storage.configured) {
+      return NextResponse.json({ error: "Object storage для Messenger не настроен", storage }, { status: 503 });
+    }
+
+    const { id: conversationId } = await params;
+    const organizationId = getMessengerOrganizationId();
+    const branchId = getScopedBranchId();
+    try {
+      const conversations = await prisma.$queryRaw<ConversationRow[]>`
       SELECT
         id,
         organization_id AS "organizationId",
@@ -84,8 +86,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         AND branch_id = ${branchId}
       LIMIT 1
     `;
-    const conversation = conversations[0];
-    if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
+      const conversation = conversations[0];
+      if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
 
     const form = await request.formData();
     const file = form.get("file");
@@ -179,11 +181,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     const processed = await processOutboxItem(outbox);
     const message = (await listMessages(conversation.id)).find((item) => item.id === messageId);
-    return NextResponse.json(
-      { ok: processed.status !== "failed", message, outbox: processed, error: processed.errorMessage ?? undefined },
-      { status: processed.status === "failed" ? 202 : 201 }
-    );
-  } catch (error) {
-    return errorResponse(error);
-  }
+      return NextResponse.json(
+        { ok: processed.status !== "failed", message, outbox: processed, error: processed.errorMessage ?? undefined },
+        { status: processed.status === "failed" ? 202 : 201 }
+      );
+    } catch (error) {
+      return errorResponse(error);
+    }
+  });
 }

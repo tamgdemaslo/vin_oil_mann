@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import {
   channelConfigs,
   connectionStatusLabel,
@@ -48,6 +49,10 @@ type ApiChannel = {
 
 type ConversationsResponse = {
   conversations?: Conversation[];
+};
+
+type MessengerSummaryResponse = {
+  unreadTotal?: number;
 };
 
 type MessagesResponse = {
@@ -119,8 +124,8 @@ type MessengerContextValue = {
 };
 
 const MessengerContext = createContext<MessengerContextValue | null>(null);
-const MESSENGER_POLL_INTERVAL_MS = 12_000;
-const TELEGRAM_SYNC_INTERVAL_MS = 60_000;
+const MESSENGER_POLL_INTERVAL_MS = 30_000;
+const MESSENGER_SUMMARY_INTERVAL_MS = 60_000;
 
 function sortConversations(items: Conversation[]) {
   return [...items].sort((a, b) => {
@@ -148,7 +153,12 @@ function isMessagesPagePath(pathname: string) {
   return pathname === "/messages" || pathname === "/crm/messages";
 }
 
+function messengerDisabledPath(pathname: string) {
+  return pathname === "/login" || pathname === "/client-site" || pathname.startsWith("/report/");
+}
+
 export function MessengerProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Message[]>>({});
   const [selectedContext, setSelectedContext] = useState<MessengerConversationContext | null>(null);
@@ -164,15 +174,17 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const [channelStatuses, setChannelStatuses] = useState<Partial<Record<MessengerChannel, ChannelConnectionStatus>>>({});
   const [channelLabels, setChannelLabels] = useState<Partial<Record<MessengerChannel, string>>>({});
+  const [summaryUnreadTotal, setSummaryUnreadTotal] = useState(0);
   const conversationsRef = useRef<Conversation[]>([]);
   const messagesByConversationRef = useRef<Record<string, Message[]>>({});
   const selectedConversationIdRef = useRef<string | null>(null);
   const hasLoadedConversationsRef = useRef(false);
   const appliedUrlConversationRef = useRef<string | null>(null);
   const pollInFlightRef = useRef(false);
-  const telegramSyncInFlightRef = useRef(false);
   const contextRequestIdRef = useRef(0);
   const toastIdsRef = useRef(new Set<string>());
+  const messengerEnabled = !messengerDisabledPath(pathname);
+  const messengerActive = messengerEnabled && (isMessagesPagePath(pathname) || widgetView !== "collapsed");
 
   const showToast = useCallback((next: Toast) => {
     if (toastIdsRef.current.has(next.id)) return;
@@ -199,21 +211,6 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       // Channel status is cosmetic in the inbox; conversation polling remains the source of truth.
     }
   }, []);
-
-  const syncTelegramUserSession = useCallback(async () => {
-    if (channel !== "all" && channel !== "telegram") return;
-    if (telegramSyncInFlightRef.current) return;
-    telegramSyncInFlightRef.current = true;
-    try {
-      await fetch("/api/messenger/telegram-user/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 30 }),
-      }).catch(() => {});
-    } finally {
-      telegramSyncInFlightRef.current = false;
-    }
-  }, [channel]);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -260,6 +257,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
         }
       }
       setConversations(next);
+      setSummaryUnreadTotal(next.reduce((sum, conversation) => sum + conversation.unreadCount, 0));
       setSelectedConversationId((current) => (current && next.some((item) => item.id === current) ? current : next[0]?.id ?? null));
       hasLoadedConversationsRef.current = true;
       setErrorMode(false);
@@ -269,6 +267,19 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       if (!options?.silent) setLoadingMode(false);
     }
   }, [channel, emptyMode, filter, loadChannelStatuses, responsible, search, showToast]);
+
+  const loadSummary = useCallback(async () => {
+    if (emptyMode || !messengerEnabled) return;
+    try {
+      const res = await fetch("/api/messenger/summary", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as MessengerSummaryResponse;
+      const unreadTotal = Number(data.unreadTotal);
+      if (Number.isFinite(unreadTotal) && unreadTotal >= 0) setSummaryUnreadTotal(Math.floor(unreadTotal));
+    } catch {
+      // The badge is non-blocking. Keep the last known value when the summary request fails.
+    }
+  }, [emptyMode, messengerEnabled]);
 
   const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
     try {
@@ -328,24 +339,25 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void loadConversations();
-  }, [loadConversations]);
-
-  useEffect(() => {
-    if (emptyMode) return;
-    const syncTelegram = () => {
-      if (document.visibilityState === "visible") void syncTelegramUserSession();
+    if (!messengerEnabled || emptyMode) return;
+    if (messengerActive) {
+      void loadConversations();
+      return;
+    }
+    const refreshSummary = () => {
+      if (document.visibilityState === "visible") void loadSummary();
     };
-    syncTelegram();
-    const intervalId = window.setInterval(syncTelegram, TELEGRAM_SYNC_INTERVAL_MS);
-    document.addEventListener("visibilitychange", syncTelegram);
+    refreshSummary();
+    const intervalId = window.setInterval(refreshSummary, MESSENGER_SUMMARY_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshSummary);
     return () => {
       window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", syncTelegram);
+      document.removeEventListener("visibilitychange", refreshSummary);
     };
-  }, [emptyMode, syncTelegramUserSession]);
+  }, [emptyMode, loadConversations, loadSummary, messengerActive, messengerEnabled]);
 
   useEffect(() => {
+    if (!messengerActive) return;
     const pollMessenger = async () => {
       if (document.visibilityState === "hidden" || emptyMode || pollInFlightRef.current) return;
       pollInFlightRef.current = true;
@@ -374,12 +386,17 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [emptyMode, loadContext, loadConversations, loadMessages]);
+  }, [emptyMode, loadContext, loadConversations, loadMessages, messengerActive]);
 
-  const unreadTotal = useMemo(
+  const conversationUnreadTotal = useMemo(
     () => conversations.reduce((sum, conversation) => sum + conversation.unreadCount, 0),
     [conversations]
   );
+  const unreadTotal = messengerActive ? conversationUnreadTotal : summaryUnreadTotal;
+
+  useEffect(() => {
+    if (messengerActive && hasLoadedConversationsRef.current) setSummaryUnreadTotal(conversationUnreadTotal);
+  }, [conversationUnreadTotal, messengerActive]);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
@@ -387,6 +404,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (!messengerActive) return;
     if (!selectedConversationId) {
       setSelectedContext(null);
       return;
@@ -395,9 +413,10 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       void loadMessages(selectedConversationId);
     }
     void loadContext(selectedConversationId);
-  }, [loadContext, loadMessages, selectedConversationId]);
+  }, [loadContext, loadMessages, messengerActive, selectedConversationId]);
 
   useEffect(() => {
+    if (!messengerActive) return;
     if (typeof window === "undefined" || !("EventSource" in window)) return;
     const params = new URLSearchParams();
     if (selectedConversationId) params.set("conversationId", selectedConversationId);
@@ -419,7 +438,7 @@ export function MessengerProvider({ children }: { children: ReactNode }) {
       source.close();
     };
     return () => source.close();
-  }, [loadContext, loadConversations, loadMessages, selectedConversationId]);
+  }, [loadContext, loadConversations, loadMessages, messengerActive, selectedConversationId]);
 
   const filteredConversations = useMemo(() => {
     if (emptyMode) return [];

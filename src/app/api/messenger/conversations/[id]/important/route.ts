@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { setConversationImportant } from "@/lib/messenger/messenger-gateway";
 
 function messengerError(error: unknown) {
@@ -11,15 +11,17 @@ function messengerError(error: unknown) {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
   const body = (await request.json().catch(() => null)) as { important?: unknown } | null;
   const { id } = await params;
-  try {
-    const conversation = await setConversationImportant(id, typeof body?.important === "boolean" ? body.important : undefined);
-    if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
-    return NextResponse.json({ conversation });
-  } catch (error) {
-    return messengerError(error);
-  }
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    try {
+      const conversation = await setConversationImportant(id, typeof body?.important === "boolean" ? body.important : undefined);
+      if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
+      return NextResponse.json({ conversation });
+    } catch (error) {
+      return messengerError(error);
+    }
+  });
 }

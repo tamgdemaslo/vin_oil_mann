@@ -714,7 +714,7 @@ function MessengerAvatar({ conversation, compact = false }: { conversation: Conv
     >
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" onError={() => setFailed(true)} />
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
       ) : (
         getInitials(conversation.participantName)
       )}

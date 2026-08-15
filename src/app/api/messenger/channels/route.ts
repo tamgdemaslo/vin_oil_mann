@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { listMessengerChannels } from "@/lib/messenger/messenger-gateway";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-  return NextResponse.json({ channels: await listMessengerChannels() });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
+  return runWithBranchApiContext(branchAccess.context, async () =>
+    NextResponse.json({ channels: await listMessengerChannels() })
+  );
 }

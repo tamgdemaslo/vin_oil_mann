@@ -4,4 +4,6 @@ export async function register() {
   startClientNotificationsWorker();
   const { startProductOemWorker } = await import("./lib/product-oem-worker");
   startProductOemWorker();
+  const { startTelegramSyncWorker } = await import("./lib/messenger/telegram-sync-worker");
+  startTelegramSyncWorker();
 }

@@ -94,14 +94,42 @@ for (const routePath of [
   "../src/app/api/demands/[id]/copy/route.ts",
   "../src/app/api/demands/metadata/route.ts",
   "../src/app/api/messenger/conversations/route.ts",
+  "../src/app/api/messenger/conversations/[id]/route.ts",
+  "../src/app/api/messenger/conversations/[id]/archive/route.ts",
+  "../src/app/api/messenger/conversations/[id]/important/route.ts",
+  "../src/app/api/messenger/conversations/[id]/pin/route.ts",
+  "../src/app/api/messenger/conversations/[id]/read/route.ts",
   "../src/app/api/messenger/conversations/[id]/messages/route.ts",
+  "../src/app/api/messenger/conversations/[id]/messages/[messageId]/retry/route.ts",
   "../src/app/api/messenger/conversations/[id]/context/route.ts",
+  "../src/app/api/messenger/conversations/[id]/avatar/route.ts",
+  "../src/app/api/messenger/conversations/[id]/attachments/route.ts",
+  "../src/app/api/messenger/attachments/[id]/route.ts",
+  "../src/app/api/messenger/attachments/[id]/content/route.ts",
+  "../src/app/api/messenger/attachments/[id]/thumbnail/route.ts",
+  "../src/app/api/messenger/attachments/[id]/retry/route.ts",
+  "../src/app/api/messenger/accounts/route.ts",
+  "../src/app/api/messenger/channels/route.ts",
+  "../src/app/api/messenger/events/route.ts",
+  "../src/app/api/messenger/summary/route.ts",
+  "../src/app/api/messenger/templates/route.ts",
   "../src/app/api/messenger/telegram-user/sync/route.ts",
 ]) {
   const routeSource = fs.readFileSync(new URL(routePath, import.meta.url), "utf8");
   assert.match(routeSource, /requireBranchApi\(\{ allowAll: false, requireActive: true \}\)/);
   assert.match(routeSource, /runWithBranchApiContext\(/);
 }
+
+const messengerProviderSource = fs.readFileSync(new URL("../src/components/messenger/MessengerProvider.tsx", import.meta.url), "utf8");
+const telegramSyncWorkerSource = fs.readFileSync(new URL("../src/lib/messenger/telegram-sync-worker.ts", import.meta.url), "utf8");
+const instrumentationSource = fs.readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8");
+const attachmentRetrySource = fs.readFileSync(new URL("../src/app/api/messenger/attachments/[id]/retry/route.ts", import.meta.url), "utf8");
+assert.match(messengerProviderSource, /const messengerActive = messengerEnabled && \(isMessagesPagePath\(pathname\) \|\| widgetView !== "collapsed"\)/);
+assert.match(messengerProviderSource, /fetch\("\/api\/messenger\/summary"/);
+assert.doesNotMatch(messengerProviderSource, /telegram-user\/sync/);
+assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
+assert.match(instrumentationSource, /startTelegramSyncWorker/);
+assert.match(attachmentRetrySource, /AND branch_id = \$\{branchAccess\.context\.branchId\}/);
 
 for (const pagePath of [
   "../src/app/shipment/[id]/poster/page.tsx",

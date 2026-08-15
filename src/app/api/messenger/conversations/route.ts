@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { listConversations } from "@/lib/messenger/messenger-gateway";
 import type { MessengerChannel, MessengerListParams } from "@/lib/messenger/messenger-types";
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   const branch = await requireBranchApi({ allowAll: false, requireActive: true });
   if (!branch.ok) return branch.response;
 

@@ -9,6 +9,8 @@ const ACTIVE_BRANCH_MAX_AGE = 60 * 60 * 24 * 180;
 const ALL_BRANCHES = "all";
 const GROUP_ROLES = new Set(["group_owner", "group_admin", "group_analyst"]);
 const GROUP_MANAGE_ROLES = new Set(["group_owner", "group_admin"]);
+const ACCESS_CACHE_TTL_MS = 5_000;
+const ACCESS_CACHE_MAX_ENTRIES = 256;
 
 type BranchCookiePayload = {
   branchId: string;
@@ -226,7 +228,7 @@ async function ensureIdentity(authUser: AuthUser) {
   return { user, group };
 }
 
-async function resolveAccess(authUser: AuthUser) {
+async function resolveAccessUncached(authUser: AuthUser) {
   const { user, group } = await ensureIdentity(authUser);
   const [groupMembership, branchMemberships] = await Promise.all([
     prisma.businessGroupMembership.findUnique({
@@ -245,8 +247,45 @@ async function resolveAccess(authUser: AuthUser) {
   const branches = activeGroupRole
     ? await prisma.branch.findMany({ where: { businessGroupId: group.id }, orderBy: [{ status: "asc" }, { name: "asc" }] })
     : branchMemberships.map((membership) => membership.branch);
+  const summaries = await branchSummaries(branches);
 
-  return { user, group, groupRole: activeGroupRole, branchMemberships, branches };
+  return { user, group, groupRole: activeGroupRole, branchMemberships, branches, summaries };
+}
+
+type AccessResolution = Awaited<ReturnType<typeof resolveAccessUncached>>;
+type AccessCacheEntry = {
+  expiresAt: number;
+  promise: Promise<AccessResolution>;
+};
+
+const accessCache = ((globalThis as typeof globalThis & {
+  __ecoBranchAccessCache?: Map<string, AccessCacheEntry>;
+}).__ecoBranchAccessCache ??= new Map<string, AccessCacheEntry>());
+
+function pruneAccessCache(now: number) {
+  for (const [key, entry] of accessCache) {
+    if (entry.expiresAt <= now) accessCache.delete(key);
+  }
+  while (accessCache.size >= ACCESS_CACHE_MAX_ENTRIES) {
+    const oldestKey = accessCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    accessCache.delete(oldestKey);
+  }
+}
+
+async function resolveAccess(authUser: AuthUser) {
+  const key = normalizeLogin(authUser.login);
+  const now = Date.now();
+  const cached = accessCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  pruneAccessCache(now);
+  const promise: Promise<AccessResolution> = resolveAccessUncached(authUser).catch((error) => {
+    if (accessCache.get(key)?.promise === promise) accessCache.delete(key);
+    throw error;
+  });
+  accessCache.set(key, { expiresAt: now + ACCESS_CACHE_TTL_MS, promise });
+  return promise;
 }
 
 export async function getBranchContext(options: { allowAll?: boolean; requireActive?: boolean } = {}): Promise<BranchContext | null> {
@@ -254,7 +293,7 @@ export async function getBranchContext(options: { allowAll?: boolean; requireAct
   if (!session) return null;
 
   const access = await resolveAccess(session.user);
-  const summaries = await branchSummaries(access.branches);
+  const summaries = access.summaries;
   const store = await cookies();
   const cookie = decodeCookie(store.get(ACTIVE_BRANCH_COOKIE)?.value, session.user.login);
   const allowedIds = new Set(access.branches.map((branch) => branch.id));

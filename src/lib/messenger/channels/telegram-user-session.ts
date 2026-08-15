@@ -155,11 +155,24 @@ type TelegramRuntimeClient = {
   downloadMedia?: (messageOrMedia: unknown, input?: Record<string, unknown>) => Promise<string | Buffer | undefined>;
   downloadProfilePhoto?: (entity: unknown, input?: { isBig?: boolean }) => Promise<string | Buffer | undefined>;
   session?: { save?: () => string };
+  getDC?: (dcId: number, downloadDC?: boolean, web?: boolean) => Promise<TelegramDcAddress>;
+};
+
+type TelegramStringSession = {
+  dcId: number;
+  setDC(dcId: number, serverAddress: string, port: number): void;
+};
+
+type TelegramDcAddress = {
+  id: number;
+  ipAddress: string;
+  port: number;
 };
 
 type GramJsModule = {
   TelegramClient: new (session: unknown, apiId: number, apiHash: string, options: Record<string, unknown>) => unknown;
-  StringSession: new (session: string) => unknown;
+  StringSession: new (session: string) => TelegramStringSession;
+  PromisedWebSockets: new () => unknown;
   Api: {
     auth: {
       SendCode: new (input: Record<string, unknown>) => unknown;
@@ -193,6 +206,13 @@ type GramJsModule = {
 const ENCRYPTION_VERSION = 1;
 const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
 const DEFAULT_CONNECTION_RETRIES = 1;
+const TELEGRAM_WEB_DC_NAMES: Record<number, string> = {
+  1: "pluto",
+  2: "venus",
+  3: "aurora",
+  4: "vesta",
+  5: "flora",
+};
 let schemaEnsurePromise: Promise<void> | null = null;
 
 type TelegramQrRuntimeAttempt = {
@@ -301,6 +321,16 @@ function telegramConnectionRetries() {
   return Math.floor(configured);
 }
 
+function telegramWebDcAddress(dcId: number, downloadDC = false): TelegramDcAddress {
+  const name = TELEGRAM_WEB_DC_NAMES[dcId];
+  if (!name) throw new Error(`Telegram WebSocket не поддерживает DC ${dcId}.`);
+  return {
+    id: dcId,
+    ipAddress: `${name}${downloadDC ? "-1" : ""}.web.telegram.org`,
+    port: 443,
+  };
+}
+
 type TelegramSocksProxy = {
   ip: string;
   port: number;
@@ -383,11 +413,13 @@ function logSyncState(action: string, payload: Record<string, unknown>) {
 async function loadGramJs(): Promise<GramJsModule> {
   try {
     const telegram = await import("telegram");
+    const extensions = await import("telegram/extensions");
     const sessions = await import("telegram/sessions");
     return {
       TelegramClient: telegram.TelegramClient as GramJsModule["TelegramClient"],
       Api: telegram.Api as unknown as GramJsModule["Api"],
       StringSession: sessions.StringSession as GramJsModule["StringSession"],
+      PromisedWebSockets: extensions.PromisedWebSockets as GramJsModule["PromisedWebSockets"],
       Password: telegram.password as GramJsModule["Password"],
       version: typeof telegram.version === "string" ? telegram.version : undefined,
     };
@@ -398,15 +430,27 @@ async function loadGramJs(): Promise<GramJsModule> {
 
 async function getClient(session = "", credentials?: { apiId: number; apiHash: string }) {
   const { apiId, apiHash } = credentials ?? await resolveTelegramUserCredentials();
-  const { TelegramClient, StringSession } = await loadGramJs();
+  const { TelegramClient, StringSession, PromisedWebSockets } = await loadGramJs();
   const proxy = telegramSocksProxy();
-  const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
+  const stringSession = new StringSession(session);
+  const useWebSocket = !proxy;
+  if (useWebSocket) {
+    const webDc = telegramWebDcAddress(stringSession.dcId || 4);
+    stringSession.setDC(webDc.id, webDc.ipAddress, webDc.port);
+  }
+  const client = new TelegramClient(stringSession, apiId, apiHash, {
     connectionRetries: telegramConnectionRetries(),
     testServers: false,
-    // SOCKS works with GramJS' TCP socket. Telegram's WSS endpoint bypasses that socket.
-    useWSS: !proxy,
+    // In Node.js GramJS does not select its WebSocket socket from useWSS alone.
+    // Set both the socket implementation and a web DC hostname so HTTPS-only
+    // hosting platforms do not fall back to raw TCP against a Telegram IP.
+    useWSS: useWebSocket,
+    ...(useWebSocket ? { networkSocket: PromisedWebSockets } : {}),
     ...(proxy ? { proxy } : {}),
   }) as TelegramRuntimeClient;
+  if (useWebSocket) {
+    client.getDC = async (dcId, downloadDC = false) => telegramWebDcAddress(dcId, downloadDC);
+  }
   try {
     await withTelegramConnectTimeout(client.connect(), telegramConnectTimeoutMs());
   } catch (error) {

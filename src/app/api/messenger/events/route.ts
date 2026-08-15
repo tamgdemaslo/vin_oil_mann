@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { NextRequest } from "next/server";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { listConversations, listMessages } from "@/lib/messenger/messenger-gateway";
 import type { Conversation, Message, MessengerRealtimeEvent } from "@/lib/messenger/messenger-types";
 
@@ -42,8 +42,8 @@ function eventId(type: MessengerRealtimeEvent["type"], key = "all") {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const conversationId = request.nextUrl.searchParams.get("conversationId") || undefined;
 
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
       const emit = (event: MessengerRealtimeEvent) => enqueue(encodeSse(event));
 
-      const emitSnapshot = async () => {
+      const emitSnapshot = () => runWithBranchApiContext(branchAccess.context, async () => {
         if (closed) return;
         const createdAt = new Date().toISOString();
         const conversations = await listConversations({ limit: 100 });
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
         previousUnreadTotal = nextUnreadTotal;
         initialized = true;
         enqueue(encodeComment(`messenger heartbeat ${createdAt}`));
-      };
+      });
 
       const timer = setInterval(() => {
         void emitSnapshot().catch((error) => {

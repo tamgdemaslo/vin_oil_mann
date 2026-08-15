@@ -77,6 +77,10 @@ expect("src/lib/messenger/channels/telegram-user-session.ts", [
   /QR session принадлежит другому филиалу или пользователю/,
   /deactivateOtherTelegramAccounts/,
   /resolveTelegramUserCredentials/,
+  /import\("telegram\/extensions"\)/,
+  /networkSocket:\s*PromisedWebSockets/,
+  /stringSession\.setDC\(webDc\.id, webDc\.ipAddress, webDc\.port\)/,
+  /client\.getDC\s*=\s*async/,
   /process\.env\.MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
   /assertIntegrationEncryptionConfigured\(\)/,
 ]);

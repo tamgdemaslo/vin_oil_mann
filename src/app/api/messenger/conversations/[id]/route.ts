@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getConversation } from "@/lib/messenger/messenger-gateway";
 
 function messengerError(error: unknown) {
@@ -11,14 +11,16 @@ function messengerError(error: unknown) {
 }
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
   const { id } = await params;
-  try {
-    const conversation = await getConversation(id);
-    if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
-    return NextResponse.json({ conversation });
-  } catch (error) {
-    return messengerError(error);
-  }
+  return runWithBranchApiContext(branchAccess.context, async () => {
+    try {
+      const conversation = await getConversation(id);
+      if (!conversation) return NextResponse.json({ error: "Диалог не найден" }, { status: 404 });
+      return NextResponse.json({ conversation });
+    } catch (error) {
+      return messengerError(error);
+    }
+  });
 }
