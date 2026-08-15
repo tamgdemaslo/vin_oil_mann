@@ -24687,6 +24687,38 @@ select.eco-input::-ms-expand,
   width: min(1180px, 100vw);
 }
 
+/* ROSSKO receipts use the same centered workspace geometry as a regular receipt. */
+.eco-restock-cart-shell.is-workspace .eco-restock-cart-backdrop {
+  background: rgba(22, 18, 14, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.eco-restock-cart-drawer.is-workspace {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  width: min(1560px, calc(100vw - clamp(24px, 4vw, 56px)));
+  height: min(1100px, calc(100dvh - clamp(24px, 4vw, 56px)));
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 8px;
+  background: var(--eco-bg);
+  box-shadow: 0 24px 80px rgba(10, 10, 10, 0.22);
+}
+
+.eco-restock-incoming-drawer.is-workspace {
+  width: min(1180px, calc(100vw - clamp(24px, 4vw, 56px)));
+  height: min(860px, calc(100dvh - clamp(24px, 4vw, 56px)));
+}
+
+.eco-restock-cart-drawer.is-workspace .eco-restock-cart-head,
+.eco-restock-cart-drawer.is-workspace .eco-restock-cart-footer {
+  background: rgba(250, 250, 247, 0.94);
+  backdrop-filter: blur(16px);
+}
+
 .eco-restock-receipt-meta {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -24975,6 +25007,29 @@ select.eco-input::-ms-expand,
 }
 
 @media (max-width: 760px) {
+  .eco-restock-cart-drawer.is-workspace,
+  .eco-restock-incoming-drawer.is-workspace {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    transform: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .eco-restock-incoming-line {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .eco-restock-incoming-line__actions {
+    justify-items: stretch;
+  }
+
+  .eco-restock-incoming-line__actions .eco-btn {
+    width: 100%;
+  }
+
   .eco-restock-receipt-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

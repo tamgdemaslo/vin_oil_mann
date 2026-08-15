@@ -284,9 +284,9 @@ export default function RosskoReceiptWorkspace({
   }
 
   return (
-    <div className="eco-restock-cart-shell" role="presentation">
+    <div className="eco-restock-cart-shell is-workspace" role="presentation">
       <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть приёмку из ROSSKO" onClick={onClose} />
-      <aside className="eco-restock-cart-drawer eco-restock-incoming-drawer" role="dialog" aria-modal="true" aria-labelledby="rossko-workspace-title">
+      <section className="eco-restock-cart-drawer eco-restock-incoming-drawer is-workspace" role="dialog" aria-modal="true" aria-labelledby="rossko-workspace-title">
         <header className="eco-restock-cart-head">
           <div>
             <span>Склад · Приёмка</span>
@@ -361,7 +361,7 @@ export default function RosskoReceiptWorkspace({
           <span>Черновик не меняет остатки до штатного проведения приёмки.</span>
           <EcoButton type="button" onClick={onClose}>Закрыть</EcoButton>
         </footer>
-      </aside>
+      </section>
     </div>
   );
 }
@@ -480,9 +480,9 @@ function RosskoReceiptEditor({
   const allReceived = Boolean(preview?.lines.length && preview.lines.every((line) => line.remainingQty <= 0));
 
   return (
-    <div className="eco-restock-cart-shell" role="presentation">
+    <div className="eco-restock-cart-shell is-workspace" role="presentation">
       <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть заказ ROSSKO" onClick={onClose} />
-      <aside className="eco-restock-cart-drawer eco-restock-receipt-drawer" role="dialog" aria-modal="true" aria-labelledby="rossko-receipt-title">
+      <section className="eco-restock-cart-drawer eco-restock-receipt-drawer is-workspace" role="dialog" aria-modal="true" aria-labelledby="rossko-receipt-title">
         <header className="eco-restock-cart-head">
           <div>
             <span>Склад · Приёмка из ROSSKO</span>
@@ -583,7 +583,7 @@ function RosskoReceiptEditor({
             <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && !preview && <EcoButton type="button" onClick={() => void fetchPreview()}>Повторить</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || allReceived || !selectedLines.length || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
           )}
         </footer>
-      </aside>
+      </section>
     </div>
   );
 }
