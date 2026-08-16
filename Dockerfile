@@ -1,32 +1,56 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:20-bookworm-slim AS dependencies
+FROM node:20-bookworm AS dependencies
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
-# Timeweb builders can advertise IPv6 without a working IPv6 route. Keep the
-# official Debian CDN from the base image, force IPv4, and retry transient CDN
-# failures instead of pinning the build to a third-party mirror.
-RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 update \
-  && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 install -y --no-install-recommends openssl \
-  && rm -rf /var/lib/apt/lists/*
-
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-  npm ci \
-    --no-audit \
-    --no-fund \
-    --fetch-retries=5 \
-    --fetch-retry-factor=2 \
-    --fetch-retry-mintimeout=10000 \
-    --fetch-retry-maxtimeout=120000 \
-    --fetch-timeout=300000
+  set -eu; \
+  attempt=1; \
+  while [ "$attempt" -le 3 ]; do \
+    rm -rf node_modules; \
+    if npm ci \
+      --no-audit \
+      --no-fund \
+      --prefer-offline \
+      --maxsockets=5 \
+      --fetch-retries=3 \
+      --fetch-retry-factor=2 \
+      --fetch-retry-mintimeout=5000 \
+      --fetch-retry-maxtimeout=30000 \
+      --fetch-timeout=60000 \
+      && test -x node_modules/.bin/prisma \
+      && test -x node_modules/.bin/next; then \
+      break; \
+    fi; \
+    if [ "$attempt" -eq 3 ]; then \
+      echo "npm ci failed after $attempt attempts" >&2; \
+      exit 1; \
+    fi; \
+    attempt=$((attempt + 1)); \
+    echo "npm ci incomplete; retrying attempt $attempt" >&2; \
+    sleep 5; \
+  done
 
 # Prisma generation is isolated from application source so it remains cached
 # when only TypeScript/React files change.
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN set -eu; \
+  attempt=1; \
+  while [ "$attempt" -le 3 ]; do \
+    if ./node_modules/.bin/prisma generate; then \
+      break; \
+    fi; \
+    if [ "$attempt" -eq 3 ]; then \
+      echo "prisma generate failed after $attempt attempts" >&2; \
+      exit 1; \
+    fi; \
+    attempt=$((attempt + 1)); \
+    echo "prisma generate failed; retrying attempt $attempt" >&2; \
+    sleep 5; \
+  done
 
 FROM dependencies AS build
 
@@ -42,23 +66,20 @@ ENV APP_RELEASE=$APP_RELEASE \
 
 COPY . ./
 RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
-  npx next build --webpack
+  ./node_modules/.bin/next build --webpack
 
-FROM node:20-bookworm-slim AS app
+FROM node:20-bookworm AS app
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    CHROME_PATH=/usr/bin/chromium \
     APP_DATA_DIR=/app/.data
 
-# Keep the large Chromium/system layer independent from per-release metadata so
-# subsequent deploys can reuse it instead of downloading and exporting it again.
-RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 update \
-  && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates chromium curl fonts-dejavu-core openssl \
-  && rm -rf /var/lib/apt/lists/* \
-  && groupadd --gid 1001 app \
+# PDF generation uses the @sparticuz/chromium binary traced into the standalone
+# output. The full official Node/Debian image already provides TLS and curl, so
+# runtime assembly does not depend on Debian package repositories.
+RUN groupadd --gid 1001 app \
   && useradd --uid 1001 --gid app --create-home app \
   && mkdir -p /app/.data \
   && chown app:app /app/.data
