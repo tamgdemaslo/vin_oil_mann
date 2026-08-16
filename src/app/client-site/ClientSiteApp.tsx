@@ -220,30 +220,61 @@ var OILS = [];
 const CASES = [
   {
     id: 'bmw-x5-f15-zf8hp',
-    title: 'BMW X5 F15 — полная замена ATF в АКПП ZF 8HP',
+    title: 'BMW G30 — ZF 8HP, раздатка и задний редуктор',
     year: 2017,
-    mileage: '146 800 км',
-    fluid: 'ZF LifeguardFluid 8',
-    duration: '2 ч 40 мин',
-    cost: 28400,
-    summary: 'Машину привезли с толчками на 2–3 передаче. После полной аппаратной замены и обнуления адаптаций — коробка работает как новая.',
+    mileage: '3 агрегата',
+    fluid: 'ZF 8HP + xDrive',
+    duration: '1 ч 30 мин',
+    cost: 46190,
+    summary: 'Комплексно обновили масла в АКПП ZF 8HP, раздатке xDrive и заднем редукторе. Для более полного слива из раздатки сняли траверсу и открыли второй контур через Launch.',
     hero: 'bmw',
+    heroImage: '/cases/bmw-g30/hero.jpg',
+    heroAlt: 'BMW 530d xDrive G30 у сервиса «Там где масло»',
+    heroEyebrow: 'АКПП · XDRIVE · РЕДУКТОР',
     palette: ['#1c1c1c', '#3d3d3d', '#C2410C'],
+    stats: [
+      {k: 'Агрегаты', v: '3', u: 'узла'},
+      {k: 'Время работы', v: '1:30', u: 'часа'},
+      {k: 'Комплекс', v: '46,19', u: 'тыс. ₽'},
+    ],
     body: [
-      {h: 'Что было', t: 'Клиент жаловался на толчки при переключении 2→3 на холодную и дёрганья при остановке. Сообщение «коробка перегрета» дважды загоралось летом.'},
-      {h: 'Что сделали', t: 'Сняли поддон, заменили внутренний фильтр и прокладку. Через тестовый стенд прогнали 14 литров новой жидкости ZF LifeguardFluid 8 до прозрачной отработки. Обнулили адаптации через ISTA.'},
-      {h: 'Результат', t: 'Тестовая поездка 45 км — толчки ушли. Гарантия на работу — 6 месяцев или 15 000 км.'},
+      {h: 'Диагностика до работ', t: 'Проверили параметры ZF 8HP и выполнили сканирование. Критических ошибок и аварийных кодов не обнаружили; фактические значения зафиксировали как исходную точку.'},
+      {h: 'АКПП ZF 8HP', t: 'Слили старое ATF, сняли поддон и осмотрели магниты. Нашли фрикционную пыль без металлической стружки. Установили новый поддон ZF со встроенным фильтром, залили ZF LifeguardFluid 8 и затянули болты динамометрическим ключом с моментом 10 Н·м.'},
+      {h: 'Раздатка xDrive', t: 'Сняли траверсу для штатного доступа к заливной пробке. Через Launch открыли второй контур и откачали около 600 г старой жидкости — обычно без этой процедуры выходит только 200–250 г.'},
+      {h: 'Задний редуктор', t: 'Слили тёмно-коричневое масло на прогретом агрегате, проверили пробку и залили оригинальное масло BMW до уровня. После сборки проверили герметичность.'},
+      {h: 'Контроль и результат', t: 'Уровень ATF выставили по температуре 30–50 °C по процедуре ZF, выполнили цикл переключений и тест-драйв. Без обещаний «как новый»: свежее масло и чистая рабочая среда снижают риск преждевременного износа.'},
+    ],
+    process: [
+      {t: '01', s: 'Диагностика', d: 'Сканирование Launch, проверка ошибок и фиксация исходных параметров АКПП.'},
+      {t: '02', s: 'Поддон ZF', d: 'Слив ATF, осмотр магнитов, очистка плоскостей и новый поддон с фильтром.'},
+      {t: '03', s: 'Раздатка', d: 'Снятие траверсы, открытие второго контура и откачка около 600 г старого масла.'},
+      {t: '04', s: 'Редуктор', d: 'Слив на прогретом агрегате, контроль пробки и оригинальное масло BMW до уровня.'},
+      {t: '05', s: 'Контроль', d: 'Уровень ATF при 30–50 °C, цикл переключений, герметичность и тест-драйв.'},
+    ],
+    quote: 'Меньше старого масла остаётся внутри — чище каналы и стабильнее работа узла. Это профилактика, а не обещание чуда.',
+    quoteAuthor: 'Итог комплексного обслуживания',
+    gallery: [
+      {src: '/cases/bmw-g30/diagnostics.jpg', alt: 'Параметры коробки BMW G30 на диагностическом сканере Launch', caption: 'Диагностика до работ'},
+      {src: '/cases/bmw-g30/pan-inspection.jpg', alt: 'Снятый поддон ZF 8HP и магниты с фрикционной пылью без стружки', caption: 'Поддон и магниты'},
+      {src: '/cases/bmw-g30/torque-pan.jpg', alt: 'Установка поддона ZF 8HP динамометрическим ключом', caption: 'Затяжка 10 Н·м'},
+      {src: '/cases/bmw-g30/transfer-case-access.jpg', alt: 'Доступ к заливной пробке раздатки BMW G30 после снятия траверсы', caption: 'Доступ к раздатке'},
+      {src: '/cases/bmw-g30/drained-fluids.jpg', alt: 'Слитые масла из АКПП, раздатки и заднего редуктора BMW G30', caption: 'Состояние старых масел'},
+      {src: '/cases/bmw-g30/materials.jpg', alt: 'Оригинальные масла ZF LifeguardFluid 8 и BMW для раздатки и редуктора', caption: 'Оригинальные жидкости ZF и BMW'},
     ],
     spec: [
-      {k: 'Машина', v: 'BMW X5 F15 xDrive30d'},
-      {k: 'Двигатель', v: 'N57D30 (3.0 дизель)'},
-      {k: 'Пробег на момент', v: '146 800 км'},
-      {k: 'Коробка', v: 'ZF 8HP70'},
-      {k: 'Жидкость', v: 'ZF LifeguardFluid 8 — 9.5 л'},
-      {k: 'Фильтр', v: 'ZF 0501 219 824 (оригинал)'},
-      {k: 'Прокладка поддона', v: 'ZF 0501 216 243'},
-      {k: 'Время работы', v: '2 ч 40 мин'},
-      {k: 'Сумма', v: '28 400 ₽'},
+      {k: 'Машина', v: 'BMW 530d xDrive (G30)'},
+      {k: 'Год', v: '2017'},
+      {k: 'Обслужили', v: 'АКПП · раздатку · задний редуктор'},
+      {k: 'Коробка', v: 'ZF 8HP'},
+      {k: 'Масло АКПП', v: 'ZF LifeguardFluid 8'},
+      {k: 'Масло раздатки', v: 'BMW DTF 1'},
+      {k: 'Масло редуктора', v: 'BMW Hypoid Axle Oil G3'},
+      {k: 'Поддон', v: 'ZF со встроенным фильтром'},
+      {k: 'Момент затяжки', v: '10 Н·м по ZF'},
+      {k: 'Уровень ATF', v: 'по температуре 30–50 °C'},
+      {k: 'Из раздатки', v: 'откачано около 600 г'},
+      {k: 'Время работы', v: '1 ч 30 мин'},
+      {k: 'Комплекс', v: '46 190 ₽'},
     ],
   },
   {
@@ -648,6 +679,24 @@ function CarPlate({ palette = ['#1c1c1c', '#3d3d3d', '#C2410C'], label, sub, kin
           {sub && <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, fontWeight: 400, color: '#9A9A9A', letterSpacing: '0.12em', marginTop: 6}}>{sub}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+function CaseVisual({ c, label, priority = false }) {
+  if (!c?.heroImage) {
+    return <CarPlate kind={c?.hero} palette={c?.palette} label={label} sub={c?.fluid} />;
+  }
+
+  return (
+    <div className="case-visual">
+      <img
+        src={c.heroImage}
+        alt={c.heroAlt || c.title}
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : 'auto'}
+        decoding="async"
+      />
     </div>
   );
 }
@@ -1229,7 +1278,7 @@ function CasesPreview() {
             <Link key={c.id} to={`/case/${c.id}`} style={{display: 'block'}}>
               <div className="card" style={{padding: 0, background: '#0a0a0a', overflow: 'hidden', height: '100%', cursor: 'pointer'}}>
                 <div style={{aspectRatio: '16/10', borderBottom: '1px solid var(--line)'}}>
-                  <CarPlate kind={c.hero} palette={c.palette} label={`N°${(idx+1).toString().padStart(2,'0')}`} sub={c.fluid} />
+                  <CaseVisual c={c} label={`N°${(idx+1).toString().padStart(2,'0')}`} />
                 </div>
                 <div style={{padding: '22px 22px 24px'}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em'}}>
@@ -2667,7 +2716,7 @@ function CasesPage() {
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 44, lineHeight: 1, color: '#F5F2ED', marginTop: 8}}>{(idx+1).toString().padStart(2, '0')}</div>
                 </div>
                 <div style={{aspectRatio: '4/3', border: '1px solid var(--line)'}}>
-                  <CarPlate kind={c.hero} palette={c.palette} label={`N°0${idx+1}`} sub={c.fluid} />
+                  <CaseVisual c={c} label={`N°0${idx+1}`} />
                 </div>
                 <div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, lineHeight: 1.1, color: '#F5F2ED', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '-0.01em'}}>{c.title}</div>
@@ -2711,52 +2760,65 @@ function CasePage() {
   const c = CASES.find(x => x.id === id) || CASES[0];
   const idx = CASES.findIndex(x => x.id === c.id);
   const next = CASES[(idx + 1) % CASES.length];
+  const stats = c.stats || [
+    {k: 'Пробег', v: c.mileage.split(' ')[0], u: 'км'},
+    {k: 'Время работы', v: c.duration.split(' ')[0], u: c.duration.split(' ').slice(1).join(' ')},
+    {k: 'Сумма', v: fmtNum(c.cost / 1000), u: 'тыс. ₽'},
+  ];
+  const process = c.process || [
+    {t: '00:00', s: 'Приёмка', d: 'VIN, сверка регламента, согласование жидкости.'},
+    {t: '00:15', s: 'Подъём', d: 'Лифт, защита, осмотр поддона на утечки.'},
+    {t: '00:30', s: 'Слив + поддон', d: 'Слив отработки, снятие поддона, замена фильтра и прокладки.'},
+    {t: '01:10', s: 'Аппарат', d: 'Прогон жидкости через стенд до прозрачности.'},
+    {t: '02:30', s: 'Корректировка', d: 'Прогрев, уровень, обнуление адаптаций, тест-драйв.'},
+  ];
 
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '0 0 100px'}}>
+    <main className="case-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '0 0 100px'}}>
       {/* Hero */}
-      <section style={{background: c.palette[0], borderBottom: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}} className="grain">
+      <section style={{background: c.palette[0], borderBottom: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}} className="case-hero grain">
         <div style={{borderBottom: '1px solid var(--line)'}}>
-          <div className="container" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9A9A9A'}}>
-            <div style={{display: 'flex', gap: 24}}>
+          <div className="container case-hero__meta" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9A9A9A'}}>
+            <div className="case-hero__meta-group" style={{display: 'flex', gap: 24}}>
               <Link to="/cases" style={{color: '#C2410C'}}>← КЕЙСЫ</Link>
-              <span>CASE №{(idx + 1).toString().padStart(2, '0')} / 04</span>
+              <span>CASE №{(idx + 1).toString().padStart(2, '0')} / {CASES.length.toString().padStart(2, '0')}</span>
               <span>{c.year} · {c.mileage}</span>
             </div>
-            <div style={{display: 'flex', gap: 24}}>
+            <div className="case-hero__meta-group" style={{display: 'flex', gap: 24}}>
               <span>{c.fluid}</span>
               <span>{c.duration}</span>
             </div>
           </div>
         </div>
 
-        <div className="container" style={{padding: '70px 24px 50px', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'center'}}>
-          <div>
-            <div className="t-eyebrow" style={{marginBottom: 22}}>Полная замена ATF</div>
+        <div className="container case-hero__grid" style={{padding: '70px 24px 50px', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'center'}}>
+          <div className="case-hero__copy">
+            <div className="t-eyebrow" style={{marginBottom: 22}}>{c.heroEyebrow || 'Полная замена ATF'}</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(46px, 6.5vw, 96px)', lineHeight: 0.9, margin: 0, textTransform: 'uppercase', color: '#F5F2ED', letterSpacing: '-0.02em'}}>
               {c.title.split('—')[0].trim()}<span style={{color: '#C2410C'}}>.</span>
             </h1>
+            <div className="case-hero__service">{c.title.split('—').slice(1).join('—').trim()}</div>
             <div style={{marginTop: 26, fontSize: 18, color: '#F5F2ED', lineHeight: 1.5, maxWidth: 580, opacity: 0.85}}>
               {c.summary}
             </div>
-            <div style={{display: 'flex', gap: 14, marginTop: 36}}>
-              <div className="numpanel"><span className="k">Пробег</span><span className="v">{c.mileage.split(' ')[0]}</span><span className="u">км</span></div>
-              <div className="numpanel"><span className="k">Время работы</span><span className="v">{c.duration.split(' ')[0]}</span><span className="u">{c.duration.split(' ').slice(1).join(' ')}</span></div>
-              <div className="numpanel"><span className="k">Сумма</span><span className="v">{fmtNum(c.cost / 1000)}</span><span className="u">тыс. ₽</span></div>
+            <div className="case-hero__stats" style={{display: 'flex', gap: 14, marginTop: 36}}>
+              {stats.map(stat => (
+                <div className="numpanel" key={stat.k}><span className="k">{stat.k}</span><span className="v">{stat.v}</span><span className="u">{stat.u}</span></div>
+              ))}
             </div>
           </div>
-          <div style={{aspectRatio: '4/3'}}>
-            <CarPlate kind={c.hero} palette={c.palette} label={`N°0${idx+1}`} sub={c.fluid} />
+          <div className="case-hero__visual" style={{aspectRatio: '4/3'}}>
+            <CaseVisual c={c} label={`N°0${idx+1}`} priority />
           </div>
         </div>
       </section>
 
       {/* Body */}
-      <section style={{background: '#0a0a0a', padding: '80px 0'}}>
-        <div className="container" style={{display: 'grid', gridTemplateColumns: '1fr 320px', gap: 64, alignItems: 'start'}}>
-          <article>
+      <section className="case-story" style={{background: '#0a0a0a', padding: '80px 0'}}>
+        <div className="container case-story__grid" style={{display: 'grid', gridTemplateColumns: '1fr 320px', gap: 64, alignItems: 'start'}}>
+          <article className="case-story__article">
             {c.body.map((b, i) => (
-              <div key={i} style={{display: 'grid', gridTemplateColumns: '80px 1fr', gap: 32, paddingBottom: 40, marginBottom: 40, borderBottom: i === c.body.length - 1 ? 'none' : '1px solid var(--line)'}}>
+              <div className="case-story__section" key={i} style={{display: 'grid', gridTemplateColumns: '80px 1fr', gap: 32, paddingBottom: 40, marginBottom: 40, borderBottom: i === c.body.length - 1 ? 'none' : '1px solid var(--line)'}}>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#C2410C', letterSpacing: '0.14em', textTransform: 'uppercase', paddingTop: 6}}>
                   0{i+1}
                 </div>
@@ -2768,16 +2830,10 @@ function CasePage() {
             ))}
 
             {/* Process strip */}
-            <div style={{marginTop: 16}}>
-              <div className="t-eyebrow muted" style={{marginBottom: 18}}>Хронометраж</div>
-              <div style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
-                {[
-                  {t: '00:00', s: 'Приёмка', d: 'VIN, сверка регламента, согласование жидкости.'},
-                  {t: '00:15', s: 'Подъём', d: 'Лифт, защита, осмотр поддона на утечки.'},
-                  {t: '00:30', s: 'Слив + поддон', d: 'Слив отработки, снятие поддона, замена фильтра и прокладки.'},
-                  {t: '01:10', s: 'Аппарат', d: 'Прогон жидкости через стенд до прозрачности.'},
-                  {t: '02:30', s: 'Корректировка', d: 'Прогрев, уровень, обнуление адаптаций, тест-драйв.'},
-                ].map((p, i) => (
+            <div className="case-process" style={{marginTop: 16}}>
+              <div className="t-eyebrow muted" style={{marginBottom: 18}}>Порядок работ</div>
+              <div className="case-process__grid" style={{display: 'grid', gridTemplateColumns: `repeat(${process.length}, 1fr)`, gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+                {process.map((p, i) => (
                   <div key={i} style={{background: '#0a0a0a', padding: '20px 18px', minHeight: 170}}>
                     <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED', lineHeight: 1}}>{p.t}</div>
                     <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em', marginTop: 8, textTransform: 'uppercase'}}>{p.s}</div>
@@ -2787,17 +2843,31 @@ function CasePage() {
               </div>
             </div>
 
-            {/* Quote */}
-            <div style={{marginTop: 60, padding: '36px 40px', background: '#0e0e0e', borderLeft: '3px solid #C2410C'}}>
-              <div style={{fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 22, color: '#F5F2ED', lineHeight: 1.4, letterSpacing: '-0.01em'}}>
-                «Полная замена — это не "слил и залил". Это работа со стендом, прокладками и адаптациями. Час времени экономить нельзя.»
+            {c.gallery?.length > 0 && (
+              <div className="case-gallery">
+                <div className="t-eyebrow muted">Фотоотчёт</div>
+                <div className="case-gallery__grid">
+                  {c.gallery.map((photo, i) => (
+                    <figure className="case-gallery__item" key={photo.src}>
+                      <img src={photo.src} alt={photo.alt} loading="lazy" decoding="async" />
+                      <figcaption><span>{(i + 1).toString().padStart(2, '0')}</span>{photo.caption}</figcaption>
+                    </figure>
+                  ))}
+                </div>
               </div>
-              <div style={{marginTop: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>— Максим Лобов · мастер моторного цеха</div>
+            )}
+
+            {/* Quote */}
+            <div className="case-quote" style={{marginTop: 60, padding: '36px 40px', background: '#0e0e0e'}}>
+              <div style={{fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 22, color: '#F5F2ED', lineHeight: 1.4, letterSpacing: '-0.01em'}}>
+                «{c.quote || 'Полная замена — это не "слил и залил". Это работа со стендом, прокладками и адаптациями. Час времени экономить нельзя.'}»
+              </div>
+              <div style={{marginTop: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>— {c.quoteAuthor || 'Максим Лобов · мастер моторного цеха'}</div>
             </div>
           </article>
 
           {/* Sidebar — spec sheet */}
-          <aside style={{position: 'sticky', top: 130}}>
+          <aside className="case-spec" style={{position: 'sticky', top: 130}}>
             <div style={{padding: '22px 22px', border: '1px solid var(--line)', background: '#0e0e0e'}}>
               <div className="t-eyebrow" style={{marginBottom: 12}}>Наряд-заказ № {1100 + idx * 17}</div>
               <table className="spec">
@@ -2820,10 +2890,10 @@ function CasePage() {
       </section>
 
       {/* Next case */}
-      <section style={{background: next.palette[0], padding: '60px 0'}}>
+      <section className="case-next" style={{background: next.palette[0], padding: '60px 0'}}>
         <div className="container">
           <Link to={`/case/${next.id}`}>
-            <div style={{display: 'grid', gridTemplateColumns: '120px 1fr 240px', gap: 36, alignItems: 'center', cursor: 'pointer'}}>
+            <div className="case-next__grid" style={{display: 'grid', gridTemplateColumns: '120px 1fr 240px', gap: 36, alignItems: 'center', cursor: 'pointer'}}>
               <div>
                 <div className="t-eyebrow muted" style={{marginBottom: 10}}>Следующий кейс</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 64, color: '#F5F2ED', lineHeight: 1}}>{(CASES.findIndex(x => x.id === next.id) + 1).toString().padStart(2, '0')}</div>
@@ -2833,7 +2903,7 @@ function CasePage() {
                 <div style={{marginTop: 12, fontSize: 14, color: '#F5F2ED', opacity: 0.7, maxWidth: 720}}>{next.summary}</div>
               </div>
               <div style={{aspectRatio: '4/3', border: '1px solid var(--line)'}}>
-                <CarPlate kind={next.hero} palette={next.palette} label={`N°0${CASES.findIndex(x => x.id === next.id) + 1}`} sub={next.fluid} />
+                <CaseVisual c={next} label={`N°0${CASES.findIndex(x => x.id === next.id) + 1}`} />
               </div>
             </div>
           </Link>
@@ -3552,15 +3622,15 @@ function App() {
   if (router.path === '/' || router.path === '') page = <HomePage />;
   else if (seg[0] === 'privacy') page = <PrivacyPage />;
   else if (seg[0] === 'offer') page = <OfferPage />;
+  else if (seg[0] === 'cases') page = <CasesPage />;
+  else if (seg[0] === 'case') page = <CasePage />;
+  else if (seg[0] === 'team') page = <TeamPage />;
+  else if (seg[0] === 'contacts') page = <ContactsPage />;
   else if (catalogStatus === 'loading') page = <CatalogGate title="Загружаем каталог масел" />;
   else if (catalogStatus === 'error') page = <CatalogGate title="Каталог эко-платформы недоступен" text={catalogError} />;
   else if (seg[0] === 'vin') page = <VinPage />;
   else if (seg[0] === 'shop') page = <ShopPage />;
   else if (seg[0] === 'product') page = <ProductPage />;
-  else if (seg[0] === 'cases') page = <CasesPage />;
-  else if (seg[0] === 'case') page = <CasePage />;
-  else if (seg[0] === 'team') page = <TeamPage />;
-  else if (seg[0] === 'contacts') page = <ContactsPage />;
   else if (seg[0] === 'account') page = <AccountPage />;
   else page = <HomePage />;
 
