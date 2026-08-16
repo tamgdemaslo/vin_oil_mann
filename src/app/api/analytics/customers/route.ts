@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { canAccessCustomerAnalytics } from "@/lib/customer-analytics-access";
 import { loadCustomerAnalyticsPayload } from "@/lib/customer-analytics";
 import { getCustomerAnalyticsSettings } from "@/lib/customer-analytics-settings";
@@ -42,40 +43,39 @@ function safeAnalyticsError(error: unknown, debug: boolean): { error: string; hi
 }
 
 export async function GET(request: NextRequest) {
+  const branchAccess = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branchAccess.ok) return branchAccess.response;
+
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
-    }
-    if (!canAccessCustomerAnalytics(session.user.role)) {
-      return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
-    }
+    return await runWithBranchApiContext(branchAccess.context, async () => {
+      const session = await getSession();
+      if (!session) {
+        return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+      }
+      if (!canAccessCustomerAnalytics(session.user.role)) {
+        return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+      }
 
-    const sp = request.nextUrl.searchParams;
-    const dateFrom = sp.get("dateFrom")?.trim() || null;
-    const dateTo = sp.get("dateTo")?.trim() || null;
-    const services = parseServices(sp.get("services"));
-    const inactiveDays = Number(sp.get("inactiveDays") ?? "");
+      const sp = request.nextUrl.searchParams;
+      const dateFrom = sp.get("dateFrom")?.trim() || null;
+      const dateTo = sp.get("dateTo")?.trim() || null;
+      const services = parseServices(sp.get("services"));
+      const inactiveDays = Number(sp.get("inactiveDays") ?? "");
 
-    const settings = await getCustomerAnalyticsSettings();
-    const payload = await loadCustomerAnalyticsPayload({
-      dateFrom,
-      dateTo,
-      serviceIds: services,
-      settings: {
-        ...settings,
-        inactiveDaysThreshold:
-          Number.isFinite(inactiveDays) && inactiveDays > 0 ? Math.floor(inactiveDays) : settings.inactiveDaysThreshold,
-      },
-    });
+      const settings = await getCustomerAnalyticsSettings();
+      const inactiveDaysThreshold =
+        Number.isFinite(inactiveDays) && inactiveDays > 0 ? Math.floor(inactiveDays) : settings.inactiveDaysThreshold;
+      const payload = await loadCustomerAnalyticsPayload({
+        dateFrom,
+        dateTo,
+        serviceIds: services,
+        settings: { ...settings, inactiveDaysThreshold },
+      });
 
-    return NextResponse.json({
-      ...payload,
-      settings: {
-        ...settings,
-        inactiveDaysThreshold:
-          Number.isFinite(inactiveDays) && inactiveDays > 0 ? Math.floor(inactiveDays) : settings.inactiveDaysThreshold,
-      },
+      return NextResponse.json({
+        ...payload,
+        settings: { ...settings, inactiveDaysThreshold },
+      });
     });
   } catch (e) {
     console.error("[analytics/customers GET]", e);

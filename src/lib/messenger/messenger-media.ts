@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
 import { getMessengerOrganizationId } from "./messenger-tenant";
-import { messengerStorageStatus } from "./messenger-storage";
+import { isMessengerStorageProxyUrl, messengerStorageStatus } from "./messenger-storage";
 import { isPhotoAttachmentType, normalizeMessengerAttachment, normalizeMessengerAttachmentType } from "./messenger-attachment-normalization";
 import type { Attachment } from "./messenger-types";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
@@ -80,13 +80,27 @@ function attachmentStatusForClient(status: string): Attachment["status"] {
 
 function attachmentProxyUrls(row: AttachmentProjectionRow) {
   const type = normalizeMessengerAttachmentType(row);
-  const contentUrl =
-    row.originalStorageKey || row.url ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/content` : row.url ?? undefined;
-  const thumbnailUrl =
-    row.thumbnailStorageKey || (isPhotoAttachmentType(type) && row.originalStorageKey) || row.previewUrl
-      ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/thumbnail`
+  const storageConfigured = messengerStorageStatus().configured;
+  const contentUrl = row.originalStorageKey
+    ? storageConfigured
+      ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/content`
+      : undefined
+    : row.url && (storageConfigured || !isMessengerStorageProxyUrl(row.url))
+      ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/content`
       : undefined;
-  return { contentUrl, thumbnailUrl };
+  const thumbnailUrl =
+    row.thumbnailStorageKey || (isPhotoAttachmentType(type) && row.originalStorageKey)
+      ? storageConfigured
+        ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/thumbnail`
+        : undefined
+      : row.previewUrl && (storageConfigured || !isMessengerStorageProxyUrl(row.previewUrl))
+        ? `/api/messenger/attachments/${encodeURIComponent(row.id)}/thumbnail`
+        : undefined;
+  return {
+    contentUrl,
+    thumbnailUrl,
+    storageUnavailable: !storageConfigured && Boolean(row.originalStorageKey || row.thumbnailStorageKey),
+  };
 }
 
 function toAttachment(row: AttachmentProjectionRow): Attachment {
@@ -99,14 +113,14 @@ function toAttachment(row: AttachmentProjectionRow): Attachment {
     name: row.name ?? undefined,
     size: row.size ?? undefined,
     mimeType: row.mimeType ?? undefined,
-    status: attachmentStatusForClient(row.status),
+    status: urls.storageUnavailable ? "failed" : attachmentStatusForClient(row.status),
     progress: row.progress,
     caption: row.caption ?? undefined,
     width: row.width ?? undefined,
     height: row.height ?? undefined,
     duration: row.duration ?? undefined,
-    errorCode: row.errorCode ?? undefined,
-    errorMessage: row.errorMessage ?? undefined,
+    errorCode: urls.storageUnavailable ? "storage_not_configured" : row.errorCode ?? undefined,
+    errorMessage: urls.storageUnavailable ? "Хранилище файлов мессенджера не настроено" : row.errorMessage ?? undefined,
   });
 }
 

@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
-import { bufferToArrayBuffer, getMessengerStorageObject } from "@/lib/messenger/messenger-storage";
+import {
+  bufferToArrayBuffer,
+  getMessengerStorageObject,
+  messengerStorageConfigurationError,
+} from "@/lib/messenger/messenger-storage";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
@@ -51,6 +55,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const attachment = rows[0];
     if (!attachment) return NextResponse.json({ error: "Вложение не найдено" }, { status: 404 });
     if (attachment.originalStorageKey) {
+      const storageError = messengerStorageConfigurationError();
+      if (storageError) {
+        return NextResponse.json(storageError, {
+          status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+        });
+      }
       const range = request.headers.get("range");
       const object = await getMessengerStorageObject(attachment.originalStorageKey, { range });
       const mimeType = attachment.mimeType || object.contentType || "application/octet-stream";

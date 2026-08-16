@@ -12,6 +12,7 @@ const jiti = createJiti(import.meta.url, {
 const tenant = await jiti.import("../src/lib/request-tenant-store.ts");
 const branchApi = await jiti.import("../src/lib/branch-api.ts");
 const effects = await jiti.import("../src/lib/external-side-effects.ts");
+const messengerStorage = await jiti.import("../src/lib/messenger/messenger-storage.ts");
 const { proxy } = await jiti.import("../src/proxy.ts");
 const { createBranch } = await jiti.import("../src/lib/branches.ts");
 
@@ -85,6 +86,7 @@ assert.match(
 );
 
 for (const routePath of [
+  "../src/app/api/analytics/customers/route.ts",
   "../src/app/api/catalog/search/route.ts",
   "../src/app/api/crm/deadline-notifications/route.ts",
   "../src/app/api/crm/deals/route.ts",
@@ -122,14 +124,48 @@ for (const routePath of [
 
 const messengerProviderSource = fs.readFileSync(new URL("../src/components/messenger/MessengerProvider.tsx", import.meta.url), "utf8");
 const telegramSyncWorkerSource = fs.readFileSync(new URL("../src/lib/messenger/telegram-sync-worker.ts", import.meta.url), "utf8");
+const telegramUserSessionSource = fs.readFileSync(new URL("../src/lib/messenger/channels/telegram-user-session.ts", import.meta.url), "utf8");
 const instrumentationSource = fs.readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8");
 const attachmentRetrySource = fs.readFileSync(new URL("../src/app/api/messenger/attachments/[id]/retry/route.ts", import.meta.url), "utf8");
 assert.match(messengerProviderSource, /const messengerActive = messengerEnabled && \(isMessagesPagePath\(pathname\) \|\| widgetView !== "collapsed"\)/);
 assert.match(messengerProviderSource, /fetch\("\/api\/messenger\/summary"/);
 assert.doesNotMatch(messengerProviderSource, /telegram-user\/sync/);
 assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
+assert.match(telegramUserSessionSource, /autoReconnect: options\.autoReconnect \?\? false/);
+assert.match(telegramUserSessionSource, /TELEGRAM_SYNC_MAX_BACKOFF_MS/);
+assert.match(telegramUserSessionSource, /account\.status === "connected" \|\| account\.status === "degraded"/);
 assert.match(instrumentationSource, /startTelegramSyncWorker/);
 assert.match(attachmentRetrySource, /AND branch_id = \$\{branchAccess\.context\.branchId\}/);
+
+assert.equal(messengerStorage.isMessengerStorageProxyUrl("/api/messenger/attachments/a/content"), true);
+assert.equal(messengerStorage.isMessengerStorageProxyUrl("https://cdn.example.test/a.jpg"), false);
+const storageEnvNames = [
+  "MESSENGER_STORAGE_ENABLED",
+  "MESSENGER_STORAGE_ENDPOINT",
+  "MESSENGER_STORAGE_BUCKET",
+  "MESSENGER_STORAGE_ACCESS_KEY_ID",
+  "MESSENGER_STORAGE_SECRET_ACCESS_KEY",
+];
+const previousStorageEnv = Object.fromEntries(storageEnvNames.map((name) => [name, process.env[name]]));
+process.env.MESSENGER_STORAGE_ENABLED = "false";
+for (const name of storageEnvNames.slice(1)) delete process.env[name];
+assert.deepEqual(messengerStorage.messengerStorageConfigurationError(), {
+  error: "Хранилище файлов мессенджера отключено",
+  code: "messenger_storage_unavailable",
+});
+Object.assign(process.env, {
+  MESSENGER_STORAGE_ENABLED: "true",
+  MESSENGER_STORAGE_ENDPOINT: "https://storage.example.test",
+  MESSENGER_STORAGE_BUCKET: "messenger",
+  MESSENGER_STORAGE_ACCESS_KEY_ID: "test-key",
+  MESSENGER_STORAGE_SECRET_ACCESS_KEY: "test-secret",
+});
+assert.equal(messengerStorage.messengerStorageConfigurationError(), null);
+for (const name of storageEnvNames) {
+  const previousValue = previousStorageEnv[name];
+  if (previousValue === undefined) delete process.env[name];
+  else process.env[name] = previousValue;
+}
 
 for (const pagePath of [
   "../src/app/shipment/[id]/poster/page.tsx",

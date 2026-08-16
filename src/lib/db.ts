@@ -142,4 +142,7 @@ const globalForPrisma = globalThis as typeof globalThis & { prisma?: PrismaClien
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// Next.js can evaluate server chunks through more than one module graph in the
+// same process. Reuse one pool in production as well, otherwise each graph can
+// leave its own idle PostgreSQL sessions behind.
+globalForPrisma.prisma = prisma;

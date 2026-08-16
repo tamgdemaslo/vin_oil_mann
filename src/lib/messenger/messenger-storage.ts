@@ -192,6 +192,22 @@ export function messengerStorageProxyUrl(kind: "attachment" | "thumbnail" | "ava
   return `/api/messenger/attachments/${encodeURIComponent(id)}/content`;
 }
 
+export function isMessengerStorageProxyUrl(value: string | null | undefined) {
+  if (!value) return false;
+  return /^\/api\/messenger\/(?:attachments\/[^/]+\/(?:content|thumbnail)|conversations\/[^/]+\/avatar)(?:[?#]|$)/.test(value);
+}
+
+export function messengerStorageConfigurationError() {
+  const status = messengerStorageStatus();
+  if (status.configured) return null;
+  return {
+    error: status.enabled
+      ? `Хранилище файлов мессенджера не настроено: ${status.missing.join(", ")}`
+      : "Хранилище файлов мессенджера отключено",
+    code: "messenger_storage_unavailable",
+  };
+}
+
 export function publicMessengerStorageUrl(key: string) {
   const config = getMessengerStorageConfig();
   return config.publicBaseUrl ? `${config.publicBaseUrl}/${encodeKeyPath(key)}` : null;

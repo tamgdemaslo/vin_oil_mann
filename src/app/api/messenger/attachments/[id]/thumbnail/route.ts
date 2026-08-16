@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "@/lib/messenger/messenger-schema";
-import { bufferToArrayBuffer, getMessengerStorageObject } from "@/lib/messenger/messenger-storage";
+import {
+  bufferToArrayBuffer,
+  getMessengerStorageObject,
+  messengerStorageConfigurationError,
+} from "@/lib/messenger/messenger-storage";
 import { getMessengerOrganizationId } from "@/lib/messenger/messenger-tenant";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
@@ -41,6 +45,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const key = attachment.thumbnailStorageKey || attachment.originalStorageKey;
     if (!key) {
       return NextResponse.json({ error: "Превью ещё не загружено", status: attachment.status }, { status: 404 });
+    }
+    const storageError = messengerStorageConfigurationError();
+    if (storageError) {
+      return NextResponse.json(storageError, {
+        status: 503,
+        headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+      });
     }
     const object = await getMessengerStorageObject(key);
     return new NextResponse(bufferToArrayBuffer(object.body), {

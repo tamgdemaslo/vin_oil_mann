@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSession } from "@/lib/api-session-shift";
 
 export const lookupBodySchema = z.object({
   organizationId: z.string().trim().min(1).max(128).optional(),
@@ -13,11 +13,12 @@ export const lookupBodySchema = z.object({
 export async function requireVehicleLookupRequest(request: Request, organizationId?: string) {
   void request;
   void organizationId;
-  const access = await requireApiSessionWithShift();
-  if (!access.ok) return access;
-  return access;
+  // Lookup only reads a provider and the local MANN catalogue. A working shift
+  // is required when changing a shipment, but not when identifying a vehicle.
+  return requireApiSession();
 }
 
 export function vehicleLookupError(error: unknown) {
-  return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось выполнить поиск автомобиля" }, { status: 500 });
+  console.error("[vehicle-lookup] unexpected error", error);
+  return NextResponse.json({ error: "Сервис определения автомобиля временно недоступен. Повторите попытку позже." }, { status: 500 });
 }

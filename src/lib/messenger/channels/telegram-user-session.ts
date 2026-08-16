@@ -428,7 +428,11 @@ async function loadGramJs(): Promise<GramJsModule> {
   }
 }
 
-async function getClient(session = "", credentials?: { apiId: number; apiHash: string }) {
+async function getClient(
+  session = "",
+  credentials?: { apiId: number; apiHash: string },
+  options: { autoReconnect?: boolean } = {}
+) {
   const { apiId, apiHash } = credentials ?? await resolveTelegramUserCredentials();
   const { TelegramClient, StringSession, PromisedWebSockets } = await loadGramJs();
   const proxy = telegramSocksProxy();
@@ -440,6 +444,10 @@ async function getClient(session = "", credentials?: { apiId: number; apiHash: s
   }
   const client = new TelegramClient(stringSession, apiId, apiHash, {
     connectionRetries: telegramConnectionRetries(),
+    // Regular operations own a short-lived client and destroy it in finally.
+    // Leaving GramJS auto-reconnect enabled lets it keep reconnecting after a
+    // connect timeout, even though the owning operation has already failed.
+    autoReconnect: options.autoReconnect ?? false,
     testServers: false,
     // In Node.js GramJS does not select its WebSocket socket from useWSS alone.
     // Set both the socket implementation and a web DC hostname so HTTPS-only
@@ -492,7 +500,7 @@ function safeDisconnectTelegramClient(client: TelegramRuntimeClient) {
 
 function statusToConnection(status?: MessengerAccountStatus): MessengerConnection["connectionStatus"] {
   if (status === "connected") return "connected";
-  if (status === "error" || status === "needs_auth") return "error";
+  if (status === "error" || status === "needs_auth" || status === "degraded") return "error";
   return "not_connected";
 }
 
@@ -631,7 +639,7 @@ async function updateAccountStatus(accountId: string, status: MessengerAccountSt
       AND organization_id = ${organizationId}
       AND branch_id = ${branchId}
   `;
-  if (status === "needs_auth" || status === "error") {
+  if (status === "needs_auth" || status === "error" || status === "degraded") {
     await recordIntegrationAudit({
       channel: "telegram_user",
       action: "telegram_user_sync_failed",
@@ -897,7 +905,7 @@ export async function startTelegramUserQrAuth(phoneInput = "") {
   const attemptId = crypto.randomUUID();
   const accountId = crypto.randomUUID();
   const sessionId = crypto.randomUUID();
-  const client = await getClient("", { apiId, apiHash });
+  const client = await getClient("", { apiId, apiHash }, { autoReconnect: true });
   try {
     const { Api, version } = await loadGramJs();
     logAuthAttempt({
@@ -1226,7 +1234,7 @@ export async function checkTelegramUserQrAuth(accountId: string) {
     : await resolveTelegramUserCredentials();
   const { apiId, apiHash } = currentCredentials;
   if (!sessionString) throw new Error("QR session потеряна. Создайте QR заново.");
-  const client = await getClient(sessionString, currentCredentials);
+  const client = await getClient(sessionString, currentCredentials, { autoReconnect: true });
   const adoptedAttempt: TelegramQrRuntimeAttempt = {
     accountId,
     sessionId: session.id,
@@ -2464,7 +2472,9 @@ function startAgentForSyncedMessages(input: { organizationId: string; conversati
 async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
   const accounts = accountId
     ? (await listTelegramUserAccounts()).filter((account) => account.id === accountId)
-    : (await listTelegramUserAccounts()).filter((account) => account.status === "connected" && account.isActive);
+    : (await listTelegramUserAccounts()).filter(
+        (account) => (account.status === "connected" || account.status === "degraded") && account.isActive
+      );
   const processed = [];
   for (const account of accounts) {
     const allowAgentTrigger = Boolean(account.lastSyncAt);
@@ -2475,8 +2485,9 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
       processed.push({ accountId: account.id, ok: false, error: "session missing" });
       continue;
     }
-    const client = await getClient(sessionString);
+    let client: TelegramRuntimeClient | null = null;
     try {
+      client = await getClient(sessionString);
       const dialogs = (await client.getDialogs({ limit })) as TelegramDialog[];
       logSyncState("dialogs_fetched", { accountId: account.id, count: dialogs.length, limit });
       let conversationCount = 0;
@@ -2537,10 +2548,10 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
       processed.push({ accountId: account.id, ok: true, conversationCount, messageCount, skippedCount, archivedCount });
     } catch (error) {
       const message = safeError(error, "Telegram sync failed");
-      await updateAccountStatus(account.id, /AUTH|SESSION|PASSWORD/i.test(message) ? "needs_auth" : "error", message);
+      await updateAccountStatus(account.id, /AUTH|SESSION|PASSWORD/i.test(message) ? "needs_auth" : "degraded", message);
       processed.push({ accountId: account.id, ok: false, error: message });
     } finally {
-      await disconnectTelegramClient(client);
+      if (client) await disconnectTelegramClient(client);
     }
   }
   return { ok: true as const, processed };
@@ -2550,6 +2561,8 @@ type TelegramUserSyncResult = Awaited<ReturnType<typeof runTelegramUserAccountSy
 type TelegramSyncRuntimeEntry = {
   inFlight: Promise<TelegramUserSyncResult> | null;
   lastStartedAt: number;
+  consecutiveFailures: number;
+  nextRetryAt: number;
 };
 
 const telegramSyncRuntimeGlobal = globalThis as typeof globalThis & {
@@ -2567,20 +2580,48 @@ function telegramSyncMinIntervalMs() {
   return Math.floor(configured);
 }
 
+function telegramSyncMaxBackoffMs() {
+  const minimum = telegramSyncMinIntervalMs();
+  const configured = Number(process.env.TELEGRAM_SYNC_MAX_BACKOFF_MS);
+  if (!Number.isFinite(configured) || configured < minimum) return Math.max(minimum, 15 * 60_000);
+  return Math.floor(configured);
+}
+
+function telegramSyncFailureBackoffMs(consecutiveFailures: number) {
+  const exponent = Math.min(Math.max(0, consecutiveFailures - 1), 10);
+  return Math.min(telegramSyncMaxBackoffMs(), telegramSyncMinIntervalMs() * 2 ** exponent);
+}
+
+function telegramSyncResultFailed(result: TelegramUserSyncResult) {
+  return result.processed.some((item) => !item.ok);
+}
+
+function recordTelegramSyncFailure(entry: TelegramSyncRuntimeEntry) {
+  entry.consecutiveFailures += 1;
+  entry.nextRetryAt = Date.now() + telegramSyncFailureBackoffMs(entry.consecutiveFailures);
+}
+
+function clearTelegramSyncFailure(entry: TelegramSyncRuntimeEntry) {
+  entry.consecutiveFailures = 0;
+  entry.nextRetryAt = 0;
+}
+
 export async function syncTelegramUserAccount(accountId?: string, limit = 40, options: { force?: boolean } = {}) {
   const runtime = telegramSyncRuntime();
-  const runtimeKey = `${getMessengerOrganizationId()}:telegram-user-session`;
-  const entry = runtime.get(runtimeKey) ?? { inFlight: null, lastStartedAt: 0 };
+  const runtimeKey = `${getMessengerOrganizationId()}:${getScopedBranchId()}:telegram-user-session`;
+  const entry = runtime.get(runtimeKey) ?? { inFlight: null, lastStartedAt: 0, consecutiveFailures: 0, nextRetryAt: 0 };
 
   if (entry.inFlight) return entry.inFlight;
 
   const now = Date.now();
-  const retryAfterMs = Math.max(0, telegramSyncMinIntervalMs() - (now - entry.lastStartedAt));
+  const intervalRetryAt = entry.lastStartedAt + telegramSyncMinIntervalMs();
+  const retryAt = Math.max(intervalRetryAt, entry.nextRetryAt);
+  const retryAfterMs = Math.max(0, retryAt - now);
   if (!options.force && retryAfterMs > 0) {
     return {
       ok: true as const,
       processed: [],
-      skipped: "throttled" as const,
+      skipped: entry.nextRetryAt > now ? "backoff" as const : "throttled" as const,
       retryAfterMs,
     };
   }
@@ -2591,7 +2632,13 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40, op
   runtime.set(runtimeKey, entry);
 
   try {
-    return await inFlight;
+    const result = await inFlight;
+    if (telegramSyncResultFailed(result)) recordTelegramSyncFailure(entry);
+    else clearTelegramSyncFailure(entry);
+    return result;
+  } catch (error) {
+    recordTelegramSyncFailure(entry);
+    throw error;
   } finally {
     if (entry.inFlight === inFlight) entry.inFlight = null;
   }

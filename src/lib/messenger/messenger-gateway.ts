@@ -17,6 +17,7 @@ import { assertMessengerOutboundTextSafe } from "./messenger-security";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
 import { normalizeAttachmentList } from "./messenger-attachment-normalization";
+import { isMessengerStorageProxyUrl, messengerStorageStatus } from "./messenger-storage";
 import type {
   Conversation,
   IncomingMessageEvent,
@@ -138,6 +139,10 @@ function sendTextWithLinkFallback(text: string, input: SendMessageInput, inlineB
 }
 
 function toConversation(row: ConversationRow): Conversation {
+  const participantAvatar =
+    !isMessengerStorageProxyUrl(row.participantAvatarUrl) || messengerStorageStatus().configured
+      ? row.participantAvatarUrl ?? undefined
+      : undefined;
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -147,7 +152,7 @@ function toConversation(row: ConversationRow): Conversation {
     title: row.title,
     participantName: row.participantName,
     participantPhone: row.participantPhone ?? undefined,
-    participantAvatar: row.participantAvatarUrl ?? undefined,
+    participantAvatar,
     lastMessageText: sanitizeMessengerText(row.lastMessageText),
     lastMessageAt: row.lastMessageAt.toISOString(),
     unreadCount: row.unreadCount,
@@ -167,7 +172,23 @@ function toConversation(row: ConversationRow): Conversation {
 }
 
 function toMessage(row: MessageRow): Message {
-  const attachments = normalizeAttachmentList(row.attachmentsJson ?? []);
+  const storageConfigured = messengerStorageStatus().configured;
+  const attachments = normalizeAttachmentList(row.attachmentsJson ?? []).map((attachment) => {
+    if (storageConfigured) return attachment;
+    const url = isMessengerStorageProxyUrl(attachment.url) ? undefined : attachment.url;
+    const previewUrl = isMessengerStorageProxyUrl(attachment.previewUrl) ? undefined : attachment.previewUrl;
+    const storageUnavailable = Boolean((attachment.url && !url) || (attachment.previewUrl && !previewUrl));
+    if (!storageUnavailable) return attachment;
+    const hasUsableUrl = Boolean(url || previewUrl);
+    return {
+      ...attachment,
+      url,
+      previewUrl,
+      status: hasUsableUrl ? attachment.status : "failed" as const,
+      errorCode: hasUsableUrl ? attachment.errorCode : "storage_not_configured",
+      errorMessage: hasUsableUrl ? attachment.errorMessage : "Хранилище файлов мессенджера не настроено",
+    };
+  });
   return {
     id: row.id,
     organizationId: row.organizationId,

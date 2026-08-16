@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { matchMannArticlesToLocalProducts } from "@/lib/mann-catalog";
 
 type Body = {
@@ -9,8 +9,8 @@ type Body = {
 };
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branch = await requireBranchApi({ allowAll: false, requireActive: true });
+  if (!branch.ok) return branch.response;
 
   const body = (await request.json().catch(() => null)) as Body | null;
   const mannArticles: Array<string | { mannArticle: string; filterType?: string; filterSubtype?: string | null }> = [];
@@ -24,11 +24,20 @@ export async function POST(request: NextRequest) {
   }
   if (mannArticles.length === 0) return NextResponse.json({ error: "Передайте mannArticles[]" }, { status: 400 });
 
-  return NextResponse.json({
-    matches: await matchMannArticlesToLocalProducts({
-      mannArticles,
-      organizationId: body?.organizationId,
-      warehouseId: body?.warehouseId,
-    }),
-  });
+  try {
+    const matches = await runWithBranchApiContext(branch.context, () =>
+      matchMannArticlesToLocalProducts({
+        mannArticles,
+        organizationId: body?.organizationId,
+        warehouseId: body?.warehouseId,
+      })
+    );
+    return NextResponse.json({ matches });
+  } catch (error) {
+    console.error("MANN local product matching failed", error);
+    return NextResponse.json(
+      { error: "Не удалось сопоставить фильтры с локальным каталогом" },
+      { status: 500 }
+    );
+  }
 }

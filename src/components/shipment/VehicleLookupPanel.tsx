@@ -247,13 +247,14 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       const data = await responseJson<LookupResponse>(response);
       if (requestId !== lookupRequestIdRef.current) return;
       if (!response.ok || !data) {
+        const message = data?.error ?? "Повторите попытку позже или продолжите подбор вручную.";
         setFeedback({
           tone: "warning",
           title: tab === "plate" ? "Сервис определения автомобиля временно недоступен" : "Не удалось определить автомобиль",
-          body: tab === "plate" ? "Можно продолжить вручную." : data?.error ?? "Попробуйте ещё раз или продолжите вручную.",
+          body: message,
           actionLabel: "Перейти к ручному подбору",
         });
-        openManualMode({ reason: "lookup_unavailable", message: data?.error });
+        openManualMode({ reason: "lookup_unavailable", message });
         return;
       }
 
@@ -274,10 +275,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         setFeedback({
           tone: "warning",
           title: "Сервис определения автомобиля временно недоступен",
-          body: "Можно продолжить вручную.",
+          body: data.message ?? "Повторите попытку позже или продолжите подбор вручную.",
           actionLabel: "Перейти к ручному подбору",
         });
-        openManualMode({ reason: "lookup_unavailable", vehicle: data.vehicle, message: data.message });
+        openManualMode({ reason: "lookup_unavailable", vehicle: data.vehicle, message: data.message ?? "Сервис определения автомобиля временно недоступен" });
         return;
       }
 

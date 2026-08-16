@@ -98,6 +98,14 @@ if (/LEGACY_INTEGRATION_BRANCH_ID|legacyIntegrationEnvAllowed/.test(read("src/li
 }
 requireText("src/proxy.ts", [/branchId === "all"/, /concrete_branch_required/, /matcher: \["\/api\/:path\*"\]/]);
 requireText("src/app/api/session/active-branch/route.ts", [/selectActiveBranch/]);
+for (const route of [
+  "src/app/api/analytics/customers/route.ts",
+  "src/app/api/mann-catalog/match-local-products/route.ts",
+  "src/app/api/mann-catalog/resolve-decoded-vehicle/route.ts",
+  "src/app/api/mann-catalog/resolve-vehicle/route.ts",
+]) {
+  requireText(route, [/requireBranchApi/, /runWithBranchApiContext/]);
+}
 requireText("src/lib/local-inventory-admin.ts", [/branchId/]);
 requireText("src/lib/local-demand-write.ts", [/resolveDemandBranchScope/, /where:\s*\{\s*branchId/]);
 requireText("src/lib/cashbox.ts", [/activeCashBranchId/, /where:\s*\{\s*branchId,\s*serviceDate\s*\}/]);

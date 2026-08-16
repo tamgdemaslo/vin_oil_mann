@@ -4,8 +4,8 @@ import { getCurrentShift } from "@/lib/shifts";
 import { getCurrentShift as getCashShift } from "@/lib/cashbox";
 import { hasActiveShiftAccess } from "@/lib/active-shift-access";
 
-/** Как на страницах отгрузки: owner без проверки смены; остальные — рабочая смена или кассовая. */
-export async function requireApiSessionWithShift(): Promise<
+/** Проверка авторизации для операций, которые не изменяют рабочие данные. */
+export async function requireApiSession(): Promise<
   | { ok: true; session: NonNullable<Awaited<ReturnType<typeof getSession>>> }
   | { ok: false; response: NextResponse }
 > {
@@ -16,6 +16,17 @@ export async function requireApiSessionWithShift(): Promise<
       response: NextResponse.json({ error: "Необходима авторизация" }, { status: 401 }),
     };
   }
+  return { ok: true, session };
+}
+
+/** Как на страницах отгрузки: owner без проверки смены; остальные — рабочая смена или кассовая. */
+export async function requireApiSessionWithShift(): Promise<
+  | { ok: true; session: NonNullable<Awaited<ReturnType<typeof getSession>>> }
+  | { ok: false; response: NextResponse }
+> {
+  const access = await requireApiSession();
+  if (!access.ok) return access;
+  const { session } = access;
   if (session.user.role === "owner") {
     return { ok: true, session };
   }

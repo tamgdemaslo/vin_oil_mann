@@ -1,8 +1,8 @@
 # Messenger production E2E
 
-## Railway env
+## Timeweb App Platform env
 
-Добавить в Railway Variables для web-сервиса:
+Добавить в переменные web-сервиса Timeweb App Platform:
 
 ```env
 MESSENGER_STORAGE_ENABLED=true
@@ -13,6 +13,19 @@ MESSENGER_STORAGE_ACCESS_KEY_ID=<access-key-id>
 MESSENGER_STORAGE_SECRET_ACCESS_KEY=<secret-access-key>
 MESSENGER_STORAGE_PUBLIC_BASE_URL=
 MESSENGER_STORAGE_FORCE_PATH_STYLE=true
+```
+
+Для Telegram worker по умолчанию используется WebSocket с экспоненциальной паузой
+между неудачными синхронизациями (максимум 15 минут). Если App Platform стабильно
+обрывает `*.web.telegram.org`, настройте выделенный SOCKS5 proxy:
+
+```env
+TELEGRAM_SYNC_MAX_BACKOFF_MS=900000
+TELEGRAM_PROXY_HOST=<proxy-host>
+TELEGRAM_PROXY_PORT=<proxy-port>
+TELEGRAM_PROXY_SOCKS_TYPE=5
+TELEGRAM_PROXY_USERNAME=<optional-user>
+TELEGRAM_PROXY_PASSWORD=<optional-password>
 ```
 
 Опционально:

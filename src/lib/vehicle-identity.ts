@@ -413,13 +413,19 @@ async function cachedTronkCall(params: {
 }): Promise<{ call: TronkCallResult; fromCache: boolean; cacheId: string | null }> {
   const hash = inputHash(params.normalizedInput);
   if (!params.refresh) {
-    const cached = await prisma.vehicleLookupCache.findFirst({
-      where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, status: "success", expiresAt: { gt: new Date() } },
-      orderBy: { completedAt: "desc" },
-    });
-    const raw = decryptRaw(cached?.rawResponseEncrypted ?? null);
-    if (cached && raw) {
-      return { call: { ok: true, method: params.method, data: raw, durationMs: 0, providerRequestId: cached.providerRequestId }, fromCache: true, cacheId: cached.id };
+    try {
+      const cached = await prisma.vehicleLookupCache.findFirst({
+        where: { organizationId: params.organizationId, inputType: params.inputType, normalizedInputHash: hash, method: params.method, status: "success", expiresAt: { gt: new Date() } },
+        orderBy: { completedAt: "desc" },
+      });
+      const raw = decryptRaw(cached?.rawResponseEncrypted ?? null);
+      if (cached && raw) {
+        return { call: { ok: true, method: params.method, data: raw, durationMs: 0, providerRequestId: cached.providerRequestId }, fromCache: true, cacheId: cached.id };
+      }
+    } catch (error) {
+      // The cache is an optimization. A missing or temporarily unavailable
+      // cache must not prevent a paid lookup from completing.
+      console.error("[vehicle-lookup-cache] read failed", error);
     }
   }
 
@@ -538,6 +544,19 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
     const gateVehicle = gate.ok ? toVehicle(asRecord(gate.data.result ?? gate.data), "tronk_convertgate", { licensePlate: plate.normalized }) : null;
     if (gateVehicle?.makeCanonical && gateVehicle.modelCanonical) {
       return resultFromVehicles({ vehicles: [gateVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertgate"] });
+    }
+    const calls = [number2vin, b2b, gate];
+    const unavailableCall = calls.find((call) => !call.ok);
+    if (calls.every((call) => !call.ok)) {
+      return {
+        status: "unavailable",
+        vehicle: null,
+        candidates: [],
+        message: unavailableCall?.message ?? "Сервис определения автомобиля временно недоступен.",
+        fromCache,
+        cacheIds,
+        sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"],
+      };
     }
     return { status: "not_found", vehicle: null, candidates: [], message: "По госномеру автомобиль не найден. Можно продолжить ручной подбор MANN.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"] };
   }
