@@ -5,12 +5,11 @@ FROM node:20-bookworm-slim AS dependencies
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
-RUN sed -i \
-    -e 's|http://deb.debian.org/debian-security|http://mirror.yandex.ru/debian-security|g' \
-    -e 's|http://deb.debian.org/debian|http://mirror.yandex.ru/debian|g' \
-    /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
+# Timeweb builders can advertise IPv6 without a working IPv6 route. Keep the
+# official Debian CDN from the base image, force IPv4, and retry transient CDN
+# failures instead of pinning the build to a third-party mirror.
+RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
@@ -56,12 +55,8 @@ ENV NODE_ENV=production \
 
 # Keep the large Chromium/system layer independent from per-release metadata so
 # subsequent deploys can reuse it instead of downloading and exporting it again.
-RUN sed -i \
-    -e 's|http://deb.debian.org/debian-security|http://mirror.yandex.ru/debian-security|g' \
-    -e 's|http://deb.debian.org/debian|http://mirror.yandex.ru/debian|g' \
-    /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates chromium curl fonts-dejavu-core openssl \
+RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 update \
+  && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates chromium curl fonts-dejavu-core openssl \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1001 app \
   && useradd --uid 1001 --gid app --create-home app \
