@@ -169,6 +169,10 @@ assert.match(service, /TransactionIsolationLevel\.Serializable/);
 assert.match(service, /startsAt: \{ lt: input\.endsAt \}/);
 assert.match(service, /endsAt: \{ gt: input\.startsAt \}/);
 assert.match(service, /booking\.created/);
+assert.match(service, /booking_internal_\$\{phase\}/);
+assert.match(service, /inBookingCreatePhase\("vehicle"/);
+assert.match(service, /inBookingCreatePhase\("booking"/);
+assert.match(service, /inBookingCreatePhase\("audit"/);
 assert.match(service, /booking\.rescheduled/);
 assert.match(service, /booking\.cancelled/);
 assert.ok(

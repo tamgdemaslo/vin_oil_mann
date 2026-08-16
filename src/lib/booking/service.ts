@@ -14,6 +14,8 @@ import { formatLocalDate } from "./timezone";
 
 type BookingDb = Prisma.TransactionClient;
 
+type BookingCreatePhase = "client" | "vehicle" | "booking" | "audit";
+
 export type BookingVehicleInput = {
   make?: string | null;
   model?: string | null;
@@ -80,6 +82,20 @@ function dateValue(value: string | Date, field: string) {
 
 function distinctIds(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+async function inBookingCreatePhase<T>(phase: BookingCreatePhase, operation: () => Promise<T>) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof BookingError) throw error;
+    console.error(`[booking/create:${phase}]`, error);
+    throw new BookingError(
+      "Не удалось выполнить операцию с записью",
+      `booking_internal_${phase}`,
+      500,
+    );
+  }
 }
 
 function requiredServiceFields(services: Array<{ requiredFieldsJson: Prisma.JsonValue; requiresVin: boolean }>) {
@@ -340,8 +356,8 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
     }
 
-    const client = await resolveClient(tx, input, normalizedPhone);
-    const vehicle = await resolveVehicle(tx, input, client.id);
+    const client = await inBookingCreatePhase("client", () => resolveClient(tx, input, normalizedPhone));
+    const vehicle = await inBookingCreatePhase("vehicle", () => resolveVehicle(tx, input, client.id));
     const requiredFields = requiredServiceFields(services);
     if (requiresVin && !vehicle.vin) {
       throw new BookingError("Для выбранной услуги нужен VIN", "booking_vin_required");
@@ -360,7 +376,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
     if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
 
-    const booking = await tx.booking.create({
+    const booking = await inBookingCreatePhase("booking", () => tx.booking.create({
       data: {
         branchId: input.branchId,
         clientId: client.id,
@@ -401,8 +417,8 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         },
       },
       include: BOOKING_INCLUDE,
-    });
-    await tx.branchAuditLog.create({
+    }));
+    await inBookingCreatePhase("audit", () => tx.branchAuditLog.create({
       data: {
         businessGroupId: branch.businessGroupId,
         branchId: branch.id,
@@ -420,7 +436,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
           conflictOverride: booking.conflictOverride,
         },
       },
-    });
+    }));
     return booking;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
