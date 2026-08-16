@@ -55,6 +55,7 @@ type VehicleInfo = {
 
 type RecordItem = {
   id: number;
+  local_booking_id?: string;
   staff_id?: number;
   date?: string;
   datetime?: string;
@@ -381,7 +382,7 @@ function getApiErrorMessage(data: unknown, fallback: string) {
 function getRecordSaveErrorMessage(data: unknown, fallback: string) {
   const message = getApiErrorMessage(data, fallback);
   if (/нет\s+врем|no\s+time|busy|занят|недоступ/i.test(message)) {
-    return "YCLIENTS не подтвердил свободное окно. Проверьте, что выбран именно свободный сотрудник / бокс, услуга доступна этому ресурсу и время совпадает с календарем YCLIENTS.";
+    return "Система записи не подтвердила свободное окно. Обновите календарь и выберите другой слот или подтвердите пересечение.";
   }
   return message;
 }
@@ -547,6 +548,10 @@ function getClientDisplayName(record: RecordItem): string {
   return record.client?.display_name || record.client?.name || "Клиент";
 }
 
+function bookingMutationId(record: RecordItem) {
+  return record.local_booking_id?.trim() || record.id;
+}
+
 function stringFromUnknown(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -669,15 +674,18 @@ function resolveStatus(record: RecordItem, startMinute: number, endMinute: numbe
 
 function sourceInfo(record: RecordItem): Pick<TimelineRecord, "source" | "sourceLabel" | "syncLabel"> {
   if (record.online || record.bookform_id || record.from_url) {
-    return { source: "online", sourceLabel: "YCLIENTS online", syncLabel: "Синхронизировано" };
+    return { source: "online", sourceLabel: "Онлайн-запись", syncLabel: "Собственная система" };
+  }
+  if (record.record_from === "legacy_yclients") {
+    return { source: "yclients", sourceLabel: "Архив Yclients", syncLabel: "Историческая запись" };
   }
   if (record.record_from && record.record_from !== "manual") {
-    return { source: "yclients", sourceLabel: "YCLIENTS", syncLabel: `Источник: ${record.record_from}` };
+    return { source: "local", sourceLabel: "Эко-платформа", syncLabel: `Источник: ${record.record_from}` };
   }
   if (record.local === true || record.source === "local") {
     return { source: "local", sourceLabel: "Локально", syncLabel: "Локальная запись" };
   }
-  return { source: "yclients", sourceLabel: "YCLIENTS", syncLabel: "Синхронизировано" };
+  return { source: "local", sourceLabel: "Эко-платформа", syncLabel: "Собственная запись" };
 }
 
 function composeRecordComment(input: { comment: string; vehicle: VehicleInfo; internalComment: string; statusKey?: AppointmentStatusKey }) {
@@ -770,6 +778,8 @@ export default function RecordsPageClient() {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [companyTitle, setCompanyTitle] = useState("Там где масло");
+  const [canManageRecords, setCanManageRecords] = useState(false);
+  const [canOverrideConflict, setCanOverrideConflict] = useState(false);
 
   const [scheduleDate, setScheduleDate] = useState(() => toDateInputValue(new Date()));
   const [timelineStaffId, setTimelineStaffId] = useState("");
@@ -838,7 +848,7 @@ export default function RecordsPageClient() {
     };
   }, [router]);
 
-  const canAccess = useMemo(() => !!user && (user.role === "owner" || user.role === "admin"), [user]);
+  const canAccess = useMemo(() => Boolean(user), [user]);
 
   const timelineStaff = useMemo(() => {
     if (timelineStaffId) {
@@ -953,14 +963,16 @@ export default function RecordsPageClient() {
     setConfigLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/yclients?action=config", { cache: "no-store" });
+      const res = await fetch("/api/booking-journal?action=config", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки конфигурации филиала");
       const cfg = data?.data ?? {};
       const id = String(cfg.company_id ?? "").trim();
-      if (!id) throw new Error("YCLIENTS не настроен для активного филиала");
+      if (!id) throw new Error("Система записи не настроена для активного филиала");
       setCompanyId(id);
       if (cfg.company_title) setCompanyTitle(String(cfg.company_title));
+      setCanManageRecords(cfg.can_manage === true);
+      setCanOverrideConflict(cfg.can_override_conflict === true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки конфигурации филиала");
     } finally {
@@ -974,8 +986,8 @@ export default function RecordsPageClient() {
     setError(null);
     try {
       const [staffRes, servicesRes] = await Promise.all([
-        fetch(`/api/yclients?action=staff&company_id=${companyId}`, { cache: "no-store" }),
-        fetch(`/api/yclients?action=services&company_id=${companyId}`, { cache: "no-store" }),
+        fetch(`/api/booking-journal?action=staff&company_id=${companyId}`, { cache: "no-store" }),
+        fetch(`/api/booking-journal?action=services&company_id=${companyId}`, { cache: "no-store" }),
       ]);
       const staffJson = await staffRes.json();
       const servicesJson = await servicesRes.json();
@@ -1024,7 +1036,7 @@ export default function RecordsPageClient() {
             count: "100",
             staff_id: staffIdOne,
           });
-          const res = await fetch(`/api/yclients?${params.toString()}`, { cache: "no-store" });
+          const res = await fetch(`/api/booking-journal?${params.toString()}`, { cache: "no-store" });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки записей");
           return Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
@@ -1069,7 +1081,7 @@ export default function RecordsPageClient() {
             count: "500",
             staff_id: staffIdOne,
           });
-          const res = await fetch(`/api/yclients?${params.toString()}`, { cache: "no-store" });
+          const res = await fetch(`/api/booking-journal?${params.toString()}`, { cache: "no-store" });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error ?? "Ошибка загрузки календаря месяца");
           return Array.isArray(data.data) ? (data.data as RecordItem[]) : [];
@@ -1609,7 +1621,7 @@ export default function RecordsPageClient() {
       return {
         ok: true,
         warning: true,
-        message: "Время вне отображаемой сетки. YCLIENTS проверит доступность при сохранении.",
+        message: "Время вне отображаемой сетки. Система проверит расписание при сохранении.",
       };
     }
     return { ok: true, warning: false, message: "Время свободно" };
@@ -1634,6 +1646,7 @@ export default function RecordsPageClient() {
 
   const openCreateForm = useCallback(
     (defaults?: Partial<RecordFormState>) => {
+      if (!canManageRecords) return;
       const now = new Date(`${scheduleDate}T09:00:00`);
       const baseStart = defaults?.datetime || toDateTimeLocalValue(now);
       const serviceIds = defaults?.serviceIds ?? [];
@@ -1655,7 +1668,7 @@ export default function RecordsPageClient() {
       setLinkedCreateDealId(null);
       setFormOpen(true);
     },
-    [scheduleDate, serviceById, timelineStaff]
+    [canManageRecords, scheduleDate, serviceById, timelineStaff]
   );
 
   const openQuickCreateFromMinute = useCallback(
@@ -1719,7 +1732,7 @@ export default function RecordsPageClient() {
           company_id: companyId,
           record_id: recordIdParam,
         });
-        const res = await fetch(`/api/yclients?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        const res = await fetch(`/api/booking-journal?${params.toString()}`, { cache: "no-store", signal: controller.signal });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
         const record = (data?.data ?? data) as RecordItem;
@@ -1871,7 +1884,7 @@ export default function RecordsPageClient() {
             send_sms: false,
           };
 
-          const res = await fetch("/api/yclients", {
+          const res = await fetch("/api/booking-journal", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "create-record", company_id: companyId, payload }),
@@ -1912,8 +1925,8 @@ export default function RecordsPageClient() {
               body: JSON.stringify({
                 recordId: created?.id ?? null,
                 recordDateTime: form.datetime,
-                recordSource: "yclients",
-                sourceLabel: "YCLIENTS",
+                recordSource: "local",
+                sourceLabel: "Эко-платформа",
                 clientName: form.clientName.trim(),
                 clientPhone: phone,
                 clientEmail: form.clientEmail.trim(),
@@ -1950,15 +1963,17 @@ export default function RecordsPageClient() {
           comment: comment || undefined,
           confirmed: confirmedForStatus(form.statusKey),
           attendance: attendanceForStatus(form.statusKey),
-          save_if_busy: true,
+          save_if_busy: form.allowOverlap,
         };
-        const res = await fetch("/api/yclients", {
+        const res = await fetch("/api/booking-journal", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "update-record",
             company_id: companyId,
-            record_id: editingRecordId,
+            record_id: selectedRecordItem && selectedRecordItem.id === editingRecordId
+              ? bookingMutationId(selectedRecordItem)
+              : editingRecordId,
             payload,
           }),
         });
@@ -1987,6 +2002,7 @@ export default function RecordsPageClient() {
       loadCrmDeals,
       loadRecords,
       router,
+      selectedRecordItem,
       selectedServiceDurationSeconds,
       serviceById,
     ]
@@ -2012,13 +2028,13 @@ export default function RecordsPageClient() {
       confirmed: 1,
       save_if_busy: true,
     };
-    const res = await fetch("/api/yclients", {
+    const res = await fetch("/api/booking-journal", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "update-record",
         company_id: companyId,
-        record_id: selectedRecordItem.id,
+        record_id: bookingMutationId(selectedRecordItem),
         payload,
       }),
     });
@@ -2062,13 +2078,13 @@ export default function RecordsPageClient() {
           attendance: attendanceForStatus(statusKey),
           save_if_busy: true,
         };
-        const res = await fetch("/api/yclients", {
+        const res = await fetch("/api/booking-journal", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "update-record",
             company_id: companyId,
-            record_id: selectedRecordItem.id,
+            record_id: bookingMutationId(selectedRecordItem),
             payload,
           }),
         });
@@ -2094,19 +2110,21 @@ export default function RecordsPageClient() {
   );
 
   const handleCancelRecord = useCallback(async () => {
-    if (!selectedRecordId) return;
+    if (!selectedRecordId || !selectedRecordItem) return;
     const ok = window.confirm("Отменить запись?");
     if (!ok) return;
-    window.prompt("Причина отмены (опционально)", "");
+    const reason = window.prompt("Причина отмены (опционально)", "");
+    if (reason === null) return;
 
     setError(null);
-    const res = await fetch("/api/yclients", {
+    const res = await fetch("/api/booking-journal", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "delete-record",
         company_id: companyId,
-        record_id: selectedRecordId,
+        record_id: bookingMutationId(selectedRecordItem),
+        reason,
       }),
     });
     const data = await res.json();
@@ -2118,7 +2136,7 @@ export default function RecordsPageClient() {
     setSelectedRecordId(null);
     await loadRecords();
     setToast("Запись отменена");
-  }, [companyId, loadRecords, selectedRecordId]);
+  }, [companyId, loadRecords, selectedRecordId, selectedRecordItem]);
 
   const copyPhone = useCallback(async (phone: string) => {
     try {
@@ -2243,6 +2261,7 @@ export default function RecordsPageClient() {
 
   const commitTimelineTimeChange = useCallback(
     async (interaction: TimelineInteraction) => {
+      if (!canManageRecords) return;
       if (!interaction.moved) return;
       const record = dayTimeline.find((item) => item.id === interaction.recordId);
       const original = records.find((item) => item.id === interaction.recordId);
@@ -2257,12 +2276,14 @@ export default function RecordsPageClient() {
         if (item.id === record.id) return false;
         return startMinute < item.endMinute && endMinute > item.startMinute;
       });
+      let overrideConflict = false;
       if (conflicts.length > 0) {
-        setToast(`Слот занят: ${conflicts.map((item) => `${item.startedAtText}–${item.endedAtText}`).join(", ")}`);
-        return;
+        const message = `У мастера уже есть запись: ${conflicts.map((item) => `${item.startedAtText}–${item.endedAtText}`).join(", ")}. Создать пересечение?`;
+        if (!canOverrideConflict || !window.confirm(message)) return;
+        overrideConflict = true;
       }
       if (!companyId) {
-        setToast("Не удалось проверить доступность: не настроен филиал YCLIENTS");
+        setToast("Не удалось проверить доступность: не настроен филиал");
         return;
       }
 
@@ -2283,18 +2304,40 @@ export default function RecordsPageClient() {
           comment: original.comment || undefined,
           confirmed: confirmedForStatus(record.statusKey),
           attendance: attendanceForStatus(record.statusKey),
+          save_if_busy: overrideConflict,
         };
-        const res = await fetch("/api/yclients", {
+        const res = await fetch("/api/booking-journal", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "update-record",
             company_id: companyId,
-            record_id: record.id,
+            record_id: bookingMutationId(original),
             payload,
           }),
         });
-        const data = await res.json().catch(() => ({}));
+        let data = await res.json().catch(() => ({}));
+        if (!res.ok && data?.code === "booking_slot_taken" && canOverrideConflict && window.confirm(`${data?.error || "Время не входит в расписание мастера."} Всё равно перенести?`)) {
+          const overrideResponse = await fetch("/api/booking-journal", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "update-record",
+              company_id: companyId,
+              record_id: bookingMutationId(original),
+              payload: { ...payload, save_if_busy: true },
+            }),
+          });
+          data = await overrideResponse.json().catch(() => ({}));
+          if (!overrideResponse.ok) {
+            setToast(getRecordSaveErrorMessage(data, "Не удалось перенести запись"));
+            return;
+          }
+          await loadRecords();
+          setSelectedRecordId(record.id);
+          setToast(interaction.kind === "resize" ? "Длительность обновлена с override" : "Запись перенесена с override");
+          return;
+        }
         if (!res.ok) {
           setToast(getRecordSaveErrorMessage(data, "Не удалось перенести запись"));
           return;
@@ -2308,7 +2351,7 @@ export default function RecordsPageClient() {
         setTimelineActionSaving(false);
       }
     },
-    [companyId, dayTimeline, loadRecords, records, scheduleDate, timelineByStaff, timelineEndMinute, timelineStartMinute]
+    [canManageRecords, canOverrideConflict, companyId, dayTimeline, loadRecords, records, scheduleDate, timelineByStaff, timelineEndMinute, timelineStartMinute]
   );
 
   useEffect(() => {
@@ -2400,7 +2443,7 @@ export default function RecordsPageClient() {
     return (
       <div className="p-6">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Доступ к разделу записей есть только у владельца и администратора.
+          Нет доступа к журналу записей этого филиала.
         </div>
       </div>
     );
@@ -2419,7 +2462,7 @@ export default function RecordsPageClient() {
             <div className="eco-title-row">
               <h1 className="eco-page-title">Журнал записей</h1>
               <EcoBadge tone="success" dot>
-                YCLIENTS
+                Эко-платформа
               </EcoBadge>
               <EcoBadge tone="neutral">{dayTimeline.length} {dayTimeline.length === 1 ? "запись" : dayTimeline.length > 1 && dayTimeline.length < 5 ? "записи" : "записей"}</EcoBadge>
             </div>
@@ -2432,10 +2475,10 @@ export default function RecordsPageClient() {
               <ArrowLeft size={15} />
               К воронке
             </Link>
-            <EcoButton variant="primary" type="button" onClick={() => openCreateForm()}>
+            {canManageRecords && <EcoButton variant="primary" type="button" onClick={() => openCreateForm()}>
               <Plus size={15} />
               Новая запись
-            </EcoButton>
+            </EcoButton>}
           </div>
         </section>
 
@@ -2588,9 +2631,9 @@ export default function RecordsPageClient() {
             <span>Источник</span>
             <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as typeof sourceFilter)} className="eco-select-inline">
               <option value="all">Все</option>
-              <option value="yclients">YCLIENTS</option>
-              <option value="online">YCLIENTS online</option>
-              <option value="local">Локально</option>
+              <option value="yclients">Архив Yclients</option>
+              <option value="local">Эко-платформа</option>
+              <option value="online">Онлайн-запись</option>
             </select>
           </label>
           <label className="eco-select-chip">
@@ -2633,7 +2676,7 @@ export default function RecordsPageClient() {
             <AlertTriangle size={18} />
             <div>
               <strong>Не удалось загрузить журнал записей</strong>
-              <p>{error || "Проверьте подключение к YCLIENTS или локальной базе."}</p>
+              <p>{error || "Обновите страницу или проверьте настройки филиала."}</p>
             </div>
             <EcoButton type="button" size="sm" onClick={() => void refreshRecords()}>
               Повторить
@@ -2667,12 +2710,12 @@ export default function RecordsPageClient() {
                       <CalendarCheck size={18} />
                       <div>
                         <strong>Записей на этот день нет</strong>
-                        <span>Кликните по свободному времени в сетке, чтобы создать запись.</span>
+                        <span>{canManageRecords ? "Кликните по свободному времени в сетке, чтобы создать запись." : "На выбранную дату записей нет."}</span>
                       </div>
-                      <EcoButton variant="primary" type="button" size="sm" onClick={() => openCreateForm()}>
+                      {canManageRecords && <EcoButton variant="primary" type="button" size="sm" onClick={() => openCreateForm()}>
                         <Plus size={14} />
                         Новая запись
-                      </EcoButton>
+                      </EcoButton>}
                     </div>
                   ) : null}
                   <div className="eco-records-timeline-shell">
@@ -2710,6 +2753,7 @@ export default function RecordsPageClient() {
                             key={`col-${staffItem.id}`}
                             className="eco-records-timeline-col"
                             onMouseMove={(event) => {
+                              if (!canManageRecords) return;
                               const rect = event.currentTarget.getBoundingClientRect();
                               const y = event.clientY - rect.top;
                               const minute = Math.round(y / minutePx) + timelineStartMinute;
@@ -2717,6 +2761,7 @@ export default function RecordsPageClient() {
                             }}
                             onMouseLeave={() => setHoveredSlot((prev) => (prev?.staffId === staffItem.id ? null : prev))}
                             onClick={(event) => {
+                              if (!canManageRecords) return;
                               const rect = event.currentTarget.getBoundingClientRect();
                               const y = event.clientY - rect.top;
                               const minute = Math.round(y / minutePx) + timelineStartMinute;
@@ -2729,7 +2774,7 @@ export default function RecordsPageClient() {
                             {halfHourMarks.map((minute) => (
                               <div key={`half-${staffItem.id}-${minute}`} className="eco-records-half-line" style={{ top: `${(minute - timelineStartMinute) * minutePx}px` }} />
                             ))}
-                            {hoveredSlot?.staffId === staffItem.id ? (
+                            {canManageRecords && hoveredSlot?.staffId === staffItem.id ? (
                               <div
                                 className="eco-records-hover-slot"
                                 style={{
@@ -2798,7 +2843,7 @@ export default function RecordsPageClient() {
                                     if (timelineInteractionRef.current?.recordId === block.id) return;
                                     setSelectedRecordId(block.id);
                                   }}
-                                  onPointerDown={(event) => startTimelineInteraction("drag", block, event)}
+                                  onPointerDown={canManageRecords ? (event) => startTimelineInteraction("drag", block, event) : undefined}
                                   className={cx(
                                     "eco-record-card",
                                     `eco-record-card--${block.statusKey}`,
@@ -2830,7 +2875,7 @@ export default function RecordsPageClient() {
                                   <span
                                     className="eco-record-card__resize"
                                     aria-hidden="true"
-                                    onPointerDown={(event) => startTimelineInteraction("resize", block, event)}
+                                    onPointerDown={canManageRecords ? (event) => startTimelineInteraction("resize", block, event) : undefined}
                                   />
                                 </button>
                               );
@@ -3097,36 +3142,36 @@ export default function RecordsPageClient() {
 
                   <div className="eco-records-detail-actions">
                     {selectedTimelineRecord.statusKey === "new" || selectedTimelineRecord.statusKey === "waiting" ? (
-                      <EcoButton type="button" variant="primary" onClick={() => void handleConfirmRecord()}>
+                      <EcoButton type="button" variant="primary" onClick={() => void handleConfirmRecord()} disabled={!canManageRecords}>
                         <CheckCircle2 size={15} />
                         Подтвердить
                       </EcoButton>
                     ) : null}
                     {!["arrived", "in_work", "done", "left", "cancelled", "no_show"].includes(selectedTimelineRecord.statusKey) ? (
-                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("arrived")} disabled={recordStatusSaving === "arrived"}>
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("arrived")} disabled={!canManageRecords || recordStatusSaving === "arrived"}>
                         {recordStatusSaving === "arrived" ? <Loader2 size={15} className="eco-spin" /> : <UserRound size={15} />}
                         Клиент приехал
                       </EcoButton>
                     ) : null}
                     {["arrived", "in_work"].includes(selectedTimelineRecord.statusKey) ? (
-                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("done")} disabled={recordStatusSaving === "done"}>
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("done")} disabled={!canManageRecords || recordStatusSaving === "done"}>
                         {recordStatusSaving === "done" ? <Loader2 size={15} className="eco-spin" /> : <CheckCircle2 size={15} />}
                         Готово
                       </EcoButton>
                     ) : null}
                     {["arrived", "in_work", "done"].includes(selectedTimelineRecord.statusKey) ? (
-                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("left")} disabled={recordStatusSaving === "left"}>
+                      <EcoButton type="button" onClick={() => void handleSetRecordStatus("left")} disabled={!canManageRecords || recordStatusSaving === "left"}>
                         {recordStatusSaving === "left" ? <Loader2 size={15} className="eco-spin" /> : <ArrowLeft size={15} />}
                         Клиент уехал
                       </EcoButton>
                     ) : null}
                     {!["cancelled", "no_show", "left", "done"].includes(selectedTimelineRecord.statusKey) ? (
-                      <EcoButton type="button" variant="danger" onClick={() => void handleSetRecordStatus("no_show")} disabled={recordStatusSaving === "no_show"}>
+                      <EcoButton type="button" variant="danger" onClick={() => void handleSetRecordStatus("no_show")} disabled={!canManageRecords || recordStatusSaving === "no_show"}>
                         {recordStatusSaving === "no_show" ? <Loader2 size={15} className="eco-spin" /> : <AlertTriangle size={15} />}
                         Не приехал
                       </EcoButton>
                     ) : null}
-                    <EcoButton type="button" onClick={() => selectedRecordItem && openEditForm(selectedTimelineRecord, selectedRecordItem)}>
+                    <EcoButton type="button" disabled={!canManageRecords} onClick={() => selectedRecordItem && openEditForm(selectedTimelineRecord, selectedRecordItem)}>
                       <Edit3 size={15} />
                       Редактировать
                     </EcoButton>
@@ -3153,7 +3198,7 @@ export default function RecordsPageClient() {
                         {creatingCaseRecordId === selectedTimelineRecord.id ? "Создаю…" : "Добавить в дела"}
                       </EcoButton>
                     )}
-                    <EcoButton type="button" variant="danger" onClick={() => void handleCancelRecord()}>
+                    <EcoButton type="button" variant="danger" disabled={!canManageRecords} onClick={() => void handleCancelRecord()}>
                       <Ban size={15} />
                       Отменить запись
                     </EcoButton>
@@ -3164,10 +3209,10 @@ export default function RecordsPageClient() {
                   <CalendarCheck size={24} />
                   <strong>Выберите запись</strong>
                   <p>Кликните по карточке в таймлайне или по строке списка, чтобы увидеть клиента, авто, услуги и отгрузки.</p>
-                  <EcoButton type="button" variant="primary" onClick={() => openCreateForm()}>
+                  {canManageRecords && <EcoButton type="button" variant="primary" onClick={() => openCreateForm()}>
                     <Plus size={15} />
                     Новая запись
-                  </EcoButton>
+                  </EcoButton>}
                 </div>
               )}
             </aside>
@@ -3259,7 +3304,11 @@ export default function RecordsPageClient() {
                       <AlertTriangle size={16} />
                       <div>
                         <strong>{formTimeValidation.message}</strong>
-                        <p>Локальная сетка не блокирует запись; окончательное окно проверит YCLIENTS.</p>
+                        <p>Окончательное окно проверяется транзакционно при сохранении.</p>
+                        <label className="eco-records-overlap">
+                          <input type="checkbox" checked={form.allowOverlap} onChange={(event) => setFormValue("allowOverlap", event.target.checked)} />
+                          Разрешить запись вне расписания явно
+                        </label>
                       </div>
                     </>
                   ) : (
@@ -3272,6 +3321,12 @@ export default function RecordsPageClient() {
                     </>
                   )}
                 </div>
+                {canOverrideConflict && formConflicts.length === 0 && !formTimeValidation.warning ? (
+                  <label className="eco-records-overlap">
+                    <input type="checkbox" checked={form.allowOverlap} onChange={(event) => setFormValue("allowOverlap", event.target.checked)} />
+                    Административный override расписания — использовать только после предупреждения системы
+                  </label>
+                ) : null}
               </section>
 
               <section>

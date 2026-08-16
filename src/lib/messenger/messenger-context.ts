@@ -2,7 +2,11 @@ import crypto from "crypto";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
 import { clientCaseStatusLabel, defaultNextActionForCaseStatus } from "@/lib/client-case-shared";
 import { getFirstCrmStage } from "@/lib/crm";
-import { ClientApiError, createClientAppointment, listClientAppointments } from "@/lib/client-site-api";
+import { getBookingAvailability } from "@/lib/booking/availability";
+import { BookingError } from "@/lib/booking/errors";
+import { notifyBookingCreated } from "@/lib/booking/notifications";
+import { BOOKING_INCLUDE, createBooking, type BookingWithDetails } from "@/lib/booking/service";
+import { formatLocalDate, formatLocalTime, zonedLocalToUtc } from "@/lib/booking/timezone";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
@@ -27,6 +31,27 @@ export type MessengerContextState =
   | "group"
   | "forbidden"
   | "error";
+
+function bookingForMessenger(booking: BookingWithDetails) {
+  return {
+    id: booking.id,
+    slot: {
+      date: formatLocalDate(booking.startsAt, booking.branch.timezone),
+      time: formatLocalTime(booking.startsAt, booking.branch.timezone),
+    },
+    comment: booking.serviceItems.map((item) => item.serviceNameSnapshot).join(", ") || booking.comment || "Обслуживание",
+    vin: booking.vehicle?.vin ?? "",
+    status: booking.status,
+  };
+}
+
+async function loadRelatedBooking(bookingId: string | null | undefined) {
+  if (!bookingId) return null;
+  return prisma.booking.findFirst({
+    where: { id: bookingId, branchId: contextBranchId() },
+    include: BOOKING_INCLUDE,
+  });
+}
 
 type ConversationContextRow = {
   id: string;
@@ -512,9 +537,8 @@ async function loadClientContext(row: ConversationContextRow, client: LocalCount
     orderBy: [{ updatedAt: "desc" }],
     take: 5,
   });
-  const appointment = row.relatedAppointmentId
-    ? listClientAppointments().find((item) => item.id === row.relatedAppointmentId)
-    : null;
+  const relatedBooking = await loadRelatedBooking(row.relatedAppointmentId);
+  const appointment = relatedBooking ? bookingForMessenger(relatedBooking) : null;
   const tasks = await prisma.crmDeal.findMany({
     where: {
       source: "messenger-task",
@@ -1155,14 +1179,57 @@ export async function createAppointmentForConversation(
   if (!client) throw new MessengerContextError("Сначала привяжите клиента", 409);
   const clientContext = await loadClientContext(row, client);
   try {
-    const appointment = createClientAppointment({
-      name: client.name,
-      phone: client.phone ?? client.normalizedPhone ?? conversationPhone(row),
-      vin: input.vin || clientContext.vehicle?.vin,
-      oilId: input.oilId,
-      slotId: input.slotId,
-      comment: input.comment || input.serviceName || "Запись из Messenger",
+    const branchId = contextBranchId();
+    const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { timezone: true } });
+    if (!branch) throw new MessengerContextError("Филиал не найден", 404);
+    const slotMatch = input.slotId?.match(/^(20\d{2}-\d{2}-\d{2})-(\d{2})(\d{2})$/);
+    if (!slotMatch) throw new MessengerContextError("Выберите время в собственном журнале записи", 422);
+    const localDate = slotMatch[1];
+    const localTime = `${slotMatch[2]}:${slotMatch[3]}`;
+    const service = await prisma.bookingService.findFirst({
+      where: {
+        branchId,
+        status: "ACTIVE",
+        ...(input.serviceName ? { name: { contains: input.serviceName, mode: "insensitive" } } : {}),
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }) ?? await prisma.bookingService.findFirst({
+      where: { branchId, status: "ACTIVE" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
+    if (!service) throw new MessengerContextError("В филиале не настроены услуги записи", 409);
+    const availability = await getBookingAvailability({
+      branchId,
+      localDate,
+      serviceIds: [service.id],
+      onlineOnly: false,
+      respectLeadTime: false,
+    });
+    const slot = availability.slots.find((item) => item.localTime === localTime);
+    if (!slot) throw new MessengerContextError("Выбранное время занято или не входит в расписание", 409);
+    const vehicleWords = (clientContext.vehicle?.label ?? "").split(/\s+/u).filter(Boolean);
+    const clientPhone = client.phone ?? client.normalizedPhone ?? conversationPhone(row);
+    if (!clientPhone) throw new MessengerContextError("У клиента не указан телефон", 422);
+    const result = await createBooking({
+      branchId,
+      serviceIds: [service.id],
+      masterMembershipId: slot.master.membershipId,
+      startsAt: zonedLocalToUtc(localDate, localTime, branch.timezone),
+      customerName: client.name,
+      phone: clientPhone,
+      clientId: client.id,
+      vehicle: {
+        make: vehicleWords[0] || "Автомобиль",
+        model: vehicleWords.slice(1).join(" ") || "Не указан",
+        vin: input.vin || clientContext.vehicle?.vin,
+        plate: clientContext.vehicle?.plate,
+        year: clientContext.vehicle?.year,
+      },
+      comment: input.comment || input.serviceName || "Запись из Messenger",
+      source: "ADMIN",
+    }, { kind: "USER", userId: actorId(actor), respectLeadTime: false });
+    const appointment = bookingForMessenger(result.booking);
+    await notifyBookingCreated(result.booking).catch((error) => console.warn("[booking/messenger-notification]", error));
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         UPDATE messenger_conversations
@@ -1191,7 +1258,7 @@ export async function createAppointmentForConversation(
     });
     return { context: await getConversationContext(row.id), appointment };
   } catch (error) {
-    if (error instanceof ClientApiError) throw new MessengerContextError(error.message, error.status);
+    if (error instanceof BookingError) throw new MessengerContextError(error.message, error.status);
     throw error;
   }
 }
@@ -1393,9 +1460,8 @@ export async function sendAppointmentLinkFromConversation(conversationId: string
   assertOwnerOrAdmin(actor);
   const row = await loadConversationRow(conversationId);
   if (!row) throw new MessengerContextError("Диалог не найден", 404);
-  const appointment = row.relatedAppointmentId
-    ? listClientAppointments().find((item) => item.id === row.relatedAppointmentId)
-    : null;
+  const relatedBooking = await loadRelatedBooking(row.relatedAppointmentId);
+  const appointment = relatedBooking ? bookingForMessenger(relatedBooking) : null;
   if (!appointment) throw new MessengerContextError("Запись не найдена", 404);
   return sendTextAndAudit(
     row,

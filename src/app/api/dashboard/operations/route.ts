@@ -2,14 +2,12 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { reconcileAppointmentShipments } from "@/lib/appointment-shipment-reconcile";
+import { listAppointmentRowsForDate } from "@/lib/appointment-source";
 import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
-import { listClientAppointments } from "@/lib/client-site-api";
 import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-case-shared";
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
-import { isBranchIntegrationConfigured } from "@/lib/branch-integration-credentials";
 import { resolveDashboardAccessForBranch } from "@/lib/dashboard-variant";
-import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
 
 export const dynamic = "force-dynamic";
 
@@ -68,12 +66,6 @@ type AppointmentRow = {
 
 type JsonRecord = Record<string, unknown>;
 
-type YclientsStaff = {
-  id?: string | number;
-  name?: string;
-  bookable?: boolean;
-};
-
 type MessengerSummary = {
   total: number;
   needsReply: number;
@@ -86,9 +78,6 @@ type MessengerSummary = {
 };
 
 const LONG_OPEN_SHIFT_HOURS = 10;
-const YCLIENTS_USER_TOKEN_TTL_MS = 50 * 60 * 1000;
-
-const yclientsRuntimeUserTokens = new Map<string, { token: string; at: number }>();
 
 function cents(amount: number) {
   return Math.round(amount);
@@ -113,70 +102,6 @@ function stringValue(value: unknown) {
 
 function arrayValue<T = unknown>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
-}
-
-function extractYclientsUserToken(data: unknown): string | null {
-  const record = asRecord(data);
-  const direct = stringValue(record.user_token);
-  if (direct) return direct;
-  const nested = stringValue(asRecord(record.data).user_token);
-  return nested || null;
-}
-
-async function fetchYclientsUserToken(config: YclientsBranchConfig) {
-  if (!config.userLogin || !config.userPassword) return null;
-  try {
-    const res = await fetch(`${config.apiBase}/auth`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.partnerToken}`,
-        Accept: "application/vnd.yclients.v2+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ login: config.userLogin, password: config.userPassword }),
-      cache: "no-store",
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return null;
-    return extractYclientsUserToken(data);
-  } catch {
-    return null;
-  }
-}
-
-async function resolveYclientsAuthHeader(config: YclientsBranchConfig, needsUserToken: boolean) {
-  if (!needsUserToken) return `Bearer ${config.partnerToken}`;
-  if (config.userToken) return `Bearer ${config.partnerToken}, User ${config.userToken}`;
-  const cached = yclientsRuntimeUserTokens.get(config.branchId);
-  if (
-    cached?.token &&
-    Date.now() - cached.at <= YCLIENTS_USER_TOKEN_TTL_MS
-  ) {
-    return `Bearer ${config.partnerToken}, User ${cached.token}`;
-  }
-  const token = await fetchYclientsUserToken(config);
-  if (!token) return null;
-  yclientsRuntimeUserTokens.set(config.branchId, { token, at: Date.now() });
-  return `Bearer ${config.partnerToken}, User ${token}`;
-}
-
-async function yclientsData(config: YclientsBranchConfig, path: string, needsUserToken: boolean) {
-  const auth = await resolveYclientsAuthHeader(config, needsUserToken);
-  if (!auth) return null;
-  try {
-    const res = await fetch(`${config.apiBase}${path}`, {
-      headers: {
-        Authorization: auth,
-        Accept: "application/vnd.yclients.v2+json",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return res.json().catch(() => null) as Promise<unknown>;
-  } catch {
-    return null;
-  }
 }
 
 function truthyPaymentValue(value: unknown) {
@@ -313,45 +238,6 @@ function appointmentStatus(appointment: AppointmentRow) {
 
 function appointmentIsConfirmed(appointment: AppointmentRow) {
   return appointment.confirmed === 1 || appointment.attendance === 1;
-}
-
-async function listYclientsTodayAppointments(today: string): Promise<AppointmentRow[]> {
-  const config = await getYclientsBranchConfig();
-  const staffJson = await yclientsData(config, `/book_staff/${config.companyId}`, false);
-  const staffRows = arrayValue<YclientsStaff>(asRecord(staffJson).data);
-  const bookable = staffRows.filter((staff) => staff.bookable !== false);
-  const staffIds = (bookable.length ? bookable : staffRows)
-    .slice(0, 4)
-    .map((staff) => stringValue(staff.id))
-    .filter(Boolean);
-  if (staffIds.length === 0) return [];
-
-  const responses = await Promise.all(
-    staffIds.map(async (staffId) => {
-      const params = new URLSearchParams({
-        page: "1",
-        count: "100",
-        start_date: today,
-        end_date: today,
-        staff_id: staffId,
-      });
-      const data = await yclientsData(config, `/records/${config.companyId}?${params.toString()}`, true);
-      return arrayValue<AppointmentRow>(asRecord(data).data).map((record) => ({
-        ...record,
-        id: stringValue(record.id),
-        source: "yclients" as const,
-      }));
-    })
-  );
-  const seen = new Set<string>();
-  return responses
-    .flat()
-    .filter((record) => {
-      const id = stringValue(record.id);
-      if (!id || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
 }
 
 function dueLabel(date: Date | string | null | undefined) {
@@ -583,15 +469,7 @@ export async function GET() {
     return !attrs.includes("предчек") && !attrs.includes("precheck");
   }).length;
 
-  const yclientsConfigured = await isBranchIntegrationConfigured("yclients", ["companyId", "partnerToken"]);
-  const [yclientsAppointments, localAppointments] = await Promise.all([
-    yclientsConfigured ? listYclientsTodayAppointments(today) : Promise.resolve([]),
-    Promise.resolve((listClientAppointments() as AppointmentRow[]).map((item) => ({ ...item, source: "local" as const }))),
-  ]);
-  const rawAppointments = [...yclientsAppointments, ...localAppointments].filter((item, index, arr) => {
-    const id = stringValue(item.id);
-    return id && arr.findIndex((candidate) => stringValue(candidate.id) === id) === index;
-  });
+  const rawAppointments = await listAppointmentRowsForDate(today) as AppointmentRow[];
   const todayAppointments = rawAppointments
     .filter((item) => appointmentServiceDate(item) === today)
     .sort((a, b) => (appointmentDateTime(a)?.getTime() ?? 0) - (appointmentDateTime(b)?.getTime() ?? 0));

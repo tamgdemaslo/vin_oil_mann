@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Bot, Building2, Cable, Landmark, MessageSquareText, PackageSearch, Settings, ShieldCheck, UsersRound, Warehouse } from "lucide-react";
+import { Bot, Building2, CalendarClock, Cable, Landmark, MessageSquareText, PackageSearch, Settings, ShieldCheck, UsersRound } from "lucide-react";
 import { requireAuthenticatedSession } from "@/lib/app-access";
 import { getBranchContext } from "@/lib/branch-context";
 import { resolveNavigationForUser } from "@/lib/navigation-policy.mjs";
@@ -51,6 +51,7 @@ export default async function ManagementPage() {
   if (!management) redirect("/");
   const allowed = new Set(management.items.map((entry: { href: string }) => entry.href.split("?")[0].split("#")[0]));
   const canManageBranches = allowed.has("/cabinet/branches");
+  const canManageBooking = allowed.has("/management/booking");
   const canManageIntegrations = allowed.has("/cabinet/integrations");
   const canManageCommunications = allowed.has("/cabinet/notifications") || allowed.has("/cabinet/integrations/messenger");
 
@@ -60,6 +61,7 @@ export default async function ManagementPage() {
       { href: context?.branchId ? `/cabinet/branches?branch=${context.branchId}&tab=employees` : "/cabinet/branches?tab=employees", label: "Сотрудники и роли", description: "Назначение людей и доступ к филиалам.", icon: UsersRound },
     ] : []),
     ...(allowed.has("/cabinet/organizations") ? [{ href: "/cabinet/organizations", label: "Организации", description: "ИП и ООО, реквизиты, налоги и документы.", icon: Landmark }] : []),
+    ...(canManageBooking ? [{ href: "/management/booking", label: "Система записи", description: "Услуги, мастера, графики и публичная запись.", icon: CalendarClock }] : []),
   ];
 
   const communications: ManagementCard[] = [
@@ -72,7 +74,6 @@ export default async function ManagementPage() {
 
   const integrations: ManagementCard[] = canManageIntegrations ? [
     { href: "/cabinet/integrations#finance", label: "Финансы · T-Bank", description: "Банковское подключение и платежи.", icon: Landmark },
-    { href: "/records", label: "Запись и клиенты · YCLIENTS", description: "Рабочий журнал клиентских записей.", icon: UsersRound },
     { href: "/inventory/integrations/mann-pdf", label: "Поставщики и каталоги · MANN", description: "Импорт каталога применимости фильтров.", icon: PackageSearch },
     { href: "/cabinet/ai-assistant", label: "ИИ и внешние API", description: "Настройки ИИ-помощника и правил расчёта.", icon: Bot },
   ] : [];

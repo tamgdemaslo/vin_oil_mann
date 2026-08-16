@@ -69,7 +69,7 @@ type AgentSettings = {
 
 type EnvironmentStatus = {
   openaiConfigured: boolean;
-  yclientsConfigured: boolean;
+  bookingConfigured: boolean;
   rosskoConfigured: boolean;
 };
 
@@ -225,7 +225,7 @@ export default function AIAgentSettingsClient() {
   }
 
   const modeTitle = modeOptions.find((item) => item.id === settings.mode)?.title ?? "Черновики";
-  const integrationsReady = [environment?.openaiConfigured, environment?.yclientsConfigured, environment?.rosskoConfigured].filter(Boolean).length;
+  const integrationsReady = [environment?.openaiConfigured, environment?.bookingConfigured, environment?.rosskoConfigured].filter(Boolean).length;
 
   let content: ReactNode;
   if (tab === "general") {
@@ -261,7 +261,7 @@ export default function AIAgentSettingsClient() {
           <SectionHead title="Готовность подключений" body="Секретные ключи хранятся только на сервере и никогда не показываются сотруднику или клиенту." />
           <div className="eco-agent-settings__body eco-agent-integrations">
             <IntegrationStatus ok={Boolean(environment?.openaiConfigured)} title="OpenAI · GPT-5.6 Terra" body="Ответы и инструменты агента готовы" />
-            <IntegrationStatus ok={Boolean(environment?.yclientsConfigured)} title="YCLIENTS" body="Свободные окна и создание записей готовы" />
+            <IntegrationStatus ok={Boolean(environment?.bookingConfigured)} title="Эко-платформа · Запись" body="Расписание, услуги и мастера готовы" />
             <IntegrationStatus ok={Boolean(environment?.rosskoConfigured)} title="ROSSKO" body="Поиск наличия у поставщика готов" />
           </div>
         </EcoCard>
@@ -321,7 +321,7 @@ export default function AIAgentSettingsClient() {
         <EcoCard padded={false}>
           <SectionHead title="Запись в сервис" body="Даже в автономном режиме запись создаётся только после явного согласия клиента с датой, временем, адресом и автомобилем." />
           <div className="eco-agent-settings__body">
-            <Switch checked={settings.autoBookingEnabled} onChange={(autoBookingEnabled) => patch({ autoBookingEnabled })} title="Разрешить подготовку записи" hint="Помощник сможет получать реальные окна YCLIENTS и удерживать выбранное время." />
+            <Switch checked={settings.autoBookingEnabled} onChange={(autoBookingEnabled) => patch({ autoBookingEnabled })} title="Разрешить подготовку записи" hint="Помощник сможет получать реальные окна Эко-платформы и удерживать выбранное время." />
             <Switch checked={settings.bookingApprovalRequired} onChange={(bookingApprovalRequired) => patch({ bookingApprovalRequired })} title="Подтверждение сотрудником обязательно" hint="Рекомендуется оставить включённым до завершения пилотного периода." />
             <div className="eco-agent-settings__grid">
               <NumberField label="Удерживать окно" value={settings.slotHoldMinutes} onChange={(slotHoldMinutes) => patch({ slotHoldMinutes: Math.round(slotHoldMinutes) })} min={5} max={15} suffix="мин" />
@@ -362,7 +362,7 @@ export default function AIAgentSettingsClient() {
 
       <div className="eco-grid eco-grid--kpi">
         <EcoKpi label="Режим" value={modeTitle} tone={settings.mode === "suggestions" || settings.mode === "off" ? "neutral" : "rust"} sub="Меняется без перезапуска приложения." />
-        <EcoKpi label="Подключения" value={`${integrationsReady} из 3`} tone={integrationsReady === 3 ? "success" : "warning"} sub="OpenAI, YCLIENTS и поставщик." />
+        <EcoKpi label="Подключения" value={`${integrationsReady} из 3`} tone={integrationsReady === 3 ? "success" : "warning"} sub="OpenAI, собственная запись и поставщик." />
         <EcoKpi label="Запись" value={settings.autoBookingEnabled ? "Разрешена" : "Выключена"} tone={settings.autoBookingEnabled ? "success" : "neutral"} sub={settings.bookingApprovalRequired ? "С подтверждением сотрудника." : "По явному согласию клиента."} />
       </div>
 

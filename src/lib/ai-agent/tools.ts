@@ -10,7 +10,7 @@ import { partsCatalogsRequest } from "@/lib/parts-catalogs";
 import { getVinLookupCache } from "@/lib/vin-lookup-cache";
 import { parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
 import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
-import { createYclientsAppointment, getYclientsAvailableSlots, parseYclientsSlotId } from "./yclients";
+import { createInternalAppointment, getInternalAvailableSlots, parseInternalSlotId } from "./booking";
 import { safeToolOutputGuardrail, sanitizeForModel, tenantToolInputGuardrail } from "./security";
 import { getFreshTechnicalEvidence, queryTechnicalProvider, saveTechnicalEvidence, technicalVehicleKey, technicalWebSearchAvailability, type TechnicalVehicle } from "./technical-evidence";
 import { AI_SERVICE_TYPES, TRANSMISSION_SERVICE_TYPES, type AIAgentRunContext, type AIServiceType } from "./types";
@@ -1245,7 +1245,7 @@ export const createClientCaseTool = tool({
 
 export const getAvailableSlotsTool = tool({
   name: "get_available_slots",
-  description: "Получить не более настроенного количества реальных свободных окон из YCLIENTS. Для комплексной услуги обязательно передай полную длительность; если запрошенный день занят, инструмент вернёт ближайшие следующие даты.",
+  description: "Получить не более настроенного количества реальных свободных окон из Эко-платформы. Для комплексной услуги обязательно передай полную длительность; если запрошенный день занят, инструмент вернёт ближайшие следующие даты.",
   parameters: z.object({
     quoteId: z.string().nullable(),
     requestedDate: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).nullable().optional(),
@@ -1268,7 +1268,7 @@ export const getAvailableSlotsTool = tool({
       const conversationState = getConversationAgentState(session?.collectedDataJson);
       const fullDurationMinutes = durationMinutes ?? estimateConversationDurationMinutes(conversationState, ctx.settings.calculationRules.serviceDurationMinutes);
       const date = requestedDate ?? conversationState.requestedDate;
-      const slots = await getYclientsAvailableSlots({
+      const slots = await getInternalAvailableSlots({
         limit: ctx.settings.slotSuggestionCount,
         minLeadMinutes: ctx.settings.minBookingLeadMinutes,
         horizonDays: ctx.settings.maxBookingHorizonDays,
@@ -1288,7 +1288,7 @@ export const getAvailableSlotsTool = tool({
         ? session.collectedDataJson as Record<string, unknown>
         : {};
       await prisma.aIAgentSession.update({ where: { id: ctx.sessionId }, data: { collectedDataJson: json(withConversationAgentState(root, nextState)), lastActivityAt: new Date() } });
-      return { slots, source: "yclients", requestedDate: date, durationMinutes: fullDurationMinutes, checkedAt: new Date().toISOString() };
+      return { slots, source: "internal", requestedDate: date, durationMinutes: fullDurationMinutes, checkedAt: new Date().toISOString() };
     }),
 });
 
@@ -1300,7 +1300,7 @@ export const holdAppointmentSlotTool = tool({
   execute: async ({ slotId, quoteId }, context) =>
     withToolAudit(context, "hold_appointment_slot", { slotId, quoteId }, async () => {
       const ctx = requireContext(context);
-      const slot = parseYclientsSlotId(slotId);
+      const slot = parseInternalSlotId(slotId);
       const session = await prisma.aIAgentSession.findFirst({
         where: { id: ctx.sessionId, organizationId: ctx.organizationId },
         select: { collectedDataJson: true },
@@ -1386,12 +1386,19 @@ export const createAppointmentTool = tool({
         ? await prisma.localStore.findFirst({ where: { archived: false, OR: [{ organizationId: organization.id }, { organizationId: null }] }, orderBy: { isMain: "desc" } })
         : null;
       if (!client || !organization || !store) throw new Error("Для записи не настроены клиент, организация или склад для черновика отгрузки");
-      const appointment = await createYclientsAppointment({
+      const appointment = await createInternalAppointment({
         slotId,
         clientName: conversation.client.name,
         clientPhone: conversation.client.phone,
+        clientId: conversation.client.id,
         durationMinutes: appointmentDurationMinutes,
         comment: [comment, vehicle ? `${vehicle.label}; VIN ${vehicle.vin || "не указан"}; госномер ${vehicle.plate || "не указан"}` : "", `Расчёт ИИ: ${quote.id}`, `Диалог: ${ctx.conversationId}`].filter(Boolean).join("\n"),
+        vehicle: {
+          label: vehicle.label,
+          vin: vehicle.vin,
+          plate: vehicle.plate,
+          year: vehicle.year,
+        },
       });
       const commentText = [
         "Запись создана ИИ-агентом.",

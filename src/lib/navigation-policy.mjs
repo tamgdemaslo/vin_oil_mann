@@ -64,6 +64,10 @@ export function resolveNavigationForUser({
   const canManageClientCommunications = canManageIntegrations || permissionSet.has("communications.client_automation.manage");
   const canCustomerManage = CUSTOMER_MANAGERS.has(effectiveRole) || permissionSet.has("crm.write") || permissionSet.has("crm.manage");
   const canCustomerRead = canCustomerManage || ["group_analyst", "master", "mechanic", "accountant"].includes(effectiveRole) || permissionSet.has("crm.view");
+  const canBookingView = ["group_owner", "group_admin", "branch_owner", "administrator", "master", "mechanic"].includes(effectiveRole)
+    || permissionSet.has("booking.view")
+    || permissionSet.has("booking.manage");
+  const canBookingSettings = CUSTOMER_MANAGERS.has(effectiveRole) || permissionSet.has("booking.settings.manage");
   const canUseAi = ["group_owner", "group_admin", "branch_owner", "administrator", "master"].includes(effectiveRole) || permissionSet.has("ai.use");
   const canViewWarehouseAnalytics = isGroupManager || effectiveRole === "group_analyst" || permissionSet.has("warehouse.analytics.view");
   const canWork = WORK_ROLES.has(effectiveRole) || permissionSet.has("operations.view");
@@ -89,7 +93,7 @@ export function resolveNavigationForUser({
 
   if (canWork) {
     const workItems = [];
-    if (canCustomerManage) workItems.push(branchOnly("/records", "Записи", "Рабочий журнал YCLIENTS.", { requiresShift: true }));
+    if (canBookingView) workItems.push(item("/records", "Записи", isAllBranches ? "Сводный журнал всех филиалов." : "Рабочий журнал собственной системы записи.", { requiresShift: !isAllBranches }));
     workItems.push(branchOnly("/shipment", "Журнал отгрузок", "Поиск и контроль документов.", { requiresShift: true }));
     if (effectiveRole !== "mechanic") workItems.push(branchOnly("/shipment/new", "Новая отгрузка", "Создать рабочий документ.", { requiresShift: true }));
     sections.push({ id: "work", label: "Работа", href: workItems[0]?.href ?? "/shipment", items: workItems });
@@ -152,6 +156,7 @@ export function resolveNavigationForUser({
     managementItems.push(item("/cabinet/integrations/messenger", "Каналы связи", "Рабочий Telegram филиала и другие каналы."));
   }
   if (canManageClientCommunications) managementItems.push(item("/cabinet/notifications", "Уведомления клиентам", "Сценарии, шаблоны и журнал отправок."));
+  if (canBookingSettings) managementItems.push(branchOnly("/management/booking", "Система записи", "Услуги, мастера, расписания и публичная форма."));
   if (canManageIntegrations) managementItems.push(item("/cabinet/ai-assistant", "Настройки ИИ", "Доступ, модель и правила расчёта."));
   if (managementItems.length) sections.push({ id: "management", label: "Управление", href: "/management", items: managementItems });
 

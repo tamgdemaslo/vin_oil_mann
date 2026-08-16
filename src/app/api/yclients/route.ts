@@ -1,9 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  handleAppointmentCancelled,
-  handleAppointmentCreated,
-  handleAppointmentUpdated,
-} from "@/lib/client-notifications/client-notifications";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { getYclientsBranchConfig, type YclientsBranchConfig } from "@/lib/yclients/branch-config";
@@ -87,115 +82,6 @@ async function resolveAuthHeader(
 }
 
 type CompanyItem = { id?: number; title?: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function numberValue(value: unknown): number | undefined {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function idStringValue(value: unknown): string | undefined {
-  const text = stringValue(value);
-  if (text) return text;
-  const number = numberValue(value);
-  return number ? String(number) : undefined;
-}
-
-function normalizeCreateRecordPayload(rawPayload: unknown) {
-  if (!isRecord(rawPayload)) return {};
-  if (rawPayload.staff_id !== undefined || rawPayload.client !== undefined || rawPayload.datetime !== undefined) {
-    return rawPayload;
-  }
-
-  const appointments = Array.isArray(rawPayload.appointments) ? rawPayload.appointments : [];
-  const appointment = appointments.find(isRecord);
-  if (!appointment) return rawPayload;
-
-  const serviceIds = Array.isArray(appointment.services)
-    ? appointment.services.map(numberValue).filter((item): item is number => item !== undefined)
-    : [];
-
-  return {
-    staff_id: numberValue(appointment.staff_id),
-    services: serviceIds.map((id) => ({ id })),
-    client: {
-      name: stringValue(rawPayload.fullname) ?? stringValue(rawPayload.name) ?? "",
-      phone: stringValue(rawPayload.phone) ?? "",
-      email: stringValue(rawPayload.email),
-    },
-    datetime: stringValue(appointment.datetime),
-    seance_length: numberValue(appointment.seance_length),
-    comment: stringValue(rawPayload.comment),
-    save_if_busy: Boolean(rawPayload.save_if_busy),
-    send_sms: Boolean(rawPayload.send_sms),
-    sms_remain_hours: numberValue(rawPayload.sms_remain_hours),
-    email_remain_hours: numberValue(rawPayload.email_remain_hours),
-    attendance: numberValue(rawPayload.attendance),
-    api_id: stringValue(rawPayload.api_id) ?? stringValue(rawPayload.apiId),
-  };
-}
-
-function responseRecordId(data: unknown) {
-  if (!isRecord(data)) return null;
-  const nested = isRecord(data.data) ? data.data : data;
-  const id =
-    idStringValue(nested.id) ??
-    idStringValue(nested.record_id) ??
-    idStringValue(nested.recordId);
-  return id ?? null;
-}
-
-function appointmentStatusFromComment(value: string) {
-  const statusLine = value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => /^Статус записи:/i.test(line));
-  const normalized = (statusLine || value).toLowerCase();
-  if (/не приехал|no[-_\s]?show/.test(normalized)) return "no_show";
-  if (/уехал|выдан|left/.test(normalized)) return "left";
-  if (/готов|done|заверш/.test(normalized)) return "done";
-  if (/работ|in_work/.test(normalized)) return "in_work";
-  if (/приехал|arrived/.test(normalized)) return "arrived";
-  return null;
-}
-
-function appointmentContextFromPayload(payload: unknown, fallbackId?: string | null) {
-  const record = isRecord(payload) ? payload : {};
-  const client = isRecord(record.client) ? record.client : {};
-  const services = Array.isArray(record.services) ? record.services : [];
-  const serviceList = services
-    .map((service) => (isRecord(service) ? stringValue(service.title) ?? stringValue(service.name) ?? stringValue(service.id) : stringValue(service)))
-    .filter(Boolean)
-    .join(", ");
-  const datetime = stringValue(record.datetime) ?? stringValue(record.date);
-  const comment = stringValue(record.comment) ?? "";
-  const vehicleMatch = comment.match(/(?:VIN|vin|ВИН|госномер|авто)[:\s]+([A-Za-zА-Яа-я0-9 ._-]{3,40})/);
-  const statusFromComment = appointmentStatusFromComment(comment);
-  return {
-    appointmentId: fallbackId ?? idStringValue(record.id) ?? idStringValue(record.record_id) ?? null,
-    appointmentAt: datetime ?? null,
-    clientName: stringValue(client.name) ?? stringValue(record.name) ?? stringValue(record.fullname) ?? null,
-    clientPhone: stringValue(client.phone) ?? stringValue(record.phone) ?? null,
-    clientEmail: stringValue(client.email) ?? stringValue(record.email) ?? null,
-    serviceList: serviceList || null,
-    car: vehicleMatch?.[1]?.trim() || null,
-    status:
-      statusFromComment ??
-      (record.attendance === 1
-        ? "arrived"
-        : record.attendance === -1
-          ? "no_show"
-          : stringValue(record.status) ?? stringValue(record.state) ?? null),
-    payload: { yclientsPayload: record },
-  };
-}
 
 async function fetchAccessibleCompanies(
   config: YclientsBranchConfig,
@@ -454,132 +340,25 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  return withYclientsRequestContext(async (config) => {
-    const body = (await request.json().catch(() => ({}))) as {
-      action?: string;
-      company_id?: number | string;
-      payload?: unknown;
-      login?: string;
-      password?: string;
-    };
-    const action = body.action;
-
-  if (action === "auth") {
-    return NextResponse.json(
-      { success: false, error: "Интерактивная выдача user token отключена; настройте credential активного филиала" },
-      { status: 410 }
-    );
-  }
-
-  let companyId: string;
-  try {
-    companyId = configuredCompanyId(body.company_id, config);
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
-  }
-
-  if (action === "create-client") {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          "Создание клиента отдельным методом недоступно в booking API. Клиент создается автоматически при создании записи.",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (action === "create-record") {
-    const normalizedPayload = normalizeCreateRecordPayload(body.payload);
-    const response = await yclientsRequest(config, `/record/${companyId}`, {
-      method: "POST",
-      body: JSON.stringify(normalizedPayload),
-    });
-    if (response.ok) {
-      const data = await response.clone().json().catch(() => null);
-      await handleAppointmentCreated({
-        source: "admin",
-        ...appointmentContextFromPayload(normalizedPayload, responseRecordId(data)),
-        initiatedById: "yclients",
-      }).catch((error) => {
-        console.warn("[client-notifications/yclients-create]", error);
-      });
-    }
-    return response;
-  }
-
-    return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
-  });
+  void request;
+  return NextResponse.json(
+    { success: false, error: "Запись через Yclients отключена. Используйте /api/booking-journal или /api/bookings." },
+    { status: 410 },
+  );
 }
 
 export async function PUT(request: NextRequest) {
-  return withYclientsRequestContext(async (config) => {
-    const body = await request.json().catch(() => ({}));
-    const action = String(body.action ?? "");
-    if (action !== "update-record") {
-      return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
-    }
-
-  let companyId: string;
-  try {
-    companyId = configuredCompanyId(body.company_id, config);
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
-  }
-  const recordId = String(body.record_id ?? "").trim();
-  if (!companyId || !recordId) {
-    return NextResponse.json(
-      { success: false, error: "Для редактирования нужны company_id и record_id" },
-      { status: 400 }
-    );
-  }
-
-  const response = await yclientsRequest(config, `/record/${companyId}/${recordId}`, {
-    method: "PUT",
-    body: JSON.stringify(body.payload ?? {}),
-  });
-  if (response.ok) {
-    await handleAppointmentUpdated({
-      ...appointmentContextFromPayload(body.payload, recordId),
-      initiatedById: "yclients",
-    }).catch((error) => {
-      console.warn("[client-notifications/yclients-update]", error);
-    });
-  }
-    return response;
-  });
+  void request;
+  return NextResponse.json(
+    { success: false, error: "Изменение записи через Yclients отключено. Используйте собственный журнал записи." },
+    { status: 410 },
+  );
 }
 
 export async function DELETE(request: NextRequest) {
-  return withYclientsRequestContext(async (config) => {
-    const body = await request.json().catch(() => ({}));
-    const action = String(body.action ?? "");
-    if (action !== "delete-record") {
-      return NextResponse.json({ success: false, error: "Неизвестный action" }, { status: 400 });
-    }
-
-  let companyId: string;
-  try {
-    companyId = configuredCompanyId(body.company_id, config);
-  } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Недопустимый company_id" }, { status: 403 });
-  }
-  const recordId = String(body.record_id ?? "").trim();
-  if (!companyId || !recordId) {
-    return NextResponse.json(
-      { success: false, error: "Для удаления нужны company_id и record_id" },
-      { status: 400 }
-    );
-  }
-
-  const response = await yclientsRequest(config, `/record/${companyId}/${recordId}`, {
-    method: "DELETE",
-  });
-  if (response.ok) {
-    await handleAppointmentCancelled(recordId).catch((error) => {
-      console.warn("[client-notifications/yclients-delete]", error);
-    });
-  }
-    return response;
-  });
+  void request;
+  return NextResponse.json(
+    { success: false, error: "Отмена записи через Yclients отключена. Используйте собственный журнал записи." },
+    { status: 410 },
+  );
 }

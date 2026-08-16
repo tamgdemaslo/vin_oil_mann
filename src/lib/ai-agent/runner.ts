@@ -23,7 +23,7 @@ import type { AIAgentConversationStatus, AIAgentRunContext, AIAgentSettings } fr
 import { AGENT_RUN_STAGE_LABELS, runTimeoutState, startAgentRunHeartbeat, updateAgentRunProgress } from "./run-progress";
 import { didClientRefuseVin } from "./vehicle-resolution";
 import { queryTechnicalProvider, saveTechnicalEvidence, technicalWebSearchAvailability, type TechnicalVehicle } from "./technical-evidence";
-import { getYclientsAvailableSlots } from "./yclients";
+import { getInternalAvailableSlots } from "./booking";
 import { createOpenAIClient } from "@/lib/openai-client";
 import {
   contextInstruction,
@@ -827,7 +827,7 @@ async function prefetchRequestedSlots(input: {
     },
   });
   try {
-    const slots = await getYclientsAvailableSlots({
+    const slots = await getInternalAvailableSlots({
       limit: input.settings.slotSuggestionCount,
       minLeadMinutes: input.settings.minBookingLeadMinutes,
       horizonDays: input.settings.maxBookingHorizonDays,
@@ -846,7 +846,7 @@ async function prefetchRequestedSlots(input: {
       updatedAt: new Date().toISOString(),
     };
     await Promise.all([
-      prisma.aIAgentToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: json({ slots: suggestions, source: "yclients", requestedDate: input.state.requestedDate, durationMinutes }), durationMs: Date.now() - startedAt, completedAt: new Date() } }),
+      prisma.aIAgentToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: json({ slots: suggestions, source: "internal", requestedDate: input.state.requestedDate, durationMinutes }), durationMs: Date.now() - startedAt, completedAt: new Date() } }),
       prisma.aIAgentSession.update({ where: { id: input.sessionId }, data: { collectedDataJson: json(withConversationAgentState(session?.collectedDataJson && typeof session.collectedDataJson === "object" && !Array.isArray(session.collectedDataJson) ? session.collectedDataJson as Record<string, unknown> : {}, nextState)), lastActivityAt: new Date() } }),
     ]);
     return suggestions;

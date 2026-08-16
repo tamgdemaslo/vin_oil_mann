@@ -119,7 +119,7 @@ function money(cents?: number | null) {
 
 function approvalLabel(toolName: string) {
   if (toolName === "request_quote_approval") return "Проверить расчёт перед отправкой";
-  if (toolName === "create_appointment") return "Создать запись в YCLIENTS";
+  if (toolName === "create_appointment") return "Создать запись в Эко-платформе";
   if (toolName === "hold_appointment_slot") return "Удержать выбранное время";
   return toolLabels[toolName] ?? "Выполнить действие агента";
 }

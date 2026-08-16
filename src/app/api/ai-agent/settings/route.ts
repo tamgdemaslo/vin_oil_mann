@@ -90,15 +90,27 @@ export async function GET() {
   if ("response" in access) return access.response;
   try {
     const settings = await getAgentSettings(access.organizationId);
-    const [yclientsConfigured, rosskoConfigured] = await Promise.all([
-      isBranchIntegrationConfigured("yclients", ["companyId", "partnerToken", "serviceId", "staffId"]),
+    const branchId = getScopedBranchId();
+    const [bookingSettings, bookingServiceCount, branchHoursCount, masterHoursCount, rosskoConfigured] = await Promise.all([
+      prisma.branchBookingSettings.findUnique({ where: { branchId }, select: { id: true } }),
+      prisma.bookingService.count({
+        where: {
+          branchId,
+          status: "ACTIVE",
+          onlineBookingEnabled: true,
+          masters: { some: { membership: { status: "active", user: { status: "active" } } } },
+        },
+      }),
+      prisma.branchBookingWorkingHour.count({ where: { branchId, isWorking: true } }),
+      prisma.bookingMasterWorkingHour.count({ where: { branchId, isWorking: true } }),
       isBranchIntegrationConfigured("rossko", ["key1", "key2"]),
     ]);
+    const bookingConfigured = Boolean(bookingSettings && bookingServiceCount && branchHoursCount && masterHoursCount);
     return NextResponse.json({
       settings: settingsToPublicJson(settings),
       environment: {
         openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
-        yclientsConfigured,
+        bookingConfigured,
         rosskoConfigured,
       },
     });

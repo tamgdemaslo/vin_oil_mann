@@ -33,6 +33,7 @@ export type ClientNotificationEventType =
   | "review_after_visit"
   | "appointment_rescheduled"
   | "appointment_cancelled"
+  | "appointment_confirmed"
   | "appointment_no_show"
   | "estimate_sent"
   | "precheck_sent"
@@ -354,8 +355,9 @@ export const notificationEventDefinitions: Array<{
     description: "Мягкая просьба оставить отзыв, планируется автоматически после приезда.",
     defaultTiming: "Через 6 часов после приезда",
   },
-  { type: "appointment_rescheduled", title: "Запись перенесена", description: "Будущее событие для переноса записи.", defaultTiming: "Сразу", future: true },
-  { type: "appointment_cancelled", title: "Запись отменена", description: "Будущее событие для отмены записи.", defaultTiming: "Сразу", future: true },
+  { type: "appointment_rescheduled", title: "Запись перенесена", description: "Клиент получает новое время визита после переноса.", defaultTiming: "Сразу" },
+  { type: "appointment_cancelled", title: "Запись отменена", description: "Клиент получает уведомление после отмены записи.", defaultTiming: "Сразу" },
+  { type: "appointment_confirmed", title: "Запись подтверждена", description: "Отправляется после ручного подтверждения сложной услуги.", defaultTiming: "Сразу" },
   { type: "appointment_no_show", title: "Клиент не приехал", description: "Шаблон для ручной отправки после no-show.", defaultTiming: "Вручную", future: true },
   { type: "estimate_sent", title: "Расчёт отправлен", description: "Расширение для отправки расчёта клиенту.", defaultTiming: "Сразу", future: true },
   { type: "precheck_sent", title: "Предчек отправлен", description: "Расширение для предчека.", defaultTiming: "Сразу", future: true },
@@ -615,6 +617,15 @@ const defaultTemplates: Array<{
       "Ваша запись на {{appointmentDate}} в {{appointmentTime}} отменена. Если хотите выбрать другое время, напишите нам.",
   },
   {
+    key: "appointment-confirmed",
+    name: "Запись подтверждена",
+    eventType: "appointment_confirmed",
+    body:
+      "{{#clientName}}Здравствуйте, {{clientName}}!{{/clientName}}{{^clientName}}Здравствуйте!{{/clientName}}\n" +
+      "Подтверждаем вашу запись на {{appointmentDate}} в {{appointmentTime}}." +
+      "{{#vehicleDisplayName}}\n🚗 {{vehicleDisplayName}}{{/vehicleDisplayName}}",
+  },
+  {
     key: "appointment-no-show",
     name: "Клиент не приехал",
     eventType: "appointment_no_show",
@@ -690,8 +701,9 @@ const defaultRuleSpecs: Array<{
     offsetMinutes: 360,
     conditions: { ...defaultConditions, reviewDelayMinutes: 360, requireReviewLink: true },
   },
-  { key: "appointment-rescheduled", eventType: "appointment_rescheduled", templateKey: "appointment-rescheduled", enabled: false, timingType: "immediate" },
-  { key: "appointment-cancelled", eventType: "appointment_cancelled", templateKey: "appointment-cancelled", enabled: false, timingType: "immediate" },
+  { key: "appointment-rescheduled", eventType: "appointment_rescheduled", templateKey: "appointment-rescheduled", enabled: true, timingType: "immediate" },
+  { key: "appointment-cancelled", eventType: "appointment_cancelled", templateKey: "appointment-cancelled", enabled: true, timingType: "immediate" },
+  { key: "appointment-confirmed", eventType: "appointment_confirmed", templateKey: "appointment-confirmed", enabled: true, timingType: "immediate" },
   { key: "appointment-no-show", eventType: "appointment_no_show", templateKey: "appointment-no-show", enabled: false, timingType: "immediate" },
   { key: "vehicle-ready", eventType: "vehicle_ready", templateKey: "vehicle-ready", enabled: false, timingType: "immediate" },
   { key: "precheck-sent", eventType: "precheck_sent", templateKey: "precheck-sent", enabled: false, timingType: "immediate" },

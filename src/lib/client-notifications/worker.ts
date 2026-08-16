@@ -1,8 +1,4 @@
 import { processDueClientNotificationJobs } from "@/lib/client-notifications/client-notifications";
-import {
-  syncRecentYclientsRecordNotifications,
-  type YclientsRecordNotificationSyncResult,
-} from "@/lib/yclients/record-notifications";
 import { runForActiveBranches } from "@/lib/branch-workers";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
@@ -18,14 +14,12 @@ type WorkerState = {
 type WorkerResult =
   | {
       ok: true;
-      yclientsSync: YclientsRecordNotificationSyncResult | { ok: false; error: string };
       processed: Awaited<ReturnType<typeof processDueClientNotificationJobs>>;
       count: number;
     }
   | {
       ok: true;
       skipped: "already_running";
-      yclientsSync: null;
       processed: [];
       count: 0;
     };
@@ -72,16 +66,12 @@ function workerEnabled() {
   return process.env.CLIENT_NOTIFICATIONS_WORKER_ENABLED === "1";
 }
 
-export async function runClientNotificationsWorkerOnce(
-  limit = 50,
-  options: { syncYclients?: boolean } = {}
-): Promise<WorkerResult> {
+export async function runClientNotificationsWorkerOnce(limit = 50): Promise<WorkerResult> {
   const current = state();
   if (current.running) {
     return {
       ok: true,
       skipped: "already_running",
-      yclientsSync: null,
       processed: [],
       count: 0,
     };
@@ -89,15 +79,8 @@ export async function runClientNotificationsWorkerOnce(
 
   current.running = true;
   try {
-    const syncYclients = options.syncYclients ?? true;
-    const yclientsSync = !syncYclients
-      ? { ok: false as const, error: "YCLIENTS не настроен для этого филиала" }
-      : await syncRecentYclientsRecordNotifications().catch((error) => ({
-          ok: false as const,
-          error: error instanceof Error ? error.message : "Не удалось проверить свежие записи YCLIENTS",
-        }));
     const processed = await processDueClientNotificationJobs(limit);
-    return { ok: true, yclientsSync, processed, count: processed.length };
+    return { ok: true, processed, count: processed.length };
   } finally {
     current.running = false;
   }

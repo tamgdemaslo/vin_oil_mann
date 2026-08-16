@@ -1570,30 +1570,8 @@ function VinPage() {
     }
 
     setBookingStatus('sending');
-    setBookingError('');
-
-    try {
-      const created = await apiPost('/api/appointments', {
-        name,
-        phone,
-        vin,
-        oilId: chosen.id,
-        slotId: selectedSlot.id,
-        comment: [
-          `Масло: ${oilFullName(chosen)} ${chosen.visc}, объём заливки ${formatLiters(oilCalc.requiredLiters)}, упаковок ${oilCalc.packages} × ${formatLiters(oilCalc.packageLiters)}`,
-          selectedFilterItems.length
-            ? `Фильтры: ${selectedFilterItems.map(item => `${item.title} ${item.article}`).join('; ')}`
-            : 'Фильтры не выбраны',
-          `Итого: ${fmtMoney(orderTotal)}`,
-        ].join('\n'),
-      });
-      setAppointment(created);
-      setStep(5);
-    } catch (error) {
-      setBookingError(error.message || 'Не получилось создать запись.');
-    } finally {
-      setBookingStatus('idle');
-    }
+    const params = new URLSearchParams({ name: name.trim(), phone: phone.trim(), vin: vin.trim() });
+    window.location.assign(`/booking?${params.toString()}`);
   };
 
   return (

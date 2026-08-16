@@ -106,6 +106,14 @@ export function getPublicLeadLimitPerHour(): number {
   return parsePositiveInt(process.env.PUBLIC_API_LEAD_LIMIT_PER_HOUR, 5);
 }
 
+export function getPublicBookingReadLimitPerHour(): number {
+  return parsePositiveInt(process.env.PUBLIC_BOOKING_READ_LIMIT_PER_HOUR, 180);
+}
+
+export function getPublicBookingWriteLimitPerHour(): number {
+  return parsePositiveInt(process.env.PUBLIC_BOOKING_WRITE_LIMIT_PER_HOUR, 12);
+}
+
 export function getRequestIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return (

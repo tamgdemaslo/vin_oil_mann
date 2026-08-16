@@ -78,6 +78,15 @@ model Branch {
   integrationCredentials IntegrationCredential[]
   aqsiCashRegisters      AqsiCashRegister[]
   integrationMigrations  BranchIntegrationMigration[]
+  bookingSettings        BranchBookingSettings?
+  bookingWorkingHours    BranchBookingWorkingHour[]
+  bookingServices        BookingService[]
+  bookingAssignments     BookingMasterService[]
+  bookingMasterHours     BookingMasterWorkingHour[]
+  bookingExceptions      BookingScheduleException[]
+  clientVehicles         ClientVehicle[]
+  bookings               Booking[]
+  bookingServiceItems    BookingServiceItem[]
 
   @@unique([businessGroupId, slug])
   @@index([businessGroupId, status])
@@ -102,7 +111,13 @@ model BranchMembership {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  bookingServices   BookingMasterService[]
+  bookingHours      BookingMasterWorkingHour[]
+  bookingExceptions BookingScheduleException[]
+  assignedBookings  Booking[]
+
   @@unique([branchId, userId])
+  @@unique([branchId, id])
   @@index([userId, status])
   @@index([branchId, status])
   @@map("branch_memberships")
@@ -1246,6 +1261,217 @@ model BranchIntegrationMigration {
   @@unique([branchId, provider])
   @@index([branchId, status])
   @@map("branch_integration_migrations")
+}
+
+/// Настройки собственной системы записи для конкретного филиала.
+model BranchBookingSettings {
+  id                   String   @id @default(cuid())
+  branchId             String   @unique @map("branch_id")
+  branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  publicBookingEnabled Boolean  @default(false) @map("public_booking_enabled")
+  publicName           String?  @map("public_name")
+  publicIntro          String?  @map("public_intro") @db.Text
+  bookingStepMinutes   Int      @default(30) @map("booking_step_minutes")
+  bookingHorizonDays   Int      @default(60) @map("booking_horizon_days")
+  minimumLeadMinutes   Int      @default(60) @map("minimum_lead_minutes")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("branch_booking_settings")
+}
+
+/// Базовое расписание филиала. Время хранится как локальное HH:mm филиала.
+model BranchBookingWorkingHour {
+  id        String   @id @default(cuid())
+  branchId  String   @map("branch_id")
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  weekday   Int
+  isWorking Boolean  @default(true) @map("is_working")
+  startTime String?  @map("start_time")
+  endTime   String?  @map("end_time")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([branchId, weekday])
+  @@index([branchId, isWorking])
+  @@map("branch_booking_working_hours")
+}
+
+/// Филиальный справочник услуг для журнала и публичной записи.
+model BookingService {
+  id                   String   @id @default(cuid())
+  branchId             String   @map("branch_id")
+  branch               Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name                 String
+  description          String?  @db.Text
+  durationMinutes      Int      @map("duration_minutes")
+  onlineBookingEnabled Boolean  @default(false) @map("online_booking_enabled")
+  requiresVin          Boolean  @default(false) @map("requires_vin")
+  requiresConfirmation Boolean  @default(false) @map("requires_confirmation")
+  requiredFieldsJson   Json     @default("[]") @map("required_fields_json")
+  sortOrder            Int      @default(0) @map("sort_order")
+  status               String   @default("ACTIVE")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  masters      BookingMasterService[]
+  bookingItems BookingServiceItem[]
+
+  @@unique([branchId, id])
+  @@index([branchId, status, sortOrder])
+  @@index([branchId, onlineBookingEnabled, status])
+  @@map("booking_services")
+}
+
+/// Назначение услуги сотруднику. BranchMembership остаётся единым справочником сотрудников.
+model BookingMasterService {
+  id           String           @id @default(cuid())
+  branchId     String           @map("branch_id")
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  membershipId String           @map("membership_id")
+  membership   BranchMembership @relation(fields: [branchId, membershipId], references: [branchId, id], onDelete: Cascade)
+  serviceId    String           @map("service_id")
+  service      BookingService   @relation(fields: [branchId, serviceId], references: [branchId, id], onDelete: Cascade)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([membershipId, serviceId])
+  @@index([branchId, serviceId])
+  @@index([branchId, membershipId])
+  @@map("booking_master_services")
+}
+
+/// Недельное рабочее расписание мастера в локальном времени филиала.
+model BookingMasterWorkingHour {
+  id           String           @id @default(cuid())
+  branchId     String           @map("branch_id")
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  membershipId String           @map("membership_id")
+  membership   BranchMembership @relation(fields: [branchId, membershipId], references: [branchId, id], onDelete: Cascade)
+  weekday      Int
+  isWorking    Boolean          @default(true) @map("is_working")
+  startTime    String?          @map("start_time")
+  endTime      String?          @map("end_time")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([membershipId, weekday])
+  @@index([branchId, weekday, isWorking])
+  @@map("booking_master_working_hours")
+}
+
+/// Исключение расписания на локальную календарную дату: CLOSED или CUSTOM.
+model BookingScheduleException {
+  id           String           @id @default(cuid())
+  branchId     String           @map("branch_id")
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  membershipId String           @map("membership_id")
+  membership   BranchMembership @relation(fields: [branchId, membershipId], references: [branchId, id], onDelete: Cascade)
+  localDate    String           @map("local_date")
+  kind         String           @default("CLOSED")
+  startTime    String?          @map("start_time")
+  endTime      String?          @map("end_time")
+  note         String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([membershipId, localDate])
+  @@index([branchId, localDate])
+  @@map("booking_schedule_exceptions")
+}
+
+/// Нормализованный автомобиль клиента; legacy vehicle в raw контрагента остаётся совместимым.
+model ClientVehicle {
+  id             String            @id @default(cuid())
+  branchId       String            @map("branch_id")
+  branch         Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  counterpartyId String            @map("counterparty_id")
+  counterparty   LocalCounterparty @relation(fields: [branchId, counterpartyId], references: [branchId, id], onDelete: Cascade)
+  make           String
+  model          String
+  generation     String?
+  year           Int?
+  plate          String?
+  vin            String?
+  status         String            @default("ACTIVE")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  bookings Booking[]
+
+  @@unique([branchId, id])
+  @@index([branchId, counterpartyId, status])
+  @@index([branchId, vin])
+  @@index([branchId, plate])
+  @@map("client_vehicles")
+}
+
+/// Собственная запись. ACTIVE включает ожидающие подтверждения и всегда блокирует слот.
+model Booking {
+  id                     String             @id @default(cuid())
+  branchId               String             @map("branch_id")
+  branch                 Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  clientId               String?            @map("client_id")
+  client                 LocalCounterparty? @relation(fields: [branchId, clientId], references: [branchId, id], onDelete: Restrict)
+  vehicleId              String?            @map("vehicle_id")
+  vehicle                ClientVehicle?     @relation(fields: [branchId, vehicleId], references: [branchId, id], onDelete: Restrict)
+  masterMembershipId     String?            @map("master_membership_id")
+  masterMembership       BranchMembership?  @relation(fields: [branchId, masterMembershipId], references: [branchId, id], onDelete: Restrict)
+  customerName           String             @map("customer_name")
+  phone                  String
+  normalizedPhone        String             @map("normalized_phone")
+  email                  String?
+  vehicleSnapshot        Json               @default("{}") @map("vehicle_snapshot")
+  vin                    String?
+  startsAt               DateTime           @map("starts_at") @db.Timestamptz(6)
+  endsAt                 DateTime           @map("ends_at") @db.Timestamptz(6)
+  durationMinutes        Int                @map("duration_minutes")
+  source                 String             @default("ADMIN")
+  status                 String             @default("ACTIVE")
+  requiresConfirmation   Boolean            @default(false) @map("requires_confirmation")
+  confirmationState      String             @default("NOT_REQUIRED") @map("confirmation_state")
+  comment                String?            @db.Text
+  internalComment        String?            @map("internal_comment") @db.Text
+  conflictOverride       Boolean            @default(false) @map("conflict_override")
+  managementHandle       String             @unique @map("management_handle")
+  managementTokenVersion Int                @default(1) @map("management_token_version")
+  legacyExternalId       String?            @map("legacy_external_id")
+  createdByUserId        String?            @map("created_by_user_id")
+  cancelledAt            DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  cancelledBy            String?            @map("cancelled_by")
+  cancellationReason     String?            @map("cancellation_reason") @db.Text
+  confirmedAt            DateTime?          @map("confirmed_at") @db.Timestamptz(6)
+  confirmedBy            String?            @map("confirmed_by")
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  serviceItems BookingServiceItem[]
+
+  @@unique([branchId, id])
+  @@unique([branchId, legacyExternalId])
+  @@index([branchId, startsAt, endsAt])
+  @@index([branchId, masterMembershipId, status, startsAt])
+  @@index([branchId, normalizedPhone, startsAt])
+  @@index([branchId, clientId, startsAt])
+  @@map("bookings")
+}
+
+/// Снимок состава услуг защищает историю от последующего изменения справочника.
+model BookingServiceItem {
+  id                      String          @id @default(cuid())
+  branchId                String          @map("branch_id")
+  branch                  Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  bookingId               String          @map("booking_id")
+  booking                 Booking         @relation(fields: [branchId, bookingId], references: [branchId, id], onDelete: Cascade)
+  serviceId               String?         @map("service_id")
+  service                 BookingService? @relation(fields: [branchId, serviceId], references: [branchId, id], onDelete: Restrict)
+  serviceNameSnapshot     String          @map("service_name_snapshot")
+  durationMinutesSnapshot Int             @map("duration_minutes_snapshot")
+  sortOrder               Int             @default(0) @map("sort_order")
+  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([branchId, bookingId, sortOrder])
+  @@index([branchId, serviceId])
+  @@map("booking_service_items")
 }
 
 /// Физическая касса AQSI. Секреты хранятся одним AES-GCM payload, настройки — отдельно.
@@ -2821,6 +3047,8 @@ model LocalCounterparty {
   inventoryDocuments LocalInventoryDocument[]
   cashExpenseOrders  CashExpenseOrder[]
   suppliedProducts   LocalProduct[]           @relation("ProductSupplierCounterparty")
+  vehicles           ClientVehicle[]
+  bookings           Booking[]
 
   @@unique([branchId, id])
   @@index([name])

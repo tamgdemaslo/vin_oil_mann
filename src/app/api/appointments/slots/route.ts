@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { getClientAppointmentSlots } from "@/lib/client-site-api";
 
 export async function GET() {
-  const items = getClientAppointmentSlots();
-  return NextResponse.json({ items, total: items.length });
+  return NextResponse.json({
+    error: "Старые демонстрационные слоты отключены",
+    code: "legacy_booking_disabled",
+    bookingUrl: "/booking",
+  }, { status: 410 });
 }
