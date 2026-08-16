@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ExternalLink, Pencil, Plus, Search, Trash2 } from "lucide-react";
@@ -723,9 +723,11 @@ export default function ShipmentDetailPage() {
   const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
   const [reopenCheck, setReopenCheck] = useState<ReopenCheck | null>(null);
   const [reopenReasonCode, setReopenReasonCode] = useState("quantity_error");
   const [reopenComment, setReopenComment] = useState("");
+  const reopenRequestInFlight = useRef(false);
   const [description, setDescription] = useState("");
   const [applicable, setApplicable] = useState(false);
   const [attributes, setAttributes] = useState<DemandAttribute[]>([]);
@@ -1268,6 +1270,7 @@ export default function ShipmentDetailPage() {
   async function openReopenDialog() {
     if (!id) return;
     setReopenLoading(true);
+    setReopenError(null);
     setError(null);
     setPaymentInfo(null);
     try {
@@ -1288,13 +1291,14 @@ export default function ShipmentDetailPage() {
   }
 
   async function confirmReopenShipment() {
-    if (!id || !reopenCheck) return;
+    if (!id || !reopenCheck || reopenRequestInFlight.current) return;
     if (reopenReasonCode === "other" && !reopenComment.trim()) {
-      setError("Укажите комментарий для причины «Другое»");
+      setReopenError("Укажите комментарий для причины «Другое»");
       return;
     }
+    reopenRequestInFlight.current = true;
     setReopenLoading(true);
-    setError(null);
+    setReopenError(null);
     setPaymentInfo(null);
     try {
       const res = await fetch(`/api/shipments/${encodeURIComponent(id)}/reopen`, {
@@ -1310,7 +1314,7 @@ export default function ShipmentDetailPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         const message = typeof json.error === "string" ? json.error : "Не удалось вернуть отгрузку в черновик";
-        setError(message);
+        setReopenError(message);
         return;
       }
       setApplicable(false);
@@ -1329,8 +1333,9 @@ export default function ShipmentDetailPage() {
       setPaymentInfo("Проведение отменено. Отгрузка снова доступна для редактирования.");
       router.replace(`/shipment/${encodeURIComponent(id)}/edit?reopened=1`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка возврата в черновик");
+      setReopenError(e instanceof Error ? e.message : "Ошибка возврата в черновик");
     } finally {
+      reopenRequestInFlight.current = false;
       setReopenLoading(false);
     }
   }
@@ -1606,6 +1611,15 @@ export default function ShipmentDetailPage() {
                     {reopenCheck.warnings.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
+                  </ul>
+                </section>
+              )}
+
+              {reopenError && (
+                <section className="is-danger" role="alert">
+                  <h3>Не удалось вернуть в черновик</h3>
+                  <ul>
+                    <li>{reopenError}</li>
                   </ul>
                 </section>
               )}

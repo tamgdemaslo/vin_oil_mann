@@ -151,6 +151,7 @@ type StockMovementPosition = {
 };
 
 type StockMovementContext = {
+  branchId: string;
   sourceType: "SHIPMENT";
   sourceId: string;
   organizationId?: string | null;
@@ -655,8 +656,10 @@ async function applyStockMovements(
         },
       });
     } else {
+      if (!context) throw new Error("Не удалось определить филиал для складского остатка");
       await tx.localStockBalance.create({
         data: {
+          branchId: context.branchId,
           productId,
           storeId,
           quantity: new Prisma.Decimal(nextQuantity),
@@ -670,6 +673,7 @@ async function applyStockMovements(
     if (context) {
       await tx.inventoryLedgerEntry.create({
         data: {
+          branchId: context.branchId,
           sourceType: context.sourceType,
           sourceId: context.sourceId,
           organizationId: context.organizationId ?? null,
@@ -1233,6 +1237,7 @@ export async function createLocalDemand(
         applicable,
         applicable
           ? {
+              branchId: created.branchId,
               sourceType: "SHIPMENT",
               sourceId: created.id,
               organizationId: organization.id,
@@ -1355,6 +1360,7 @@ export async function updateLocalDemand(
     if (!importedDraftBeingPosted) {
       if (storeChanged) {
         await applyStockMovements(tx, current.storeId, current.positions, current.applicable, [], false, {
+          branchId: current.branchId,
           sourceType: "SHIPMENT",
           sourceId: current.id,
           organizationId: current.organizationId,
@@ -1365,6 +1371,7 @@ export async function updateLocalDemand(
         });
         await applyStockMovements(tx, nextStoreId, [], false, nextPositions, nextApplicable, nextApplicable
           ? {
+              branchId: current.branchId,
               sourceType: "SHIPMENT",
               sourceId: current.id,
               organizationId: current.organizationId,
@@ -1384,6 +1391,7 @@ export async function updateLocalDemand(
           nextApplicable,
           nextApplicable
             ? {
+                branchId: current.branchId,
                 sourceType: "SHIPMENT",
                 sourceId: current.id,
                 organizationId: current.organizationId,
@@ -1484,15 +1492,15 @@ function canReopenShipment(actor?: ShipmentActor | null): boolean {
   return actor?.role === "owner" || actor?.role === "admin";
 }
 
-async function loadReopenRelations(shipmentId: string) {
+async function loadReopenRelations(shipmentId: string, branchId: string) {
   const [closingDocuments, diagnostics] = await Promise.all([
     prisma.closingDocument.findMany({
-      where: { shipmentId },
+      where: { branchId, shipmentId },
       select: { id: true, type: true, number: true, status: true, revision: true, issuedAt: true },
       orderBy: { createdAt: "desc" },
     }),
     prisma.diagnosticMapSession.findMany({
-      where: { demandId: shipmentId },
+      where: { branchId, demandId: shipmentId },
       select: { id: true, status: true, totalCount: true, completedAt: true, publicToken: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -1536,7 +1544,7 @@ export async function getLocalDemandReopenCheck(
   if (!current.applicable) blockers.push("Отгрузка уже находится в черновике");
   if (!canReopenShipment(actor)) blockers.push("Недостаточно прав для возврата проведённой отгрузки в черновик");
 
-  const { closingDocuments, diagnostics } = await loadReopenRelations(current.id);
+  const { closingDocuments, diagnostics } = await loadReopenRelations(current.id, current.branchId);
   for (const doc of closingDocuments) {
     if (isBlockingClosingStatus(doc.status)) {
       blockers.push(`По отгрузке выпущен закрывающий документ ${doc.type.toUpperCase()}-${doc.number}. Сначала аннулируйте документ или создайте корректировку.`);
@@ -1546,6 +1554,15 @@ export async function getLocalDemandReopenCheck(
 
   const trackedPositions = current.positions.filter((position) => position.productId && isStockTrackedType(position.assortmentType));
   const quantityToRestore = trackedPositions.reduce((sum, position) => sum + decimalToNumber(position.quantity), 0);
+  try {
+    await assertNoActiveInventoryLocks(prisma, {
+      organizationId: current.organizationId,
+      warehouseId: current.storeId,
+      productIds: trackedPositions.map((position) => position.productId),
+    });
+  } catch (error) {
+    blockers.push(demandWriteErrorMessage(error, "Одна из позиций участвует в активной инвентаризации"));
+  }
 
   return {
     ok: true,
@@ -1589,7 +1606,9 @@ export async function getLocalDemandReopenCheck(
 export async function reopenLocalDemand(
   id: string,
   body: ReopenDemandBody,
-  actor: ShipmentActor
+  actor: ShipmentActor,
+  branchId?: string,
+  organizationId?: string
 ): Promise<{ ok: true; id: string; name: string; applicable: boolean; updatedAt: string } | { ok: false; error: string; notFound?: boolean; conflict?: boolean }> {
   if (!canReopenShipment(actor)) {
     return { ok: false, error: "Недостаточно прав для возврата проведённой отгрузки в черновик" };
@@ -1597,10 +1616,17 @@ export async function reopenLocalDemand(
   const reason = normalizeReopenReason(body);
   if (!reason.ok) return { ok: false, error: reason.error };
 
+  let scope: { branchId: string; organizationId: string };
+  try {
+    scope = await resolveDemandBranchScope(branchId, organizationId);
+  } catch (error) {
+    return { ok: false, error: demandWriteErrorMessage(error, "Не удалось определить филиал") };
+  }
+
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const current = await tx.localDemand.findFirst({
-        where: { OR: [{ id }, { id: id }] },
+        where: { branchId: scope.branchId, OR: [{ id }, { id: id }] },
         include: { positions: true, counterparty: true, store: true, organization: true },
       });
       if (!current) throw new Error("NOT_FOUND");
@@ -1616,6 +1642,7 @@ export async function reopenLocalDemand(
 
       const blockingClosing = await tx.closingDocument.findFirst({
         where: {
+          branchId: scope.branchId,
           shipmentId: current.id,
           NOT: { status: { in: ["draft", "cancelled", "canceled", "void", "annulled"] } },
         },
@@ -1635,6 +1662,7 @@ export async function reopenLocalDemand(
         [],
         false,
         {
+          branchId: current.branchId,
           sourceType: "SHIPMENT",
           sourceId: current.id,
           organizationId: current.organizationId,
