@@ -128,6 +128,15 @@ const dayOff = await getBookingAvailability(
 );
 assert.equal(dayOff.slots.length, 0);
 
+const inheritedBranchHours = await getBookingAvailability(
+  { ...availabilityInput, serviceIds: ["oil"] },
+  availabilityDb({ masterHours: [] }),
+);
+assert.deepEqual(
+  new Set(inheritedBranchHours.slots.filter((slot) => slot.localTime === "09:00").map((slot) => slot.master.name)),
+  new Set(["Александр", "Кирилл"]),
+);
+
 await assert.rejects(
   () => getBookingAvailability({ ...availabilityInput, serviceIds: ["hidden"] }, availabilityDb()),
   /недоступна для записи/,

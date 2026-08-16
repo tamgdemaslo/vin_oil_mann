@@ -198,9 +198,12 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
   for (const membershipId of candidateIds) {
     const exception = exceptionById.get(membershipId);
     if (exception?.kind === "CLOSED") continue;
+    const configuredMasterHours = masterHoursById.get(membershipId);
     const masterInterval = exception?.kind === "CUSTOM"
       ? intervalFromHours({ isWorking: true, startTime: exception.startTime, endTime: exception.endTime })
-      : intervalFromHours(masterHoursById.get(membershipId));
+      : configuredMasterHours
+        ? intervalFromHours(configuredMasterHours)
+        : branchInterval;
     if (!masterInterval) continue;
     const working = intersectInterval(branchInterval, masterInterval);
     if (!working) continue;
