@@ -68,6 +68,7 @@ export function startTelegramSyncWorker() {
   const tick = () => {
     void runTelegramSyncWorkerOnce().then((results) => {
       const failures: Array<{ branchId: string; accountId?: string; error: string }> = [];
+      let completedAccountSync = false;
       for (const result of results) {
         if (!result.ok) {
           failures.push({ branchId: result.branchId, error: result.error ?? "Telegram branch sync failed" });
@@ -80,6 +81,8 @@ export function startTelegramSyncWorker() {
               accountId: item.accountId,
               error: item.error ?? "Telegram account sync failed",
             });
+          } else if (!("skipped" in item)) {
+            completedAccountSync = true;
           }
         }
       }
@@ -91,7 +94,7 @@ export function startTelegramSyncWorker() {
           current.lastFailureFingerprint = fingerprint;
           current.lastFailureLoggedAt = now;
         }
-      } else if (current.lastFailureFingerprint) {
+      } else if (current.lastFailureFingerprint && completedAccountSync) {
         console.info("[messenger.telegram_user.worker]", JSON.stringify({ action: "sync_recovered" }));
         current.lastFailureFingerprint = undefined;
         current.lastFailureLoggedAt = undefined;
