@@ -14,7 +14,7 @@ import { formatLocalDate } from "./timezone";
 
 type BookingDb = Prisma.TransactionClient;
 
-type BookingCreatePhase = "client" | "vehicle" | "booking" | "audit";
+type BookingCreatePhase = "client" | "vehicle" | "booking" | "service_items" | "booking_reload" | "audit";
 
 export type BookingVehicleInput = {
   make?: string | null;
@@ -90,9 +90,14 @@ async function inBookingCreatePhase<T>(phase: BookingCreatePhase, operation: () 
   } catch (error) {
     if (error instanceof BookingError) throw error;
     console.error(`[booking/create:${phase}]`, error);
+    const failureKind = error instanceof Prisma.PrismaClientKnownRequestError
+      ? error.code.toLowerCase()
+      : error instanceof Prisma.PrismaClientValidationError
+        ? "validation"
+        : "unknown";
     throw new BookingError(
       "Не удалось выполнить операцию с записью",
-      `booking_internal_${phase}`,
+      `booking_internal_${phase}_${failureKind}`,
       500,
     );
   }
@@ -376,7 +381,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
     const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
     if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
 
-    const booking = await inBookingCreatePhase("booking", () => tx.booking.create({
+    const bookingRow = await inBookingCreatePhase("booking", () => tx.booking.create({
       data: {
         branchId: input.branchId,
         clientId: client.id,
@@ -406,18 +411,24 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
         conflictOverride: wantsOverride,
         managementHandle,
         createdByUserId: actor.userId ?? null,
-        serviceItems: {
-          create: services.map((service, index) => ({
-            branchId: input.branchId,
-            serviceId: service.id,
-            serviceNameSnapshot: service.name,
-            durationMinutesSnapshot: service.durationMinutes,
-            sortOrder: index,
-          })),
-        },
       },
+      select: { id: true },
+    }));
+    await inBookingCreatePhase("service_items", () => tx.bookingServiceItem.createMany({
+      data: services.map((service, index) => ({
+        branchId: input.branchId,
+        bookingId: bookingRow.id,
+        serviceId: service.id,
+        serviceNameSnapshot: service.name,
+        durationMinutesSnapshot: service.durationMinutes,
+        sortOrder: index,
+      })),
+    }));
+    const booking = await inBookingCreatePhase("booking_reload", () => tx.booking.findUnique({
+      where: { id: bookingRow.id },
       include: BOOKING_INCLUDE,
     }));
+    if (!booking) throw new BookingError("Не удалось сохранить запись", "booking_create_failed", 500);
     await inBookingCreatePhase("audit", () => tx.branchAuditLog.create({
       data: {
         businessGroupId: branch.businessGroupId,
