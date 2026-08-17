@@ -952,6 +952,12 @@ function mapProduct(product: ProductWithStock) {
     markingConfiguredManually: product.markingConfiguredManually,
     markingConfiguredAt: product.markingConfiguredAt?.toISOString() ?? null,
     markingConfiguredByLogin: product.markingConfiguredByLogin ?? null,
+    origin: product.origin,
+    sourceBranchId: product.sourceBranchId,
+    sourceProductId: product.sourceProductId,
+    copyBatchId: product.copyBatchId,
+    copiedAt: product.copiedAt?.toISOString() ?? null,
+    priceNeedsSetup: product.priceNeedsSetup,
     imageHref: product.imageHref ?? "",
     photos: product.photos.map((photo) => ({
       id: photo.id,

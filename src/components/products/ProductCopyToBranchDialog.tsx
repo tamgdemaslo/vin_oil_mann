@@ -63,12 +63,29 @@ function actionTone(action: PreviewRow["action"]) {
   return "is-update";
 }
 
+function cardCountText(value: number) {
+  const count = Math.abs(value) % 100;
+  const lastDigit = count % 10;
+  const noun = count > 10 && count < 20
+    ? "карточек"
+    : lastDigit === 1
+      ? "карточка"
+      : lastDigit >= 2 && lastDigit <= 4
+        ? "карточки"
+        : "карточек";
+  return `${value.toLocaleString("ru-RU")} ${noun}`;
+}
+
 export default function ProductCopyToBranchDialog({
   productIds,
+  selection,
+  selectionCount,
   onClose,
   onCompleted,
 }: {
   productIds: string[];
+  selection?: Record<string, unknown>;
+  selectionCount?: number;
   onClose: () => void;
   onCompleted: () => void;
 }) {
@@ -137,7 +154,7 @@ export default function ProductCopyToBranchDialog({
       const response = await fetch("/api/products/copy-to-branch/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetBranchId, productIds, options }),
+        body: JSON.stringify({ targetBranchId, productIds, selection, options }),
       });
       const payload = await response.json() as Preview & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Не удалось подготовить предпросмотр");
@@ -154,10 +171,17 @@ export default function ProductCopyToBranchDialog({
     setExecuting(true);
     setError(null);
     try {
+      const previewProductIds = preview?.rows.map((row) => row.sourceProductId) ?? [];
       const response = await fetch("/api/products/copy-to-branch/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetBranchId, productIds, options, idempotencyKey: idempotencyKey.current }),
+        body: JSON.stringify({
+          targetBranchId,
+          productIds: previewProductIds.length ? previewProductIds : productIds,
+          selection: previewProductIds.length ? undefined : selection,
+          options,
+          idempotencyKey: idempotencyKey.current,
+        }),
       });
       const payload = await response.json() as Result & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Не удалось скопировать карточки");
@@ -195,7 +219,7 @@ export default function ProductCopyToBranchDialog({
           <div>
             <span className="eco-copy-dialog__eyebrow"><Copy aria-hidden className="eco-icon" /> Между филиалами</span>
             <h2 id="copy-products-dialog-title">Скопировать карточки товаров</h2>
-            <p>{productIds.length.toLocaleString("ru-RU")} {productIds.length === 1 ? "карточка" : "карточек"} · остатки и движения не переносятся</p>
+            <p>{cardCountText(selectionCount ?? productIds.length)} · остатки и движения не переносятся</p>
           </div>
           <button type="button" className="eco-copy-dialog__close" onClick={onClose} disabled={executing} aria-label="Закрыть"><X aria-hidden className="eco-icon" /></button>
         </header>

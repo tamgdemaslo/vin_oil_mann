@@ -9,11 +9,13 @@ import {
   ArchiveRestore,
   Building2,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Download,
   FileSpreadsheet,
   History,
   ImagePlus,
+  ListChecks,
   Loader2,
   MoreHorizontal,
   PackageOpen,
@@ -232,6 +234,11 @@ type ProductOemBatchDialogState = {
   selection?: Record<string, unknown>;
   source: string;
   existingBatchId?: string;
+};
+type ProductCopyDialogState = {
+  productIds: string[];
+  selection?: Record<string, unknown>;
+  selectionCount: number;
 };
 type OemEnrichmentResultState = { batchId: string; result: OemEnrichmentResultFilter } | null;
 type ProductGroupKind = "oil" | "filter" | "other";
@@ -921,6 +928,19 @@ function formatFileSize(value: number) {
   return `${(value / 1024 / 1024).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} МБ`;
 }
 
+function productCountText(value: number) {
+  const count = Math.abs(value) % 100;
+  const lastDigit = count % 10;
+  const noun = count > 10 && count < 20
+    ? "товаров"
+    : lastDigit === 1
+      ? "товар"
+      : lastDigit >= 2 && lastDigit <= 4
+        ? "товара"
+        : "товаров";
+  return `${value.toLocaleString("ru-RU")} ${noun}`;
+}
+
 function normalizeFieldSearch(value: string) {
   return value
     .toLowerCase()
@@ -1566,7 +1586,11 @@ export default function ProductsClient() {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [allFilteredProductsSelected, setAllFilteredProductsSelected] = useState(false);
   const [canCopyProducts, setCanCopyProducts] = useState(false);
-  const [copyProductIds, setCopyProductIds] = useState<string[] | null>(null);
+  const [copyDialog, setCopyDialog] = useState<ProductCopyDialogState | null>(null);
+  const [bulkActionsOpen, setBulkActionsOpen] = useState(false);
+  const [bulkActionsPosition, setBulkActionsPosition] = useState<ActionMenuPosition | null>(null);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [bulkArchiveSaving, setBulkArchiveSaving] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -1590,6 +1614,8 @@ export default function ProductsClient() {
   const facetPreviewPinsRef = useRef<FacetPreviewPinState>(createFacetPreviewPinState());
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const bulkActionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const bulkActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const listAbortRef = useRef<AbortController | null>(null);
@@ -1655,6 +1681,58 @@ export default function ProductsClient() {
         && prev.placement === next.placement
       ) {
         return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const updateBulkActionsPosition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const reference = bulkActionsButtonRef.current;
+    const floating = bulkActionsMenuRef.current;
+    if (!reference?.isConnected || !floating) return;
+
+    const referenceRect = reference.getBoundingClientRect();
+    const floatingRect = floating.getBoundingClientRect();
+    const floatingWidth = floatingRect.width || 300;
+    const floatingHeight = floatingRect.height || 1;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const maxLeft = viewportWidth - floatingWidth - ACTION_MENU_VIEWPORT_PADDING;
+    const maxTop = viewportHeight - floatingHeight - ACTION_MENU_VIEWPORT_PADDING;
+    const bottomTop = referenceRect.bottom + ACTION_MENU_GAP;
+    const topTop = referenceRect.top - floatingHeight - ACTION_MENU_GAP;
+    const fitsBelow = bottomTop + floatingHeight + ACTION_MENU_VIEWPORT_PADDING <= viewportHeight;
+    const placement: ActionMenuPosition["placement"] = fitsBelow || topTop < ACTION_MENU_VIEWPORT_PADDING
+      ? "bottom-end"
+      : "top-end";
+    const nextTop = clampNumber(
+      placement === "bottom-end" ? bottomTop : topTop,
+      ACTION_MENU_VIEWPORT_PADDING,
+      Math.max(ACTION_MENU_VIEWPORT_PADDING, maxTop)
+    );
+    const nextLeft = clampNumber(
+      referenceRect.right - floatingWidth,
+      ACTION_MENU_VIEWPORT_PADDING,
+      Math.max(ACTION_MENU_VIEWPORT_PADDING, maxLeft)
+    );
+    const referenceCenter = referenceRect.left + referenceRect.width / 2;
+    const arrowLeft = clampNumber(
+      referenceCenter - nextLeft - ACTION_MENU_ARROW_SIZE / 2,
+      14,
+      Math.max(14, floatingWidth - ACTION_MENU_ARROW_SIZE - 14)
+    );
+
+    setBulkActionsPosition((previous) => {
+      const next = { top: nextTop, left: nextLeft, placement, arrowLeft };
+      if (
+        previous
+        && Math.abs(previous.top - next.top) < 0.5
+        && Math.abs(previous.left - next.left) < 0.5
+        && Math.abs(previous.arrowLeft - next.arrowLeft) < 0.5
+        && previous.placement === next.placement
+      ) {
+        return previous;
       }
       return next;
     });
@@ -2041,6 +2119,65 @@ export default function ProductsClient() {
   }, [activeActionMenuId, activeActionRow, updateActionMenuPosition]);
 
   useEffect(() => {
+    if (!bulkActionsOpen) {
+      setBulkActionsPosition(null);
+      return;
+    }
+    if (!selectedProductsCount) {
+      setBulkActionsOpen(false);
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target;
+      if (target instanceof Node && bulkActionsMenuRef.current?.contains(target)) return;
+      if (target instanceof Node && bulkActionsButtonRef.current?.contains(target)) return;
+      setBulkActionsOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setBulkActionsOpen(false);
+        bulkActionsButtonRef.current?.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const items = Array.from(bulkActionsMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+      if (!items.length) return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+      const nextIndex = currentIndex < 0
+        ? event.key === "ArrowDown" ? 0 : items.length - 1
+        : event.key === "ArrowDown"
+          ? (currentIndex + 1) % items.length
+          : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
+    }
+
+    let frame = 0;
+    function scheduleUpdate() {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updateBulkActionsPosition);
+    }
+    scheduleUpdate();
+    const resizeObserver = typeof ResizeObserver !== "undefined" && bulkActionsMenuRef.current
+      ? new ResizeObserver(scheduleUpdate)
+      : null;
+    if (bulkActionsMenuRef.current) resizeObserver?.observe(bulkActionsMenuRef.current);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+    };
+  }, [bulkActionsOpen, selectedProductsCount, updateBulkActionsPosition]);
+
+  useEffect(() => {
     if (!exportMenuOpen) return;
     function handlePointerDown(event: MouseEvent) {
       const target = event.target;
@@ -2066,6 +2203,15 @@ export default function ProductsClient() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [archiveCandidate, archiveSaving]);
+
+  useEffect(() => {
+    if (!bulkArchiveOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !bulkArchiveSaving) setBulkArchiveOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [bulkArchiveOpen, bulkArchiveSaving]);
 
   useEffect(() => {
     if (!toast) return;
@@ -2467,6 +2613,7 @@ export default function ProductsClient() {
     const params = buildExportParams(scope);
     window.location.href = `/api/products/export?${params.toString()}`;
     setExportMenuOpen(false);
+    setBulkActionsOpen(false);
   }
 
   function downloadTemplate() {
@@ -2475,12 +2622,86 @@ export default function ProductsClient() {
   }
 
   function openCopyToBranch() {
-    if (selectedProductIds.length === 0) {
+    if (!selectedProductsCount) {
       setToast({ message: "Выберите товары чекбоксами перед копированием в филиал." });
       return;
     }
     setExportMenuOpen(false);
-    setCopyProductIds(selectedProductIds);
+    setBulkActionsOpen(false);
+    setCopyDialog({
+      productIds: allFilteredProductsSelected ? [] : selectedProductIds,
+      selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
+      selectionCount: selectedProductsCount,
+    });
+  }
+
+  function exportSelectedProducts() {
+    downloadProductsExport(allFilteredProductsSelected ? "current" : "selected");
+  }
+
+  function clearProductSelection() {
+    setBulkActionsOpen(false);
+    setSelectedProductIds([]);
+    setAllFilteredProductsSelected(false);
+  }
+
+  function requestBulkArchive() {
+    if (!selectedProductsCount) return;
+    setBulkActionsOpen(false);
+    setBulkArchiveOpen(true);
+    setError(null);
+  }
+
+  async function setBulkProductsArchived(productIds: string[], archived: boolean) {
+    const response = await fetch("/api/products/bulk-archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productIds, archived }),
+    });
+    const payload = await readJson<{ productIds?: string[]; updatedCount?: number; error?: string }>(response);
+    if (!response.ok) throw new Error(payload?.error ?? (archived ? "Не удалось перенести товары в архив" : "Не удалось восстановить товары"));
+    return payload;
+  }
+
+  async function archiveSelectedProducts() {
+    if (!selectedProductsCount) return;
+    setBulkArchiveSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/products/bulk-archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productIds: allFilteredProductsSelected ? undefined : selectedProductIds,
+          selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
+          archived: true,
+        }),
+      });
+      const payload = await readJson<{ productIds?: string[]; updatedCount?: number; error?: string }>(response);
+      if (!response.ok) throw new Error(payload?.error ?? "Не удалось перенести товары в архив");
+      const archivedIds = Array.isArray(payload?.productIds) ? payload.productIds : [];
+      const updatedCount = payload?.updatedCount ?? archivedIds.length;
+      setBulkArchiveOpen(false);
+      clearProductSelection();
+      setToast({
+        message: `${productCountText(updatedCount)} ${updatedCount === 1 ? "перенесён" : "перенесено"} в архив`,
+        actionLabel: archivedIds.length ? "Отменить" : undefined,
+        onAction: archivedIds.length ? async () => {
+          try {
+            await setBulkProductsArchived(archivedIds, false);
+            setToast({ message: "Массовая архивация отменена" });
+            await load(search, sort, direction, filters);
+          } catch (restoreError) {
+            setError(restoreError instanceof Error ? restoreError.message : String(restoreError));
+          }
+        } : undefined,
+      });
+      await load(search, sort, direction, filters);
+    } catch (archiveError) {
+      setError(archiveError instanceof Error ? archiveError.message : String(archiveError));
+    } finally {
+      setBulkArchiveSaving(false);
+    }
   }
 
   function resetImportWizard() {
@@ -2643,6 +2864,7 @@ export default function ProductsClient() {
 
   function openOemBatchForSelection() {
     if (!selectedProductsCount) return;
+    setBulkActionsOpen(false);
     setOemBatchDialog({
       productIds: allFilteredProductsSelected ? [] : selectedProductIds,
       selection: allFilteredProductsSelected ? buildCatalogSelectionSnapshot() : undefined,
@@ -2979,7 +3201,7 @@ export default function ProductsClient() {
             role="menuitem"
             onClick={() => {
               setActiveActionMenuId(null);
-              setCopyProductIds([activeActionRow.id]);
+              setCopyDialog({ productIds: [activeActionRow.id], selectionCount: 1 });
             }}
           >
             <Copy aria-hidden className="eco-icon" />
@@ -3025,6 +3247,62 @@ export default function ProductsClient() {
             <span>В архив</span>
           </button>
         )}
+      </div>,
+      document.body
+    );
+  }
+
+  function renderBulkActionsPortal() {
+    if (!bulkActionsOpen || !selectedProductsCount || typeof document === "undefined") return null;
+    const menuStyle = {
+      top: bulkActionsPosition?.top ?? -9999,
+      left: bulkActionsPosition?.left ?? -9999,
+      visibility: bulkActionsPosition ? "visible" : "hidden",
+      "--eco-action-menu-arrow-left": `${bulkActionsPosition?.arrowLeft ?? 18}px`,
+    } as CSSProperties;
+    const selectionLabel = allFilteredProductsSelected
+      ? `Вся выборка · ${selectedProductsCount.toLocaleString("ru-RU")}`
+      : `Выбрано на странице · ${selectedProductsCount.toLocaleString("ru-RU")}`;
+
+    return createPortal(
+      <div
+        id="eco-products-bulk-actions-menu"
+        ref={bulkActionsMenuRef}
+        className={`eco-product-actions-menu eco-product-bulk-menu ${
+          bulkActionsPosition?.placement === "top-end" ? "is-top" : "is-bottom"
+        }`}
+        role="menu"
+        aria-label="Массовые действия с товарами"
+        style={menuStyle}
+      >
+        <div className="eco-product-bulk-menu__summary">
+          <ListChecks aria-hidden className="eco-icon" />
+          <span><b>Массовые действия</b><small>{selectionLabel}</small></span>
+        </div>
+        <button type="button" role="menuitem" onClick={openOemBatchForSelection}>
+          <Truck aria-hidden className="eco-icon" />
+          <span><b>Заполнить OEM Parts из ROSSKO</b><small>Получить кросс-номера для выбранных товаров</small></span>
+        </button>
+        {canCopyProducts ? (
+          <button type="button" role="menuitem" onClick={openCopyToBranch}>
+            <Copy aria-hidden className="eco-icon" />
+            <span><b>Копировать в филиал</b><small>Без остатков и истории движений</small></span>
+          </button>
+        ) : null}
+        <button type="button" role="menuitem" onClick={exportSelectedProducts}>
+          <FileSpreadsheet aria-hidden className="eco-icon" />
+          <span><b>Экспортировать</b><small>Скачать выбранные карточки в Excel</small></span>
+        </button>
+        <div className="eco-product-actions-separator" role="separator" />
+        <button type="button" role="menuitem" className="is-destructive" onClick={requestBulkArchive}>
+          <Archive aria-hidden className="eco-icon" />
+          <span><b>Перенести в архив</b><small>Скрыть из активного каталога</small></span>
+        </button>
+        <div className="eco-product-actions-separator" role="separator" />
+        <button type="button" role="menuitem" onClick={clearProductSelection}>
+          <X aria-hidden className="eco-icon" />
+          <span><b>Снять выделение</b><small>Отменить текущий выбор товаров</small></span>
+        </button>
       </div>,
       document.body
     );
@@ -4304,6 +4582,16 @@ export default function ProductsClient() {
                     <span>Новый</span>
                   )}
                 </div>
+                {editingProduct?.origin === "BRANCH_COPY" ? (
+                  <p className="product-editor-origin-note">
+                    <Copy aria-hidden className="eco-icon" />
+                    <span>
+                      Скопировано из другого филиала
+                      {editingProduct.copiedAt ? ` ${new Date(editingProduct.copiedAt).toLocaleDateString("ru-RU")}` : ""}.
+                      Карточка редактируется независимо от исходной.
+                    </span>
+                  </p>
+                ) : null}
               </div>
               <div className="product-editor-header-actions">
                 <span className={`product-editor-save-state ${saving ? "is-saving" : formDirty ? "is-dirty" : "is-saved"}`}>
@@ -4618,6 +4906,7 @@ export default function ProductsClient() {
       )}
 
       {renderActionMenuPortal()}
+      {renderBulkActionsPortal()}
 
       {archiveCandidate && (
         <div
@@ -4659,6 +4948,53 @@ export default function ProductsClient() {
               >
                 {archiveSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Archive aria-hidden className="eco-icon" />}
                 {archiveSaving ? "Переносим..." : "Перенести в архив"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {bulkArchiveOpen && (
+        <div
+          className="eco-product-confirm-backdrop"
+          onMouseDown={() => {
+            if (!bulkArchiveSaving) setBulkArchiveOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="eco-products-bulk-archive-title"
+            className="eco-product-confirm eco-product-bulk-confirm"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="eco-product-confirm-icon">
+              <Archive aria-hidden className="eco-icon" />
+            </div>
+            <div className="eco-product-confirm-copy">
+              <h3 id="eco-products-bulk-archive-title">Перенести выбранные товары в архив?</h3>
+              <p>
+                {productCountText(selectedProductsCount)} будут скрыты из активного каталога и поиска.
+                История отгрузок, приёмок и движений сохранится.
+              </p>
+            </div>
+            <footer className="eco-product-confirm-actions">
+              <button
+                type="button"
+                className="eco-btn"
+                onClick={() => setBulkArchiveOpen(false)}
+                disabled={bulkArchiveSaving}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="eco-btn eco-btn--danger"
+                onClick={() => void archiveSelectedProducts()}
+                disabled={bulkArchiveSaving}
+              >
+                {bulkArchiveSaving ? <Loader2 aria-hidden className="eco-icon animate-spin" /> : <Archive aria-hidden className="eco-icon" />}
+                {bulkArchiveSaving ? "Переносим..." : `В архив · ${selectedProductsCount.toLocaleString("ru-RU")}`}
               </button>
             </footer>
           </section>
@@ -4761,15 +5097,6 @@ export default function ProductsClient() {
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("selected")}>Выбранные строки ({selectedProductIds.length})</button>
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("active")}>Только активные</button>
                   <button type="button" role="menuitem" onClick={() => downloadProductsExport("archived")}>Архивные</button>
-                  {selectedProductIds.length > 0 && canCopyProducts ? (
-                    <>
-                      <div className="eco-product-export-separator" role="separator" />
-                      <button type="button" role="menuitem" onClick={openCopyToBranch}>
-                        <Copy aria-hidden className="eco-icon" />
-                        Скопировать в филиал ({selectedProductIds.length})
-                      </button>
-                    </>
-                  ) : null}
                   <div className="eco-product-export-separator" role="separator" />
                   <button type="button" role="menuitem" onClick={downloadTemplate}>Скачать пустой шаблон</button>
                   <button type="button" role="menuitem" onClick={openImportHistory}>История экспортов/импортов</button>
@@ -4969,14 +5296,35 @@ export default function ProductsClient() {
               )}
             </div>
             <div className="eco-products-strip-meta">
-              {selectedProductsCount > 0 ? <>
-                <span>{allFilteredProductsSelected
-                  ? `Выбрано ${selectedProductsCount.toLocaleString("ru-RU")} товаров`
-                  : `Выбрано ${selectedProductsCount.toLocaleString("ru-RU")} товаров на этой странице`}</span>
-                {!allFilteredProductsSelected && (meta?.total ?? 0) > selectedProductsCount ? <button type="button" className="eco-products-select-all" onClick={selectAllFilteredProducts}>Выбрать все {(meta?.total ?? 0).toLocaleString("ru-RU")} товаров</button> : null}
-                <button type="button" className="eco-btn eco-btn--compact" onClick={openOemBatchForSelection}>Заполнить OEM Parts из ROSSKO</button>
-              </> : null}
-              <span>{visibleProductsLabel} из {totalProductsLabel}</span>
+              {selectedProductsCount > 0 ? (
+                <div className="eco-products-selection-summary" aria-live="polite">
+                  <span>{allFilteredProductsSelected
+                    ? `Выбрано: ${productCountText(selectedProductsCount)}`
+                    : `Выбрано на этой странице: ${productCountText(selectedProductsCount)}`}</span>
+                  {!allFilteredProductsSelected && (meta?.total ?? 0) > selectedProductsCount ? (
+                    <button type="button" className="eco-products-select-all" onClick={selectAllFilteredProducts}>
+                      Выбрать все {productCountText(meta?.total ?? 0)}
+                    </button>
+                  ) : null}
+                  <button
+                    ref={bulkActionsButtonRef}
+                    type="button"
+                    className="eco-btn eco-btn--primary eco-products-bulk-trigger"
+                    onClick={() => {
+                      setBulkActionsPosition(null);
+                      setBulkActionsOpen((current) => !current);
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={bulkActionsOpen}
+                    aria-controls="eco-products-bulk-actions-menu"
+                  >
+                    <ListChecks aria-hidden className="eco-icon" />
+                    Массовые действия
+                    <ChevronDown aria-hidden className={`eco-icon eco-products-bulk-trigger__chevron ${bulkActionsOpen ? "is-open" : ""}`} />
+                  </button>
+                </div>
+              ) : null}
+              <span className="eco-products-visible-count">{visibleProductsLabel} из {totalProductsLabel}</span>
             </div>
           </div>
         ) : null}
@@ -5086,7 +5434,6 @@ export default function ProductsClient() {
                         </span>
                       ) : null}
                       {row.archived ? <span className="eco-product-archive-badge">В архиве</span> : null}
-                      {row.origin === "BRANCH_COPY" ? <span className="eco-product-archive-badge">Из филиала</span> : null}
                       {row.priceNeedsSetup ? <span className="eco-product-marking-badge is-warning">Настроить цену</span> : null}
                     </div>
                   </td>
@@ -5152,12 +5499,15 @@ export default function ProductsClient() {
         </div>
       </section>
       ) : null}
-      {copyProductIds ? (
+      {copyDialog ? (
         <ProductCopyToBranchDialog
-          productIds={copyProductIds}
-          onClose={() => setCopyProductIds(null)}
+          productIds={copyDialog.productIds}
+          selection={copyDialog.selection}
+          selectionCount={copyDialog.selectionCount}
+          onClose={() => setCopyDialog(null)}
           onCompleted={() => {
             setSelectedProductIds([]);
+            setAllFilteredProductsSelected(false);
           }}
         />
       ) : null}
