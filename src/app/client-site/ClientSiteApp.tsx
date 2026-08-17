@@ -1117,7 +1117,7 @@ function HomeHero() {
                 <blockquote style={{
                   margin: 0, fontFamily: 'Inter, sans-serif', fontWeight: 500,
                   fontSize: 22, lineHeight: 1.3, color: '#F5F2ED', letterSpacing: '-0.01em',
-                  borderLeft: '3px solid #C2410C', paddingLeft: 18,
+                  borderLeft: '1px solid var(--line)', paddingLeft: 18,
                 }}>
                   {master.quote}
                 </blockquote>
