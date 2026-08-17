@@ -379,6 +379,7 @@ type ProductFieldRenderOptions = {
   type?: "text" | "number" | "textarea" | "money";
   placeholder?: string;
   required?: boolean;
+  hideErrorMessage?: boolean;
   full?: boolean;
   rows?: number;
   step?: string;
@@ -587,14 +588,7 @@ const NEW_GROUP_VALUE = "__new_group__";
 const PRODUCT_UOM_OPTIONS = [
   { value: "шт", label: "Штука (шт.)" },
   { value: "л", label: "Литр (л)" },
-  { value: "кг", label: "Килограмм (кг)" },
-  { value: "г", label: "Грамм (г)" },
-  { value: "мл", label: "Миллилитр (мл)" },
-  { value: "м", label: "Метр (м)" },
   { value: "комплект", label: "Комплект" },
-  { value: "упаковка", label: "Упаковка" },
-  { value: "услуга", label: "Услуга" },
-  { value: "ч", label: "Час (ч)" },
 ] as const;
 const BRAND_ORDER = ["Shell", "Mobil", "ZIC", "Total", "Lukoil", "Bardahl", "ELF", "BMW", "Mann", "ZF", "VAG"];
 const FILTER_SIDEBAR_STORAGE_KEY = "inventory-products-filter-sidebar-collapsed";
@@ -776,6 +770,34 @@ function shortGroupLabel(value: string) {
     return "Трансмиссионное в бочках на розлив";
   }
   return cleaned;
+}
+
+function productNameCategoryLabel(value: string) {
+  const label = shortGroupLabel(value);
+  const normalized = label.toLowerCase().replace(/ё/g, "е").trim();
+  if (normalized === "трансмиссионное" || normalized === "трансмисионное") return "Трансмиссионное масло";
+  if (normalized === "топливные фильтры") return "Топливный фильтр";
+  if (normalized === "воздушные фильтры") return "Воздушный фильтр";
+  if (normalized === "салонные фильтры") return "Салонный фильтр";
+  if (normalized === "масляные фильтры двс") return "Масляный фильтр";
+  return label;
+}
+
+function productNameFormatHint(form: Pick<ProductForm, "groupPath" | "brand" | "article" | "code">) {
+  const example = [
+    productNameCategoryLabel(form.groupPath) || "Категория",
+    form.brand.trim() || "бренд",
+    form.article.trim() || form.code.trim() || "артикул",
+  ].join(" ");
+  return `Формат: категория + бренд + артикул (или код). Пример: ${example}.`;
+}
+
+function productUomForEditor(value: string) {
+  const normalized = value.toLowerCase().replace(/ё/g, "е").replace(/[.\s]/g, "");
+  if (/^(шт|штука|штуки|штук)$/.test(normalized)) return "шт";
+  if (/^(л|литр|литра|литров)$/.test(normalized)) return "л";
+  if (/^(комплект|комплекта|комплектов|компл)$/.test(normalized)) return "комплект";
+  return "";
 }
 
 function normalizedGroupLabel(value: string) {
@@ -1187,7 +1209,7 @@ function formFromProduct(product: ProductRow): ProductForm {
     code: product.code,
     externalCode: product.externalCode,
     groupPath: product.groupPath,
-    uomName: product.uomName,
+    uomName: productUomForEditor(product.uomName),
     entityType: product.entityType || "product",
     salePrice: product.salePrice ? String(product.salePrice) : "",
     buyPrice: product.buyPrice == null ? "" : String(product.buyPrice),
@@ -3656,7 +3678,7 @@ export default function ProductsClient() {
           />
         )}
         {options.hint ? <span className="product-editor-hint">{options.hint}</span> : null}
-        {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
+        {errorMessage && !options.hideErrorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
       </label>
     );
   }
@@ -3735,13 +3757,9 @@ export default function ProductsClient() {
   function renderUomField() {
     const key: keyof ProductForm = "uomName";
     const errorMessage = formErrors[key];
-    const currentValue = form.uomName.trim();
-    const hasLegacyValue = Boolean(
-      currentValue && !PRODUCT_UOM_OPTIONS.some((option) => option.value === currentValue)
-    );
 
     return (
-      <label className={`product-editor-field ${fieldMatches(key, "Единица учёта", ["единица измерения", "шт", "литр", "килограмм"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
+      <label className={`product-editor-field ${fieldMatches(key, "Единица учёта", ["единица измерения", "шт", "литр", "комплект"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
         <span className="product-editor-label">
           <span>Единица учёта <b aria-hidden="true">*</b></span>
         </span>
@@ -3753,7 +3771,6 @@ export default function ProductsClient() {
           className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
         >
           <option value="" disabled>Выберите единицу</option>
-          {hasLegacyValue ? <option value={currentValue}>{currentValue} — текущее значение</option> : null}
           {PRODUCT_UOM_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
@@ -4684,11 +4701,22 @@ export default function ProductsClient() {
                       {renderField("name", "Название товара", {
                         required: true,
                         full: true,
-                        placeholder: "Например: Топливный фильтр MANN WK 853/3 x",
-                        hint: "Единый формат: категория + бренд + артикул. Пример: Топливный фильтр MANN WK 853/3 x.",
+                        placeholder: "Категория + бренд + артикул",
+                        hint: productNameFormatHint(form),
                       })}
-                      {renderField("article", "Артикул", { required: true, placeholder: "156202" })}
-                      {renderField("code", "Код / штрихкод", { required: true, placeholder: "30015649815" })}
+                      <fieldset className="product-editor-identifier-group">
+                        <legend>
+                          <strong>Артикул или код <b aria-hidden="true">*</b></strong>
+                          <span>Заполните хотя бы одно поле</span>
+                        </legend>
+                        <div className="product-editor-grid">
+                          {renderField("article", "Артикул", { placeholder: "Например: W 914/2", hideErrorMessage: true })}
+                          {renderField("code", "Код / штрихкод", { placeholder: "Например: 30015649815", hideErrorMessage: true })}
+                        </div>
+                        {formErrors.article || formErrors.code ? (
+                          <span className="product-editor-error">Заполните артикул или код</span>
+                        ) : null}
+                      </fieldset>
                       {renderEntityTypeField()}
                       {renderField("brand", "Бренд", { placeholder: "Mobil" })}
                       {renderGroupField()}
