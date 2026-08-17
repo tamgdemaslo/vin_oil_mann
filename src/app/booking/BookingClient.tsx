@@ -63,7 +63,7 @@ type Availability = {
   slots: Slot[];
 };
 
-const STEPS = ["Филиал", "Автомобиль", "Услуги", "Время", "Контакты"];
+const STEPS = ["Филиал", "Автомобиль", "Услуги", "Время и контакты"];
 
 async function readJson<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as (T & { error?: string }) | null;
@@ -140,6 +140,21 @@ export default function BookingClient() {
   const effectivePlate = selectedVehicle?.plate || (!vehicleId ? plate.trim() : "");
   const effectiveYear = selectedVehicle?.year || (!vehicleId ? year.trim() : "");
 
+  function changePhone(nextPhone: string) {
+    if (selectedVehicle) {
+      setMake(selectedVehicle.make);
+      setModel(selectedVehicle.model);
+      setYear(selectedVehicle.year == null ? "" : String(selectedVehicle.year));
+      setPlate(selectedVehicle.plate ?? "");
+      setVin(selectedVehicle.vin ?? "");
+    }
+    setPhone(nextPhone);
+    setVehicles([]);
+    setVehicleId(null);
+    setLookupState("idle");
+    setError("");
+  }
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const initialName = params.get("name")?.trim();
@@ -157,7 +172,10 @@ export default function BookingClient() {
       .then((data) => {
         if (!active) return;
         setBranches(data.branches);
-        if (data.branches.length === 1) setBranchId(data.branches[0].id);
+        if (data.branches.length === 1) {
+          setBranchId(data.branches[0].id);
+          setStep((current) => current === 1 ? 2 : current);
+        }
       })
       .catch((reason) => active && setError(reason instanceof Error ? reason.message : "Не удалось загрузить филиалы"))
       .finally(() => active && setLoading(false));
@@ -178,7 +196,8 @@ export default function BookingClient() {
 
   const lookupCustomer = useCallback(async () => {
     if (!branchId || phone.replace(/\D/g, "").length < 10) {
-      setLookupState("none");
+      setLookupState("idle");
+      setError("Введите номер телефона полностью, чтобы найти сохранённые автомобили.");
       return;
     }
     setLookupState("loading");
@@ -231,39 +250,49 @@ export default function BookingClient() {
     if (step === 4) void loadAvailability();
   }, [step, loadAvailability]);
 
+  function validationMessage() {
+    if (step === 1 && !branchId) return "Выберите филиал, в который хотите приехать.";
+    if (step === 2) {
+      if (phone.replace(/\D/g, "").length < 10) return "Укажите номер телефона — по нему мы найдём ваши автомобили и отправим подтверждение.";
+      if (!vehicleId && (!make.trim() || !model.trim())) return "Укажите марку и модель автомобиля.";
+      if (requiredFields.has("plate") && !effectivePlate) return "Для выбранной услуги нужен госномер автомобиля.";
+      if (requiredFields.has("year") && !effectiveYear) return "Для выбранной услуги нужен год выпуска автомобиля.";
+      if (requiresVin && !effectiveVin) return "Для выбранной услуги нужен VIN автомобиля.";
+    }
+    if (step === 3) {
+      if (!serviceIds.length) return "Выберите хотя бы одну услугу.";
+      if (requiresVin && !effectiveVin) return "Для выбранной услуги нужен VIN. Вернитесь к автомобилю и укажите его.";
+      if (requiredFields.has("plate") && !effectivePlate) return "Для выбранной услуги нужен госномер. Вернитесь к автомобилю и укажите его.";
+      if (requiredFields.has("year") && !effectiveYear) return "Для выбранной услуги нужен год выпуска. Вернитесь к автомобилю и укажите его.";
+    }
+    if (step === 4) {
+      if (!selectedSlot) return "Выберите свободное время визита.";
+      if (!name.trim()) return "Укажите, как к вам обращаться.";
+      if (phone.replace(/\D/g, "").length < 10) return "Проверьте номер телефона.";
+      if (requiredFields.has("email") && !email.trim()) return "Для выбранной услуги нужен email.";
+    }
+    return "";
+  }
+
   function canContinue() {
-    if (step === 1) return Boolean(branchId);
-    if (step === 2) return Boolean(
-      name.trim() &&
-      phone.replace(/\D/g, "").length >= 10 &&
-      (vehicleId || (make.trim() && model.trim())) &&
-      (!requiredFields.has("plate") || selectedVehicle?.plate || plate.trim()) &&
-      (!requiredFields.has("year") || selectedVehicle?.year || year.trim())
-    );
-    if (step === 3) return Boolean(
-      serviceIds.length > 0 &&
-      (!requiresVin || effectiveVin) &&
-      (!requiredFields.has("plate") || effectivePlate) &&
-      (!requiredFields.has("year") || effectiveYear)
-    );
-    if (step === 4) return Boolean(selectedSlot);
-    return Boolean(name.trim() && phone.trim() && selectedSlot && (!requiredFields.has("email") || email.trim()));
+    return !validationMessage();
   }
 
   function goNext() {
     setError("");
     if (!canContinue()) {
-      if (step === 3 && (requiresVin && !effectiveVin || requiredFields.has("plate") && !effectivePlate || requiredFields.has("year") && !effectiveYear)) {
-        setError("Для выбранной услуги не хватает данных автомобиля. Вернитесь на шаг «Автомобиль» и добавьте другой автомобиль с обязательными полями.");
-      } else {
-        setError("Заполните обязательные поля шага");
-      }
+      setError(validationMessage());
       return;
     }
-    setStep((current) => Math.min(5, current + 1));
+    setStep((current) => Math.min(4, current + 1));
   }
 
   async function submitBooking() {
+    const message = validationMessage();
+    if (message) {
+      setError(message);
+      return;
+    }
     if (!selectedSlot || !branchId) return;
     setBusy(true);
     setError("");
@@ -345,32 +374,54 @@ export default function BookingClient() {
       <section className={styles.bookingShell}>
         <div className={styles.intro}>
           <div>
-            <h1>Запись в сервис</h1>
-            <p>Выберите работы и удобное время. Мы показываем только действительно свободные слоты.</p>
+            <h1>Запишитесь в сервис за пару минут</h1>
+            <p>Без звонка и регистрации: выберите автомобиль, работы и действительно свободное время.</p>
           </div>
           {branch?.phone && <a href={`tel:${branch.phone.replace(/[^+\d]/g, "")}`}><Phone aria-hidden /> {branch.phone}</a>}
         </div>
 
-        <nav className={styles.steps} aria-label="Шаги записи">
-          {STEPS.map((label, index) => {
-            const number = index + 1;
-            return (
-              <button
-                type="button"
-                key={label}
-                className={number === step ? styles.activeStep : number < step ? styles.doneStep : ""}
-                onClick={() => number < step && setStep(number)}
-                disabled={number > step}
-                aria-current={number === step ? "step" : undefined}
-              >
-                <span>{number < step ? <Check aria-hidden /> : number}</span>
-                {label}
-              </button>
-            );
-          })}
-        </nav>
+        <div className={styles.progressHeader}>
+          <nav className={styles.steps} aria-label="Шаги записи">
+            {STEPS.map((label, index) => {
+              const number = index + 1;
+              return (
+                <button
+                  type="button"
+                  key={label}
+                  className={number === step ? styles.activeStep : number < step ? styles.doneStep : ""}
+                  onClick={() => {
+                    if (number < step) {
+                      setError("");
+                      setStep(number);
+                    }
+                  }}
+                  disabled={number > step}
+                  aria-current={number === step ? "step" : undefined}
+                >
+                  <span>{number < step ? <Check aria-hidden /> : number}</span>
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+          <div className={styles.mobileProgress} aria-label={`Шаг ${step} из ${STEPS.length}: ${STEPS[step - 1]}`}>
+            <div><strong>Шаг {step} из {STEPS.length}</strong><span>{STEPS[step - 1]}</span></div>
+            <i aria-hidden><span style={{ transform: `scaleX(${step / STEPS.length})` }} /></i>
+          </div>
+        </div>
 
         <div className={styles.workspace}>
+          <div className={styles.mobileSummary} aria-label="Текущие данные записи">
+            <MapPin aria-hidden />
+            <span>
+              <strong>{branch?.name || "Выберите филиал"}</strong>
+              <small>{[
+                selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model}` : [make, model].filter(Boolean).join(" "),
+                selectedServices.length ? `${selectedServices.length} ${selectedServices.length === 1 ? "услуга" : "услуги"}` : "",
+                selectedSlot ? `${dateLabel(localDate)}, ${selectedSlot.localTime}` : "",
+              ].filter(Boolean).join(" · ") || "Детали визита появятся здесь"}</small>
+            </span>
+          </div>
           <section className={styles.stage}>
             {loading ? (
               <div className={styles.skeleton} aria-label="Загрузка"><i /><i /><i /></div>
@@ -390,12 +441,12 @@ export default function BookingClient() {
               </div>
             ) : step === 2 ? (
               <div className={styles.stageBody}>
-                <div className={styles.stageHeading}><Car aria-hidden /><div><h2>Кто приедет и на каком автомобиле?</h2><p>По телефону найдём вашу карточку и сохранённые автомобили.</p></div></div>
+                <div className={styles.stageHeading}><Car aria-hidden /><div><h2>На каком автомобиле приедете?</h2><p>Если вы уже были у нас, найдём сохранённые автомобили по телефону.</p></div></div>
                 <div className={styles.formGrid}>
-                  <label><span>Телефон *</span><div className={styles.inlineField}><input value={phone} onChange={(event) => { setPhone(event.target.value); setLookupState("idle"); }} placeholder="+7 900 000-00-00" inputMode="tel" autoComplete="tel" /><button type="button" onClick={lookupCustomer} disabled={lookupState === "loading"}>{lookupState === "loading" ? "Ищем…" : "Найти"}</button></div></label>
-                  <label><span>Имя *</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Как к вам обращаться" autoComplete="name" /></label>
+                  <label className={`${styles.wideField} ${styles.lookupField}`}><span>Телефон *</span><div className={styles.inlineField}><input value={phone} onChange={(event) => changePhone(event.target.value)} placeholder="+7 900 000-00-00" inputMode="tel" autoComplete="tel" aria-describedby="phone-help" /><button type="button" onClick={lookupCustomer} disabled={lookupState === "loading"}>{lookupState === "loading" ? "Ищем…" : "Найти мои авто"}</button></div><small id="phone-help">Номер нужен для подтверждения записи. Рекламных звонков не будет.</small></label>
                 </div>
                 {lookupState === "found" && <p className={styles.lookupNotice}><CheckCircle2 aria-hidden /> Нашли вашу карточку. Выберите автомобиль или добавьте новый.</p>}
+                {lookupState === "none" && <p className={styles.neutralNotice}>Сохранённых автомобилей не нашли — добавьте автомобиль ниже.</p>}
                 {!!vehicles.length && (
                   <div className={styles.vehicleList}>
                     {vehicles.map((vehicle) => (
@@ -405,16 +456,19 @@ export default function BookingClient() {
                         <Check aria-hidden />
                       </label>
                     ))}
-                    <button type="button" className={styles.textButton} onClick={() => setVehicleId(null)}>+ Другой автомобиль</button>
+                    <button type="button" className={styles.textButton} onClick={() => { setVehicleId(null); setError(""); }}>+ Добавить другой автомобиль</button>
                   </div>
                 )}
                 {!vehicleId && (
-                  <div className={styles.formGrid}>
-                    <label><span>Марка *</span><input value={make} onChange={(event) => setMake(event.target.value)} placeholder="Например, BMW" /></label>
-                    <label><span>Модель *</span><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Например, X5" /></label>
-                    <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} onChange={(event) => setYear(event.target.value)} placeholder="2020" inputMode="numeric" /></label>
-                    <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} onChange={(event) => setPlate(event.target.value.toUpperCase())} placeholder="А123ВС39" /></label>
-                    <label className={styles.wideField}><span>VIN {requiresVin ? "*" : ""}</span><input value={vin} onChange={(event) => setVin(event.target.value.toUpperCase())} placeholder="17 символов" maxLength={17} autoCapitalize="characters" /></label>
+                  <div className={styles.vehicleEditor}>
+                    <div className={styles.sectionLead}><strong>Добавьте автомобиль</strong><span>Сейчас достаточно марки и модели. Остальные данные помогут нам подготовиться заранее.</span></div>
+                    <div className={styles.formGrid}>
+                      <label><span>Марка *</span><input value={make} onChange={(event) => { setMake(event.target.value); setError(""); }} placeholder="Например, BMW" autoComplete="organization" /></label>
+                      <label><span>Модель *</span><input value={model} onChange={(event) => { setModel(event.target.value); setError(""); }} placeholder="Например, X5" /></label>
+                      <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} onChange={(event) => { setYear(event.target.value); setError(""); }} placeholder="2020" inputMode="numeric" /></label>
+                      <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} onChange={(event) => { setPlate(event.target.value.toUpperCase()); setError(""); }} placeholder="А123ВС39" autoCapitalize="characters" /></label>
+                      <label className={styles.wideField}><span>VIN {requiresVin ? "*" : ""}</span><input value={vin} onChange={(event) => { setVin(event.target.value.toUpperCase()); setError(""); }} placeholder="Если знаете — 17 символов" maxLength={17} autoCapitalize="characters" /></label>
+                    </div>
                   </div>
                 )}
               </div>
@@ -426,7 +480,7 @@ export default function BookingClient() {
                     const selected = serviceIds.includes(service.id);
                     return (
                       <label key={service.id} className={selected ? styles.selectedChoice : ""}>
-                        <input type="checkbox" checked={selected} onChange={() => setServiceIds((current) => selected ? current.filter((id) => id !== service.id) : [...current, service.id])} />
+                        <input type="checkbox" checked={selected} onChange={() => { setServiceIds((current) => selected ? current.filter((id) => id !== service.id) : [...current, service.id]); setError(""); }} />
                         <span><strong>{service.name}</strong><small>{service.description || "Работа по регламенту сервиса"}</small><em>{durationLabel(service.durationMinutes)}{service.requiresVin ? " · нужен VIN" : ""}{service.requiresConfirmation ? " · с подтверждением" : ""}</em></span>
                         <Check aria-hidden />
                       </label>
@@ -441,37 +495,40 @@ export default function BookingClient() {
               </div>
             ) : step === 4 ? (
               <div className={styles.stageBody}>
-                <div className={styles.stageHeading}><Clock3 aria-hidden /><div><h2>Выберите дату и время</h2><p>Слот закрепится только после подтверждения на следующем шаге.</p></div></div>
+                <div className={styles.stageHeading}><Clock3 aria-hidden /><div><h2>Когда вам удобно приехать?</h2><p>Выберите свободное время и оставьте контакт для подтверждения.</p></div></div>
                 <label className={styles.dateField}><span>Дата визита</span><input type="date" value={localDate} min={todayInput()} max={addDays(todayInput(), branch?.bookingHorizonDays ?? 60)} onChange={(event) => setLocalDate(event.target.value)} /></label>
                 <div className={styles.slotHeader}><strong>{dateLabel(localDate)}</strong><button type="button" onClick={loadAvailability} disabled={busy}>Обновить</button></div>
                 {busy ? <div className={styles.slotSkeleton}><i /><i /><i /><i /></div> : (
                   <div className={styles.slotGrid}>
                     {availability?.slots.map((slot) => (
-                      <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => setSelectedSlot(slot)}>
+                      <button type="button" key={`${slot.startsAt}-${slot.master.membershipId}`} className={selectedSlot?.startsAt === slot.startsAt && selectedSlot.master.membershipId === slot.master.membershipId ? styles.selectedSlot : ""} onClick={() => { setSelectedSlot(slot); setError(""); }}>
                         <strong>{slot.localTime}</strong><span>{slot.master.name}</span>
                       </button>
                     ))}
                     {availability && !availability.slots.length && <div className={styles.empty}>На эту дату свободных окон нет. Выберите другой день.</div>}
                   </div>
                 )}
+                {selectedSlot && (
+                  <section className={styles.contactPanel} aria-labelledby="contact-heading">
+                    <div className={styles.sectionLead}><strong id="contact-heading">Куда отправить подтверждение?</strong><span>Имя спросим один раз. Телефон уже подставлен — проверьте его перед записью.</span></div>
+                    <div className={styles.formGrid}>
+                      <label><span>Имя *</span><input value={name} onChange={(event) => { setName(event.target.value); setError(""); }} autoComplete="name" placeholder="Как к вам обращаться" /></label>
+                      <label><span>Телефон *</span><input value={phone} onChange={(event) => changePhone(event.target.value)} inputMode="tel" autoComplete="tel" /></label>
+                      <label className={styles.wideField}><span>Email {requiredFields.has("email") ? "*" : ""}</span><input value={email} onChange={(event) => { setEmail(event.target.value); setError(""); }} type="email" autoComplete="email" placeholder={requiredFields.has("email") ? "Укажите email" : "Необязательно"} /></label>
+                      <label className={styles.wideField}><span>Комментарий</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} placeholder="Например, есть шум при повороте руля" /></label>
+                    </div>
+                    {requiresConfirmation && <p className={styles.pendingNotice}><ShieldCheck aria-hidden /> Время будет временно занято. Администратор проверит данные автомобиля и подтвердит визит.</p>}
+                  </section>
+                )}
               </div>
-            ) : (
-              <div className={styles.stageBody}>
-                <div className={styles.stageHeading}><UserRound aria-hidden /><div><h2>Проверьте контакты</h2><p>На телефон придут подтверждение, напоминание и ссылка управления записью.</p></div></div>
-                <div className={styles.formGrid}>
-                  <label><span>Имя *</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" /></label>
-                  <label><span>Телефон *</span><input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" autoComplete="tel" /></label>
-                  <label className={styles.wideField}><span>Email {requiredFields.has("email") ? "*" : ""}</span><input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder={requiredFields.has("email") ? "Обязательное поле" : "Необязательно"} /></label>
-                  <label className={styles.wideField}><span>Комментарий</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={4} placeholder="Например, есть шум при повороте руля" /></label>
-                </div>
-                {requiresConfirmation && <p className={styles.pendingNotice}><ShieldCheck aria-hidden /> Время пока не подтверждено. После отправки оно будет временно занято в календаре, а администратор свяжется с вами после проверки автомобиля.</p>}
-              </div>
-            )}
+            ) : null}
 
             {error && <div className={styles.error} role="alert">{error}</div>}
             <footer className={styles.stageFooter}>
-              <button type="button" className={styles.secondaryButton} onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || busy}><ArrowLeft aria-hidden /> Назад</button>
-              {step < 5
+              {step > 1 && (step > 2 || branches.length > 1)
+                ? <button type="button" className={styles.secondaryButton} onClick={() => { setError(""); setStep((current) => Math.max(1, current - 1)); }} disabled={step === 1 || busy}><ArrowLeft aria-hidden /> Назад</button>
+                : <span />}
+              {step < 4
                 ? <button type="button" className={styles.primaryButton} onClick={goNext} disabled={busy}>Продолжить <ArrowRight aria-hidden /></button>
                 : <button type="button" className={styles.primaryButton} onClick={submitBooking} disabled={busy}>{busy ? "Закрепляем время…" : requiresConfirmation ? "Отправить на подтверждение" : "Записаться"} <ArrowRight aria-hidden /></button>}
             </footer>
