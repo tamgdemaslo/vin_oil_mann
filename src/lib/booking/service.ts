@@ -327,6 +327,10 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
   if (wantsOverride && !actor.allowConflictOverride) {
     throw new BookingError("Нет права создавать пересекающиеся записи", "booking_override_forbidden", 403);
   }
+  // Validate the signing configuration before any durable write. A booking
+  // must never commit and then fail while its management link is generated.
+  const managementHandle = createManagementHandle();
+  const managementToken = createManagementToken(managementHandle, 1);
 
   const created = await (prisma as unknown as PrismaClient).$transaction(async (tx) => {
     await lockKeys(tx, [`booking-master:${input.branchId}:${input.masterMembershipId}`]);
@@ -377,7 +381,6 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
       throw new BookingError("Для выбранной услуги нужен год автомобиля", "booking_vehicle_year_required");
     }
     const requiresConfirmation = services.some((service) => service.requiresConfirmation);
-    const managementHandle = createManagementHandle();
     const branch = await tx.branch.findUnique({ where: { id: input.branchId } });
     if (!branch) throw new BookingError("Филиал не найден", "booking_branch_not_found", 404);
 
@@ -453,7 +456,7 @@ export async function createBooking(input: CreateBookingInput, actor: BookingAct
 
   return {
     booking: created,
-    managementToken: createManagementToken(created.managementHandle, created.managementTokenVersion),
+    managementToken,
   };
 }
 

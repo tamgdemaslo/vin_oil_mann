@@ -35,6 +35,14 @@ assert.deepEqual(tokens.verifyManagementToken(token), { handle, version: 1 });
 assert.throws(() => tokens.verifyManagementToken(`${token}tampered`), /недействительна/);
 assert.notEqual(tokens.createManagementHandle(), handle);
 
+delete process.env.BOOKING_MANAGEMENT_TOKEN_SECRET;
+delete process.env.SESSION_SECRET;
+process.env.MESSENGER_CREDENTIAL_ENCRYPTION_KEY = "integration-storage-test-secret";
+const fallbackHandle = tokens.createManagementHandle();
+const fallbackToken = tokens.createManagementToken(fallbackHandle, 1);
+assert.deepEqual(tokens.verifyManagementToken(fallbackToken), { handle: fallbackHandle, version: 1 });
+process.env.BOOKING_MANAGEMENT_TOKEN_SECRET = "booking-test-secret-with-enough-entropy";
+
 function availabilityDb(overrides = {}) {
   const services = overrides.services ?? [
     { id: "oil", branchId: "branch-a", name: "Моторное масло", durationMinutes: 60, onlineBookingEnabled: true, requiresVin: false, requiresConfirmation: false },
@@ -175,6 +183,10 @@ assert.match(service, /inBookingCreatePhase\("booking"/);
 assert.match(service, /inBookingCreatePhase\("service_items"/);
 assert.match(service, /inBookingCreatePhase\("booking_reload"/);
 assert.match(service, /inBookingCreatePhase\("audit"/);
+assert.ok(
+  service.indexOf("const managementToken = createManagementToken") < service.indexOf(".$transaction", service.indexOf("export async function createBooking")),
+  "management token configuration must be validated before the booking transaction",
+);
 assert.match(service, /booking\.rescheduled/);
 assert.match(service, /booking\.cancelled/);
 assert.ok(
@@ -193,6 +205,10 @@ assert.match(publicCreate, /checkPublicRateLimit/);
 assert.match(publicCreate, /hasLeadHoneypot/);
 assert.match(publicCreate, /notifyBookingCreated/);
 assert.match(publicCreate, /clientId: null/);
+
+const managementTokenSource = source("src/lib/booking/management-token.ts");
+assert.match(managementTokenSource, /MESSENGER_CREDENTIAL_ENCRYPTION_KEY/);
+assert.match(managementTokenSource, /eco-booking-management-token-v1/);
 
 const customerLookup = source("src/app/api/public/booking/customer-lookup/route.ts");
 assert.doesNotMatch(customerLookup, /customer:\s*\{/);

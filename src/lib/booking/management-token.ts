@@ -2,11 +2,19 @@ import crypto from "node:crypto";
 import { BookingError } from "./errors";
 
 function tokenSecret() {
-  const secret = process.env.BOOKING_MANAGEMENT_TOKEN_SECRET ?? process.env.SESSION_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
+  const directSecret = process.env.BOOKING_MANAGEMENT_TOKEN_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
+  if (directSecret) return directSecret;
+  const integrationSecret = process.env.MESSENGER_CREDENTIAL_ENCRYPTION_KEY?.trim();
+  if (integrationSecret) {
+    return crypto
+      .createHmac("sha256", integrationSecret)
+      .update("eco-booking-management-token-v1", "utf8")
+      .digest("base64url");
+  }
+  if (process.env.NODE_ENV === "production") {
     throw new BookingError("Секрет управления записью не настроен", "booking_token_secret_missing", 500);
   }
-  return secret ?? "eco-booking-development-only";
+  return "eco-booking-development-only";
 }
 
 function signature(payload: string) {
