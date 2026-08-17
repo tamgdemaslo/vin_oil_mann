@@ -465,30 +465,6 @@ function isProductFormDirty(current: ProductForm, baseline: ProductForm) {
   return productFormKeys.some((key) => current[key] !== baseline[key]);
 }
 
-const searchImpactFields = new Set<keyof ProductForm>([
-  "name",
-  "article",
-  "code",
-  "brand",
-  "groupPath",
-  "barcodeEan13",
-  "oem",
-  "oemParts",
-]);
-
-const shipmentImpactFields = new Set<keyof ProductForm>([
-  "name",
-  "entityType",
-  "salePrice",
-  "uomName",
-  "minimumBalance",
-  "cell",
-  "markingEnabled",
-  "markingMode",
-  "markingActiveBarrelCode",
-  "markingCurrentVolumeLiters",
-]);
-
 const criticalFieldLabels: Partial<Record<keyof ProductForm, string>> = {
   name: "название",
   article: "артикул",
@@ -496,7 +472,7 @@ const criticalFieldLabels: Partial<Record<keyof ProductForm, string>> = {
   groupPath: "группа",
   salePrice: "цена продажи",
   buyPrice: "закупочная цена",
-  uomName: "единица",
+  uomName: "единица учёта",
   minimumBalance: "неснижаемый остаток",
   barcodeEan13: "EAN",
   oem: "OEM",
@@ -608,6 +584,18 @@ const oemPartsOptions: Array<{ value: OemPartsFilter; label: string }> = [
 ];
 const PRODUCT_PAGE_LIMIT = 50;
 const NEW_GROUP_VALUE = "__new_group__";
+const PRODUCT_UOM_OPTIONS = [
+  { value: "шт", label: "Штука (шт.)" },
+  { value: "л", label: "Литр (л)" },
+  { value: "кг", label: "Килограмм (кг)" },
+  { value: "г", label: "Грамм (г)" },
+  { value: "мл", label: "Миллилитр (мл)" },
+  { value: "м", label: "Метр (м)" },
+  { value: "комплект", label: "Комплект" },
+  { value: "упаковка", label: "Упаковка" },
+  { value: "услуга", label: "Услуга" },
+  { value: "ч", label: "Час (ч)" },
+] as const;
 const BRAND_ORDER = ["Shell", "Mobil", "ZIC", "Total", "Lukoil", "Bardahl", "ELF", "BMW", "Mann", "ZF", "VAG"];
 const FILTER_SIDEBAR_STORAGE_KEY = "inventory-products-filter-sidebar-collapsed";
 const FILTER_MOBILE_QUERY = "(max-width: 1180px)";
@@ -1120,8 +1108,9 @@ function validateProductForm(values: ProductForm): ProductFormErrors {
   const errors: ProductFormErrors = {};
   if (!values.name.trim()) errors.name = "Введите название товара";
   if (!values.entityType.trim()) errors.entityType = "Выберите тип";
+  if (!values.groupPath.trim()) errors.groupPath = "Выберите группу товара";
   if (!values.salePrice.trim()) errors.salePrice = "Укажите цену продажи";
-  if (!values.uomName.trim()) errors.uomName = "Укажите единицу измерения";
+  if (!values.uomName.trim()) errors.uomName = "Укажите единицу учёта";
   if (!values.article.trim() && !values.code.trim()) {
     errors.article = "Укажите артикул или код";
     errors.code = "Укажите артикул или код";
@@ -1898,7 +1887,7 @@ export default function ProductsClient() {
       { label: "Группа", ok: Boolean(form.groupPath.trim()) },
       { label: "Бренд", ok: Boolean(form.brand.trim()) },
       { label: "Код / штрихкод", ok: Boolean(form.code.trim() || form.barcodeEan13.trim() || form.barcodeEan8.trim() || form.barcodeCode128.trim()) },
-      { label: "Единица", ok: Boolean(form.uomName.trim()) },
+      { label: "Единица учёта", ok: Boolean(form.uomName.trim()) },
       { label: "Цена", ok: parseMoneyInput(form.salePrice) > 0 },
       { label: "Поставщик", ok: Boolean(form.supplierName.trim()) },
     ];
@@ -3612,10 +3601,6 @@ export default function ProductsClient() {
   function renderField(key: keyof ProductForm, label: string, options: ProductFieldRenderOptions = {}) {
     const isHighlighted = fieldMatches(key, label, options.aliases);
     const errorMessage = formErrors[key];
-    const tags = [
-      searchImpactFields.has(key) ? { label: "поиск", title: "Это поле участвует в поиске товара" } : null,
-      shipmentImpactFields.has(key) ? { label: "отгрузка", title: "Это поле важно для продажи и отгрузки" } : null,
-    ].filter((tag): tag is { label: string; title: string } => Boolean(tag));
     const fieldClass = [
       "product-editor-field",
       options.full ? "is-full" : "",
@@ -3632,11 +3617,6 @@ export default function ProductsClient() {
             {label}
             {options.required ? <b aria-hidden="true"> *</b> : null}
           </span>
-          {tags.length ? (
-            <span className="product-editor-label-tags">
-              {tags.map((tag) => <em key={tag.label} title={tag.title}>{tag.label}</em>)}
-            </span>
-          ) : null}
         </span>
         {options.type === "textarea" ? (
           <ProductEditorBufferedInput
@@ -3688,9 +3668,6 @@ export default function ProductsClient() {
       <label className={`product-editor-field ${fieldMatches(key, "Тип", ["товар услуга"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
         <span className="product-editor-label">
           <span>Тип *</span>
-          <span className="product-editor-label-tags">
-            <em title="Это поле важно для продажи и отгрузки">отгрузка</em>
-          </span>
         </span>
         <select
           value={form.entityType}
@@ -3713,13 +3690,12 @@ export default function ProductsClient() {
     return (
       <label className={`product-editor-field ${fieldMatches(key, "Группа", ["категория"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
         <span className="product-editor-label">
-          <span>Группа</span>
-          <span className="product-editor-label-tags">
-            <em title="Это поле участвует в поиске товара">поиск</em>
-          </span>
+          <span>Группа <b aria-hidden="true">*</b></span>
         </span>
         <select
           value={newGroupMode ? NEW_GROUP_VALUE : form.groupPath}
+          aria-required="true"
+          aria-invalid={Boolean(errorMessage)}
           onChange={(event) => {
             if (event.target.value === NEW_GROUP_VALUE) {
               setNewGroupMode(true);
@@ -3731,7 +3707,7 @@ export default function ProductsClient() {
           }}
           className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
         >
-          <option value="">Без группы</option>
+          <option value="" disabled>Выберите группу</option>
           {editorGroupsLoading && groupOptions.length === 0 ? (
             <option value="" disabled>Загружаем группы...</option>
           ) : null}
@@ -3751,6 +3727,40 @@ export default function ProductsClient() {
         ) : null}
         {editorGroupsLoading ? <span className="product-editor-hint">Загружаем полный список групп...</span> : null}
         {editorGroupsError ? <span className="product-editor-error">{editorGroupsError}</span> : null}
+        {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
+      </label>
+    );
+  }
+
+  function renderUomField() {
+    const key: keyof ProductForm = "uomName";
+    const errorMessage = formErrors[key];
+    const currentValue = form.uomName.trim();
+    const hasLegacyValue = Boolean(
+      currentValue && !PRODUCT_UOM_OPTIONS.some((option) => option.value === currentValue)
+    );
+
+    return (
+      <label className={`product-editor-field ${fieldMatches(key, "Единица учёта", ["единица измерения", "шт", "литр", "килограмм"]) ? "is-highlighted" : ""} ${errorMessage ? "has-error" : ""}`}>
+        <span className="product-editor-label">
+          <span>Единица учёта <b aria-hidden="true">*</b></span>
+        </span>
+        <select
+          value={form.uomName}
+          aria-required="true"
+          aria-invalid={Boolean(errorMessage)}
+          onChange={(event) => updateForm({ uomName: event.target.value })}
+          className={`eco-input product-editor-input ${errorMessage ? "has-error" : ""}`}
+        >
+          <option value="" disabled>Выберите единицу</option>
+          {hasLegacyValue ? <option value={currentValue}>{currentValue} — текущее значение</option> : null}
+          {PRODUCT_UOM_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <span className="product-editor-hint">
+          В этой единице считаются остатки и количество в приёмке и отгрузке.
+        </span>
         {errorMessage ? <span className="product-editor-error">{errorMessage}</span> : null}
       </label>
     );
@@ -3869,9 +3879,6 @@ export default function ProductsClient() {
             <label className={`product-editor-field is-full ${errorMessage ? "has-error" : ""}`}>
               <span className="product-editor-label">
                 <span>Как списывать код маркировки *</span>
-                <span className="product-editor-label-tags">
-                  <em title="Это поле определяет payload в AQSI">отгрузка</em>
-                </span>
               </span>
               <select
                 value={mode}
@@ -4674,13 +4681,18 @@ export default function ProductsClient() {
                       </div>
                     </div>
                     <div className="product-editor-grid">
-                      {renderField("name", "Название товара", { required: true, full: true, placeholder: "Например: Mobil 1 ESP 5W-30, 1 л" })}
+                      {renderField("name", "Название товара", {
+                        required: true,
+                        full: true,
+                        placeholder: "Например: Топливный фильтр MANN WK 853/3 x",
+                        hint: "Единый формат: категория + бренд + артикул. Пример: Топливный фильтр MANN WK 853/3 x.",
+                      })}
                       {renderField("article", "Артикул", { required: true, placeholder: "156202" })}
                       {renderField("code", "Код / штрихкод", { required: true, placeholder: "30015649815" })}
                       {renderEntityTypeField()}
                       {renderField("brand", "Бренд", { placeholder: "Mobil" })}
                       {renderGroupField()}
-                      {renderField("uomName", "Единица", { required: true, placeholder: "шт" })}
+                      {renderUomField()}
                       {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}
                       {renderField("buyPrice", "Цена закупки", { type: "money", placeholder: "0,00" })}
                       <SupplierCombobox

@@ -2723,6 +2723,7 @@ export async function createLocalAdminProduct(
   const code = body.code?.trim() || null;
   const externalCode = cleanText(body.externalCode);
   const groupPath = cleanText(body.groupPath);
+  if (!groupPath) return { ok: false as const, error: "Выберите группу товара" };
   const uomName = cleanText(body.uomName);
   const currencyName = body.currencyName?.trim() || "руб.";
   const barcodeEan13 = cleanText(body.barcodeEan13);
@@ -2881,6 +2882,9 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
   const code = body.code == null ? current.code : body.code.trim() || null;
   const externalCode = body.externalCode === undefined ? current.externalCode : cleanText(body.externalCode);
   const groupPath = body.groupPath === undefined ? current.groupPath : cleanText(body.groupPath);
+  if (body.groupPath !== undefined && !groupPath) {
+    return { ok: false as const, error: "Выберите группу товара" };
+  }
   const uomName = body.uomName === undefined ? current.uomName : cleanText(body.uomName);
   const currencyName = body.currencyName == null ? current.currencyName ?? "руб." : body.currencyName.trim() || "руб.";
   const buyPriceCents = body.buyPrice === undefined

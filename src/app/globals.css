@@ -37908,23 +37908,6 @@ select.eco-input::-ms-expand,
   color: var(--eco-danger);
 }
 
-.product-editor-label-tags {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 4px;
-}
-
-.product-editor-label-tags em {
-  padding: 3px 5px;
-  color: var(--eco-info);
-  background: var(--eco-info-tint);
-  border-radius: 999px;
-  font-size: 9px;
-  font-style: normal;
-  letter-spacing: 0;
-  text-transform: lowercase;
-}
-
 .product-editor-input,
 textarea.product-editor-input,
 select.product-editor-input {
