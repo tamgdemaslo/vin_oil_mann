@@ -101,9 +101,9 @@ function availabilityDb(overrides = {}) {
     { id: "atf", branchId: "branch-a", name: "АКПП", durationMinutes: 120, onlineBookingEnabled: true, requiresVin: true, requiresConfirmation: true },
     { id: "hidden", branchId: "branch-a", name: "Скрытая", durationMinutes: 60, onlineBookingEnabled: false, requiresVin: false, requiresConfirmation: false },
   ];
-  const masters = {
-    "master-1": { id: "master-1", position: "Мастер", status: "active", user: { name: "Александр", status: "active" } },
-    "master-2": { id: "master-2", position: "Мастер", status: "active", user: { name: "Кирилл", status: "active" } },
+  const masters = overrides.masters ?? {
+    "master-1": { id: "master-1", roleId: "master", position: "Мастер", status: "active", user: { name: "Александр", status: "active" } },
+    "master-2": { id: "master-2", roleId: "master", position: "Мастер", status: "active", user: { name: "Кирилл", status: "active" } },
   };
   const assignments = overrides.assignments ?? [
     ["master-1", "oil"], ["master-1", "filter"], ["master-1", "atf"], ["master-2", "oil"],
@@ -132,7 +132,9 @@ function availabilityDb(overrides = {}) {
     },
     bookingMasterService: {
       findMany: async ({ where }) => assignments
-        .filter(([membershipId, serviceId]) => where.serviceId.in.includes(serviceId) && (!where.membershipId || where.membershipId === membershipId))
+        .filter(([membershipId, serviceId]) => where.serviceId.in.includes(serviceId)
+          && (!where.membershipId || where.membershipId === membershipId)
+          && (!where.membership?.roleId || masters[membershipId]?.roleId === where.membership.roleId))
         .map(([membershipId, serviceId]) => ({ branchId: "branch-a", membershipId, serviceId, membership: masters[membershipId] })),
     },
     branchBookingWorkingHour: {
@@ -160,6 +162,14 @@ const availabilityInput = {
 const twoMasters = await getBookingAvailability(availabilityInput, availabilityDb());
 assert.equal(twoMasters.durationMinutes, 60);
 assert.deepEqual(new Set(twoMasters.slots.filter((slot) => slot.localTime === "09:00").map((slot) => slot.master.name)), new Set(["Александр", "Кирилл"]));
+
+const masterRoleOnly = await getBookingAvailability(availabilityInput, availabilityDb({
+  masters: {
+    "master-1": { id: "master-1", roleId: "master", position: "Мастер", status: "active", user: { name: "Александр", status: "active" } },
+    "master-2": { id: "master-2", roleId: "administrator", position: "Администратор", status: "active", user: { name: "Кирилл", status: "active" } },
+  },
+}));
+assert.deepEqual(new Set(masterRoleOnly.slots.map((slot) => slot.master.membershipId)), new Set(["master-1"]));
 
 const combined = await getBookingAvailability({ ...availabilityInput, serviceIds: ["oil", "filter"] }, availabilityDb());
 assert.equal(combined.durationMinutes, 90);
@@ -228,6 +238,7 @@ assert.match(service, /TransactionIsolationLevel\.Serializable/);
 assert.match(service, /startsAt: \{ lt: input\.endsAt \}/);
 assert.match(service, /endsAt: \{ gt: input\.startsAt \}/);
 assert.match(service, /booking\.created/);
+assert.match(service, /roleId: BOOKING_MASTER_ROLE_ID/);
 assert.match(service, /booking_internal_\$\{phase\}_\$\{failureKind\}/);
 assert.match(service, /inBookingCreatePhase\("vehicle"/);
 assert.match(service, /inBookingCreatePhase\("booking"/);
@@ -250,6 +261,19 @@ assert.match(availability, /branchBookingWorkingHour/);
 assert.match(availability, /bookingMasterWorkingHour/);
 assert.match(availability, /bookingScheduleException/);
 assert.match(availability, /status: BOOKING_STATUS\.ACTIVE/);
+assert.match(availability, /roleId: BOOKING_MASTER_ROLE_ID/);
+
+const bookingJournal = source("src/app/api/booking-journal/route.ts");
+assert.match(bookingJournal, /roleId: BOOKING_MASTER_ROLE_ID/);
+
+const bookingSettings = source("src/app/api/booking-admin/settings/route.ts");
+assert.match(bookingSettings, /roleId: BOOKING_MASTER_ROLE_ID/);
+
+const bookingMasterSettings = source("src/app/api/booking-admin/masters\/\[membershipId\]\/route.ts");
+assert.match(bookingMasterSettings, /roleId: BOOKING_MASTER_ROLE_ID/);
+
+const bookingExceptions = source("src/app/api/booking-admin/exceptions/route.ts");
+assert.match(bookingExceptions, /roleId: BOOKING_MASTER_ROLE_ID/);
 
 const publicCreate = source("src/app/api/public/booking/route.ts");
 assert.match(publicCreate, /checkPublicRateLimit/);

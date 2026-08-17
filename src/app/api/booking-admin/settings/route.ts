@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
 import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { assertLocalTime } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -50,7 +51,12 @@ export async function GET() {
         prisma.branchBookingWorkingHour.findMany({ where: { branchId }, orderBy: { weekday: "asc" } }),
         prisma.bookingService.findMany({ where: { branchId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
         prisma.branchMembership.findMany({
-          where: { branchId, status: "active", user: { status: "active" } },
+          where: {
+            branchId,
+            roleId: BOOKING_MASTER_ROLE_ID,
+            status: "active",
+            user: { status: "active" },
+          },
           include: {
             user: { select: { id: true, name: true, login: true } },
             bookingServices: { select: { serviceId: true } },

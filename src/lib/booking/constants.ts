@@ -25,6 +25,8 @@ export const BOOKING_PERMISSION = {
   OVERRIDE_CONFLICT: "booking.conflict.override",
 } as const;
 
+export const BOOKING_MASTER_ROLE_ID = "master";
+
 export const BOOKING_MANAGER_ROLES = new Set([
   "group_owner",
   "group_admin",

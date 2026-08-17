@@ -4,6 +4,7 @@ import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { prisma } from "@/lib/db";
 import {
   BOOKING_CONFIRMATION,
+  BOOKING_MASTER_ROLE_ID,
   BOOKING_SOURCE,
   BOOKING_STATUS,
 } from "./constants";
@@ -154,7 +155,13 @@ async function loadServices(tx: BookingDb, branchId: string, serviceIds: string[
 
 async function assertMasterAssignments(tx: BookingDb, branchId: string, membershipId: string, serviceIds: string[]) {
   const membership = await tx.branchMembership.findFirst({
-    where: { id: membershipId, branchId, status: "active", user: { status: "active" } },
+    where: {
+      id: membershipId,
+      branchId,
+      roleId: BOOKING_MASTER_ROLE_ID,
+      status: "active",
+      user: { status: "active" },
+    },
     include: { user: { select: { name: true } } },
   });
   if (!membership) throw new BookingError("Мастер недоступен", "booking_master_unavailable", 409);

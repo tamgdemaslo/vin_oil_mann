@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { BookingError, bookingErrorPayload } from "@/lib/booking/errors";
 import { assertLocalTime } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -37,7 +38,15 @@ export async function PUT(request: NextRequest, context: Context) {
     const serviceIds = [...new Set(Array.isArray(body.serviceIds) ? body.serviceIds.map(String).filter(Boolean) : [])];
     const hours = hoursInput(body.workingHours);
     await runWithBranchApiContext(access.context, () => (prisma as unknown as PrismaClient).$transaction(async (tx) => {
-      const membership = await tx.branchMembership.findFirst({ where: { id: membershipId, branchId, status: "active" } });
+      const membership = await tx.branchMembership.findFirst({
+        where: {
+          id: membershipId,
+          branchId,
+          roleId: BOOKING_MASTER_ROLE_ID,
+          status: "active",
+          user: { status: "active" },
+        },
+      });
       if (!membership) throw new BookingError("Сотрудник не найден", "booking_master_not_found", 404);
       const serviceCount = serviceIds.length ? await tx.bookingService.count({ where: { branchId, id: { in: serviceIds }, status: "ACTIVE" } }) : 0;
       if (serviceCount !== serviceIds.length) throw new BookingError("Одна из услуг недоступна", "booking_service_unavailable", 409);

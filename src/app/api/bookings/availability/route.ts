@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
 import { getBookingAvailability } from "@/lib/booking/availability";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { bookingErrorPayload } from "@/lib/booking/errors";
 import { readableBranchIds, requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
@@ -17,7 +18,12 @@ export async function POST(request: NextRequest) {
     }
     const ownMembership = bookingViewIsSelfOnly(access.context)
       ? await runWithBranchApiContext(access.context, () => prisma.branchMembership.findFirst({
-          where: { branchId: requestedBranchId, userId: access.context.userId, status: "active" },
+          where: {
+            branchId: requestedBranchId,
+            userId: access.context.userId,
+            roleId: BOOKING_MASTER_ROLE_ID,
+            status: "active",
+          },
           select: { id: true },
         }))
       : null;

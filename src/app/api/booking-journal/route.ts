@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCancelled, notifyBookingConfirmed, notifyBookingCreated, notifyBookingRescheduled } from "@/lib/booking/notifications";
@@ -194,7 +195,15 @@ async function resolveServiceIds(branchId: string, numericIds: number[]) {
 async function resolveMembershipId(branchId: string, numericId: unknown) {
   const id = number(numericId);
   if (!id) throw new BookingError("Мастер не выбран", "booking_master_required");
-  const memberships = await prisma.branchMembership.findMany({ where: { branchId, status: "active" }, select: { id: true } });
+  const memberships = await prisma.branchMembership.findMany({
+    where: {
+      branchId,
+      roleId: BOOKING_MASTER_ROLE_ID,
+      status: "active",
+      user: { status: "active" },
+    },
+    select: { id: true },
+  });
   const membership = memberships.find((item) => journalId(item.id) === id);
   if (!membership) throw new BookingError("Мастер не найден", "booking_master_not_found", 404);
   return membership.id;
@@ -224,7 +233,13 @@ export async function GET(request: NextRequest) {
       } });
       if (action === "staff") {
         const memberships = await prisma.branchMembership.findMany({
-          where: { branchId, status: "active", user: { status: "active" }, ...(bookingViewIsSelfOnly(access.context) ? { id: ownMembership?.id ?? "__none__" } : {}) },
+          where: {
+            branchId,
+            roleId: BOOKING_MASTER_ROLE_ID,
+            status: "active",
+            user: { status: "active" },
+            ...(bookingViewIsSelfOnly(access.context) ? { id: ownMembership?.id ?? "__none__" } : {}),
+          },
           include: { user: { select: { name: true } }, bookingServices: { select: { serviceId: true } } },
           orderBy: [{ position: "asc" }, { user: { name: "asc" } }],
         });

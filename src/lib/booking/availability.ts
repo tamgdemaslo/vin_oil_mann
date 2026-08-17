@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { BOOKING_STATUS } from "./constants";
+import { BOOKING_MASTER_ROLE_ID, BOOKING_STATUS } from "./constants";
 import { BookingError } from "./errors";
 import {
   addLocalDays,
@@ -114,6 +114,7 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
       branchId: branch.id,
       serviceId: { in: serviceIds },
       membership: {
+        roleId: BOOKING_MASTER_ROLE_ID,
         status: "active",
         user: { status: "active" },
       },

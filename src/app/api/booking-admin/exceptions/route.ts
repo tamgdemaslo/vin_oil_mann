@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
+import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
 import { BookingError, bookingErrorPayload } from "@/lib/booking/errors";
 import { assertLocalDate, assertLocalTime } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -20,7 +21,15 @@ export async function POST(request: NextRequest) {
       throw new BookingError("Проверьте исключение расписания", "booking_exception_invalid");
     }
     const branchId = access.context.branchId!;
-    const membership = await runWithBranchApiContext(access.context, () => prisma.branchMembership.findFirst({ where: { id: membershipId, branchId } }));
+    const membership = await runWithBranchApiContext(access.context, () => prisma.branchMembership.findFirst({
+      where: {
+        id: membershipId,
+        branchId,
+        roleId: BOOKING_MASTER_ROLE_ID,
+        status: "active",
+        user: { status: "active" },
+      },
+    }));
     if (!membership) throw new BookingError("Сотрудник не найден", "booking_master_not_found", 404);
     const exception = await runWithBranchApiContext(access.context, () => prisma.bookingScheduleException.upsert({
       where: { membershipId_localDate: { membershipId, localDate } },
