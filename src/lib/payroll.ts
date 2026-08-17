@@ -6,9 +6,9 @@ import { getScopedBranchId } from "@/lib/request-tenant-store";
 import {
   calculatePieceworkAmountCents,
   extractLocalEntityId,
-  getPieceworkRuleKey,
   getPieceworkRuleMap,
   normalizeText,
+  resolveProductGroupPieceworkRule,
   resolveProductGroupTargetId,
   resolveServicePieceworkRule,
 } from "@/lib/piecework-rules";
@@ -659,7 +659,11 @@ export async function computePayroll(params: {
           priceCents: saleCents,
         });
 
-        const productGroupTargetId = resolveProductGroupTargetId(pathName);
+        const { targetId: productGroupTargetId, rule } = resolveProductGroupPieceworkRule({
+          ruleMap: pieceworkRuleMap,
+          groupPath: pathName,
+          role: "admin",
+        });
         const profitCents = Math.max(0, saleCents - buyPriceCents);
         if (!admin) {
           addUnallocatedPiecework({
@@ -686,9 +690,6 @@ export async function computePayroll(params: {
           });
           continue;
         }
-        const rule = pieceworkRuleMap.get(
-          getPieceworkRuleKey("product_group", productGroupTargetId, "admin")
-        );
         if (!rule) {
           addUnallocatedPiecework({
             category: "product",

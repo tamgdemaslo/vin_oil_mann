@@ -276,7 +276,13 @@ function toKey(targetType: PieceworkTargetType, targetId: string, role: Piecewor
 }
 
 export function normalizeText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/ё/g, "е")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 function defaultRulesToList(): PieceworkRuleView[] {
@@ -328,6 +334,39 @@ export function resolveProductGroupTargetId(pathName?: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Product groups are editable data, so a payroll calculation must also match
+ * the saved rule name — not only the built-in catalogue matcher. This keeps
+ * existing, renamed and imported groups connected to their active rule.
+ */
+export function resolveProductGroupPieceworkRule(params: {
+  ruleMap: Map<string, PieceworkRuleView>;
+  groupPath?: string;
+  role: PieceworkRole;
+}): { targetId: string | null; rule: PieceworkRuleView | undefined } {
+  const { ruleMap, groupPath, role } = params;
+  const directTargetId = resolveProductGroupTargetId(groupPath);
+  if (directTargetId) {
+    const directRule = ruleMap.get(toKey("product_group", directTargetId, role));
+    if (directRule) return { targetId: directTargetId, rule: directRule };
+  }
+
+  const normalizedGroup = normalizeText(groupPath ?? "");
+  if (!normalizedGroup) return { targetId: null, rule: undefined };
+
+  const candidates = [...ruleMap.values()].filter(
+    (rule) =>
+      rule.targetType === "product_group" &&
+      rule.role === role &&
+      normalizeText(rule.targetName) === normalizedGroup
+  );
+  if (candidates.length !== 1) {
+    return { targetId: directTargetId, rule: undefined };
+  }
+
+  return { targetId: candidates[0].targetId, rule: candidates[0] };
 }
 
 export async function listPieceworkRules(branchId?: string): Promise<PieceworkRuleView[]> {
