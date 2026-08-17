@@ -8,6 +8,7 @@ import {
   extractLocalEntityId,
   getPieceworkRuleKey,
   getPieceworkRuleMap,
+  normalizeText,
   resolveProductGroupTargetId,
   resolveServicePieceworkRule,
 } from "@/lib/piecework-rules";
@@ -147,8 +148,10 @@ async function fetchLocalDemandsWithPositions(
   dateFrom: string,
   dateTo: string
 ): Promise<{ demand: DemandRow; positions: PositionRow[] }[]> {
+  const branchId = getScopedBranchId();
   const demands = await prisma.localDemand.findMany({
     where: {
+      branchId,
       documentDate: { gte: dateFrom, lte: dateTo },
       applicable: true,
     },
@@ -159,6 +162,44 @@ async function fetchLocalDemandsWithPositions(
     orderBy: { momentAt: "asc" },
   });
 
+  // Old imported positions could be saved without productId. A rule is assigned
+  // to a product group, therefore in this case resolve the current local product
+  // by an exact name in the active branch. We deliberately use a fallback only
+  // where it is unambiguous: otherwise a similarly named product must not get a
+  // salary rule intended for a different group.
+  const unresolvedProductNames = [...new Set(
+    demands.flatMap((demand) => demand.positions)
+      .filter((position) =>
+        position.assortmentType !== "service" &&
+        !resolveProductGroupTargetId(position.product?.groupPath ?? "")
+      )
+      .map((position) => position.name.trim())
+      .filter(Boolean)
+  )];
+  const fallbackProducts = unresolvedProductNames.length
+    ? await prisma.localProduct.findMany({
+        where: {
+          branchId,
+          archived: false,
+          name: { in: unresolvedProductNames },
+        },
+        select: {
+          id: true,
+          entityType: true,
+          name: true,
+          groupPath: true,
+          buyPriceCents: true,
+        },
+      })
+    : [];
+  const fallbackProductsByName = new Map<string, (typeof fallbackProducts)[number][]>();
+  for (const product of fallbackProducts) {
+    const key = normalizeText(product.name);
+    const items = fallbackProductsByName.get(key) ?? [];
+    items.push(product);
+    fallbackProductsByName.set(key, items);
+  }
+
   return demands.map((demand) => ({
     demand: {
       id: demand.id,
@@ -168,7 +209,17 @@ async function fetchLocalDemandsWithPositions(
       agent: { name: demand.counterparty?.name ?? demand.agentNameSnapshot ?? "" },
     },
     positions: demand.positions.map((position) => {
-      const product = position.product;
+      const linkedProduct = position.product;
+      const candidates = (fallbackProductsByName.get(normalizeText(position.name)) ?? [])
+        .filter((candidate) => Boolean(resolveProductGroupTargetId(candidate.groupPath ?? "")));
+      // Prefer the linked product when it already maps to a payroll group. If
+      // it does not (or the legacy row is unlinked), use one unambiguous current
+      // product with the same name and a configured payroll group.
+      const product = resolveProductGroupTargetId(linkedProduct?.groupPath ?? "")
+        ? linkedProduct
+        : candidates.length === 1
+          ? candidates[0]
+          : linkedProduct;
       const assortmentType = product?.entityType ?? position.assortmentType ?? "";
       const assortmentId = product?.id ?? position.productId ?? position.id;
       return {
@@ -371,6 +422,7 @@ export async function computePayroll(params: {
   targetLogin?: string;
 }): Promise<PayrollSummary> {
   const { dateFrom, dateTo, targetLogin } = params;
+  const branchId = getScopedBranchId();
   const normalizedTargetLogin = targetLogin ? normalizeLogin(targetLogin) : undefined;
   const targetLoginVariants = targetLogin ? getLoginVariants(targetLogin) : undefined;
   const targetLoginWhere = targetLoginVariants ? { userLogin: { in: targetLoginVariants } } : {};
@@ -411,7 +463,10 @@ export async function computePayroll(params: {
       },
     }),
     getUsersFromEnv(),
-    getPieceworkRuleMap(),
+    // The rules and shipments must be read from the same active branch. Reading
+    // rules via the request branch also avoids a stale cookie context selecting
+    // a rule set from another branch.
+    getPieceworkRuleMap(branchId),
   ]);
 
   const demandsWithPositions = await fetchDemandsWithPositions(dateFrom, dateTo);
