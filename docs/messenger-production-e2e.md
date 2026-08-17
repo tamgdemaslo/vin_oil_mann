@@ -15,12 +15,28 @@ MESSENGER_STORAGE_PUBLIC_BASE_URL=
 MESSENGER_STORAGE_FORCE_PATH_STYLE=true
 ```
 
-Для Telegram worker по умолчанию используется WebSocket с экспоненциальной паузой
-между неудачными синхронизациями (максимум 15 минут). Если App Platform стабильно
-обрывает `*.web.telegram.org`, настройте выделенный SOCKS5 proxy:
+Telegram worker является opt-in и запускается только при
+`TELEGRAM_SYNC_WORKER_ENABLED=1`. Серверный GramJS по умолчанию использует штатный
+MTProto TCP на порту 443. DB-lease не даёт двум репликам одновременно
+синхронизировать один аккаунт, а после транспортной ошибки оставляет общую паузу.
+
+Базовая конфигурация:
 
 ```env
-TELEGRAM_SYNC_MAX_BACKOFF_MS=900000
+TELEGRAM_SYNC_WORKER_ENABLED=1
+TELEGRAM_TRANSPORT=tcp
+TELEGRAM_CONNECT_TIMEOUT_MS=10000
+TELEGRAM_CONNECTION_RETRIES=1
+TELEGRAM_SYNC_MAX_BACKOFF_MS=21600000
+TELEGRAM_SYNC_WORKER_LEASE_MS=1800000
+TELEGRAM_SYNC_FAILURE_LOG_INTERVAL_MS=3600000
+TELEGRAM_GRAMJS_LOG_LEVEL=none
+```
+
+Если прямой TCP из App Platform недоступен, настройте выделенный SOCKS5 proxy
+(при наличии proxy транспорт автоматически остаётся TCP):
+
+```env
 TELEGRAM_PROXY_HOST=<proxy-host>
 TELEGRAM_PROXY_PORT=<proxy-port>
 TELEGRAM_PROXY_SOCKS_TYPE=5

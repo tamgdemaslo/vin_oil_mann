@@ -131,8 +131,16 @@ assert.match(messengerProviderSource, /const messengerActive = messengerEnabled 
 assert.match(messengerProviderSource, /fetch\("\/api\/messenger\/summary"/);
 assert.doesNotMatch(messengerProviderSource, /telegram-user\/sync/);
 assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
+assert.match(telegramSyncWorkerSource, /TELEGRAM_SYNC_WORKER_ENABLED === "1"/);
+assert.doesNotMatch(telegramSyncWorkerSource, /process\.env\.NODE_ENV === "production"/);
+assert.match(telegramSyncWorkerSource, /\{ worker: true \}/);
+assert.match(telegramSyncWorkerSource, /TELEGRAM_SYNC_FAILURE_LOG_INTERVAL_MS/);
 assert.match(telegramUserSessionSource, /autoReconnect: options\.autoReconnect \?\? false/);
 assert.match(telegramUserSessionSource, /TELEGRAM_SYNC_MAX_BACKOFF_MS/);
+assert.match(telegramUserSessionSource, /TELEGRAM_TRANSPORT/);
+assert.match(telegramUserSessionSource, /TELEGRAM_TCP_DC_ADDRESSES/);
+assert.match(telegramUserSessionSource, /telegramSyncWorkerLease/);
+assert.match(telegramUserSessionSource, /client\.setLogLevel\?\.\(telegramGramJsLogLevel\(\)\)/);
 assert.match(telegramUserSessionSource, /account\.status === "connected" \|\| account\.status === "degraded"/);
 assert.match(instrumentationSource, /startTelegramSyncWorker/);
 assert.match(attachmentRetrySource, /AND branch_id = \$\{branchAccess\.context\.branchId\}/);

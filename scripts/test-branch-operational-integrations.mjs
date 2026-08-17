@@ -79,8 +79,11 @@ expect("src/lib/messenger/channels/telegram-user-session.ts", [
   /resolveTelegramUserCredentials/,
   /import\("telegram\/extensions"\)/,
   /networkSocket:\s*PromisedWebSockets/,
-  /stringSession\.setDC\(webDc\.id, webDc\.ipAddress, webDc\.port\)/,
+  /telegramTransport\(\) === "websocket"/,
+  /telegramTcpDcAddress\(stringSession\.dcId \|\| 4\)/,
   /client\.getDC\s*=\s*async/,
+  /client\.setLogLevel/,
+  /claimTelegramWorkerLease/,
   /process\.env\.MESSENGER_CREDENTIAL_ENCRYPTION_KEY/,
   /assertIntegrationEncryptionConfigured\(\)/,
 ]);

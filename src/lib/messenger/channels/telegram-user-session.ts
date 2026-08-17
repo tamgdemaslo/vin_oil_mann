@@ -141,6 +141,7 @@ type TelegramMessage = {
 
 type TelegramRuntimeClient = {
   connect(): Promise<void>;
+  setLogLevel?: (level: "none" | "error" | "warn" | "info" | "debug") => void;
   disconnect?: () => Promise<void>;
   destroy?: () => Promise<void>;
   invoke(input: unknown): Promise<unknown>;
@@ -204,8 +205,9 @@ type GramJsModule = {
 };
 
 const ENCRYPTION_VERSION = 1;
-const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_CONNECTION_RETRIES = 1;
+const DEFAULT_WORKER_LEASE_MS = 30 * 60_000;
 const TELEGRAM_WEB_DC_NAMES: Record<number, string> = {
   1: "pluto",
   2: "venus",
@@ -213,6 +215,17 @@ const TELEGRAM_WEB_DC_NAMES: Record<number, string> = {
   4: "vesta",
   5: "flora",
 };
+// GramJS uses raw TCP in Node.js by default. Existing sessions were previously
+// saved with *.web.telegram.org addresses for WSS, so switching transports
+// also requires restoring a raw MTProto endpoint for the session DC.
+const TELEGRAM_TCP_DC_ADDRESSES: Record<number, string> = {
+  1: "149.154.175.53",
+  2: "149.154.167.51",
+  3: "149.154.175.100",
+  4: "149.154.167.91",
+  5: "91.108.56.130",
+};
+const TELEGRAM_SYNC_WORKER_OWNER = `${process.env.HOSTNAME?.trim() || "telegram-worker"}:${process.pid}:${crypto.randomUUID()}`;
 let schemaEnsurePromise: Promise<void> | null = null;
 
 type TelegramQrRuntimeAttempt = {
@@ -321,6 +334,17 @@ function telegramConnectionRetries() {
   return Math.floor(configured);
 }
 
+function telegramTransport() {
+  const configured = process.env.TELEGRAM_TRANSPORT?.trim().toLowerCase();
+  return configured === "websocket" || configured === "wss" ? "websocket" as const : "tcp" as const;
+}
+
+function telegramGramJsLogLevel(): "none" | "error" | "warn" | "info" | "debug" {
+  const configured = process.env.TELEGRAM_GRAMJS_LOG_LEVEL?.trim().toLowerCase();
+  if (configured === "error" || configured === "warn" || configured === "info" || configured === "debug") return configured;
+  return "none";
+}
+
 function telegramWebDcAddress(dcId: number, downloadDC = false): TelegramDcAddress {
   const name = TELEGRAM_WEB_DC_NAMES[dcId];
   if (!name) throw new Error(`Telegram WebSocket не поддерживает DC ${dcId}.`);
@@ -329,6 +353,12 @@ function telegramWebDcAddress(dcId: number, downloadDC = false): TelegramDcAddre
     ipAddress: `${name}${downloadDC ? "-1" : ""}.web.telegram.org`,
     port: 443,
   };
+}
+
+function telegramTcpDcAddress(dcId: number): TelegramDcAddress {
+  const ipAddress = TELEGRAM_TCP_DC_ADDRESSES[dcId];
+  if (!ipAddress) throw new Error(`Telegram TCP не поддерживает DC ${dcId}.`);
+  return { id: dcId, ipAddress, port: 443 };
 }
 
 type TelegramSocksProxy = {
@@ -437,11 +467,11 @@ async function getClient(
   const { TelegramClient, StringSession, PromisedWebSockets } = await loadGramJs();
   const proxy = telegramSocksProxy();
   const stringSession = new StringSession(session);
-  const useWebSocket = !proxy;
-  if (useWebSocket) {
-    const webDc = telegramWebDcAddress(stringSession.dcId || 4);
-    stringSession.setDC(webDc.id, webDc.ipAddress, webDc.port);
-  }
+  const useWebSocket = !proxy && telegramTransport() === "websocket";
+  const initialDc = useWebSocket
+    ? telegramWebDcAddress(stringSession.dcId || 4)
+    : telegramTcpDcAddress(stringSession.dcId || 4);
+  stringSession.setDC(initialDc.id, initialDc.ipAddress, initialDc.port);
   const client = new TelegramClient(stringSession, apiId, apiHash, {
     connectionRetries: telegramConnectionRetries(),
     // Regular operations own a short-lived client and destroy it in finally.
@@ -449,13 +479,16 @@ async function getClient(
     // connect timeout, even though the owning operation has already failed.
     autoReconnect: options.autoReconnect ?? false,
     testServers: false,
-    // In Node.js GramJS does not select its WebSocket socket from useWSS alone.
-    // Set both the socket implementation and a web DC hostname so HTTPS-only
-    // hosting platforms do not fall back to raw TCP against a Telegram IP.
+    // When WSS is explicitly requested, GramJS needs both the WebSocket socket
+    // implementation and a web DC hostname. Node.js otherwise uses raw TCP.
     useWSS: useWebSocket,
     ...(useWebSocket ? { networkSocket: PromisedWebSockets } : {}),
     ...(proxy ? { proxy } : {}),
   }) as TelegramRuntimeClient;
+  // GramJS prints the complete WebSocket event (including its internal client
+  // graph) on connection failures. Application-level errors below are enough
+  // for diagnostics and keep production logs bounded.
+  client.setLogLevel?.(telegramGramJsLogLevel());
   if (useWebSocket) {
     client.getDC = async (dcId, downloadDC = false) => telegramWebDcAddress(dcId, downloadDC);
   }
@@ -2469,7 +2502,51 @@ function startAgentForSyncedMessages(input: { organizationId: string; conversati
     .catch((error) => console.warn("[ai-agent telegram sync]", error instanceof Error ? error.message : String(error)));
 }
 
-async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
+function telegramWorkerLeaseMs() {
+  const configured = Number(process.env.TELEGRAM_SYNC_WORKER_LEASE_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_WORKER_LEASE_MS;
+  return Math.max(60_000, Math.floor(configured));
+}
+
+async function claimTelegramWorkerLease(accountId: string) {
+  const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
+  const expiresAt = new Date(Date.now() + telegramWorkerLeaseMs()).toISOString();
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    UPDATE messenger_accounts
+    SET metadata_json = jsonb_set(
+          COALESCE(metadata_json, '{}'::jsonb),
+          '{telegramSyncWorkerLease}',
+          jsonb_build_object('owner', ${TELEGRAM_SYNC_WORKER_OWNER}::text, 'expiresAt', ${expiresAt}::text),
+          true
+        )
+    WHERE id = ${accountId}
+      AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
+      AND (
+        metadata_json #>> '{telegramSyncWorkerLease,expiresAt}' IS NULL
+        OR NULLIF(metadata_json #>> '{telegramSyncWorkerLease,expiresAt}', '')::timestamptz <= now()
+        OR metadata_json #>> '{telegramSyncWorkerLease,owner}' = ${TELEGRAM_SYNC_WORKER_OWNER}
+      )
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+async function releaseTelegramWorkerLease(accountId: string) {
+  const organizationId = getMessengerOrganizationId();
+  const branchId = getScopedBranchId();
+  await prisma.$executeRaw`
+    UPDATE messenger_accounts
+    SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) #- '{telegramSyncWorkerLease}'
+    WHERE id = ${accountId}
+      AND organization_id = ${organizationId}
+      AND branch_id = ${branchId}
+      AND metadata_json #>> '{telegramSyncWorkerLease,owner}' = ${TELEGRAM_SYNC_WORKER_OWNER}
+  `;
+}
+
+async function runTelegramUserAccountSync(accountId?: string, limit = 40, options: { worker?: boolean } = {}) {
   const accounts = accountId
     ? (await listTelegramUserAccounts()).filter((account) => account.id === accountId)
     : (await listTelegramUserAccounts()).filter(
@@ -2477,6 +2554,13 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
       );
   const processed = [];
   for (const account of accounts) {
+    if (options.worker && account.lastSyncAt) {
+      const lastSyncAt = Date.parse(account.lastSyncAt);
+      if (Number.isFinite(lastSyncAt) && Date.now() - lastSyncAt < telegramSyncMinIntervalMs()) {
+        processed.push({ accountId: account.id, ok: true, skipped: "recently_synced" as const });
+        continue;
+      }
+    }
     const allowAgentTrigger = Boolean(account.lastSyncAt);
     const session = await getSessionByAccount(account.id);
     const sessionString = decryptSecret(session?.sessionEncrypted);
@@ -2485,7 +2569,12 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
       processed.push({ accountId: account.id, ok: false, error: "session missing" });
       continue;
     }
+    if (options.worker && !await claimTelegramWorkerLease(account.id)) {
+      processed.push({ accountId: account.id, ok: true, skipped: "leased" as const });
+      continue;
+    }
     let client: TelegramRuntimeClient | null = null;
+    let syncSucceeded = false;
     try {
       client = await getClient(sessionString);
       const dialogs = (await client.getDialogs({ limit })) as TelegramDialog[];
@@ -2546,12 +2635,24 @@ async function runTelegramUserAccountSync(accountId?: string, limit = 40) {
       await recordIntegrationAudit({ channel: "telegram_user", action: "telegram_user_sync_verified", metadata: { accountId: account.id } });
       logSyncState("dialogs_saved", { accountId: account.id, dialogsFetched: dialogs.length, conversationCount, messageCount, skippedCount, archivedCount });
       processed.push({ accountId: account.id, ok: true, conversationCount, messageCount, skippedCount, archivedCount });
+      syncSucceeded = true;
     } catch (error) {
       const message = safeError(error, "Telegram sync failed");
       await updateAccountStatus(account.id, /AUTH|SESSION|PASSWORD/i.test(message) ? "needs_auth" : "degraded", message);
       processed.push({ accountId: account.id, ok: false, error: message });
     } finally {
       if (client) await disconnectTelegramClient(client);
+      // A successful run releases the lease immediately. On transport failure
+      // it remains until expiry, forming a cross-replica cooldown.
+      if (options.worker && syncSucceeded) {
+        await releaseTelegramWorkerLease(account.id).catch((error) => {
+          console.warn("[messenger.telegram_user.worker]", JSON.stringify({
+            action: "lease_release_failed",
+            accountId: account.id,
+            error: safeError(error, "Telegram worker lease release failed"),
+          }));
+        });
+      }
     }
   }
   return { ok: true as const, processed };
@@ -2583,7 +2684,7 @@ function telegramSyncMinIntervalMs() {
 function telegramSyncMaxBackoffMs() {
   const minimum = telegramSyncMinIntervalMs();
   const configured = Number(process.env.TELEGRAM_SYNC_MAX_BACKOFF_MS);
-  if (!Number.isFinite(configured) || configured < minimum) return Math.max(minimum, 15 * 60_000);
+  if (!Number.isFinite(configured) || configured < minimum) return Math.max(minimum, 6 * 60 * 60_000);
   return Math.floor(configured);
 }
 
@@ -2606,7 +2707,7 @@ function clearTelegramSyncFailure(entry: TelegramSyncRuntimeEntry) {
   entry.nextRetryAt = 0;
 }
 
-export async function syncTelegramUserAccount(accountId?: string, limit = 40, options: { force?: boolean } = {}) {
+export async function syncTelegramUserAccount(accountId?: string, limit = 40, options: { force?: boolean; worker?: boolean } = {}) {
   const runtime = telegramSyncRuntime();
   const runtimeKey = `${getMessengerOrganizationId()}:${getScopedBranchId()}:telegram-user-session`;
   const entry = runtime.get(runtimeKey) ?? { inFlight: null, lastStartedAt: 0, consecutiveFailures: 0, nextRetryAt: 0 };
@@ -2627,7 +2728,7 @@ export async function syncTelegramUserAccount(accountId?: string, limit = 40, op
   }
 
   entry.lastStartedAt = now;
-  const inFlight = runTelegramUserAccountSync(accountId, limit);
+  const inFlight = runTelegramUserAccountSync(accountId, limit, { worker: options.worker });
   entry.inFlight = inFlight;
   runtime.set(runtimeKey, entry);
 
