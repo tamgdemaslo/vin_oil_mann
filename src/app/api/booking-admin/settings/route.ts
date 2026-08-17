@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
+import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { assertLocalTime } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -77,7 +78,10 @@ export async function GET() {
         minimumLeadMinutes: 60,
       },
       workingHours: state.branchHours.length ? state.branchHours : DEFAULT_HOURS,
-      services: state.services,
+      services: state.services.map((service) => ({
+        ...service,
+        catalogManaged: isCatalogBookingServiceId(service.id),
+      })),
       masters: state.memberships.map((membership) => ({
         membershipId: membership.id,
         userId: membership.userId,

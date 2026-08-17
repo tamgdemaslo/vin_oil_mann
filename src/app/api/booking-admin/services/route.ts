@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
+import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
 import { BookingError, bookingErrorPayload } from "@/lib/booking/errors";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
@@ -38,7 +39,10 @@ export async function GET() {
       where: { branchId: access.context.branchId! },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }));
-    return NextResponse.json({ services });
+    return NextResponse.json({ services: services.map((service) => ({
+      ...service,
+      catalogManaged: isCatalogBookingServiceId(service.id),
+    })) });
   } catch (error) {
     const failure = bookingErrorPayload(error);
     return NextResponse.json(failure.body, { status: failure.status });

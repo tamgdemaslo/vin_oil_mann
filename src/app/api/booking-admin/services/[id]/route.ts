@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
+import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
 import { BookingError, bookingErrorPayload } from "@/lib/booking/errors";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
@@ -16,6 +17,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!body) throw new BookingError("Неверное тело запроса", "booking_service_invalid");
     const current = await runWithBranchApiContext(access.context, () => prisma.bookingService.findFirst({ where: { id, branchId: access.context.branchId! } }));
     if (!current) throw new BookingError("Услуга не найдена", "booking_service_not_found", 404);
+    const catalogManaged = isCatalogBookingServiceId(id);
     const durationMinutes = body.durationMinutes === undefined ? current.durationMinutes : Math.trunc(Number(body.durationMinutes));
     if (!Number.isFinite(durationMinutes) || durationMinutes < 5 || durationMinutes > 1_440) {
       throw new BookingError("Некорректная длительность услуги", "booking_service_duration_invalid");
@@ -23,8 +25,8 @@ export async function PATCH(request: NextRequest, context: Context) {
     const service = await runWithBranchApiContext(access.context, () => prisma.bookingService.update({
       where: { branchId_id: { branchId: access.context.branchId!, id } },
       data: {
-        name: typeof body.name === "string" ? body.name.trim().slice(0, 180) || current.name : undefined,
-        description: typeof body.description === "string" ? body.description.trim().slice(0, 2_000) || null : undefined,
+        name: !catalogManaged && typeof body.name === "string" ? body.name.trim().slice(0, 180) || current.name : undefined,
+        description: !catalogManaged && typeof body.description === "string" ? body.description.trim().slice(0, 2_000) || null : undefined,
         durationMinutes,
         onlineBookingEnabled: typeof body.onlineBookingEnabled === "boolean" ? body.onlineBookingEnabled : undefined,
         requiresVin: typeof body.requiresVin === "boolean" ? body.requiresVin : undefined,
@@ -35,7 +37,7 @@ export async function PATCH(request: NextRequest, context: Context) {
               .slice(0, 20)
           : undefined,
         sortOrder: Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : undefined,
-        status: body.status === "INACTIVE" ? "INACTIVE" : body.status === "ACTIVE" ? "ACTIVE" : undefined,
+        status: catalogManaged ? undefined : body.status === "INACTIVE" ? "INACTIVE" : body.status === "ACTIVE" ? "ACTIVE" : undefined,
       },
     }));
     return NextResponse.json({ service });
@@ -51,6 +53,9 @@ export async function DELETE(_request: NextRequest, context: Context) {
   try {
     requireBookingCapability(canManageBookingSettings(access.context), "Нет права отключать услуги");
     const { id } = await context.params;
+    if (isCatalogBookingServiceId(id)) {
+      throw new BookingError("Каталожную услугу можно скрыть из онлайн-записи или архивировать в каталоге", "booking_catalog_service_managed", 409);
+    }
     const result = await runWithBranchApiContext(access.context, () => prisma.bookingService.updateMany({
       where: { id, branchId: access.context.branchId! },
       data: { status: "INACTIVE", onlineBookingEnabled: false },

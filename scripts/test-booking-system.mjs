@@ -15,7 +15,36 @@ process.env.BOOKING_MANAGEMENT_TOKEN_SECRET = "booking-test-secret-with-enough-e
 const timezone = await jiti.import("../src/lib/booking/timezone.ts");
 const tokens = await jiti.import("../src/lib/booking/management-token.ts");
 const managementUrls = await jiti.import("../src/lib/booking/management-url.ts");
+const catalogServices = await jiti.import("../src/lib/booking/catalog-services.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
+
+assert.equal(catalogServices.catalogBookingServiceId("product-1"), "catalog-service:product-1");
+assert.equal(catalogServices.isCatalogBookingServiceId("catalog-service:product-1"), true);
+assert.equal(catalogServices.isCatalogBookingServiceId("manual-service"), false);
+
+const catalogCreates = [];
+const catalogUpdates = [];
+const catalogSync = await catalogServices.syncCatalogBookingServices({
+  localProduct: {
+    findMany: async () => [
+      { id: "product-1", name: "Диагностика", description: null },
+      { id: "product-2", name: "Замена масла", description: "Работа" },
+    ],
+  },
+  bookingService: {
+    findMany: async () => [
+      { id: "catalog-service:product-1", name: "Старое название", description: null, status: "ACTIVE" },
+      { id: "catalog-service:archived", name: "Архивная", description: null, status: "ACTIVE" },
+    ],
+    createMany: async (args) => { catalogCreates.push(args); return { count: args.data.length }; },
+    updateMany: async (args) => { catalogUpdates.push(args); return { count: 1 }; },
+  },
+}, "branch-a");
+assert.deepEqual(catalogSync, { catalogCount: 2, added: 1, updated: 1, disabled: 1 });
+assert.equal(catalogCreates[0].data[0].id, "catalog-service:product-2");
+assert.equal(catalogCreates[0].data[0].onlineBookingEnabled, false);
+assert.ok(catalogUpdates.some((entry) => entry.data.name === "Диагностика"));
+assert.ok(catalogUpdates.some((entry) => entry.data.status === "INACTIVE"));
 
 assert.equal(
   timezone.zonedLocalToUtc("2026-08-16", "10:30", "Europe/Kaliningrad").toISOString(),
