@@ -2068,6 +2068,29 @@ export default function SalaryDashboard({
     return { hasShift: items.length > 0, items };
   }
 
+  async function addShiftAssignments(
+    assignments: Array<{ userLogin: string; date: string }>,
+    fallbackError: string
+  ) {
+    if (assignments.length === 0) return;
+    const response = await fetch("/api/working-days", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignments }),
+    });
+    await readJson(response, fallbackError);
+  }
+
+  async function removeShiftAssignments(ids: string[], fallbackError: string) {
+    if (ids.length === 0) return;
+    const response = await fetch("/api/working-days", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    await readJson(response, fallbackError);
+  }
+
   async function runSelectedShiftAction(action: "add" | "remove") {
     if (!canManagePayroll || calendarBusy || selectedDatesCount === 0) return;
 
@@ -2089,16 +2112,10 @@ export default function SalaryDashboard({
     setCalendarBusy(true);
     try {
       if (action === "add") {
-        for (const user of targetUsers) {
-          for (const date of sortedSelectedDates) {
-            const response = await fetch("/api/working-days", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userLogin: user.login, date }),
-            });
-            await readJson(response, "Не удалось назначить смену");
-          }
-        }
+        await addShiftAssignments(
+          targetUsers.flatMap((user) => sortedSelectedDates.map((date) => ({ userLogin: user.login, date }))),
+          "Не удалось назначить смены"
+        );
       } else {
         const removable = calendarShifts.filter((item) => {
           if (!sortedSelectedDates.includes(item.date)) return false;
@@ -2110,10 +2127,7 @@ export default function SalaryDashboard({
           setToast("На выбранные даты смен нет");
           return;
         }
-        for (const item of removable) {
-          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
-          await readJson(response, "Не удалось снять смену");
-        }
+        await removeShiftAssignments(removable.map((item) => item.id), "Не удалось снять смены");
       }
 
       await Promise.all([loadCalendarShifts(), loadPayroll()]);
@@ -2185,10 +2199,7 @@ export default function SalaryDashboard({
           if (calendarLogin && normalizeLogin(item.userLogin) !== normalizeLogin(calendarLogin)) return false;
           return true;
         });
-        for (const item of removable) {
-          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
-          await readJson(response, "Не удалось снять смену");
-        }
+        await removeShiftAssignments(removable.map((item) => item.id), "Не удалось снять смены");
       }
 
       if (kind === "copy") {
@@ -2199,18 +2210,13 @@ export default function SalaryDashboard({
           prevBounds.dateTo,
           isOwner ? calendarLogin || undefined : undefined
         );
-        for (const item of previousShifts) {
+        const assignments = previousShifts.flatMap((item) => {
           const day = Number(item.date.slice(8, 10));
-          if (!Number.isFinite(day) || day < 1 || day > daysInMonth) continue;
+          if (!Number.isFinite(day) || day < 1 || day > daysInMonth) return [];
           const targetDate = `${monthFrom.slice(0, 8)}${String(day).padStart(2, "0")}`;
-          if (targetDate > monthTo) continue;
-          const response = await fetch("/api/working-days", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userLogin: item.userLogin, date: targetDate }),
-          });
-          await readJson(response, "Не удалось скопировать смены");
-        }
+          return targetDate <= monthTo ? [{ userLogin: item.userLogin, date: targetDate }] : [];
+        });
+        await addShiftAssignments(assignments, "Не удалось скопировать смены");
       }
 
       if (kind === "masters") {
@@ -2220,16 +2226,10 @@ export default function SalaryDashboard({
         const masters = teamUsers.filter(
           (user) => user.role === "master" && normalizeLogin(user.login) !== normalizeLogin(calendarLogin)
         );
-        for (const user of masters) {
-          for (const date of sourceDates) {
-            const response = await fetch("/api/working-days", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userLogin: user.login, date }),
-            });
-            await readJson(response, "Не удалось применить смены");
-          }
-        }
+        await addShiftAssignments(
+          masters.flatMap((user) => sourceDates.map((date) => ({ userLogin: user.login, date }))),
+          "Не удалось применить смены"
+        );
       }
 
       await Promise.all([loadCalendarShifts(), loadPayroll()]);
