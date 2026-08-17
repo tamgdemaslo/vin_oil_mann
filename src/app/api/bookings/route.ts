@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { bookingDto } from "@/lib/booking/dto";
 import { bookingViewIsSelfOnly, canManageBookings, canViewBookings, canOverrideBookingConflict, requireBookingCapability } from "@/lib/booking/access";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCreated } from "@/lib/booking/notifications";
 import { BOOKING_INCLUDE, createBooking, type CreateBookingInput } from "@/lib/booking/service";
 import { addLocalDays, localDateUtcRange } from "@/lib/booking/timezone";
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       allowConflictOverride: canOverrideBookingConflict(access.context),
       respectLeadTime: false,
     }));
-    const managementUrl = new URL(`/booking/manage/${encodeURIComponent(result.managementToken)}`, request.nextUrl.origin).toString();
+    const managementUrl = buildBookingManagementUrl(request, result.managementToken);
     await runWithBranchApiContext(access.context, () => notifyBookingCreated(result.booking, managementUrl))
       .catch((error) => console.warn("[booking/admin-created-notification]", error));
     return NextResponse.json({ booking: bookingDto(result.booking), managementUrl }, { status: 201 });

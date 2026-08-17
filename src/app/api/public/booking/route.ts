@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { bookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCreated } from "@/lib/booking/notifications";
 import { createBooking, type CreateBookingInput } from "@/lib/booking/service";
 import {
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       comment: typeof body.comment === "string" ? body.comment : null,
       source: "PUBLIC",
     }, { kind: "PUBLIC", respectLeadTime: true });
-    const managementUrl = new URL(`/booking/manage/${encodeURIComponent(result.managementToken)}`, request.nextUrl.origin).toString();
+    const managementUrl = buildBookingManagementUrl(request, result.managementToken);
     await notifyBookingCreated(result.booking, managementUrl).catch((error) => console.warn("[booking/notification-created]", error));
     return publicJson(request, {
       ok: true,

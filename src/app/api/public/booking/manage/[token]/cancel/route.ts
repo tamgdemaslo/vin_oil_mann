@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { publicManagedBookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCancelled } from "@/lib/booking/notifications";
 import { cancelBooking, getBookingByManagementToken } from "@/lib/booking/service";
 import {
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest, context: Context) {
     const current = await getBookingByManagementToken(token);
     const body = await request.json().catch(() => null) as { reason?: unknown } | null;
     const booking = await cancelBooking(current.id, typeof body?.reason === "string" ? body.reason : null, { kind: "MANAGE_LINK" });
-    const managementUrl = new URL(`/booking/manage/${encodeURIComponent(token)}`, request.nextUrl.origin).toString();
+    const managementUrl = buildBookingManagementUrl(request, token);
     await notifyBookingCancelled(booking, managementUrl).catch((error) => console.warn("[booking/notification-cancelled]", error));
     return publicJson(request, { ok: true, booking: publicManagedBookingDto(booking) }, { headers: rateLimitHeaders(rate) });
   } catch (error) {

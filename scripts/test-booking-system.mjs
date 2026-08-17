@@ -14,6 +14,7 @@ const jiti = createJiti(import.meta.url, {
 process.env.BOOKING_MANAGEMENT_TOKEN_SECRET = "booking-test-secret-with-enough-entropy";
 const timezone = await jiti.import("../src/lib/booking/timezone.ts");
 const tokens = await jiti.import("../src/lib/booking/management-token.ts");
+const managementUrls = await jiti.import("../src/lib/booking/management-url.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
 
 assert.equal(
@@ -42,6 +43,27 @@ const fallbackHandle = tokens.createManagementHandle();
 const fallbackToken = tokens.createManagementToken(fallbackHandle, 1);
 assert.deepEqual(tokens.verifyManagementToken(fallbackToken), { handle: fallbackHandle, version: 1 });
 process.env.BOOKING_MANAGEMENT_TOKEN_SECRET = "booking-test-secret-with-enough-entropy";
+
+const previousAppOrigin = process.env.APP_ORIGIN;
+process.env.APP_ORIGIN = "https://tamgdemaslocrm.ru/";
+const internalRequest = {
+  headers: new Headers({ "x-forwarded-host": "ignored.internal", "x-forwarded-proto": "http" }),
+  nextUrl: { origin: "http://0.0.0.0:3000" },
+};
+assert.equal(
+  managementUrls.buildBookingManagementUrl(internalRequest, "handle.1.signature"),
+  "https://tamgdemaslocrm.ru/booking/manage/handle.1.signature",
+);
+delete process.env.APP_ORIGIN;
+assert.equal(
+  managementUrls.bookingAppOrigin({
+    headers: new Headers({ "x-forwarded-host": "booking.example.ru", "x-forwarded-proto": "https" }),
+    nextUrl: { origin: "http://0.0.0.0:3000" },
+  }),
+  "https://booking.example.ru",
+);
+if (previousAppOrigin === undefined) delete process.env.APP_ORIGIN;
+else process.env.APP_ORIGIN = previousAppOrigin;
 
 function availabilityDb(overrides = {}) {
   const services = overrides.services ?? [
@@ -205,6 +227,21 @@ assert.match(publicCreate, /checkPublicRateLimit/);
 assert.match(publicCreate, /hasLeadHoneypot/);
 assert.match(publicCreate, /notifyBookingCreated/);
 assert.match(publicCreate, /clientId: null/);
+
+for (const route of [
+  "src/app/api/public/booking/route.ts",
+  "src/app/api/booking-journal/route.ts",
+  "src/app/api/bookings/route.ts",
+  "src/app/api/bookings/[id]/confirm/route.ts",
+  "src/app/api/bookings/[id]/cancel/route.ts",
+  "src/app/api/bookings/[id]/reschedule/route.ts",
+  "src/app/api/public/booking/manage/[token]/cancel/route.ts",
+  "src/app/api/public/booking/manage/[token]/reschedule/route.ts",
+]) {
+  const routeSource = source(route);
+  assert.match(routeSource, /buildBookingManagementUrl/);
+  assert.doesNotMatch(routeSource, /\/booking\/manage\/[\s\S]*request\.nextUrl\.origin/);
+}
 
 const managementTokenSource = source("src/lib/booking/management-token.ts");
 assert.match(managementTokenSource, /MESSENGER_CREDENTIAL_ENCRYPTION_KEY/);

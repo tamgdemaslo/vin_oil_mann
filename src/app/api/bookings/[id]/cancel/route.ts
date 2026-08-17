@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { canManageBookings, requireBookingCapability } from "@/lib/booking/access";
 import { bookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCancelled } from "@/lib/booking/notifications";
 import { bookingManagementToken, cancelBooking } from "@/lib/booking/service";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, context: Context) {
       { kind: "USER", userId: access.context.userId },
     ));
     const token = bookingManagementToken(booking);
-    const managementUrl = new URL(`/booking/manage/${encodeURIComponent(token)}`, request.nextUrl.origin).toString();
+    const managementUrl = buildBookingManagementUrl(request, token);
     await runWithBranchApiContext(access.context, () => notifyBookingCancelled(booking, managementUrl))
       .catch((error) => console.warn("[booking/admin-cancelled-notification]", error));
     return NextResponse.json({ booking: bookingDto(booking) });

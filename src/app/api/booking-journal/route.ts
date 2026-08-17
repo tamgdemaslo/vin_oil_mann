@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCancelled, notifyBookingConfirmed, notifyBookingCreated, notifyBookingRescheduled } from "@/lib/booking/notifications";
 import {
   BOOKING_INCLUDE,
@@ -200,7 +201,7 @@ async function resolveMembershipId(branchId: string, numericId: unknown) {
 }
 
 function managementUrl(request: NextRequest, booking: BookingWithDetails) {
-  return new URL(`/booking/manage/${encodeURIComponent(bookingManagementToken(booking))}`, request.nextUrl.origin).toString();
+  return buildBookingManagementUrl(request, bookingManagementToken(booking));
 }
 
 export async function GET(request: NextRequest) {

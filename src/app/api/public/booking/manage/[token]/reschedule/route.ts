@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { publicManagedBookingDto } from "@/lib/booking/dto";
 import { bookingErrorPayload } from "@/lib/booking/errors";
+import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingRescheduled } from "@/lib/booking/notifications";
 import { getBookingByManagementToken, rescheduleBooking } from "@/lib/booking/service";
 import {
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest, context: Context) {
       startsAt: typeof body?.startsAt === "string" ? body.startsAt : "",
       masterMembershipId: typeof body?.masterMembershipId === "string" ? body.masterMembershipId : null,
     }, { kind: "MANAGE_LINK", respectLeadTime: false });
-    const managementUrl = new URL(`/booking/manage/${encodeURIComponent(token)}`, request.nextUrl.origin).toString();
+    const managementUrl = buildBookingManagementUrl(request, token);
     await notifyBookingRescheduled(booking, managementUrl).catch((error) => console.warn("[booking/notification-rescheduled]", error));
     return publicJson(request, { ok: true, booking: publicManagedBookingDto(booking) }, { headers: rateLimitHeaders(rate) });
   } catch (error) {
