@@ -139,11 +139,28 @@ type SavedAdjustment = {
   refreshFailed: boolean;
 };
 
+type UnallocatedPieceworkReason = NonNullable<VehicleRecord["unallocatedPiecework"]>[number]["reason"];
+
+type UnallocatedPieceworkLine = NonNullable<VehicleRecord["unallocatedPiecework"]>[number] & {
+  demandId: string;
+  demandName: string;
+  date: string;
+  agentName: string;
+};
+
+type ShiftProblemContext = {
+  date: string;
+  role: "master" | "admin";
+  needsSingleEmployee: boolean;
+  item?: UnallocatedPieceworkLine;
+};
+
 type PayrollProblemAction =
   | { kind: "retry" }
   | { kind: "rate"; employeeLogin: string }
   | { kind: "rules"; role: "master" | "admin" | null; instruction: string }
   | { kind: "shifts"; date: string; role: "master" | "admin"; needsSingleEmployee: boolean }
+  | { kind: "unallocated"; reason: UnallocatedPieceworkReason }
   | { kind: "adjustments" }
   | { kind: "none" };
 
@@ -1122,6 +1139,8 @@ export default function SalaryDashboard({
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [selectedLogin, setSelectedLogin] = useState<string | null>(null);
   const [drawerComment, setDrawerComment] = useState("");
+  const [unallocatedDrawerReason, setUnallocatedDrawerReason] = useState<UnallocatedPieceworkReason | null>(null);
+  const [shiftProblemContext, setShiftProblemContext] = useState<ShiftProblemContext | null>(null);
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [adjustmentType, setAdjustmentType] = useState<"BONUS" | "PENALTY" | "DEDUCTION" | "EXTRA_PAY" | "COMPENSATION">("BONUS");
   const [adjustmentAmount, setAdjustmentAmount] = useState("");
@@ -1590,6 +1609,36 @@ export default function SalaryDashboard({
     return { totalAccrued, totalPaid, totalRemaining, totalShifts };
   }, [payrollRows]);
 
+  const unallocatedPiecework = useMemo<UnallocatedPieceworkLine[]>(() => {
+    const lines: UnallocatedPieceworkLine[] = [];
+    for (const vehicle of payroll?.vehicleHistory ?? []) {
+      for (const item of vehicle.unallocatedPiecework ?? []) {
+        lines.push({
+          ...item,
+          demandId: vehicle.demandId,
+          demandName: vehicle.demandName,
+          date: vehicle.date,
+          agentName: vehicle.agentName,
+        });
+      }
+    }
+    return lines.sort((left, right) =>
+      left.label.localeCompare(right.label, "ru") ||
+      left.date.localeCompare(right.date) ||
+      left.demandName.localeCompare(right.demandName, "ru")
+    );
+  }, [payroll?.vehicleHistory]);
+
+  const unallocatedDrawerItems = useMemo(
+    () => unallocatedPiecework.filter((item) => item.reason === unallocatedDrawerReason),
+    [unallocatedDrawerReason, unallocatedPiecework]
+  );
+
+  const unallocatedDrawerRoles = useMemo(
+    () => Array.from(new Set(unallocatedDrawerItems.map((item) => item.category === "work" ? "master" : "admin"))),
+    [unallocatedDrawerItems]
+  );
+
   const problems = useMemo(() => {
     const next: PayrollProblem[] = [];
     if (payrollError) {
@@ -1624,23 +1673,16 @@ export default function SalaryDashboard({
         });
       }
     }
-    const unallocatedByReason = new Map<string, {
+    const unallocatedByReason = new Map<UnallocatedPieceworkReason, {
       count: number;
-      sample: { date: string; demandName: string; label: string; category: "work" | "product" };
+      sample: UnallocatedPieceworkLine;
     }>();
-    for (const vehicle of payroll?.vehicleHistory ?? []) {
-      for (const item of vehicle.unallocatedPiecework ?? []) {
-        const current = unallocatedByReason.get(item.reason);
-        unallocatedByReason.set(item.reason, {
-          count: (current?.count ?? 0) + 1,
-          sample: current?.sample ?? {
-            date: vehicle.date,
-            demandName: vehicle.demandName,
-            label: item.label,
-            category: item.category,
-          },
-        });
-      }
+    for (const item of unallocatedPiecework) {
+      const current = unallocatedByReason.get(item.reason);
+      unallocatedByReason.set(item.reason, {
+        count: (current?.count ?? 0) + 1,
+        sample: current?.sample ?? item,
+      });
     }
     for (const [reason, problem] of unallocatedByReason) {
       const role = problem.sample.category === "work" ? "master" : "admin";
@@ -1659,19 +1701,8 @@ export default function SalaryDashboard({
             ? `В «${example}» назначено несколько ${roleLabel}. Оставьте в графике одного.`
             : `В «${example}» не назначен ${roleLabel}. Назначьте ему смену на этот день.`,
         severity: isMissingRule ? "warning" : "danger",
-        actionLabel: isMissingRule ? "Настроить правило" : "Открыть график",
-        action: isMissingRule
-          ? {
-              kind: "rules",
-              role,
-              instruction: `Создайте правило для ${roleLabel}: «${problem.sample.label}».`,
-            }
-          : {
-              kind: "shifts",
-              date: problem.sample.date,
-              role,
-              needsSingleEmployee: isMultiple,
-            },
+        actionLabel: `Показать ${problem.count} поз.`,
+        action: { kind: "unallocated", reason },
       });
     }
     if (!rulesLoading && canManagePayroll && rules.length === 0) {
@@ -1704,44 +1735,65 @@ export default function SalaryDashboard({
       });
     }
     return next.slice(0, 8);
-  }, [canManagePayroll, dateFrom, payroll, payrollError, payrollRows, payrollShifts.length, rules.length, rulesLoading]);
+  }, [canManagePayroll, dateFrom, payroll, payrollError, payrollRows, payrollShifts.length, rules.length, rulesLoading, unallocatedPiecework]);
+
+  function openShiftProblem(
+    date: string,
+    role: "master" | "admin",
+    needsSingleEmployee: boolean,
+    item?: UnallocatedPieceworkLine
+  ) {
+    const selectedMonth = new Date(`${date}T12:00:00`);
+    const roleUsers = teamUsers.filter((user) => normalizeRole(user.role ?? "master") === role);
+    const assignedRoleUser = calendarShifts.find((shift) =>
+      shift.date === date && roleUsers.some((user) => normalizeLogin(user.login) === normalizeLogin(shift.userLogin))
+    );
+    changeTab("workdays");
+    setCalendarDate(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1));
+    setCalendarLogin(assignedRoleUser?.userLogin ?? roleUsers[0]?.login ?? "");
+    setSelectedDate(date);
+    setSelectedDates(new Set([date]));
+    setSelectionAnchor(date);
+    setMultiSelectEnabled(false);
+    setShiftProblemContext({ date, role, needsSingleEmployee, item });
+    setToast(
+      needsSingleEmployee
+        ? `На ${formatDate(date)} оставьте одну смену для ${role === "master" ? "мастера" : "администратора"}.`
+        : `На ${formatDate(date)} назначьте смену для ${role === "master" ? "мастера" : "администратора"}.`
+    );
+  }
 
   function resolvePayrollProblem(problem: PayrollProblem) {
     const { action } = problem;
     if (action.kind === "retry") {
+      setToast("Повторяем расчёт зарплаты…");
       void loadPayroll();
       return;
     }
     if (action.kind === "rate") {
-      setActiveTab("rates");
+      changeTab("rates");
       setRateDrawerLogin(action.employeeLogin);
       setToast("Укажите ставку и сохраните изменение.");
       return;
     }
     if (action.kind === "rules") {
-      setActiveTab("rules");
+      changeTab("rules");
       setRuleRoleFilter(action.role ?? "all");
       setToast(action.instruction);
       return;
     }
     if (action.kind === "shifts") {
-      const selectedMonth = new Date(`${action.date}T12:00:00`);
-      setActiveTab("workdays");
-      setCalendarDate(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1));
-      setCalendarLogin("");
-      setSelectedDate(action.date);
-      setSelectedDates(new Set([action.date]));
-      setSelectionAnchor(action.date);
-      setMultiSelectEnabled(false);
-      setToast(
-        action.needsSingleEmployee
-          ? `На ${formatDate(action.date)} оставьте одну смену для ${action.role === "master" ? "мастера" : "администратора"}.`
-          : `На ${formatDate(action.date)} назначьте смену для ${action.role === "master" ? "мастера" : "администратора"}.`
-      );
+      openShiftProblem(action.date, action.role, action.needsSingleEmployee);
+      return;
+    }
+    if (action.kind === "unallocated") {
+      setUnallocatedDrawerReason(action.reason);
+      setToast("Открыли полный список позиций, требующих настройки.");
       return;
     }
     if (action.kind === "adjustments") {
-      setActiveTab("adjustments");
+      changeTab("adjustments");
+      setToast("Открыли корректировки выбранного периода.");
     }
   }
 
@@ -2514,12 +2566,34 @@ export default function SalaryDashboard({
   const selectedDayState = getEffectiveShiftState(selectedDate);
   const selectedDayItems = selectedDayState.items;
   const selectedDayHasShift = selectedDayState.hasShift;
-  const selectedBulkStats = sortedSelectedDates.reduce(
-    (stats, date) => {
-      if (getEffectiveShiftState(date).hasShift) stats.shifts += 1;
-      return stats;
-    },
-    { shifts: 0 }
+  const selectedShiftTargetUsers = getTargetUsersForCalendarAction();
+  const selectedShiftAssignments = calendarShifts.filter(
+    (shift) =>
+      sortedSelectedDates.includes(shift.date) &&
+      selectedShiftTargetUsers.some((user) => normalizeLogin(user.login) === normalizeLogin(shift.userLogin))
+  ).length;
+  const selectedShiftCapacity = selectedDatesCount * selectedShiftTargetUsers.length;
+  const canAssignSelectedShifts = selectedShiftCapacity > selectedShiftAssignments;
+  const canRemoveSelectedShifts = selectedShiftAssignments > 0;
+  const shiftProblemRoleLabel = shiftProblemContext?.role === "master" ? "мастер" : "администратор";
+  const shiftProblemSelectedUser = shiftProblemContext && calendarLogin
+    ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin)) ?? null
+    : null;
+  const shiftProblemAssignedUsers = shiftProblemContext
+    ? calendarShifts
+        .filter((shift) =>
+          shift.date === shiftProblemContext.date &&
+          teamUsers.some(
+            (user) => normalizeLogin(user.login) === normalizeLogin(shift.userLogin) && normalizeRole(user.role ?? "master") === shiftProblemContext.role
+          )
+        )
+        .map((shift) => teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(shift.userLogin))?.name ?? shift.userLogin)
+    : [];
+  const shiftProblemResolved = Boolean(
+    shiftProblemContext &&
+    (shiftProblemContext.needsSingleEmployee
+      ? shiftProblemAssignedUsers.length === 1
+      : shiftProblemAssignedUsers.length >= 1)
   );
 
   const selectedShipmentBreakdown = selectedRow
@@ -2777,6 +2851,7 @@ export default function SalaryDashboard({
                       type="button"
                       className={`is-${problem.severity}`}
                       onClick={() => resolvePayrollProblem(problem)}
+                      aria-label={`${problem.title}. ${problem.actionLabel ?? "Открыть действие"}`}
                     >
                       <span className="eco-payroll-problem-copy">
                         <strong>{problem.title}</strong>
@@ -2941,6 +3016,109 @@ export default function SalaryDashboard({
             </div>
           </div>
 
+          {shiftProblemContext && (
+            <section className="eco-payroll-resolution-guide" role="status" aria-live="polite">
+              <div className="eco-payroll-resolution-guide__head">
+                <div>
+                  <span className="eco-page-kicker">Что нужно исправить</span>
+                  <strong>
+                    {shiftProblemResolved
+                      ? "Проблема исправлена"
+                      : shiftProblemContext.needsSingleEmployee
+                      ? `Оставьте одного: ${shiftProblemRoleLabel}`
+                      : `Назначьте смену: ${shiftProblemRoleLabel}`}
+                  </strong>
+                  <p>
+                    {shiftProblemResolved
+                      ? `На ${formatDate(shiftProblemContext.date)} назначен один ${shiftProblemRoleLabel}. Позиция попадёт в расчёт после повторного расчёта зарплаты.`
+                      : shiftProblemContext.needsSingleEmployee
+                      ? `На ${formatDate(shiftProblemContext.date)} система нашла несколько сотрудников этой роли и не может выбрать исполнителя для начисления.`
+                      : `На ${formatDate(shiftProblemContext.date)} нет ${shiftProblemRoleLabel === "мастер" ? "мастера" : "администратора"} на смене, поэтому позиция не вошла в зарплату.`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="eco-icon-btn"
+                  onClick={() => setShiftProblemContext(null)}
+                  title="Скрыть инструкцию"
+                  aria-label="Скрыть инструкцию"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <dl className="eco-payroll-resolution-guide__facts">
+                {shiftProblemContext.item && (
+                  <>
+                    <div>
+                      <dt>Позиция</dt>
+                      <dd>{shiftProblemContext.item.label} × {shiftProblemContext.item.quantity}</dd>
+                    </div>
+                    <div>
+                      <dt>Отгрузка</dt>
+                      <dd>
+                        <Link href={`/shipment/${encodeURIComponent(shiftProblemContext.item.demandId)}`}>
+                          {shiftProblemContext.item.demandName}
+                        </Link>
+                      </dd>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <dt>Дата смены</dt>
+                  <dd>{formatDate(shiftProblemContext.date)} — уже выделена в календаре</dd>
+                </div>
+                <div>
+                  <dt>Сотрудник</dt>
+                  <dd>{shiftProblemSelectedUser?.name ?? `Выберите ${shiftProblemRoleLabel === "мастер" ? "мастера" : "администратора"}`}</dd>
+                </div>
+                {shiftProblemContext.needsSingleEmployee && (
+                  <div>
+                    <dt>Сейчас на смене</dt>
+                    <dd>{shiftProblemAssignedUsers.length ? shiftProblemAssignedUsers.join(", ") : "Нет данных о назначениях"}</dd>
+                  </div>
+                )}
+              </dl>
+
+              <div className="eco-payroll-resolution-guide__action">
+                <p>
+                  {shiftProblemResolved
+                    ? "Нажмите «Готово», вернитесь в расчёт и пересчитайте зарплату, чтобы обновить суммы и список проблем."
+                    : shiftProblemContext.needsSingleEmployee
+                    ? "Оставьте на этот день одного сотрудника нужной роли. Выбранного сотрудника можно снять со смены кнопкой ниже, затем выбрать другого в списке выше."
+                    : "Сотрудник и дата уже выбраны. Подтвердите назначение смены одной кнопкой."}
+                </p>
+                <EcoButton
+                  type="button"
+                  variant="primary"
+                  onClick={() => {
+                    if (shiftProblemResolved) {
+                      setShiftProblemContext(null);
+                      changeTab("calculation");
+                      return;
+                    }
+                    void toggleShift(shiftProblemContext.date, !shiftProblemContext.needsSingleEmployee);
+                  }}
+                  disabled={
+                    !shiftProblemResolved && (
+                      !canManagePayroll ||
+                      calendarBusy ||
+                      !shiftProblemSelectedUser ||
+                      normalizeRole(shiftProblemSelectedUser.role ?? "master") !== shiftProblemContext.role ||
+                      (shiftProblemContext.needsSingleEmployee ? !selectedDayHasShift : selectedDayHasShift)
+                    )
+                  }
+                >
+                  {shiftProblemResolved
+                    ? "Готово — вернуться к расчёту"
+                    : shiftProblemContext.needsSingleEmployee
+                    ? `Снять смену у ${shiftProblemSelectedUser?.name ?? "сотрудника"}`
+                    : `Назначить смену ${shiftProblemSelectedUser?.name ?? "сотруднику"}`}
+                </EcoButton>
+              </div>
+            </section>
+          )}
+
           <div className="eco-payroll-employee-strip">
             {isOwner && (
               <button
@@ -2986,10 +3164,10 @@ export default function SalaryDashboard({
                 </EcoButton>
               </div>
               <div className="eco-payroll-bulk-actions">
-                <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={calendarBusy || selectedDatesCount === 0}>
+                <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={calendarBusy || !canAssignSelectedShifts}>
                   Назначить смены
                 </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={calendarBusy || selectedDatesCount === 0}>
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={calendarBusy || !canRemoveSelectedShifts}>
                   Снять смены
                 </EcoButton>
               </div>
@@ -3087,15 +3265,15 @@ export default function SalaryDashboard({
                       <dd>{formatDate(firstSelectedDate)} - {formatDate(lastSelectedDate)}</dd>
                     </div>
                     <div>
-                      <dt>Смен уже назначено</dt>
-                      <dd>{selectedBulkStats.shifts}</dd>
+                      <dt>Смен назначено</dt>
+                      <dd>{selectedShiftAssignments} из {selectedShiftCapacity}</dd>
                     </div>
                   </dl>
                   <div className="eco-payroll-day-actions">
-                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={!canManagePayroll || calendarBusy}>
+                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={!canManagePayroll || calendarBusy || !canAssignSelectedShifts}>
                       Назначить смены
                     </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={!canManagePayroll || calendarBusy}>
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={!canManagePayroll || calendarBusy || !canRemoveSelectedShifts}>
                       Снять смены
                     </EcoButton>
                     <EcoButton type="button" size="sm" variant="ghost" onClick={() => selectCalendarPreset("clear")}>
@@ -3122,10 +3300,10 @@ export default function SalaryDashboard({
                     </div>
                   </dl>
                   <div className="eco-payroll-day-actions">
-                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void toggleShift(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || selectedDayHasShift}>
+                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void toggleShift(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || !calendarLogin || selectedDayHasShift}>
                       Назначить смену
                     </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void toggleShift(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !selectedDayHasShift}>
+                    <EcoButton type="button" size="sm" onClick={() => void toggleShift(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !calendarLogin || !selectedDayHasShift}>
                       Снять смену
                     </EcoButton>
                   </div>
@@ -4122,6 +4300,98 @@ export default function SalaryDashboard({
                 Применить на период
               </EcoButton>
             </div>
+          </aside>
+        </div>
+      )}
+
+      {unallocatedDrawerReason && (
+        <div className="eco-payroll-drawer-backdrop" onClick={() => setUnallocatedDrawerReason(null)}>
+          <aside
+            className="eco-payroll-drawer eco-payroll-unallocated-drawer"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Позиции, требующие настройки зарплаты"
+          >
+            <div className="eco-payroll-drawer__head">
+              <div>
+                <span className="eco-page-kicker">Проверка начислений</span>
+                <h2>{unallocatedDrawerReason === "missing_rule" ? "Позиции без правила" : "Позиции без рабочей команды"}</h2>
+                <p>
+                  {unallocatedDrawerItems.length} поз. за период {formatDate(dateFrom)} — {formatDate(dateTo)}
+                </p>
+              </div>
+              <button type="button" className="eco-icon-btn" onClick={() => setUnallocatedDrawerReason(null)} title="Закрыть">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="eco-payroll-drawer-total">
+              <span>Требуют настройки</span>
+              <strong>{unallocatedDrawerItems.length} поз.</strong>
+              <p>
+                {unallocatedDrawerReason === "missing_rule"
+                  ? "Для этих товаров или услуг нет правила начисления."
+                  : "Для этих позиций нужно назначить рабочую команду на дату отгрузки."}
+              </p>
+            </div>
+
+            <section className="eco-payroll-drawer-section">
+              <strong>Все позиции</strong>
+              <div className="eco-payroll-unallocated-list">
+                {unallocatedDrawerItems.map((item, index) => {
+                  const role = item.category === "work" ? "master" : "admin";
+                  const needsSingleEmployee = item.reason === "multiple_masters" || item.reason === "multiple_admins";
+                  return (
+                    <article key={`${item.demandId}-${item.label}-${item.reason}-${index}`}>
+                      <div className="eco-payroll-unallocated-list__head">
+                        <div>
+                          <span>{item.category === "product" ? "Товар · администратор" : "Услуга · мастер"}</span>
+                          <strong>{item.label}</strong>
+                        </div>
+                        <b>× {item.quantity}</b>
+                      </div>
+                      <p>
+                        <Link href={`/shipment/${encodeURIComponent(item.demandId)}`}>{item.demandName}</Link>
+                        {" · "}{formatDate(item.date)}{item.agentName ? ` · ${item.agentName}` : ""}
+                      </p>
+                      {unallocatedDrawerReason !== "missing_rule" && (
+                        <EcoButton
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            setUnallocatedDrawerReason(null);
+                            openShiftProblem(item.date, role, needsSingleEmployee, item);
+                          }}
+                        >
+                          Открыть график
+                        </EcoButton>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+
+            {unallocatedDrawerReason === "missing_rule" && (
+              <div className="eco-payroll-drawer__footer">
+                {unallocatedDrawerRoles.map((role) => (
+                  <EcoButton
+                    key={role}
+                    type="button"
+                    variant="primary"
+                    onClick={() => {
+                      setUnallocatedDrawerReason(null);
+                      changeTab("rules");
+                      setRuleRoleFilter(role);
+                      setToast(`Настройте правила для ${role === "master" ? "мастера" : "администратора"}.`);
+                    }}
+                  >
+                    Настроить правила для {role === "master" ? "мастера" : "администратора"}
+                  </EcoButton>
+                ))}
+              </div>
+            )}
           </aside>
         </div>
       )}

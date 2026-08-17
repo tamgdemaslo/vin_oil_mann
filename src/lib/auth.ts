@@ -71,10 +71,12 @@ function normalizeRole(value?: string): UserRole {
 
 type EnvUser = { login: string; name: string; passwordHash: string; role: UserRole };
 type PasswordOverrideCache = { expiresAt: number; rows: Map<string, string> } | null;
+type DatabaseUserRow = { login: string; name: string; authRole: string };
+type DatabaseUserCache = { expiresAt: number; rows: DatabaseUserRow[] } | null;
 
 const authCache = ((globalThis as typeof globalThis & {
-  __ecoAuthPasswordOverrideCache?: { passwordOverrides: PasswordOverrideCache };
-}).__ecoAuthPasswordOverrideCache ??= { passwordOverrides: null });
+  __ecoAuthPasswordOverrideCache?: { passwordOverrides: PasswordOverrideCache; databaseUsers?: DatabaseUserCache };
+}).__ecoAuthPasswordOverrideCache ??= { passwordOverrides: null, databaseUsers: null });
 
 function normalizeLoginKey(login: string): string {
   return login.trim().toLowerCase();
@@ -114,9 +116,27 @@ async function getPasswordOverrides(): Promise<Map<string, string>> {
   }
 }
 
+async function getDatabaseUsers(): Promise<DatabaseUserRow[]> {
+  const now = Date.now();
+  if (authCache.databaseUsers && authCache.databaseUsers.expiresAt > now) {
+    return authCache.databaseUsers.rows;
+  }
+  try {
+    const rows = await prisma.user.findMany({
+      where: { status: "active" },
+      select: { login: true, name: true, authRole: true },
+      orderBy: { createdAt: "asc" },
+    });
+    authCache.databaseUsers = { expiresAt: now + AUTH_PASSWORD_CACHE_MS, rows };
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 export async function getUsersFromEnv(): Promise<EnvUser[]> {
   const raw = process.env.AUTH_USERS?.trim() || DEFAULT_AUTH_USERS;
-  const passwordOverrides = await getPasswordOverrides();
+  const [passwordOverrides, databaseUsers] = await Promise.all([getPasswordOverrides(), getDatabaseUsers()]);
   const users: EnvUser[] = [];
   const lines = raw?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   for (const line of lines) {
@@ -147,28 +167,19 @@ export async function getUsersFromEnv(): Promise<EnvUser[]> {
     }
   }
 
-  try {
-    const databaseUsers = await prisma.user.findMany({
-      where: { status: "active" },
-      select: { login: true, name: true, authRole: true },
-      orderBy: { createdAt: "asc" },
+  for (const databaseUser of databaseUsers) {
+    const login = canonicalizeLogin(databaseUser.login);
+    if (users.some((user) => normalizeLoginKey(user.login) === normalizeLoginKey(login))) continue;
+    const passwordHash = getLoginVariants(login)
+      .map((variant) => passwordOverrides.get(normalizeLoginKey(variant)))
+      .find((hash): hash is string => Boolean(hash));
+    if (!passwordHash) continue;
+    users.push({
+      login,
+      name: databaseUser.name.trim() || login,
+      role: normalizeRole(databaseUser.authRole),
+      passwordHash,
     });
-    for (const databaseUser of databaseUsers) {
-      const login = canonicalizeLogin(databaseUser.login);
-      if (users.some((user) => normalizeLoginKey(user.login) === normalizeLoginKey(login))) continue;
-      const passwordHash = getLoginVariants(login)
-        .map((variant) => passwordOverrides.get(normalizeLoginKey(variant)))
-        .find((hash): hash is string => Boolean(hash));
-      if (!passwordHash) continue;
-      users.push({
-        login,
-        name: databaseUser.name.trim() || login,
-        role: normalizeRole(databaseUser.authRole),
-        passwordHash,
-      });
-    }
-  } catch {
-    // Keep environment-backed sign-in available while the database is unreachable.
   }
 
   return users;
@@ -184,7 +195,23 @@ export async function verifyUser(login: string, password: string): Promise<User 
   const canonicalLogin = canonicalizeLogin(login);
   const hash = hashPassword(password, AUTH_SALT);
   const u = users.find((x) => normalizeLoginKey(x.login) === normalizeLoginKey(canonicalLogin) && x.passwordHash === hash);
-  return u ? { login: u.login, name: u.name, role: u.role } : null;
+  if (u) return { login: u.login, name: u.name, role: u.role };
+
+  // A freshly created employee can reach another application instance whose
+  // short-lived auth cache has not seen the new account yet.
+  try {
+    const normalizedLogin = normalizeLoginKey(canonicalLogin);
+    const [databaseUser, databasePassword] = await Promise.all([
+      prisma.user.findFirst({ where: { login: normalizedLogin, status: "active" }, select: { login: true, name: true, authRole: true } }),
+      prisma.authPassword.findUnique({ where: { login: normalizedLogin }, select: { passwordHash: true } }),
+    ]);
+    if (databaseUser && databasePassword && timingSafeEqual(databasePassword.passwordHash, hash)) {
+      return { login: databaseUser.login, name: databaseUser.name, role: normalizeRole(databaseUser.authRole) };
+    }
+  } catch {
+    // Environment-backed authentication above remains available during DB outages.
+  }
+  return null;
 }
 
 export async function setUserPassword(login: string, password: string): Promise<void> {
@@ -199,6 +226,7 @@ export async function setUserPassword(login: string, password: string): Promise<
 
 export function invalidateAuthPasswordCache(): void {
   authCache.passwordOverrides = null;
+  authCache.databaseUsers = null;
 }
 
 export async function getSession(): Promise<{ user: User } | null> {

@@ -124,6 +124,7 @@ async function findPayrollPeriodByRange(params: {
   dateTo: string;
   organizationId?: string;
 }) {
+  const { branchId } = requireSingleBranchSqlContext();
   const rows = await prisma.$queryRaw<
     Array<{
       id: string;
@@ -156,9 +157,10 @@ async function findPayrollPeriodByRange(params: {
       created_at AS "createdAt",
       updated_at AS "updatedAt"
     FROM payroll_periods
-    WHERE organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
-      AND date_from = ${params.dateFrom}
-      AND date_to = ${params.dateTo}
+    WHERE branch_id = ${branchId}::text
+      AND organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}::text
+      AND date_from = ${params.dateFrom}::text
+      AND date_to = ${params.dateTo}::text
     LIMIT 1
   `;
   return rows[0] ? mapPeriod(rows[0]) : null;
@@ -183,6 +185,7 @@ export async function listPayrollPeriods(params: {
   organizationId?: string;
 } = {}) {
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const employeeLogin = params.employeeLogin ? normalizeLogin(params.employeeLogin) : null;
     const limit = Math.max(1, Math.min(100, params.limit ?? 50));
     const rows = await prisma.$queryRaw<
@@ -218,8 +221,9 @@ export async function listPayrollPeriods(params: {
         p.updated_at AS "updatedAt"
       FROM payroll_periods p
       LEFT JOIN payroll_period_employees e ON e.period_id = p.id
-      WHERE p.organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
-        AND (${employeeLogin} IS NULL OR lower(e.employee_login) = ${employeeLogin})
+      WHERE p.branch_id = ${branchId}::text
+        AND p.organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}::text
+        AND (${employeeLogin}::text IS NULL OR lower(e.employee_login) = ${employeeLogin}::text)
       ORDER BY p.closed_at DESC
       LIMIT ${limit}
     `;
@@ -237,6 +241,7 @@ export async function getPayrollPeriodEmployeeByRange(params: {
   organizationId?: string;
 }) {
   try {
+    const { branchId } = requireSingleBranchSqlContext();
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -271,11 +276,12 @@ export async function getPayrollPeriodEmployeeByRange(params: {
         e.status,
         e.created_at AS "createdAt"
       FROM payroll_period_employees e
-      JOIN payroll_periods p ON p.id = e.period_id
-      WHERE p.organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}
-        AND p.date_from = ${params.dateFrom}
-        AND p.date_to = ${params.dateTo}
-        AND lower(e.employee_login) = ${normalizeLogin(params.employeeLogin)}
+      JOIN payroll_periods p ON p.id = e.period_id AND p.branch_id = e.branch_id
+      WHERE p.branch_id = ${branchId}::text
+        AND p.organization_id = ${params.organizationId ?? DEFAULT_PAYROLL_ORG_ID}::text
+        AND p.date_from = ${params.dateFrom}::text
+        AND p.date_to = ${params.dateTo}::text
+        AND lower(e.employee_login) = ${normalizeLogin(params.employeeLogin)}::text
       LIMIT 1
     `;
     return rows[0] ? mapEmployee(rows[0]) : null;

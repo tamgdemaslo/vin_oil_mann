@@ -20051,6 +20051,93 @@ select.eco-input::-ms-expand,
   font-weight: 650;
 }
 
+.eco-payroll-resolution-guide {
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+  background: #fffaf2;
+  border: 1px solid #fdba74;
+  border-left: 4px solid var(--eco-rust);
+  border-radius: 6px;
+}
+
+.eco-payroll-resolution-guide__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eco-payroll-resolution-guide__head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.eco-payroll-resolution-guide__head strong {
+  color: var(--eco-ink);
+  font-size: 17px;
+}
+
+.eco-payroll-resolution-guide__head p,
+.eco-payroll-resolution-guide__action p {
+  margin: 0;
+  color: var(--eco-ink-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.eco-payroll-resolution-guide__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.eco-payroll-resolution-guide__facts div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(194, 65, 12, 0.2);
+  border-radius: 4px;
+}
+
+.eco-payroll-resolution-guide__facts dt {
+  color: var(--eco-muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.eco-payroll-resolution-guide__facts dd {
+  margin: 0;
+  color: var(--eco-ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.eco-payroll-resolution-guide__facts a {
+  color: var(--eco-rust);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.eco-payroll-resolution-guide__action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(194, 65, 12, 0.2);
+}
+
+.eco-payroll-resolution-guide__action p {
+  max-width: 680px;
+}
+
 .eco-payroll-calendar-filters {
   display: inline-flex;
   align-items: center;
@@ -21027,6 +21114,10 @@ select.eco-input::-ms-expand,
   width: min(460px, 100vw);
 }
 
+.eco-payroll-unallocated-drawer {
+  width: min(680px, 100vw);
+}
+
 .eco-payroll-drawer__head {
   display: flex;
   align-items: flex-start;
@@ -21079,6 +21170,14 @@ select.eco-input::-ms-expand,
   justify-self: start;
 }
 
+.eco-payroll-drawer-total p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--eco-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .eco-payroll-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -21114,6 +21213,65 @@ select.eco-input::-ms-expand,
 
 .eco-payroll-drawer-section > strong {
   color: var(--eco-ink);
+}
+
+.eco-payroll-unallocated-list {
+  display: grid;
+  gap: 8px;
+}
+
+.eco-payroll-unallocated-list article {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  background: var(--eco-surface-sunk);
+  border: 1px solid var(--eco-line);
+  border-radius: 5px;
+}
+
+.eco-payroll-unallocated-list__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eco-payroll-unallocated-list__head div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.eco-payroll-unallocated-list__head span,
+.eco-payroll-unallocated-list article > p {
+  color: var(--eco-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.eco-payroll-unallocated-list__head strong {
+  color: var(--eco-ink);
+  font-size: 14px;
+}
+
+.eco-payroll-unallocated-list__head b {
+  color: var(--eco-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.eco-payroll-unallocated-list article > p {
+  margin: 0;
+}
+
+.eco-payroll-unallocated-list article > p a {
+  color: var(--eco-rust);
+  font-weight: 750;
+}
+
+.eco-payroll-unallocated-list .eco-btn {
+  justify-self: start;
 }
 
 .eco-payroll-operation-grid {
@@ -21274,6 +21432,11 @@ select.eco-input::-ms-expand,
   .eco-payroll-day-panel {
     position: static;
   }
+
+  .eco-payroll-resolution-guide__action {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 760px) {
@@ -21301,6 +21464,10 @@ select.eco-input::-ms-expand,
   .eco-payroll-rules-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .eco-payroll-resolution-guide__facts {
+    grid-template-columns: 1fr;
   }
 
   .eco-payroll-calendar-filters,
