@@ -4,13 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { SERVICE_TIME_ZONE } from "@/lib/date-time";
 import { toLocalDateInputValue, useOwnerUsers } from "../useOwnerUsers";
 
-type WorkingDayItem = {
+type PayrollShiftItem = {
   id: string;
   userLogin: string;
   date: string;
   createdByLogin: string;
-  source?: "scheduled" | "actual" | "both";
-  removable?: boolean;
 };
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -36,14 +34,14 @@ export default function WorkingDaysBlock() {
   const { users, loading: usersLoading } = useOwnerUsers(true);
   const [selectedLogin, setSelectedLogin] = useState<string | null>(null);
   const [viewDate, setViewDate] = useState(() => new Date());
-  const [list, setList] = useState<WorkingDayItem[]>([]);
+  const [list, setList] = useState<PayrollShiftItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
 
   const viewYear = viewDate.getFullYear();
   const viewMonth = viewDate.getMonth();
 
-  const loadWorkingDays = useCallback(() => {
+  const loadShifts = useCallback(() => {
     if (!selectedLogin) {
       setList([]);
       return;
@@ -63,41 +61,22 @@ export default function WorkingDaysBlock() {
   }, [selectedLogin, users]);
 
   useEffect(() => {
-    loadWorkingDays();
-  }, [loadWorkingDays]);
+    loadShifts();
+  }, [loadShifts]);
 
   const getDayItem = (dateStr: string) => list.find((x) => x.date === dateStr) ?? null;
   const dateToId = (dateStr: string) => getDayItem(dateStr)?.id ?? null;
-  const isWorking = (dateStr: string) => dateToId(dateStr) != null;
+  const hasShift = (dateStr: string) => dateToId(dateStr) != null;
 
   const handleDayClick = async (dateStr: string) => {
     if (!selectedLogin || toggling) return;
     const item = getDayItem(dateStr);
-    if (item && item.removable === false) return;
     const id = item?.id ?? null;
     setToggling(dateStr);
     try {
       if (id) {
         const r = await fetch(`/api/working-days/${id}`, { method: "DELETE" });
-        if (r.ok) {
-          setList((prev) =>
-            prev.flatMap((x) => {
-              if (x.id !== id) return [x];
-              if (x.source === "both") {
-                return [
-                  {
-                    ...x,
-                    id: `actual:${x.userLogin}:${x.date}`,
-                    createdByLogin: "system",
-                    source: "actual",
-                    removable: false,
-                  },
-                ];
-              }
-              return [];
-            })
-          );
-        }
+        if (r.ok) setList((prev) => prev.filter((x) => x.id !== id));
       } else {
         const r = await fetch("/api/working-days", {
           method: "POST",
@@ -127,17 +106,13 @@ export default function WorkingDaysBlock() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Выберите сотрудника и нажимайте на даты в календаре: клик назначает рабочий день, повторный —
-        снимает. Дни с фактической сменой отображаются автоматически.
+        Выберите сотрудника и нажимайте на даты в календаре: клик назначает смену, повторный — снимает.
+        Зарплата за день начисляется только по назначенной смене.
       </p>
       <div className="flex flex-wrap gap-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-emerald-500" />
-          Назначенный рабочий день
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full bg-sky-500" />
-          Фактическая смена
+          Назначенная смена
         </span>
       </div>
 
@@ -208,35 +183,20 @@ export default function WorkingDaysBlock() {
                         return <div key={`empty-${cellKey}`} className="aspect-square" />;
                       }
                       const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                      const item = getDayItem(dateStr);
-                      const working = isWorking(dateStr);
+                      const hasAssignedShift = hasShift(dateStr);
                       const busy = toggling === dateStr;
-                      const actualOnly = item?.source === "actual";
-                      const both = item?.source === "both";
-                      const title = actualOnly
-                        ? "Фактическая смена"
-                        : both
-                          ? "Есть фактическая смена и назначенный рабочий день"
-                          : working
-                            ? "Снять рабочий день"
-                            : "Назначить рабочий день";
+                      const title = hasAssignedShift ? "Снять смену" : "Назначить смену";
                       return (
                         <button
                           key={dateStr}
                           type="button"
-                          disabled={busy || actualOnly}
+                          disabled={busy}
                           onClick={() => handleDayClick(dateStr)}
                           title={title}
                           className={`aspect-square min-w-[2.25rem] rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                            actualOnly
-                              ? "bg-sky-500 text-white"
-                              : both
-                                ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                                : working
-                                  ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                                  : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
-                          } ${
-                            actualOnly ? "cursor-default" : ""
+                            hasAssignedShift
+                              ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
                           }`}
                         >
                           {busy ? "…" : day}

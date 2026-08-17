@@ -378,8 +378,8 @@ export async function computePayroll(params: {
     bonusPenalties,
     payrollAdjustments,
     payrollPayments,
-    scheduledDaysForRates,
-    scheduledDaysForStaffing,
+    scheduledShiftsForRates,
+    scheduledShiftsForStaffing,
     users,
     pieceworkRuleMap,
   ] = await Promise.all([
@@ -424,9 +424,9 @@ export async function computePayroll(params: {
     users.filter((u) => u.role === "master" || u.role === "admin").map((u) => normalizeLogin(u.login))
   );
   const staffingByDate = mergeStaffingByDate({
-    scheduledDays: scheduledDaysForStaffing.map((day) => ({
-      ...day,
-      userLogin: canonicalLoginByLower.get(normalizeLogin(day.userLogin)) ?? day.userLogin,
+    scheduledDays: scheduledShiftsForStaffing.map((shift) => ({
+      ...shift,
+      userLogin: canonicalLoginByLower.get(normalizeLogin(shift.userLogin)) ?? shift.userLogin,
     })),
     roleByLogin,
   });
@@ -598,9 +598,9 @@ export async function computePayroll(params: {
     });
   }
 
-  // Назначенные владельцем смены сотрудников: единственный источник фиксированной части зарплаты.
-  for (const swd of scheduledDaysForRates) {
-    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(swd.userLogin)) ?? swd.userLogin;
+  // Назначенная смена — единственный источник фиксированной части зарплаты.
+  for (const scheduledShift of scheduledShiftsForRates) {
+    const canonicalLogin = canonicalLoginByLower.get(normalizeLogin(scheduledShift.userLogin)) ?? scheduledShift.userLogin;
     if (normalizedTargetLogin && normalizeLogin(canonicalLogin) !== normalizedTargetLogin) continue;
     const roleValue = roleByLogin.get(normalizeLogin(canonicalLogin));
     if (roleValue !== "master" && roleValue !== "admin") continue;
@@ -615,7 +615,7 @@ export async function computePayroll(params: {
         shiftsCount: 0,
       };
     }
-    const rate = await getShiftRateCents(canonicalLogin, swd.date);
+    const rate = await getShiftRateCents(canonicalLogin, scheduledShift.date);
     if (rate != null) {
       byLogin[canonicalLogin].shiftTotalCents += rate;
       byLogin[canonicalLogin].shiftsCount += 1;

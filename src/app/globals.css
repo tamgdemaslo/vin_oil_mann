@@ -19791,19 +19791,51 @@ select.eco-input::-ms-expand,
   gap: 8px;
 }
 
-.eco-payroll-problem-list > div {
+.eco-payroll-problem-list > div,
+.eco-payroll-problem-list > button {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 3px;
+  width: 100%;
   padding: 10px;
   background: var(--eco-surface);
   border: 1px solid #fed7aa;
-  border-left: 3px solid var(--eco-warning);
   border-radius: 4px;
+  color: inherit;
+  text-align: left;
 }
 
-.eco-payroll-problem-list > div.is-danger {
+.eco-payroll-problem-list > button {
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.eco-payroll-problem-list > button:hover {
+  border-color: var(--eco-warning);
+  background: #fffdf8;
+}
+
+.eco-payroll-problem-list > button:focus-visible {
+  outline: 2px solid var(--eco-rust);
+  outline-offset: 2px;
+}
+
+.eco-payroll-problem-list > div.is-danger,
+.eco-payroll-problem-list > button.is-danger {
   border-color: #fecaca;
-  border-left-color: var(--eco-danger);
+}
+
+.eco-payroll-problem-list > button.is-danger:hover {
+  border-color: var(--eco-danger);
+  background: #fff9f8;
+}
+
+.eco-payroll-problem-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .eco-payroll-problem-list strong {
@@ -19815,6 +19847,17 @@ select.eco-input::-ms-expand,
   color: var(--eco-muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.eco-payroll-problem-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 10px;
+  color: var(--eco-rust) !important;
+  font-size: 12px !important;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .eco-payroll-skeleton {
@@ -20001,6 +20044,13 @@ select.eco-input::-ms-expand,
   flex-wrap: wrap;
 }
 
+.eco-payroll-calendar-rule {
+  margin: 0;
+  color: var(--eco-ink-3);
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .eco-payroll-calendar-filters {
   display: inline-flex;
   align-items: center;
@@ -20118,6 +20168,11 @@ select.eco-input::-ms-expand,
   background: var(--eco-success);
 }
 
+.eco-payroll-calendar-legend i.is-shift,
+.eco-payroll-calendar-day.has-shift i {
+  background: var(--eco-success);
+}
+
 .eco-payroll-calendar-legend i.is-actual,
 .eco-payroll-calendar-day.has-actual i {
   background: var(--eco-info);
@@ -20182,6 +20237,11 @@ select.eco-input::-ms-expand,
   border-color: #bbf7d0;
 }
 
+.eco-payroll-calendar-day.has-shift {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
 .eco-payroll-calendar-day.has-actual {
   background: #eff6ff;
   border-color: #bfdbfe;
@@ -20201,6 +20261,10 @@ select.eco-input::-ms-expand,
 
 .eco-payroll-calendar-day.is-selected.has-working {
   background: linear-gradient(0deg, rgba(220, 252, 231, 0.7), rgba(252, 235, 224, 0.86));
+}
+
+.eco-payroll-calendar-day.is-selected.has-shift {
+  background: #e8f6e9;
 }
 
 .eco-payroll-calendar-day.is-selected.has-actual {
@@ -21101,6 +21165,72 @@ select.eco-input::-ms-expand,
 
 .eco-payroll-adjustment label:last-of-type {
   grid-column: 1 / -1;
+}
+
+.eco-payroll-operation-error {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px solid #e7aaa2;
+  border-radius: 5px;
+  background: #fff5f3;
+  color: #8f3025;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.eco-payroll-operation-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 14px;
+  border: 1px solid #a8d7b3;
+  border-radius: 6px;
+  background: #f3fbf4;
+  color: #245d37;
+}
+
+.eco-payroll-operation-result__icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: #dff3e2;
+}
+
+.eco-payroll-operation-result strong,
+.eco-payroll-operation-result p,
+.eco-payroll-operation-result small {
+  margin: 0;
+}
+
+.eco-payroll-operation-result strong {
+  display: block;
+  color: #1f5a35;
+  font-size: 14px;
+}
+
+.eco-payroll-operation-result p {
+  margin-top: 3px;
+  color: #386546;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-payroll-operation-result small {
+  display: block;
+  margin-top: 8px;
+  color: #6f4a16;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.eco-payroll-operation-result__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .eco-payroll-drawer__footer {

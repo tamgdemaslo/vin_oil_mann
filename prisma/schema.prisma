@@ -386,7 +386,9 @@ model ChangeLog {
   @@map("change_logs")
 }
 
-// Назначенные владельцем рабочие дни сотрудника (график)
+// Назначенные владельцем смены для расчёта зарплаты. Имя таблицы оставлено
+// прежним для совместимости с существующими данными; отдельной сущности
+// «рабочий день» в продукте больше нет.
 model ScheduledWorkingDay {
   id             String   @id @default(cuid())
   branchId       String   @default("branch-main") @map("branch_id")

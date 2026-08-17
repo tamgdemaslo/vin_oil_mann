@@ -131,19 +131,42 @@ type Payroll = {
   }[];
 };
 
+type SavedAdjustment = {
+  employeeName: string;
+  operationTitle: string;
+  amountCents: number;
+  date: string;
+  refreshFailed: boolean;
+};
+
+type PayrollProblemAction =
+  | { kind: "retry" }
+  | { kind: "rate"; employeeLogin: string }
+  | { kind: "rules"; role: "master" | "admin" | null; instruction: string }
+  | { kind: "shifts"; date: string; role: "master" | "admin"; needsSingleEmployee: boolean }
+  | { kind: "adjustments" }
+  | { kind: "none" };
+
+type PayrollProblem = {
+  id: string;
+  title: string;
+  text: string;
+  severity: "warning" | "danger";
+  actionLabel?: string;
+  action: PayrollProblemAction;
+};
+
 type ShiftRateItem = {
   login: string;
   name: string;
   amountCents: number | null;
 };
 
-type WorkingDayItem = {
+type PayrollShiftItem = {
   id: string;
   userLogin: string;
   date: string;
   createdByLogin: string;
-  source?: "scheduled" | "actual" | "both";
-  removable?: boolean;
 };
 
 type PieceworkRuleItem = {
@@ -336,8 +359,7 @@ type PayrollRow = {
   role: UserRole;
   payroll: PayrollByLogin;
   rateCents: number | null;
-  workDaysCount: number;
-  actualShiftsCount: number;
+  shiftsCount: number;
   status: StatusKey;
 };
 
@@ -368,8 +390,8 @@ const TAB_META: Record<
     icon: ClipboardList,
   },
   workdays: {
-    label: "Рабочие дни",
-    description: "Календарь рабочих дней и фактических смен",
+    label: "Смены",
+    description: "Календарь смен, по которым начисляется зарплата",
     icon: CalendarDays,
   },
   rules: {
@@ -574,21 +596,6 @@ function formatDate(value: string) {
 function formatDateTime(value: string) {
   const formatted = formatServiceDateTime(value);
   return formatted === "—" ? value : formatted;
-}
-
-function formatDays(count: number) {
-  const abs = Math.abs(count);
-  const suffix =
-    abs % 10 === 1 && abs % 100 !== 11
-      ? "день"
-      : abs % 10 >= 2 && abs % 10 <= 4 && (abs % 100 < 10 || abs % 100 >= 20)
-        ? "дня"
-        : "дней";
-  return `${count} ${suffix}`;
-}
-
-function formatHours(count: number) {
-  return `${count} ч`;
 }
 
 function getMonthBounds(year: number, month: number) {
@@ -1029,14 +1036,14 @@ function getRowStatus(params: {
   payroll: PayrollByLogin;
   role: UserRole;
   rateCents: number | null;
-  workDaysCount: number;
+  shiftsCount: number;
   paidOverride: boolean;
 }): StatusKey {
-  const { closed, hasData, payroll, role, rateCents, workDaysCount, paidOverride } = params;
+  const { closed, hasData, payroll, role, rateCents, shiftsCount, paidOverride } = params;
   if (closed) return "closed";
   if (paidOverride || (payroll.paidOutCents > 0 && payroll.remainingCents <= 0)) return "paid";
   if (!hasData || payroll.totalCents === 0) return "not_calculated";
-  if (role !== "owner" && rateCents == null && workDaysCount > 0) return "has_errors";
+  if (role !== "owner" && rateCents == null && shiftsCount > 0) return "has_errors";
   if (payroll.remainingCents > 0) return "awaiting_payment";
   return "calculated";
 }
@@ -1086,7 +1093,7 @@ export default function SalaryDashboard({
   const [employeeDashboard, setEmployeeDashboard] = useState<EmployeeDashboardData | null>(null);
   const [employeeDashboardLoading, setEmployeeDashboardLoading] = useState(false);
   const [employeeDashboardError, setEmployeeDashboardError] = useState<string | null>(null);
-  const [payrollWorkingDays, setPayrollWorkingDays] = useState<WorkingDayItem[]>([]);
+  const [payrollShifts, setPayrollShifts] = useState<PayrollShiftItem[]>([]);
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [payrollError, setPayrollError] = useState<string | null>(null);
   const [progressText, setProgressText] = useState<string | null>(null);
@@ -1105,18 +1112,14 @@ export default function SalaryDashboard({
   const [ruleStatusFilter, setRuleStatusFilter] = useState("all");
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [calendarLogin, setCalendarLogin] = useState(isOwner ? "" : login);
-  const [calendarFilter, setCalendarFilter] = useState<"all" | "working" | "actual" | "absence">("all");
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateInputValue(new Date()));
   const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([toLocalDateInputValue(new Date())]));
   const [selectionAnchor, setSelectionAnchor] = useState(() => toLocalDateInputValue(new Date()));
   const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
   const [calendarSaveStatus, setCalendarSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
-  const [calendarDays, setCalendarDays] = useState<WorkingDayItem[]>([]);
+  const [calendarShifts, setCalendarShifts] = useState<PayrollShiftItem[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
-  const [dayComments, setDayComments] = useState<Record<string, string>>({});
-  const [shiftOverrides, setShiftOverrides] = useState<Set<string>>(() => new Set());
-  const [absenceOverrides, setAbsenceOverrides] = useState<Set<string>>(() => new Set());
   const [selectedLogin, setSelectedLogin] = useState<string | null>(null);
   const [drawerComment, setDrawerComment] = useState("");
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -1126,6 +1129,8 @@ export default function SalaryDashboard({
   const [adjustmentReason, setAdjustmentReason] = useState("");
   const [adjustmentDate, setAdjustmentDate] = useState(() => toLocalDateInputValue(new Date()));
   const [adjustmentSaving, setAdjustmentSaving] = useState(false);
+  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
+  const [savedAdjustment, setSavedAdjustment] = useState<SavedAdjustment | null>(null);
   const [adjustments, setAdjustments] = useState<BonusPenaltyItem[]>([]);
   const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -1209,11 +1214,11 @@ export default function SalaryDashboard({
     } catch {}
   }, [paidOverrides]);
 
-  const fetchWorkingDays = useCallback(async (from: string, to: string, targetLogin?: string) => {
+  const fetchPayrollShifts = useCallback(async (from: string, to: string, targetLogin?: string) => {
     const params = new URLSearchParams({ dateFrom: from, dateTo: to });
     if (targetLogin) params.set("user", targetLogin);
     const response = await fetch(`/api/working-days?${params.toString()}`, { cache: "no-store" });
-    return readJson<WorkingDayItem[]>(response, "Не удалось загрузить рабочие дни");
+    return readJson<PayrollShiftItem[]>(response, "Не удалось загрузить смены");
   }, []);
 
   const loadRates = useCallback(async () => {
@@ -1336,25 +1341,25 @@ export default function SalaryDashboard({
     if (!dateFrom || !dateTo) return;
     if (dateFrom > dateTo) {
       setPayroll(null);
-      setPayrollWorkingDays([]);
+      setPayrollShifts([]);
       setPayrollError("Дата начала расчёта не может быть позже даты окончания.");
       setProgressText(null);
       return;
     }
     setPayrollLoading(true);
     setPayrollError(null);
-    setProgressText("Считаем рабочие дни, услуги и сдельные начисления...");
+    setProgressText("Считаем смены, услуги и сдельные начисления...");
 
     try {
       const params = new URLSearchParams({ dateFrom, dateTo });
       if (isOwner && activeScopedLogin) params.set("user", activeScopedLogin);
       const [payrollResponse, workingDaysResponse] = await Promise.all([
         fetch(`/api/payroll?${params.toString()}`, { cache: "no-store" }),
-        fetchWorkingDays(dateFrom, dateTo, isOwner ? activeScopedLogin || undefined : undefined),
+        fetchPayrollShifts(dateFrom, dateTo, isOwner ? activeScopedLogin || undefined : undefined),
       ]);
       const nextPayroll = await readJson<Payroll>(payrollResponse, "Не удалось рассчитать зарплату");
       setPayroll(nextPayroll);
-      setPayrollWorkingDays(workingDaysResponse);
+      setPayrollShifts(workingDaysResponse);
       if (viewingAsEmployee) {
         await loadEmployeeDashboard();
       }
@@ -1362,34 +1367,34 @@ export default function SalaryDashboard({
       await Promise.all([loadRates(), loadAdjustments(), loadHistory(), loadPeriods()]);
     } catch (error) {
       setPayroll(null);
-      setPayrollWorkingDays([]);
+      setPayrollShifts([]);
       setPayrollError(error instanceof Error ? error.message : "Не удалось рассчитать зарплату");
       setProgressText(null);
     } finally {
       setPayrollLoading(false);
     }
-  }, [activeScopedLogin, dateFrom, dateTo, fetchWorkingDays, isOwner, loadAdjustments, loadEmployeeDashboard, loadHistory, loadPeriods, loadRates, viewingAsEmployee]);
+  }, [activeScopedLogin, dateFrom, dateTo, fetchPayrollShifts, isOwner, loadAdjustments, loadEmployeeDashboard, loadHistory, loadPeriods, loadRates, viewingAsEmployee]);
 
-  const loadCalendarDays = useCallback(async () => {
+  const loadCalendarShifts = useCallback(async () => {
     const { dateFrom: monthFrom, dateTo: monthTo } = getMonthBounds(
       calendarDate.getFullYear(),
       calendarDate.getMonth()
     );
     setCalendarLoading(true);
     try {
-      const nextDays = await fetchWorkingDays(
+      const nextShifts = await fetchPayrollShifts(
         monthFrom,
         monthTo,
         isOwner ? calendarLogin || undefined : undefined
       );
-      setCalendarDays(nextDays);
+      setCalendarShifts(nextShifts);
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Не удалось загрузить календарь");
-      setCalendarDays([]);
+      setToast(error instanceof Error ? error.message : "Не удалось загрузить смены");
+      setCalendarShifts([]);
     } finally {
       setCalendarLoading(false);
     }
-  }, [calendarDate, calendarLogin, fetchWorkingDays, isOwner]);
+  }, [calendarDate, calendarLogin, fetchPayrollShifts, isOwner]);
 
   useEffect(() => {
     if (autoLoadedRef.current) return;
@@ -1415,8 +1420,8 @@ export default function SalaryDashboard({
   }, [isOwner, login]);
 
   useEffect(() => {
-    void loadCalendarDays();
-  }, [loadCalendarDays]);
+    void loadCalendarShifts();
+  }, [loadCalendarShifts]);
 
   useEffect(() => {
     const { dateFrom: monthFrom, dateTo: monthTo } = getMonthBounds(
@@ -1478,17 +1483,16 @@ export default function SalaryDashboard({
     return teamUsers;
   }, [currentUser, teamUsers, userFilter, viewingAsEmployee]);
 
-  const workdayCountsByLogin = useMemo(() => {
-    const map = new Map<string, { working: Set<string>; actual: Set<string> }>();
-    for (const item of payrollWorkingDays) {
+  const shiftCountsByLogin = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const item of payrollShifts) {
       const key = normalizeLogin(item.userLogin);
-      const entry = map.get(key) ?? { working: new Set<string>(), actual: new Set<string>() };
-      if (item.source === "scheduled" || item.source === "both") entry.working.add(item.date);
-      if (item.source === "actual" || item.source === "both") entry.actual.add(item.date);
+      const entry = map.get(key) ?? new Set<string>();
+      entry.add(item.date);
       map.set(key, entry);
     }
     return map;
-  }, [payrollWorkingDays]);
+  }, [payrollShifts]);
 
   const payrollRows = useMemo<PayrollRow[]>(() => {
     const logins = new Set<string>();
@@ -1504,7 +1508,7 @@ export default function SalaryDashboard({
         const payrollEntry =
           Object.entries(payroll?.byLogin ?? {}).find(([entryLogin]) => normalizeLogin(entryLogin) === loginKey)?.[1] ??
           EMPTY_PAYROLL_ROW;
-        const counts = workdayCountsByLogin.get(loginKey);
+        const shifts = shiftCountsByLogin.get(loginKey);
         const roleValue = normalizeRole(user?.role ?? (loginKey === normalizeLogin(login) ? role : "master"));
         const rate = rateByLogin.get(loginKey)?.amountCents ?? null;
         const status = getRowStatus({
@@ -1513,7 +1517,7 @@ export default function SalaryDashboard({
           payroll: payrollEntry,
           role: roleValue,
           rateCents: rate,
-          workDaysCount: counts?.working.size ?? payrollEntry.shiftsCount,
+          shiftsCount: shifts?.size ?? payrollEntry.shiftsCount,
           paidOverride: paidOverrides.has(`${periodKey}:${loginKey}`),
         });
 
@@ -1523,8 +1527,7 @@ export default function SalaryDashboard({
           role: roleValue,
           payroll: payrollEntry,
           rateCents: rate,
-          workDaysCount: counts?.working.size ?? payrollEntry.shiftsCount,
-          actualShiftsCount: counts?.actual.size ?? payrollEntry.shiftsCount,
+          shiftsCount: shifts?.size ?? payrollEntry.shiftsCount,
           status,
         };
       })
@@ -1541,7 +1544,7 @@ export default function SalaryDashboard({
     scopedUsers,
     userByLogin,
     viewingAsEmployee,
-    workdayCountsByLogin,
+    shiftCountsByLogin,
   ]);
 
   const selectedRow = selectedLogin
@@ -1556,8 +1559,7 @@ export default function SalaryDashboard({
           role: normalizeRole(user.role ?? "master"),
           payroll: EMPTY_PAYROLL_ROW,
           rateCents: rateByLogin.get(normalizeLogin(user.login))?.amountCents ?? null,
-          workDaysCount: 0,
-          actualShiftsCount: 0,
+          shiftsCount: 0,
           status: "not_calculated" as StatusKey,
         }))
         .find((row) => normalizeLogin(row.login) === normalizeLogin(rateDrawerLogin)) ??
@@ -1584,78 +1586,164 @@ export default function SalaryDashboard({
     const totalAccrued = payrollRows.reduce((sum, row) => sum + row.payroll.totalCents, 0);
     const totalPaid = payrollRows.reduce((sum, row) => sum + row.payroll.paidOutCents, 0);
     const totalRemaining = payrollRows.reduce((sum, row) => sum + row.payroll.remainingCents, 0);
-    const totalWorkingDays = payrollRows.reduce((sum, row) => sum + row.workDaysCount, 0);
-    return { totalAccrued, totalPaid, totalRemaining, totalWorkingDays };
+    const totalShifts = payrollRows.reduce((sum, row) => sum + row.shiftsCount, 0);
+    return { totalAccrued, totalPaid, totalRemaining, totalShifts };
   }, [payrollRows]);
 
   const problems = useMemo(() => {
-    const next: { title: string; text: string; severity: "warning" | "danger" }[] = [];
+    const next: PayrollProblem[] = [];
     if (payrollError) {
       next.push({
+        id: "payroll-error",
         title: "Не удалось рассчитать зарплату",
-        text: "Проверьте рабочие дни, ставки и правила сдельной части.",
+        text: "Расчёт не завершился. Попробуйте запустить его ещё раз.",
         severity: "danger",
+        actionLabel: "Повторить расчёт",
+        action: { kind: "retry" },
       });
     }
     for (const row of payrollRows) {
-      if (row.role !== "owner" && row.rateCents == null && row.workDaysCount > 0) {
+      if (row.role !== "owner" && row.rateCents == null && row.shiftsCount > 0) {
         next.push({
+          id: `missing-rate:${row.login}`,
           title: `${row.name}: нет ставки`,
-          text: "Фиксированная часть за смены не будет начислена.",
+          text: `За ${row.shiftsCount} смен. фиксированная часть не начислена. Укажите ставку сотрудника.`,
           severity: "warning",
+          actionLabel: "Указать ставку",
+          action: { kind: "rate", employeeLogin: row.login },
         });
       }
       if (row.payroll.bonusPenaltyCents < 0 && row.payroll.totalCents < 0) {
         next.push({
+          id: `negative-accrual:${row.login}`,
           title: `${row.name}: отрицательное начисление`,
-          text: "Проверьте удержания и ручные корректировки.",
+          text: "Удержания превышают начисления. Проверьте ручные корректировки сотрудника.",
           severity: "danger",
+          actionLabel: "Открыть корректировки",
+          action: { kind: "adjustments" },
         });
       }
     }
-    const unallocatedByReason = new Map<string, number>();
+    const unallocatedByReason = new Map<string, {
+      count: number;
+      sample: { date: string; demandName: string; label: string; category: "work" | "product" };
+    }>();
     for (const vehicle of payroll?.vehicleHistory ?? []) {
       for (const item of vehicle.unallocatedPiecework ?? []) {
-        unallocatedByReason.set(item.reason, (unallocatedByReason.get(item.reason) ?? 0) + 1);
+        const current = unallocatedByReason.get(item.reason);
+        unallocatedByReason.set(item.reason, {
+          count: (current?.count ?? 0) + 1,
+          sample: current?.sample ?? {
+            date: vehicle.date,
+            demandName: vehicle.demandName,
+            label: item.label,
+            category: item.category,
+          },
+        });
       }
     }
-    const unallocatedReasonLabels: Record<string, string> = {
-      missing_master: "нет мастера в рабочей команде",
-      multiple_masters: "несколько мастеров в рабочей команде",
-      missing_admin: "нет администратора в рабочей команде",
-      multiple_admins: "несколько администраторов в рабочей команде",
-      missing_rule: "нет правила сдельной части",
-    };
-    for (const [reason, count] of unallocatedByReason) {
+    for (const [reason, problem] of unallocatedByReason) {
+      const role = problem.sample.category === "work" ? "master" : "admin";
+      const roleLabel = role === "master" ? "мастера" : "администратора";
+      const example = `${problem.sample.demandName} · ${formatDate(problem.sample.date)}`;
+      const isMissingRule = reason === "missing_rule";
+      const isMultiple = reason === "multiple_masters" || reason === "multiple_admins";
       next.push({
-        title: `${count} поз. требуют распределения`,
-        text: unallocatedReasonLabels[reason] ?? "Позиции не начислены автоматически.",
-        severity: reason === "missing_rule" ? "warning" : "danger",
+        id: `unallocated:${reason}`,
+        title: isMissingRule
+          ? `${problem.count} поз. без правила начисления`
+          : `${problem.count} поз. без назначенной рабочей команды`,
+        text: isMissingRule
+          ? `Для «${problem.sample.label}» (${example}) нет правила для ${roleLabel}.`
+          : isMultiple
+            ? `В «${example}» назначено несколько ${roleLabel}. Оставьте в графике одного.`
+            : `В «${example}» не назначен ${roleLabel}. Назначьте ему смену на этот день.`,
+        severity: isMissingRule ? "warning" : "danger",
+        actionLabel: isMissingRule ? "Настроить правило" : "Открыть график",
+        action: isMissingRule
+          ? {
+              kind: "rules",
+              role,
+              instruction: `Создайте правило для ${roleLabel}: «${problem.sample.label}».`,
+            }
+          : {
+              kind: "shifts",
+              date: problem.sample.date,
+              role,
+              needsSingleEmployee: isMultiple,
+            },
       });
     }
     if (!rulesLoading && canManagePayroll && rules.length === 0) {
       next.push({
+        id: "rules-empty",
         title: "Правила сдельной части не настроены",
-        text: "Добавьте правила для услуг и групп товаров.",
+        text: "Без них платформа не сможет начислить сдельную часть за услуги и товары.",
         severity: "warning",
+        actionLabel: "Настроить правила",
+        action: { kind: "rules", role: null, instruction: "Добавьте правило для услуги или группы товаров." },
       });
     }
     if (payroll && payrollRows.length === 0) {
       next.push({
+        id: "payroll-users-empty",
         title: "Сотрудники не найдены",
         text: "Добавьте сотрудников в настройках доступа.",
         severity: "warning",
+        action: { kind: "none" },
       });
     }
-    if (payroll && payrollWorkingDays.length === 0) {
+    if (payroll && payrollShifts.length === 0) {
       next.push({
-        title: "Рабочие дни не заполнены",
-        text: "Календарь графика пуст за выбранный период.",
+        id: "shifts-empty",
+        title: "Смены не назначены",
+        text: "Назначьте смены сотрудникам за выбранный период — только они участвуют в начислении.",
         severity: "warning",
+        actionLabel: "Открыть смены",
+        action: { kind: "shifts", date: dateFrom, role: "master", needsSingleEmployee: false },
       });
     }
     return next.slice(0, 8);
-  }, [canManagePayroll, payroll, payrollError, payrollRows, payrollWorkingDays.length, rules.length, rulesLoading]);
+  }, [canManagePayroll, dateFrom, payroll, payrollError, payrollRows, payrollShifts.length, rules.length, rulesLoading]);
+
+  function resolvePayrollProblem(problem: PayrollProblem) {
+    const { action } = problem;
+    if (action.kind === "retry") {
+      void loadPayroll();
+      return;
+    }
+    if (action.kind === "rate") {
+      setActiveTab("rates");
+      setRateDrawerLogin(action.employeeLogin);
+      setToast("Укажите ставку и сохраните изменение.");
+      return;
+    }
+    if (action.kind === "rules") {
+      setActiveTab("rules");
+      setRuleRoleFilter(action.role ?? "all");
+      setToast(action.instruction);
+      return;
+    }
+    if (action.kind === "shifts") {
+      const selectedMonth = new Date(`${action.date}T12:00:00`);
+      setActiveTab("workdays");
+      setCalendarDate(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1));
+      setCalendarLogin("");
+      setSelectedDate(action.date);
+      setSelectedDates(new Set([action.date]));
+      setSelectionAnchor(action.date);
+      setMultiSelectEnabled(false);
+      setToast(
+        action.needsSingleEmployee
+          ? `На ${formatDate(action.date)} оставьте одну смену для ${action.role === "master" ? "мастера" : "администратора"}.`
+          : `На ${formatDate(action.date)} назначьте смену для ${action.role === "master" ? "мастера" : "администратора"}.`
+      );
+      return;
+    }
+    if (action.kind === "adjustments") {
+      setActiveTab("adjustments");
+    }
+  }
 
   const availableTabs = useMemo<SalaryTab[]>(
     () =>
@@ -1891,17 +1979,16 @@ export default function SalaryDashboard({
     setMultiSelectEnabled(true);
   }
 
-  function getCalendarItemsForDate(date: string, targetLogin = calendarLogin) {
-    return calendarDays.filter((item) => {
+  function getCalendarShiftsForDate(date: string, targetLogin = calendarLogin) {
+    return calendarShifts.filter((item) => {
       if (targetLogin && normalizeLogin(item.userLogin) !== normalizeLogin(targetLogin)) return false;
       return item.date === date;
     });
   }
 
-  function getCalendarCountsByLogin() {
+  function getCalendarShiftCountsByLogin() {
     const counts = new Map<string, Set<string>>();
-    for (const item of calendarDays) {
-      if (item.source !== "scheduled" && item.source !== "both") continue;
+    for (const item of calendarShifts) {
       const key = normalizeLogin(item.userLogin);
       const set = counts.get(key) ?? new Set<string>();
       set.add(item.date);
@@ -1910,7 +1997,7 @@ export default function SalaryDashboard({
     return counts;
   }
 
-  const calendarCounts = getCalendarCountsByLogin();
+  const calendarShiftCounts = getCalendarShiftCountsByLogin();
 
   const sortedSelectedDates = Array.from(selectedDates).sort();
   const selectedDatesCount = sortedSelectedDates.length;
@@ -1921,70 +2008,35 @@ export default function SalaryDashboard({
     if (calendarLogin) {
       return teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin));
     }
-    return teamUsers;
+    return teamUsers.filter((user) => user.role === "master" || user.role === "admin");
   }
 
-  function calendarOverrideKey(userLogin: string, date: string) {
-    return `${normalizeLogin(userLogin)}:${date}`;
+  function getEffectiveShiftState(date: string, targetLogin = calendarLogin) {
+    const items = getCalendarShiftsForDate(date, targetLogin);
+    return { hasShift: items.length > 0, items };
   }
 
-  function getEffectiveDayState(date: string, targetLogin = calendarLogin) {
-    const targetUsers = targetLogin
-      ? teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(targetLogin))
-      : teamUsers;
-    const items = getCalendarItemsForDate(date, targetLogin);
-    const hasWorking = items.some((item) => item.source === "scheduled" || item.source === "both");
-    const hasActualFromApi = items.some((item) => item.source === "actual" || item.source === "both");
-    const hasShiftOverride = targetUsers.some((user) => shiftOverrides.has(calendarOverrideKey(user.login, date)));
-    const hasAbsenceOverride = targetUsers.some((user) => absenceOverrides.has(calendarOverrideKey(user.login, date)));
-    const hasActual = hasActualFromApi || hasShiftOverride;
-    const todayKey = toLocalDateInputValue(new Date());
-    const hasAbsence = hasAbsenceOverride || (hasWorking && !hasActual && date < todayKey);
-    return { hasWorking, hasActual, hasAbsence, items };
-  }
-
-  async function runSelectedDaysAction(
-    action:
-      | "mark-working"
-      | "clear-working"
-      | "add-shift"
-      | "clear-shift"
-      | "add-comment"
-      | "clear-comment"
-      | "mark-absence"
-      | "reset-local"
-  ) {
+  async function runSelectedShiftAction(action: "add" | "remove") {
     if (!canManagePayroll || calendarBusy || selectedDatesCount === 0) return;
 
     const targetUsers = getTargetUsersForCalendarAction();
     if (targetUsers.length === 0) {
-      setToast("Выберите сотрудника для массового действия");
+      setToast("Выберите сотрудника для смены");
       return;
     }
 
     const targetLabel = calendarLogin
       ? teamUsers.find((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))?.name ?? calendarLogin
       : "всех сотрудников";
-    const dangerous = action === "clear-working" || action === "clear-shift" || action === "clear-comment" || !calendarLogin;
-    const actionLabels = {
-      "mark-working": "Отметить",
-      "clear-working": "Снять рабочие дни",
-      "add-shift": "Добавить смену",
-      "clear-shift": "Очистить смены",
-      "add-comment": "Добавить комментарий",
-      "clear-comment": "Очистить комментарии",
-      "mark-absence": "Отметить отсутствием",
-      "reset-local": "Сбросить выбранные изменения",
-    };
-
-    if (dangerous && !window.confirm(`${actionLabels[action]} для ${selectedDatesCount} дней: ${targetLabel}?`)) {
+    const label = action === "add" ? "Назначить смены" : "Снять смены";
+    if ((action === "remove" || !calendarLogin) && !window.confirm(`${label} для ${selectedDatesCount} дн.: ${targetLabel}?`)) {
       return;
     }
 
     setCalendarSaveStatus("saving");
     setCalendarBusy(true);
     try {
-      if (action === "mark-working") {
+      if (action === "add") {
         for (const user of targetUsers) {
           for (const date of sortedSelectedDates) {
             const response = await fetch("/api/working-days", {
@@ -1992,271 +2044,154 @@ export default function SalaryDashboard({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ userLogin: user.login, date }),
             });
-            await readJson(response, "Не удалось назначить рабочие дни");
+            await readJson(response, "Не удалось назначить смену");
           }
         }
-        setToast(`${selectedDatesCount} дней отмечены рабочими`);
-      }
-
-      if (action === "clear-working") {
-        const removable = calendarDays.filter((item) => {
+      } else {
+        const removable = calendarShifts.filter((item) => {
           if (!sortedSelectedDates.includes(item.date)) return false;
-          if (item.source !== "scheduled" && item.source !== "both") return false;
           if (calendarLogin && normalizeLogin(item.userLogin) !== normalizeLogin(calendarLogin)) return false;
-          return item.removable !== false;
+          return true;
         });
-        for (const item of removable) {
-          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
-          await readJson(response, "Не удалось снять рабочие дни");
-        }
-        setToast(`${selectedDatesCount} дней сняты с графика`);
-      }
-
-      if (action === "add-shift") {
-        setShiftOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.add(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setAbsenceOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setToast(`${selectedDatesCount} смен добавлены в календарь`);
-      }
-
-      if (action === "clear-shift") {
-        setShiftOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setToast("Локальные смены очищены");
-      }
-
-      if (action === "add-comment") {
-        const comment = window.prompt(`Комментарий для ${selectedDatesCount} дней`);
-        if (comment == null) {
-          setCalendarSaveStatus("idle");
+        if (removable.length === 0) {
+          setCalendarSaveStatus("saved");
+          setToast("На выбранные даты смен нет");
           return;
         }
-        setDayComments((prev) => {
-          const next = { ...prev };
-          for (const date of sortedSelectedDates) {
-            next[`${calendarLogin || "all"}:${date}`] = comment;
-          }
-          return next;
-        });
-        setToast("Комментарий добавлен");
+        for (const item of removable) {
+          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
+          await readJson(response, "Не удалось снять смену");
+        }
       }
 
-      if (action === "clear-comment") {
-        setDayComments((prev) => {
-          const next = { ...prev };
-          for (const date of sortedSelectedDates) delete next[`${calendarLogin || "all"}:${date}`];
-          return next;
-        });
-        setToast("Комментарии очищены");
-      }
-
-      if (action === "mark-absence") {
-        setAbsenceOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.add(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setShiftOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setToast(`${selectedDatesCount} дней отмечены отсутствием`);
-      }
-
-      if (action === "reset-local") {
-        setShiftOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setAbsenceOverrides((prev) => {
-          const next = new Set(prev);
-          for (const user of targetUsers) {
-            for (const date of sortedSelectedDates) next.delete(calendarOverrideKey(user.login, date));
-          }
-          return next;
-        });
-        setDayComments((prev) => {
-          const next = { ...prev };
-          for (const date of sortedSelectedDates) delete next[`${calendarLogin || "all"}:${date}`];
-          return next;
-        });
-        setToast("Выбранные локальные изменения сброшены");
-      }
-
-      await loadCalendarDays();
-      await loadPayroll();
+      await Promise.all([loadCalendarShifts(), loadPayroll()]);
       setCalendarSaveStatus("saved");
+      setToast(action === "add" ? "Смены назначены: зарплата пересчитана" : "Смены сняты: зарплата пересчитана");
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Не удалось выполнить массовое действие");
+      setToast(error instanceof Error ? error.message : "Не удалось изменить смены");
       setCalendarSaveStatus("dirty");
     } finally {
       setCalendarBusy(false);
     }
   }
 
-  async function toggleWorkingDay(targetDate: string, shouldBeWorking: boolean) {
+  async function toggleShift(targetDate: string, shouldHaveShift: boolean) {
     if (!canManagePayroll) return;
     if (!calendarLogin) {
-      setToast("Выберите сотрудника для изменения конкретного дня");
+      setToast("Выберите сотрудника, чтобы изменить его смену");
       return;
     }
-    const item = getCalendarItemsForDate(targetDate, calendarLogin).find(
-      (candidate) => candidate.source === "scheduled" || candidate.source === "both"
-    );
+    const item = getCalendarShiftsForDate(targetDate, calendarLogin)[0];
+    setCalendarSaveStatus("saving");
     setCalendarBusy(true);
     try {
-      if (shouldBeWorking && !item) {
+      if (shouldHaveShift && !item) {
         const response = await fetch("/api/working-days", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userLogin: calendarLogin, date: targetDate }),
         });
-        await readJson(response, "Не удалось назначить рабочий день");
-        setToast("Рабочий день назначен");
+        await readJson(response, "Не удалось назначить смену");
       }
-      if (!shouldBeWorking && item) {
+      if (!shouldHaveShift && item) {
         const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
-        await readJson(response, "Не удалось снять рабочий день");
-        setToast("Рабочий день снят");
+        await readJson(response, "Не удалось снять смену");
       }
-      await loadCalendarDays();
-      await loadPayroll();
+      await Promise.all([loadCalendarShifts(), loadPayroll()]);
+      setCalendarSaveStatus("saved");
+      setToast(shouldHaveShift ? "Смена назначена: зарплата пересчитана" : "Смена снята: зарплата пересчитана");
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Не удалось обновить рабочий день");
+      setToast(error instanceof Error ? error.message : "Не удалось изменить смену");
+      setCalendarSaveStatus("dirty");
     } finally {
       setCalendarBusy(false);
     }
   }
 
-  async function runBulkWorkingDays(kind: "weekdays" | "copy" | "clear" | "masters") {
+  async function runBulkShifts(kind: "copy" | "clear" | "masters") {
     if (!canManagePayroll || calendarBusy) return;
+    if (kind === "masters" && !calendarLogin) {
+      setToast("Выберите сотрудника-источник");
+      return;
+    }
     const { dateFrom: monthFrom, dateTo: monthTo, daysInMonth } = getMonthBounds(
       calendarDate.getFullYear(),
       calendarDate.getMonth()
     );
-    const targetUsers = calendarLogin
-      ? teamUsers.filter((user) => normalizeLogin(user.login) === normalizeLogin(calendarLogin))
-      : teamUsers.filter((user) => user.role !== "owner");
-
     const messages = {
-      weekdays: "Назначить будни рабочими для выбранного набора сотрудников?",
       copy: "Скопировать график прошлого месяца в текущий?",
-      clear: "Очистить назначенные рабочие дни за месяц?",
+      clear: "Снять все смены за месяц?",
       masters: "Применить график выбранного сотрудника ко всем мастерам?",
     };
     if (!window.confirm(messages[kind])) return;
 
+    setCalendarSaveStatus("saving");
     setCalendarBusy(true);
     try {
-      if (kind === "weekdays") {
-        const dates = Array.from({ length: daysInMonth }, (_, index) => {
-          const day = index + 1;
-          const date = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
-          return { date, key: toLocalDateInputValue(date) };
-        }).filter(({ date }) => date.getDay() !== 0 && date.getDay() !== 6);
-
-        for (const user of targetUsers) {
-          for (const item of dates) {
-            await fetch("/api/working-days", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userLogin: user.login, date: item.key }),
-            });
-          }
-        }
-        setToast("Будни назначены рабочими");
-      }
-
       if (kind === "clear") {
-        const removable = calendarDays.filter((item) => {
-          if (item.source !== "scheduled" && item.source !== "both") return false;
+        const removable = calendarShifts.filter((item) => {
           if (calendarLogin && normalizeLogin(item.userLogin) !== normalizeLogin(calendarLogin)) return false;
-          return item.removable !== false;
+          return true;
         });
         for (const item of removable) {
-          await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
+          const response = await fetch(`/api/working-days/${item.id}`, { method: "DELETE" });
+          await readJson(response, "Не удалось снять смену");
         }
-        setToast("Месяц очищен");
       }
 
       if (kind === "copy") {
         const prevDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1);
         const prevBounds = getMonthBounds(prevDate.getFullYear(), prevDate.getMonth());
-        const previousDays = await fetchWorkingDays(
+        const previousShifts = await fetchPayrollShifts(
           prevBounds.dateFrom,
           prevBounds.dateTo,
           isOwner ? calendarLogin || undefined : undefined
         );
-        const scheduledPrevious = previousDays.filter(
-          (item) => item.source === "scheduled" || item.source === "both"
-        );
-        for (const item of scheduledPrevious) {
+        for (const item of previousShifts) {
           const day = Number(item.date.slice(8, 10));
           if (!Number.isFinite(day) || day < 1 || day > daysInMonth) continue;
           const targetDate = `${monthFrom.slice(0, 8)}${String(day).padStart(2, "0")}`;
           if (targetDate > monthTo) continue;
-          await fetch("/api/working-days", {
+          const response = await fetch("/api/working-days", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ userLogin: item.userLogin, date: targetDate }),
           });
+          await readJson(response, "Не удалось скопировать смены");
         }
-        setToast("График прошлого месяца скопирован");
       }
 
       if (kind === "masters") {
-        if (!calendarLogin) {
-          setToast("Выберите сотрудника-источник");
-        } else {
-          const sourceDates = calendarDays
-            .filter(
-              (item) =>
-                normalizeLogin(item.userLogin) === normalizeLogin(calendarLogin) &&
-                (item.source === "scheduled" || item.source === "both")
-            )
-            .map((item) => item.date);
-          const masters = teamUsers.filter(
-            (user) => user.role === "master" && normalizeLogin(user.login) !== normalizeLogin(calendarLogin)
-          );
-          for (const user of masters) {
-            for (const date of sourceDates) {
-              await fetch("/api/working-days", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userLogin: user.login, date }),
-              });
-            }
+        const sourceDates = calendarShifts
+          .filter((item) => normalizeLogin(item.userLogin) === normalizeLogin(calendarLogin))
+          .map((item) => item.date);
+        const masters = teamUsers.filter(
+          (user) => user.role === "master" && normalizeLogin(user.login) !== normalizeLogin(calendarLogin)
+        );
+        for (const user of masters) {
+          for (const date of sourceDates) {
+            const response = await fetch("/api/working-days", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userLogin: user.login, date }),
+            });
+            await readJson(response, "Не удалось применить смены");
           }
-          setToast("График применён ко всем мастерам");
         }
       }
 
-      await loadCalendarDays();
-      await loadPayroll();
+      await Promise.all([loadCalendarShifts(), loadPayroll()]);
+      setCalendarSaveStatus("saved");
+      setToast(
+        kind === "copy"
+          ? "Смены прошлого месяца скопированы: зарплата пересчитана"
+          : kind === "clear"
+            ? "Смены месяца сняты: зарплата пересчитана"
+            : "Смены применены ко всем мастерам: зарплата пересчитана"
+      );
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Не удалось изменить смены");
+      setCalendarSaveStatus("dirty");
     } finally {
       setCalendarBusy(false);
     }
@@ -2376,14 +2311,15 @@ export default function SalaryDashboard({
 
   async function submitAdjustment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setAdjustmentError(null);
     const employeeLogin = operationEmployeeLogin || selectedRow?.login || payrollOperationUsers[0]?.login || "";
     if (!employeeLogin) {
-      setToast("Выберите сотрудника для корректировки");
+      setAdjustmentError("Выберите сотрудника для корректировки.");
       return;
     }
     const amount = parseMoneyInput(adjustmentAmount);
     if (!adjustmentDate || amount <= 0) {
-      setToast("Укажите дату и сумму корректировки");
+      setAdjustmentError("Укажите дату и сумму корректировки больше нуля.");
       return;
     }
 
@@ -2404,14 +2340,31 @@ export default function SalaryDashboard({
         }),
       });
       await readJson(response, "Не удалось добавить корректировку");
-      setToast("Корректировка добавлена");
+      const employeeName = payrollOperationUsers.find(
+        (user) => normalizeLogin(user.login) === normalizeLogin(employeeLogin)
+      )?.name ?? employeeLogin;
+      const saved = {
+        employeeName,
+        operationTitle: adjustmentOperationTitle(adjustmentType),
+        amountCents: Math.round(amount * 100),
+        date: adjustmentDate,
+      };
       setAdjustmentOpen(false);
       setAdjustmentAmount("");
       setAdjustmentReason("");
       setAdjustmentComment("");
-      await Promise.all([loadPayroll(), loadAdjustments()]);
+      setSavedAdjustment({ ...saved, refreshFailed: false });
+      setToast("Корректировка сохранена");
+      try {
+        await Promise.all([loadPayroll(), loadAdjustments()]);
+      } catch {
+        // The settlement has already been persisted. Surface a refresh problem
+        // separately instead of telling the owner that saving failed.
+        setSavedAdjustment({ ...saved, refreshFailed: true });
+      }
     } catch (error) {
-      setToast(error instanceof Error ? error.message : "Не удалось добавить корректировку");
+      const message = error instanceof Error ? error.message : "Не удалось добавить корректировку";
+      setAdjustmentError(message);
     } finally {
       setAdjustmentSaving(false);
     }
@@ -2426,6 +2379,8 @@ export default function SalaryDashboard({
   function openAdjustmentForm(type: typeof adjustmentType) {
     const employeeLogin = operationEmployeeLogin || selectedRow?.login || payrollRows[0]?.login || payrollOperationUsers[0]?.login || login;
     setPaymentOpen(false);
+    setSavedAdjustment(null);
+    setAdjustmentError(null);
     setOperationEmployeeLogin(employeeLogin);
     setAdjustmentType(type);
     setAdjustmentReason("");
@@ -2444,8 +2399,17 @@ export default function SalaryDashboard({
     setPaymentAmount(operationType === "SALARY" ? formatFixedInput(Math.max(0, row.payroll.remainingCents)) : "");
     setPaymentComment("");
     setPaymentOpen(true);
+    setSavedAdjustment(null);
+    setAdjustmentError(null);
     setToast(`Открыта форма: ${paymentOperationTitle(operationType).toLowerCase()}`);
     focusOperationForm();
+  }
+
+  function closePayrollOperation() {
+    setPaymentOpen(false);
+    setAdjustmentOpen(false);
+    setAdjustmentError(null);
+    setSavedAdjustment(null);
   }
 
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
@@ -2547,20 +2511,15 @@ export default function SalaryDashboard({
     },
   ] as const;
 
-  const selectedDayState = getEffectiveDayState(selectedDate);
+  const selectedDayState = getEffectiveShiftState(selectedDate);
   const selectedDayItems = selectedDayState.items;
-  const selectedDayWorking = selectedDayState.hasWorking;
-  const selectedDayActual = selectedDayState.hasActual;
-  const selectedDayCommentKey = `${calendarLogin || "all"}:${selectedDate}`;
+  const selectedDayHasShift = selectedDayState.hasShift;
   const selectedBulkStats = sortedSelectedDates.reduce(
     (stats, date) => {
-      const state = getEffectiveDayState(date);
-      if (state.hasWorking) stats.working += 1;
-      if (state.hasActual) stats.actual += 1;
-      if (state.hasAbsence) stats.absence += 1;
+      if (getEffectiveShiftState(date).hasShift) stats.shifts += 1;
       return stats;
     },
-    { working: 0, actual: 0, absence: 0 }
+    { shifts: 0 }
   );
 
   const selectedShipmentBreakdown = selectedRow
@@ -2618,7 +2577,7 @@ export default function SalaryDashboard({
             </EcoBadge>
           </div>
           <p className="eco-page-subtitle">
-            Расчёт выплат, рабочих дней и сдельных правил по текущим данным платформы.
+            Расчёт выплат, смен и сдельных правил по текущим данным платформы.
           </p>
         </div>
         <div className="eco-page-actions eco-payroll-head-actions">
@@ -2658,7 +2617,7 @@ export default function SalaryDashboard({
             <EcoKpi label="Начислено" value={formatMoney(totals.totalAccrued)} sub={`за ${formatDate(dateFrom)} - ${formatDate(dateTo)}`} tone="rust" />
             <EcoKpi label="Выплачено" value={formatMoney(totals.totalPaid)} sub="по данным расходных ордеров" tone="success" />
             <EcoKpi label="К выплате" value={formatMoney(totals.totalRemaining)} sub="личный остаток" tone={totals.totalRemaining > 0 ? "warning" : "success"} />
-            <EcoKpi label="Рабочих дней" value={formatDays(totals.totalWorkingDays)} sub="по графику и сменам" tone="info" />
+            <EcoKpi label="Смен" value={totals.totalShifts} sub="назначено для оплаты" tone="info" />
           </>
         ) : (
           <>
@@ -2666,7 +2625,7 @@ export default function SalaryDashboard({
             <EcoKpi label="Начислено за период" value={formatMoney(totals.totalAccrued)} sub={`${formatDate(dateFrom)} - ${formatDate(dateTo)}`} tone="rust" />
             <EcoKpi label="Выплачено" value={formatMoney(totals.totalPaid)} sub="по РКО и авансам" tone="success" />
             <EcoKpi label="К выплате" value={formatMoney(totals.totalRemaining)} sub="остаток по сотрудникам" tone={totals.totalRemaining > 0 ? "warning" : "success"} />
-            <EcoKpi label="Рабочих дней" value={totals.totalWorkingDays} sub="по всем сотрудникам" tone="info" />
+            <EcoKpi label="Смен" value={totals.totalShifts} sub="по всем сотрудникам" tone="info" />
             <EcoKpi label="Не настроено" value={problems.length} sub="требуют проверки" tone={problems.length > 0 ? "warning" : "success"} />
           </>
         )}
@@ -2689,7 +2648,7 @@ export default function SalaryDashboard({
                 ? employeeDashboard?.latestAccruals.length ?? payrollRows.length
                 : payrollRows.length
               : tab === "workdays"
-                ? payrollWorkingDays.length || calendarDays.length
+                ? payrollShifts.length || calendarShifts.length
                 : tab === "rates"
                   ? rates.length
                   : tab === "rules"
@@ -2802,16 +2761,34 @@ export default function SalaryDashboard({
                 <AlertTriangle size={17} />
                 <div>
                   <strong>Проблемы расчёта</strong>
-                  <span>Проверьте эти пункты перед закрытием периода.</span>
+                  <span>Откройте пункт, чтобы перейти к нужному действию.</span>
                 </div>
               </div>
               <div className="eco-payroll-problem-list">
-                {problems.map((problem, index) => (
-                  <div key={`${problem.title}-${index}`} className={`is-${problem.severity}`}>
-                    <strong>{problem.title}</strong>
-                    <span>{problem.text}</span>
-                  </div>
-                ))}
+                {problems.map((problem) =>
+                  problem.action.kind === "none" ? (
+                    <div key={problem.id} className={`is-${problem.severity}`}>
+                      <strong>{problem.title}</strong>
+                      <span>{problem.text}</span>
+                    </div>
+                  ) : (
+                    <button
+                      key={problem.id}
+                      type="button"
+                      className={`is-${problem.severity}`}
+                      onClick={() => resolvePayrollProblem(problem)}
+                    >
+                      <span className="eco-payroll-problem-copy">
+                        <strong>{problem.title}</strong>
+                        <span>{problem.text}</span>
+                      </span>
+                      <span className="eco-payroll-problem-action">
+                        {problem.actionLabel}
+                        <ChevronRight size={16} aria-hidden="true" />
+                      </span>
+                    </button>
+                  )
+                )}
               </div>
             </div>
           )}
@@ -2840,7 +2817,6 @@ export default function SalaryDashboard({
                   <tr>
                     <th>Сотрудник</th>
                     <th>Роль</th>
-                    <th className="is-num">Рабочих дней</th>
                     <th className="is-num">Смен</th>
                     <th className="is-num">Фикс</th>
                     <th className="is-num">Сдельная часть</th>
@@ -2873,8 +2849,7 @@ export default function SalaryDashboard({
                           </div>
                         </td>
                         <td>{roleShortLabel(row.role)}</td>
-                        <td className="is-num">{formatDays(row.workDaysCount)}</td>
-                        <td className="is-num">{row.actualShiftsCount}</td>
+                        <td className="is-num">{row.shiftsCount}</td>
                         <td className="is-num">{formatMoney(row.payroll.shiftTotalCents)}</td>
                         <td className="is-num">{formatMoney(row.payroll.pieceworkCents)}</td>
                         <td className="is-num is-positive">{formatMoney(bonuses)}</td>
@@ -2929,8 +2904,8 @@ export default function SalaryDashboard({
         <section className="eco-payroll-workspace eco-payroll-calendar-view">
           <div className="eco-payroll-toolbar">
             <div>
-              <div className="eco-page-kicker">Рабочие дни сотрудников</div>
-              <p>Крупный календарь графика, фактических смен и пропусков.</p>
+              <div className="eco-page-kicker">Смены сотрудников</div>
+              <p>Смена — единственное основание для начисления зарплаты за день.</p>
             </div>
             <div className="eco-payroll-controls">
               <div className="eco-payroll-month-nav">
@@ -2954,23 +2929,7 @@ export default function SalaryDashboard({
           </div>
 
           <div className="eco-payroll-calendar-topline">
-            <div className="eco-payroll-calendar-filters" aria-label="Фильтр дней">
-              {[
-                ["all", "Все"],
-                ["working", "Рабочие"],
-                ["actual", "Смены"],
-                ["absence", "Пропуски"],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={calendarFilter === value ? "is-active" : ""}
-                  onClick={() => setCalendarFilter(value as typeof calendarFilter)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <p className="eco-payroll-calendar-rule">Есть смена — зарплата за день начисляется. Нет смены — не начисляется.</p>
             <div className={`eco-payroll-save-state is-${calendarSaveStatus}`}>
               {calendarBusy || calendarSaveStatus === "saving"
                 ? "Сохраняем..."
@@ -2999,7 +2958,7 @@ export default function SalaryDashboard({
                 className={normalizeLogin(calendarLogin) === normalizeLogin(user.login) ? "is-active" : ""}
                 onClick={() => setCalendarLogin(user.login)}
               >
-                {user.name} · {calendarCounts.get(normalizeLogin(user.login))?.size ?? 0}
+                {user.name} · {calendarShiftCounts.get(normalizeLogin(user.login))?.size ?? 0}
               </button>
             ))}
           </div>
@@ -3027,40 +2986,22 @@ export default function SalaryDashboard({
                 </EcoButton>
               </div>
               <div className="eco-payroll-bulk-actions">
-                <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedDaysAction("mark-working")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Назначить выбранные рабочими
+                <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Назначить смены
                 </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-working")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Снять рабочие дни
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Добавить смену
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-shift")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Очистить смены
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("mark-absence")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Отметить пропуском
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-comment")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Добавить комментарий
-                </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-comment")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Очистить комментарии
-                </EcoButton>
-                <EcoButton type="button" size="sm" variant="ghost" onClick={() => void runSelectedDaysAction("reset-local")} disabled={calendarBusy || selectedDatesCount === 0}>
-                  Сбросить выбранные изменения
+                <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={calendarBusy || selectedDatesCount === 0}>
+                  Снять смены
                 </EcoButton>
               </div>
               <div className="eco-payroll-month-actions">
-                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("copy")} disabled={calendarBusy}>
-                  Скопировать график прошлого месяца
+                <EcoButton type="button" size="sm" onClick={() => void runBulkShifts("copy")} disabled={calendarBusy}>
+                  Скопировать смены прошлого месяца
                 </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("clear")} disabled={calendarBusy}>
-                  Очистить месяц
+                <EcoButton type="button" size="sm" onClick={() => void runBulkShifts("clear")} disabled={calendarBusy}>
+                  Снять все смены месяца
                 </EcoButton>
-                <EcoButton type="button" size="sm" onClick={() => void runBulkWorkingDays("masters")} disabled={calendarBusy || !calendarLogin}>
-                  Применить ко всем мастерам
+                <EcoButton type="button" size="sm" onClick={() => void runBulkShifts("masters")} disabled={calendarBusy || !calendarLogin}>
+                  Применить смены ко всем мастерам
                 </EcoButton>
               </div>
             </div>
@@ -3069,9 +3010,7 @@ export default function SalaryDashboard({
           <div className="eco-payroll-calendar-layout">
             <div className="eco-payroll-calendar-shell">
               <div className="eco-payroll-calendar-legend">
-                <span><i className="is-working" /> Рабочий день</span>
-                <span><i className="is-actual" /> Фактическая смена</span>
-                <span><i className="is-absence" /> Отсутствие / пропуск</span>
+                <span><i className="is-shift" /> Назначенная смена</span>
               </div>
               {calendarLoading ? (
                 <SkeletonRows rows={5} />
@@ -3090,12 +3029,7 @@ export default function SalaryDashboard({
                     return cells.map(({ key, day }) => {
                       if (day == null) return <span key={key} className="eco-payroll-calendar-empty" />;
                       const dateKey = `${calendarDate.getFullYear()}-${String(calendarDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                      const dayState = getEffectiveDayState(dateKey);
-                      const { hasWorking, hasActual, hasAbsence, items } = dayState;
-                      const hiddenByFilter =
-                        (calendarFilter === "working" && !hasWorking) ||
-                        (calendarFilter === "actual" && !hasActual) ||
-                        (calendarFilter === "absence" && !hasAbsence);
+                      const { hasShift, items } = getEffectiveShiftState(dateKey);
                       const isSelected = selectedDates.has(dateKey);
                       const prevDate = getDateRangeKeys(dateKey, dateKey)[0]
                         ? toLocalDateInputValue(new Date(new Date(`${dateKey}T00:00:00`).setDate(new Date(`${dateKey}T00:00:00`).getDate() - 1)))
@@ -3116,10 +3050,7 @@ export default function SalaryDashboard({
                             isRangeStart && selectedDatesCount > 1 ? "is-range-start" : "",
                             isRangeEnd && selectedDatesCount > 1 ? "is-range-end" : "",
                             todayKey === dateKey ? "is-today" : "",
-                            hasWorking ? "has-working" : "",
-                            hasActual ? "has-actual" : "",
-                            hasAbsence ? "has-absence" : "",
-                            hiddenByFilter ? "is-muted" : "",
+                            hasShift ? "has-shift" : "",
                           ].filter(Boolean).join(" ")}
                           onPointerDown={(event) => handleCalendarPointerDown(dateKey, event)}
                           onPointerEnter={() => handleCalendarPointerEnter(dateKey)}
@@ -3156,37 +3087,16 @@ export default function SalaryDashboard({
                       <dd>{formatDate(firstSelectedDate)} - {formatDate(lastSelectedDate)}</dd>
                     </div>
                     <div>
-                      <dt>Рабочих уже</dt>
-                      <dd>{selectedBulkStats.working}</dd>
-                    </div>
-                    <div>
-                      <dt>Выходных</dt>
-                      <dd>{selectedDatesCount - selectedBulkStats.working}</dd>
-                    </div>
-                    <div>
-                      <dt>Со сменами</dt>
-                      <dd>{selectedBulkStats.actual}</dd>
-                    </div>
-                    <div>
-                      <dt>Пропуски</dt>
-                      <dd>{selectedBulkStats.absence}</dd>
+                      <dt>Смен уже назначено</dt>
+                      <dd>{selectedBulkStats.shifts}</dd>
                     </div>
                   </dl>
                   <div className="eco-payroll-day-actions">
-                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedDaysAction("mark-working")} disabled={!canManagePayroll || calendarBusy}>
-                      Отметить рабочими
+                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void runSelectedShiftAction("add")} disabled={!canManagePayroll || calendarBusy}>
+                      Назначить смены
                     </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-working")} disabled={!canManagePayroll || calendarBusy}>
-                      Снять рабочие дни
-                    </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={!canManagePayroll || calendarBusy}>
-                      Добавить смену
-                    </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("clear-shift")} disabled={!canManagePayroll || calendarBusy}>
-                      Очистить смены
-                    </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-comment")} disabled={!canManagePayroll || calendarBusy}>
-                      Добавить комментарий
+                    <EcoButton type="button" size="sm" onClick={() => void runSelectedShiftAction("remove")} disabled={!canManagePayroll || calendarBusy}>
+                      Снять смены
                     </EcoButton>
                     <EcoButton type="button" size="sm" variant="ghost" onClick={() => selectCalendarPreset("clear")}>
                       Сбросить выбор
@@ -3207,39 +3117,16 @@ export default function SalaryDashboard({
                       </dd>
                     </div>
                     <div>
-                      <dt>Рабочий день</dt>
-                      <dd>{selectedDayWorking ? "Да" : "Нет"}</dd>
-                    </div>
-                    <div>
-                      <dt>Фактическая смена</dt>
-                      <dd>{selectedDayActual ? "Есть" : "Нет"}</dd>
-                    </div>
-                    <div>
-                      <dt>Часы</dt>
-                      <dd>{selectedDayActual || selectedDayWorking ? formatHours(8) : "—"}</dd>
+                      <dt>Смена</dt>
+                      <dd>{selectedDayHasShift ? "Назначена" : "Не назначена"}</dd>
                     </div>
                   </dl>
-                  <textarea
-                    className="eco-input eco-payroll-comment"
-                    value={dayComments[selectedDayCommentKey] ?? ""}
-                    onChange={(event) =>
-                      setDayComments((prev) => ({ ...prev, [selectedDayCommentKey]: event.target.value }))
-                    }
-                    placeholder="Комментарий к дню"
-                    rows={3}
-                  />
                   <div className="eco-payroll-day-actions">
-                    <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || selectedDayWorking}>
-                      Отметить рабочим
+                    <EcoButton type="button" size="sm" variant="primary" onClick={() => void toggleShift(selectedDate, true)} disabled={!canManagePayroll || calendarBusy || selectedDayHasShift}>
+                      Назначить смену
                     </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void toggleWorkingDay(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !selectedDayWorking}>
-                      Снять рабочий день
-                    </EcoButton>
-                    <EcoButton type="button" size="sm" onClick={() => void runSelectedDaysAction("add-shift")} disabled={!canManagePayroll || calendarBusy}>
-                      Добавить смену
-                    </EcoButton>
-                    <EcoButton type="button" size="sm" variant="ghost" onClick={() => setToast("Комментарий сохранён локально")}>
-                      Добавить комментарий
+                    <EcoButton type="button" size="sm" onClick={() => void toggleShift(selectedDate, false)} disabled={!canManagePayroll || calendarBusy || !selectedDayHasShift}>
+                      Снять смену
                     </EcoButton>
                   </div>
                 </>
@@ -3790,7 +3677,7 @@ export default function SalaryDashboard({
           <div className="eco-payroll-toolbar">
             <div>
               <div className="eco-page-kicker">Периоды</div>
-              <p>Закрытые периоды и журнал изменений ставок, правил, рабочих дней и корректировок.</p>
+              <p>Закрытые периоды и журнал изменений ставок, смен, правил и корректировок.</p>
             </div>
             <div className="eco-payroll-controls">
               <EcoButton
@@ -3882,12 +3769,8 @@ export default function SalaryDashboard({
 
             <div className="eco-payroll-detail-grid">
               <div>
-                <span>Рабочие дни</span>
-                <strong>{formatDays(selectedRow.workDaysCount)}</strong>
-              </div>
-              <div>
                 <span>Смены</span>
-                <strong>{selectedRow.actualShiftsCount}</strong>
+                <strong>{selectedRow.shiftsCount}</strong>
               </div>
               <div>
                 <span>Фиксированная ставка</span>
@@ -4015,17 +3898,14 @@ export default function SalaryDashboard({
               />
             </div>
 
-            {(paymentOpen || adjustmentOpen) && canManagePayroll && (
+            {(paymentOpen || adjustmentOpen || savedAdjustment) && canManagePayroll && (
               <div ref={operationFormRef} className="eco-payroll-operation-panel">
                 <div className="eco-payroll-operation-panel__head">
-                  <strong>{paymentOpen ? paymentOperationTitle(paymentOperationType) : adjustmentOperationTitle(adjustmentType)}</strong>
+                  <strong>{savedAdjustment ? "Корректировка сохранена" : paymentOpen ? paymentOperationTitle(paymentOperationType) : adjustmentOperationTitle(adjustmentType)}</strong>
                   <button
                     type="button"
                     className="eco-icon-btn"
-                    onClick={() => {
-                      setPaymentOpen(false);
-                      setAdjustmentOpen(false);
-                    }}
+                    onClick={closePayrollOperation}
                     title="Закрыть форму"
                   >
                     <X size={15} />
@@ -4132,11 +4012,39 @@ export default function SalaryDashboard({
                 <FieldLabel label="Комментарий">
                   <EcoInput value={adjustmentComment} onChange={(event) => setAdjustmentComment(event.target.value)} />
                 </FieldLabel>
+                {adjustmentError && (
+                  <div className="eco-payroll-operation-error" role="alert">
+                    {adjustmentError}
+                  </div>
+                )}
                 <EcoButton type="submit" variant="primary" disabled={adjustmentSaving}>
                   {adjustmentSaving ? <Loader2 size={15} className="eco-spin" /> : <Save size={15} />}
-                  Сохранить корректировку
+                  {adjustmentSaving ? "Сохраняем корректировку…" : "Сохранить корректировку"}
                 </EcoButton>
                   </form>
+                )}
+
+                {savedAdjustment && (
+                  <section className="eco-payroll-operation-result" role="status" aria-live="polite">
+                    <div className="eco-payroll-operation-result__icon" aria-hidden="true"><Check size={18} /></div>
+                    <div>
+                      <strong>{savedAdjustment.operationTitle} добавлено</strong>
+                      <p>
+                        {savedAdjustment.employeeName} · {formatMoney(savedAdjustment.amountCents)} · {formatDate(savedAdjustment.date)}
+                      </p>
+                      {savedAdjustment.refreshFailed && (
+                        <small>Корректировка сохранена, но расчёт не обновился. Нажмите «Рассчитать», чтобы обновить суммы.</small>
+                      )}
+                    </div>
+                    <div className="eco-payroll-operation-result__actions">
+                      <EcoButton type="button" variant="secondary" size="sm" onClick={() => openAdjustmentForm(adjustmentType)}>
+                        Добавить ещё
+                      </EcoButton>
+                      <EcoButton type="button" variant="ghost" size="sm" onClick={closePayrollOperation}>
+                        Готово
+                      </EcoButton>
+                    </div>
+                  </section>
                 )}
               </div>
             )}
@@ -4193,8 +4101,8 @@ export default function SalaryDashboard({
                 <strong>{rateDrawerRow.rateCents == null ? "Не задана" : formatMoney(rateDrawerRow.rateCents)}</strong>
               </div>
               <div>
-                <span>Рабочие дни</span>
-                <strong>{formatDays(rateDrawerRow.workDaysCount)}</strong>
+                <span>Смены за период</span>
+                <strong>{rateDrawerRow.shiftsCount}</strong>
               </div>
               <div>
                 <span>Сдельная часть</span>
