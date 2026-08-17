@@ -21265,6 +21265,14 @@ select.eco-input::-ms-expand,
   margin: 0;
 }
 
+.eco-payroll-unallocated-list__diagnostic {
+  padding: 8px 9px;
+  color: var(--eco-rust) !important;
+  background: color-mix(in srgb, var(--eco-rust) 7%, transparent);
+  border-left: 2px solid var(--eco-rust);
+  border-radius: 3px;
+}
+
 .eco-payroll-unallocated-list article > p a {
   color: var(--eco-rust);
   font-weight: 750;

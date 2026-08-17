@@ -63,6 +63,58 @@ type PositionRow = {
   price: number;
 };
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value != null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function productNameKey(value: string) {
+  return normalizeText(value).replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * Imported shipment rows may not have productId in the relational column, but
+ * still retain the local product href/id inside `raw`. It is a stronger link
+ * than the display name and lets payroll restore the product group safely.
+ */
+function positionProductReferenceIds(position: { productId: string | null; raw: unknown }) {
+  const ids = new Set<string>();
+  const addId = (value: unknown) => {
+    const text = textValue(value);
+    if (!text) return;
+    if (text.includes("://")) {
+      const id = extractLocalEntityId(text);
+      if (id) ids.add(id);
+      return;
+    }
+    ids.add(text);
+  };
+
+  addId(position.productId);
+  const raw = recordValue(position.raw);
+  const assortment = recordValue(raw?.assortment);
+  const product = recordValue(raw?.product);
+  const meta = recordValue(assortment?.meta);
+  for (const value of [
+    raw?.productId,
+    raw?.assortmentId,
+    raw?.assortmentReference,
+    raw?.href,
+    assortment?.id,
+    assortment?.productId,
+    product?.id,
+    meta?.href,
+  ]) {
+    addId(value);
+  }
+  return [...ids];
+}
+
 type DemandRow = {
   id: string;
   name: string;
@@ -162,26 +214,31 @@ async function fetchLocalDemandsWithPositions(
     orderBy: { momentAt: "asc" },
   });
 
-  // Old imported positions could be saved without productId. A rule is assigned
-  // to a product group, therefore in this case resolve the current local product
-  // by an exact name in the active branch. We deliberately use a fallback only
-  // where it is unambiguous: otherwise a similarly named product must not get a
-  // salary rule intended for a different group.
+  // Old imported positions can lose their relational product link. Resolve a
+  // current product first from the saved local id/href, then by name only when
+  // every matching candidate belongs to one payroll group.
+  const unresolvedPositions = demands.flatMap((demand) => demand.positions)
+    .filter((position) =>
+      position.assortmentType !== "service" &&
+      !resolveProductGroupTargetId(position.product?.groupPath ?? "")
+    );
   const unresolvedProductNames = [...new Set(
-    demands.flatMap((demand) => demand.positions)
-      .filter((position) =>
-        position.assortmentType !== "service" &&
-        !resolveProductGroupTargetId(position.product?.groupPath ?? "")
-      )
-      .map((position) => position.name.trim())
-      .filter(Boolean)
+    unresolvedPositions.map((position) => position.name.trim()).filter(Boolean)
   )];
-  const fallbackProducts = unresolvedProductNames.length
+  const unresolvedProductIds = [...new Set(
+    unresolvedPositions.flatMap((position) => positionProductReferenceIds(position))
+  )];
+  const fallbackProducts = (unresolvedProductNames.length || unresolvedProductIds.length)
     ? await prisma.localProduct.findMany({
         where: {
           branchId,
           archived: false,
-          name: { in: unresolvedProductNames },
+          OR: [
+            ...(unresolvedProductIds.length ? [{ id: { in: unresolvedProductIds } }] : []),
+            ...unresolvedProductNames.map((name) => ({
+              name: { equals: name, mode: "insensitive" as const },
+            })),
+          ],
         },
         select: {
           id: true,
@@ -192,9 +249,10 @@ async function fetchLocalDemandsWithPositions(
         },
       })
     : [];
+  const fallbackProductsById = new Map(fallbackProducts.map((product) => [product.id, product]));
   const fallbackProductsByName = new Map<string, (typeof fallbackProducts)[number][]>();
   for (const product of fallbackProducts) {
-    const key = normalizeText(product.name);
+    const key = productNameKey(product.name);
     const items = fallbackProductsByName.get(key) ?? [];
     items.push(product);
     fallbackProductsByName.set(key, items);
@@ -210,14 +268,26 @@ async function fetchLocalDemandsWithPositions(
     },
     positions: demand.positions.map((position) => {
       const linkedProduct = position.product;
-      const candidates = (fallbackProductsByName.get(normalizeText(position.name)) ?? [])
-        .filter((candidate) => Boolean(resolveProductGroupTargetId(candidate.groupPath ?? "")));
+      const candidates = [
+        ...positionProductReferenceIds(position)
+          .map((id) => fallbackProductsById.get(id))
+          .filter((candidate): candidate is (typeof fallbackProducts)[number] => Boolean(candidate)),
+        ...(fallbackProductsByName.get(productNameKey(position.name)) ?? []),
+      ].filter((candidate, index, all) =>
+        all.findIndex((other) => other.id === candidate.id) === index &&
+        Boolean(resolveProductGroupTargetId(candidate.groupPath ?? ""))
+      );
+      const candidateGroupIds = new Set(
+        candidates
+          .map((candidate) => resolveProductGroupTargetId(candidate.groupPath ?? ""))
+          .filter((targetId): targetId is string => Boolean(targetId))
+      );
       // Prefer the linked product when it already maps to a payroll group. If
       // it does not (or the legacy row is unlinked), use one unambiguous current
-      // product with the same name and a configured payroll group.
+      // product group recovered from its id/href or name.
       const product = resolveProductGroupTargetId(linkedProduct?.groupPath ?? "")
         ? linkedProduct
-        : candidates.length === 1
+        : candidateGroupIds.size === 1
           ? candidates[0]
           : linkedProduct;
       const assortmentType = product?.entityType ?? position.assortmentType ?? "";
@@ -379,6 +449,9 @@ export type VehicleRecord = {
       | "multiple_admins"
       | "missing_rule";
     logins?: string[];
+    groupPath?: string;
+    ruleTargetId?: string;
+    diagnostic?: string;
   }[];
 };
 
@@ -606,6 +679,10 @@ export async function computePayroll(params: {
             quantity: qty,
             baseCents: profitCents,
             reason: "missing_rule",
+            groupPath: pathName || undefined,
+            diagnostic: pathName
+              ? `Группа «${pathName}» не сопоставлена ни с одним правилом начисления.`
+              : "В строке отгрузки не найден товар с назначенной группой.",
           });
           continue;
         }
@@ -619,6 +696,9 @@ export async function computePayroll(params: {
             quantity: qty,
             baseCents: profitCents,
             reason: "missing_rule",
+            groupPath: pathName || undefined,
+            ruleTargetId: productGroupTargetId,
+            diagnostic: `Группа «${pathName || productGroupTargetId}» распознана, но для неё нет правила администратора.`,
           });
           continue;
         }

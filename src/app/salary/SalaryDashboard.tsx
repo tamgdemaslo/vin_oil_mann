@@ -107,6 +107,9 @@ type VehicleRecord = {
     baseCents: number;
     reason: "missing_master" | "multiple_masters" | "missing_admin" | "multiple_admins" | "missing_rule";
     logins?: string[];
+    groupPath?: string;
+    ruleTargetId?: string;
+    diagnostic?: string;
   }[];
 };
 
@@ -1696,7 +1699,7 @@ export default function SalaryDashboard({
           ? `${problem.count} поз. без правила начисления`
           : `${problem.count} поз. без назначенной рабочей команды`,
         text: isMissingRule
-          ? `Для «${problem.sample.label}» (${example}) нет правила для ${roleLabel}.`
+          ? problem.sample.diagnostic ?? `Для «${problem.sample.label}» (${example}) нет правила для ${roleLabel}.`
           : isMultiple
             ? `В «${example}» назначено несколько ${roleLabel}. Оставьте в графике одного.`
             : `В «${example}» не назначен ${roleLabel}. Назначьте ему смену на этот день.`,
@@ -4355,6 +4358,11 @@ export default function SalaryDashboard({
                         <Link href={`/shipment/${encodeURIComponent(item.demandId)}`}>{item.demandName}</Link>
                         {" · "}{formatDate(item.date)}{item.agentName ? ` · ${item.agentName}` : ""}
                       </p>
+                      {item.diagnostic && (
+                        <p className="eco-payroll-unallocated-list__diagnostic">
+                          {item.diagnostic}
+                        </p>
+                      )}
                       {unallocatedDrawerReason !== "missing_rule" && (
                         <EcoButton
                           type="button"
