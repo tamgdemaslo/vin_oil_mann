@@ -14,7 +14,7 @@
   --leather: #A85A3C;
   --wood: #8B6F47;
   --steel: #3D3D3D;
-  --gray-1: #6B6B6B;
+  --gray-1: #858585;
   --gray-2: #9A9A9A;
   --line: #2A2A2A;
   --line-paper: #D9D3C5;
@@ -34,7 +34,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; max-width: 100%; }
 body {
   font-family: var(--f-sans);
   background: var(--ink);
@@ -47,6 +47,19 @@ body {
 img { display: block; max-width: 100%; }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; cursor: pointer; }
+h1, h2, h3 { text-wrap: balance; overflow-wrap: anywhere; }
+p { text-wrap: pretty; }
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--rust);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
 
 /* Selection */
 ::selection { background: var(--rust); color: var(--paper); }
@@ -68,12 +81,12 @@ button { font: inherit; cursor: pointer; }
 .t-eyebrow {
   font-family: var(--f-sans);
   font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  font-size: 12px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--rust);
 }
-.t-eyebrow.muted { color: var(--gray-1); }
+.t-eyebrow.muted { color: var(--gray-2); }
 .t-meta {
   font-family: var(--f-mono);
   font-size: 11px;
@@ -104,21 +117,14 @@ button { font: inherit; cursor: pointer; }
 .bg-paper { background: var(--paper); color: var(--ink); }
 .bg-wood { background: var(--wood); color: var(--paper); }
 
-/* Hex grid tone — subtle background per concept 4.5 */
+/* Quiet surface: structure comes from content, not decorative overlays. */
 .bg-hex {
   background-color: var(--ink);
-  background-image:
-    linear-gradient(60deg, rgba(245,242,237,0.025) 0 0),
-    repeating-linear-gradient(60deg, transparent 0 22px, rgba(245,242,237,0.03) 22px 23px),
-    repeating-linear-gradient(-60deg, transparent 0 22px, rgba(245,242,237,0.03) 22px 23px),
-    repeating-linear-gradient(0deg, transparent 0 22px, rgba(245,242,237,0.03) 22px 23px);
+  background-image: none;
 }
 .bg-paper.bg-hex {
   background-color: var(--paper);
-  background-image:
-    repeating-linear-gradient(60deg, transparent 0 22px, rgba(10,10,10,0.04) 22px 23px),
-    repeating-linear-gradient(-60deg, transparent 0 22px, rgba(10,10,10,0.04) 22px 23px),
-    repeating-linear-gradient(0deg, transparent 0 22px, rgba(10,10,10,0.04) 22px 23px);
+  background-image: none;
 }
 
 /* Chequered strip */
@@ -143,18 +149,12 @@ button { font: inherit; cursor: pointer; }
   background-color: var(--paper);
 }
 
-/* Grain overlay for poster look */
+/* The old SVG noise overlay was expensive and reduced legibility. */
 .grain { position: relative; }
 .grain::after {
-  content: '';
-  position: absolute; inset: 0;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.45 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
-  mix-blend-mode: overlay;
-  opacity: 0.5;
-  z-index: 1;
+  content: none;
 }
-.grain > * { position: relative; z-index: 2; }
+.grain > * { position: relative; }
 
 /* ========== Buttons ========== */
 .btn {
@@ -181,7 +181,7 @@ button { font: inherit; cursor: pointer; }
 .btn.rust { background: var(--rust); color: var(--paper); border-color: var(--rust); }
 .btn.rust:hover { background: var(--rust-deep); border-color: var(--rust-deep); }
 .btn.lg { height: 56px; padding: 0 28px; font-size: 15px; }
-.btn.sm { height: 36px; padding: 0 14px; font-size: 12px; }
+.btn.sm { height: 44px; padding: 0 14px; font-size: 12px; }
 .btn .arr { font-family: var(--f-mono); font-weight: 700; }
 
 /* Inputs */
@@ -198,6 +198,7 @@ button { font: inherit; cursor: pointer; }
   border-radius: 0;
 }
 .inp:focus { border-color: var(--rust); }
+.inp::placeholder { color: var(--gray-2); opacity: 1; }
 .inp.paper { border-color: var(--line-paper); color: var(--ink); }
 .inp.paper:focus { border-color: var(--rust); }
 .inp.mono { font-family: var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; }
@@ -243,6 +244,8 @@ button { font: inherit; cursor: pointer; }
   text-transform: uppercase;
   width: 40%;
 }
+.spec td { color: var(--paper); }
+.bg-paper .spec td { color: var(--ink); }
 .bg-paper .spec th, .bg-paper .spec td { border-bottom-color: var(--line-paper); }
 
 /* Number panel — F1-style readout */
@@ -265,11 +268,44 @@ button { font: inherit; cursor: pointer; }
   font: 11px var(--f-mono); padding: 2px 6px; border: 1px solid var(--line); color: var(--gray-2);
 }
 
-/* ========== Scrollbar ========== */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: var(--ink); }
-::-webkit-scrollbar-thumb { background: var(--steel); }
-::-webkit-scrollbar-thumb:hover { background: var(--rust); }
+/* ========== Shared interaction and motion ========== */
+.text-action {
+  appearance: none;
+  min-height: 44px;
+  padding: 6px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  text-align: inherit;
+}
+
+.client-contact-link {
+  min-height: 44px;
+}
+
+.client-topbar {
+  background: rgba(10, 10, 10, 0.98);
+}
+
+.tape__track {
+  animation: tape 60s linear infinite;
+  width: max-content;
+}
+
+@keyframes tape {
+  from { transform: translateX(0); }
+  to { transform: translateX(-33.333%); }
+}
+
+.contacts-map__pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: map-pulse 3s ease-in-out infinite;
+}
+
+@keyframes map-pulse {
+  50% { transform: scale(1.25); opacity: 0.04; }
+}
 
 .home-hero__grid {
   max-width: 1240px;
@@ -550,6 +586,23 @@ button { font: inherit; cursor: pointer; }
   .case-process__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
+
+  .cases-list-row {
+    grid-template-columns: 92px 210px minmax(0, 1fr) 150px !important;
+    gap: 18px !important;
+    padding: 24px !important;
+  }
+
+  .team-grid {
+    grid-template-columns: minmax(0, 860px) !important;
+    justify-content: center;
+  }
+
+  .account-history-row {
+    grid-template-columns: 64px 110px minmax(0, 1fr) 150px !important;
+    gap: 16px !important;
+    padding: 20px 18px !important;
+  }
 }
 
 @media (max-width: 900px) {
@@ -557,75 +610,84 @@ button { font: inherit; cursor: pointer; }
     --gutter: 18px;
   }
 
-  html,
-  body {
-    overflow-x: hidden;
-  }
-
-  header > .container:first-child {
+  .client-topbar__primary {
     height: auto !important;
-    min-height: 68px;
-    flex-wrap: wrap !important;
-    gap: 12px !important;
-    padding-top: 12px !important;
-    padding-bottom: 12px !important;
+    min-height: 0;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px !important;
+    padding-top: 10px !important;
+    padding-bottom: 6px !important;
   }
 
-  header nav {
-    order: 3;
+  .client-topbar__nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
     max-width: 100%;
-    justify-content: flex-start;
-    gap: 18px !important;
-    overflow-x: auto;
-    padding-bottom: 6px;
-    scrollbar-width: thin;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 8px !important;
   }
 
-  header nav a {
+  .client-topbar__primary > a:first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .client-topbar__nav a {
     display: inline-flex;
     align-items: center;
-    flex: 0 0 auto;
-    min-height: 40px;
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px 2px !important;
+    text-align: center;
   }
 
-  header > .container:first-child > div:last-child {
-    margin-left: auto;
+  .client-topbar__actions {
+    grid-column: 2;
+    grid-row: 1;
     gap: 10px !important;
   }
 
-  header > .container:first-child > div:last-child a {
-    min-height: 40px;
+  .client-topbar__actions a {
+    min-height: 44px;
   }
 
-  header > .container:nth-child(2) {
-    display: block !important;
-    height: auto !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+  .client-topbar__status {
+    height: 44px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    gap: 16px;
+    white-space: nowrap;
   }
 
-  header > .container:nth-child(2) > div {
-    flex-wrap: wrap !important;
-    gap: 8px 14px !important;
+  .client-topbar__status-primary,
+  .client-topbar__status-secondary {
+    min-width: 0;
+    gap: 12px !important;
   }
 
-  main [style*="grid-template-columns"] {
+  .client-topbar__address,
+  .client-topbar__hours,
+  .client-topbar__duration {
+    display: none;
+  }
+
+  .responsive-grid {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  footer [style*="grid-template-columns"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  main [style*="font-size: 280px"],
-  main [style*="font-size: 520px"],
-  footer [style*="font-size: 280px"],
-  footer [style*="font-size: 520px"] {
+  .decorative-number {
     display: none !important;
   }
 
-  main [style*="position: sticky"] {
+  .client-footer__grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .responsive-sticky,
+  .case-spec {
     position: static !important;
     top: auto !important;
   }
@@ -655,7 +717,17 @@ button { font: inherit; cursor: pointer; }
   .home-hero__grid,
   .free-change-banner__grid {
     max-width: 760px;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 32px !important;
+  }
+
+  .home-hero__portrait-grid,
+  .what-we-dont__grid,
+  .closing-cta__grid,
+  .case-hero__grid,
+  .case-story__grid,
+  .case-next__grid {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   .home-hero__booking {
@@ -697,17 +769,153 @@ button { font: inherit; cursor: pointer; }
     text-align: left !important;
   }
 
-  main [style*="width: 280px"] {
-    width: 100% !important;
-  }
-
-  main [style*="width: 260px"] {
+  .vin-entry-layout .btn,
+  .vin-car-layout > div:first-child > .btn {
     width: 100% !important;
   }
 
   .btn {
     justify-content: center;
     white-space: normal;
+  }
+
+  .vin-stepper {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px !important;
+    margin-bottom: 30px !important;
+    padding-bottom: 18px !important;
+  }
+
+  .vin-stepper__title,
+  .vin-stepper__fill,
+  .vin-step__line {
+    display: none;
+  }
+
+  .vin-step {
+    min-width: 0;
+    min-height: 48px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px !important;
+    border: 1px solid var(--line);
+    text-align: center;
+  }
+
+  .vin-step[aria-current="step"] {
+    border-color: var(--rust);
+    background: #17110d;
+  }
+
+  .vin-step__label {
+    max-width: 100%;
+    font-family: var(--f-sans);
+    font-size: 10px;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
+
+  .vin-selection-footer,
+  .vin-selection-footer__total {
+    align-items: stretch !important;
+    flex-direction: column !important;
+    width: 100%;
+  }
+
+  .vin-selection-footer__total .btn {
+    width: 100%;
+  }
+
+  .vin-slot-layout,
+  .vin-entry-layout,
+  .vin-car-layout {
+    gap: 32px !important;
+  }
+
+  .cases-list-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 18px !important;
+    padding: 22px !important;
+  }
+
+  .cases-list-row > div:last-child {
+    text-align: left !important;
+  }
+
+  .cases-list-row__meta {
+    flex-wrap: wrap;
+    gap: 6px 12px !important;
+  }
+
+  .cases-cta {
+    align-items: stretch !important;
+    flex-direction: column !important;
+    padding: 28px 24px !important;
+  }
+
+  .cases-cta .btn {
+    width: 100%;
+  }
+
+  .team-page__header,
+  .contacts-page__header,
+  .account-page__header {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+
+  .team-page__header > div:last-child,
+  .contacts-page__coordinates,
+  .account-page__orders {
+    text-align: left !important;
+  }
+
+  .team-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 28px !important;
+  }
+
+  .master-card {
+    grid-template-columns: minmax(220px, 42%) minmax(0, 1fr) !important;
+  }
+
+  .team-hiring__contact,
+  .contacts-cta__actions {
+    text-align: left !important;
+  }
+
+  .contacts-cta__actions a,
+  .contacts-cta__actions .btn {
+    width: 100%;
+  }
+
+  .account-page__meta {
+    flex-wrap: wrap;
+    gap: 8px 16px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .account-history-row {
+    grid-template-columns: 58px minmax(0, 1fr) !important;
+    gap: 12px 16px !important;
+    padding: 20px 18px !important;
+  }
+
+  .account-history-row > div:nth-child(3),
+  .account-history-row > div:nth-child(4) {
+    grid-column: 2;
+  }
+
+  .account-history-row > div:last-child {
+    text-align: left !important;
+  }
+
+  .legal-title {
+    font-size: clamp(34px, 9vw, 64px) !important;
+    hyphens: auto;
+    overflow-wrap: anywhere;
   }
 
   .numpanel {
@@ -807,21 +1015,29 @@ button { font: inherit; cursor: pointer; }
 }
 
 @media (max-width: 640px) {
-  header > .container:first-child > a:first-child img {
+  .client-topbar__primary > a:first-child img {
     height: 20px !important;
   }
 
-  header nav {
-    gap: 14px !important;
+  .client-topbar__nav {
+    gap: 0 4px !important;
   }
 
-  header nav a {
+  .client-topbar__nav a {
     font-size: 12px !important;
   }
 
-  header .btn.sm {
-    height: 34px;
+  .client-topbar .btn.sm {
+    height: 44px;
     padding: 0 12px;
+  }
+
+  .client-topbar__account-label {
+    display: none;
+  }
+
+  .client-topbar__status {
+    display: none !important;
   }
 
   .container {
@@ -831,6 +1047,23 @@ button { font: inherit; cursor: pointer; }
 
   .numpanel .v {
     font-size: 30px;
+  }
+
+  .vin-page {
+    padding-top: 28px !important;
+  }
+
+  .vin-page h1 {
+    margin-bottom: 36px !important;
+  }
+
+  .vin-step {
+    min-height: 52px;
+    padding: 4px 2px;
+  }
+
+  .vin-step__number {
+    font-size: 10px !important;
   }
 
   .home-hero__stats .numpanel .v {
@@ -848,6 +1081,42 @@ button { font: inherit; cursor: pointer; }
 
   .free-change-banner__grid > :first-child > div:last-child {
     font-size: 68px !important;
+  }
+
+  .master-card {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0 !important;
+  }
+
+  .master-card__photo {
+    aspect-ratio: 16 / 10 !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .master-card__body {
+    padding: 22px !important;
+  }
+
+  .team-hiring,
+  .contacts-cta {
+    padding: 28px 24px !important;
+  }
+
+  .contacts-cta__actions a:first-child {
+    font-size: clamp(28px, 9vw, 38px) !important;
+    overflow-wrap: anywhere;
+  }
+
+  .contacts-map {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .legal-title + div,
+  .legal-title {
+    min-width: 0;
   }
 
   .closing-cta__copy > div:last-child {
@@ -899,5 +1168,25 @@ button { font: inherit; cursor: pointer; }
 
   .case-next__grid {
     gap: 24px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .tape__track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .contacts-map__pulse {
+    animation: none !important;
   }
 }

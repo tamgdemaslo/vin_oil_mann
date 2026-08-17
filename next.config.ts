@@ -9,7 +9,9 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/*": ["./assets/price-label-fonts/**/*"],
   },
-  serverExternalPackages: ["telegram"],
+  // Keep Node-only integration clients out of the instrumentation bundle.
+  // Their transitive dependencies use core modules such as crypto and stream.
+  serverExternalPackages: ["telegram", "soap", "axios-ntlm"],
   turbopack: {
     root: projectRoot,
     resolveAlias: {

@@ -215,7 +215,8 @@ const DEMO_OILS = [
   },
 ];
 
-var OILS = [];
+// Keep the public journey renderable during API startup, local outages, and Fast Refresh.
+var OILS = [...DEMO_OILS];
 
 const CASES = [
   {
@@ -455,10 +456,6 @@ function F1Portrait({ helmet = 'stripes', mood = 'cold', label, sublabel }) {
       }} />
       <svg viewBox="0 0 400 520" preserveAspectRatio="xMidYMid slice" style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}}>
         <defs>
-          <filter id={`grain-${helmet}`}>
-            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
-            <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.45 0" />
-          </filter>
           <linearGradient id={`shadow-${helmet}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#000" stopOpacity="0" />
             <stop offset="1" stopColor="#000" stopOpacity="0.7" />
@@ -533,8 +530,6 @@ function F1Portrait({ helmet = 'stripes', mood = 'cold', label, sublabel }) {
         {/* Helmet bottom shadow */}
         <path d="M 124 234 Q 120 130 200 110 Q 280 130 276 234 L 276 252 Q 260 240 240 240 L 160 240 Q 140 240 124 252 Z" fill="url(#shadow-${helmet})" />
 
-        {/* Grain overlay */}
-        <rect width="100%" height="100%" filter={`url(#grain-${helmet})`} opacity="0.55" />
       </svg>
 
       {/* Big year stamp top-left */}
@@ -631,10 +626,6 @@ function CarPlate({ palette = ['#1c1c1c', '#3d3d3d', '#C2410C'], label, sub, kin
       }} />
       <svg viewBox="0 0 440 280" preserveAspectRatio="xMidYMid slice" style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}}>
         <defs>
-          <filter id={`g-${kind}`}>
-            <feTurbulence baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
-            <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.4 0" />
-          </filter>
           <linearGradient id={`hood-${kind}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={palette[1]} stopOpacity="0.4" />
             <stop offset="1" stopColor="#000" stopOpacity="0.6" />
@@ -668,7 +659,6 @@ function CarPlate({ palette = ['#1c1c1c', '#3d3d3d', '#C2410C'], label, sub, kin
         {/* number on door */}
         <circle cx="220" cy="195" r="14" fill={palette[2]} opacity="0.85" />
         <text x="220" y="200" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="18" fontWeight="700" fill="#0a0a0a">76</text>
-        <rect width="100%" height="100%" filter={`url(#g-${kind})`} opacity="0.4" />
       </svg>
       <div style={{position: 'absolute', top: 14, left: 16, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 12, color: '#F5F2ED', letterSpacing: '0.08em'}}>
         76 · KGD
@@ -800,15 +790,15 @@ function OilProductVisual({ oil, variant = 'shop' }) {
 /* ---------- Tape (mono ticker) ---------- */
 function Tape({ items, kind = 'paper' }) {
   return (
-    <div style={{
+    <div className="tape" style={{
       background: kind === 'rust' ? '#C2410C' : kind === 'paper' ? '#F5F2ED' : '#0a0a0a',
       color: kind === 'paper' ? '#0a0a0a' : '#F5F2ED',
       overflow: 'hidden', position: 'relative',
       borderTop: '1px solid rgba(0,0,0,0.1)', borderBottom: '1px solid rgba(0,0,0,0.1)',
     }}>
-      <div style={{
+      <div className="tape__track" style={{
         display: 'flex', alignItems: 'center', gap: 32, padding: '10px 0',
-        whiteSpace: 'nowrap', animation: 'tape 60s linear infinite',
+        whiteSpace: 'nowrap',
         fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 14, letterSpacing: '0.08em',
         textTransform: 'uppercase',
       }}>
@@ -819,7 +809,6 @@ function Tape({ items, kind = 'paper' }) {
           </span>
         ))}
       </div>
-      <style>{`@keyframes tape { from{transform:translateX(0)} to{transform:translateX(-33.333%)} }`}</style>
     </div>
   );
 }
@@ -906,12 +895,12 @@ function TopBar() {
   ];
   const active = (to) => to === '/' ? path === '/' : path.startsWith(to);
   return (
-    <header style={{position: 'sticky', top: 0, zIndex: 20, background: 'rgba(10,10,10,0.85)', backdropFilter: 'blur(8px)', borderBottom: '1px solid var(--line)'}}>
-      <div className="container" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68}}>
+    <header className="client-topbar" style={{position: 'sticky', top: 0, zIndex: 20, borderBottom: '1px solid var(--line)'}}>
+      <div className="container client-topbar__primary" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68}}>
         <Link to="/" style={{display: 'flex', alignItems: 'center', gap: 12}}>
           <Logo variant="light" h={22} />
         </Link>
-        <nav style={{display: 'flex', alignItems: 'center', gap: 28}}>
+        <nav className="client-topbar__nav" aria-label="Основная навигация" style={{display: 'flex', alignItems: 'center', gap: 28}}>
           {nav.map(n => (
             <Link key={n.to} to={n.to} style={{
               fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 13,
@@ -921,24 +910,24 @@ function TopBar() {
             }}>{n.label}</Link>
           ))}
         </nav>
-        <div style={{display: 'flex', alignItems: 'center', gap: 14}}>
-          <Link to="/account" style={{display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#9A9A9A', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em'}}>
+        <div className="client-topbar__actions" style={{display: 'flex', alignItems: 'center', gap: 14}}>
+          <Link to="/account" aria-label="Открыть личный гараж автомобиля А 247 МК 39" style={{display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#9A9A9A', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em'}}>
             <span style={{display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#C2410C'}} />
-            А 247 МК 39
+            <span className="client-topbar__account-label">А 247 МК 39</span>
           </Link>
           <Link to="/vin" className="btn sm rust">Записаться <span className="arr">→</span></Link>
         </div>
       </div>
       {/* Mini status strip */}
-      <div className="container" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 30, borderTop: '1px solid var(--line)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#6B6B6B', letterSpacing: '0.12em', textTransform: 'uppercase'}}>
-        <div style={{display: 'flex', gap: 22}}>
-          <span>Калининград · Московский пр. 244 · Дачная 6В · Юрия Гагарина 116</span>
-          <span>пн - выходной, вт-пт 09:00-19:00, сб-вск 10:00-17:00</span>
+      <div className="container client-topbar__status" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 30, borderTop: '1px solid var(--line)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#858585', letterSpacing: '0.12em', textTransform: 'uppercase'}}>
+        <div className="client-topbar__status-primary" style={{display: 'flex', gap: 22}}>
+          <span className="client-topbar__address">Калининград · Московский пр. 244 · Дачная 6В · Юрия Гагарина 116</span>
+          <span className="client-topbar__hours">пн - выходной, вт-пт 09:00-19:00, сб-вск 10:00-17:00</span>
           <a href="tel:+79950545859" style={{color: '#9A9A9A', textDecoration: 'none'}}>+7 (995) 054-58-59</a>
         </div>
-        <div style={{display: 'flex', gap: 22}}>
+        <div className="client-topbar__status-secondary" style={{display: 'flex', gap: 22}}>
           <span><span style={{color: '#C2410C'}}>●</span> сегодня 4 свободных слота</span>
-          <span>замена за 28 мин</span>
+          <span className="client-topbar__duration">замена за 28 мин</span>
         </div>
       </div>
     </header>
@@ -997,7 +986,7 @@ function Footer() {
               ].map(([d, h], i) => (
                 <tr key={i} style={{borderBottom: '1px dashed var(--line)'}}>
                   <td style={{padding: '11px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.12em'}}>{d}</td>
-                  <td style={{padding: '11px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: h === 'Выходной' ? '#6B6B6B' : '#F5F2ED', textAlign: 'right'}}>{h}</td>
+                  <td style={{padding: '11px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: h === 'Выходной' ? '#858585' : '#F5F2ED', textAlign: 'right'}}>{h}</td>
                 </tr>
               ))}
             </tbody>
@@ -1018,13 +1007,13 @@ function Footer() {
             +7 (995)<br />054-58-59
           </a>
           <div style={{display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 26}}>
-            <a className="t-mono" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
+            <a href="mailto:tam-gde-maslo@mail.ru" className="t-mono client-contact-link" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
               <span style={{display: 'inline-block', width: 4, height: 4, background: '#C2410C', borderRadius: '50%'}} /> tam-gde-maslo@mail.ru
             </a>
-            <a className="t-mono" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
+            <a href="https://t.me/tamgdemaslo" target="_blank" rel="noreferrer" className="t-mono client-contact-link" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
               <span style={{display: 'inline-block', width: 4, height: 4, background: '#C2410C', borderRadius: '50%'}} /> t.me/tamgdemaslo
             </a>
-            <a className="t-mono" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
+            <a href="https://www.instagram.com/tamgdemaslo.kgd" target="_blank" rel="noreferrer" className="t-mono client-contact-link" style={{fontSize: 13, color: '#F5F2ED', display: 'inline-flex', alignItems: 'center', gap: 10}}>
               <span style={{display: 'inline-block', width: 4, height: 4, background: '#C2410C', borderRadius: '50%'}} /> instagram/tamgdemaslo.kgd
             </a>
           </div>
@@ -1036,14 +1025,14 @@ function Footer() {
       <div className="chequered" />
 
       {/* Bottom bar */}
-      <div className="container client-footer__bottom" style={{padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
+      <div className="container client-footer__bottom" style={{padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
         <div className="client-footer__brand" style={{display: 'flex', gap: 32, alignItems: 'center'}}>
           <Logo variant="light" monogram h={32} />
           <span>© 2026 Там где масло. Калининград.</span>
         </div>
         <div className="client-footer__legal" style={{display: 'flex', gap: 24}}>
-          <Link to="/privacy" style={{color: '#6B6B6B'}}>Политика конфиденциальности</Link>
-          <Link to="/offer" style={{color: '#6B6B6B'}}>Договор оферты</Link>
+          <Link to="/privacy" style={{color: '#858585'}}>Политика конфиденциальности</Link>
+          <Link to="/offer" style={{color: '#858585'}}>Договор оферты</Link>
           <span>ИП Елисеенко И. С. · ИНН 392302838630</span>
         </div>
       </div>
@@ -1153,7 +1142,7 @@ function HomeHero() {
               <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 0.9, color: '#0a0a0a'}}>01</div>
             </div>
 
-            <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#6B6B6B', textTransform: 'uppercase', marginBottom: 8}}>VIN автомобиля · 17 знаков</label>
+            <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#858585', textTransform: 'uppercase', marginBottom: 8}}>VIN автомобиля · 17 знаков</label>
             <input
               className="inp paper mono"
               placeholder="WBABA91070AL55203"
@@ -1163,9 +1152,9 @@ function HomeHero() {
               onKeyDown={e => e.key === 'Enter' && submit()}
               style={{borderColor: '#0a0a0a', height: 58, fontSize: 16, letterSpacing: '0.14em'}}
             />
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.1em'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>
               <span>{vin.length}/17</span>
-              <a onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C', cursor: 'pointer', textTransform: 'uppercase'}}>Попробовать с демо-VIN →</a>
+              <button type="button" className="text-action" onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C', textTransform: 'uppercase'}}>Попробовать с демо-VIN →</button>
             </div>
 
             <button className="btn rust lg" onClick={submit} style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
@@ -1186,7 +1175,7 @@ function HomeHero() {
           </div>
 
           {/* Quick-call alt */}
-          <div style={{marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, border: '1px solid var(--line)'}}>
+          <div className="responsive-grid" style={{marginTop: 28, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, border: '1px solid var(--line)'}}>
             <div style={{padding: '18px 20px', background: '#0a0a0a'}}>
               <div className="t-eyebrow muted" style={{marginBottom: 8}}>Связь</div>
               <a href="tel:+79950545859" style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, color: '#F5F2ED', textDecoration: 'none'}}>+7 (995) 054-58-59</a>
@@ -1234,7 +1223,7 @@ function FreeChangeBanner() {
         </div>
       </div>
       {/* race numbers as background */}
-      <div style={{position: 'absolute', top: -20, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 280, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>76</div>
+      <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -20, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 280, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>76</div>
     </section>
   );
 }
@@ -1245,12 +1234,12 @@ function ServicesGrid() {
     <section style={{background: '#0a0a0a', padding: '90px 0'}}>
       <div className="container">
         <SectionHead eyebrow="Что делаем" title="Сервис, дисциплина, тишина." num="02 / 09" right={<Link to="/contacts" className="btn ghost sm">Полный прайс →</Link>} />
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
           {SERVICES.map(s => (
             <div key={s.k} style={{background: '#0a0a0a', padding: '32px 28px 28px', minHeight: 220, position: 'relative'}}>
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22}}>
                 <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.16em', color: '#C2410C'}}>{s.k}</span>
-                <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.12em', color: '#6B6B6B'}}>{s.time}</span>
+                <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.12em', color: '#858585'}}>{s.time}</span>
               </div>
               <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, lineHeight: 1.05, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 14}}>{s.title}</div>
               <div style={{fontSize: 13.5, color: '#9A9A9A', lineHeight: 1.55, maxWidth: 320}}>{s.t}</div>
@@ -1273,7 +1262,7 @@ function CasesPreview() {
     <section style={{background: '#0a0a0a', padding: '90px 0 110px', borderTop: '1px solid var(--line)'}}>
       <div className="container">
         <SectionHead eyebrow="Машины недели" title="Кейсы: масло в АКПП." num="03 / 09" right={<Link to="/cases" className="btn ghost sm">Все кейсы →</Link>} />
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28}}>
           {CASES.slice(0, 3).map((c, idx) => (
             <Link key={c.id} to={`/case/${c.id}`} style={{display: 'block'}}>
               <div className="card" style={{padding: 0, background: '#0a0a0a', overflow: 'hidden', height: '100%', cursor: 'pointer'}}>
@@ -1310,7 +1299,7 @@ function ProductsPreview() {
     <section style={{background: '#F5F2ED', color: '#0a0a0a', padding: '90px 0 110px', position: 'relative'}}>
       <div className="container">
         <SectionHead paper eyebrow="Что заливают" title="На что записываются чаще всего." num="04 / 09" right={<Link to="/shop" className="btn ghost dark sm">Весь каталог →</Link>} />
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
           {picks.map((o, idx) => <OilCardPaper key={o.id} oil={o} idx={idx} />)}
         </div>
       </div>
@@ -1355,7 +1344,7 @@ function CifryBlock() {
   return (
     <section style={{background: '#0a0a0a', padding: '90px 0', borderTop: '1px solid var(--line)'}}>
       <div className="container">
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
           {[
             {k: 'Замен с открытия', v: '4 217', u: 'литров масла прошло через нас'},
             {k: 'Среднее время визита', v: '28', u: 'минут с подъёма до спуска'},
@@ -1383,7 +1372,7 @@ function TeamPreview() {
     <section style={{background: '#0a0a0a', padding: '0 0 110px'}}>
       <div className="container">
         <SectionHead eyebrow="Наши люди" title="Конкретные люди, не персонал." num="05 / 09" right={<Link to="/team" className="btn ghost sm">Вся команда →</Link>} />
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+        <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
           {MASTERS.map((m, idx) => (
             <Link key={m.id} to="/team">
               <div style={{display: 'flex', flexDirection: 'column', gap: 18, cursor: 'pointer'}}>
@@ -1394,7 +1383,7 @@ function TeamPreview() {
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em', marginBottom: 8}}>N°0{idx+1}</div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, lineHeight: 1.1, textTransform: 'uppercase', color: '#F5F2ED', marginBottom: 6}}>{m.name}</div>
                   <div style={{fontSize: 12.5, color: '#9A9A9A', marginBottom: 10}}>{m.role}</div>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.06em'}}>
+                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.06em'}}>
                     с {m.since} · {fmtNum(m.swaps)} {m.swapsLabel || 'замен'}
                   </div>
                 </div>
@@ -1420,12 +1409,12 @@ function WhatWeDont() {
   return (
     <section style={{background: '#0a0a0a', padding: '90px 0 110px', borderTop: '1px solid var(--line)'}}>
       <div className="container">
-        <SectionHead eyebrow="Принципы дома" title="Что мы не делаем." num="06 / 09" right={<span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.14em', textTransform: 'uppercase'}}>На случай если кто-то сомневается</span>} />
-        <div className="what-we-dont__grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+        <SectionHead eyebrow="Принципы дома" title="Что мы не делаем." num="06 / 09" right={<span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.14em', textTransform: 'uppercase'}}>На случай если кто-то сомневается</span>} />
+        <div className="what-we-dont__grid responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
           {items.map(it => (
             <div key={it.n} style={{background: '#0a0a0a', padding: '32px 28px'}}>
               <div style={{display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14}}>
-                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>{it.n}</div>
+                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#858585', letterSpacing: '0.12em', marginTop: 4}}>{it.n}</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, lineHeight: 1.1, textTransform: 'uppercase', color: '#F5F2ED'}}>
                   <span style={{color: '#C2410C', marginRight: 8}}>—</span>{it.t}
                 </div>
@@ -1444,7 +1433,7 @@ function ClosingCTA() {
   const r = useRoute();
   return (
     <section className="closing-cta" style={{background: '#F5F2ED', color: '#0a0a0a', padding: '110px 0', position: 'relative', overflow: 'hidden'}}>
-      <div style={{position: 'absolute', top: -60, right: -100, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 520, color: 'rgba(10,10,10,0.05)', lineHeight: 0.8, pointerEvents: 'none', letterSpacing: '-0.04em'}}>76</div>
+      <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -60, right: -100, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 520, color: 'rgba(10,10,10,0.05)', lineHeight: 0.8, pointerEvents: 'none', letterSpacing: '-0.04em'}}>76</div>
       <div className="container closing-cta__grid" style={{position: 'relative', display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 56, alignItems: 'center'}}>
         <div className="closing-cta__copy">
           <div className="t-eyebrow" style={{marginBottom: 18}}>07 / 09 · Финал</div>
@@ -1624,19 +1613,20 @@ function VinPage() {
   };
 
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="vin-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
         {/* Stepper header */}
-        <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 40, borderBottom: '1px solid var(--line)', paddingBottom: 24}}>
-          <div className="t-eyebrow">Запись по VIN</div>
-          <span style={{flex: 1, height: 1, background: '#3D3D3D'}} />
+        <div className="vin-stepper" style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 40, borderBottom: '1px solid var(--line)', paddingBottom: 24}}>
+          <div className="t-eyebrow vin-stepper__title">Запись по VIN</div>
+          <span className="vin-stepper__fill" style={{flex: 1, height: 1, background: '#3D3D3D'}} />
           {['VIN', 'Машина', 'Масло и фильтры', 'Слот', 'Готово'].map((s, i) => (
-            <div key={s} style={{display: 'flex', alignItems: 'center', gap: 8}}>
-              <span style={{
+            <div key={s} className="vin-step" aria-current={(i + 1) === step ? 'step' : undefined} style={{display: 'flex', alignItems: 'center', gap: 8}}>
+              <span className="vin-step__number" style={{
                 fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
-                color: (i+1) <= step ? '#F5F2ED' : '#6B6B6B', letterSpacing: '0.12em',
-              }}>{(i+1).toString().padStart(2,'0')} {s}</span>
-              {i < 4 && <span style={{width: 24, height: 1, background: (i+1) < step ? '#C2410C' : '#3D3D3D'}} />}
+                color: (i+1) <= step ? '#F5F2ED' : '#858585', letterSpacing: '0.12em',
+              }}>{(i+1).toString().padStart(2,'0')}</span>
+              <span className="vin-step__label" style={{color: (i+1) <= step ? '#F5F2ED' : '#858585'}}>{s}</span>
+              {i < 4 && <span className="vin-step__line" style={{width: 24, height: 1, background: (i+1) < step ? '#C2410C' : '#3D3D3D'}} />}
             </div>
           ))}
         </div>
@@ -1651,7 +1641,7 @@ function VinPage() {
 
         {/* STEP 1 — VIN entry */}
         {step === 1 && (
-          <div style={{display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 56}}>
+          <div className="responsive-grid vin-entry-layout" style={{display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 56}}>
             <div>
               <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', color: '#9A9A9A', textTransform: 'uppercase', marginBottom: 10}}>VIN автомобиля · 17 знаков</label>
               <input
@@ -1663,9 +1653,9 @@ function VinPage() {
                 style={{height: 72, fontSize: 22, letterSpacing: '0.2em'}}
                 autoFocus
               />
-              <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 10, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 10, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>
                 <span>{vin.length}/17</span>
-                <a onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C', cursor: 'pointer'}}>Попробовать с демо-VIN →</a>
+                <button type="button" className="text-action" onClick={() => setVin(VIN_DEMO.vin)} style={{color: '#C2410C'}}>Попробовать с демо-VIN →</button>
               </div>
               <button
                 className="btn rust lg"
@@ -1682,7 +1672,7 @@ function VinPage() {
                 </div>
               )}
 
-              <div style={{marginTop: 50, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+              <div className="responsive-grid" style={{marginTop: 50, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
                 {[
                   {n: '01', t: 'Не знаешь VIN?', d: 'Он есть в СТС, в нижней части лобового и в страховке. Или позвони — продиктуем сами.'},
                   {n: '02', t: 'Что мы определим', d: 'Марка, модель, год, двигатель, тип масла, рекомендованную марку и аналоги.'},
@@ -1712,11 +1702,11 @@ function VinPage() {
 
         {/* STEP 2 — car identified */}
         {step === 2 && (
-          <div style={{display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'start'}}>
+          <div className="responsive-grid vin-car-layout" style={{display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'start'}}>
             <div>
               <div style={{display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 18}}>
                 <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>VIN · {vin}</span>
-                <a onClick={() => setStep(1)} style={{fontSize: 12, color: '#9A9A9A', cursor: 'pointer'}}>изменить</a>
+                <button type="button" className="text-action" onClick={() => setStep(1)} style={{fontSize: 12, color: '#9A9A9A'}}>изменить</button>
               </div>
               <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
                 {carTitle}
@@ -1785,22 +1775,22 @@ function VinPage() {
                 </div>
               </div>
 
-              <div style={{display: 'grid', gridTemplateColumns: '0.95fr 1.35fr', gap: 1, background: 'var(--line)'}}>
+              <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: '0.95fr 1.35fr', gap: 1, background: 'var(--line)'}}>
                 <section style={{background: '#0a0a0a', padding: '24px'}}>
                   <div className="t-eyebrow muted" style={{marginBottom: 14}}>01 / Масло</div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 30, color: '#F5F2ED', lineHeight: 1.05, textTransform: 'uppercase'}}>{oilFullName(chosen)}</div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', marginTop: 10, letterSpacing: '0.08em'}}>{chosen.visc} · упаковка {formatLiters(oilCalc.packageLiters)}</div>
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', marginTop: 20}}>
+                  <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', marginTop: 20}}>
                     <div style={{background: '#0e0e0e', padding: '14px'}}>
-                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.1em'}}>НУЖНО</div>
+                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>НУЖНО</div>
                       <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#F5F2ED'}}>{formatLiters(oilCalc.requiredLiters)}</div>
                     </div>
                     <div style={{background: '#0e0e0e', padding: '14px'}}>
-                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.1em'}}>КОЛ-ВО</div>
+                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>КОЛ-ВО</div>
                       <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#F5F2ED'}}>{oilCalc.packages} шт.</div>
                     </div>
                     <div style={{background: '#0e0e0e', padding: '14px'}}>
-                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.1em'}}>СУММА</div>
+                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.1em'}}>СУММА</div>
                       <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, color: '#F5F2ED'}}>{fmtMoney(oilCalc.total)}</div>
                     </div>
                   </div>
@@ -1808,7 +1798,7 @@ function VinPage() {
 
                 <section style={{background: '#0a0a0a', padding: '24px'}}>
                   <div className="t-eyebrow muted" style={{marginBottom: 14}}>02 / Фильтры на выбор</div>
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10}}>
+                  <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10}}>
                     {filterItems.map(item => {
                       const active = selectedFilters[item.key];
                       return (
@@ -1828,7 +1818,7 @@ function VinPage() {
                           }}
                         >
                           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
-                            <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: active ? '#C2410C' : '#6B6B6B', letterSpacing: '0.12em'}}>{active ? 'ВКЛ' : 'ВЫКЛ'}</span>
+                            <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: active ? '#C2410C' : '#858585', letterSpacing: '0.12em'}}>{active ? 'ВКЛ' : 'ВЫКЛ'}</span>
                             <span style={{width: 18, height: 18, border: '1px solid #C2410C', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#C2410C', fontSize: 13}}>{active ? '✓' : '+'}</span>
                           </div>
                           <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 19, textTransform: 'uppercase', lineHeight: 1.05}}>{item.title}</div>
@@ -1841,9 +1831,9 @@ function VinPage() {
                 </section>
               </div>
 
-              <div style={{padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24}}>
+              <div className="vin-selection-footer" style={{padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24}}>
                 <div style={{fontSize: 13, color: '#9A9A9A'}}>Итог пересчитывается из выбранного масла и включённых фильтров. Работа мастера включена.</div>
-                <div style={{display: 'flex', alignItems: 'center', gap: 18}}>
+                <div className="vin-selection-footer__total" style={{display: 'flex', alignItems: 'center', gap: 18}}>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 42, color: '#F5F2ED'}}>{fmtMoney(orderTotal)}</div>
                   <button className="btn rust" onClick={() => setStep(4)} style={{whiteSpace: 'nowrap'}}>К выбору слота <span className="arr">→</span></button>
                 </div>
@@ -1851,7 +1841,7 @@ function VinPage() {
             </div>
 
             {/* Recommended big card */}
-            <div style={{display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 1, background: 'var(--line)', border: '1px solid #C2410C', marginBottom: 32}}>
+            <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 1, background: 'var(--line)', border: '1px solid #C2410C', marginBottom: 32}}>
               <div style={{background: '#0e0e0e', padding: '36px 36px 32px'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22}}>
                   <span className="badge solid-rust">★ ОСНОВНАЯ РЕКОМЕНДАЦИЯ</span>
@@ -1900,7 +1890,7 @@ function VinPage() {
             </div>
 
             <div className="t-eyebrow muted" style={{marginBottom: 16}}>Альтернативы в той же спецификации</div>
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+            <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
               {alternatives.map(o => (
                 <div key={o.id} style={{background: '#0e0e0e', padding: '22px 22px'}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.1em'}}>
@@ -1910,7 +1900,7 @@ function VinPage() {
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED', textTransform: 'uppercase', lineHeight: 1.05, marginBottom: 6}}>{o.line}</div>
                   <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A'}}>{o.visc} · {o.volume}</div>
                   <div style={{fontSize: 12.5, color: '#9A9A9A', marginTop: 12, lineHeight: 1.4, minHeight: 50}}>{o.note}</div>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#6B6B6B', marginTop: 12, lineHeight: 1.35}}>
+                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#858585', marginTop: 12, lineHeight: 1.35}}>
                     {(() => {
                       const calc = calculateOilByCapacity(o, maintenance);
                       return `${formatLiters(calc.requiredLiters)} · ${calc.packages} шт. · ${fmtMoney(calc.total)}`;
@@ -1918,7 +1908,7 @@ function VinPage() {
                   </div>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 14, paddingTop: 14, borderTop: '1px dashed var(--line)'}}>
                     <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED'}}>{fmtMoney(calculateOilByCapacity(o, maintenance).total)}</span>
-                    <a onClick={() => setChosenOilId(o.id)} style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em', cursor: 'pointer'}}>{chosen?.id === o.id ? 'ВЫБРАНО' : 'ВЫБРАТЬ →'}</a>
+                    <button type="button" className="text-action" onClick={() => setChosenOilId(o.id)} style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em'}}>{chosen?.id === o.id ? 'ВЫБРАНО' : 'ВЫБРАТЬ →'}</button>
                   </div>
                 </div>
               ))}
@@ -1926,7 +1916,7 @@ function VinPage() {
 
             <div style={{marginTop: 32}}>
               <div className="t-eyebrow muted" style={{marginBottom: 16}}>Фильтры отдельно</div>
-              <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
+              <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
                 {filterItems.map(item => {
                   const active = selectedFilters[item.key];
                   return (
@@ -1945,7 +1935,7 @@ function VinPage() {
                       }}
                     >
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12}}>
-                        <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: active ? '#C2410C' : '#6B6B6B', letterSpacing: '0.14em'}}>{active ? 'ВКЛЮЧЕН' : 'НЕ ВЫБРАН'}</span>
+                        <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: active ? '#C2410C' : '#858585', letterSpacing: '0.14em'}}>{active ? 'ВКЛЮЧЕН' : 'НЕ ВЫБРАН'}</span>
                         <span style={{width: 18, height: 18, border: '1px solid #C2410C', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#C2410C', fontSize: 13}}>{active ? '✓' : '+'}</span>
                       </div>
                       <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, textTransform: 'uppercase', lineHeight: 1.05}}>{item.title}</div>
@@ -1957,12 +1947,12 @@ function VinPage() {
               </div>
             </div>
 
-            <div style={{marginTop: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24, border: '1px solid #C2410C', padding: '22px 24px'}}>
+            <div className="vin-selection-footer" style={{marginTop: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24, border: '1px solid #C2410C', padding: '22px 24px'}}>
               <div>
                 <div className="t-eyebrow" style={{marginBottom: 8}}>Итого по выбранному</div>
                 <div style={{fontSize: 13, color: '#9A9A9A'}}>Масло по объёму + выбранные фильтры. Работа мастера включена.</div>
               </div>
-              <div style={{display: 'flex', alignItems: 'center', gap: 18}}>
+              <div className="vin-selection-footer__total" style={{display: 'flex', alignItems: 'center', gap: 18}}>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 46, color: '#F5F2ED'}}>{fmtMoney(orderTotal)}</div>
                 <button className="btn rust" onClick={() => setStep(4)} style={{whiteSpace: 'nowrap'}}>К выбору слота <span className="arr">→</span></button>
               </div>
@@ -1972,7 +1962,7 @@ function VinPage() {
 
         {/* STEP 4 — slot picker */}
         {step === 4 && (
-          <div style={{display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 56}}>
+          <div className="responsive-grid vin-slot-layout" style={{display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 56}}>
             <div>
               <div className="t-eyebrow muted" style={{marginBottom: 14}}>Свободные слоты в Калининграде · Московский пр. 244</div>
 
@@ -1987,7 +1977,7 @@ function VinPage() {
                   <div style={{display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14}}>
                     <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 24, color: '#F5F2ED', textTransform: 'uppercase'}}>{d.day}</span>
                     <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.12em'}}>{d.wd} · {d.date}</span>
-                    <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em', marginLeft: 'auto'}}>{d.times.length} СВОБОДНЫХ</span>
+                    <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em', marginLeft: 'auto'}}>{d.times.length} СВОБОДНЫХ</span>
                   </div>
                   <div style={{display: 'flex', flexWrap: 'wrap', gap: 8}}>
                     {d.times.map((t, ti) => {
@@ -2019,7 +2009,7 @@ function VinPage() {
                 </div>
               )}
 
-              <div style={{marginTop: 32, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18}}>
+              <div className="responsive-grid vin-contact-fields" style={{marginTop: 32, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18}}>
                 <div>
                   <label style={{display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', color: '#9A9A9A', textTransform: 'uppercase', marginBottom: 8}}>Имя</label>
                   <input className="inp" placeholder="Алексей" value={name} onChange={e => setName(e.target.value)} />
@@ -2046,7 +2036,7 @@ function VinPage() {
               </button>
             </div>
 
-            <aside style={{position: 'sticky', top: 130, alignSelf: 'start'}}>
+            <aside className="responsive-sticky" style={{position: 'sticky', top: 130, alignSelf: 'start'}}>
               <div style={{border: '1px solid var(--line)', background: '#0e0e0e'}}>
                 <div style={{padding: '22px 22px 20px', borderBottom: '1px solid var(--line)'}}>
                   <div className="t-eyebrow" style={{marginBottom: 10}}>Сводка</div>
@@ -2094,10 +2084,10 @@ function VinPage() {
 
         {/* STEP 5 — done */}
         {step === 5 && (
-          <div style={{display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'start'}}>
+          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 56, alignItems: 'start'}}>
             <div>
               <div style={{padding: '40px 40px', background: '#C2410C', color: '#F5F2ED', position: 'relative', overflow: 'hidden'}}>
-                <div style={{position: 'absolute', top: -30, right: -10, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 220, color: 'rgba(10,10,10,0.15)', lineHeight: 0.8}}>76</div>
+                <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -30, right: -10, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 220, color: 'rgba(10,10,10,0.15)', lineHeight: 0.8}}>76</div>
                 <div className="t-eyebrow" style={{color: '#F5F2ED', marginBottom: 14}}>Заявка №{appointment?.id || 'TGM'}</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>Записал.<br />Ждём в {selectedSlot?.time}<span style={{color: '#0a0a0a'}}>.</span></div>
                 <div style={{marginTop: 24, fontSize: 16, lineHeight: 1.5}}>
@@ -2380,9 +2370,9 @@ function ShopPage() {
           <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.12em'}}>ПРАВИЛО ДОМА · С 2023</div>
         </div>
 
-        <div style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 40, alignItems: 'start'}}>
+        <div className="responsive-grid shop-layout" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 40, alignItems: 'start'}}>
           {/* Filters */}
-          <aside style={{position: 'sticky', top: 120}}>
+          <aside className="responsive-sticky" style={{position: 'sticky', top: 120}}>
             <FilterGroup title="Бренд" items={allBrands} active={brands} onToggle={v => toggle(brands, setBrands, v)} />
             <FilterGroup title="Вязкость" items={allViscs} active={viscs} onToggle={v => toggle(viscs, setViscs, v)} />
             <FilterGroup title="Тип ДВС" items={allTypes} active={types} onToggle={v => toggle(types, setTypes, v)} />
@@ -2402,12 +2392,12 @@ function ShopPage() {
               <div style={{display: 'flex', gap: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase'}}>
                 <span style={{color: '#6B6B6B'}}>Сортировка:</span>
                 {[{k: 'rec', l: 'Реком.'}, {k: 'cheap', l: 'Дешевле'}, {k: 'exp', l: 'Дороже'}].map(o => (
-                  <a key={o.k} onClick={() => setSort(o.k)} style={{color: sort === o.k ? '#C2410C' : '#0a0a0a', cursor: 'pointer', borderBottom: sort === o.k ? '1px solid #C2410C' : '1px solid transparent', paddingBottom: 2}}>{o.l}</a>
+                  <button type="button" className="text-action" key={o.k} onClick={() => setSort(o.k)} aria-pressed={sort === o.k} style={{color: sort === o.k ? '#C2410C' : '#0a0a0a', borderBottom: sort === o.k ? '1px solid #C2410C' : '1px solid transparent', paddingBottom: 2}}>{o.l}</button>
                 ))}
               </div>
             </div>
 
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22}}>
+            <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22}}>
               {filtered.map((o, i) => <ShopCard key={o.id} oil={o} idx={i} />)}
             </div>
 
@@ -2522,7 +2512,7 @@ function ProductPage() {
           <Link to="/" style={{color: '#6B6B6B'}}>Главная</Link> / <Link to="/shop" style={{color: '#6B6B6B'}}>Магазин</Link> / <span style={{color: '#0a0a0a'}}>{oil.brand} {oil.line}</span>
         </div>
 
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: 56}}>
+        <div className="responsive-grid product-layout" style={{display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: 56}}>
           {/* Image side */}
           <div>
             <div style={{aspectRatio: '1', background: '#FFFFFF', border: '1px solid #D9D3C5', position: 'relative', overflow: 'hidden'}}>
@@ -2629,7 +2619,7 @@ function ProductPage() {
         {/* Compatibility */}
         <section style={{marginTop: 80}}>
           <SectionHead paper eyebrow="Подходит к машинам" title="OEM-допуски и спецификации." num="" right={<Link to="/vin" className="btn ghost dark sm">Проверить по VIN →</Link>} />
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14}}>
+          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14}}>
             {['BMW LL-01', 'MB-Approval 229.5', 'VW 502.00 / 505.00', 'Porsche A40', 'Renault RN 0700/0710', 'Fiat 9.55535-Z2', 'Ford WSS-M2C913-D', 'GM dexos2'].map(c => (
               <div key={c} style={{padding: '18px 18px', background: '#FFF', border: '1px solid #D9D3C5'}}>
                 <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 8}}>OEM</div>
@@ -2642,7 +2632,7 @@ function ProductPage() {
         {/* Other oils */}
         <section style={{marginTop: 80}}>
           <SectionHead paper eyebrow="Похожие позиции" title="Если хочешь сравнить." num="" />
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
             {others.map((o, i) => <OilCardPaper key={o.id} oil={o} idx={i} />)}
           </div>
         </section>
@@ -2662,11 +2652,11 @@ function OptRow({ label, price, on, toggle, hint }) {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>{on && <span style={{color: '#F5F2ED', fontSize: 11, lineHeight: 1}}>+</span>}</span>
           {label}
-          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.08em', marginLeft: 8}}>· {hint}</span>
+          <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.08em', marginLeft: 8}}>· {hint}</span>
           <input type="checkbox" checked={on} onChange={toggle} style={{display: 'none'}} />
         </label>
       </td>
-      <td style={{padding: '14px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: on ? '#F5F2ED' : '#6B6B6B', textAlign: 'right'}}>
+      <td style={{padding: '14px 0', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: on ? '#F5F2ED' : '#858585', textAlign: 'right'}}>
         {on ? '+' : ''}{fmtMoney(price)}
       </td>
     </tr>
@@ -2681,7 +2671,7 @@ function OptRow({ label, price, on, toggle, hint }) {
 
 function CasesPage() {
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="cases-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
         <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
           <div>
@@ -2692,14 +2682,14 @@ function CasesPage() {
             </h1>
           </div>
           <div style={{textAlign: 'right'}}>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>Опубликовано</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>Опубликовано</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, color: '#F5F2ED'}}>{CASES.length}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>РАЗВОРОТОВ · 2025–2026</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginTop: 4}}>РАЗВОРОТОВ · 2025–2026</div>
           </div>
         </div>
 
         <div style={{display: 'flex', gap: 14, padding: '22px 0', marginBottom: 36, borderBottom: '1px solid var(--line)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase', flexWrap: 'wrap'}}>
-          <span style={{color: '#6B6B6B'}}>Фильтр:</span>
+          <span style={{color: '#858585'}}>Фильтр:</span>
           {['Все', 'ZF 8HP', 'DSG / DL382', '9G-Tronic', 'Aisin', 'CVT', 'Toyota'].map((f, i) => (
             <span key={f} style={{color: i === 0 ? '#C2410C' : '#F5F2ED', borderBottom: i === 0 ? '1px solid #C2410C' : '1px solid transparent', paddingBottom: 2, cursor: 'pointer'}}>{f}</span>
           ))}
@@ -2708,7 +2698,7 @@ function CasesPage() {
         <div style={{display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
           {CASES.map((c, idx) => (
             <Link key={c.id} to={`/case/${c.id}`}>
-              <div style={{display: 'grid', gridTemplateColumns: '120px 280px 1fr 200px', gap: 28, padding: '28px 28px', background: '#0a0a0a', alignItems: 'center', cursor: 'pointer', transition: 'background 160ms'}}
+              <div className="cases-list-row" style={{display: 'grid', gridTemplateColumns: '120px 280px 1fr 200px', gap: 28, padding: '28px 28px', background: '#0a0a0a', alignItems: 'center', cursor: 'pointer', transition: 'background 160ms'}}
                 onMouseEnter={e => e.currentTarget.style.background = '#161616'}
                 onMouseLeave={e => e.currentTarget.style.background = '#0a0a0a'}>
                 <div>
@@ -2721,7 +2711,7 @@ function CasesPage() {
                 <div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 26, lineHeight: 1.1, color: '#F5F2ED', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '-0.01em'}}>{c.title}</div>
                   <div style={{fontSize: 14, color: '#9A9A9A', lineHeight: 1.55, marginBottom: 14, maxWidth: 640}}>{c.summary}</div>
-                  <div style={{display: 'flex', gap: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.08em', textTransform: 'uppercase'}}>
+                  <div className="cases-list-row__meta" style={{display: 'flex', gap: 18, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.08em', textTransform: 'uppercase'}}>
                     <span>{c.year}</span>
                     <span>·</span>
                     <span>{c.mileage}</span>
@@ -2732,7 +2722,7 @@ function CasesPage() {
                   </div>
                 </div>
                 <div style={{textAlign: 'right'}}>
-                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>Сумма работы</div>
+                  <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>Сумма работы</div>
                   <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 38, color: '#F5F2ED', lineHeight: 1}}>{fmtMoney(c.cost)}</div>
                   <div style={{marginTop: 14, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>ОТКРЫТЬ →</div>
                 </div>
@@ -2741,7 +2731,7 @@ function CasesPage() {
           ))}
         </div>
 
-        <div style={{marginTop: 80, padding: '36px 40px', background: '#0e0e0e', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 32}}>
+        <div className="cases-cta" style={{marginTop: 80, padding: '36px 40px', background: '#0e0e0e', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 32}}>
           <div>
             <div className="t-eyebrow" style={{marginBottom: 10}}>Своя коробка — свой случай</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 32, lineHeight: 1, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.01em'}}>Не нашёл свою машину?</div>
@@ -2921,9 +2911,9 @@ function CasePage() {
 
 function TeamPage() {
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="team-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
-        <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
+        <div className="team-page__header" style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
           <div>
             <div className="t-eyebrow" style={{marginBottom: 14}}>Наши люди</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(44px, 6.5vw, 96px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
@@ -2932,9 +2922,9 @@ function TeamPage() {
             </h1>
           </div>
           <div style={{textAlign: 'right'}}>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>В команде</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>В команде</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, color: '#F5F2ED'}}>{MASTERS.length}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>МАСТЕРОВ · 2026</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginTop: 4}}>МАСТЕРОВ · 2026</div>
           </div>
         </div>
 
@@ -2942,13 +2932,13 @@ function TeamPage() {
           У нас нет «работников зала», «специалистов фронта» и «администраторов клиентского отдела». У нас — мастера. У каждого имя, лицо, цифра. Если не нравится мастер — скажешь, поменяем. Если нравится — записывайся к конкретному.
         </div>
 
-        <div style={{padding: '56px 0', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40}}>
+        <div className="team-grid" style={{padding: '56px 0', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 40}}>
           {MASTERS.map((m, idx) => <MasterCard key={m.id} m={m} idx={idx} />)}
         </div>
 
         {/* Hiring strip */}
-        <section style={{marginTop: 40, padding: '40px 40px', background: '#C2410C', color: '#F5F2ED', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, alignItems: 'center', position: 'relative', overflow: 'hidden'}}>
-          <div style={{position: 'absolute', top: -40, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 280, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>+1</div>
+        <section className="team-hiring responsive-grid" style={{marginTop: 40, padding: '40px 40px', background: '#C2410C', color: '#F5F2ED', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, alignItems: 'center', position: 'relative', overflow: 'hidden'}}>
+          <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -40, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 280, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>+1</div>
           <div style={{position: 'relative'}}>
             <div className="t-eyebrow" style={{color: '#F5F2ED', marginBottom: 14, opacity: 0.85}}>Растём</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 48, lineHeight: 0.95, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>Ищем 5-го мастера<span style={{color: '#0a0a0a'}}>.</span></div>
@@ -2956,10 +2946,10 @@ function TeamPage() {
               Калининград. Моторный цех. Опыт от 3 лет. Чёрная униформа. Кофе бесплатно. Зарплата выше рынка — потому что мы не демпингуем.
             </div>
           </div>
-          <div style={{position: 'relative', textAlign: 'right'}}>
+          <div className="team-hiring__contact" style={{position: 'relative', textAlign: 'right'}}>
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 12}}>пиши в личку</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 42, lineHeight: 1, marginBottom: 22}}>@tamgdemaslo<span style={{color: '#0a0a0a'}}>.</span></div>
-            <a className="btn" style={{background: '#0a0a0a', borderColor: '#0a0a0a', color: '#F5F2ED'}}>
+            <a href="https://t.me/tamgdemaslo" target="_blank" rel="noreferrer" className="btn" style={{background: '#0a0a0a', borderColor: '#0a0a0a', color: '#F5F2ED'}}>
               Резюме в Telegram <span className="arr">→</span>
             </a>
           </div>
@@ -2971,15 +2961,15 @@ function TeamPage() {
 
 function MasterCard({ m, idx }) {
   return (
-    <div style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
-      <div style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
+    <div className="master-card" style={{display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24, alignItems: 'stretch', border: '1px solid var(--line)', background: '#0e0e0e'}}>
+      <div className="master-card__photo" style={{aspectRatio: '4/5', borderRight: '1px solid var(--line)', position: 'relative', overflow: 'hidden'}}>
         <MasterPhoto master={m} label={idx+1} sublabel={m.role} priority />
       </div>
-      <div style={{padding: '22px 24px 22px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
+      <div className="master-card__body" style={{padding: '22px 24px 22px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
         <div>
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>N°0{idx+1} · {m.city.toUpperCase()}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.1em'}}>С {m.since}</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.1em'}}>С {m.since}</div>
           </div>
           <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 30, lineHeight: 1.05, color: '#F5F2ED', textTransform: 'uppercase', marginTop: 10, letterSpacing: '-0.01em'}}>{m.name}<span style={{color: '#C2410C'}}>.</span></div>
           <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 400, fontSize: 16, color: '#9A9A9A', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 4}}>{m.role}</div>
@@ -3012,9 +3002,9 @@ function MasterCard({ m, idx }) {
 
 function ContactsPage() {
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="contacts-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
-        <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
+        <div className="contacts-page__header" style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
           <div>
             <div className="t-eyebrow" style={{marginBottom: 14}}>Контакты · точка 01</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(44px, 6.5vw, 88px)', lineHeight: 0.92, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
@@ -3022,15 +3012,15 @@ function ContactsPage() {
               Московский пр. 244.
             </h1>
           </div>
-          <div style={{textAlign: 'right'}}>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginBottom: 6}}>Координаты</div>
+          <div className="contacts-page__coordinates" style={{textAlign: 'right'}}>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginBottom: 6}}>Координаты</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 28, lineHeight: 1.1, color: '#F5F2ED'}}>54.689°N<br />20.493°E</div>
           </div>
         </div>
 
-        <div style={{display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 40, marginTop: 40}}>
+        <div className="responsive-grid contacts-page__layout" style={{display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 40, marginTop: 40}}>
           {/* Map */}
-          <div style={{position: 'relative', aspectRatio: '16 / 11', background: '#0e0e0e', border: '1px solid var(--line)', overflow: 'hidden'}}>
+          <div className="contacts-map" style={{position: 'relative', aspectRatio: '16 / 11', background: '#0e0e0e', border: '1px solid var(--line)', overflow: 'hidden'}}>
             <svg viewBox="0 0 900 620" preserveAspectRatio="xMidYMid slice" style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}}>
               <rect width="900" height="620" fill="#0a0a0a" />
               {/* small streets grid */}
@@ -3070,10 +3060,7 @@ function ContactsPage() {
               </g>
               {/* point pin */}
               <g transform="translate(458 295)">
-                <circle r="70" fill="#C2410C" opacity="0.1">
-                  <animate attributeName="r" values="70;90;70" dur="3s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.1;0.04;0.1" dur="3s" repeatCount="indefinite" />
-                </circle>
+                <circle className="contacts-map__pulse" r="70" fill="#C2410C" opacity="0.1" />
                 <circle r="40" fill="#C2410C" opacity="0.2" />
                 <circle r="14" fill="#C2410C" />
                 <circle r="5" fill="#F5F2ED" />
@@ -3099,8 +3086,8 @@ function ContactsPage() {
             </svg>
             {/* zoom controls */}
             <div style={{position: 'absolute', top: 14, right: 14, display: 'flex', flexDirection: 'column', gap: 1}}>
-              <button style={{width: 36, height: 36, background: '#0a0a0a', border: '1px solid #3D3D3D', color: '#F5F2ED', fontFamily: 'Oswald, sans-serif', fontSize: 22, lineHeight: 1, cursor: 'pointer'}}>+</button>
-              <button style={{width: 36, height: 36, background: '#0a0a0a', border: '1px solid #3D3D3D', color: '#F5F2ED', fontFamily: 'Oswald, sans-serif', fontSize: 22, lineHeight: 1, cursor: 'pointer'}}>−</button>
+              <button type="button" aria-label="Приблизить карту" style={{width: 44, height: 44, background: '#0a0a0a', border: '1px solid #3D3D3D', color: '#F5F2ED', fontFamily: 'Oswald, sans-serif', fontSize: 22, lineHeight: 1, cursor: 'pointer'}}>+</button>
+              <button type="button" aria-label="Отдалить карту" style={{width: 44, height: 44, background: '#0a0a0a', border: '1px solid #3D3D3D', color: '#F5F2ED', fontFamily: 'Oswald, sans-serif', fontSize: 22, lineHeight: 1, cursor: 'pointer'}}>−</button>
             </div>
           </div>
 
@@ -3130,7 +3117,7 @@ function ContactsPage() {
         {/* What's inside */}
         <section style={{marginTop: 72}}>
           <SectionHead eyebrow="Что внутри" title="Чёрный фасад. Тёплое дерево. Шестиугольный свет." />
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22}}>
+          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22}}>
             {[
               {n: '01', t: 'Зона ожидания', d: 'Рыжий кожаный диван, тёплое дерево, постеры эпохи Формулы-1, бесплатный кофе и Wi-Fi.', acc: '#A85A3C'},
               {n: '02', t: 'Моторный цех', d: 'Два подъёмника, чистый пол, шестиугольная подсветка. Видно с дивана через стекло.', acc: '#3D3D3D'},
@@ -3199,15 +3186,15 @@ function ContactsPage() {
         </section>
 
         {/* CTA */}
-        <section style={{marginTop: 72, padding: '40px 44px', background: '#C2410C', color: '#F5F2ED', display: 'grid', gridTemplateColumns: '1fr auto', gap: 32, alignItems: 'center', position: 'relative', overflow: 'hidden'}}>
-          <div style={{position: 'absolute', top: -40, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 240, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>76</div>
+        <section className="contacts-cta responsive-grid" style={{marginTop: 72, padding: '40px 44px', background: '#C2410C', color: '#F5F2ED', display: 'grid', gridTemplateColumns: '1fr auto', gap: 32, alignItems: 'center', position: 'relative', overflow: 'hidden'}}>
+          <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -40, right: -20, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 240, color: 'rgba(10,10,10,0.12)', lineHeight: 0.8, pointerEvents: 'none'}}>76</div>
           <div style={{position: 'relative'}}>
             <div className="t-eyebrow" style={{color: '#F5F2ED', opacity: 0.85, marginBottom: 12}}>Связь</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(28px, 3.5vw, 48px)', lineHeight: 1, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
               Просто позвони. Запишем за минуту<span style={{color: '#0a0a0a'}}>.</span>
             </div>
           </div>
-          <div style={{position: 'relative', textAlign: 'right'}}>
+          <div className="contacts-cta__actions" style={{position: 'relative', textAlign: 'right'}}>
             <a href="tel:+79950545859" style={{display: 'block', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 38, lineHeight: 1, marginBottom: 12, color: '#F5F2ED', textDecoration: 'none'}}>+7 (995) 054-58-59</a>
             <Link to="/vin" className="btn" style={{background: '#0a0a0a', borderColor: '#0a0a0a', color: '#F5F2ED'}}>
               Или по VIN <span className="arr">→</span>
@@ -3231,36 +3218,36 @@ function AccountPage() {
   const pct = Math.max(0, Math.min(1, (15000 - kmToNext) / 15000));
 
   return (
-    <main style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
+    <main className="account-page" style={{background: '#0a0a0a', minHeight: '100vh', padding: '40px 0 100px'}}>
       <div className="container">
         {/* Header — "наряд-заказ"-style */}
-        <div style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
+        <div className="account-page__header" style={{display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 32, marginBottom: 14, borderBottom: '1px solid var(--line)', paddingBottom: 28}}>
           <div>
             <div className="t-eyebrow" style={{marginBottom: 14}}>Личный гараж · {a.user}</div>
             <h1 style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 'clamp(36px, 5vw, 64px)', lineHeight: 0.95, margin: 0, textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
               {a.car.name}<span style={{color: '#C2410C'}}>.</span>
             </h1>
-            <div style={{display: 'flex', gap: 22, marginTop: 12, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
+            <div className="account-page__meta" style={{display: 'flex', gap: 22, marginTop: 12, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#9A9A9A', letterSpacing: '0.1em', textTransform: 'uppercase'}}>
               <span>ГОС. №&nbsp;{a.car.plate}</span>
               <span>VIN {a.car.vin}</span>
               <span>{a.car.year}</span>
               <span>{fmtNum(a.car.mileage)} км</span>
             </div>
           </div>
-          <div style={{textAlign: 'right'}}>
+          <div className="account-page__orders" style={{textAlign: 'right'}}>
             <div className="t-eyebrow muted" style={{marginBottom: 6}}>Наряд-заказы</div>
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, lineHeight: 1, color: '#F5F2ED'}}>{a.history.length}</div>
-            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 4}}>С ОКТЯБРЯ 2024</div>
+            <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', letterSpacing: '0.12em', marginTop: 4}}>С ОКТЯБРЯ 2024</div>
           </div>
         </div>
 
-        <div style={{display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 40, marginTop: 40}}>
+        <div className="responsive-grid account-page__layout" style={{display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 40, marginTop: 40}}>
           {/* History */}
           <div>
             <div className="t-eyebrow muted" style={{marginBottom: 18}}>История замен · хронология</div>
             <div style={{display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--line)', border: '1px solid var(--line)'}}>
               {a.history.map((h, i) => (
-                <div key={i} style={{display: 'grid', gridTemplateColumns: '80px 120px 1fr 200px', gap: 22, padding: '22px 22px', background: '#0e0e0e', alignItems: 'center'}}>
+                <div className="account-history-row" key={i} style={{display: 'grid', gridTemplateColumns: '80px 120px 1fr 200px', gap: 22, padding: '22px 22px', background: '#0e0e0e', alignItems: 'center'}}>
                   <div>
                     <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.14em'}}>N°{(a.history.length - i).toString().padStart(2, '0')}</div>
                     <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 28, lineHeight: 1, color: '#F5F2ED', marginTop: 8}}>{i === 0 ? '◆' : '○'}</div>
@@ -3275,7 +3262,7 @@ function AccountPage() {
                   </div>
                   <div style={{textAlign: 'right'}}>
                     <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 22, color: '#F5F2ED'}}>{fmtMoney(h.sum)}</div>
-                    <a style={{display: 'inline-block', marginTop: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em', cursor: 'pointer'}}>НАРЯД-ЗАКАЗ →</a>
+                    <span style={{display: 'inline-block', marginTop: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C2410C', letterSpacing: '0.12em'}}>НАРЯД-ЗАКАЗ</span>
                   </div>
                 </div>
               ))}
@@ -3301,7 +3288,7 @@ function AccountPage() {
           <div style={{display: 'flex', flexDirection: 'column', gap: 22}}>
             {/* Next change */}
             <div style={{background: '#C2410C', color: '#F5F2ED', padding: '28px 28px 26px', position: 'relative', overflow: 'hidden'}}>
-              <div style={{position: 'absolute', top: -20, right: -10, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 200, color: 'rgba(10,10,10,0.15)', lineHeight: 0.8}}>76</div>
+              <div className="decorative-number" aria-hidden="true" style={{position: 'absolute', top: -20, right: -10, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 200, color: 'rgba(10,10,10,0.15)', lineHeight: 0.8}}>76</div>
               <div className="t-eyebrow" style={{color: '#F5F2ED', opacity: 0.85, marginBottom: 12, position: 'relative'}}>Следующая замена</div>
               <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 64, lineHeight: 0.95, position: 'relative', textTransform: 'uppercase', letterSpacing: '-0.02em'}}>
                 Через {fmtNum(kmToNext)} км
@@ -3328,13 +3315,13 @@ function AccountPage() {
                   <Logo variant="black" monogram h={36} />
                   <div className="chequered" style={{width: 60, height: 8}}></div>
                 </div>
-                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#6B6B6B', marginTop: 10}}>ДО СЛЕДУЮЩЕЙ ЗАМЕНЫ:</div>
+                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.14em', color: '#626262', marginTop: 10}}>ДО СЛЕДУЮЩЕЙ ЗАМЕНЫ:</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 32, lineHeight: 1, marginTop: 6}}>{fmtNum(a.nextChange.km)} км</div>
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 20, color: '#C2410C', marginTop: 4}}>ИЛИ {a.nextChange.date}</div>
                 <div style={{fontFamily: 'Inter', fontSize: 13, color: '#0a0a0a', marginTop: 14, lineHeight: 1.4}}>«Не забудь — мы скучаем.»</div>
-                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#6B6B6B', marginTop: 14, letterSpacing: '0.1em'}}>+7 (995) 054-58-59 · TGM · KGD</div>
+                <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: '#626262', marginTop: 14, letterSpacing: '0.1em'}}>+7 (995) 054-58-59 · TGM · KGD</div>
               </div>
-              <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#6B6B6B', letterSpacing: '0.12em', marginTop: 12, textAlign: 'center'}}>50 × 80 ММ · ПЕЧАТЬ НА ПЛЁНКЕ</div>
+              <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.12em', marginTop: 12, textAlign: 'center'}}>50 × 80 ММ · ПЕЧАТЬ НА ПЛЁНКЕ</div>
             </div>
 
             {/* Garage actions */}
@@ -3347,13 +3334,13 @@ function AccountPage() {
                   {l: 'SMS-напоминание за 500 км', d: 'включено'},
                   {l: 'Скачать историю в PDF', d: '4 наряд-заказа'},
                 ].map((b, i) => (
-                  <a key={i} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: i === 3 ? 'none' : '1px dashed var(--line)', cursor: 'pointer'}}>
+                  <div key={i} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: i === 3 ? 'none' : '1px dashed var(--line)'}}>
                     <div>
                       <div style={{fontSize: 14, color: '#F5F2ED'}}>{b.l}</div>
-                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6B6B6B', marginTop: 2, letterSpacing: '0.06em'}}>{b.d}</div>
+                      <div style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#858585', marginTop: 2, letterSpacing: '0.06em'}}>{b.d}</div>
                     </div>
-                    <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#C2410C'}}>→</span>
-                  </a>
+                    <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#858585', letterSpacing: '0.08em'}}>СКОРО</span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -3363,7 +3350,7 @@ function AccountPage() {
         {/* Recommended now */}
         <section style={{marginTop: 64}}>
           <SectionHead eyebrow="Рекомендуем" title="Под твою машину." right={<Link to="/vin" className="btn ghost sm">Подбор по VIN →</Link>} />
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
+          <div className="responsive-grid" style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 22}}>
             {OILS.filter(o => VIN_DEMO.alternatives.slice(0,3).includes(o.id) || o.id === VIN_DEMO.recommended).slice(0,4).map((o, i) => (
               <Link key={o.id} to={`/product/${o.id}`}>
                 <div className="card" style={{padding: 0, height: '100%'}}>
@@ -3406,7 +3393,7 @@ function LegalShell({ eyebrow, title, children }) {
     <main style={{background: '#F5F2ED', color: '#0a0a0a'}}>
       <section className="container" style={{padding: '86px 24px 96px'}}>
         <div className="t-eyebrow" style={{marginBottom: 16}}>{eyebrow}</div>
-        <h1 style={{
+        <h1 className="legal-title" style={{
           fontFamily: 'Oswald, sans-serif',
           fontWeight: 700,
           fontSize: 'clamp(42px, 6vw, 86px)',
