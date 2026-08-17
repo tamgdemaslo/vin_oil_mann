@@ -63013,8 +63013,14 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-branch-editor select,
 .eco-warehouse-editor input,
 .eco-warehouse-editor textarea,
+.eco-branch-create-member input,
+.eco-branch-create-member select,
 .eco-branch-add-member select,
 .eco-branch-member-list select { min-height: 40px; width: 100%; padding: 0 10px; color: var(--eco-ink); background: var(--eco-surface); border: 1px solid var(--eco-line); border-radius: 4px; font: inherit; }
+.eco-branch-create-member input:focus-visible,
+.eco-branch-create-member select:focus-visible,
+.eco-branch-add-member select:focus-visible,
+.eco-branch-member-list select:focus-visible { outline: 2px solid var(--eco-focus, #155eef); outline-offset: 2px; }
 .eco-branches-page__form > label { display: grid; gap: 5px; color: var(--eco-ink-2); font-size: 11px; font-weight: 700; }
 
 .eco-branch-workspace { display: grid; grid-template-columns: minmax(240px, .7fr) minmax(0, 2fr); min-height: 620px; margin-top: 22px; background: var(--eco-surface); border: 1px solid var(--eco-line); border-radius: 10px; overflow: hidden; }
@@ -63044,6 +63050,20 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-branch-form-grid label small { color: var(--eco-muted); font-weight: 500; line-height: 1.4; }
 .eco-branch-editor__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 14px; border-top: 1px solid var(--eco-line); }
 .eco-branch-employees { display: grid; gap: 18px; padding-top: 18px; }
+.eco-branch-employees__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.eco-branch-employees__head h3 { margin: 0 0 5px; font-size: 17px; }
+.eco-branch-employees__head > div > span { display: block; max-width: 62ch; color: var(--eco-muted); font-size: 12px; line-height: 1.45; }
+.eco-branch-create-member { display: grid; gap: 16px; padding: 16px; background: var(--eco-surface-sunk); border: 1px solid var(--eco-line-strong); border-radius: 7px; }
+.eco-branch-create-member__intro { display: flex; align-items: center; gap: 9px; color: var(--eco-rust); }
+.eco-branch-create-member__intro > span { display: grid; gap: 2px; color: var(--eco-ink); }
+.eco-branch-create-member__intro small { color: var(--eco-muted); font-size: 10px; font-weight: 500; }
+.eco-branch-create-member__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.eco-branch-create-member__grid label { display: grid; align-content: start; gap: 6px; color: var(--eco-ink-2); font-size: 11px; font-weight: 750; }
+.eco-branch-create-member__grid label.is-wide { grid-column: 1 / -1; }
+.eco-branch-create-member__grid label small { color: var(--eco-muted); font-size: 10px; font-weight: 500; line-height: 1.4; }
+.eco-branch-create-member footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; border-top: 1px solid var(--eco-line); }
+.eco-branch-create-member footer > span { color: var(--eco-muted); font-size: 11px; line-height: 1.4; }
+.eco-branch-create-member footer > div { display: flex; flex: 0 0 auto; gap: 8px; }
 .eco-branch-warehouses { display: grid; gap: 18px; padding-top: 18px; }
 .eco-branch-warehouses__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .eco-branch-warehouses__head h3 { margin: 3px 0 5px; font-size: 17px; }
@@ -63126,6 +63146,11 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-branch-form-grid label.is-wide { grid-column: auto; }
   .eco-branch-add-member { grid-template-columns: 1fr; }
   .eco-branch-add-member > div { grid-column: auto; }
+  .eco-branch-employees__head,
+  .eco-branch-create-member footer { align-items: stretch; flex-direction: column; }
+  .eco-branch-create-member__grid { grid-template-columns: 1fr; }
+  .eco-branch-create-member__grid label.is-wide { grid-column: auto; }
+  .eco-branch-create-member footer > div { justify-content: flex-end; }
   .eco-branch-member-list article { grid-template-columns: 1fr; gap: 8px; padding: 12px 0; }
   .eco-working-telegram-status { align-items: stretch; flex-direction: column; }
   .eco-branch-editor__actions { align-items: stretch; flex-direction: column-reverse; }

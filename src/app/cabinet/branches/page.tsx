@@ -101,6 +101,7 @@ export default function BranchesPage() {
   const [canManageWarehouses, setCanManageWarehouses] = useState(false);
   const [warehouseFormOpen, setWarehouseFormOpen] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<WarehouseRow | null>(null);
+  const [employeeFormOpen, setEmployeeFormOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -201,12 +202,14 @@ export default function BranchesPage() {
     setNotice("");
     setWarehouseFormOpen(false);
     setEditingWarehouse(null);
+    setEmployeeFormOpen(false);
     updateLocation(branchId, "overview");
   }
 
   function chooseTab(nextTab: BranchTab) {
     setTab(nextTab);
     setNotice("");
+    if (nextTab !== "employees") setEmployeeFormOpen(false);
     updateLocation(selectedBranchId, nextTab);
   }
 
@@ -363,6 +366,7 @@ export default function BranchesPage() {
     if (!details) return;
     setSaving(true);
     setError("");
+    setNotice("");
     const form = new FormData(event.currentTarget);
     const response = await fetch(`/api/branches/${encodeURIComponent(details.id)}/members`, {
       method: "POST",
@@ -375,6 +379,38 @@ export default function BranchesPage() {
       event.currentTarget.reset();
       await loadBranch(details.id);
       setNotice("Сотрудник добавлен в филиал.");
+    }
+    setSaving(false);
+  }
+
+  async function createMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!details) return;
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    const passwordConfirmation = String(form.get("passwordConfirmation") ?? "");
+    if (password !== passwordConfirmation) {
+      setError("Введённые пароли не совпадают");
+      return;
+    }
+    const login = String(form.get("login") ?? "").trim().toLowerCase();
+    const name = String(form.get("name") ?? "").trim();
+    setSaving(true);
+    setError("");
+    setNotice("");
+    const response = await fetch(`/api/branches/${encodeURIComponent(details.id)}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...Object.fromEntries(form.entries()), createUser: true, login }),
+    });
+    const payload = await safeReadJson<{ error?: string }>(response);
+    if (!response.ok) {
+      setError(payload?.error ?? "Не удалось создать сотрудника");
+    } else {
+      event.currentTarget.reset();
+      setEmployeeFormOpen(false);
+      await loadBranch(details.id);
+      setNotice(`${name || login} создан и добавлен в филиал. Передайте сотруднику логин и временный PIN-код.`);
     }
     setSaving(false);
   }
@@ -522,12 +558,32 @@ export default function BranchesPage() {
 
               {tab === "employees" && (
                 <div className="eco-branch-employees">
+                  <header className="eco-branch-employees__head">
+                    <div>
+                      <h3>Сотрудники филиала</h3>
+                      <span>Создавайте учётные записи или назначайте уже зарегистрированных пользователей.</span>
+                    </div>
+                    {canManage && <button type="button" className="eco-btn eco-btn--primary" aria-expanded={employeeFormOpen} aria-controls="branch-create-member" onClick={() => { setEmployeeFormOpen((value) => !value); setError(""); }}><UserPlus aria-hidden className="eco-icon" />{employeeFormOpen ? "Закрыть форму" : "Создать сотрудника"}</button>}
+                  </header>
+                  {canManage && employeeFormOpen && (
+                    <form id="branch-create-member" onSubmit={createMember} className="eco-branch-create-member">
+                      <div className="eco-branch-create-member__intro"><UserPlus aria-hidden size={20} /><span><strong>Новая учётная запись</strong><small>Сотрудник сможет войти сразу после создания.</small></span></div>
+                      <div className="eco-branch-create-member__grid">
+                        <label>Имя сотрудника<input name="name" required minLength={2} maxLength={100} autoComplete="name" placeholder="Иван Петров" disabled={saving} /></label>
+                        <label>Логин<input name="login" required minLength={3} maxLength={32} pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="ivan" disabled={saving} /><small>3–32 символа латиницей; можно использовать цифры, точку, дефис и _</small></label>
+                        <label>Временный PIN-код<input name="password" required type="password" inputMode="numeric" pattern="[0-9]{4}" minLength={4} maxLength={4} autoComplete="new-password" placeholder="4 цифры" disabled={saving} /></label>
+                        <label>Повторите PIN-код<input name="passwordConfirmation" required type="password" inputMode="numeric" pattern="[0-9]{4}" minLength={4} maxLength={4} autoComplete="new-password" placeholder="Ещё раз" disabled={saving} /></label>
+                        <label className="is-wide">Роль в филиале<select name="roleId" required defaultValue="master" disabled={saving}>{BRANCH_ROLES.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
+                      </div>
+                      <footer><span>PIN-код можно изменить позже в личном кабинете сотрудника.</span><div><button type="button" className="eco-btn eco-btn--quiet" onClick={() => { setEmployeeFormOpen(false); setError(""); }} disabled={saving}>Отменить</button><button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><UserPlus aria-hidden className="eco-icon" />{saving ? "Создаём…" : "Создать и добавить"}</button></div></footer>
+                    </form>
+                  )}
                   {canManage && (
                     <form onSubmit={addMember} className="eco-branch-add-member">
-                      <div><UserPlus aria-hidden size={20} /><span><strong>Добавить существующего пользователя</strong><small>Доступ начинает действовать сразу после назначения роли.</small></span></div>
+                      <div><UsersRound aria-hidden size={20} /><span><strong>Назначить зарегистрированного пользователя</strong><small>Для сотрудника, у которого уже есть учётная запись.</small></span></div>
                       <select name="login" required defaultValue=""><option value="" disabled>Выберите сотрудника</option>{users.map((user) => <option value={user.login} key={user.login} disabled={assignedLogins.has(user.login)}>{user.name} · {user.login}{assignedLogins.has(user.login) ? " · уже добавлен" : ""}</option>)}</select>
                       <select name="roleId" required defaultValue="master">{BRANCH_ROLES.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select>
-                      <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><UserPlus aria-hidden className="eco-icon" />Добавить</button>
+                      <button type="submit" className="eco-btn eco-btn--primary" disabled={saving || users.every((user) => assignedLogins.has(user.login))}><UserPlus aria-hidden className="eco-icon" />Добавить</button>
                     </form>
                   )}
                   <div className="eco-branch-member-list">

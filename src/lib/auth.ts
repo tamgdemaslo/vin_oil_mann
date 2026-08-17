@@ -37,6 +37,10 @@ function hashPassword(password: string, salt: string): string {
   return crypto.createHash("sha256").update(salt + password, "utf8").digest("hex");
 }
 
+export function hashAuthPassword(password: string): string {
+  return hashPassword(password, AUTH_SALT);
+}
+
 function base64UrlEncode(input: string): string {
   return Buffer.from(input, "utf8").toString("base64url");
 }
@@ -112,10 +116,9 @@ async function getPasswordOverrides(): Promise<Map<string, string>> {
 
 export async function getUsersFromEnv(): Promise<EnvUser[]> {
   const raw = process.env.AUTH_USERS?.trim() || DEFAULT_AUTH_USERS;
-  if (!raw?.trim()) return [];
-  const lines = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const passwordOverrides = await getPasswordOverrides();
   const users: EnvUser[] = [];
+  const lines = raw?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   for (const line of lines) {
     const parts = line.split(":");
     if (parts.length >= 2) {
@@ -143,6 +146,31 @@ export async function getUsersFromEnv(): Promise<EnvUser[]> {
       }
     }
   }
+
+  try {
+    const databaseUsers = await prisma.user.findMany({
+      where: { status: "active" },
+      select: { login: true, name: true, authRole: true },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const databaseUser of databaseUsers) {
+      const login = canonicalizeLogin(databaseUser.login);
+      if (users.some((user) => normalizeLoginKey(user.login) === normalizeLoginKey(login))) continue;
+      const passwordHash = getLoginVariants(login)
+        .map((variant) => passwordOverrides.get(normalizeLoginKey(variant)))
+        .find((hash): hash is string => Boolean(hash));
+      if (!passwordHash) continue;
+      users.push({
+        login,
+        name: databaseUser.name.trim() || login,
+        role: normalizeRole(databaseUser.authRole),
+        passwordHash,
+      });
+    }
+  } catch {
+    // Keep environment-backed sign-in available while the database is unreachable.
+  }
+
   return users;
 }
 
@@ -163,9 +191,13 @@ export async function setUserPassword(login: string, password: string): Promise<
   const canonicalLogin = canonicalizeLogin(login);
   await prisma.authPassword.upsert({
     where: { login: canonicalLogin },
-    update: { passwordHash: hashPassword(password, AUTH_SALT) },
-    create: { login: canonicalLogin, passwordHash: hashPassword(password, AUTH_SALT) },
+    update: { passwordHash: hashAuthPassword(password) },
+    create: { login: canonicalLogin, passwordHash: hashAuthPassword(password) },
   });
+  invalidateAuthPasswordCache();
+}
+
+export function invalidateAuthPasswordCache(): void {
   authCache.passwordOverrides = null;
 }
 
