@@ -61,6 +61,22 @@ type WarehouseRow = {
 
 type BranchTab = "overview" | "employees" | "channels" | "warehouses";
 
+const NETWORK_RETRY_DELAY_MS = 750;
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchRead(input: RequestInfo | URL, init: RequestInit = {}) {
+  try {
+    return await fetch(input, init);
+  } catch {
+    // GET requests are safe to repeat when Safari loses an individual connection.
+    await wait(NETWORK_RETRY_DELAY_MS);
+    return fetch(input, init);
+  }
+}
+
 const BRANCH_ROLES = [
   ["branch_owner", "Владелец филиала"],
   ["administrator", "Администратор"],
@@ -115,82 +131,105 @@ export default function BranchesPage() {
 
   const loadBranches = useCallback(async () => {
     setLoading(true);
-    const response = await fetch("/api/branches", { cache: "no-store" });
-    const payload = await safeReadJson<{ branches?: Branch[]; activeBranchId?: string; canManageBranches?: boolean; error?: string }>(response);
-    const rows = payload?.branches ?? [];
-    setBranches(rows);
-    setCanManage(Boolean(payload?.canManageBranches));
-    setActiveBranchId(payload?.activeBranchId && payload.activeBranchId !== "all" ? payload.activeBranchId : null);
-    setError(response.ok ? "" : payload?.error ?? "Не удалось загрузить филиалы");
-    const initial = queryState();
-    const selected = rows.find((branch) => branch.id === initial.branchId)?.id
-      ?? rows.find((branch) => branch.id === payload?.activeBranchId)?.id
-      ?? rows[0]?.id
-      ?? null;
-    setSelectedBranchId((current) => current && rows.some((branch) => branch.id === current) ? current : selected);
-    setTab(initial.tab);
-    setLoading(false);
+    try {
+      const response = await fetchRead("/api/branches", { cache: "no-store" });
+      const payload = await safeReadJson<{ branches?: Branch[]; activeBranchId?: string; canManageBranches?: boolean; error?: string }>(response);
+      const rows = payload?.branches ?? [];
+      setBranches(rows);
+      setCanManage(Boolean(payload?.canManageBranches));
+      setActiveBranchId(payload?.activeBranchId && payload.activeBranchId !== "all" ? payload.activeBranchId : null);
+      setError(response.ok ? "" : payload?.error ?? "Не удалось загрузить филиалы");
+      const initial = queryState();
+      const selected = rows.find((branch) => branch.id === initial.branchId)?.id
+        ?? rows.find((branch) => branch.id === payload?.activeBranchId)?.id
+        ?? rows[0]?.id
+        ?? null;
+      setSelectedBranchId((current) => current && rows.some((branch) => branch.id === current) ? current : selected);
+      setTab(initial.tab);
+    } catch {
+      setError("Сетевое соединение прервалось. Повторите загрузку филиалов.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadOrganizations = useCallback(async () => {
-    const response = await fetch("/api/organizations", { cache: "no-store" });
-    if (!response.ok) return;
-    const payload = await safeReadJson<{ organizations?: Organization[] }>(response);
-    setOrganizations(payload?.organizations ?? []);
+    try {
+      const response = await fetchRead("/api/organizations", { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = await safeReadJson<{ organizations?: Organization[] }>(response);
+      setOrganizations(payload?.organizations ?? []);
+    } catch {
+      // Organizations are secondary data on this screen; the branch list stays usable.
+    }
   }, []);
 
   const loadBranch = useCallback(async (branchId: string) => {
     setDetailLoading(true);
     setError("");
-    const [branchResponse, membersResponse, usersResponse] = await Promise.all([
-      fetch(`/api/branches/${encodeURIComponent(branchId)}`, { cache: "no-store" }),
-      fetch(`/api/branches/${encodeURIComponent(branchId)}/members`, { cache: "no-store" }),
-      fetch("/api/auth/users", { cache: "no-store" }),
-    ]);
-    const branchPayload = await safeReadJson<{ branch?: BranchDetails; error?: string }>(branchResponse);
-    const membersPayload = await safeReadJson<{ memberships?: Membership[] }>(membersResponse);
-    const usersPayload = await safeReadJson<{ users?: PublicUser[] }>(usersResponse);
-    if (!branchResponse.ok || !branchPayload?.branch) {
-      setError(branchPayload?.error ?? "Не удалось открыть филиал");
-      setDetails(null);
-    } else {
-      setDetails(branchPayload.branch);
+    try {
+      const [branchResponse, membersResponse, usersResponse] = await Promise.all([
+        fetchRead(`/api/branches/${encodeURIComponent(branchId)}`, { cache: "no-store" }),
+        fetchRead(`/api/branches/${encodeURIComponent(branchId)}/members`, { cache: "no-store" }),
+        fetchRead("/api/auth/users", { cache: "no-store" }),
+      ]);
+      const branchPayload = await safeReadJson<{ branch?: BranchDetails; error?: string }>(branchResponse);
+      const membersPayload = await safeReadJson<{ memberships?: Membership[]; error?: string }>(membersResponse);
+      const usersPayload = await safeReadJson<{ users?: PublicUser[]; error?: string }>(usersResponse);
+      const loadedMemberships = membersResponse.ok ? membersPayload?.memberships ?? [] : [];
+      if (!branchResponse.ok || !branchPayload?.branch) {
+        setError(branchPayload?.error ?? "Не удалось открыть филиал");
+        setDetails(null);
+      } else {
+        setDetails(branchPayload.branch);
+        if (!membersResponse.ok) setError(membersPayload?.error ?? "Не удалось загрузить сотрудников филиала");
+        else if (!usersResponse.ok) setError(usersPayload?.error ?? "Не удалось загрузить список пользователей");
+      }
+      setMemberships(loadedMemberships);
+      setUsers(usersResponse.ok ? usersPayload?.users ?? [] : []);
+      return { memberships: loadedMemberships };
+    } catch {
+      setError("Сетевое соединение прервалось. Повторите открытие филиала.");
+      return null;
+    } finally {
+      setDetailLoading(false);
     }
-    setMemberships(membersResponse.ok ? membersPayload?.memberships ?? [] : []);
-    setUsers(usersResponse.ok ? usersPayload?.users ?? [] : []);
-    setDetailLoading(false);
   }, []);
 
   const loadWarehouses = useCallback(async (branchId: string) => {
     setWarehousesLoading(true);
-    const response = await fetch(`/api/branches/${encodeURIComponent(branchId)}/warehouses`, { cache: "no-store" });
-    const payload = await safeReadJson<{ warehouses?: WarehouseRow[]; canManage?: boolean; error?: string }>(response);
-    if (!response.ok) {
-      setError(payload?.error ?? "Не удалось загрузить склады филиала");
+    try {
+      const response = await fetchRead(`/api/branches/${encodeURIComponent(branchId)}/warehouses`, { cache: "no-store" });
+      const payload = await safeReadJson<{ warehouses?: WarehouseRow[]; canManage?: boolean; error?: string }>(response);
+      if (!response.ok) {
+        setError(payload?.error ?? "Не удалось загрузить склады филиала");
+        setWarehouses([]);
+        setCanManageWarehouses(false);
+      } else {
+        setWarehouses(payload?.warehouses ?? []);
+        setCanManageWarehouses(Boolean(payload?.canManage));
+      }
+    } catch {
+      setError("Сетевое соединение прервалось. Повторите загрузку складов.");
       setWarehouses([]);
       setCanManageWarehouses(false);
-    } else {
-      setWarehouses(payload?.warehouses ?? []);
-      setCanManageWarehouses(Boolean(payload?.canManage));
+    } finally {
+      setWarehousesLoading(false);
     }
-    setWarehousesLoading(false);
   }, []);
 
   useEffect(() => {
     // These callbacks start remote reads; their state updates happen as the requests settle.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void Promise.all([loadBranches(), loadOrganizations()]);
   }, [loadBranches, loadOrganizations]);
 
   useEffect(() => {
     // The selected id is the external route state that drives the detail request.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (selectedBranchId) void loadBranch(selectedBranchId);
   }, [loadBranch, selectedBranchId]);
 
   useEffect(() => {
     // This starts a remote read; the state updates happen when the request settles.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (selectedBranchId && tab === "warehouses") void loadWarehouses(selectedBranchId);
   }, [loadWarehouses, selectedBranchId, tab]);
 
@@ -386,7 +425,8 @@ export default function BranchesPage() {
   async function createMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!details) return;
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const password = String(form.get("password") ?? "");
     const passwordConfirmation = String(form.get("passwordConfirmation") ?? "");
     if (password !== passwordConfirmation) {
@@ -398,21 +438,37 @@ export default function BranchesPage() {
     setSaving(true);
     setError("");
     setNotice("");
-    const response = await fetch(`/api/branches/${encodeURIComponent(details.id)}/members`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...Object.fromEntries(form.entries()), createUser: true, login }),
-    });
-    const payload = await safeReadJson<{ error?: string }>(response);
-    if (!response.ok) {
-      setError(payload?.error ?? "Не удалось создать сотрудника");
-    } else {
-      event.currentTarget.reset();
-      setEmployeeFormOpen(false);
-      await loadBranch(details.id);
-      setNotice(`${name || login} создан и добавлен в филиал. Передайте сотруднику логин и временный PIN-код.`);
+    try {
+      const response = await fetch(`/api/branches/${encodeURIComponent(details.id)}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...Object.fromEntries(form.entries()), createUser: true, login }),
+      });
+      const payload = await safeReadJson<{ error?: string }>(response);
+      if (!response.ok) {
+        setError(payload?.error ?? "Не удалось создать сотрудника");
+      } else {
+        formElement.reset();
+        setEmployeeFormOpen(false);
+        await loadBranch(details.id);
+        setNotice(`${name || login} создан и добавлен в филиал. Передайте сотруднику логин и временный PIN-код.`);
+      }
+    } catch {
+      // Never repeat this POST automatically: the server may have committed the
+      // transaction before the response connection was lost. Reconcile instead.
+      const refreshed = await loadBranch(details.id);
+      const wasCreated = refreshed?.memberships.some((membership) => membership.user.login.toLowerCase() === login);
+      if (wasCreated) {
+        formElement.reset();
+        setEmployeeFormOpen(false);
+        setError("");
+        setNotice(`${name || login} создан. Ответ сервера потерялся, но список сотрудников уже обновлён.`);
+      } else {
+        setError("Сетевое соединение прервалось. Сотрудник не подтверждён — проверьте список и повторите отправку.");
+      }
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function updateMember(membership: Membership, input: { roleId?: string; status?: string }) {
