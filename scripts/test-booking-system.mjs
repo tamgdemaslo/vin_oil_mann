@@ -16,7 +16,30 @@ const timezone = await jiti.import("../src/lib/booking/timezone.ts");
 const tokens = await jiti.import("../src/lib/booking/management-token.ts");
 const managementUrls = await jiti.import("../src/lib/booking/management-url.ts");
 const catalogServices = await jiti.import("../src/lib/booking/catalog-services.ts");
+const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
+
+assert.deepEqual(
+  journalWindows.buildJournalFreeWindows(
+    { isWorking: true, startTime: "09:00", endTime: "13:00" },
+    [],
+  ),
+  ["09:00", "10:00", "11:00", "12:00"],
+);
+assert.deepEqual(
+  journalWindows.buildJournalFreeWindows(
+    { isWorking: true, startTime: "09:00", endTime: "13:00" },
+    [{ start: 10 * 60, end: 11 * 60 }],
+  ),
+  ["09:00", "11:00", "12:00"],
+);
+assert.deepEqual(
+  journalWindows.buildJournalFreeWindows(
+    { isWorking: false, startTime: null, endTime: null },
+    [],
+  ),
+  [],
+);
 
 assert.equal(catalogServices.catalogBookingServiceId("product-1"), "catalog-service:product-1");
 assert.equal(catalogServices.isCatalogBookingServiceId("catalog-service:product-1"), true);

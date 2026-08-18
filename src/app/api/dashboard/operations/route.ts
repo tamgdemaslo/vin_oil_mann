@@ -8,6 +8,8 @@ import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-c
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
 import { resolveDashboardAccessForBranch } from "@/lib/dashboard-variant";
+import { buildJournalFreeWindows } from "@/lib/booking/journal-windows";
+import { localDateIsoWeekday } from "@/lib/booking/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -411,6 +413,7 @@ export async function GET() {
     diagnosticStats,
     latestDocuments,
     messengerSummary,
+    todayBookingHours,
   ] = await Promise.all([
     getCashState(),
     prisma.localDemand.findMany({
@@ -463,6 +466,10 @@ export async function GET() {
       take: 5,
     }),
     getMessengerSummary(organizationId),
+    prisma.branchBookingWorkingHour.findUnique({
+      where: { branchId_weekday: { branchId, weekday: localDateIsoWeekday(today) } },
+      select: { isWorking: true, startTime: true, endTime: true },
+    }),
   ]);
 
   const notifications: DashboardNotification[] = [];
@@ -516,12 +523,7 @@ export async function GET() {
     if (start === null) return [];
     return [{ start, end: start + appointmentDurationMinutes(item) }];
   });
-  const freeWindows = ["09:00", "10:30", "12:00", "13:30", "16:00", "17:00", "18:30"].filter((time) => {
-    const start = clockMinutes(time);
-    if (start === null) return false;
-    const end = start + 60;
-    return !occupiedIntervals.some((interval) => start < interval.end && end > interval.start);
-  });
+  const freeWindows = buildJournalFreeWindows(todayBookingHours, occupiedIntervals);
 
   const crmDueAt = (deal: (typeof crmDeals)[number]) => deal.nextActionAt ?? deal.nextContactAt;
   const crmToday = crmDeals.filter((deal) => {
