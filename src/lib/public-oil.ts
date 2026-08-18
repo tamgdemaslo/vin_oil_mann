@@ -179,7 +179,8 @@ function totalAvailable(row: LocalOilRow): number {
 }
 
 function toPublicOilCard(row: LocalOilRow): PublicOilCard {
-  const hasLocalPhoto = row.photos.length > 0;
+  // Internal product photos are operational attachments, not curated storefront assets.
+  // Keep imageHref absent until the catalog has an explicitly approved public image.
   return {
     id: row.id,
     name: row.name,
@@ -192,7 +193,6 @@ function toPublicOilCard(row: LocalOilRow): PublicOilCard {
     price: row.salePriceCents / 100,
     currency: row.currencyName ?? "руб.",
     available: totalAvailable(row),
-    imageHref: hasLocalPhoto || row.imageHref ? `/api/local-inventory/image?productId=${encodeURIComponent(row.id)}` : undefined,
   };
 }
 
@@ -255,7 +255,6 @@ async function loadLocalOilRows(params: PublicOilQuery = {}, scanLimit = 1000) {
     },
     include: {
       stockBalances: true,
-      photos: { select: { id: true }, take: 1, orderBy: { createdAt: "desc" } },
     },
     orderBy: [{ name: "asc" }],
     take: scanLimit,
