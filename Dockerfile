@@ -66,7 +66,18 @@ ENV APP_RELEASE=$APP_RELEASE \
 
 COPY . ./
 RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
-  ./node_modules/.bin/next build --webpack
+  set -eu; \
+  if [ -n "$APP_COMMIT_SHA" ] && [ "$APP_COMMIT_SHA" != "unknown" ]; then \
+    deployment_id="$APP_COMMIT_SHA"; \
+  else \
+    deployment_id="$(find . -path ./node_modules -prune -o -type f -print0 \
+      | sort -z \
+      | xargs -0 sha256sum \
+      | sha256sum \
+      | cut -d ' ' -f 1)"; \
+  fi; \
+  echo "Building Next.js deployment ${deployment_id}"; \
+  NEXT_DEPLOYMENT_ID="$deployment_id" ./node_modules/.bin/next build --webpack
 
 FROM node:20-bookworm AS app
 
