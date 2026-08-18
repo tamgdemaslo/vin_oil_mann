@@ -287,6 +287,18 @@ button:disabled {
   background: rgba(10, 10, 10, 0.98);
 }
 
+.client-topbar__phone {
+  color: var(--gray-2);
+  font: 500 12px/1 var(--f-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 120ms ease;
+}
+
+.client-topbar__phone:hover {
+  color: var(--paper);
+}
+
 .tape__track {
   animation: tape 60s linear infinite;
   width: max-content;
@@ -532,6 +544,10 @@ button:disabled {
 }
 
 @media (min-width: 901px) and (max-width: 1200px) {
+  .client-topbar__phone {
+    display: none;
+  }
+
   .home-hero__grid {
     max-width: 1080px;
     grid-template-columns: minmax(0, 1fr) minmax(330px, 390px) !important;
@@ -611,42 +627,19 @@ button:disabled {
   }
 
   .client-topbar__primary {
-    height: auto !important;
-    min-height: 0;
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px 12px !important;
-    padding-top: 10px !important;
-    padding-bottom: 6px !important;
+    display: flex !important;
+    height: 58px !important;
+    gap: 12px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
   }
 
   .client-topbar__nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-    max-width: 100%;
-    display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 8px !important;
-  }
-
-  .client-topbar__primary > a:first-child {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .client-topbar__nav a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 6px 2px !important;
-    text-align: center;
+    display: none !important;
   }
 
   .client-topbar__actions {
-    grid-column: 2;
-    grid-row: 1;
+    margin-left: auto;
     gap: 10px !important;
   }
 
@@ -654,23 +647,8 @@ button:disabled {
     min-height: 44px;
   }
 
+  .client-topbar__phone,
   .client-topbar__status {
-    height: 44px !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    gap: 16px;
-    white-space: nowrap;
-  }
-
-  .client-topbar__status-primary,
-  .client-topbar__status-secondary {
-    min-width: 0;
-    gap: 12px !important;
-  }
-
-  .client-topbar__address,
-  .client-topbar__hours,
-  .client-topbar__duration {
     display: none;
   }
 
@@ -1019,21 +997,9 @@ button:disabled {
     height: 20px !important;
   }
 
-  .client-topbar__nav {
-    gap: 0 4px !important;
-  }
-
-  .client-topbar__nav a {
-    font-size: 12px !important;
-  }
-
   .client-topbar .btn.sm {
     height: 44px;
     padding: 0 12px;
-  }
-
-  .client-topbar__account-label {
-    display: none;
   }
 
   .client-topbar__status {

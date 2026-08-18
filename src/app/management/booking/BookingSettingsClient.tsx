@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Copy,
   ExternalLink,
   Globe2,
   Info,
@@ -18,6 +19,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { publicBookingPath } from "@/lib/booking/public-link";
 import styles from "./settings.module.css";
 
 type WorkingHour = {
@@ -310,6 +312,19 @@ export default function BookingSettingsClient() {
       : legacyMigration?.status === "FAILED"
         ? "Нужен повтор"
         : "Не запускался";
+  const branchBookingHref = publicBookingPath(state.branch.id);
+
+  async function copyBranchBookingLink() {
+    try {
+      const url = new URL(branchBookingHref, window.location.origin).toString();
+      await navigator.clipboard.writeText(url);
+      setError("");
+      setNotice("Ссылка на запись в филиал скопирована");
+    } catch {
+      setNotice("");
+      setError("Не удалось скопировать ссылку. Откройте форму и скопируйте адрес из браузера.");
+    }
+  }
 
   return (
     <main className={`eco-page eco-page--wide ${styles.page}`}>
@@ -319,7 +334,7 @@ export default function BookingSettingsClient() {
           <h1>Онлайн-запись филиала</h1>
           <p>{state.branch.name}{state.branch.address ? ` · ${state.branch.address}` : ""} · настройка доступности для клиентов</p>
         </div>
-        <a className={styles.publicLink} href="/booking" target="_blank" rel="noreferrer">Проверить форму записи <ExternalLink aria-hidden /></a>
+        <a className={styles.publicLink} href={branchBookingHref} target="_blank" rel="noreferrer">Открыть запись филиала <ExternalLink aria-hidden /></a>
       </header>
 
       <nav className={styles.tabs} aria-label="Разделы настройки записи">
@@ -347,6 +362,15 @@ export default function BookingSettingsClient() {
                 <span />
                 <strong>{state.settings.publicBookingEnabled ? "Запись открыта" : "Запись закрыта"}</strong>
               </label>
+            </div>
+
+            <div className={styles.shareLink}>
+              <div>
+                <strong>Ссылка для клиентов этого филиала</strong>
+                <span>Филиал уже выбран — клиент сразу начнёт с автомобиля.</span>
+              </div>
+              <code>{branchBookingHref}</code>
+              <button type="button" onClick={copyBranchBookingLink}><Copy aria-hidden /> Копировать ссылку</button>
             </div>
 
             <div className={styles.publicLayout}>

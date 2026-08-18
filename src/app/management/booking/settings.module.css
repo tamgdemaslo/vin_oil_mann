@@ -30,6 +30,15 @@
 .formGrid input:focus, .formGrid textarea:focus, .exceptionForm input:focus, .exceptionForm select:focus, .settingsGrid input:focus, .settingsGrid textarea:focus { border-color: var(--eco-rust); box-shadow: 0 0 0 3px color-mix(in srgb, var(--eco-rust) 11%, transparent); }
 .formGrid .wide, .exceptionForm .wide, .settingsGrid .wide { grid-column: 1 / -1; }
 .publicLayout { display: grid; grid-template-columns: minmax(0, 1fr) 250px; align-items: start; gap: 22px; }
+.shareLink { display: grid; grid-template-columns: minmax(230px, .85fr) minmax(280px, 1.15fr) auto; align-items: center; gap: 14px; margin-bottom: 22px; border: 1px solid color-mix(in srgb, var(--eco-rust) 24%, var(--eco-line)); border-radius: 9px; padding: 13px 14px; background: color-mix(in srgb, var(--eco-rust) 5%, var(--eco-surface)); }
+.shareLink > div { display: grid; gap: 3px; }
+.shareLink strong { color: var(--eco-ink); font-size: 12px; }
+.shareLink span { color: var(--eco-muted); font-size: 11px; line-height: 1.4; }
+.shareLink code { overflow: hidden; border: 1px solid var(--eco-line); border-radius: 6px; padding: 10px 11px; background: var(--eco-surface); color: var(--eco-ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.shareLink button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--eco-rust); border-radius: 7px; padding: 0 13px; background: var(--eco-rust); color: #fff; cursor: pointer; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.shareLink button:hover { border-color: var(--eco-rust-hover); background: var(--eco-rust-hover); }
+.shareLink button:focus-visible { outline: 2px solid var(--eco-rust); outline-offset: 2px; }
+.shareLink button svg { width: 15px; height: 15px; }
 .settingsGrid { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px 12px; }
 .settingsGrid small { color: var(--eco-muted); font-size: 11px; line-height: 1.45; }
 .inputWithSuffix { display: flex; overflow: hidden; border: 1px solid var(--eco-line); border-radius: 7px; background: var(--eco-surface); }
@@ -167,6 +176,8 @@
 .notice svg { width: 13px; height: 13px; }
 
 @media (max-width: 980px) {
+  .shareLink { grid-template-columns: 1fr auto; }
+  .shareLink > div { grid-column: 1 / -1; }
   .publicLayout { grid-template-columns: 1fr; }
   .bookingSummary { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr); align-items: start; gap: 0 22px; }
   .bookingSummary .summaryEyebrow, .bookingSummary > strong { grid-column: 1; }
@@ -189,6 +200,8 @@
   .sectionIcon { width: 32px; height: 32px; }
   .sectionHeading h2 { font-size: 18px; }
   .switch { width: fit-content; }
+  .shareLink { grid-template-columns: 1fr; }
+  .shareLink button { width: 100%; }
   .settingsGrid, .formGrid, .exceptionForm { grid-template-columns: 1fr; }
   .settingsGrid .wide, .formGrid .wide, .exceptionForm .wide { grid-column: auto; }
   .bookingSummary { display: block; padding: 14px; }

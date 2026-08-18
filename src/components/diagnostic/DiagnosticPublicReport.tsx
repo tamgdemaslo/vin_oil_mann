@@ -122,7 +122,7 @@ type DiagnosticPublicReportProps = {
 
 const REPORT_PHONE = "+7 (995) 054-58-59";
 const REPORT_PHONE_HREF = "tel:+79950545859";
-const BOOKING_HREF = "/client-site#/vin";
+const BOOKING_HREF = "/booking";
 const ATTENTION_STATUSES = ["crit", "warn"] as const;
 const INDIRECT_STATUSES = ["by-mileage", "by-client"] as const;
 const ATTENTION_STATUS_ORDER: Record<string, number> = { crit: 0, warn: 1 };

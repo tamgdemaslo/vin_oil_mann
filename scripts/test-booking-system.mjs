@@ -17,7 +17,15 @@ const tokens = await jiti.import("../src/lib/booking/management-token.ts");
 const managementUrls = await jiti.import("../src/lib/booking/management-url.ts");
 const catalogServices = await jiti.import("../src/lib/booking/catalog-services.ts");
 const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts");
+const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
+
+assert.equal(publicLinks.publicBookingPath(), "/booking");
+assert.equal(publicLinks.publicBookingPath("branch-a"), "/booking?branchId=branch-a");
+assert.equal(publicLinks.publicBookingPath("филиал 1"), "/booking?branchId=%D1%84%D0%B8%D0%BB%D0%B8%D0%B0%D0%BB%201");
+assert.equal(publicLinks.publicBookingBranchFromSearch("?branchId=branch-a"), "branch-a");
+assert.equal(publicLinks.publicBookingBranchFromSearch("?branch=legacy-branch"), "legacy-branch");
+assert.equal(publicLinks.publicBookingBranchFromSearch(""), null);
 
 assert.deepEqual(
   journalWindows.buildJournalFreeWindows(
@@ -325,6 +333,14 @@ assert.match(managementTokenSource, /eco-booking-management-token-v1/);
 
 const customerLookup = source("src/app/api/public/booking/customer-lookup/route.ts");
 assert.doesNotMatch(customerLookup, /customer:\s*\{/);
+
+const publicBookingClient = source("src/app/booking/BookingClient.tsx");
+assert.match(publicBookingClient, /publicBookingBranchFromSearch\(window\.location\.search\)/);
+assert.match(publicBookingClient, /setStep\(\(current\) => current === 1 \? 2 : current\)/);
+
+const bookingManagementSettings = source("src/app/management/booking/BookingSettingsClient.tsx");
+assert.match(bookingManagementSettings, /publicBookingPath\(state\.branch\.id\)/);
+assert.match(bookingManagementSettings, /navigator\.clipboard\.writeText\(url\)/);
 
 const records = source("src/app/records/RecordsPageClient.tsx");
 assert.doesNotMatch(records, /\/api\/yclients/);

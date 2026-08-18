@@ -7,14 +7,18 @@ import {
   Car,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
+  LoaderCircle,
   MapPin,
   Phone,
+  Search,
   ShieldCheck,
   UserRound,
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { publicBookingBranchFromSearch } from "@/lib/booking/public-link";
 import styles from "./booking.module.css";
 
 type Branch = {
@@ -125,6 +129,7 @@ export default function BookingClient() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "none">("idle");
+  const [manualVehicleOpen, setManualVehicleOpen] = useState(false);
   const [error, setError] = useState("");
   const [managementUrl, setManagementUrl] = useState("");
   const [createdPending, setCreatedPending] = useState(false);
@@ -172,7 +177,17 @@ export default function BookingClient() {
       .then((data) => {
         if (!active) return;
         setBranches(data.branches);
-        if (data.branches.length === 1) {
+        const requestedBranchId = publicBookingBranchFromSearch(window.location.search);
+        const requestedBranch = requestedBranchId
+          ? data.branches.find((item) => item.id === requestedBranchId)
+          : null;
+
+        if (requestedBranch) {
+          setBranchId(requestedBranch.id);
+          setStep((current) => current === 1 ? 2 : current);
+        } else if (requestedBranchId) {
+          setError("Филиал по этой ссылке сейчас недоступен. Выберите другой филиал.");
+        } else if (data.branches.length === 1) {
           setBranchId(data.branches[0].id);
           setStep((current) => current === 1 ? 2 : current);
         }
@@ -214,10 +229,12 @@ export default function BookingClient() {
       if (data.match === "found") {
         setVehicles(data.vehicles ?? []);
         setVehicleId(data.vehicles?.[0]?.id ?? null);
+        setManualVehicleOpen(false);
         setLookupState("found");
       } else {
         setVehicles([]);
         setVehicleId(null);
+        setManualVehicleOpen(true);
         setLookupState("none");
       }
     } catch (reason) {
@@ -281,6 +298,7 @@ export default function BookingClient() {
   function goNext() {
     setError("");
     if (!canContinue()) {
+      if (step === 2 && !vehicleId && (!make.trim() || !model.trim())) setManualVehicleOpen(true);
       setError(validationMessage());
       return;
     }
@@ -441,34 +459,42 @@ export default function BookingClient() {
               </div>
             ) : step === 2 ? (
               <div className={styles.stageBody}>
-                <div className={styles.stageHeading}><Car aria-hidden /><div><h2>На каком автомобиле приедете?</h2><p>Если вы уже были у нас, найдём сохранённые автомобили по телефону.</p></div></div>
+                <div className={styles.stageHeading}><Car aria-hidden /><div><h2>Выберите автомобиль</h2><p>Найдём сохранённый по телефону или быстро добавим новый.</p></div></div>
                 <div className={styles.formGrid}>
-                  <label className={`${styles.wideField} ${styles.lookupField}`}><span>Телефон *</span><div className={styles.inlineField}><input value={phone} onChange={(event) => changePhone(event.target.value)} placeholder="+7 900 000-00-00" inputMode="tel" autoComplete="tel" aria-describedby="phone-help" /><button type="button" onClick={lookupCustomer} disabled={lookupState === "loading"}>{lookupState === "loading" ? "Ищем…" : "Найти мои авто"}</button></div><small id="phone-help">Номер нужен для подтверждения записи. Рекламных звонков не будет.</small></label>
+                  <label className={`${styles.wideField} ${styles.lookupField} ${lookupState === "loading" ? styles.lookupLoading : ""}`}><span>Телефон *</span><div className={styles.inlineField}><input value={phone} onChange={(event) => changePhone(event.target.value)} placeholder="+7 900 000-00-00" inputMode="tel" autoComplete="tel" aria-describedby="phone-help" /><button type="button" onClick={lookupCustomer} disabled={lookupState === "loading"} aria-busy={lookupState === "loading"}>{lookupState === "loading" ? <><LoaderCircle className={styles.searchSpinner} aria-hidden /><span>Ищем автомобиль</span></> : <><Search aria-hidden /><span>Найти мои авто</span></>}</button></div><small id="phone-help">Нужен только для подтверждения. Без рекламы.</small></label>
                 </div>
                 {lookupState === "found" && <p className={styles.lookupNotice}><CheckCircle2 aria-hidden /> Нашли вашу карточку. Выберите автомобиль или добавьте новый.</p>}
-                {lookupState === "none" && <p className={styles.neutralNotice}>Сохранённых автомобилей не нашли — добавьте автомобиль ниже.</p>}
+                {lookupState === "none" && <p className={styles.neutralNotice}>Сохранённых автомобилей нет. Добавьте марку и модель.</p>}
                 {!!vehicles.length && (
                   <div className={styles.vehicleList}>
                     {vehicles.map((vehicle) => (
                       <label key={vehicle.id} className={vehicleId === vehicle.id ? styles.selectedChoice : ""}>
-                        <input type="radio" name="vehicle" checked={vehicleId === vehicle.id} onChange={() => setVehicleId(vehicle.id)} />
+                        <input type="radio" name="vehicle" checked={vehicleId === vehicle.id} onChange={() => { setVehicleId(vehicle.id); setManualVehicleOpen(false); }} />
                         <span><strong>{vehicle.make} {vehicle.model}</strong><small>{[vehicle.year, vehicle.plate, vehicle.vin].filter(Boolean).join(" · ")}</small></span>
                         <Check aria-hidden />
                       </label>
                     ))}
-                    <button type="button" className={styles.textButton} onClick={() => { setVehicleId(null); setError(""); }}>+ Добавить другой автомобиль</button>
+                    <button type="button" className={styles.textButton} onClick={() => { setVehicleId(null); setManualVehicleOpen(true); setError(""); }}>+ Добавить другой автомобиль</button>
                   </div>
                 )}
-                {!vehicleId && (
+                {!manualVehicleOpen && !vehicles.length && lookupState !== "loading" && (
+                  <button type="button" className={styles.manualVehicleButton} onClick={() => { setManualVehicleOpen(true); setError(""); }}><Car aria-hidden /><span><strong>Автомобиль у нас впервые</strong><small>Добавить марку и модель без поиска</small></span><ArrowRight aria-hidden /></button>
+                )}
+                {!vehicleId && manualVehicleOpen && (
                   <div className={styles.vehicleEditor}>
-                    <div className={styles.sectionLead}><strong>Добавьте автомобиль</strong><span>Сейчас достаточно марки и модели. Остальные данные помогут нам подготовиться заранее.</span></div>
-                    <div className={styles.formGrid}>
+                    <div className={styles.sectionLead}><strong>Новый автомобиль</strong><span>Достаточно марки и модели.</span></div>
+                    <div className={`${styles.formGrid} ${styles.vehicleCoreFields}`}>
                       <label><span>Марка *</span><input value={make} onChange={(event) => { setMake(event.target.value); setError(""); }} placeholder="Например, BMW" autoComplete="organization" /></label>
                       <label><span>Модель *</span><input value={model} onChange={(event) => { setModel(event.target.value); setError(""); }} placeholder="Например, X5" /></label>
-                      <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} onChange={(event) => { setYear(event.target.value); setError(""); }} placeholder="2020" inputMode="numeric" /></label>
-                      <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} onChange={(event) => { setPlate(event.target.value.toUpperCase()); setError(""); }} placeholder="А123ВС39" autoCapitalize="characters" /></label>
-                      <label className={styles.wideField}><span>VIN {requiresVin ? "*" : ""}</span><input value={vin} onChange={(event) => { setVin(event.target.value.toUpperCase()); setError(""); }} placeholder="Если знаете — 17 символов" maxLength={17} autoCapitalize="characters" /></label>
                     </div>
+                    <details className={styles.vehicleDetails} open={requiresVin || requiredFields.has("plate") || requiredFields.has("year") ? true : undefined}>
+                      <summary><span><strong>Дополнительные данные</strong><small>Год, госномер или VIN</small></span><ChevronDown aria-hidden /></summary>
+                      <div className={`${styles.formGrid} ${styles.vehicleOptionalFields}`}>
+                        <label><span>Год {requiredFields.has("year") ? "*" : ""}</span><input value={year} onChange={(event) => { setYear(event.target.value); setError(""); }} placeholder="2020" inputMode="numeric" /></label>
+                        <label><span>Госномер {requiredFields.has("plate") ? "*" : ""}</span><input value={plate} onChange={(event) => { setPlate(event.target.value.toUpperCase()); setError(""); }} placeholder="А123ВС39" autoCapitalize="characters" /></label>
+                        <label className={styles.wideField}><span>VIN {requiresVin ? "*" : ""}</span><input value={vin} onChange={(event) => { setVin(event.target.value.toUpperCase()); setError(""); }} placeholder="17 символов" maxLength={17} autoCapitalize="characters" /></label>
+                      </div>
+                    </details>
                   </div>
                 )}
               </div>
@@ -529,7 +555,7 @@ export default function BookingClient() {
                 ? <button type="button" className={styles.secondaryButton} onClick={() => { setError(""); setStep((current) => Math.max(1, current - 1)); }} disabled={step === 1 || busy}><ArrowLeft aria-hidden /> Назад</button>
                 : <span />}
               {step < 4
-                ? <button type="button" className={styles.primaryButton} onClick={goNext} disabled={busy}>Продолжить <ArrowRight aria-hidden /></button>
+                ? <button type="button" className={styles.primaryButton} onClick={goNext} disabled={busy || step === 2 && !vehicleId && (!make.trim() || !model.trim())}>Продолжить <ArrowRight aria-hidden /></button>
                 : <button type="button" className={styles.primaryButton} onClick={submitBooking} disabled={busy}>{busy ? "Закрепляем время…" : requiresConfirmation ? "Отправить на подтверждение" : "Записаться"} <ArrowRight aria-hidden /></button>}
             </footer>
           </section>

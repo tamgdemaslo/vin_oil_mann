@@ -922,16 +922,14 @@ function TopBar() {
   const path = r.path;
   const nav = [
     {to: '/', label: 'Главная'},
-    {to: '/vin', label: 'Подбор по VIN'},
     {to: '/shop', label: 'Магазин'},
     {to: '/cases', label: 'Кейсы'},
-    {to: '/team', label: 'Команда'},
     {to: '/contacts', label: 'Контакты'},
   ];
   const active = (to) => to === '/' ? path === '/' : path.startsWith(to);
   return (
     <header className="client-topbar" style={{position: 'sticky', top: 0, zIndex: 20, borderBottom: '1px solid var(--line)'}}>
-      <div className="container client-topbar__primary" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68}}>
+      <div className="container client-topbar__primary" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64}}>
         <Link to="/" style={{display: 'flex', alignItems: 'center', gap: 12}}>
           <Logo variant="light" h={22} />
         </Link>
@@ -945,24 +943,9 @@ function TopBar() {
             }}>{n.label}</Link>
           ))}
         </nav>
-        <div className="client-topbar__actions" style={{display: 'flex', alignItems: 'center', gap: 14}}>
-          <Link to="/account" aria-label="Открыть личный гараж автомобиля А 247 МК 39" style={{display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#9A9A9A', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em'}}>
-            <span style={{display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#C2410C'}} />
-            <span className="client-topbar__account-label">А 247 МК 39</span>
-          </Link>
-          <Link to="/vin" className="btn sm rust">Записаться <span className="arr">→</span></Link>
-        </div>
-      </div>
-      {/* Mini status strip */}
-      <div className="container client-topbar__status" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 30, borderTop: '1px solid var(--line)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5, color: '#858585', letterSpacing: '0.12em', textTransform: 'uppercase'}}>
-        <div className="client-topbar__status-primary" style={{display: 'flex', gap: 22}}>
-          <span className="client-topbar__address">Калининград · Московский пр. 244 · Дачная 6В · Юрия Гагарина 116</span>
-          <span className="client-topbar__hours">пн - выходной, вт-пт 09:00-19:00, сб-вск 10:00-17:00</span>
-          <a href="tel:+79950545859" style={{color: '#9A9A9A', textDecoration: 'none'}}>+7 (995) 054-58-59</a>
-        </div>
-        <div className="client-topbar__status-secondary" style={{display: 'flex', gap: 22}}>
-          <span><span style={{color: '#C2410C'}}>●</span> сегодня 4 свободных слота</span>
-          <span className="client-topbar__duration">замена за 28 мин</span>
+        <div className="client-topbar__actions" style={{display: 'flex', alignItems: 'center', gap: 12}}>
+          <a className="client-topbar__phone" href="tel:+79950545859">+7 (995) 054-58-59</a>
+          <a href="/booking" className="btn sm rust client-topbar__cta">Записаться <span className="arr">→</span></a>
         </div>
       </div>
     </header>
@@ -1052,7 +1035,7 @@ function Footer() {
               <span style={{display: 'inline-block', width: 4, height: 4, background: '#C2410C', borderRadius: '50%'}} /> instagram/tamgdemaslo.kgd
             </a>
           </div>
-          <Link to="/vin" className="btn rust" style={{width: '100%'}}>Записаться сейчас <span className="arr">→</span></Link>
+          <a href="/booking" className="btn rust" style={{width: '100%'}}>Записаться сейчас <span className="arr">→</span></a>
         </div>
       </div>
 
@@ -1479,7 +1462,7 @@ function ClosingCTA() {
             Сервис уровня дилера. Атмосфера гаража. Свои пацаны на ресепшене. Без официоза, без скидочных акций, без «уважаемый клиент».
           </div>
           <div style={{display: 'flex', gap: 16, marginTop: 36}}>
-            <Link to="/vin" className="btn rust lg">Записаться по VIN <span className="arr">→</span></Link>
+            <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
             <Link to="/shop" className="btn ghost dark lg">Каталог масел</Link>
           </div>
         </div>
@@ -2644,9 +2627,9 @@ function ProductPage() {
                 <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 56, color: '#F5F2ED', lineHeight: 0.9}}>{fmtMoney(total)}</div>
               </div>
 
-              <Link to="/vin" className="btn rust lg" style={{width: '100%', marginTop: 22, justifyContent: 'space-between'}}>
+              <a href="/booking" className="btn rust lg" style={{width: '100%', marginTop: 22, justifyContent: 'space-between'}}>
                 Записаться по этому маслу <span className="arr">→</span>
-              </Link>
+              </a>
             </div>
           </div>
         </div>
@@ -2772,7 +2755,7 @@ function CasesPage() {
             <div style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 32, lineHeight: 1, color: '#F5F2ED', textTransform: 'uppercase', letterSpacing: '-0.01em'}}>Не нашёл свою машину?</div>
             <div style={{marginTop: 14, fontSize: 14, color: '#9A9A9A', lineHeight: 1.5, maxWidth: 540}}>Каждая коробка — отдельная история. Скажи марку и пробег — расскажем, что делали с такими же.</div>
           </div>
-          <Link to="/vin" className="btn rust lg">Записаться по VIN <span className="arr">→</span></Link>
+          <a href="/booking" className="btn rust lg">Записаться <span className="arr">→</span></a>
         </div>
       </div>
     </main>
@@ -2906,9 +2889,9 @@ function CasePage() {
                 <span style={{fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9A9A9A', letterSpacing: '0.14em', textTransform: 'uppercase'}}>{c.costLabel || 'Итого'}</span>
                 <span style={{fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 36, color: '#F5F2ED'}}>{fmtMoney(c.cost)}</span>
               </div>
-              <Link to="/vin" className="btn rust" style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
+              <a href="/booking" className="btn rust" style={{width: '100%', marginTop: 18, justifyContent: 'space-between'}}>
                 Записать свою машину <span className="arr">→</span>
-              </Link>
+              </a>
             </div>
           </aside>
         </div>
@@ -3337,9 +3320,9 @@ function AccountPage() {
                 <span>0</span>
                 <span>15 000 КМ</span>
               </div>
-              <Link to="/vin" className="btn lg" style={{marginTop: 22, width: '100%', justifyContent: 'space-between', position: 'relative', background: '#0a0a0a', borderColor: '#0a0a0a', color: '#F5F2ED'}}>
+              <a href="/booking" className="btn lg" style={{marginTop: 22, width: '100%', justifyContent: 'space-between', position: 'relative', background: '#0a0a0a', borderColor: '#0a0a0a', color: '#F5F2ED'}}>
                 Записаться заранее <span className="arr">→</span>
-              </Link>
+              </a>
             </div>
 
             {/* Sticker preview */}
