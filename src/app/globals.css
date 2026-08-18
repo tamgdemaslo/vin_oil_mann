@@ -63688,11 +63688,11 @@ select[size="1"]::-ms-expand {
 
 .eco-admin-payroll__head {
   display: flex;
-  min-height: 68px;
+  min-height: 50px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 9px 14px;
   border-bottom: 1px solid #323232;
 }
 
@@ -63705,8 +63705,8 @@ select[size="1"]::-ms-expand {
 
 .eco-admin-payroll__icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid #4c3329;
@@ -63725,9 +63725,9 @@ select[size="1"]::-ms-expand {
 }
 
 .eco-admin-payroll__title h2 {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   color: #fbf8f3;
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: -.012em;
 }
 
@@ -63750,16 +63750,15 @@ select[size="1"]::-ms-expand {
 
 .eco-admin-payroll__metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-bottom: 1px solid #323232;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .eco-admin-payroll__metrics > div {
   display: grid;
-  min-height: 128px;
+  min-height: 82px;
   align-content: center;
-  gap: 7px;
-  padding: 20px 24px;
+  gap: 5px;
+  padding: 11px 16px 12px;
 }
 
 .eco-admin-payroll__metrics > div + div { border-left: 1px solid #323232; }
@@ -63768,7 +63767,7 @@ select[size="1"]::-ms-expand {
 .eco-admin-payroll__metrics strong {
   color: #fffaf3;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: clamp(29px, 4vw, 46px);
+  font-size: 26px;
   font-variant-numeric: tabular-nums;
   font-weight: 850;
   letter-spacing: -.055em;
@@ -63778,27 +63777,35 @@ select[size="1"]::-ms-expand {
 .eco-admin-payroll__metrics .is-today strong { color: #f8783d; }
 .eco-admin-payroll__metrics small { color: #858585; font-size: 11px; }
 
-.eco-admin-payroll__scale {
-  padding: 17px 24px 16px;
-  border-bottom: 1px solid #323232;
+.eco-admin-payroll__footer {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(280px, 1.2fr);
+  min-height: 52px;
+  border-top: 1px solid #323232;
+  background: #1c1c1c;
 }
 
-.eco-admin-payroll__scale-copy,
-.eco-admin-payroll__scale-ends {
+.eco-admin-payroll__scale {
+  display: grid;
+  align-content: center;
+  padding: 9px 16px 10px;
+  border-right: 1px solid #323232;
+}
+
+.eco-admin-payroll__scale-copy {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
 }
 
-.eco-admin-payroll__scale-copy span,
-.eco-admin-payroll__scale-ends span { color: #858585; font-size: 10px; font-weight: 650; }
+.eco-admin-payroll__scale-copy span { color: #858585; font-size: 10px; font-weight: 650; }
 .eco-admin-payroll__scale-copy strong { color: #d7d3cc; font-size: 11px; }
 
 .eco-admin-payroll__track {
   position: relative;
-  height: 8px;
-  margin-top: 12px;
+  height: 4px;
+  margin-top: 7px;
   border-radius: 2px;
   background: #343434;
 }
@@ -63814,31 +63821,16 @@ select[size="1"]::-ms-expand {
   animation: eco-admin-payroll-track-in 560ms cubic-bezier(.2, .8, .2, 1) both;
 }
 
-.eco-admin-payroll__track em {
-  position: absolute;
-  top: 15px;
-  left: clamp(58px, calc(var(--admin-payroll-progress) * 100%), calc(100% - 58px));
-  color: #f68a58;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 800;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  animation: eco-admin-payroll-accrual 520ms 220ms cubic-bezier(.2, .8, .2, 1) both;
-}
-
-.eco-admin-payroll__scale-ends { margin-top: 29px; }
-
 .eco-admin-payroll__toggle {
   display: flex;
   width: 100%;
-  min-height: 62px;
+  min-height: 51px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   border: 0;
-  background: #1c1c1c;
-  padding: 11px 18px;
+  background: transparent;
+  padding: 8px 14px;
   color: #f2eee8;
   cursor: pointer;
   font: inherit;
@@ -63970,14 +63962,13 @@ select[size="1"]::-ms-expand {
 
 .eco-admin-payroll__skeleton {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  min-height: 236px;
+  min-height: 134px;
   background: #323232;
 }
 
 .eco-admin-payroll__skeleton span { background: #222; animation: eco-admin-payroll-skeleton 900ms ease-in-out infinite alternate; }
-.eco-admin-payroll__skeleton span:last-child { grid-column: 1 / -1; min-height: 72px; }
 
 .eco-admin-day-notice,
 .eco-admin-day-shift {
@@ -64000,6 +63991,15 @@ select[size="1"]::-ms-expand {
 .eco-admin-day-shift > div { display: grid; gap: 3px; }
 .eco-admin-day-shift strong { color: #743d08; font-size: 13px; }
 .eco-admin-day-shift span { color: #8a591d; font-size: 11.5px; }
+.eco-admin-day-shift__restricted {
+  flex: 0 0 auto;
+  border: 1px solid var(--ops-warning-tint2);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 42%);
+  padding: 9px 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
 
 .eco-admin-day-sections {
   display: grid;
@@ -64056,16 +64056,12 @@ select[size="1"]::-ms-expand {
 .eco-admin-day-deadline { color: var(--ops-muted); font: 700 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
 .eco-admin-day-deadline.is-over { color: var(--ops-danger); }
 .eco-admin-day-row.is-shipment { grid-template-columns: 64px minmax(0, 1fr) auto auto 18px; }
+.eco-admin-day-row.is-shipment.is-no-amount { grid-template-columns: 64px minmax(0, 1fr) auto 18px; }
 .eco-admin-day-amount { color: var(--ops-ink); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 @keyframes eco-admin-payroll-track-in {
   from { transform: scaleX(0); }
   to { transform: scaleX(var(--admin-payroll-progress)); }
-}
-
-@keyframes eco-admin-payroll-accrual {
-  from { opacity: 0; transform: translate(-50%, 7px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 @keyframes eco-admin-payroll-details-in {
@@ -64080,7 +64076,6 @@ select[size="1"]::-ms-expand {
 
 @media (prefers-reduced-motion: reduce) {
   .eco-admin-payroll__track > span,
-  .eco-admin-payroll__track em,
   .eco-admin-payroll__details > div,
   .eco-admin-payroll__skeleton span { animation: none; }
 
@@ -64105,12 +64100,13 @@ select[size="1"]::-ms-expand {
   .eco-admin-day-head h1 { font-size: 24px; }
   .eco-admin-day-refresh { width: 36px; flex: 0 0 36px; padding: 0; justify-content: center; }
   .eco-admin-day-refresh span { display: none; }
-  .eco-admin-payroll__head { min-height: 60px; padding: 12px 13px; }
+  .eco-admin-payroll__head { min-height: 50px; padding: 9px 12px; }
   .eco-admin-payroll__title h2 { font-size: 14px; }
-  .eco-admin-payroll__metrics > div { min-height: 108px; padding: 16px 14px; }
-  .eco-admin-payroll__metrics strong { font-size: clamp(24px, 8vw, 34px); }
-  .eco-admin-payroll__scale { padding: 15px 14px 14px; }
-  .eco-admin-payroll__toggle { padding: 10px 13px; }
+  .eco-admin-payroll__metrics > div { min-height: 76px; padding: 10px 12px; }
+  .eco-admin-payroll__metrics strong { font-size: 22px; }
+  .eco-admin-payroll__footer { grid-template-columns: minmax(180px, .8fr) minmax(240px, 1.2fr); }
+  .eco-admin-payroll__scale { padding: 8px 12px 9px; }
+  .eco-admin-payroll__toggle { padding: 8px 12px; }
 
   .eco-admin-payroll__row {
     grid-template-columns: 50px minmax(0, 1fr) 16px;
@@ -64135,6 +64131,10 @@ select[size="1"]::-ms-expand {
     padding: 10px 12px;
   }
 
+  .eco-admin-day-row.is-shipment.is-no-amount {
+    grid-template-columns: 50px minmax(0, 1fr) 16px;
+  }
+
   .eco-admin-day-row > svg { grid-column: 3; grid-row: 1; }
   .eco-admin-day-row > .eco-ops-badge,
   .eco-admin-day-deadline,
@@ -64143,10 +64143,252 @@ select[size="1"]::-ms-expand {
 }
 
 @media (max-width: 480px) {
-  .eco-admin-payroll__metrics { grid-template-columns: 1fr; }
-  .eco-admin-payroll__metrics > div { min-height: 94px; }
-  .eco-admin-payroll__metrics > div + div { border-top: 1px solid #323232; border-left: 0; }
+  .eco-admin-payroll__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eco-admin-payroll__metrics > div { min-height: 70px; }
+  .eco-admin-payroll__metrics > div:nth-child(3) { grid-column: 1 / -1; border-top: 1px solid #323232; border-left: 0; }
+  .eco-admin-payroll__metrics strong { font-size: 20px; }
+  .eco-admin-payroll__footer { grid-template-columns: 1fr; }
+  .eco-admin-payroll__scale { min-height: 46px; border-right: 0; border-bottom: 1px solid #323232; }
   .eco-admin-payroll__status { display: none; }
   .eco-admin-payroll__breakdown { padding-left: 13px; }
   .eco-admin-payroll__breakdown footer { align-items: flex-start; flex-direction: column; }
+}
+
+/* The administrator journal is a measured day view, not a list of slots. */
+.eco-admin-journal-statusbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--ops-line);
+  background: #f4f7f8;
+  padding: 9px 14px;
+}
+
+.eco-admin-journal-statusbar > strong {
+  flex: 0 0 auto;
+  color: var(--ops-ink2);
+  font: 800 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.eco-admin-journal-legend {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.eco-admin-journal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ops-ink3);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.eco-admin-journal-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #c45326;
+}
+
+.eco-admin-journal-legend .is-free i { background: #168848; }
+.eco-admin-journal-legend .is-warning { color: var(--ops-warning); }
+.eco-admin-journal-legend .is-warning::before { content: "!"; display: grid; width: 15px; height: 15px; place-items: center; border-radius: 50%; background: var(--ops-warning-tint2); font-size: 10px; font-weight: 900; }
+.eco-admin-journal-legend b { color: var(--ops-ink); font-variant-numeric: tabular-nums; }
+
+.eco-admin-journal-timeline {
+  --journal-minute: .92px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 0;
+  padding: 16px 14px 20px 8px;
+  background: var(--ops-surface);
+}
+
+.eco-admin-journal-scale,
+.eco-admin-journal-canvas {
+  position: relative;
+  height: calc(var(--journal-total-minutes) * var(--journal-minute));
+}
+
+.eco-admin-journal-scale span {
+  position: absolute;
+  top: calc(var(--journal-offset) * var(--journal-minute));
+  right: 12px;
+  color: #697680;
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  transform: translateY(-50%);
+}
+
+.eco-admin-journal-scale span.is-hour {
+  color: #26343e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.eco-admin-journal-canvas {
+  min-width: 0;
+  border-right: 1px solid #dce4e8;
+  border-left: 1px solid #dce4e8;
+  background: #fafcfc;
+}
+
+.eco-admin-journal-line {
+  position: absolute;
+  z-index: 0;
+  top: calc(var(--journal-offset) * var(--journal-minute));
+  right: 0;
+  left: 0;
+  border-top: 1px solid #e7ecef;
+}
+
+.eco-admin-journal-line.is-hour { border-top-color: #cfd9df; }
+.eco-admin-journal-line.is-half { border-top-style: dashed; }
+
+.eco-admin-journal-slot {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--journal-offset) * var(--journal-minute) + 3px);
+  left: calc(var(--journal-left) + 4px);
+  display: grid;
+  width: calc(var(--journal-width) - 8px);
+  height: max(42px, calc(var(--journal-duration) * var(--journal-minute) - 6px));
+  min-width: 0;
+  align-content: start;
+  overflow: hidden;
+  border: 1px solid #bd4f24;
+  border-radius: 5px;
+  background: #f3d5c7;
+  color: #3b1e13;
+  padding: 25px 8px 6px;
+  text-decoration: none;
+  transition: filter 150ms ease, transform 150ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.eco-admin-journal-slot:hover {
+  filter: saturate(1.08) brightness(.98);
+  transform: translateY(-1px);
+}
+
+.eco-admin-journal-slot:focus-visible {
+  z-index: 5;
+  outline: 2px solid var(--ops-rust);
+  outline-offset: 2px;
+}
+
+.eco-admin-journal-slot__time {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  height: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  background: #a63d17;
+  padding: 0 7px;
+  color: #fff;
+  font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.eco-admin-journal-slot__time em {
+  overflow: hidden;
+  font: 700 9px/1 Inter, "Open Sans", Roboto, Arial, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-admin-journal-slot > strong,
+.eco-admin-journal-slot > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-admin-journal-slot > strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #32180f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.eco-admin-journal-slot > small {
+  margin-top: 3px;
+  color: #71402f;
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.eco-admin-journal-slot.is-free {
+  border-color: #55ad72;
+  background: #e0f4e7;
+  color: #0f592b;
+}
+
+.eco-admin-journal-slot.is-free .eco-admin-journal-slot__time { background: #168848; }
+.eco-admin-journal-slot.is-free > strong { color: #0f642f; }
+.eco-admin-journal-slot.is-free > small { color: #36734a; }
+.eco-admin-journal-slot.is-compact > small { display: none; }
+
+.eco-admin-journal-now {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--journal-offset) * var(--journal-minute));
+  right: 0;
+  left: -5px;
+  height: 2px;
+  background: #d72e20;
+  pointer-events: none;
+}
+
+.eco-admin-journal-now::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d72e20;
+}
+
+.eco-admin-journal-now b {
+  position: absolute;
+  top: -19px;
+  left: 8px;
+  background: #d72e20;
+  padding: 3px 5px;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-admin-journal-slot { transition: none; }
+}
+
+@media (max-width: 720px) {
+  .eco-admin-journal-statusbar { align-items: flex-start; flex-direction: column; gap: 8px; padding: 10px 12px; }
+  .eco-admin-journal-statusbar > strong { align-self: flex-end; margin-top: -24px; }
+  .eco-admin-journal-legend { padding-right: 90px; gap: 7px 12px; }
+  .eco-admin-journal-timeline { --journal-minute: .8px; grid-template-columns: 50px minmax(0, 1fr); padding: 14px 8px 18px 4px; }
+  .eco-admin-journal-scale span { right: 8px; font-size: 9px; }
+  .eco-admin-journal-scale span.is-hour { font-size: 10.5px; }
+  .eco-admin-journal-slot { left: calc(var(--journal-left) + 3px); width: calc(var(--journal-width) - 6px); min-height: 38px; padding: 23px 6px 5px; }
+  .eco-admin-journal-slot__time { height: 18px; padding-inline: 5px; font-size: 9px; }
+  .eco-admin-journal-slot__time em { display: none; }
+  .eco-admin-journal-slot > strong { font-size: 11px; }
+  .eco-admin-journal-slot > small { font-size: 9.5px; }
 }

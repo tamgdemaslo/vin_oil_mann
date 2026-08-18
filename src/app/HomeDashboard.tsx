@@ -23,6 +23,11 @@ import type { DashboardVariant } from "@/lib/dashboard-variant";
 import { SERVICE_TIME_ZONE, formatServiceDayMonth, formatServiceTime } from "@/lib/date-time";
 
 type UserRole = "owner" | "admin" | "master";
+
+function usesOperationalDayCenter(role: UserRole): boolean {
+  return role === "admin" || role === "master";
+}
+
 type CurrentCashShift = {
   id: string;
   status: "open" | "closed";
@@ -46,6 +51,8 @@ type DashboardNotification = {
 type AppointmentItem = {
   id: string;
   time: string;
+  endTime?: string;
+  durationMinutes?: number;
   client: string;
   phone?: string;
   vehicle: string;
@@ -237,7 +244,7 @@ function formatShortDeadline(value?: string | null) {
 const SCHEDULE_WINDOW_MINUTES = 60;
 
 type ScheduleTimelineItem =
-  | { kind: "record"; key: string; start: number; item: AppointmentItem }
+  | { kind: "record"; key: string; start: number; end: number; item: AppointmentItem }
   | { kind: "window"; key: string; start: number; end: number; label: string };
 
 function parseClockMinutes(value?: string | null) {
@@ -257,6 +264,10 @@ function formatClockMinutes(value: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+function formatTimelineBoundary(value: number) {
+  return value >= 24 * 60 ? "24:00" : formatClockMinutes(value);
+}
+
 function scheduleWindowLabel(value: string) {
   const start = parseClockMinutes(value);
   if (start === null) return value;
@@ -264,12 +275,17 @@ function scheduleWindowLabel(value: string) {
 }
 
 function buildScheduleTimeline(appointments: AppointmentItem[], freeWindows: string[]) {
-  const recordItems: ScheduleTimelineItem[] = appointments.map((item, index) => ({
-    kind: "record",
-    key: `record-${item.id}`,
-    start: parseClockMinutes(item.time) ?? 24 * 60 + index,
-    item,
-  }));
+  const recordItems: ScheduleTimelineItem[] = appointments.map((item, index) => {
+    const start = parseClockMinutes(item.time) ?? 24 * 60 + index;
+    const duration = Math.max(30, Math.min(480, Number(item.durationMinutes) || 60));
+    return {
+      kind: "record",
+      key: `record-${item.id}`,
+      start,
+      end: start + duration,
+      item,
+    };
+  });
   const windowItems: ScheduleTimelineItem[] = freeWindows.flatMap((window, index) => {
     const start = parseClockMinutes(window);
     if (start === null) return [];
@@ -284,7 +300,54 @@ function buildScheduleTimeline(appointments: AppointmentItem[], freeWindows: str
     ];
   });
 
-  return [...recordItems, ...windowItems].sort((a, b) => a.start - b.start).slice(0, 12);
+  return [...recordItems, ...windowItems].sort((a, b) => a.start - b.start).slice(0, 100);
+}
+
+type PositionedScheduleItem = {
+  slot: ScheduleTimelineItem;
+  lane: number;
+  laneCount: number;
+};
+
+function positionScheduleItems(items: ScheduleTimelineItem[]): PositionedScheduleItem[] {
+  const result: PositionedScheduleItem[] = [];
+  let cluster: ScheduleTimelineItem[] = [];
+  let clusterEnd = -1;
+
+  function flushCluster() {
+    if (!cluster.length) return;
+    const laneEnds: number[] = [];
+    const positioned = cluster.map((slot) => {
+      let lane = laneEnds.findIndex((end) => end <= slot.start);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = slot.end;
+      return { slot, lane };
+    });
+    const laneCount = Math.max(1, laneEnds.length);
+    result.push(...positioned.map((item) => ({ ...item, laneCount })));
+    cluster = [];
+    clusterEnd = -1;
+  }
+
+  for (const slot of items.filter((item) => item.start < 24 * 60).sort((a, b) => a.start - b.start)) {
+    if (cluster.length && slot.start >= clusterEnd) flushCluster();
+    cluster.push(slot);
+    clusterEnd = Math.max(clusterEnd, slot.end);
+  }
+  flushCluster();
+  return result;
+}
+
+function currentServiceClockMinutes() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: SERVICE_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hours = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minutes = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hours * 60 + minutes;
 }
 
 function initials(value?: string | null) {
@@ -760,6 +823,7 @@ function AdminPayrollOverview({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const todayCents = useAnimatedCents(data?.today.earnedCents ?? 0);
   const weekCents = useAnimatedCents(data?.summary.earnedCents ?? 0);
+  const monthCents = useAnimatedCents(data?.month.earnedCents ?? 0);
   const selectedItem = useMemo(
     () => data?.items.find((item) => item.id === selectedItemId) ?? null,
     [data?.items, selectedItemId]
@@ -776,7 +840,7 @@ function AdminPayrollOverview({
           <span className="eco-admin-payroll__icon" aria-hidden><Banknote size={19} /></span>
           <div>
             <span>Моя зарплата</span>
-            <h2>Начисления за рабочую неделю</h2>
+            <h2>Сегодня, неделя и месяц</h2>
           </div>
         </div>
         {data && (
@@ -810,41 +874,41 @@ function AdminPayrollOverview({
               <strong aria-label={formatMoneyCents(data.summary.earnedCents)}>{formatMoneyCents(weekCents)}</strong>
               <small>{payrollDateLabel(data.period.from)} — {payrollDateLabel(data.period.to)}</small>
             </div>
-          </div>
-
-          <div className="eco-admin-payroll__scale" style={progressStyle}>
-            <div className="eco-admin-payroll__scale-copy">
-              <span>Сегодня в заработке недели</span>
-              <strong>{data.summary.earnedCents > 0 ? `${Math.round(ratio * 100)}%` : "Пока нет начислений"}</strong>
-            </div>
-            <div className="eco-admin-payroll__track" aria-hidden>
-              <span />
-              {data.today.earnedCents > 0 && (
-                <em key={`${data.lastUpdatedAt}-${data.today.earnedCents}`}>+{formatMoneyCents(data.today.earnedCents)}</em>
-              )}
-            </div>
-            <div className="eco-admin-payroll__scale-ends">
-              <span>Понедельник</span>
-              <span>Сегодня</span>
+            <div>
+              <span>С начала месяца</span>
+              <strong aria-label={formatMoneyCents(data.month.earnedCents)}>{formatMoneyCents(monthCents)}</strong>
+              <small>Начислено за текущий месяц</small>
             </div>
           </div>
 
-          <button
-            type="button"
-            className="eco-admin-payroll__toggle"
-            aria-expanded={detailsOpen}
-            aria-controls="admin-payroll-details"
-            onClick={() => setDetailsOpen((current) => !current)}
-          >
-            <span>
-              <b>Из чего сложилась сумма</b>
-              <small>{formatCount(data.summary.shipmentCount)} {shipmentWord(data.summary.shipmentCount)} за неделю</small>
-            </span>
-            <span className="eco-admin-payroll__toggle-action">
-              {detailsOpen ? "Скрыть" : "Показать"}
-              <ChevronDown aria-hidden size={17} />
-            </span>
-          </button>
+          <div className="eco-admin-payroll__footer">
+            <div className="eco-admin-payroll__scale" style={progressStyle}>
+              <div className="eco-admin-payroll__scale-copy">
+                <span>Сегодня в сумме недели</span>
+                <strong>{data.summary.earnedCents > 0 ? `${Math.round(ratio * 100)}%` : "Нет начислений"}</strong>
+              </div>
+              <div className="eco-admin-payroll__track" aria-hidden>
+                <span />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="eco-admin-payroll__toggle"
+              aria-expanded={detailsOpen}
+              aria-controls="admin-payroll-details"
+              onClick={() => setDetailsOpen((current) => !current)}
+            >
+              <span>
+                <b>Начисления по заказам</b>
+                <small>{formatCount(data.summary.shipmentCount)} {shipmentWord(data.summary.shipmentCount)} за неделю</small>
+              </span>
+              <span className="eco-admin-payroll__toggle-action">
+                {detailsOpen ? "Скрыть" : "Показать"}
+                <ChevronDown aria-hidden size={17} />
+              </span>
+            </button>
+          </div>
 
           <div id="admin-payroll-details" className={`eco-admin-payroll__details ${detailsOpen ? "is-open" : ""}`}>
             <div>
@@ -906,6 +970,29 @@ function AdminPayrollOverview({
 }
 
 function AdminJournalSection({ dashboard, scheduleItems }: { dashboard: DashboardData; scheduleItems: ScheduleTimelineItem[] }) {
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null);
+  const visibleItems = scheduleItems.filter((slot) => slot.start < 24 * 60);
+  const earliestStart = visibleItems.length ? Math.min(...visibleItems.map((slot) => slot.start)) : 9 * 60;
+  const latestEnd = visibleItems.length ? Math.max(...visibleItems.map((slot) => slot.end)) : 20 * 60;
+  const dayStart = Math.max(0, Math.min(9 * 60, Math.floor(earliestStart / 60) * 60));
+  const dayEnd = Math.min(24 * 60, Math.max(20 * 60, Math.ceil(latestEnd / 60) * 60));
+  const totalMinutes = Math.max(60, dayEnd - dayStart);
+  const markers = Array.from({ length: Math.floor(totalMinutes / 30) + 1 }, (_, index) => dayStart + index * 30);
+  const positionedItems = positionScheduleItems(visibleItems);
+  const freeCount = visibleItems.filter((slot) => slot.kind === "window").length;
+  const busyCount = visibleItems.filter((slot) => slot.kind === "record").length;
+  const timelineStyle = { "--journal-total-minutes": totalMinutes } as CSSProperties;
+
+  useEffect(() => {
+    const updateNow = () => setNowMinutes(currentServiceClockMinutes());
+    const initialTimer = window.setTimeout(updateNow, 0);
+    const interval = window.setInterval(updateNow, 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
+
   return (
     <Card
       title="Журнал сегодня"
@@ -914,38 +1001,88 @@ function AdminJournalSection({ dashboard, scheduleItems }: { dashboard: Dashboar
       badge={<Badge tone={dashboard.appointments.withoutShipment ? "warning" : "neutral"}>{formatCount(dashboard.appointments.totalToday)} записей</Badge>}
       className="eco-admin-day-section is-journal"
     >
-      <StatStrip
-        items={[
-          { label: "Всего", value: dashboard.appointments.totalToday },
-          { label: "Подтверждены", value: dashboard.appointments.confirmedToday },
-          { label: "Без отгрузки", value: dashboard.appointments.withoutShipment, tone: dashboard.appointments.withoutShipment ? "warning" : "muted" },
-          { label: "Свободные окна", value: dashboard.appointments.freeWindows.length },
-        ]}
-        dense
-      />
-      {scheduleItems.length ? (
-        <div className="eco-admin-day-list">
-          {scheduleItems.slice(0, 7).map((slot) => slot.kind === "window" ? (
-            <Link key={slot.key} href={recordCreateHref()} className="eco-admin-day-row is-window">
-              <time>{formatClockMinutes(slot.start)}</time>
-              <span className="eco-admin-day-row__copy">
-                <b>Свободное окно</b>
-                <small>{slot.label} · можно записать клиента</small>
+      <div className="eco-admin-journal-statusbar">
+        <div className="eco-admin-journal-legend" aria-label="Занятость журнала">
+          <span className="is-busy"><i aria-hidden />Занято <b>{formatCount(busyCount)}</b></span>
+          <span className="is-free"><i aria-hidden />Свободно <b>{formatCount(freeCount)}</b></span>
+          {dashboard.appointments.withoutShipment > 0 && (
+            <span className="is-warning">Без отгрузки <b>{formatCount(dashboard.appointments.withoutShipment)}</b></span>
+          )}
+        </div>
+        <strong>{formatClockMinutes(dayStart)}–{formatTimelineBoundary(dayEnd)}</strong>
+      </div>
+      {visibleItems.length ? (
+        <div className="eco-admin-journal-timeline" style={timelineStyle}>
+          <div className="eco-admin-journal-scale" aria-hidden>
+            {markers.map((minute) => (
+              <span
+                key={`scale-${minute}`}
+                className={minute % 60 === 0 ? "is-hour" : "is-half"}
+                style={{ "--journal-offset": minute - dayStart } as CSSProperties}
+              >
+                {minute % 60 === 0 ? formatClockMinutes(minute) : "30"}
               </span>
-              <Badge tone="success">Свободно</Badge>
-              <ChevronRight aria-hidden size={17} />
-            </Link>
-          ) : (
-            <Link key={slot.key} href={recordHref(slot.item)} className="eco-admin-day-row">
-              <time>{slot.item.time || "—"}</time>
-              <span className="eco-admin-day-row__copy">
-                <b>{slot.item.client}</b>
-                <small>{[slot.item.vehicle || "авто не указано", slot.item.service].filter(Boolean).join(" · ")}</small>
+            ))}
+          </div>
+          <div className="eco-admin-journal-canvas">
+            {markers.map((minute) => (
+              <span
+                key={`line-${minute}`}
+                className={`eco-admin-journal-line ${minute % 60 === 0 ? "is-hour" : "is-half"}`}
+                style={{ "--journal-offset": minute - dayStart } as CSSProperties}
+                aria-hidden
+              />
+            ))}
+            {nowMinutes !== null && nowMinutes >= dayStart && nowMinutes <= dayEnd && (
+              <span
+                className="eco-admin-journal-now"
+                style={{ "--journal-offset": nowMinutes - dayStart } as CSSProperties}
+                aria-label={`Сейчас ${formatClockMinutes(nowMinutes)}`}
+              >
+                <b>Сейчас</b>
               </span>
-              <Badge tone={appointmentTone(slot.item.status)}>{slot.item.status || "Запланирована"}</Badge>
-              <ChevronRight aria-hidden size={17} />
-            </Link>
-          ))}
+            )}
+            {positionedItems.map(({ slot, lane, laneCount }) => {
+              const slotStyle = {
+                "--journal-offset": Math.max(0, slot.start - dayStart),
+                "--journal-duration": Math.min(slot.end, dayEnd) - Math.max(slot.start, dayStart),
+                "--journal-left": `${(lane / laneCount) * 100}%`,
+                "--journal-width": `${100 / laneCount}%`,
+              } as CSSProperties;
+              if (slot.kind === "window") {
+                return (
+                  <Link
+                    key={slot.key}
+                    href={recordCreateHref()}
+                    className="eco-admin-journal-slot is-free"
+                    style={slotStyle}
+                    aria-label={`${slot.label}, свободно, записать клиента`}
+                  >
+                    <span className="eco-admin-journal-slot__time">{slot.label}</span>
+                    <strong><Plus aria-hidden size={15} /> Свободно</strong>
+                    <small>Записать клиента</small>
+                  </Link>
+                );
+              }
+              const isCompact = slot.end - slot.start < 75;
+              return (
+                <Link
+                  key={slot.key}
+                  href={recordHref(slot.item)}
+                  className={`eco-admin-journal-slot is-busy ${isCompact ? "is-compact" : ""}`}
+                  style={slotStyle}
+                  aria-label={`${slot.item.time}–${slot.item.endTime || formatClockMinutes(slot.end)}, занято, ${slot.item.client}`}
+                >
+                  <span className="eco-admin-journal-slot__time">
+                    {slot.item.time || formatClockMinutes(slot.start)}–{slot.item.endTime || formatClockMinutes(slot.end)}
+                    <em>{slot.item.status || "Запланирована"}</em>
+                  </span>
+                  <strong>{slot.item.client}</strong>
+                  <small>{[slot.item.service, slot.item.vehicle].filter(Boolean).join(" · ")}</small>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <EmptyState title="Записей на сегодня нет" hint="Создайте запись или добавьте свободное окно в журнале." />
@@ -959,9 +1096,11 @@ function AdminCasesSection({ dashboard, now }: { dashboard: DashboardData; now: 
   return (
     <Card
       title="Дела клиентов"
-      href="/crm?filter=today"
+      href={crm ? "/crm?filter=today" : undefined}
       action="Все дела"
-      badge={<Badge tone={crm?.overdue ? "warning" : "neutral"}>{formatCount(crm?.overdue ?? 0)} просрочено</Badge>}
+      badge={crm
+        ? <Badge tone={crm.overdue ? "warning" : "neutral"}>{formatCount(crm.overdue)} просрочено</Badge>
+        : <Badge tone="neutral">Только администратор</Badge>}
       className="eco-admin-day-section is-cases"
     >
       {crm ? (
@@ -995,7 +1134,7 @@ function AdminCasesSection({ dashboard, now }: { dashboard: DashboardData; now: 
           )}
         </>
       ) : (
-        <EmptyState title="Дела недоступны" hint="Проверьте доступ к CRM и обновите страницу." />
+        <EmptyState title="Дела скрыты для этой роли" hint="Клиентские задачи доступны администратору филиала." />
       )}
     </Card>
   );
@@ -1021,14 +1160,14 @@ function AdminShipmentsSection({ dashboard }: { dashboard: DashboardData }) {
       {dashboard.shipments.rows.length ? (
         <div className="eco-admin-day-list">
           {dashboard.shipments.rows.slice(0, 7).map((item) => (
-            <Link key={item.id} href={`/shipment/${item.id}`} className="eco-admin-day-row is-shipment">
+            <Link key={item.id} href={`/shipment/${item.id}`} className={`eco-admin-day-row is-shipment ${item.sumCents === null ? "is-no-amount" : ""}`}>
               <time>{formatTime(item.moment)}</time>
               <span className="eco-admin-day-row__copy">
                 <b>{item.name}</b>
                 <small>{item.client || "Клиент не указан"}</small>
               </span>
               <Badge tone={item.applicable ? "success" : "warning"}>{item.applicable ? "Проведена" : "Черновик"}</Badge>
-              <strong className="eco-admin-day-amount">{formatMoneyCents(item.sumCents ?? 0)}</strong>
+              {item.sumCents !== null && <strong className="eco-admin-day-amount">{formatMoneyCents(item.sumCents)}</strong>}
               <ChevronRight aria-hidden size={17} />
             </Link>
           ))}
@@ -1052,6 +1191,7 @@ function AdminDayCenter({
   lastUpdatedAt,
   scheduleItems,
   sectionsLocked,
+  canOpenCashShift,
   needCashShiftNotice,
   onRefresh,
 }: {
@@ -1066,6 +1206,7 @@ function AdminDayCenter({
   lastUpdatedAt: number | null;
   scheduleItems: ScheduleTimelineItem[];
   sectionsLocked: boolean;
+  canOpenCashShift: boolean;
   needCashShiftNotice: boolean;
   onRefresh: () => void;
 }) {
@@ -1100,7 +1241,11 @@ function AdminDayCenter({
             <strong>Сначала откройте кассовую смену</strong>
             <span>{needCashShiftNotice ? "Вы вернулись из раздела, доступного только при открытой кассе. " : ""}После открытия появятся журнал, дела клиентов и отгрузки.</span>
           </div>
-          <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">Открыть кассовую смену</Link>
+          {canOpenCashShift ? (
+            <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">Открыть кассовую смену</Link>
+          ) : (
+            <span className="eco-admin-day-shift__restricted">Кассовую смену открывает администратор</span>
+          )}
         </section>
       )}
 
@@ -1149,8 +1294,9 @@ export default function HomeDashboard({
   const employeePayrollQueryRef = useRef<EmployeePayrollQuery>({ period: "today" });
   const mountedRef = useRef(true);
 
-  const isEmployeeDashboard = dashboardVariant === "EMPLOYEE" && role !== "admin";
-  const needsOpenCashShift = role === "admin" || role === "master";
+  const isDayCenterRole = usesOperationalDayCenter(role);
+  const isEmployeeDashboard = dashboardVariant === "EMPLOYEE" && !isDayCenterRole;
+  const needsOpenCashShift = isDayCenterRole;
   const hasOpenCashShift = currentCashShift?.status === "open" || dashboard?.cash.status === "open";
   const cashShiftStatusKnown = cashAvailable || Boolean(dashboard);
   const sectionsLocked = needsOpenCashShift && cashShiftStatusKnown && !hasOpenCashShift;
@@ -1179,7 +1325,7 @@ export default function HomeDashboard({
         setLoadState("ready");
         return;
       }
-      const payrollPromise: Promise<{ data: EmployeePayrollData | null; error: string | null }> = role === "admin"
+      const payrollPromise: Promise<{ data: EmployeePayrollData | null; error: string | null }> = isDayCenterRole
         ? fetch("/api/dashboard/my-payroll?period=week", { cache: "no-store" })
             .then((response) => readDashboardResponse<EmployeePayrollData>(response, "Не удалось загрузить начисления."))
             .then((data) => ({ data, error: null }))
@@ -1195,7 +1341,7 @@ export default function HomeDashboard({
       if (!mountedRef.current) return;
       dashboardRef.current = bundle.dashboard;
       setDashboard(bundle.dashboard);
-      if (role === "admin") {
+      if (isDayCenterRole) {
         if (payrollResult.data) {
           setAdminPayroll(payrollResult.data);
         }
@@ -1212,7 +1358,7 @@ export default function HomeDashboard({
       setDashboardError(message);
       setLoadState(dashboardRef.current ? "stale" : "error");
     }
-  }, [isEmployeeDashboard, role]);
+  }, [isDayCenterRole, isEmployeeDashboard]);
 
   const changeEmployeePayrollPeriod = useCallback((period: EmployeePayrollPeriod, range?: { dateFrom: string; dateTo: string }) => {
     const next: EmployeePayrollQuery = range ? { period, ...range } : { period };
@@ -1371,7 +1517,7 @@ export default function HomeDashboard({
     );
   }
 
-  if (role === "admin") {
+  if (isDayCenterRole) {
     return (
       <AdminDayCenter
         userName={userName}
@@ -1385,6 +1531,7 @@ export default function HomeDashboard({
         lastUpdatedAt={lastUpdatedAt}
         scheduleItems={scheduleItems}
         sectionsLocked={sectionsLocked}
+        canOpenCashShift={role === "admin"}
         needCashShiftNotice={needCashShiftNotice}
         onRefresh={() => void loadSummary(true)}
       />

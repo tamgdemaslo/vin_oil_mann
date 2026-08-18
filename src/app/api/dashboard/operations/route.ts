@@ -181,6 +181,28 @@ function appointmentTime(appointment: AppointmentRow) {
   return formatServiceTime(date.toISOString());
 }
 
+function clockMinutes(value: string) {
+  const match = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function appointmentDurationMinutes(appointment: AppointmentRow) {
+  const seconds = Number(appointment.seance_length ?? appointment.length ?? 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 60;
+  return Math.max(30, Math.min(480, Math.round(seconds / 60)));
+}
+
+function appointmentEndTime(appointment: AppointmentRow) {
+  const startsAt = appointmentDateTime(appointment);
+  if (!startsAt) return "";
+  const endsAt = new Date(startsAt.getTime() + appointmentDurationMinutes(appointment) * 60_000);
+  return formatServiceTime(endsAt.toISOString());
+}
+
 function appointmentClientName(appointment: AppointmentRow) {
   return appointment.client?.display_name || appointment.client?.name || appointment.name || "Клиент";
 }
@@ -359,9 +381,9 @@ export async function GET() {
   const organizationId = branch.organizationId;
   const dashboardAccess = await resolveDashboardAccessForBranch(branch);
 
-  // An employee dashboard is served from /api/dashboard/my-payroll. Do not
-  // load management records here merely to hide them in the browser.
-  if (dashboardAccess.variant === "EMPLOYEE") {
+  // The master-receiver uses the operational day center too, while the
+  // capability flags below keep finance and client-management data hidden.
+  if (dashboardAccess.variant === "EMPLOYEE" && session.user.role !== "master") {
     return NextResponse.json({
       variant: dashboardAccess.variant,
       audience,
@@ -488,9 +510,18 @@ export async function GET() {
   const appointmentsMatchedByRules = appointmentShipmentStatuses.filter(
     (status) => status.hasShipment && status.linkSource && status.linkSource !== "created_from_appointment" && status.linkSource !== "manual"
   );
-  const freeWindows = ["09:00", "10:30", "12:00", "13:30", "16:00", "17:00", "18:30"].filter(
-    (time) => !todayAppointments.some((item) => appointmentTime(item) === time)
-  );
+  const occupiedIntervals = todayAppointments.flatMap((item) => {
+    if (appointmentStatus(item) === "отменена") return [];
+    const start = clockMinutes(appointmentTime(item));
+    if (start === null) return [];
+    return [{ start, end: start + appointmentDurationMinutes(item) }];
+  });
+  const freeWindows = ["09:00", "10:30", "12:00", "13:30", "16:00", "17:00", "18:30"].filter((time) => {
+    const start = clockMinutes(time);
+    if (start === null) return false;
+    const end = start + 60;
+    return !occupiedIntervals.some((interval) => start < interval.end && end > interval.start);
+  });
 
   const crmDueAt = (deal: (typeof crmDeals)[number]) => deal.nextActionAt ?? deal.nextContactAt;
   const crmToday = crmDeals.filter((deal) => {
@@ -714,6 +745,8 @@ export async function GET() {
         ? {
             id: nextAppointment.id,
             time: appointmentTime(nextAppointment),
+            endTime: appointmentEndTime(nextAppointment),
+            durationMinutes: appointmentDurationMinutes(nextAppointment),
             client: appointmentClientName(nextAppointment),
             vehicle: appointmentVehicle(nextAppointment),
             service: appointmentService(nextAppointment),
@@ -723,9 +756,11 @@ export async function GET() {
             shipmentStatus: appointmentShipmentStatusById.get(stringValue(nextAppointment.id))?.label ?? "Отгрузка не найдена",
           }
         : null,
-      rows: todayAppointments.slice(0, 5).map((item) => ({
+      rows: todayAppointments.slice(0, 80).map((item) => ({
         id: item.id,
         time: appointmentTime(item),
+        endTime: appointmentEndTime(item),
+        durationMinutes: appointmentDurationMinutes(item),
         client: appointmentClientName(item),
         phone: appointmentPhone(item),
         vehicle: appointmentVehicle(item),
