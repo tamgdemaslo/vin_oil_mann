@@ -441,9 +441,58 @@ export default function BookingSettingsClient() {
       {tab === "services" && (
         <section className={styles.panel}>
           <div className={styles.sectionHeading}><div><h2>Услуги филиала</h2><p>Все активные позиции типа «Услуга» из каталога добавляются автоматически. Длительность и настройки записи сохраняются здесь.</p></div>{state.canManage && <button type="button" className={styles.secondary} onClick={syncCatalogServices} disabled={saving}>{saving ? "Синхронизируем…" : "Обновить из каталога"}</button>}</div>
-          <div className={styles.serviceTable}>
-            <div className={styles.tableHead}><span>Услуга и обязательные данные</span><span>Минут</span><span>Порядок</span><span>Онлайн</span><span>VIN</span><span>Подтверждение</span><span /></div>
-            {state.services.map((service) => <div key={service.id} className={service.status !== "ACTIVE" ? styles.inactiveRow : ""}><span><input value={service.name} onChange={(event) => updateService(service.id, { name: event.target.value })} disabled={!state.canManage || service.status !== "ACTIVE" || service.catalogManaged} /><input className={styles.descriptionInput} value={service.description ?? ""} onChange={(event) => updateService(service.id, { description: event.target.value })} placeholder="Короткое описание" disabled={!state.canManage || service.status !== "ACTIVE" || service.catalogManaged} />{service.catalogManaged && <small className={styles.catalogBadge}>Из каталога</small>}<small className={styles.requiredFields}><label><input type="checkbox" checked={service.requiredFieldsJson?.includes("email") ?? false} onChange={() => toggleRequiredField(service, "email")} disabled={!state.canManage || service.status !== "ACTIVE"} />Email</label><label><input type="checkbox" checked={service.requiredFieldsJson?.includes("plate") ?? false} onChange={() => toggleRequiredField(service, "plate")} disabled={!state.canManage || service.status !== "ACTIVE"} />Госномер</label><label><input type="checkbox" checked={service.requiredFieldsJson?.includes("year") ?? false} onChange={() => toggleRequiredField(service, "year")} disabled={!state.canManage || service.status !== "ACTIVE"} />Год</label></small></span><input type="number" min={5} step={5} value={service.durationMinutes} onChange={(event) => updateService(service.id, { durationMinutes: Number(event.target.value) })} disabled={!state.canManage || service.status !== "ACTIVE"} /><input type="number" value={service.sortOrder} onChange={(event) => updateService(service.id, { sortOrder: Number(event.target.value) })} disabled={!state.canManage || service.status !== "ACTIVE"} /><input type="checkbox" checked={service.onlineBookingEnabled} onChange={(event) => updateService(service.id, { onlineBookingEnabled: event.target.checked })} disabled={!state.canManage || service.status !== "ACTIVE"} /><input type="checkbox" checked={service.requiresVin} onChange={(event) => updateService(service.id, { requiresVin: event.target.checked })} disabled={!state.canManage || service.status !== "ACTIVE"} /><input type="checkbox" checked={service.requiresConfirmation} onChange={(event) => updateService(service.id, { requiresConfirmation: event.target.checked })} disabled={!state.canManage || service.status !== "ACTIVE"} /><span>{service.status === "ACTIVE" && state.canManage && <><button type="button" onClick={() => saveService(service)} disabled={saving}>Сохранить</button>{!service.catalogManaged && <button type="button" className={styles.mutedAction} onClick={() => disableService(service)} disabled={saving}>Отключить</button>}</>}</span></div>)}
+          <div className={styles.serviceList}>
+            {state.services.map((service) => {
+              const disabled = !state.canManage || service.status !== "ACTIVE";
+              return (
+                <article key={service.id} className={`${styles.serviceRow} ${service.status !== "ACTIVE" ? styles.inactiveRow : ""}`}>
+                  <div className={styles.serviceIdentity}>
+                    <label>
+                      <span>Название услуги</span>
+                      <input value={service.name} onChange={(event) => updateService(service.id, { name: event.target.value })} disabled={disabled || service.catalogManaged} />
+                    </label>
+                    <label>
+                      <span>Описание для клиента</span>
+                      <input value={service.description ?? ""} onChange={(event) => updateService(service.id, { description: event.target.value })} placeholder="Коротко опишите результат услуги" disabled={disabled || service.catalogManaged} />
+                    </label>
+                    {service.catalogManaged && <small className={styles.catalogBadge}>Название и описание берутся из каталога</small>}
+                  </div>
+
+                  <div className={styles.serviceConfig}>
+                    <div className={styles.serviceNumbers}>
+                      <label>
+                        <span>Длительность</span>
+                        <div className={styles.serviceNumberControl}><input type="number" min={5} step={5} value={service.durationMinutes} onChange={(event) => updateService(service.id, { durationMinutes: Number(event.target.value) })} disabled={disabled} /><span>мин</span></div>
+                      </label>
+                      <label>
+                        <span>Порядок</span>
+                        <input type="number" value={service.sortOrder} onChange={(event) => updateService(service.id, { sortOrder: Number(event.target.value) })} disabled={disabled} />
+                      </label>
+                    </div>
+
+                    <div className={styles.serviceToggles}>
+                      <label><input type="checkbox" checked={service.onlineBookingEnabled} onChange={(event) => updateService(service.id, { onlineBookingEnabled: event.target.checked })} disabled={disabled} /><span><strong>Онлайн-запись</strong><small>Показывать клиентам</small></span></label>
+                      <label><input type="checkbox" checked={service.requiresVin} onChange={(event) => updateService(service.id, { requiresVin: event.target.checked })} disabled={disabled} /><span><strong>VIN</strong><small>Обязателен при записи</small></span></label>
+                      <label><input type="checkbox" checked={service.requiresConfirmation} onChange={(event) => updateService(service.id, { requiresConfirmation: event.target.checked })} disabled={disabled} /><span><strong>Подтверждение</strong><small>Проверить вручную</small></span></label>
+                    </div>
+
+                    <div className={styles.serviceRequired}>
+                      <span>Дополнительно спросить</span>
+                      <label><input type="checkbox" checked={service.requiredFieldsJson?.includes("email") ?? false} onChange={() => toggleRequiredField(service, "email")} disabled={disabled} />Email</label>
+                      <label><input type="checkbox" checked={service.requiredFieldsJson?.includes("plate") ?? false} onChange={() => toggleRequiredField(service, "plate")} disabled={disabled} />Госномер</label>
+                      <label><input type="checkbox" checked={service.requiredFieldsJson?.includes("year") ?? false} onChange={() => toggleRequiredField(service, "year")} disabled={disabled} />Год автомобиля</label>
+                    </div>
+
+                    {service.status === "ACTIVE" && state.canManage && (
+                      <div className={styles.serviceActions}>
+                        {!service.catalogManaged && <button type="button" className={styles.mutedAction} onClick={() => disableService(service)} disabled={saving}>Отключить</button>}
+                        <button type="button" className={styles.primary} onClick={() => saveService(service)} disabled={saving}><Save aria-hidden /> Сохранить</button>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
           {state.canManage && <div className={styles.createService}><h3>Новая услуга</h3><div className={styles.formGrid}><label><span>Название</span><input value={newService.name} onChange={(event) => setNewService((current) => ({ ...current, name: event.target.value }))} /></label><label><span>Длительность, минут</span><input type="number" min={5} step={5} value={newService.durationMinutes} onChange={(event) => setNewService((current) => ({ ...current, durationMinutes: Number(event.target.value) }))} /></label><label><span>Порядок</span><input type="number" value={newService.sortOrder} onChange={(event) => setNewService((current) => ({ ...current, sortOrder: Number(event.target.value) }))} /></label><label className={styles.wide}><span>Описание</span><input value={newService.description} onChange={(event) => setNewService((current) => ({ ...current, description: event.target.value }))} /></label></div><div className={styles.inlineChecks}><label><input type="checkbox" checked={newService.onlineBookingEnabled} onChange={(event) => setNewService((current) => ({ ...current, onlineBookingEnabled: event.target.checked }))} />Онлайн-запись</label><label><input type="checkbox" checked={newService.requiresVin} onChange={(event) => setNewService((current) => ({ ...current, requiresVin: event.target.checked }))} />Требовать VIN</label><label><input type="checkbox" checked={newService.requiresConfirmation} onChange={(event) => setNewService((current) => ({ ...current, requiresConfirmation: event.target.checked }))} />Ручное подтверждение</label><label><input type="checkbox" checked={newService.requiredFieldsJson.includes("email")} onChange={() => setNewService((current) => ({ ...current, requiredFieldsJson: current.requiredFieldsJson.includes("email") ? current.requiredFieldsJson.filter((field) => field !== "email") : [...current.requiredFieldsJson, "email"] }))} />Требовать email</label><label><input type="checkbox" checked={newService.requiredFieldsJson.includes("plate")} onChange={() => setNewService((current) => ({ ...current, requiredFieldsJson: current.requiredFieldsJson.includes("plate") ? current.requiredFieldsJson.filter((field) => field !== "plate") : [...current.requiredFieldsJson, "plate"] }))} />Требовать госномер</label><label><input type="checkbox" checked={newService.requiredFieldsJson.includes("year")} onChange={() => setNewService((current) => ({ ...current, requiredFieldsJson: current.requiredFieldsJson.includes("year") ? current.requiredFieldsJson.filter((field) => field !== "year") : [...current.requiredFieldsJson, "year"] }))} />Требовать год</label></div><button type="button" className={styles.primary} onClick={createService} disabled={saving || !newService.name.trim()}><Plus aria-hidden /> Добавить услугу</button></div>}
         </section>
