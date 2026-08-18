@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bot, Check, CircleAlert, Hand, LoaderCircle, RotateCcw, Send, ShieldCheck, Sparkles, StopCircle, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMessenger } from "./MessengerProvider";
 import type { Conversation } from "./messenger-data";
 
@@ -164,6 +164,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
   const [error, setError] = useState<string | null>(null);
   const [liveDraft, setLiveDraft] = useState("");
   const [editedDraft, setEditedDraft] = useState("");
+  const statusLoadInFlightRef = useRef(false);
 
   const latestInbound = useMemo(
     () => [...(messagesByConversation[conversation.id] ?? [])].reverse().find((message) => message.direction === "inbound") ?? null,
@@ -171,6 +172,8 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
   );
 
   const loadStatus = useCallback(async (silent = false) => {
+    if (statusLoadInFlightRef.current) return;
+    statusLoadInFlightRef.current = true;
     if (!silent) setLoading(true);
     try {
       const response = await fetch(`/api/ai-agent/conversations/${encodeURIComponent(conversation.id)}/status`, { cache: "no-store" });
@@ -181,6 +184,7 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Не удалось получить состояние агента");
     } finally {
+      statusLoadInFlightRef.current = false;
       if (!silent) setLoading(false);
     }
   }, [conversation.id]);
@@ -188,9 +192,16 @@ export default function AIAgentPanel({ conversation }: { conversation: Conversat
   useEffect(() => {
     setStatus(null);
     setLiveDraft("");
-    void loadStatus();
-    const timer = window.setInterval(() => void loadStatus(true), 8_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadStatus(true);
+    };
+    if (document.visibilityState === "visible") void loadStatus();
+    const timer = window.setInterval(refresh, 8_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [loadStatus]);
 
   useEffect(() => {

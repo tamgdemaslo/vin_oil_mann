@@ -1431,10 +1431,15 @@ export default function SalaryDashboard({
 
   useEffect(() => {
     if (!viewingAsEmployee) return;
-    const timer = window.setInterval(() => {
-      void loadEmployeeDashboard();
-    }, 45_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadEmployeeDashboard();
+    };
+    const timer = window.setInterval(refresh, 45_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [loadEmployeeDashboard, viewingAsEmployee]);
 
   useEffect(() => {

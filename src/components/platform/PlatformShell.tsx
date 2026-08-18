@@ -262,6 +262,7 @@ export default function PlatformShell() {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const browserPushSeenRef = useRef<Set<string>>(new Set());
+  const deadlineLoadInFlightRef = useRef(false);
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
@@ -315,23 +316,32 @@ export default function PlatformShell() {
 
   const loadDeadlineNotifications = useCallback(async () => {
     if (shouldHideShell(pathname)) return;
-    const res = await fetch("/api/crm/deadline-notifications", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await safeReadJson<{
-      notifications?: DeadlineNotification[];
-      notificationCounts?: DeadlineNotificationCounts;
-    }>(res);
-    const notifications = data?.notifications ?? [];
-    setDeadlineCounts(data?.notificationCounts ?? null);
-    const top = notifications[0] ?? null;
-    setDeadlineToast(top);
-
-    if (!top || typeof window === "undefined" || !("Notification" in window)) return;
-    const browserPushEnabled = window.localStorage.getItem("eco-crm-browser-push") !== "off";
-    const pushKey = `${top.id}:${top.sentAt}`;
-    if (!browserPushEnabled || Notification.permission !== "granted" || browserPushSeenRef.current.has(pushKey)) return;
-    browserPushSeenRef.current.add(pushKey);
+    if (document.visibilityState !== "visible" || deadlineLoadInFlightRef.current) return;
+    deadlineLoadInFlightRef.current = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+    let notificationForFailure: DeadlineNotification | null = null;
     try {
+      const res = await fetch("/api/crm/deadline-notifications", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) return;
+      const data = await safeReadJson<{
+        notifications?: DeadlineNotification[];
+        notificationCounts?: DeadlineNotificationCounts;
+      }>(res);
+      const notifications = data?.notifications ?? [];
+      setDeadlineCounts(data?.notificationCounts ?? null);
+      const top = notifications[0] ?? null;
+      setDeadlineToast(top);
+
+      if (!top || !("Notification" in window)) return;
+      const browserPushEnabled = window.localStorage.getItem("eco-crm-browser-push") !== "off";
+      const pushKey = `${top.id}:${top.sentAt}`;
+      if (!browserPushEnabled || Notification.permission !== "granted" || browserPushSeenRef.current.has(pushKey)) return;
+      browserPushSeenRef.current.add(pushKey);
+      notificationForFailure = top;
       const notification = new Notification(top.title, {
         body: top.body,
         tag: `crm-case-${top.caseId}`,
@@ -345,27 +355,38 @@ export default function PlatformShell() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "browser_push", caseId: top.caseId, type: top.type, status: "sent" }),
-      });
+      }).catch(() => undefined);
     } catch (error) {
+      if (!notificationForFailure || (error instanceof DOMException && error.name === "AbortError")) return;
       void fetch("/api/crm/deadline-notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "browser_push",
-          caseId: top.caseId,
-          type: top.type,
+          caseId: notificationForFailure.caseId,
+          type: notificationForFailure.type,
           status: "failed",
           errorMessage: error instanceof Error ? error.message : "browser push failed",
         }),
-      });
+      }).catch(() => undefined);
+    } finally {
+      window.clearTimeout(timeoutId);
+      deadlineLoadInFlightRef.current = false;
     }
   }, [pathname]);
 
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
-    void loadDeadlineNotifications();
-    const timer = window.setInterval(() => void loadDeadlineNotifications(), 60_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadDeadlineNotifications();
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [loadDeadlineNotifications, pathname]);
 
   useEffect(() => {

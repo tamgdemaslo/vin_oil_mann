@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, DatabaseZap, Loader2, RefreshCw, X } from "lucide-react";
 import type { ProductOemBatchView } from "@/lib/product-oem-batches";
 
@@ -45,6 +45,7 @@ export default function ProductOemBatchPanel({
   onBatchChange?: (batch: ProductOemBatchView) => void;
   onShowResult?: (batchId: string, result: "remaining" | "error" | "no_results" | "missing_source") => void;
 }) {
+  const batchLoadInFlightRef = useRef(false);
   const [batch, setBatch] = useState<ProductOemBatchView | null>(null);
   const [preview, setPreview] = useState<{ total: number; items: Array<{ id: string; name: string; article: string }> } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,8 +104,21 @@ export default function ProductOemBatchPanel({
 
   useEffect(() => {
     if (!open || !batch || !activeStatuses.has(batch.status)) return;
-    const timer = window.setInterval(() => void loadBatch(batch.id, true), 2_000);
-    return () => window.clearInterval(timer);
+    const refresh = async () => {
+      if (document.visibilityState !== "visible" || batchLoadInFlightRef.current) return;
+      batchLoadInFlightRef.current = true;
+      try {
+        await loadBatch(batch.id, true);
+      } finally {
+        batchLoadInFlightRef.current = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [batch, loadBatch, open]);
 
   async function start() {

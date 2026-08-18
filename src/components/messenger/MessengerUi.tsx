@@ -818,22 +818,29 @@ export function ChatHeader({
 export function AIAgentRunActivity({ conversation }: { conversation: Conversation }) {
   const [status, setStatus] = useState<AgentRunActivityStatus["status"] | null>(null);
   const [busy, setBusy] = useState(false);
+  const loadInFlightRef = useRef(false);
   useEffect(() => {
     let alive = true;
     async function load() {
+      if (document.visibilityState !== "visible" || loadInFlightRef.current) return;
+      loadInFlightRef.current = true;
       try {
         const response = await fetch(`/api/ai-agent/conversations/${encodeURIComponent(conversation.id)}/status`, { cache: "no-store" });
         const data = (await response.json()) as AgentRunActivityStatus;
         if (alive && response.ok) setStatus(data.status ?? null);
       } catch {
         // A missing status feed must never interrupt the messenger thread.
+      } finally {
+        loadInFlightRef.current = false;
       }
     }
     void load();
     const timer = window.setInterval(() => void load(), 8_000);
+    document.addEventListener("visibilitychange", load);
     return () => {
       alive = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", load);
     };
   }, [conversation.id]);
   const run = status?.currentRun;

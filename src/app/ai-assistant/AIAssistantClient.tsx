@@ -114,6 +114,7 @@ export default function AIAssistantClient() {
   const [checkingConnection, setCheckingConnection] = useState(false);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const threadPollInFlightRef = useRef(false);
 
   const loadThreads = useCallback(async () => {
     const response = await fetch("/api/ai-assistant/threads", { cache: "no-store" });
@@ -172,8 +173,23 @@ export default function AIAssistantClient() {
   const chatBranchChanged = Boolean(data?.branch && activeBranch && data.branch.id !== activeBranch.id);
   useEffect(() => {
     if (!activeThreadId || !working) return;
-    const timer = window.setInterval(() => { void loadThread(activeThreadId).catch(() => undefined); }, 2_000);
-    return () => window.clearInterval(timer);
+    const refresh = async () => {
+      if (document.visibilityState !== "visible" || threadPollInFlightRef.current) return;
+      threadPollInFlightRef.current = true;
+      try {
+        await loadThread(activeThreadId);
+      } catch {
+        // The next visible polling tick will retry without surfacing noise.
+      } finally {
+        threadPollInFlightRef.current = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [activeThreadId, loadThread, working]);
 
   useEffect(() => {

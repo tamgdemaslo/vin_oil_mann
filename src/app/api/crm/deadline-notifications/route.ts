@@ -14,6 +14,54 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const DEFAULT_PROCESSING_INTERVAL_MS = 60_000;
+const MIN_PROCESSING_INTERVAL_MS = 30_000;
+
+type DeadlineProcessingState = {
+  inFlight?: Promise<void>;
+  nextAllowedAt?: number;
+};
+
+const deadlineProcessingGlobal = globalThis as typeof globalThis & {
+  __crmDeadlineProcessingByBranch?: Map<string, DeadlineProcessingState>;
+};
+
+function processingIntervalMs() {
+  const configured = Number(process.env.CRM_CASE_PROCESSING_INTERVAL_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_PROCESSING_INTERVAL_MS;
+  return Math.max(Math.floor(configured), MIN_PROCESSING_INTERVAL_MS);
+}
+
+function safeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function scheduleDeadlineProcessing(branchId: string) {
+  deadlineProcessingGlobal.__crmDeadlineProcessingByBranch ??= new Map();
+  const states = deadlineProcessingGlobal.__crmDeadlineProcessingByBranch;
+  const current = states.get(branchId) ?? {};
+  states.set(branchId, current);
+
+  const now = Date.now();
+  if (current.inFlight || now < (current.nextAllowedAt ?? 0)) return;
+  current.nextAllowedAt = now + processingIntervalMs();
+
+  const task = Promise.resolve()
+    .then(() => processClientCaseDeadlineNotifications())
+    .then(() => undefined)
+    .catch((error) => {
+      console.warn("[crm-deadline-notifications]", {
+        action: "processing_failed",
+        branchId,
+        error: safeError(error),
+      });
+    })
+    .finally(() => {
+      if (current.inFlight === task) current.inFlight = undefined;
+    });
+  current.inFlight = task;
+}
+
 async function requireSession() {
   const session = await getSession();
   if (!session) {
@@ -42,8 +90,11 @@ export async function GET() {
   if (!branchId) return NextResponse.json({ error: "Выберите филиал" }, { status: 409 });
 
   return runWithBranchApiContext(branch.context, async () => {
-    await processClientCaseDeadlineNotifications();
     const items = await listClientCaseNotificationsForUser(access.session!.user.login, branchId);
+    // Generating reminders can scan hundreds of CRM cases and send Telegram
+    // notifications. Run it at most once per branch/interval and never make
+    // every browser tab wait for the same background work.
+    scheduleDeadlineProcessing(branchId);
     return NextResponse.json({
       config: getCrmNotificationConfig(),
       notifications: items,
