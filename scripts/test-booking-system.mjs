@@ -337,6 +337,7 @@ assert.doesNotMatch(customerLookup, /customer:\s*\{/);
 const publicBookingClient = source("src/app/booking/BookingClient.tsx");
 assert.match(publicBookingClient, /publicBookingBranchFromSearch\(window\.location\.search\)/);
 assert.match(publicBookingClient, /setStep\(\(current\) => current === 1 \? 2 : current\)/);
+assert.doesNotMatch(publicBookingClient, /data\.branches\.length === 1/);
 
 const bookingManagementSettings = source("src/app/management/booking/BookingSettingsClient.tsx");
 assert.match(bookingManagementSettings, /publicBookingPath\(state\.branch\.id\)/);

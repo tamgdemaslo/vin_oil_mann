@@ -187,9 +187,6 @@ export default function BookingClient() {
           setStep((current) => current === 1 ? 2 : current);
         } else if (requestedBranchId) {
           setError("Филиал по этой ссылке сейчас недоступен. Выберите другой филиал.");
-        } else if (data.branches.length === 1) {
-          setBranchId(data.branches[0].id);
-          setStep((current) => current === 1 ? 2 : current);
         }
       })
       .catch((reason) => active && setError(reason instanceof Error ? reason.message : "Не удалось загрузить филиалы"))
