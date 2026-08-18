@@ -63,9 +63,27 @@ const fordFifth = evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "2.5 l", hp: "149", vehicleYearFrom: 2014, vehicleYearTo: 2019,
 }));
 assert.ok(fordFifth.candidate, "Mondeo V remains a valid candidate");
+const fordScreenshotBoundary = evaluateMannCandidate(ford, row({
+  make: "FORD",
+  model: "Mondeo V",
+  vehicleText: "2.5(CNG)",
+  engineCode: "C25HDEX",
+  kw: "110",
+  hp: "150",
+  vehicleYears: "05/15 ->",
+  vehicleYearFrom: 2015,
+}));
+assert.ok(fordScreenshotBoundary.candidate, "matching generation, 2.5 displacement and 150 hp retain the adjacent MANN year as confirmable");
+assert.ok(fordScreenshotBoundary.candidate?.mismatchedFields.includes("год"));
+assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("объём двигателя"));
+assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("мощность"));
+assert.ok(fordScreenshotBoundary.candidate?.warnings.some((warning) => warning.includes("переход модельного года")));
 assert.ok(evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "2.0TDCi", vehicleYearFrom: 2014, vehicleYearTo: 2019,
 })).rejected?.reasons.some((reason) => reason.includes("объём")), "2.0TDCi is rejected against 2.488 l");
+assert.ok(evaluateMannCandidate(ford, row({
+  make: "FORD", model: "Mondeo V", vehicleText: "All models",
+})).rejected?.reasons.some((reason) => reason.includes("общая применяемость")), "All models is context, not a selectable vehicle variant");
 
 const highlander = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "TOYOTA", modelRaw: "Highlander", generationRaw: "III", year: 2017, engineVolumeCc: 3456 }));
 assert.deepEqual({ model: highlander?.baseModel, generation: highlander?.generation }, { model: "HIGHLANDER", generation: "III" });
@@ -91,7 +109,7 @@ assert.ok(bmwPdfQualifier.rejected?.reasons.some((reason) => reason.includes("с
 const bmwWrongBody = evaluateMannCandidate(bmwX1, row({
   make: "BMW",
   model: "X1(F48)",
-  vehicleText: "All models",
+  vehicleText: "2.0",
 }));
 assert.ok(bmwWrongBody.rejected?.reasons.some((reason) => reason.includes("код кузова")));
 

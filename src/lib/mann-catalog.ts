@@ -606,6 +606,7 @@ export async function listMannVariants(params: { make: string; model: string; ye
     FROM mann_filter_applications
     WHERE make_normalized = ${makeNormalized}
       AND model_normalized = ${modelNormalized}
+      AND UPPER(BTRIM(COALESCE(effective_vehicle_text, vehicle_text, ''))) NOT IN ('ALL MODELS', 'ВСЕ МОДЕЛИ')
       ${yearSql}
     GROUP BY vehicle_variant_key
     ORDER BY MIN(effective_vehicle_text) NULLS LAST, MIN(vehicle_years) NULLS LAST

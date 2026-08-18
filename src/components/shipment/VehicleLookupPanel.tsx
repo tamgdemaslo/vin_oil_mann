@@ -96,16 +96,17 @@ function confidenceLabel(value?: "high" | "medium" | "low"): string {
 }
 
 function mannStatusCopy(resolution: MannVehicleResolution | null, resolving: boolean): string {
-  if (resolving) return "Автомобиль найден, подбираем фильтры MANN...";
+  if (resolving) return "Подбираем MANN-модификацию...";
   if (resolution?.status === "resolved") {
-    return `MANN: точное совпадение — ${resolution.selectedApplication?.effectiveVehicleText ?? resolution.selectedApplication?.vehicleText ?? "модификация найдена"}.`;
+    return `MANN-модификация выбрана: ${resolution.selectedApplication?.effectiveVehicleText ?? resolution.selectedApplication?.vehicleText ?? "точное совпадение"}.`;
   }
-  if (resolution?.status === "candidates") return "MANN: требуется подтвердить одну из найденных модификаций.";
-  return "MANN: точное совпадение не найдено. Можно продолжить ручной подбор.";
+  if (resolution?.status === "candidates") return "Выберите MANN-модификацию.";
+  return "MANN-модификация не найдена. Выберите автомобиль вручную.";
 }
 
 function candidateLabel(candidate: MannVehicleCandidate): string {
-  const title = candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Все модификации";
+  const rawTitle = candidate.effectiveVehicleText ?? candidate.vehicleText ?? "Все модификации";
+  const title = rawTitle.trim().toLowerCase() === "all models" ? "Все модификации" : rawTitle;
   const details = [candidate.engineCode, candidate.kw ? `${candidate.kw} кВт` : null, candidate.hp ? `${candidate.hp} л.с.` : null, candidate.vehicleYears].filter(Boolean);
   return details.length ? `${title} · ${details.join(" · ")}` : title;
 }
@@ -120,7 +121,6 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<LookupFeedback | null>(null);
   const [appliedVehicle, setAppliedVehicle] = useState<NormalizedVehicleIdentity | null>(null);
-  const [appliedResolution, setAppliedResolution] = useState<MannVehicleResolution | null>(null);
   const [appliedFromCache, setAppliedFromCache] = useState(false);
   const lookupRequestIdRef = useRef(0);
   const resolutionRequestIdRef = useRef(0);
@@ -142,7 +142,6 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setSelectedKey(null);
     setFeedback(null);
     setAppliedVehicle(null);
-    setAppliedResolution(null);
     setAppliedFromCache(false);
   };
 
@@ -178,7 +177,6 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       onUseVehicle(vehicle, data);
       if (data.status === "resolved") {
         setAppliedVehicle(vehicle);
-        setAppliedResolution(data);
         setAppliedFromCache(Boolean(fromCache));
         setFeedback(null);
         return;
@@ -239,7 +237,6 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setSelectedKey(null);
     setFeedback(null);
     setAppliedVehicle(null);
-    setAppliedResolution(null);
     setAppliedFromCache(false);
 
     try {
@@ -313,6 +310,13 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     if (candidate) void handleResolution(candidate, lookup?.fromCache);
   };
 
+  const confirmMannCandidate = (vehicle: NormalizedVehicleIdentity, candidate: MannVehicleCandidate) => {
+    setAppliedVehicle(vehicle);
+    setAppliedFromCache(Boolean(lookup?.fromCache));
+    setFeedback(null);
+    onConfirmMannCandidate(vehicle, candidate);
+  };
+
   const changeTab = (next: LookupTab) => {
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
@@ -323,7 +327,6 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setResolution(null);
     setFeedback(null);
     setAppliedVehicle(null);
-    setAppliedResolution(null);
     setAppliedFromCache(false);
     if (next === "manual") onManualMode({ reason: "manual" });
   };
@@ -332,19 +335,17 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     return (
       <section className="eco-vehicle-lookup is-compact" aria-label="Определить автомобиль и подобрать фильтры">
         <div className="eco-vehicle-lookup__selected">
-          <div>
+          <div className="eco-vehicle-lookup__identity">
+            <div className="eco-vehicle-lookup__identity-head">
+              <span className="eco-vehicle-lookup__status is-ready">Автомобиль и MANN подобраны</span>
+              {appliedFromCache ? <em>Из карточки</em> : null}
+            </div>
             <strong>{vehicleTitle(appliedVehicle)}</strong>
             <span>{vehicleDetails(appliedVehicle) || "Автомобиль определён. Фильтры MANN готовы ниже."}</span>
           </div>
-          {appliedFromCache ? <em>Автомобиль определён ранее</em> : null}
           <div className="eco-vehicle-lookup__actions">
-            {appliedFromCache ? (
-              <button type="button" className="eco-btn eco-btn--primary" onClick={() => onUseVehicle(appliedVehicle, appliedResolution)}>
-                Сохранить данные автомобиля
-              </button>
-            ) : null}
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
-              Изменить вручную
+              Изменить
             </button>
             <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
               Определить заново
@@ -394,7 +395,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           </button>
         </div>
       ) : null}
-      {feedback ? (
+      {feedback && !(selectedVehicle && resolution?.status === "candidates") ? (
         <div className={`eco-vehicle-lookup__feedback is-${feedback.tone}`} aria-live="polite">
           <div>
             <strong>{feedback.title}</strong>
@@ -423,26 +424,36 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       ) : null}
       {selectedVehicle ? (
         <article className="eco-vehicle-lookup__result">
-          <div>
+          <div className="eco-vehicle-lookup__identity">
+            <div className="eco-vehicle-lookup__identity-head">
+              <span className="eco-vehicle-lookup__status">Автомобиль найден</span>
+              {lookup?.fromCache ? <em>Из карточки</em> : null}
+            </div>
             <strong>{vehicleTitle(selectedVehicle)}</strong>
-            <span>{vehicleDetails(selectedVehicle) || "Технические параметры не указаны"}</span>
-            {[selectedVehicle.transmissionName ?? selectedVehicle.transmissionType, selectedVehicle.driveType].filter(Boolean).length > 0 ? (
-              <span>{[selectedVehicle.transmissionName ?? selectedVehicle.transmissionType, selectedVehicle.driveType].filter(Boolean).join(" · ")}</span>
-            ) : null}
-            <small>{selectedVehicle.vin ? `VIN: ${selectedVehicle.vin}` : selectedVehicle.frameNumber ? `Кузов: ${selectedVehicle.frameNumber}` : "VIN не получен"} · Источник: {sourceLabel(selectedVehicle)}</small>
-            <small>Расшифровка TRONK: {confidenceLabel(selectedVehicle.confidence)} уверенность</small>
-            {selectedVehicle.vinStatus === "check_digit_absent" ? <small>Контрольная цифра VIN отсутствует или не применяется.</small> : null}
+            <span>
+              {[
+                vehicleDetails(selectedVehicle) || "Технические параметры не указаны",
+                selectedVehicle.transmissionName ?? selectedVehicle.transmissionType,
+                selectedVehicle.driveType,
+              ].filter(Boolean).join(" · ")}
+            </span>
+            <details className="eco-vehicle-lookup__technical">
+              <summary>Данные распознавания</summary>
+              <div className="eco-vehicle-lookup__technical-body">
+                <small>{selectedVehicle.vin ? `VIN: ${selectedVehicle.vin}` : selectedVehicle.frameNumber ? `Кузов: ${selectedVehicle.frameNumber}` : "VIN не получен"}</small>
+                <small>Источник: {sourceLabel(selectedVehicle)} · уверенность {confidenceLabel(selectedVehicle.confidence)}</small>
+                {selectedVehicle.vinStatus === "check_digit_absent" ? <small>Контрольная цифра VIN отсутствует или не применяется.</small> : null}
+                <div className="eco-vehicle-lookup__technical-actions">
+                  {lookup?.fromCache ? <button type="button" onClick={() => void runLookup(false, true)} disabled={loading || resolving}>Определить заново</button> : null}
+                  {tab === "vin" ? <button type="button" onClick={() => void runLookup(true)} disabled={loading || resolving}>Получить расширенные данные</button> : null}
+                </div>
+              </div>
+            </details>
           </div>
           <div className="eco-vehicle-lookup__actions">
-            {lookup?.fromCache ? <span className="eco-vehicle-lookup__cache-note">Используем данные из карточки автомобиля</span> : null}
-            <button type="button" className="eco-btn eco-btn--primary" disabled={resolving} onClick={() => onUseVehicle(selectedVehicle, resolution)}>
-              Сохранить данные автомобиля
-            </button>
-            {lookup?.fromCache ? <button type="button" onClick={() => void runLookup(false, true)} disabled={loading || resolving}>Определить заново</button> : null}
-            {tab === "vin" ? <button type="button" onClick={() => void runLookup(true)} disabled={loading || resolving}>Получить расширенные данные</button> : null}
-            <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: selectedVehicle })}>Изменить вручную</button>
+            <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: selectedVehicle })}>Изменить</button>
           </div>
-          {(resolving || resolution) ? (
+          {(resolving || (resolution && resolution.status !== "candidates")) ? (
             <div className={`eco-vehicle-lookup__mann is-${resolution?.status ?? "loading"}`}>
               {mannStatusCopy(resolution, resolving)}
               {resolution?.selectedApplication?.warnings.length ? <span>{resolution.selectedApplication.warnings.join(" ")}</span> : null}
@@ -450,18 +461,26 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           ) : null}
           {resolution?.status === "candidates" ? (
             <div className="eco-vehicle-lookup__mann-candidates">
-              <strong>Варианты MANN</strong>
+              <div className="eco-vehicle-lookup__mann-candidates-head">
+                <strong>Выберите модификацию MANN</strong>
+                <span>Это нужно для точного подбора фильтров.</span>
+              </div>
               {resolution.candidates.map((candidate) => (
                 <div key={candidate.applicationId}>
                   <div>
                     <b>{candidateLabel(candidate)}</b>
-                    <span>Оценка совпадения: {candidate.score}{candidate.matchedFields.length ? ` · совпало: ${candidate.matchedFields.join(", ")}` : ""}</span>
                     {candidate.warnings.length ? <span>{candidate.warnings.join(" ")}</span> : null}
                   </div>
-                  <button type="button" onClick={() => onConfirmMannCandidate(selectedVehicle, candidate)}>Выбрать эту модификацию</button>
+                  <button
+                    type="button"
+                    aria-label={`Выбрать MANN-модификацию: ${candidateLabel(candidate)}`}
+                    onClick={() => confirmMannCandidate(selectedVehicle, candidate)}
+                  >
+                    Выбрать
+                  </button>
                 </div>
               ))}
-              <button type="button" onClick={() => openManualMode({ reason: "partial", vehicle: selectedVehicle })}>Подобрать вручную</button>
+              <button type="button" onClick={() => openManualMode({ reason: "partial", vehicle: selectedVehicle })}>Не нашли нужную? Подобрать вручную</button>
             </div>
           ) : null}
           {process.env.NODE_ENV !== "production" && resolution?.trace ? (

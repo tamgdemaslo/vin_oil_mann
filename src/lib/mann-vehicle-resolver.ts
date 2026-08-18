@@ -189,7 +189,7 @@ function engineVolumeCcFromRow(row: MannRow): number | null {
     .find((volume) => Number.isFinite(volume) && volume >= 0.5 && volume <= 12);
   if (liters) return Math.round(liters * 1000);
   // MANN often writes a displacement directly next to an engine suffix: 2.0TDCi, 1.5EcoBoost, 2.7.
-  const compactLiters = [...value.matchAll(/\b(\d{1,2}[.,]\d{1,3})(?=\s*(?:[A-ZА-Я]|\)|,|;|$))/gi)]
+  const compactLiters = [...value.matchAll(/\b(\d{1,2}[.,]\d{1,3})(?=\s*(?:[A-ZА-Я]|\(|\)|,|;|$))/gi)]
     .map((match) => Number(match[1]?.replace(",", ".")))
     .find((volume) => Number.isFinite(volume) && volume >= 0.5 && volume <= 12);
   if (compactLiters) return Math.round(compactLiters * 1000);
@@ -283,6 +283,12 @@ const QUALIFIER_ONLY_VARIANT_MARKERS = [
   "GEHAUSE HOUSING",
 ];
 
+function isGenericMannVariant(row: MannRow): boolean {
+  return /^(?:ALL MODELS|ВСЕ МОДЕЛИ)$/.test(
+    normalizeMannSearchText(row.effectiveVehicleText ?? row.vehicleText)
+  );
+}
+
 function isQualifierOnlyVariant(row: MannRow): boolean {
   const vehicleText = normalizeMannSearchText(row.effectiveVehicleText ?? row.vehicleText);
   if (!QUALIFIER_ONLY_VARIANT_MARKERS.some((marker) => vehicleText.includes(marker))) return false;
@@ -318,6 +324,7 @@ function candidateFromRow(row: MannRow, score: number, matchedFields: string[], 
 
 function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEvaluation {
   const reject = (reason: string) => ({ rejected: { applicationId: row.vehicleVariantKey, model: row.model, reasons: [reason] } });
+  if (isGenericMannVariant(row)) return reject("общая применяемость MANN, не модификация автомобиля");
   if (isQualifierOnlyVariant(row)) return reject("служебное условие PDF, не модификация автомобиля");
   const rowMake = normalizeVehicleMake(row.make);
   if (!rowMake || rowMake !== vehicle.canonicalMake) return reject("марка не совпадает");
@@ -333,16 +340,34 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     return reject(`код двигателя: ${candidateCodes.join(", ")} не совпадает с ${vehicle.exactEngineCode}`);
   }
   const exactEngineMatch = Boolean(vehicle.exactEngineCode && candidateCodes.includes(vehicle.exactEngineCode));
+  const candidateVolumeCc = engineVolumeCcFromRow(row);
+  const candidateKw = numberFromText(row.kw);
+  const candidateHp = numberFromText(row.hp);
+  const inputKw = vehicle.powerKw;
+  const inputHp = vehicle.powerHp ?? (inputKw ? Math.round(inputKw * 1.35962) : undefined);
+  const volumeMatch = Boolean(
+    vehicle.engineVolumeCc && candidateVolumeCc && Math.abs(candidateVolumeCc - vehicle.engineVolumeCc) <= 150
+  );
+  const powerMatch = Boolean(
+    (inputKw != null && candidateKw != null && Math.abs(candidateKw - inputKw) <= 3)
+    || (inputHp != null && candidateHp != null && Math.abs(candidateHp - inputHp) <= 5)
+  );
+  const generationMatch = Boolean(vehicle.generation && candidateGeneration === vehicle.generation);
+  const strongEngineProfileMatch = generationMatch && volumeMatch && powerMatch;
   const isYearOutsideRange = Boolean(
     vehicle.year && ((row.vehicleYearFrom != null && vehicle.year < row.vehicleYearFrom) || (row.vehicleYearTo != null && vehicle.year > row.vehicleYearTo))
   );
   // TRONK can return a model-year one year before the MANN applicability start.
-  // Only retain that row as a confirmation-required candidate when the engine code is exact.
+  // Retain the row only as a confirmation-required candidate when either the
+  // engine code is exact or generation, displacement and power all agree.
   const hasOneYearBoundaryMismatch = Boolean(
-    isYearOutsideRange && exactEngineMatch && row.vehicleYearFrom != null && vehicle.year != null && row.vehicleYearFrom === vehicle.year + 1
+    isYearOutsideRange
+    && (exactEngineMatch || strongEngineProfileMatch)
+    && row.vehicleYearFrom != null
+    && vehicle.year != null
+    && row.vehicleYearFrom === vehicle.year + 1
   );
   if (isYearOutsideRange && !hasOneYearBoundaryMismatch) return reject(`год ${vehicle.year} вне диапазона MANN`);
-  const candidateVolumeCc = engineVolumeCcFromRow(row);
   if (vehicle.engineVolumeCc && candidateVolumeCc && Math.abs(candidateVolumeCc - vehicle.engineVolumeCc) > 150) {
     return reject(`объём: ${candidateVolumeCc} см³ не совпадает с ${vehicle.engineVolumeCc} см³`);
   }
@@ -414,10 +439,6 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
     }
   }
 
-  const candidateKw = numberFromText(row.kw);
-  const candidateHp = numberFromText(row.hp);
-  const inputKw = vehicle.powerKw;
-  const inputHp = vehicle.powerHp ?? (inputKw ? Math.round(inputKw * 1.35962) : undefined);
   if (inputKw || inputHp) {
     const kwMatch = inputKw != null && candidateKw != null && Math.abs(candidateKw - inputKw) <= 3;
     const hpMatch = inputHp != null && candidateHp != null && Math.abs(candidateHp - inputHp) <= 5;
