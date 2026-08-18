@@ -129,11 +129,11 @@ type FlowSectionProps = {
   tone?: "default" | "danger";
 };
 
-const SHIFT_EVENT = "eco-shift-changed";
+const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
 function notifyShiftChanged() {
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SHIFT_EVENT));
+    window.dispatchEvent(new Event(CASH_SHIFT_EVENT));
   }
 }
 

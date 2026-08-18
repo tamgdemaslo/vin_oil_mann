@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import {
   handleDiagnosticReportSent,
   markDiagnosticReportSent,
@@ -15,7 +15,7 @@ function actionError(error: unknown) {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const { id } = await params;

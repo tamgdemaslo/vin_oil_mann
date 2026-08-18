@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getCurrentShift } from "@/lib/shifts";
 import { getCurrentShift as getCashShift } from "@/lib/cashbox";
-import { hasActiveShiftAccess } from "@/lib/active-shift-access";
+import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 
 /** Проверка авторизации для операций, которые не изменяют рабочие данные. */
 export async function requireApiSession(): Promise<
@@ -19,26 +18,23 @@ export async function requireApiSession(): Promise<
   return { ok: true, session };
 }
 
-/** Как на страницах отгрузки: owner без проверки смены; остальные — рабочая смена или кассовая. */
-export async function requireApiSessionWithShift(): Promise<
+/** Owner работает без кассы; для остальных нужна открытая кассовая смена. */
+export async function requireApiSessionWithCashShift(): Promise<
   | { ok: true; session: NonNullable<Awaited<ReturnType<typeof getSession>>> }
   | { ok: false; response: NextResponse }
 > {
   const access = await requireApiSession();
   if (!access.ok) return access;
   const { session } = access;
-  if (session.user.role === "owner") {
-    return { ok: true, session };
-  }
-  const workShift = await getCurrentShift(session.user.login);
-  const cashOpen = await getCashShift();
-  if (hasActiveShiftAccess(session.user.role, workShift, cashOpen)) {
-    return { ok: true, session };
-  }
+  if (session.user.role === "owner") return { ok: true, session };
+
+  const cashShift = await getCashShift();
+  if (hasOpenCashShiftAccess(session.user.role, cashShift)) return { ok: true, session };
+
   return {
     ok: false,
     response: NextResponse.json(
-      { error: "Откройте смену", needShift: true },
+      { error: "Откройте кассовую смену", needCashShift: true },
       { status: 403 }
     ),
   };

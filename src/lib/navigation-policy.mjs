@@ -87,15 +87,15 @@ export function resolveNavigationForUser({
       id: "home",
       label: "Главное",
       href: isAllBranches ? "/owner" : "/",
-      items: [item(isAllBranches ? "/owner" : "/", isAllBranches ? "Все филиалы" : "Дашборд", isAllBranches ? "Сводный обзор без изменений данных." : "Смена, задачи и быстрый старт.")],
+      items: [item(isAllBranches ? "/owner" : "/", isAllBranches ? "Все филиалы" : "Дашборд", isAllBranches ? "Сводный обзор без изменений данных." : "Касса, задачи и быстрый старт.")],
     },
   ];
 
   if (canWork) {
     const workItems = [];
-    if (canBookingView) workItems.push(item("/records", "Записи", isAllBranches ? "Сводный журнал всех филиалов." : "Рабочий журнал собственной системы записи.", { requiresShift: !isAllBranches }));
-    workItems.push(branchOnly("/shipment", "Журнал отгрузок", "Поиск и контроль документов.", { requiresShift: true }));
-    if (effectiveRole !== "mechanic") workItems.push(branchOnly("/shipment/new", "Новая отгрузка", "Создать рабочий документ.", { requiresShift: true }));
+    if (canBookingView) workItems.push(item("/records", "Записи", isAllBranches ? "Сводный журнал всех филиалов." : "Рабочий журнал собственной системы записи.", { requiresCashShift: !isAllBranches }));
+    workItems.push(branchOnly("/shipment", "Журнал отгрузок", "Поиск и контроль документов.", { requiresCashShift: true }));
+    if (effectiveRole !== "mechanic") workItems.push(branchOnly("/shipment/new", "Новая отгрузка", "Создать рабочий документ.", { requiresCashShift: true }));
     sections.push({ id: "work", label: "Работа", href: workItems[0]?.href ?? "/shipment", items: workItems });
   }
 

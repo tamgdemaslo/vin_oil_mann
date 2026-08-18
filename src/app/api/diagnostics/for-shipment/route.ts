@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { findDiagnosticMapForShipment, requestOrigin } from "@/lib/diagnostic-map-service";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireApiSessionWithShift();
+  const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
   const shipmentId = request.nextUrl.searchParams.get("shipmentId")?.trim();

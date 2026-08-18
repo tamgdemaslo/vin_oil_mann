@@ -1,8 +1,8 @@
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireOpenCashShiftAccess } from "@/lib/app-access";
 import PenaltiesList from "./PenaltiesList";
 
 export default async function CabinetPenaltiesPage() {
-  const session = await requireActiveShiftAccess("/cabinet/penalties");
+  const session = await requireOpenCashShiftAccess("/cabinet/penalties");
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">

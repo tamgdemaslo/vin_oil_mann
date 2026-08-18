@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { completeDiagnosticMapSession, requestOrigin } from "@/lib/diagnostic-map-service";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiSessionWithShift();
+  const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
   const { id } = await params;

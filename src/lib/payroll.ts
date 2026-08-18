@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getShiftRateCents } from "@/lib/shifts";
+import { getShiftRateCents } from "@/lib/shift-rates";
 import { canonicalizeLogin, getLoginVariants, getUsersFromEnv } from "@/lib/auth";
 import { listPayrollAdjustments, listPayrollPayments } from "@/lib/payroll-settlements";
 import { getScopedBranchId } from "@/lib/request-tenant-store";

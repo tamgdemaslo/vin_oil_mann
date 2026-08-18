@@ -57,7 +57,7 @@ export default async function OwnerDashboardPage() {
       </section>
 
       <section className="eco-owner-dashboard__attention">
-        <div><span>Незакрытые смены</span><strong>{dashboard.total.openShifts}</strong></div>
+        <div><span>Открытые кассовые смены</span><strong>{dashboard.total.openCashShifts}</strong></div>
         <div><span>Просроченные дела</span><strong>{dashboard.total.overdueCases}</strong></div>
         <div><span>Товарных карточек</span><strong>{dashboard.total.productsCount}</strong></div>
         <div><span>Автомобилей в диагностиках</span><strong>{dashboard.total.vehiclesCount}</strong></div>

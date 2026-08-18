@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiSession } from "@/lib/api-session-shift";
+import { requireApiSession } from "@/lib/api-session-cash-shift";
 
 export const lookupBodySchema = z.object({
   organizationId: z.string().trim().min(1).max(128).optional(),

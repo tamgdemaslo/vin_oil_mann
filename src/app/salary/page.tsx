@@ -1,4 +1,4 @@
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireOpenCashShiftAccess } from "@/lib/app-access";
 import SalaryDashboard from "./SalaryDashboard";
 
 function firstParam(value: string | string[] | undefined) {
@@ -14,7 +14,7 @@ export default async function SalaryPage({
   const tab = firstParam(params?.tab)?.trim();
   const personalView = firstParam(params?.view)?.trim() === "mine";
   const from = tab ? `/salary?tab=${encodeURIComponent(tab)}` : "/salary";
-  const session = await requireActiveShiftAccess(from);
+  const session = await requireOpenCashShiftAccess(from);
 
   return (
     <SalaryDashboard

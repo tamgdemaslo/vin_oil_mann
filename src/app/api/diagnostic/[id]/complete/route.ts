@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ALL_NODES } from "@/data/diagnostic-catalog";
 import { prisma } from "@/lib/db";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import {
   regenerateOffersForDiagnostic,
   updateDiagnosticSummaryCounts,
@@ -23,7 +23,7 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const { id } = await params;

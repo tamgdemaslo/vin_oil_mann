@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Eco-platform is used during the working day by an auto service owner, administrators, and mechanics. Owner users monitor money, profit, shifts, payroll, suppliers, inventory, CRM, and daily operations. Administrators work with appointments, client cases, shipments, cash, inventory operations, and messages. Mechanics start shifts, create and edit shipments, select oil and filters by VIN, and complete diagnostics.
+Eco-platform is used during the working day by an auto service owner, administrators, and mechanics. Owner users monitor money, profit, cash shifts, payroll, suppliers, inventory, CRM, and daily operations. Administrators work with appointments, client cases, shipments, cash, inventory operations, and messages. Mechanics create and edit shipments, select oil and filters by VIN, and complete diagnostics while the branch cash shift is open.
 
 The public booking surface is used by car owners, most often from a phone and often while multitasking. They need to understand the minimum required information, see genuinely available times, and complete a booking without calling or creating an account.
 
@@ -30,7 +30,7 @@ The product should not feel like a decorative SaaS dashboard, a generic CRM form
 2. Show action, not inventory: warnings and secondary systems stay compact unless they require immediate work.
 3. Make status legible at a glance: arrival, on-site, in-work, left, unpaid, overdue, and missing shipment states must be visible without digging.
 4. Preserve operational density: tables, timelines, and short rows are preferred over spacious marketing cards.
-5. Keep role and shift constraints explicit: locked or unavailable work should explain what is blocked and where to start.
+5. Keep role and cash-shift constraints explicit: locked or unavailable work should explain what is blocked and where the branch cash shift is opened.
 6. Make public journeys mobile-first: ask only for information needed at the current moment, keep the next action visible, and show progress in plain language.
 
 ## Accessibility & Inclusion

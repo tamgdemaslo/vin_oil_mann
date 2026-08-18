@@ -10,7 +10,7 @@ export async function getOwnerDashboard(context: BranchContext) {
   if (!context.groupRole) throw new Error("owner_access_required");
   const monthStart = startOfMonth();
   const rows = await Promise.all(context.branches.map(async (branch) => {
-    const [shipments, clients, vehicles, products, expenses, payroll, openShifts, overdueCases] = await Promise.all([
+    const [shipments, clients, vehicles, products, expenses, payroll, openCashShifts, overdueCases] = await Promise.all([
       prisma.localDemand.aggregate({
         where: { branchId: branch.id, applicable: true, momentAt: { gte: monthStart } },
         _count: { _all: true },
@@ -28,7 +28,7 @@ export async function getOwnerDashboard(context: BranchContext) {
         where: { branchId: branch.id, status: "ACTIVE", createdAt: { gte: monthStart } },
         _sum: { amountCents: true },
       }),
-      prisma.shift.count({ where: { branchId: branch.id, endedAt: null } }),
+      prisma.cashShift.count({ where: { branchId: branch.id, status: "open" } }),
       prisma.crmDeal.count({
         where: { branchId: branch.id, status: "open", nextActionAt: { lt: new Date() } },
       }),
@@ -47,7 +47,7 @@ export async function getOwnerDashboard(context: BranchContext) {
       expensesCents: expenseCents,
       payrollCents,
       operatingResultCents: revenueCents - expenseCents - payrollCents,
-      openShifts,
+      openCashShifts,
       overdueCases,
     };
   }));
@@ -61,7 +61,7 @@ export async function getOwnerDashboard(context: BranchContext) {
     expensesCents: sum.expensesCents + row.expensesCents,
     payrollCents: sum.payrollCents + row.payrollCents,
     operatingResultCents: sum.operatingResultCents + row.operatingResultCents,
-    openShifts: sum.openShifts + row.openShifts,
+    openCashShifts: sum.openCashShifts + row.openCashShifts,
     overdueCases: sum.overdueCases + row.overdueCases,
   }), {
     revenueCents: 0,
@@ -72,7 +72,7 @@ export async function getOwnerDashboard(context: BranchContext) {
     expensesCents: 0,
     payrollCents: 0,
     operatingResultCents: 0,
-    openShifts: 0,
+    openCashShifts: 0,
     overdueCases: 0,
   });
   return {

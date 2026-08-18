@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Download, Filter, Plus, Printer, Search, SlidersHorizontal, X } from "lucide-react";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge } from "@/components/platform/EcoUI";
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireOpenCashShiftAccess } from "@/lib/app-access";
 import { requireBranchContext } from "@/lib/branch-context";
 import { formatServiceDate, formatServiceTime } from "@/lib/date-time";
 import { loadLocalDemandList } from "@/lib/local-inventory-read";
@@ -322,7 +322,7 @@ export default async function ShipmentListPage({
     offset?: string;
   }>;
 }) {
-  await requireActiveShiftAccess("/shipment");
+  await requireOpenCashShiftAccess("/shipment");
   const branch = await requireBranchContext({ allowAll: false, requireActive: true });
   if (!branch.branchId) throw new Error("Активный филиал не выбран");
 

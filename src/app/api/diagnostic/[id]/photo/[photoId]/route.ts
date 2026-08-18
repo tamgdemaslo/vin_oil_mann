@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import { prisma } from "@/lib/db";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { deletePhotoFile, mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
@@ -9,7 +9,7 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; photoId: string }> }
 ) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const { id: diagnosticId, photoId } = await params;
@@ -35,7 +35,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string; photoId: string }> }
 ) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const { id: diagnosticId, photoId } = await params;

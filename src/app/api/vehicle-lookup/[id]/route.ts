@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const access = await requireApiSessionWithShift();
+  const access = await requireApiSessionWithCashShift();
   if (!access.ok) return access.response;
   const { id } = await params;
   const item = await prisma.vehicleLookupCache.findUnique({

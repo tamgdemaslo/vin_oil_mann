@@ -8,7 +8,7 @@ import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
-import { hasActiveShiftAccess } from "@/lib/active-shift-access";
+import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
@@ -296,9 +296,9 @@ function counterpartyIdFromDemand(raw: unknown): string | null {
   return agent?.id?.trim() || localEntityIdFromMeta(agent?.meta) || null;
 }
 
-function diagnosticApiErrorMessage(status: number, body: { error?: string; needShift?: boolean } = {}): string {
+function diagnosticApiErrorMessage(status: number, body: { error?: string; needCashShift?: boolean } = {}): string {
   if (status === 401) return "Необходима авторизация";
-  if (status === 403 && body.needShift) return "Откройте смену для проведения диагностики";
+  if (status === 403 && body.needCashShift) return "Откройте кассовую смену для проведения диагностики";
   if (status === 403) return body.error || "Недостаточно прав для проведения диагностики";
   return body.error || "Не удалось создать диагностику";
 }
@@ -793,12 +793,9 @@ export default function ShipmentDetailPage() {
           return;
         }
         if (sess.user.role === "admin" || sess.user.role === "master") {
-          const [shift, cash] = await Promise.all([
-            fetch("/api/shifts/current", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
-            fetch("/api/cash", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
-          ]);
-          if (!hasActiveShiftAccess(sess.user.role, shift, cash?.shift)) {
-            router.push(sess.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
+          const cash = await fetch("/api/cash", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null));
+          if (!hasOpenCashShiftAccess(sess.user.role, cash?.shift)) {
+            router.push(sess.user.role === "admin" ? "/cash?needCashShift=1" : "/?needCashShift=1");
             return;
           }
         }
@@ -908,7 +905,7 @@ export default function ShipmentDetailPage() {
         const existingJson = await existingResponse.json().catch(() => ({})) as {
           diagnostic?: typeof diagnosticRemote;
           error?: string;
-          needShift?: boolean;
+          needCashShift?: boolean;
         };
         if (!existingResponse.ok) {
           throw new Error(diagnosticApiErrorMessage(existingResponse.status, existingJson));
@@ -954,7 +951,7 @@ export default function ShipmentDetailPage() {
           diagnostic?: typeof diagnosticRemote;
           diagnosticId?: string;
           error?: string;
-          needShift?: boolean;
+          needCashShift?: boolean;
         };
         if (!cr.ok) {
           throw new Error(diagnosticApiErrorMessage(cr.status, cj));

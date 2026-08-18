@@ -3,7 +3,7 @@ import type { DiagnosticBlock, DiagnosticPositionStatus } from "@prisma/client";
 import { tagLabelsForNode } from "@/data/diagnostic-catalog";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { mimeFromDiagnosticPhotoPath } from "@/lib/diagnostic-photos";
 import { updateDiagnosticSummaryCounts } from "@/lib/diagnostic-regenerate-offers";
 
@@ -11,7 +11,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const { id: diagnosticId } = await params;

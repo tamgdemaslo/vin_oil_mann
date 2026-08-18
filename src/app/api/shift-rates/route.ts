@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canonicalizeLogin, getLoginVariants, getSession, getUsersFromEnv } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getShiftRateCents } from "@/lib/shifts";
+import { getShiftRateCents } from "@/lib/shift-rates";
 import { logChange } from "@/lib/change-log";
 import { toLocalDateString } from "@/lib/time";
 

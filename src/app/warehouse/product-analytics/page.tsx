@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireOpenCashShiftAccess } from "@/lib/app-access";
 import { canViewWarehouseAnalytics } from "@/lib/warehouse-analytics-access";
 import ProductAnalyticsClient from "./ProductAnalyticsClient";
 
 export default async function WarehouseProductAnalyticsPage() {
-  const session = await requireActiveShiftAccess("/warehouse/product-analytics");
+  const session = await requireOpenCashShiftAccess("/warehouse/product-analytics");
   const allowed = await canViewWarehouseAnalytics(session.user);
 
   if (!allowed) {

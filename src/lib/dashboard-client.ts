@@ -2,17 +2,15 @@ import { safeReadJson } from "@/lib/http-json";
 
 type ApiErrorPayload = { error?: string };
 
-export type DashboardClientBundle<TDashboard, TShift, TCash> = {
+export type DashboardClientBundle<TDashboard, TCash> = {
   dashboard: TDashboard;
-  shift: TShift | null;
   cash: TCash | null;
-  shiftAvailable: boolean;
   cashAvailable: boolean;
   partialErrors: string[];
   loadedAt: number;
 };
 
-type UnknownBundle = DashboardClientBundle<unknown, unknown, unknown>;
+type UnknownBundle = DashboardClientBundle<unknown, unknown>;
 
 const CACHE_TTL_MS = 1_500;
 
@@ -52,37 +50,31 @@ export function invalidateDashboardClientBundle() {
   cachedBundle = null;
 }
 
-export async function loadDashboardClientBundle<TDashboard, TShift, TCash>(options?: {
+export async function loadDashboardClientBundle<TDashboard, TCash>(options?: {
   force?: boolean;
-}): Promise<DashboardClientBundle<TDashboard, TShift, TCash>> {
+}): Promise<DashboardClientBundle<TDashboard, TCash>> {
   if (options?.force) cachedBundle = null;
   if (inFlightBundle) {
-    return inFlightBundle as Promise<DashboardClientBundle<TDashboard, TShift, TCash>>;
+    return inFlightBundle as Promise<DashboardClientBundle<TDashboard, TCash>>;
   }
   if (cachedBundle && Date.now() - cachedBundle.loadedAt < CACHE_TTL_MS) {
-    return cachedBundle as DashboardClientBundle<TDashboard, TShift, TCash>;
+    return cachedBundle as DashboardClientBundle<TDashboard, TCash>;
   }
 
   inFlightBundle = (async () => {
-    const [shiftResponse, cashResponse, dashboardResponse] = await Promise.all([
-      fetch("/api/shifts/current", { cache: "no-store" }),
+    const [cashResponse, dashboardResponse] = await Promise.all([
       fetch("/api/cash", { cache: "no-store" }),
       fetch("/api/dashboard/operations", { cache: "no-store" }),
     ]);
 
     const dashboard = await readRequiredJson<unknown>(dashboardResponse, "Операционная сводка");
-    const [shiftResult, cashResult] = await Promise.all([
-      readOptionalJson<unknown>(shiftResponse, "Рабочая смена"),
-      readOptionalJson<unknown>(cashResponse, "Кассовая смена"),
-    ]);
+    const cashResult = await readOptionalJson<unknown>(cashResponse, "Кассовая смена");
 
     const bundle: UnknownBundle = {
       dashboard,
-      shift: shiftResult.value,
       cash: cashResult.value,
-      shiftAvailable: shiftResult.available,
       cashAvailable: cashResult.available,
-      partialErrors: [shiftResult.error, cashResult.error].filter((value): value is string => Boolean(value)),
+      partialErrors: [cashResult.error].filter((value): value is string => Boolean(value)),
       loadedAt: Date.now(),
     };
     cachedBundle = bundle;
@@ -91,5 +83,5 @@ export async function loadDashboardClientBundle<TDashboard, TShift, TCash>(optio
     inFlightBundle = null;
   });
 
-  return inFlightBundle as Promise<DashboardClientBundle<TDashboard, TShift, TCash>>;
+  return inFlightBundle as Promise<DashboardClientBundle<TDashboard, TCash>>;
 }

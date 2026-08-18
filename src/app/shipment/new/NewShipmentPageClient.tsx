@@ -25,7 +25,7 @@ import { EcoBadge, EcoButton, type EcoBadgeTone } from "@/components/platform/Ec
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
-import { hasActiveShiftAccess } from "@/lib/active-shift-access";
+import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { isValidMannYear, normalizeMannYearInput, shouldApplyMannRequest } from "@/lib/mann-picker-state";
@@ -1259,17 +1259,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           return;
         }
         if (data.user.role === "admin" || data.user.role === "master") {
-          const [shift, cash] = await Promise.all([
-            fetch("/api/shifts/current", { cache: "no-store" }).then((r) =>
-              r.ok ? safeJson<unknown>(r, null) : null
-            ),
-            fetch("/api/cash", { cache: "no-store" }).then((r) =>
-              r.ok ? safeJson<{ shift?: { status?: string } } | null>(r, null) : null
-            ),
-          ]);
+          const cash = await fetch("/api/cash", { cache: "no-store" }).then((r) =>
+            r.ok ? safeJson<{ shift?: { status?: string } } | null>(r, null) : null
+          );
           if (cancelled) return;
-          if (!hasActiveShiftAccess(data.user.role, shift, cash?.shift)) {
-            router.push(data.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
+          if (!hasOpenCashShiftAccess(data.user.role, cash?.shift)) {
+            router.push(data.user.role === "admin" ? "/cash?needCashShift=1" : "/?needCashShift=1");
             return;
           }
         }

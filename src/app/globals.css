@@ -527,7 +527,6 @@
 .eco-my-payroll__dialog { width: min(480px, 100%); border: 1px solid var(--eco-line); border-radius: 10px; background: #fff; color: var(--eco-ink); }
 .eco-my-payroll__dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--eco-line); padding: 16px 18px; }.eco-my-payroll__dialog header > div { display: grid; gap: 3px; }.eco-my-payroll__dialog header span { color: var(--eco-muted); font-size: 11px; font-weight: 700; }.eco-my-payroll__dialog h2, .eco-my-payroll__dialog p { margin: 0; }.eco-my-payroll__dialog h2 { font-size: 17px; letter-spacing: -0.015em; }.eco-my-payroll__dialog p { color: var(--eco-muted); font-size: 12px; }.eco-my-payroll__dialog header button { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; border: 1px solid var(--eco-line); border-radius: 5px; background: #fff; color: var(--eco-ink-2); cursor: pointer; }
 .eco-my-payroll__dialog-lines { display: grid; padding: 5px 18px; }.eco-my-payroll__dialog-lines > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 0; }.eco-my-payroll__dialog-lines > div + div { border-top: 1px solid var(--eco-line); }.eco-my-payroll__dialog-lines span { display: grid; gap: 3px; }.eco-my-payroll__dialog-lines strong { font-size: 13px; }.eco-my-payroll__dialog-lines small { color: var(--eco-muted); font-size: 11px; line-height: 1.35; }.eco-my-payroll__dialog-lines b { flex: 0 0 auto; font-size: 13px; font-variant-numeric: tabular-nums; }.eco-my-payroll__dialog footer { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-top: 1px solid var(--eco-line); background: var(--eco-surface-sunk); padding: 13px 18px; }.eco-my-payroll__dialog footer span { color: var(--eco-muted); font-size: 12px; }.eco-my-payroll__dialog footer strong { font-size: 17px; font-variant-numeric: tabular-nums; }
-.eco-employee-dashboard__shift { margin: 0; }
 @keyframes eco-my-payroll-pulse { to { background-position: -120% 0; } }
 @media (prefers-reduced-motion: reduce) { .eco-my-payroll__skeleton span { animation: none; } }
 @media (max-width: 700px) { .eco-employee-dashboard { width: min(100% - 20px, 600px); margin-top: 10px; }.eco-my-payroll__head { align-items: stretch; flex-direction: column; padding: 15px 14px 13px; }.eco-my-payroll__head h1 { font-size: 20px; }.eco-my-payroll__controls { justify-content: space-between; }.eco-my-payroll__refresh { flex: 0 0 auto; }.eco-my-payroll__custom-range { padding: 10px 14px; }.eco-my-payroll__custom-range label { flex: 1 1 132px; }.eco-my-payroll__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.eco-my-payroll__metrics > div { min-height: 96px; padding: 13px 14px; }.eco-my-payroll__metrics > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--eco-line); }.eco-my-payroll__metrics > div:nth-child(4) { border-top: 1px solid var(--eco-line); }.eco-my-payroll__metrics strong { font-size: 19px; }.eco-my-payroll__summary { gap: 12px 20px; padding: 11px 14px; }.eco-my-payroll__list-head { padding: 14px 14px 9px; }.eco-my-payroll__item { grid-template-columns: 46px minmax(0, 1fr) auto 14px; min-height: 58px; padding: 8px 14px; }.eco-my-payroll__item-amount { padding-left: 8px; font-size: 12px; }.eco-my-payroll__item > svg { margin-left: 4px; }.eco-my-payroll__state { margin: 0 14px 14px; }.eco-my-payroll__skeleton { grid-template-columns: repeat(2, minmax(0, 1fr)); }.eco-my-payroll__skeleton span:nth-child(n + 5) { grid-column: span 1; min-height: 86px; }.eco-my-payroll__dialog-backdrop { align-items: end; padding: 0; }.eco-my-payroll__dialog { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 12px 12px 0 0; }.eco-my-payroll__dialog header { padding: 15px 14px; }.eco-my-payroll__dialog-lines { padding-right: 14px; padding-left: 14px; }.eco-my-payroll__dialog footer { padding: 13px 14px; } }
@@ -12627,16 +12626,14 @@ select.eco-input::-ms-expand,
   line-height: 1.5;
 }
 
-.eco-ops-locked,
-.eco-ops-shift-card {
+.eco-ops-locked {
   padding: 22px 24px;
   background: var(--ops-surface);
   border: 1px solid var(--ops-line);
   border-radius: 4px;
 }
 
-.eco-ops-locked h2,
-.eco-ops-shift-card h2 {
+.eco-ops-locked h2 {
   margin: 6px 0 0;
   color: var(--ops-ink);
   font-size: 22px;
@@ -12651,13 +12648,6 @@ select.eco-input::-ms-expand,
 
 .eco-ops-locked > div {
   max-width: 420px;
-}
-
-.eco-ops-shift-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-  gap: 20px;
-  align-items: center;
 }
 
 @media (max-width: 1240px) {
@@ -12678,8 +12668,7 @@ select.eco-input::-ms-expand,
 }
 
 @media (max-width: 1080px) {
-  .eco-ops-main-grid,
-  .eco-ops-shift-card {
+  .eco-ops-main-grid {
     grid-template-columns: 1fr;
   }
 
@@ -62055,46 +62044,6 @@ html.tgm-print-active .tgm-client-report .qr {
   margin: 12px auto 0;
 }
 
-.eco-shift-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.eco-shift-control__status,
-.eco-shift-control__hint,
-.eco-shift-control__warning,
-.eco-shift-control__error {
-  flex: 1 0 100%;
-  margin: 0;
-  color: var(--ops-ink2);
-  font-size: 13px;
-  line-height: 1.4;
-  text-align: right;
-}
-
-.eco-shift-control__hint {
-  color: var(--ops-muted);
-}
-
-.eco-shift-control__warning {
-  color: var(--ops-warning);
-}
-
-.eco-shift-control__error {
-  color: var(--ops-danger);
-}
-
-.eco-ops-shift-card--shared {
-  margin-top: 14px;
-}
-
-.eco-ops-shift-card--shared.is-required {
-  border-color: var(--ops-warning-tint2);
-}
-
 .eco-mobile-inline-alert button {
   min-height: 44px;
   margin-top: 8px;
@@ -62113,8 +62062,7 @@ html.tgm-print-active .tgm-client-report .qr {
 }
 
 .eco-ops-btn:focus-visible,
-.eco-mobile-primary:focus-visible,
-.eco-shift-control .eco-ops-btn:focus-visible {
+.eco-mobile-primary:focus-visible {
   outline: 2px solid var(--ops-info);
   outline-offset: 2px;
 }
@@ -62184,30 +62132,8 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-mobile-work-row,
   .eco-mobile-more-link,
   .eco-ops-row-action,
-  .eco-mobile-inline-alert button,
-  .eco-shift-control .eco-ops-btn {
+  .eco-mobile-inline-alert button {
     min-height: 44px;
-  }
-
-  .eco-ops-shift-card--shared {
-    margin: 10px 12px 0;
-    padding: 14px;
-    grid-template-columns: 1fr;
-  }
-
-  .eco-shift-control {
-    justify-content: stretch;
-  }
-
-  .eco-shift-control__status,
-  .eco-shift-control__hint,
-  .eco-shift-control__warning,
-  .eco-shift-control__error {
-    text-align: left;
-  }
-
-  .eco-shift-control .eco-ops-btn {
-    width: 100%;
   }
 }
 
@@ -63688,4 +63614,539 @@ select[size="1"]::-ms-expand {
     padding-inline-end: 10px;
     background-image: none;
   }
+}
+
+/* Administrator home: salary first, then the three operational queues. */
+.eco-ops-dashboard.eco-admin-day-center {
+  display: grid;
+  width: min(1320px, calc(100% - 40px));
+  max-width: 1320px;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 22px 0 38px;
+}
+
+.eco-admin-day-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 2px 2px 0;
+}
+
+.eco-admin-day-head h1,
+.eco-admin-day-head p { margin: 0; }
+
+.eco-admin-day-head h1 {
+  margin-top: 6px;
+  color: var(--ops-ink);
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+}
+
+.eco-admin-day-head p {
+  margin-top: 6px;
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.eco-admin-day-refresh {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--ops-line2);
+  border-radius: 5px;
+  background: var(--ops-surface);
+  padding: 0 11px;
+  color: var(--ops-ink3);
+  cursor: pointer;
+  font: 700 12px/1 Inter, "Open Sans", Roboto, Arial, sans-serif;
+}
+
+.eco-admin-day-refresh:hover { border-color: var(--ops-rust); color: var(--ops-rust); }
+.eco-admin-day-refresh:disabled { cursor: wait; opacity: .65; }
+
+.eco-admin-day-refresh:focus-visible,
+.eco-admin-payroll button:focus-visible,
+.eco-admin-day-row:focus-visible,
+.eco-admin-payroll a:focus-visible {
+  outline: 2px solid var(--ops-rust);
+  outline-offset: 2px;
+}
+
+.eco-admin-payroll {
+  overflow: hidden;
+  border: 1px solid #252525;
+  border-radius: 9px;
+  background: #171717;
+  box-shadow: 0 9px 28px rgb(15 15 15 / 12%);
+  color: #f6f3ee;
+}
+
+.eco-admin-payroll__head {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #323232;
+}
+
+.eco-admin-payroll__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.eco-admin-payroll__icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #4c3329;
+  border-radius: 6px;
+  background: #2a1d18;
+  color: #f27a40;
+}
+
+.eco-admin-payroll__title span:not(.eco-admin-payroll__icon) {
+  display: block;
+  color: #a6a6a6;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.eco-admin-payroll__title h2 {
+  margin: 3px 0 0;
+  color: #fbf8f3;
+  font-size: 16px;
+  letter-spacing: -.012em;
+}
+
+.eco-admin-payroll__status {
+  flex: 0 0 auto;
+  border: 1px solid #4b4b4b;
+  border-radius: 999px;
+  background: #252525;
+  padding: 5px 8px;
+  color: #b7b7b7;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.eco-admin-payroll__status.is-confirmed {
+  border-color: #315f42;
+  background: #1c3525;
+  color: #9dd6ae;
+}
+
+.eco-admin-payroll__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid #323232;
+}
+
+.eco-admin-payroll__metrics > div {
+  display: grid;
+  min-height: 128px;
+  align-content: center;
+  gap: 7px;
+  padding: 20px 24px;
+}
+
+.eco-admin-payroll__metrics > div + div { border-left: 1px solid #323232; }
+.eco-admin-payroll__metrics span { color: #a8a8a8; font-size: 11px; font-weight: 700; }
+
+.eco-admin-payroll__metrics strong {
+  color: #fffaf3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(29px, 4vw, 46px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  letter-spacing: -.055em;
+  line-height: 1;
+}
+
+.eco-admin-payroll__metrics .is-today strong { color: #f8783d; }
+.eco-admin-payroll__metrics small { color: #858585; font-size: 11px; }
+
+.eco-admin-payroll__scale {
+  padding: 17px 24px 16px;
+  border-bottom: 1px solid #323232;
+}
+
+.eco-admin-payroll__scale-copy,
+.eco-admin-payroll__scale-ends {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eco-admin-payroll__scale-copy span,
+.eco-admin-payroll__scale-ends span { color: #858585; font-size: 10px; font-weight: 650; }
+.eco-admin-payroll__scale-copy strong { color: #d7d3cc; font-size: 11px; }
+
+.eco-admin-payroll__track {
+  position: relative;
+  height: 8px;
+  margin-top: 12px;
+  border-radius: 2px;
+  background: #343434;
+}
+
+.eco-admin-payroll__track > span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #d95722;
+  transform: scaleX(var(--admin-payroll-progress));
+  transform-origin: left center;
+  transition: transform 420ms cubic-bezier(.2, .8, .2, 1);
+  animation: eco-admin-payroll-track-in 560ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.eco-admin-payroll__track em {
+  position: absolute;
+  top: 15px;
+  left: clamp(58px, calc(var(--admin-payroll-progress) * 100%), calc(100% - 58px));
+  color: #f68a58;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: eco-admin-payroll-accrual 520ms 220ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.eco-admin-payroll__scale-ends { margin-top: 29px; }
+
+.eco-admin-payroll__toggle {
+  display: flex;
+  width: 100%;
+  min-height: 62px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  background: #1c1c1c;
+  padding: 11px 18px;
+  color: #f2eee8;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.eco-admin-payroll__toggle:hover { background: #232323; }
+.eco-admin-payroll__toggle > span:first-child { display: grid; gap: 3px; }
+.eco-admin-payroll__toggle b { font-size: 13px; }
+.eco-admin-payroll__toggle small { color: #8f8f8f; font-size: 11px; }
+
+.eco-admin-payroll__toggle-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #c4c0ba;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eco-admin-payroll__toggle-action svg,
+.eco-admin-payroll__row > svg { transition: transform 180ms ease; }
+
+.eco-admin-payroll__toggle[aria-expanded="true"] .eco-admin-payroll__toggle-action svg,
+.eco-admin-payroll__row[aria-expanded="true"] > svg { transform: rotate(180deg); }
+
+.eco-admin-payroll__details {
+  display: none;
+  border-top: 1px solid #323232;
+}
+
+.eco-admin-payroll__details.is-open {
+  display: block;
+}
+
+.eco-admin-payroll__details > div {
+  animation: eco-admin-payroll-details-in 190ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.eco-admin-payroll__list {
+  display: grid;
+  max-height: 480px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.eco-admin-payroll__entry + .eco-admin-payroll__entry { border-top: 1px solid #303030; }
+
+.eco-admin-payroll__row {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  grid-template-columns: 70px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 11px;
+  border: 0;
+  background: #171717;
+  padding: 9px 18px;
+  color: #f3f0eb;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.eco-admin-payroll__row:hover,
+.eco-admin-payroll__entry.is-open .eco-admin-payroll__row { background: #212121; }
+.eco-admin-payroll__row time { color: #989898; font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.eco-admin-payroll__row > span { display: grid; min-width: 0; gap: 3px; }
+.eco-admin-payroll__row b,
+.eco-admin-payroll__row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-admin-payroll__row b { color: #f1eee9; font-size: 12px; }
+.eco-admin-payroll__row small { color: #8e8e8e; font-size: 11px; }
+.eco-admin-payroll__row > strong { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eco-admin-payroll__row > svg { color: #797979; }
+
+.eco-admin-payroll__breakdown {
+  border-top: 1px solid #333;
+  background: #202020;
+  padding: 5px 18px 12px 99px;
+}
+
+.eco-admin-payroll__breakdown > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.eco-admin-payroll__breakdown > div + div { border-top: 1px solid #343434; }
+.eco-admin-payroll__breakdown > div > span { display: grid; min-width: 0; gap: 3px; }
+.eco-admin-payroll__breakdown b { color: #e8e4de; font-size: 11.5px; }
+
+.eco-admin-payroll__breakdown small,
+.eco-admin-payroll__breakdown p { color: #898989; font-size: 10.5px; line-height: 1.4; }
+.eco-admin-payroll__breakdown p { margin: 10px 0; }
+.eco-admin-payroll__breakdown > div > strong { flex: 0 0 auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.eco-admin-payroll__breakdown footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid #3b3b3b;
+  padding-top: 11px;
+  color: #b9b5af;
+  font-size: 11px;
+}
+
+.eco-admin-payroll__breakdown footer > span b { margin-left: 5px; color: #f3f0ea; }
+.eco-admin-payroll__breakdown footer a { display: inline-flex; align-items: center; gap: 4px; color: #f18451; font-weight: 750; text-decoration: none; }
+
+.eco-admin-payroll__state {
+  display: grid;
+  gap: 5px;
+  margin: 14px 18px;
+  border: 1px solid #393939;
+  border-radius: 6px;
+  background: #202020;
+  padding: 14px;
+}
+
+.eco-admin-payroll__state strong { font-size: 13px; }
+.eco-admin-payroll__state span { color: #989898; font-size: 11px; line-height: 1.4; }
+.eco-admin-payroll__state.is-error { border-color: #783c31; background: #2b1b18; }
+.eco-admin-payroll__state button { width: fit-content; border: 0; background: transparent; padding: 3px 0 0; color: #f18451; cursor: pointer; font: 750 11px/1 Inter, "Open Sans", Roboto, Arial, sans-serif; }
+.eco-admin-payroll__inline-error { margin: 0; border-bottom: 1px solid #4b372f; background: #2b221e; padding: 9px 18px; color: #e9b29a; font-size: 11px; }
+
+.eco-admin-payroll__skeleton {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  min-height: 236px;
+  background: #323232;
+}
+
+.eco-admin-payroll__skeleton span { background: #222; animation: eco-admin-payroll-skeleton 900ms ease-in-out infinite alternate; }
+.eco-admin-payroll__skeleton span:last-child { grid-column: 1 / -1; min-height: 72px; }
+
+.eco-admin-day-notice,
+.eco-admin-day-shift {
+  border: 1px solid var(--ops-warning-tint2);
+  border-radius: 6px;
+  background: var(--ops-warning-tint);
+  color: var(--ops-warning);
+}
+
+.eco-admin-day-notice { padding: 10px 13px; font-size: 12px; }
+
+.eco-admin-day-shift {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 15px;
+}
+
+.eco-admin-day-shift > div { display: grid; gap: 3px; }
+.eco-admin-day-shift strong { color: #743d08; font-size: 13px; }
+.eco-admin-day-shift span { color: #8a591d; font-size: 11.5px; }
+
+.eco-admin-day-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.eco-admin-day-section { min-width: 0; }
+.eco-admin-day-section.is-journal { grid-column: 1 / -1; }
+.eco-admin-day-section .eco-ops-statstrip { border-bottom: 1px solid var(--ops-line); }
+
+.eco-admin-day-list {
+  display: grid;
+  max-height: 392px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.eco-admin-day-row {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 64px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 14px;
+  color: var(--ops-ink);
+  text-decoration: none;
+}
+
+.eco-admin-day-row + .eco-admin-day-row { border-top: 1px solid var(--ops-line); }
+.eco-admin-day-row:hover { background: var(--ops-hover); }
+.eco-admin-day-row time { color: var(--ops-ink2); font: 800 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.eco-admin-day-row__copy { display: grid; min-width: 0; gap: 3px; }
+.eco-admin-day-row__copy b,
+.eco-admin-day-row__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eco-admin-day-row__copy b { color: var(--ops-ink); font-size: 12.5px; font-weight: 750; }
+.eco-admin-day-row__copy small { color: var(--ops-muted); font-size: 11px; }
+.eco-admin-day-row > svg { color: var(--ops-faint); }
+.eco-admin-day-row.is-window { background: #f6fbf7; }
+.eco-admin-day-row.is-case { grid-template-columns: 30px minmax(0, 1fr) auto 18px; }
+
+.eco-admin-day-avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ops-deep);
+  color: var(--ops-ink3);
+  font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.eco-admin-day-deadline { color: var(--ops-muted); font: 700 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.eco-admin-day-deadline.is-over { color: var(--ops-danger); }
+.eco-admin-day-row.is-shipment { grid-template-columns: 64px minmax(0, 1fr) auto auto 18px; }
+.eco-admin-day-amount { color: var(--ops-ink); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@keyframes eco-admin-payroll-track-in {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(var(--admin-payroll-progress)); }
+}
+
+@keyframes eco-admin-payroll-accrual {
+  from { opacity: 0; transform: translate(-50%, 7px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes eco-admin-payroll-details-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes eco-admin-payroll-skeleton {
+  from { background: #202020; }
+  to { background: #292929; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-admin-payroll__track > span,
+  .eco-admin-payroll__track em,
+  .eco-admin-payroll__details > div,
+  .eco-admin-payroll__skeleton span { animation: none; }
+
+  .eco-admin-payroll__toggle-action svg,
+  .eco-admin-payroll__row > svg { transition: none; }
+}
+
+@media (max-width: 900px) {
+  .eco-admin-day-sections { grid-template-columns: 1fr; }
+  .eco-admin-day-section.is-journal { grid-column: auto; }
+}
+
+@media (max-width: 720px) {
+  .eco-ops-dashboard.eco-admin-day-center {
+    width: 100%;
+    gap: 10px;
+    padding: 12px 10px calc(24px + env(safe-area-inset-bottom));
+    background: var(--ops-bg);
+  }
+
+  .eco-admin-day-head { align-items: flex-start; padding: 2px 2px 4px; }
+  .eco-admin-day-head h1 { font-size: 24px; }
+  .eco-admin-day-refresh { width: 36px; flex: 0 0 36px; padding: 0; justify-content: center; }
+  .eco-admin-day-refresh span { display: none; }
+  .eco-admin-payroll__head { min-height: 60px; padding: 12px 13px; }
+  .eco-admin-payroll__title h2 { font-size: 14px; }
+  .eco-admin-payroll__metrics > div { min-height: 108px; padding: 16px 14px; }
+  .eco-admin-payroll__metrics strong { font-size: clamp(24px, 8vw, 34px); }
+  .eco-admin-payroll__scale { padding: 15px 14px 14px; }
+  .eco-admin-payroll__toggle { padding: 10px 13px; }
+
+  .eco-admin-payroll__row {
+    grid-template-columns: 50px minmax(0, 1fr) 16px;
+    gap: 8px;
+    padding: 9px 13px;
+  }
+
+  .eco-admin-payroll__row > strong { grid-column: 2; color: #f18451; }
+  .eco-admin-payroll__row > svg { grid-column: 3; grid-row: 1; }
+  .eco-admin-payroll__breakdown { padding: 5px 13px 12px 71px; }
+  .eco-admin-day-shift { align-items: stretch; flex-direction: column; }
+  .eco-admin-day-shift > :last-child { width: 100%; }
+  .eco-admin-day-sections { gap: 10px; }
+  .eco-admin-day-section .eco-ops-card-head { padding-inline: 12px; }
+
+  .eco-admin-day-row,
+  .eco-admin-day-row.is-case,
+  .eco-admin-day-row.is-shipment {
+    grid-template-columns: 50px minmax(0, 1fr) 16px;
+    align-items: start;
+    gap: 7px;
+    padding: 10px 12px;
+  }
+
+  .eco-admin-day-row > svg { grid-column: 3; grid-row: 1; }
+  .eco-admin-day-row > .eco-ops-badge,
+  .eco-admin-day-deadline,
+  .eco-admin-day-amount { grid-column: 2; justify-self: start; }
+  .eco-admin-day-avatar { grid-column: 1; grid-row: 1 / span 2; }
+}
+
+@media (max-width: 480px) {
+  .eco-admin-payroll__metrics { grid-template-columns: 1fr; }
+  .eco-admin-payroll__metrics > div { min-height: 94px; }
+  .eco-admin-payroll__metrics > div + div { border-top: 1px solid #323232; border-left: 0; }
+  .eco-admin-payroll__status { display: none; }
+  .eco-admin-payroll__breakdown { padding-left: 13px; }
+  .eco-admin-payroll__breakdown footer { align-items: flex-start; flex-direction: column; }
 }

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { prisma } from "@/lib/db";
 import { vehicleFieldValues, type NormalizedVehicleIdentity } from "@/lib/vehicle-identity";
 
@@ -28,7 +28,7 @@ function isAttribute(value: unknown): value is Attribute {
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireApiSessionWithShift();
+  const access = await requireApiSessionWithCashShift();
   if (!access.ok) return access.response;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Передайте отгрузку и найденный автомобиль" }, { status: 400 });

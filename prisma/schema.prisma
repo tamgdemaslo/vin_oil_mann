@@ -248,7 +248,9 @@ model BranchStockTransferItem {
   @@map("branch_stock_transfer_items")
 }
 
-model Shift {
+/// Архив старых операционных рабочих смен. Новые записи не создаются;
+/// доступ к операциям определяется только кассовой сменой.
+model LegacyWorkShift {
   id                   String    @id @default(cuid())
   branchId             String    @default("branch-main") @map("branch_id")
   userLogin            String

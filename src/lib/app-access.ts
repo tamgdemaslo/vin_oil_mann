@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getCurrentShift as getCurrentCashShift } from "@/lib/cashbox";
-import { getCurrentShift } from "@/lib/shifts";
-import { hasActiveShiftAccess } from "@/lib/active-shift-access";
+import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
 
 export async function requireAuthenticatedSession(from: string) {
   const session = await getSession();
@@ -10,15 +9,14 @@ export async function requireAuthenticatedSession(from: string) {
   return session;
 }
 
-export async function requireActiveShiftAccess(from: string) {
+export async function requireOpenCashShiftAccess(from: string) {
   const session = await requireAuthenticatedSession(from);
   if (session.user.role === "owner") return session;
 
-  const currentShift = await getCurrentShift(session.user.login);
   const currentCashShift = await getCurrentCashShift();
-  if (hasActiveShiftAccess(session.user.role, currentShift, currentCashShift)) {
+  if (hasOpenCashShiftAccess(session.user.role, currentCashShift)) {
     return session;
   }
 
-  redirect(session.user.role === "admin" ? "/cash?needShift=1" : "/?needShift=1");
+  redirect(session.user.role === "admin" ? "/cash?needCashShift=1" : "/?needCashShift=1");
 }

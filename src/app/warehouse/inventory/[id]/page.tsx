@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { requireActiveShiftAccess } from "@/lib/app-access";
+import { requireOpenCashShiftAccess } from "@/lib/app-access";
 import WarehouseInventoryClient from "../WarehouseInventoryClient";
 
 type PageProps = {
@@ -8,7 +8,7 @@ type PageProps = {
 
 export default async function WarehouseInventoryDetailPage({ params }: PageProps) {
   const { id } = await params;
-  await requireActiveShiftAccess(`/warehouse/inventory/${id}`);
+  await requireOpenCashShiftAccess(`/warehouse/inventory/${id}`);
   return (
     <main className="eco-page eco-page--wide">
       <Suspense fallback={null}>

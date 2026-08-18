@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { getRequestTenant, type RequestTenant } from "./request-tenant-store";
 
 const BRANCH_SCOPED_MODELS = new Set([
-  "Shift", "ShiftRate", "PieceworkRule", "BonusPenalty", "PayrollAdjustment", "PayrollPayment",
+  "LegacyWorkShift", "ShiftRate", "PieceworkRule", "BonusPenalty", "PayrollAdjustment", "PayrollPayment",
   "ChangeLog", "ScheduledWorkingDay", "PayrollGoal", "PayrollAchievementDefinition",
   "PayrollAchievementAward", "EmployeeRecognition", "PayrollTeamGoal", "EmployeeMotivationSettings",
   "PayrollPeriod", "PayrollPeriodEmployee", "PayrollAccrualLine", "VehicleLookupCache",

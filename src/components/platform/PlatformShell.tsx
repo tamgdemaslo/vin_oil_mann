@@ -37,12 +37,6 @@ type PlatformUser = {
   role?: "owner" | "admin" | "master";
 } | null;
 
-type CurrentShift = {
-  id: string;
-  startedAt?: string;
-  shiftDate?: string;
-} | null;
-
 type CurrentCashShift = {
   id: string;
   status: "open" | "closed";
@@ -103,7 +97,7 @@ type PlatformNavItem = {
   disabled?: boolean;
   disabledReason?: string;
   requiresBranch?: boolean;
-  requiresShift?: boolean;
+  requiresCashShift?: boolean;
 };
 
 type PlatformNavSection = {
@@ -139,7 +133,7 @@ type PlatformSearchResult = {
   kind: "section" | "search";
 };
 
-const SHIFT_EVENT = "eco-shift-changed";
+const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
 const NAV_ICONS: Record<string, ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
   home: Home,
@@ -247,7 +241,6 @@ export default function PlatformShell() {
   const router = useRouter();
   const [user, setUser] = useState<PlatformUser>(null);
   const [navigation, setNavigation] = useState<PlatformNavigation | null>(null);
-  const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
   const [branches, setBranches] = useState<ShellBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState("");
@@ -279,7 +272,7 @@ export default function PlatformShell() {
       try {
         const [sessionRes, dashboardBundle] = await Promise.all([
           fetch("/api/auth/session", { cache: "no-store" }),
-          loadDashboardClientBundle<{ notificationCounts?: NotificationCounts }, CurrentShift, { shift?: CurrentCashShift }>({ force }).catch(() => null),
+          loadDashboardClientBundle<{ notificationCounts?: NotificationCounts }, { shift?: CurrentCashShift }>({ force }).catch(() => null),
         ]);
         const sessionData = await safeReadJson<{
           user?: PlatformUser;
@@ -289,7 +282,6 @@ export default function PlatformShell() {
         if (cancelled) return;
         setUser(sessionData?.user ?? null);
         setNavigation(sessionData?.navigation ?? null);
-        setCurrentShift(dashboardBundle?.shift ?? null);
         setCurrentCashShift(dashboardBundle?.cash?.shift ?? null);
         setNotificationCounts(dashboardBundle?.dashboard.notificationCounts ?? null);
         const branchContext = sessionData?.branchContext ?? null;
@@ -301,7 +293,6 @@ export default function PlatformShell() {
         if (cancelled) return;
         setUser(null);
         setNavigation(null);
-        setCurrentShift(null);
         setCurrentCashShift(null);
         setNotificationCounts(null);
         setBranches([]);
@@ -315,10 +306,10 @@ export default function PlatformShell() {
 
     void loadShellState();
     const handleShiftChanged = () => void loadShellState(true);
-    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     return () => {
       cancelled = true;
-      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+      window.removeEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     };
   }, [pathname]);
 
@@ -408,10 +399,10 @@ export default function PlatformShell() {
   }, []);
 
   const effectiveRole = navigation?.effectiveRole ?? user?.role;
-  const needsShift = !!user && ["admin", "master", "administrator", "mechanic"].includes(effectiveRole ?? "");
-  const hasAnyActiveShift = !!currentShift || currentCashShift?.status === "open";
+  const needsCashShift = !!user && ["admin", "master", "administrator", "mechanic"].includes(effectiveRole ?? "");
+  const hasOpenCashShift = currentCashShift?.status === "open";
   const allBranchesMode = selectedBranchId === "all";
-  const locked = needsShift && !hasAnyActiveShift;
+  const locked = needsCashShift && !hasOpenCashShift;
   const operationalLocked = locked || allBranchesMode;
 
   const navSections = useMemo<PlatformNavSection[]>(
@@ -419,11 +410,11 @@ export default function PlatformShell() {
       ...section,
       icon: NAV_ICONS[section.id] ?? Settings,
       items: section.items.map((navItem) => {
-        const shiftDisabled = Boolean(navItem.requiresShift && locked);
+        const shiftDisabled = Boolean(navItem.requiresCashShift && locked);
         return {
           ...navItem,
           disabled: Boolean(navItem.disabled || shiftDisabled),
-          disabledReason: shiftDisabled ? "Рабочий раздел откроется после начала смены" : navItem.disabledReason,
+          disabledReason: shiftDisabled ? "Рабочий раздел откроется после открытия кассовой смены" : navItem.disabledReason,
         };
       }),
     })),
@@ -540,7 +531,7 @@ export default function PlatformShell() {
 
   async function handleBranchChange(id: string) {
     if (!id || id === selectedBranchId || branchSwitching) return;
-    if (hasAnyActiveShift && !window.confirm("У вас есть незакрытая смена. Всё равно переключить филиал?")) return;
+    if (hasOpenCashShift && !window.confirm("В филиале открыта кассовая смена. Всё равно переключить филиал?")) return;
     setBranchSwitching(true);
     try {
       const response = await fetch("/api/session/active-branch", {
@@ -593,13 +584,11 @@ export default function PlatformShell() {
 
   if (shouldHideShell(pathname)) return null;
 
-  const shiftLabel = loading
-    ? "Проверяем смену"
-    : hasAnyActiveShift
-      ? currentShift
-        ? `Рабочая смена активна${formatTime(currentShift.startedAt) ? ` с ${formatTime(currentShift.startedAt)}` : ""}`
-        : `Кассовая смена активна${formatTime(currentCashShift?.openedAt) ? ` с ${formatTime(currentCashShift?.openedAt)}` : ""}`
-      : "Смена не начата";
+  const cashShiftLabel = loading
+    ? "Проверяем кассовую смену"
+    : hasOpenCashShift
+      ? `Кассовая смена активна${formatTime(currentCashShift?.openedAt) ? ` с ${formatTime(currentCashShift?.openedAt)}` : ""}`
+      : "Кассовая смена закрыта";
   const context = routeContext(pathname);
   const activeBranch = selectedBranch?.id === selectedBranchId
     ? selectedBranch
@@ -923,8 +912,8 @@ export default function PlatformShell() {
       {user && (
         <div className="platform-shell__substrip">
           <div className="platform-shell__shift">
-            <EcoStatusDot tone={hasAnyActiveShift ? "success" : locked ? "warning" : "neutral"} pulse={hasAnyActiveShift} />
-            <span>{shiftLabel}</span>
+            <EcoStatusDot tone={hasOpenCashShift ? "success" : locked ? "warning" : "neutral"} pulse={hasOpenCashShift} />
+            <span>{cashShiftLabel}</span>
           </div>
           <span className="platform-shell__sub-sep" />
           <div className="platform-shell__sub-context">
@@ -939,7 +928,7 @@ export default function PlatformShell() {
           <div className="grow" />
           {allBranchesMode
             ? <span className="platform-shell__lock-note">Обзор без создания операционных документов.</span>
-            : locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после начала смены.</span>}
+            : locked && <span className="platform-shell__lock-note">Рабочие разделы откроются после открытия кассовой смены.</span>}
           <span className="platform-shell__version">internal · live data</span>
         </div>
       )}

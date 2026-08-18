@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-identity";
 import { normalizeMannSearchText } from "@/lib/mann-catalog";
 
@@ -25,7 +25,7 @@ const schema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const access = await requireApiSessionWithShift();
+  const access = await requireApiSessionWithCashShift();
   if (!access.ok) return access.response;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Проверьте параметры сопоставления" }, { status: 400 });

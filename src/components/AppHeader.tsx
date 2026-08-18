@@ -6,12 +6,11 @@ import { usePathname } from "next/navigation";
 import { safeReadJson } from "@/lib/http-json";
 
 type User = { login: string; name: string; role?: "owner" | "admin" | "master" } | null;
-type CurrentShift = { id: string } | null;
 type CurrentCashShift = { id: string; status: "open" | "closed" } | null;
 type NavItem = { href: string; label: string; description?: string; disabled?: boolean };
 type NavSection = { id: string; href: string; label: string; disabled?: boolean; items: NavItem[] };
 
-const SHIFT_EVENT = "eco-shift-changed";
+const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -27,7 +26,6 @@ function roleLabel(role?: "owner" | "admin" | "master") {
 export default function AppHeader() {
   const pathname = usePathname();
   const [user, setUser] = useState<User>(null);
-  const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
   const [loading, setLoading] = useState(true);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
@@ -43,25 +41,21 @@ export default function AppHeader() {
     async function loadHeaderState() {
       setLoading(true);
       try {
-        const [sessionRes, shiftRes, cashRes] = await Promise.all([
+        const [sessionRes, cashRes] = await Promise.all([
           fetch("/api/auth/session"),
-          fetch("/api/shifts/current", { cache: "no-store" }),
           fetch("/api/cash", { cache: "no-store" }),
         ]);
         const sessionRaw = await safeReadJson<{ user?: User }>(sessionRes);
         const sessionData = sessionRaw ?? { user: undefined };
-        const shiftData = shiftRes.ok ? (await safeReadJson<{ id: string }>(shiftRes)) ?? null : null;
         const cashData = cashRes.ok
           ? (await safeReadJson<{ shift?: CurrentCashShift }>(cashRes)) ?? null
           : null;
         if (cancelled) return;
         setUser(sessionData.user ?? null);
-        setCurrentShift(shiftData ?? null);
         setCurrentCashShift(cashData?.shift ?? null);
       } catch {
         if (cancelled) return;
         setUser(null);
-        setCurrentShift(null);
         setCurrentCashShift(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -72,10 +66,10 @@ export default function AppHeader() {
     const handleShiftChanged = () => {
       void loadHeaderState();
     };
-    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     return () => {
       cancelled = true;
-      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+      window.removeEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     };
   }, [pathname]);
 
@@ -104,9 +98,9 @@ export default function AppHeader() {
     }, 220);
   }
 
-  const needsShift = !!user && (user.role === "admin" || user.role === "master");
-  const hasAnyActiveShift = !!currentShift || currentCashShift?.status === "open";
-  const locked = needsShift && !hasAnyActiveShift;
+  const needsCashShift = !!user && (user.role === "admin" || user.role === "master");
+  const hasOpenCashShift = currentCashShift?.status === "open";
+  const locked = needsCashShift && !hasOpenCashShift;
   const canAccessCash = user?.role === "owner" || user?.role === "admin";
   const canAccessCrm = user?.role === "owner" || user?.role === "admin";
 
@@ -622,7 +616,7 @@ export default function AppHeader() {
 
         {user && locked && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-            Для администратора и мастера рабочие разделы открываются после начала смены.
+            Рабочие разделы откроются после открытия кассовой смены.
           </div>
         )}
       </div>

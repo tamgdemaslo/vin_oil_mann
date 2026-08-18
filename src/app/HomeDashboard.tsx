@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  Banknote,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   Gauge,
   MessageCircle,
@@ -13,8 +15,7 @@ import {
   Wrench,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import ShiftButton, { type ShiftButtonCashShift, type ShiftButtonShift } from "@/components/ShiftButton";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import MyPayrollCard, { type EmployeePayrollData, type EmployeePayrollPeriod } from "@/components/dashboard/MyPayrollCard";
 import { type EcoBadgeTone } from "@/components/platform/EcoUI";
 import { loadDashboardClientBundle } from "@/lib/dashboard-client";
@@ -22,8 +23,11 @@ import type { DashboardVariant } from "@/lib/dashboard-variant";
 import { SERVICE_TIME_ZONE, formatServiceDayMonth, formatServiceTime } from "@/lib/date-time";
 
 type UserRole = "owner" | "admin" | "master";
-type CurrentShift = ShiftButtonShift;
-type CurrentCashShift = ShiftButtonCashShift;
+type CurrentCashShift = {
+  id: string;
+  status: "open" | "closed";
+  openedAt?: string;
+} | null;
 type NotificationUrgency = "urgent" | "today" | "soon" | "info";
 type DashboardLoadState = "loading" | "ready" | "refreshing" | "partial" | "stale" | "error";
 type EmployeePayrollQuery = { period: EmployeePayrollPeriod; dateFrom?: string; dateTo?: string };
@@ -180,7 +184,7 @@ type DashboardData = {
   documents: Array<{ id: string; type: string; name: string; date: string; sumCents: number; href: string }>;
 };
 
-const SHIFT_EVENT = "eco-shift-changed";
+const CASH_SHIFT_EVENT = "eco-cash-shift-changed";
 
 function formatMoneyCents(amountCents: number) {
   return `${new Intl.NumberFormat("ru-RU").format(Math.round(amountCents / 100))} ₽`;
@@ -696,24 +700,447 @@ function MobileWorkRow({ slot }: { slot: ScheduleTimelineItem }) {
   );
 }
 
+function payrollDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date);
+}
+
+function shipmentWord(value: number) {
+  const mod100 = Math.abs(value) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 > 10 && mod100 < 20) return "отгрузок";
+  if (mod10 === 1) return "отгрузка";
+  if (mod10 > 1 && mod10 < 5) return "отгрузки";
+  return "отгрузок";
+}
+
+function useAnimatedCents(value: number) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const previousValueRef = useRef(0);
+
+  useEffect(() => {
+    const from = previousValueRef.current;
+    previousValueRef.current = value;
+    if (from === value) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const reducedMotionFrame = window.requestAnimationFrame(() => setDisplayValue(value));
+      return () => window.cancelAnimationFrame(reducedMotionFrame);
+    }
+
+    let frame = 0;
+    const startedAt = performance.now();
+    const duration = 520;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      setDisplayValue(Math.round(from + (value - from) * eased));
+      if (progress < 1) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [value]);
+
+  return displayValue;
+}
+
+function AdminPayrollOverview({
+  data,
+  loading,
+  error,
+  onRefresh,
+}: {
+  data: EmployeePayrollData | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const todayCents = useAnimatedCents(data?.today.earnedCents ?? 0);
+  const weekCents = useAnimatedCents(data?.summary.earnedCents ?? 0);
+  const selectedItem = useMemo(
+    () => data?.items.find((item) => item.id === selectedItemId) ?? null,
+    [data?.items, selectedItemId]
+  );
+  const ratio = data?.summary.earnedCents
+    ? Math.min(1, Math.max(0, data.today.earnedCents / data.summary.earnedCents))
+    : 0;
+  const progressStyle = { "--admin-payroll-progress": ratio } as CSSProperties;
+
+  return (
+    <section className="eco-admin-payroll" aria-busy={loading}>
+      <header className="eco-admin-payroll__head">
+        <div className="eco-admin-payroll__title">
+          <span className="eco-admin-payroll__icon" aria-hidden><Banknote size={19} /></span>
+          <div>
+            <span>Моя зарплата</span>
+            <h2>Начисления за рабочую неделю</h2>
+          </div>
+        </div>
+        {data && (
+          <span className={`eco-admin-payroll__status ${data.status === "CONFIRMED" ? "is-confirmed" : ""}`}>
+            {data.status === "CONFIRMED" ? "Подтверждено" : "Предварительно"}
+          </span>
+        )}
+      </header>
+
+      {error && !data ? (
+        <div className="eco-admin-payroll__state is-error" role="alert">
+          <strong>Не удалось загрузить начисления</strong>
+          <span>{error}</span>
+          <button type="button" onClick={onRefresh}>Повторить</button>
+        </div>
+      ) : !data ? (
+        <div className="eco-admin-payroll__skeleton" aria-label="Загружаем начисления">
+          <span /><span /><span />
+        </div>
+      ) : (
+        <>
+          {error && <p className="eco-admin-payroll__inline-error">Не удалось обновить расчёт. Показаны последние загруженные данные.</p>}
+          <div className="eco-admin-payroll__metrics">
+            <div className="is-today">
+              <span>За сегодня</span>
+              <strong aria-label={formatMoneyCents(data.today.earnedCents)}>{formatMoneyCents(todayCents)}</strong>
+              <small>{formatCount(data.today.shipmentCount)} {shipmentWord(data.today.shipmentCount)} с начислением</small>
+            </div>
+            <div>
+              <span>С начала недели</span>
+              <strong aria-label={formatMoneyCents(data.summary.earnedCents)}>{formatMoneyCents(weekCents)}</strong>
+              <small>{payrollDateLabel(data.period.from)} — {payrollDateLabel(data.period.to)}</small>
+            </div>
+          </div>
+
+          <div className="eco-admin-payroll__scale" style={progressStyle}>
+            <div className="eco-admin-payroll__scale-copy">
+              <span>Сегодня в заработке недели</span>
+              <strong>{data.summary.earnedCents > 0 ? `${Math.round(ratio * 100)}%` : "Пока нет начислений"}</strong>
+            </div>
+            <div className="eco-admin-payroll__track" aria-hidden>
+              <span />
+              {data.today.earnedCents > 0 && (
+                <em key={`${data.lastUpdatedAt}-${data.today.earnedCents}`}>+{formatMoneyCents(data.today.earnedCents)}</em>
+              )}
+            </div>
+            <div className="eco-admin-payroll__scale-ends">
+              <span>Понедельник</span>
+              <span>Сегодня</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="eco-admin-payroll__toggle"
+            aria-expanded={detailsOpen}
+            aria-controls="admin-payroll-details"
+            onClick={() => setDetailsOpen((current) => !current)}
+          >
+            <span>
+              <b>Из чего сложилась сумма</b>
+              <small>{formatCount(data.summary.shipmentCount)} {shipmentWord(data.summary.shipmentCount)} за неделю</small>
+            </span>
+            <span className="eco-admin-payroll__toggle-action">
+              {detailsOpen ? "Скрыть" : "Показать"}
+              <ChevronDown aria-hidden size={17} />
+            </span>
+          </button>
+
+          <div id="admin-payroll-details" className={`eco-admin-payroll__details ${detailsOpen ? "is-open" : ""}`}>
+            <div>
+              {data.items.length ? (
+                <div className="eco-admin-payroll__list">
+                  {data.items.map((item) => {
+                    const isSelected = selectedItemId === item.id;
+                    return (
+                      <div key={item.id} className={`eco-admin-payroll__entry ${isSelected ? "is-open" : ""}`}>
+                        <button
+                          type="button"
+                          className="eco-admin-payroll__row"
+                          aria-expanded={isSelected}
+                          onClick={() => setSelectedItemId((current) => current === item.id ? null : item.id)}
+                        >
+                          <time>{item.date === data.period.to ? formatTime(item.moment) : payrollDateLabel(item.date)}</time>
+                          <span>
+                            <b>{item.shipmentNumber}</b>
+                            <small>{item.clientName || "Клиент не указан"}</small>
+                          </span>
+                          <strong>{formatMoneyCents(item.earnedCents)}</strong>
+                          <ChevronDown aria-hidden size={17} />
+                        </button>
+                        {isSelected && selectedItem && (
+                          <div className="eco-admin-payroll__breakdown">
+                            {selectedItem.components.length ? selectedItem.components.map((component, index) => (
+                              <div key={`${component.label}-${index}`}>
+                                <span>
+                                  <b>{component.label}</b>
+                                  <small>{component.ruleLabel} · {component.basisLabel}</small>
+                                </span>
+                                <strong>{formatMoneyCents(component.amountCents)}</strong>
+                              </div>
+                            )) : (
+                              <p>Начисление рассчитано итоговой суммой без разбивки на позиции.</p>
+                            )}
+                            <footer>
+                              <span>Итого за заказ <b>{formatMoneyCents(selectedItem.earnedCents)}</b></span>
+                              <Link href={`/shipment/${selectedItem.id}`}>Открыть отгрузку <ChevronRight aria-hidden size={16} /></Link>
+                            </footer>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="eco-admin-payroll__state">
+                  <strong>За неделю пока нет начислений по отгрузкам</strong>
+                  <span>Строки появятся после проведённых отгрузок с настроенными правилами расчёта.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function AdminJournalSection({ dashboard, scheduleItems }: { dashboard: DashboardData; scheduleItems: ScheduleTimelineItem[] }) {
+  return (
+    <Card
+      title="Журнал сегодня"
+      href="/records"
+      action="Весь журнал"
+      badge={<Badge tone={dashboard.appointments.withoutShipment ? "warning" : "neutral"}>{formatCount(dashboard.appointments.totalToday)} записей</Badge>}
+      className="eco-admin-day-section is-journal"
+    >
+      <StatStrip
+        items={[
+          { label: "Всего", value: dashboard.appointments.totalToday },
+          { label: "Подтверждены", value: dashboard.appointments.confirmedToday },
+          { label: "Без отгрузки", value: dashboard.appointments.withoutShipment, tone: dashboard.appointments.withoutShipment ? "warning" : "muted" },
+          { label: "Свободные окна", value: dashboard.appointments.freeWindows.length },
+        ]}
+        dense
+      />
+      {scheduleItems.length ? (
+        <div className="eco-admin-day-list">
+          {scheduleItems.slice(0, 7).map((slot) => slot.kind === "window" ? (
+            <Link key={slot.key} href={recordCreateHref()} className="eco-admin-day-row is-window">
+              <time>{formatClockMinutes(slot.start)}</time>
+              <span className="eco-admin-day-row__copy">
+                <b>Свободное окно</b>
+                <small>{slot.label} · можно записать клиента</small>
+              </span>
+              <Badge tone="success">Свободно</Badge>
+              <ChevronRight aria-hidden size={17} />
+            </Link>
+          ) : (
+            <Link key={slot.key} href={recordHref(slot.item)} className="eco-admin-day-row">
+              <time>{slot.item.time || "—"}</time>
+              <span className="eco-admin-day-row__copy">
+                <b>{slot.item.client}</b>
+                <small>{[slot.item.vehicle || "авто не указано", slot.item.service].filter(Boolean).join(" · ")}</small>
+              </span>
+              <Badge tone={appointmentTone(slot.item.status)}>{slot.item.status || "Запланирована"}</Badge>
+              <ChevronRight aria-hidden size={17} />
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Записей на сегодня нет" hint="Создайте запись или добавьте свободное окно в журнале." />
+      )}
+    </Card>
+  );
+}
+
+function AdminCasesSection({ dashboard, now }: { dashboard: DashboardData; now: number | null }) {
+  const crm = dashboard.crm;
+  return (
+    <Card
+      title="Дела клиентов"
+      href="/crm?filter=today"
+      action="Все дела"
+      badge={<Badge tone={crm?.overdue ? "warning" : "neutral"}>{formatCount(crm?.overdue ?? 0)} просрочено</Badge>}
+      className="eco-admin-day-section is-cases"
+    >
+      {crm ? (
+        <>
+          <StatStrip
+            items={[
+              { label: "Сегодня", value: crm.today },
+              { label: "Просрочено", value: crm.overdue, tone: crm.overdue ? "warning" : "muted" },
+              { label: "Перезвонить", value: crm.callback },
+            ]}
+            dense
+          />
+          {crm.rows.length ? (
+            <div className="eco-admin-day-list">
+              {crm.rows.slice(0, 6).map((item) => (
+                <Link key={item.id} href={crmHref(item)} className="eco-admin-day-row is-case">
+                  <span className="eco-admin-day-avatar" aria-hidden>{initials(item.responsible)}</span>
+                  <span className="eco-admin-day-row__copy">
+                    <b>{item.client}</b>
+                    <small>{item.title}</small>
+                  </span>
+                  <span className={`eco-admin-day-deadline ${item.deadline && new Date(item.deadline).getTime() < (now ?? 0) ? "is-over" : ""}`}>
+                    {formatShortDeadline(item.deadline)}
+                  </span>
+                  <ChevronRight aria-hidden size={17} />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="Актуальных дел нет" hint="Сегодняшние и просроченные дела клиентов появятся здесь." />
+          )}
+        </>
+      ) : (
+        <EmptyState title="Дела недоступны" hint="Проверьте доступ к CRM и обновите страницу." />
+      )}
+    </Card>
+  );
+}
+
+function AdminShipmentsSection({ dashboard }: { dashboard: DashboardData }) {
+  return (
+    <Card
+      title="Отгрузки сегодня"
+      href="/shipment"
+      action="Все отгрузки"
+      badge={<Badge tone={dashboard.shipments.unpaid || dashboard.shipments.drafts ? "warning" : "neutral"}>{formatCount(dashboard.shipments.today)} всего</Badge>}
+      className="eco-admin-day-section is-shipments"
+    >
+      <StatStrip
+        items={[
+          { label: "Всего", value: dashboard.shipments.today },
+          { label: "Черновики", value: dashboard.shipments.drafts, tone: dashboard.shipments.drafts ? "warning" : "muted" },
+          { label: "Не оплачены", value: dashboard.shipments.unpaid, tone: dashboard.shipments.unpaid ? "warning" : "muted" },
+        ]}
+        dense
+      />
+      {dashboard.shipments.rows.length ? (
+        <div className="eco-admin-day-list">
+          {dashboard.shipments.rows.slice(0, 7).map((item) => (
+            <Link key={item.id} href={`/shipment/${item.id}`} className="eco-admin-day-row is-shipment">
+              <time>{formatTime(item.moment)}</time>
+              <span className="eco-admin-day-row__copy">
+                <b>{item.name}</b>
+                <small>{item.client || "Клиент не указан"}</small>
+              </span>
+              <Badge tone={item.applicable ? "success" : "warning"}>{item.applicable ? "Проведена" : "Черновик"}</Badge>
+              <strong className="eco-admin-day-amount">{formatMoneyCents(item.sumCents ?? 0)}</strong>
+              <ChevronRight aria-hidden size={17} />
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Отгрузок сегодня нет" hint="Новая отгрузка появится здесь сразу после создания." />
+      )}
+    </Card>
+  );
+}
+
+function AdminDayCenter({
+  userName,
+  dashboard,
+  payroll,
+  payrollError,
+  dashboardError,
+  loadState,
+  loading,
+  refreshing,
+  lastUpdatedAt,
+  scheduleItems,
+  sectionsLocked,
+  needCashShiftNotice,
+  onRefresh,
+}: {
+  userName: string;
+  dashboard: DashboardData | null;
+  payroll: EmployeePayrollData | null;
+  payrollError: string | null;
+  dashboardError: string | null;
+  loadState: DashboardLoadState;
+  loading: boolean;
+  refreshing: boolean;
+  lastUpdatedAt: number | null;
+  scheduleItems: ScheduleTimelineItem[];
+  sectionsLocked: boolean;
+  needCashShiftNotice: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <main className="eco-ops-dashboard eco-admin-day-center" aria-busy={loading || refreshing}>
+      <div className="eco-visually-hidden" role="status" aria-live="polite">
+        {loading ? "Загружаем операционный центр." : refreshing ? "Обновляем операционный центр." : "Операционный центр обновлён."}
+      </div>
+      <header className="eco-admin-day-head">
+        <div>
+          <span className="eco-ops-eyebrow">Рабочий день · {userName}</span>
+          <h1>Операционный центр дня</h1>
+          <p>{todayShortPhrase()}</p>
+        </div>
+        <button type="button" className="eco-admin-day-refresh" onClick={onRefresh} disabled={refreshing}>
+          <RefreshCw aria-hidden size={16} className={refreshing ? "eco-spin" : ""} />
+          <span>{lastUpdatedAt ? `Обновлено ${formatTime(new Date(lastUpdatedAt).toISOString())}` : "Обновить"}</span>
+        </button>
+      </header>
+
+      <AdminPayrollOverview data={payroll} loading={loading || refreshing} error={payrollError} onRefresh={onRefresh} />
+
+      {loadState === "stale" && dashboard && (
+        <div className="eco-admin-day-notice" role="alert">
+          Не удалось обновить рабочие данные. Ниже показана последняя загруженная версия.
+        </div>
+      )}
+
+      {sectionsLocked && (
+        <section id="cash-shift-control" className="eco-admin-day-shift">
+          <div>
+            <strong>Сначала откройте кассовую смену</strong>
+            <span>{needCashShiftNotice ? "Вы вернулись из раздела, доступного только при открытой кассе. " : ""}После открытия появятся журнал, дела клиентов и отгрузки.</span>
+          </div>
+          <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">Открыть кассовую смену</Link>
+        </section>
+      )}
+
+      {!dashboard ? (
+        <section className="eco-admin-day-section eco-ops-card">
+          {dashboardError ? (
+            <ErrorState title="Рабочие данные не загрузились" hint={dashboardError} onRetry={onRefresh} />
+          ) : (
+            <LoadingState rows={5} />
+          )}
+        </section>
+      ) : !sectionsLocked ? (
+        <section className="eco-admin-day-sections" aria-label="Рабочие разделы на сегодня">
+          <AdminJournalSection dashboard={dashboard} scheduleItems={scheduleItems} />
+          <AdminCasesSection dashboard={dashboard} now={lastUpdatedAt} />
+          <AdminShipmentsSection dashboard={dashboard} />
+        </section>
+      ) : null}
+    </main>
+  );
+}
+
 export default function HomeDashboard({
   role,
   userName,
   dashboardVariant,
-  needShiftNotice = false,
+  needCashShiftNotice = false,
 }: {
   role: UserRole;
   userName: string;
   dashboardVariant: DashboardVariant;
-  needShiftNotice?: boolean;
+  needCashShiftNotice?: boolean;
 }) {
   const [loadState, setLoadState] = useState<DashboardLoadState>("loading");
-  const [currentShift, setCurrentShift] = useState<CurrentShift>(null);
   const [currentCashShift, setCurrentCashShift] = useState<CurrentCashShift>(null);
-  const [shiftAvailable, setShiftAvailable] = useState(false);
   const [cashAvailable, setCashAvailable] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [employeePayroll, setEmployeePayroll] = useState<EmployeePayrollData | null>(null);
+  const [adminPayroll, setAdminPayroll] = useState<EmployeePayrollData | null>(null);
+  const [adminPayrollError, setAdminPayrollError] = useState<string | null>(null);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [partialErrors, setPartialErrors] = useState<string[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -722,12 +1149,12 @@ export default function HomeDashboard({
   const employeePayrollQueryRef = useRef<EmployeePayrollQuery>({ period: "today" });
   const mountedRef = useRef(true);
 
-  const isEmployeeDashboard = dashboardVariant === "EMPLOYEE";
-  const needsActiveShift = role === "admin" || role === "master";
-  const hasActiveShift = Boolean(currentShift) || currentCashShift?.status === "open" || dashboard?.cash.status === "open";
-  const shiftStatusKnown = role === "admin" ? cashAvailable || Boolean(dashboard) : shiftAvailable;
-  const sectionsLocked = needsActiveShift && shiftStatusKnown && !hasActiveShift;
-  const shiftStatusUnavailable = needsActiveShift && !shiftStatusKnown;
+  const isEmployeeDashboard = dashboardVariant === "EMPLOYEE" && role !== "admin";
+  const needsOpenCashShift = role === "admin" || role === "master";
+  const hasOpenCashShift = currentCashShift?.status === "open" || dashboard?.cash.status === "open";
+  const cashShiftStatusKnown = cashAvailable || Boolean(dashboard);
+  const sectionsLocked = needsOpenCashShift && cashShiftStatusKnown && !hasOpenCashShift;
+  const cashShiftStatusUnavailable = needsOpenCashShift && !cashShiftStatusKnown;
   const loading = loadState === "loading";
   const refreshing = loadState === "refreshing";
 
@@ -739,32 +1166,42 @@ export default function HomeDashboard({
         const params = new URLSearchParams({ period: employeeQuery.period });
         if (employeeQuery.dateFrom) params.set("dateFrom", employeeQuery.dateFrom);
         if (employeeQuery.dateTo) params.set("dateTo", employeeQuery.dateTo);
-        const [shiftResponse, payrollResponse] = await Promise.all([
-          fetch("/api/shifts/current", { cache: "no-store" }),
-          fetch(`/api/dashboard/my-payroll?${params.toString()}`, { cache: "no-store" }),
-        ]);
+        const payrollResponse = await fetch(`/api/dashboard/my-payroll?${params.toString()}`, { cache: "no-store" });
         const payroll = await readDashboardResponse<EmployeePayrollData>(payrollResponse, "Не удалось загрузить расчёт.");
-        const shift = shiftResponse.ok ? await readDashboardResponse<CurrentShift>(shiftResponse, "Рабочая смена недоступна") : null;
         if (!mountedRef.current) return;
         employeePayrollRef.current = payroll;
         setEmployeePayroll(payroll);
         setDashboard(null);
-        setCurrentShift(shift);
         setCurrentCashShift(null);
-        setShiftAvailable(shiftResponse.ok);
         setCashAvailable(false);
-        setPartialErrors(shiftResponse.ok ? [] : ["Статус рабочей смены временно недоступен."]);
+        setPartialErrors([]);
         setLastUpdatedAt(Date.now());
-        setLoadState(shiftResponse.ok ? "ready" : "partial");
+        setLoadState("ready");
         return;
       }
-      const bundle = await loadDashboardClientBundle<DashboardData, CurrentShift, { shift?: CurrentCashShift }>({ force });
+      const payrollPromise: Promise<{ data: EmployeePayrollData | null; error: string | null }> = role === "admin"
+        ? fetch("/api/dashboard/my-payroll?period=week", { cache: "no-store" })
+            .then((response) => readDashboardResponse<EmployeePayrollData>(response, "Не удалось загрузить начисления."))
+            .then((data) => ({ data, error: null }))
+            .catch((error: unknown) => ({
+              data: null,
+              error: error instanceof Error ? error.message : "Не удалось загрузить начисления.",
+            }))
+        : Promise.resolve({ data: null, error: null });
+      const [bundle, payrollResult] = await Promise.all([
+        loadDashboardClientBundle<DashboardData, { shift?: CurrentCashShift }>({ force }),
+        payrollPromise,
+      ]);
       if (!mountedRef.current) return;
       dashboardRef.current = bundle.dashboard;
       setDashboard(bundle.dashboard);
-      setCurrentShift(bundle.shift);
+      if (role === "admin") {
+        if (payrollResult.data) {
+          setAdminPayroll(payrollResult.data);
+        }
+        setAdminPayrollError(payrollResult.error);
+      }
       setCurrentCashShift(bundle.cash?.shift ?? null);
-      setShiftAvailable(bundle.shiftAvailable);
       setCashAvailable(bundle.cashAvailable);
       setPartialErrors(bundle.partialErrors);
       setLastUpdatedAt(bundle.loadedAt);
@@ -775,7 +1212,7 @@ export default function HomeDashboard({
       setDashboardError(message);
       setLoadState(dashboardRef.current ? "stale" : "error");
     }
-  }, [isEmployeeDashboard]);
+  }, [isEmployeeDashboard, role]);
 
   const changeEmployeePayrollPeriod = useCallback((period: EmployeePayrollPeriod, range?: { dateFrom: string; dateTo: string }) => {
     const next: EmployeePayrollQuery = range ? { period, ...range } : { period };
@@ -789,13 +1226,13 @@ export default function HomeDashboard({
     const handleShiftChanged = () => void loadSummary(true);
     const handleFocus = () => void loadSummary(true);
     const refreshTimer = window.setInterval(() => void loadSummary(true), 60_000);
-    window.addEventListener(SHIFT_EVENT, handleShiftChanged);
+    window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     window.addEventListener("focus", handleFocus);
     return () => {
       mountedRef.current = false;
       window.clearTimeout(initialTimer);
       window.clearInterval(refreshTimer);
-      window.removeEventListener(SHIFT_EVENT, handleShiftChanged);
+      window.removeEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
       window.removeEventListener("focus", handleFocus);
     };
   }, [loadSummary]);
@@ -810,25 +1247,19 @@ export default function HomeDashboard({
     () => buildScheduleTimeline(dashboard?.appointments.rows ?? [], dashboard?.appointments.freeWindows ?? []),
     [dashboard?.appointments.rows, dashboard?.appointments.freeWindows]
   );
-  const shiftStatusLine = loading && !dashboard
+  const cashShiftStatusLine = loading && !dashboard
     ? "Получаем актуальное состояние дня"
-    : shiftStatusUnavailable
-      ? "Статус смены временно недоступен"
+    : cashShiftStatusUnavailable
+      ? "Статус кассовой смены временно недоступен"
       : sectionsLocked
-    ? "Смена не начата · касса закрыта"
+    ? "Кассовая смена закрыта"
     : dashboard?.cash.status === "open"
       ? `Касса открыта${formatTime(dashboard.cash.openedAt) !== "—" ? ` с ${formatTime(dashboard.cash.openedAt)}` : ""}`
-      : currentShift
-        ? "Смена активна · касса закрыта"
-        : role === "owner" ? "Касса закрыта" : "Смена не начата · касса закрыта";
+      : "Касса закрыта";
   const mobilePrimaryAction = !dashboard
     ? null
-    : role === "master"
-      ? sectionsLocked
-        ? { href: "#shift-control", label: "Открыть смену" }
-        : { href: "/shipment?filter=diagnostics", label: "К работам" }
     : sectionsLocked
-    ? { href: role === "admin" ? "/cash#open" : "#shift-control", label: "Открыть смену" }
+    ? { href: role === "admin" ? "/cash#open" : "/", label: "Кассовая смена закрыта" }
     : cashClosed
       ? { href: "/cash#open", label: "Открыть кассу" }
       : { href: "/shipment/new", label: "Новая отгрузка" };
@@ -864,25 +1295,15 @@ export default function HomeDashboard({
   const visibleAttentionItems = attentionItems.slice(0, role === "owner" ? 4 : 5);
   const hiddenAttentionCount = Math.max(0, attentionItems.length - visibleAttentionItems.length);
   const daySignals = dashboard ? [
-    role === "master"
-      ? {
-          id: "shift",
-          label: "Рабочая смена",
-          value: !shiftAvailable ? "Нет данных" : currentShift ? "Активна" : "Не начата",
-          detail: shiftStatusLine,
-          href: "#shift-control",
-          tone: !shiftAvailable ? ("neutral" as const) : currentShift ? ("success" as const) : ("warning" as const),
-          icon: Gauge,
-        }
-      : {
-          id: "cash",
-          label: "Касса / смена",
-          value: dashboard.cash.status === "open" ? "Открыта" : "Закрыта",
-          detail: shiftStatusLine,
-          href: "/cash#cash-state",
-          tone: cashClosed ? ("danger" as const) : cashOpenLong ? ("warning" as const) : ("success" as const),
-          icon: Gauge,
-        },
+    {
+      id: "cash",
+      label: "Кассовая смена",
+      value: dashboard.cash.status === "open" ? "Открыта" : "Закрыта",
+      detail: cashShiftStatusLine,
+      href: "/cash#cash-state",
+      tone: cashClosed ? ("danger" as const) : cashOpenLong ? ("warning" as const) : ("success" as const),
+      icon: Gauge,
+    },
     {
       id: "records",
       label: role === "master" ? "Работы сегодня" : "Журнал",
@@ -930,7 +1351,7 @@ export default function HomeDashboard({
     },
   ] : [];
   const primarySignalId = sectionsLocked
-    ? role === "master" ? "shift" : "cash"
+    ? "cash"
     : daySignals.find((signal) => signal.tone === "danger")?.id ?? "records";
 
   if (isEmployeeDashboard) {
@@ -946,16 +1367,27 @@ export default function HomeDashboard({
           onRefresh={() => void loadSummary(true)}
           onPeriodChange={changeEmployeePayrollPeriod}
         />
-        {role === "master" && (
-          <section id="shift-control" className="eco-ops-shift-card eco-ops-shift-card--shared eco-employee-dashboard__shift">
-            <div>
-              <span className="eco-ops-eyebrow">Текущая рабочая смена</span>
-              <h2>{currentShift ? "Смена активна" : "Нет активной смены"}</h2>
-            </div>
-            <ShiftButton role={role} current={currentShift} currentCashShift={null} loading={!shiftAvailable} />
-          </section>
-        )}
       </main>
+    );
+  }
+
+  if (role === "admin") {
+    return (
+      <AdminDayCenter
+        userName={userName}
+        dashboard={dashboard}
+        payroll={adminPayroll}
+        payrollError={adminPayrollError}
+        dashboardError={dashboardError}
+        loadState={loadState}
+        loading={loading}
+        refreshing={refreshing}
+        lastUpdatedAt={lastUpdatedAt}
+        scheduleItems={scheduleItems}
+        sectionsLocked={sectionsLocked}
+        needCashShiftNotice={needCashShiftNotice}
+        onRefresh={() => void loadSummary(true)}
+      />
     );
   }
 
@@ -967,9 +1399,9 @@ export default function HomeDashboard({
       <section className="eco-mobile-control" aria-label={`Мобильный контроль дня для ${userName}`}>
         <header className="eco-mobile-top">
           <div>
-            <h1>{role === "owner" ? "Контроль владельца" : role === "admin" ? "Рабочий день администратора" : "Моя смена"}</h1>
+            <h1>{role === "owner" ? "Контроль владельца" : "Рабочий день"}</h1>
             <span>{todayShortPhrase()}</span>
-            <small>{shiftStatusLine}</small>
+            <small>{cashShiftStatusLine}</small>
           </div>
           {mobilePrimaryAction ? (
             <Link href={mobilePrimaryAction.href} className="eco-mobile-primary">
@@ -1004,10 +1436,10 @@ export default function HomeDashboard({
         ) : sectionsLocked ? (
           <section className="eco-mobile-card eco-mobile-gate">
             <div className="eco-mobile-card-head">
-              <h2>Сначала откройте смену</h2>
+              <h2>Сначала откройте кассовую смену</h2>
               <span>1 действие</span>
             </div>
-            <p>{needShiftNotice ? "Вы вернулись из раздела, который доступен только во время смены. " : ""}После открытия появятся журнал, работы и операционные показатели.</p>
+            <p>{needCashShiftNotice ? "Вы вернулись из раздела, доступного только при открытой кассе. " : ""}После открытия появятся журнал, работы и операционные показатели.</p>
           </section>
         ) : (
           <>
@@ -1056,7 +1488,7 @@ export default function HomeDashboard({
 
             <section className="eco-mobile-card eco-mobile-report">
               <div className="eco-mobile-card-head">
-                <h2>{role === "owner" ? "Коротко о деньгах" : role === "admin" ? "Коротко о дне" : "Коротко о работах"}</h2>
+                <h2>{role === "owner" ? "Коротко о деньгах" : "Коротко о работах"}</h2>
                 <span>{lastUpdatedAt ? `обновлено ${formatTime(new Date(lastUpdatedAt).toISOString())}` : "актуально"}</span>
               </div>
 
@@ -1073,13 +1505,6 @@ export default function HomeDashboard({
                   <>
                     <MobileReportMetric label="Прибыль" value={formatMoneyCents(dashboard.finance.grossProfitCents)} hint="по проведённым документам" />
                     <MobileReportMetric label="Не оплачено" value={formatMoneyCents(dashboard.finance.unpaidCents)} hint="ожидает оплаты" tone={dashboard.finance.unpaidCents ? "warning" : "neutral"} />
-                  </>
-                )}
-                {role === "admin" && (
-                  <>
-                    <MobileReportMetric label="Записи сегодня" value={formatCount(dashboard.appointments.totalToday)} hint={`${formatCount(dashboard.appointments.withoutShipment)} без отгрузки`} />
-                    <MobileReportMetric label="Ждут ответа" value={formatCount(messages?.needsReply ?? 0)} hint={`${formatCount(messages?.unread ?? 0)} непрочитанных`} tone={messages?.needsReply ? "warning" : "neutral"} />
-                    <MobileReportMetric label="Отгрузки" value={formatCount(dashboard.shipments.today)} hint={`${formatCount(dashboard.shipments.drafts)} черновиков`} tone={dashboard.shipments.drafts ? "warning" : "neutral"} />
                   </>
                 )}
                 {role === "master" && (
@@ -1145,9 +1570,9 @@ export default function HomeDashboard({
           <div className="eco-ops-command-top">
             <div className="eco-ops-command-main">
               <span className="eco-ops-command-context">{SERVICE_ORGANIZATION_LABEL} · {todayShortPhrase()}</span>
-              <h1>{role === "owner" ? "Контроль бизнеса сегодня" : role === "admin" ? "Операционный центр дня" : "Моя рабочая смена"}</h1>
+              <h1>{role === "owner" ? "Контроль бизнеса сегодня" : "Рабочий день"}</h1>
               <p>
-                {role === "owner" ? "Деньги, отклонения и решения по филиалу." : role === "admin" ? "Клиенты, касса и очередь следующих действий." : "Ближайшие работы, отгрузки и незавершённые диагностики."}
+                {role === "owner" ? "Деньги, отклонения и решения по филиалу." : "Ближайшие работы, отгрузки и незавершённые диагностики."}
               </p>
               {lastUpdatedAt && (
                 <span className="eco-ops-updated">Обновлено в {formatTime(new Date(lastUpdatedAt).toISOString())}{refreshing ? " · обновляем…" : ""}</span>
@@ -1155,17 +1580,10 @@ export default function HomeDashboard({
             </div>
             <div className="eco-ops-command-actions">
               {sectionsLocked ? (
-                role === "admin" ? (
-                  <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">
-                    <Play aria-hidden className="eco-icon" />
-                    Открыть смену
-                  </Link>
-                ) : (
-                  <a href="#shift-control" className="eco-ops-btn eco-ops-btn--primary">
-                    <Play aria-hidden className="eco-icon" />
-                    Открыть смену
-                  </a>
-                )
+                <Link href="/cash#open" className="eco-ops-btn eco-ops-btn--primary">
+                  <Play aria-hidden className="eco-icon" />
+                  Открыть кассовую смену
+                </Link>
               ) : null}
               {dashboard && !sectionsLocked && role !== "master" && (
                 <Link href="/shipment/new" className="eco-ops-btn eco-ops-btn--primary">
@@ -1221,12 +1639,12 @@ export default function HomeDashboard({
 
       {dashboard && (sectionsLocked ? (
         <section className="eco-ops-locked">
-          <h2>Откройте рабочую смену, чтобы начать день.</h2>
-          <p>{needShiftNotice ? "Вы вернулись из раздела, доступного только во время смены. " : ""}{role === "admin" ? "После открытия кассы появятся журнал, клиентские дела и отгрузки." : "После открытия смены появятся работы, отгрузки и диагностики."}</p>
+          <h2>Откройте кассовую смену, чтобы начать день.</h2>
+          <p>{needCashShiftNotice ? "Вы вернулись из раздела, доступного только при открытой кассе. " : ""}После открытия кассовой смены появятся работы, отгрузки и диагностики.</p>
         </section>
       ) : (
         <>
-          <section className={`eco-ops-owner-grid ${role !== "owner" ? "is-single" : ""}`} aria-label={role === "owner" ? "Деньги и внимание владельца" : role === "admin" ? "Очередь администратора" : "Очередь работ мастера"}>
+          <section className={`eco-ops-owner-grid ${role !== "owner" ? "is-single" : ""}`} aria-label={role === "owner" ? "Деньги и внимание владельца" : "Очередь работ мастера"}>
             {role === "owner" && dashboard.finance && <section className="eco-ops-finance-panel">
               <header>
                 <div>
@@ -1267,7 +1685,7 @@ export default function HomeDashboard({
               <header>
                 <div>
                   <h2>Требует решения</h2>
-                  <p>{role === "owner" ? "Деньги, клиенты, склад и диагностика по приоритету." : role === "admin" ? "Касса, клиенты и дедлайны по приоритету." : "Записи и диагностики по сроку и влиянию."}</p>
+                  <p>{role === "owner" ? "Деньги, клиенты, склад и диагностика по приоритету." : "Записи и диагностики по сроку и влиянию."}</p>
                 </div>
                 <span>{attentionItems.length ? formatCount(attentionItems.length) : "0"}</span>
               </header>
@@ -1679,15 +2097,6 @@ export default function HomeDashboard({
         </>
       ))}
       </div>
-      {role === "master" && (
-        <section id="shift-control" className={`eco-ops-shift-card eco-ops-shift-card--shared ${sectionsLocked ? "is-required" : ""}`}>
-          <div>
-            <span className="eco-ops-eyebrow">Текущая рабочая смена</span>
-            <h2>{hasActiveShift ? "Смена активна" : "Нет активной смены"}</h2>
-          </div>
-          <ShiftButton role={role} current={currentShift} currentCashShift={currentCashShift} loading={!shiftAvailable} />
-        </section>
-      )}
     </main>
   );
 }

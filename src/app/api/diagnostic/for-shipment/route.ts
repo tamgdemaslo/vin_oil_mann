@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 
 function isMissingDiagnosticSchemaError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -15,7 +15,7 @@ function isMissingDiagnosticSchemaError(error: unknown): boolean {
 
 /** Найти последнюю диагностику по id локальной отгрузки. */
 export async function GET(request: NextRequest) {
-  const gate = await requireApiSessionWithShift();
+  const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
   const shipmentId = request.nextUrl.searchParams.get("shipmentId")?.trim();

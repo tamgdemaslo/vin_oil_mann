@@ -6,7 +6,7 @@ import { resolveDashboardAccessForBranch, resolveDashboardVariant } from "@/lib/
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ needShift?: string }>;
+  searchParams: Promise<{ needCashShift?: string }>;
 }) {
   const session = await requireAuthenticatedSession("/");
   const sp = await searchParams;
@@ -21,7 +21,7 @@ export default async function Home({
       role={session.user.role}
       userName={session.user.name ?? session.user.login}
       dashboardVariant={dashboardAccess.variant}
-      needShiftNotice={sp.needShift === "1"}
+      needCashShiftNotice={sp.needCashShift === "1"}
     />
   );
 }

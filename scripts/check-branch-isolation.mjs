@@ -14,7 +14,7 @@ function requireText(file, patterns) {
 
 const schema = read("prisma/schema.prisma");
 const requiredScopedModels = [
-  "Shift",
+  "LegacyWorkShift",
   "PayrollPayment",
   "LocalCounterparty",
   "LocalProduct",
@@ -109,7 +109,8 @@ for (const route of [
 requireText("src/lib/local-inventory-admin.ts", [/branchId/]);
 requireText("src/lib/local-demand-write.ts", [/resolveDemandBranchScope/, /where:\s*\{\s*branchId/]);
 requireText("src/lib/cashbox.ts", [/activeCashBranchId/, /where:\s*\{\s*branchId,\s*serviceDate\s*\}/]);
-requireText("src/lib/shifts.ts", [/activeBranchId/, /where:\s*\{\s*branchId/]);
+requireText("src/lib/cash-shift-access.ts", [/role === "owner"/, /cashShift\?\.status === "open"/]);
+requireText("src/lib/api-session-cash-shift.ts", [/getCurrentShift as getCashShift/, /hasOpenCashShiftAccess/]);
 requireText("src/lib/owner-dashboard.ts", [/branchId:\s*branch\.id/]);
 requireText("src/lib/branch-workers.ts", [/runWithRequestTenant/, /status:\s*"active"/, /organizationId/]);
 requireText("src/lib/messenger/messenger-storage.ts", [/\["branches", getScopedBranchId\(\), \.\.\.parts\]/]);

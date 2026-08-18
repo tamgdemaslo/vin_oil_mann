@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiSessionWithShift } from "@/lib/api-session-shift";
+import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
 import {
   deleteDiagnosticMapPhoto,
   diagnosticMapPhotoMime,
@@ -24,7 +24,7 @@ function responseBody(buffer: Buffer): ArrayBuffer {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
-  const auth = await requireApiSessionWithShift();
+  const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
   const photo = await getDiagnosticMapPhoto(id, photoId);
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
-  const auth = await requireApiSessionWithShift();
+  const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
   const body = await request.json().catch(() => ({}));
@@ -74,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
-  const auth = await requireApiSessionWithShift();
+  const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
   const ok = await deleteDiagnosticMapPhoto(id, photoId);

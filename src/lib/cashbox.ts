@@ -16,11 +16,6 @@ import {
   type CashExpenseOrderSource,
   type CashExpenseOrderStatus,
 } from "./cash-expense-orders";
-import {
-  endShift as endWorkShift,
-  getCurrentShift as getCurrentWorkShift,
-  startShift as startWorkShift,
-} from "./shifts";
 
 export type CashShiftStatus = "open" | "closed";
 
@@ -426,31 +421,6 @@ export async function listOperationsForShift(
   );
 }
 
-async function ensureAdminWorkShiftOpened(user: User) {
-  if (user.role !== "admin") return;
-
-  const currentWorkShift = await getCurrentWorkShift(user.login);
-  if (currentWorkShift) return;
-
-  const result = await startWorkShift(user.login);
-  if (!result.ok) {
-    if (result.error.toLowerCase().includes("на сегодня смена уже открыта")) return;
-    throw new Error(`Не удалось открыть рабочую смену администратора: ${result.error}`);
-  }
-}
-
-async function ensureAdminWorkShiftClosed(user: User) {
-  if (user.role !== "admin") return;
-
-  const currentWorkShift = await getCurrentWorkShift(user.login);
-  if (!currentWorkShift) return;
-
-  const result = await endWorkShift(user.login);
-  if (!result.ok) {
-    throw new Error(`Не удалось закрыть рабочую смену администратора: ${result.error}`);
-  }
-}
-
 export async function openShift(openingCash: number): Promise<CashShift> {
   if (!Number.isFinite(openingCash) || openingCash < 0) {
     throw new Error("Стартовый остаток должен быть неотрицательным числом");
@@ -483,7 +453,6 @@ export async function openShift(openingCash: number): Promise<CashShift> {
     throw new Error("Кассовая смена на сегодня уже была открыта и закрыта");
   }
 
-  await ensureAdminWorkShiftOpened(user);
   const defaultAqsiRegister = await prisma.aqsiCashRegister.findFirst({
     where: { branchId, enabled: true },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
@@ -680,8 +649,6 @@ export async function closeShift(params: {
   if (!shift || shift.status !== "open") {
     throw new Error("Открытая смена не найдена");
   }
-
-  await ensureAdminWorkShiftClosed(user);
 
   const ops = await listOperationsForShift(shift.id, { strictLocalExpenses: true });
   const withdrawalsTotal = ops
