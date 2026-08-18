@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import {
+  Archive,
   CalendarClock,
   CalendarOff,
   Check,
   ChevronDown,
+  Clock3,
   ExternalLink,
+  Globe2,
+  Info,
   Plus,
   Save,
   Settings2,
@@ -297,20 +301,30 @@ export default function BookingSettingsClient() {
   if (loading) return <main className={`eco-page eco-page--wide ${styles.page}`}><div className={styles.loading}>Загружаем настройки записи…</div></main>;
   if (!state) return <main className={`eco-page eco-page--wide ${styles.page}`}><div className={styles.error}>{error || "Настройки недоступны"}</div></main>;
 
+  const branchHours = sevenHours(state.workingHours, []);
+  const workingDaysCount = branchHours.filter((row) => row.isWorking).length;
+  const migrationLabel = legacyMigration?.status === "COMPLETED"
+    ? "Импорт завершён"
+    : legacyMigration?.status === "IN_PROGRESS"
+      ? "Выполняется"
+      : legacyMigration?.status === "FAILED"
+        ? "Нужен повтор"
+        : "Не запускался";
+
   return (
     <main className={`eco-page eco-page--wide ${styles.page}`}>
       <header className={styles.header}>
         <div>
           <div className={styles.crumbs}><Link href="/management">Управление</Link><span>/</span><span>Запись</span></div>
-          <h1>Система записи</h1>
-          <p>{state.branch.name}{state.branch.address ? ` · ${state.branch.address}` : ""}</p>
+          <h1>Онлайн-запись филиала</h1>
+          <p>{state.branch.name}{state.branch.address ? ` · ${state.branch.address}` : ""} · настройка доступности для клиентов</p>
         </div>
-        <a className={styles.publicLink} href="/booking" target="_blank" rel="noreferrer">Открыть публичную запись <ExternalLink aria-hidden /></a>
+        <a className={styles.publicLink} href="/booking" target="_blank" rel="noreferrer">Проверить форму записи <ExternalLink aria-hidden /></a>
       </header>
 
       <nav className={styles.tabs} aria-label="Разделы настройки записи">
         {([
-          ["general", Settings2, "Филиал и часы"],
+          ["general", Settings2, "Публикация и часы"],
           ["services", Wrench, "Услуги"],
           ["masters", UsersRound, "Мастера"],
           ["exceptions", CalendarOff, "Исключения"],
@@ -321,25 +335,107 @@ export default function BookingSettingsClient() {
       {notice && <div className={styles.notice} role="status"><Check aria-hidden /> {notice}</div>}
 
       {tab === "general" && (
-        <section className={styles.panel}>
-          <div className={styles.sectionHeading}><div><h2>Публичная запись</h2><p>Публикация формы и ограничения самостоятельной записи.</p></div><label className={styles.switch}><input type="checkbox" checked={state.settings.publicBookingEnabled} onChange={(event) => updateSettings("publicBookingEnabled", event.target.checked)} disabled={!state.canManage} /><span />{state.settings.publicBookingEnabled ? "Открыта" : "Закрыта"}</label></div>
-          <div className={styles.formGrid}>
-            <label><span>Публичное название</span><input value={state.settings.publicName ?? ""} onChange={(event) => updateSettings("publicName", event.target.value)} disabled={!state.canManage} /></label>
-            <label><span>Шаг сетки, минут</span><input type="number" min={5} max={240} step={5} value={state.settings.bookingStepMinutes} onChange={(event) => updateSettings("bookingStepMinutes", Number(event.target.value))} disabled={!state.canManage} /></label>
-            <label><span>Горизонт записи, дней</span><input type="number" min={1} max={365} value={state.settings.bookingHorizonDays} onChange={(event) => updateSettings("bookingHorizonDays", Number(event.target.value))} disabled={!state.canManage} /></label>
-            <label><span>Минимум до визита, минут</span><input type="number" min={0} value={state.settings.minimumLeadMinutes} onChange={(event) => updateSettings("minimumLeadMinutes", Number(event.target.value))} disabled={!state.canManage} /></label>
-            <label className={styles.wide}><span>Текст над выбором филиала</span><textarea rows={3} value={state.settings.publicIntro ?? ""} onChange={(event) => updateSettings("publicIntro", event.target.value)} disabled={!state.canManage} /></label>
-          </div>
-          <div className={styles.divider} />
-          <div className={styles.sectionHeading}><div><h2>Архив Yclients</h2><p>Однонаправленный импорт старых записей. Повторный запуск безопасен: внешние идентификаторы не дублируются.</p></div><span className={legacyMigration?.status === "COMPLETED" ? styles.migrationDone : styles.migrationPending}>{legacyMigration?.status === "COMPLETED" ? "Импорт завершён" : legacyMigration?.status === "IN_PROGRESS" ? "Выполняется" : legacyMigration?.status === "FAILED" ? "Нужен повтор" : "Не запускался"}</span></div>
-          <div className={styles.migrationRow}><label><span>Импортировать записи с даты</span><input type="date" value={legacyFromDate} onChange={(event) => setLegacyFromDate(event.target.value)} disabled={!state.canManage || saving} /></label>{state.canManage && <button type="button" className={styles.secondary} onClick={importLegacyHistory} disabled={saving || legacyMigration?.status === "IN_PROGRESS"}>Импортировать архив</button>}<small>Yclients используется только как источник чтения архива. Новые записи туда не отправляются.</small></div>
-          <div className={styles.divider} />
-          <div className={styles.sectionHeading}><div><h2>Рабочие часы филиала</h2><p>Мастер может работать только внутри этих границ.</p></div></div>
-          <div className={styles.hoursTable}>
-            {sevenHours(state.workingHours, []).map((row) => <div key={row.weekday}><label><input type="checkbox" checked={row.isWorking} onChange={(event) => updateBranchHour(row.weekday, { isWorking: event.target.checked, startTime: event.target.checked ? row.startTime || "09:00" : null, endTime: event.target.checked ? row.endTime || "19:00" : null })} disabled={!state.canManage} />{DAYS[row.weekday - 1]}</label><input type="time" value={row.startTime ?? ""} onChange={(event) => updateBranchHour(row.weekday, { startTime: event.target.value })} disabled={!row.isWorking || !state.canManage} /><span>—</span><input type="time" value={row.endTime ?? ""} onChange={(event) => updateBranchHour(row.weekday, { endTime: event.target.value })} disabled={!row.isWorking || !state.canManage} /></div>)}
-          </div>
-          {state.canManage && <footer className={styles.footer}><button type="button" className={styles.primary} onClick={saveGeneral} disabled={saving}><Save aria-hidden /> {saving ? "Сохраняем…" : "Сохранить настройки"}</button></footer>}
-        </section>
+        <div className={styles.generalWorkspace}>
+          <section className={`${styles.panel} ${styles.publicPanel}`}>
+            <div className={styles.sectionHeading}>
+              <div className={styles.sectionTitle}>
+                <span className={styles.sectionIcon}><Globe2 aria-hidden /></span>
+                <div><h2>Публичная запись</h2><p>Как филиал видят клиенты и на каких условиях они могут записаться.</p></div>
+              </div>
+              <label className={styles.switch}>
+                <input type="checkbox" checked={state.settings.publicBookingEnabled} onChange={(event) => updateSettings("publicBookingEnabled", event.target.checked)} disabled={!state.canManage} aria-label="Публичная запись" />
+                <span />
+                <strong>{state.settings.publicBookingEnabled ? "Запись открыта" : "Запись закрыта"}</strong>
+              </label>
+            </div>
+
+            <div className={styles.publicLayout}>
+              <div className={styles.settingsGrid}>
+                <label className={styles.wide}>
+                  <span>Название в форме записи</span>
+                  <input value={state.settings.publicName ?? ""} onChange={(event) => updateSettings("publicName", event.target.value)} disabled={!state.canManage} />
+                  <small>Например: «Дачная 6В» или «Там где масло · Дачная».</small>
+                </label>
+                <label>
+                  <span>Интервал слотов</span>
+                  <div className={styles.inputWithSuffix}><input type="number" min={5} max={240} step={5} value={state.settings.bookingStepMinutes} onChange={(event) => updateSettings("bookingStepMinutes", Number(event.target.value))} disabled={!state.canManage} /><span>мин</span></div>
+                  <small>Шаг между вариантами времени.</small>
+                </label>
+                <label>
+                  <span>Запись вперёд</span>
+                  <div className={styles.inputWithSuffix}><input type="number" min={1} max={365} value={state.settings.bookingHorizonDays} onChange={(event) => updateSettings("bookingHorizonDays", Number(event.target.value))} disabled={!state.canManage} /><span>дней</span></div>
+                  <small>На сколько дней открыты слоты.</small>
+                </label>
+                <label>
+                  <span>Минимум до визита</span>
+                  <div className={styles.inputWithSuffix}><input type="number" min={0} value={state.settings.minimumLeadMinutes} onChange={(event) => updateSettings("minimumLeadMinutes", Number(event.target.value))} disabled={!state.canManage} /><span>мин</span></div>
+                  <small>Минимальное время до визита.</small>
+                </label>
+                <label className={styles.wide}>
+                  <span>Приветствие для клиента</span>
+                  <textarea rows={3} value={state.settings.publicIntro ?? ""} onChange={(event) => updateSettings("publicIntro", event.target.value)} disabled={!state.canManage} placeholder="Коротко расскажите, что нужно знать перед записью" />
+                  <small>Текст показывается над выбором филиала.</small>
+                </label>
+              </div>
+
+              <aside className={styles.bookingSummary} aria-label="Сводка публичной записи">
+                <span className={styles.summaryEyebrow}>Сейчас для клиента</span>
+                <strong className={state.settings.publicBookingEnabled ? styles.summaryOpen : styles.summaryClosed}><span />{state.settings.publicBookingEnabled ? "Можно записаться" : "Форма закрыта"}</strong>
+                <dl>
+                  <div><dt>Доступно вперёд</dt><dd>{state.settings.bookingHorizonDays} дн.</dd></div>
+                  <div><dt>Интервал слотов</dt><dd>{state.settings.bookingStepMinutes} мин.</dd></div>
+                  <div><dt>Рабочих дней</dt><dd>{workingDaysCount} из 7</dd></div>
+                </dl>
+                <p><Info aria-hidden /> Свободные окна считаются по часам филиала, графику мастера и длительности услуги.</p>
+              </aside>
+            </div>
+          </section>
+
+          <section className={`${styles.panel} ${styles.hoursPanel}`}>
+            <div className={styles.sectionHeading}>
+              <div className={styles.sectionTitle}>
+                <span className={styles.sectionIcon}><Clock3 aria-hidden /></span>
+                <div><h2>Рабочая неделя</h2><p>Общие границы записи. График каждого мастера дополнительно ограничивает эти часы.</p></div>
+              </div>
+              <span className={styles.daysBadge}>{workingDaysCount} рабочих дней</span>
+            </div>
+            <div className={`${styles.hoursTable} ${styles.branchHours}`}>
+              {branchHours.map((row) => (
+                <div key={row.weekday} className={!row.isWorking ? styles.dayOff : ""}>
+                  <label className={styles.dayControl}>
+                    <input type="checkbox" checked={row.isWorking} onChange={(event) => updateBranchHour(row.weekday, { isWorking: event.target.checked, startTime: event.target.checked ? row.startTime || "09:00" : null, endTime: event.target.checked ? row.endTime || "19:00" : null })} disabled={!state.canManage} />
+                    <span><strong>{DAYS[row.weekday - 1]}</strong><small>{row.isWorking ? "Филиал принимает записи" : "Выходной"}</small></span>
+                  </label>
+                  {row.isWorking ? (
+                    <div className={styles.timeRange}>
+                      <label><span>Открытие</span><input type="time" value={row.startTime ?? ""} onChange={(event) => updateBranchHour(row.weekday, { startTime: event.target.value })} disabled={!state.canManage} /></label>
+                      <span>до</span>
+                      <label><span>Закрытие</span><input type="time" value={row.endTime ?? ""} onChange={(event) => updateBranchHour(row.weekday, { endTime: event.target.value })} disabled={!state.canManage} /></label>
+                    </div>
+                  ) : <span className={styles.closedRange}>Запись закрыта</span>}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <details className={styles.archivePanel}>
+            <summary>
+              <span className={styles.sectionIcon}><Archive aria-hidden /></span>
+              <span><strong>Архив Yclients</strong><small>Разовый импорт старых записей</small></span>
+              <span className={legacyMigration?.status === "COMPLETED" ? styles.migrationDone : styles.migrationPending}>{migrationLabel}</span>
+              <ChevronDown aria-hidden className={styles.archiveChevron} />
+            </summary>
+            <div className={styles.archiveBody}>
+              <p>Внешние идентификаторы не дублируются, поэтому импорт можно повторить. Новые записи в Yclients не отправляются.</p>
+              <div className={styles.migrationRow}>
+                <label><span>Импортировать с даты</span><input type="date" value={legacyFromDate} onChange={(event) => setLegacyFromDate(event.target.value)} disabled={!state.canManage || saving} /></label>
+                {state.canManage && <button type="button" className={styles.secondary} onClick={importLegacyHistory} disabled={saving || legacyMigration?.status === "IN_PROGRESS"}>Импортировать архив</button>}
+              </div>
+            </div>
+          </details>
+
+          {state.canManage && <footer className={`${styles.footer} ${styles.stickyFooter}`}><span>Изменения повлияют на доступные клиентам окна</span><button type="button" className={styles.primary} onClick={saveGeneral} disabled={saving}><Save aria-hidden /> {saving ? "Сохраняем…" : "Сохранить и опубликовать"}</button></footer>}
+        </div>
       )}
 
       {tab === "services" && (
