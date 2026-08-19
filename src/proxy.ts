@@ -28,7 +28,24 @@ function activeBranch(value: string | undefined) {
   }
 }
 
+function isRscPrefetch(request: NextRequest) {
+  return (
+    request.method === "GET" &&
+    request.headers.get("rsc") === "1" &&
+    request.headers.has("next-router-prefetch")
+  );
+}
+
 export function proxy(request: NextRequest) {
+  if (isRscPrefetch(request)) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Cache-Control": "private, no-store",
+        "X-Eco-RSC-Prefetch": "blocked",
+      },
+    });
+  }
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return NextResponse.next();
   if (ALLOWED_ALL_MODE_WRITES.has(`${request.method} ${request.nextUrl.pathname}`)) return NextResponse.next();
   const branchId = activeBranch(request.cookies.get(ACTIVE_BRANCH_COOKIE)?.value);
@@ -41,4 +58,9 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/api/:path*"] };
+export const config = {
+  matcher: [
+    "/api/:path*",
+    "/((?!api/|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+  ],
+};

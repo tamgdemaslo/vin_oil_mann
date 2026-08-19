@@ -13,7 +13,7 @@ const tenant = await jiti.import("../src/lib/request-tenant-store.ts");
 const branchApi = await jiti.import("../src/lib/branch-api.ts");
 const effects = await jiti.import("../src/lib/external-side-effects.ts");
 const messengerStorage = await jiti.import("../src/lib/messenger/messenger-storage.ts");
-const { proxy } = await jiti.import("../src/proxy.ts");
+const { config: proxyConfig, proxy } = await jiti.import("../src/proxy.ts");
 const { createBranch } = await jiti.import("../src/lib/branches.ts");
 
 const previousSessionSecret = process.env.SESSION_SECRET;
@@ -29,10 +29,10 @@ const branchCookieSignature = crypto
   .digest("base64url");
 const allModeCookie = `eco_active_branch=${branchCookiePayload}.${branchCookieSignature}`;
 
-async function proxyResult(path, method = "POST") {
+async function proxyResult(path, method = "POST", headers = {}) {
   const response = proxy(new NextRequest(`http://localhost${path}`, {
     method,
-    headers: { cookie: allModeCookie },
+    headers: { cookie: allModeCookie, ...headers },
   }));
   return {
     status: response.status,
@@ -41,6 +41,21 @@ async function proxyResult(path, method = "POST") {
   };
 }
 
+assert.deepEqual(proxyConfig.matcher, [
+  "/api/:path*",
+  "/((?!api/|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+]);
+assert.deepEqual(
+  await proxyResult("/records?_rsc=prefetch", "GET", {
+    rsc: "1",
+    "next-router-prefetch": "1",
+  }),
+  { status: 204, next: false, body: null }
+);
+assert.deepEqual(
+  await proxyResult("/records?_rsc=navigation", "GET", { rsc: "1" }),
+  { status: 200, next: true, body: null }
+);
 assert.deepEqual(await proxyResult("/api/branches"), { status: 200, next: true, body: null });
 assert.deepEqual(await proxyResult("/api/branches", "PUT"), {
   status: 409,
