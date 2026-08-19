@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { getRequestTenant, type RequestTenant } from "./request-tenant-store";
+import { configurePrismaPool } from "./prisma-pool-config";
 
 const BRANCH_SCOPED_MODELS = new Set([
   "LegacyWorkShift", "ShiftRate", "PieceworkRule", "BonusPenalty", "PayrollAdjustment", "PayrollPayment",
@@ -124,7 +125,18 @@ export function applyBranchQueryPolicy(
 }
 
 function createPrismaClient(): PrismaClient {
-  const base = new PrismaClient({ log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"] });
+  const pool = configurePrismaPool(process.env.DATABASE_URL);
+  const base = new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    ...(pool ? { datasources: { db: { url: pool.url } } } : {}),
+  });
+  if (pool && !globalForPrisma.__prismaPoolConfigurationLogged) {
+    globalForPrisma.__prismaPoolConfigurationLogged = true;
+    console.info("[database] Prisma pool configured", {
+      connectionLimit: pool.connectionLimit,
+      poolTimeoutSeconds: pool.poolTimeoutSeconds,
+    });
+  }
   return base.$extends({
     name: "branch-isolation",
     query: {
@@ -138,7 +150,10 @@ function createPrismaClient(): PrismaClient {
   }) as unknown as PrismaClient;
 }
 
-const globalForPrisma = globalThis as typeof globalThis & { prisma?: PrismaClient };
+const globalForPrisma = globalThis as typeof globalThis & {
+  prisma?: PrismaClient;
+  __prismaPoolConfigurationLogged?: boolean;
+};
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 

@@ -92,7 +92,7 @@ const burstHeaders = {
 const originalDateNow = Date.now;
 let burstNow = originalDateNow();
 Date.now = () => burstNow;
-for (let index = 0; index < 24; index += 1) {
+for (let index = 0; index < 12; index += 1) {
   assert.deepEqual(await proxyResult(`/api/cash?request=${index}`, "GET", burstHeaders), {
     status: 200,
     next: true,
@@ -105,7 +105,7 @@ assert.equal(blockedApiBurst.next, false);
 assert.equal(blockedApiBurst.body?.code, "client_request_burst");
 
 burstNow += 30_001;
-for (let index = 0; index < 24; index += 1) {
+for (let index = 0; index < 12; index += 1) {
   assert.deepEqual(await proxyResult(`/api/cash?second-wave=${index}`, "GET", burstHeaders), {
     status: 200,
     next: true,
@@ -128,7 +128,7 @@ const documentBurstHeaders = {
   accept: "text/html,application/xhtml+xml",
   "sec-fetch-dest": "document",
 };
-for (let index = 0; index < 6; index += 1) {
+for (let index = 0; index < 4; index += 1) {
   assert.deepEqual(await proxyResult(`/shipment/restored-${index}`, "GET", documentBurstHeaders), {
     status: 200,
     next: true,

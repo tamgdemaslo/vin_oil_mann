@@ -1,5 +1,6 @@
 import { runForActiveBranches } from "@/lib/branch-workers";
 import { processProductOemJobsForBranch } from "@/lib/product-oem-batches";
+import { inProcessBackgroundWorkersEnabled } from "@/lib/background-worker-policy";
 
 const DEFAULT_INTERVAL_MS = 5_000;
 const DEFAULT_IDLE_INTERVAL_MS = 60_000;
@@ -127,7 +128,13 @@ export function kickProductOemWorker() {
 
 export function startProductOemWorker() {
   const current = state();
-  if (current.started || isBuildProcess() || process.env.PRODUCT_OEM_WORKER_DISABLED === "1") return;
+  if (
+    current.started ||
+    isBuildProcess() ||
+    process.env.PRODUCT_OEM_WORKER_DISABLED === "1" ||
+    process.env.PRODUCT_OEM_WORKER_ENABLED !== "1" ||
+    !inProcessBackgroundWorkersEnabled()
+  ) return;
   current.started = true;
   scheduleNext(2_000);
 }

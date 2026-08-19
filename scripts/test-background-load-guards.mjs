@@ -44,12 +44,27 @@ if (shellLinks.length === 0 || shellLinksWithoutPrefetchGuard.length > 0) {
 }
 
 expect("src/lib/product-oem-worker.ts", [
+  /inProcessBackgroundWorkersEnabled\(\)/,
+  /PRODUCT_OEM_WORKER_ENABLED !== "1"/,
   /PRODUCT_OEM_WORKER_IDLE_INTERVAL_MS/,
   /PRODUCT_OEM_WORKER_ERROR_BACKOFF_MS/,
   /consecutiveFailures/,
   /scheduleNext\(processedItemCount\(results\)\s*>\s*0\s*\?\s*activeIntervalMs\(\)\s*:\s*idleIntervalMs\(\)\)/,
 ]);
 reject("src/lib/product-oem-worker.ts", [/setInterval\(/]);
+
+expect("src/instrumentation.ts", [
+  /inProcessBackgroundWorkersEnabled\(\)/,
+  /\[background-workers\] disabled in web process/,
+]);
+
+for (const file of [
+  "src/lib/client-notifications/worker.ts",
+  "src/lib/messenger/telegram-sync-worker.ts",
+  "src/lib/messenger/messenger-media.ts",
+]) {
+  expect(file, [/inProcessBackgroundWorkersEnabled\(\)/]);
+}
 
 for (const file of [
   "src/app/ai-assistant/AIAssistantClient.tsx",

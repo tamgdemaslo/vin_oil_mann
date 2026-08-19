@@ -1,6 +1,7 @@
 import { processDueClientNotificationJobs } from "@/lib/client-notifications/client-notifications";
 import { runForActiveBranches } from "@/lib/branch-workers";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
+import { inProcessBackgroundWorkersEnabled } from "@/lib/background-worker-policy";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const MIN_INTERVAL_MS = 30_000;
@@ -63,7 +64,7 @@ function isBuildProcess() {
 function workerEnabled() {
   if (process.env.CLIENT_NOTIFICATIONS_WORKER_DISABLED === "1") return false;
   if (isBuildProcess()) return false;
-  return process.env.CLIENT_NOTIFICATIONS_WORKER_ENABLED === "1";
+  return inProcessBackgroundWorkersEnabled() && process.env.CLIENT_NOTIFICATIONS_WORKER_ENABLED === "1";
 }
 
 export async function runClientNotificationsWorkerOnce(limit = 50): Promise<WorkerResult> {

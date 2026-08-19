@@ -4,8 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const SESSION_COOKIE = "eco_session";
 const REQUEST_BURST_LIMITS = {
-  api: { windowMs: 10_000, limit: 24, blockMs: 30_000 },
-  document: { windowMs: 15_000, limit: 6, blockMs: 30_000 },
+  api: { windowMs: 10_000, limit: 12, blockMs: 30_000 },
+  document: { windowMs: 15_000, limit: 4, blockMs: 30_000 },
 } as const;
 const REQUEST_BURST_BUCKET_LIMIT = 2_000;
 const REQUEST_BURST_BUCKET_TTL_MS = 5 * 60_000;
