@@ -622,7 +622,7 @@ export default function PlatformShell() {
     <div ref={shellRef} className="platform-shell">
       <header className="platform-shell__main">
         <div className="platform-shell__brand-row">
-          <Link href="/" className="platform-shell__brand" aria-label="Там где масло. ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ">
+          <Link href="/" prefetch={false} className="platform-shell__brand" aria-label="Там где масло. ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ">
             <Image src="/brand/logo-wordmark-black.svg" alt="Там где масло." width={150} height={24} priority />
             <span>ИП ЕЛИСЕЕНКО ИЛЬЯ СЕРГЕЕВИЧ</span>
           </Link>
@@ -676,6 +676,7 @@ export default function PlatformShell() {
                           <Link
                             key={item.href}
                             href={item.href}
+                            prefetch={false}
                             className={`platform-shell__dropdown-link ${isActivePath(pathname, item.href) ? "is-active" : ""}`}
                             role="menuitem"
                             aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
@@ -763,12 +764,12 @@ export default function PlatformShell() {
                       {navigation?.canManageBranches && (
                         <div className="platform-shell__branch-actions" role="group" aria-label="Управление филиалами">
                           {selectedBranchId !== "all" && (
-                            <Link href={`/cabinet/branches?branch=${encodeURIComponent(selectedBranchId)}`} role="menuitem">
+                            <Link href={`/cabinet/branches?branch=${encodeURIComponent(selectedBranchId)}`} prefetch={false} role="menuitem">
                               <Settings aria-hidden className="eco-icon" />
                               Настройки текущего филиала
                             </Link>
                           )}
-                          <Link href="/cabinet/branches" role="menuitem">
+                          <Link href="/cabinet/branches" prefetch={false} role="menuitem">
                             <Building2 aria-hidden className="eco-icon" />
                             Управление филиалами
                           </Link>
@@ -825,7 +826,7 @@ export default function PlatformShell() {
                   </div>
                 )}
               </div>
-              <Link href="/notifications" className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
+              <Link href="/notifications" prefetch={false} className="platform-shell__icon-btn platform-shell__notification-btn" aria-label="Уведомления">
                 <Bell aria-hidden className="eco-icon" />
                 {!!((deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)) && (
                   <span>{(deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0) > 99 ? "99+" : (deadlineCounts?.total ?? 0) + (notificationCounts?.total ?? 0)}</span>
@@ -864,7 +865,7 @@ export default function PlatformShell() {
                       );
                     }
                     return (
-                      <Link key={personalItem.href} href={personalItem.href ?? "/cabinet"} className="platform-shell__dropdown-link" role="menuitem">
+                      <Link key={personalItem.href} href={personalItem.href ?? "/cabinet"} prefetch={false} className="platform-shell__dropdown-link" role="menuitem">
                         <Icon aria-hidden className="eco-icon" />
                         <span>{personalItem.label}</span>
                       </Link>
@@ -874,7 +875,7 @@ export default function PlatformShell() {
               </div>
             </>
           ) : (
-            <Link href="/login" className="eco-btn eco-btn--primary eco-btn--sm">
+            <Link href="/login" prefetch={false} className="eco-btn eco-btn--primary eco-btn--sm">
               Войти
             </Link>
           )}
@@ -913,7 +914,7 @@ export default function PlatformShell() {
                     {section.items.map((navItem) => navItem.disabled ? (
                       <span key={navItem.href} className="platform-shell__mobile-link is-disabled" aria-disabled="true"><strong>{navItem.label}</strong><small>{navItem.disabledReason ?? navItem.description}</small></span>
                     ) : (
-                      <Link key={navItem.href} href={navItem.href} className={`platform-shell__mobile-link ${isActivePath(pathname, navItem.href) ? "is-active" : ""}`} aria-current={isActivePath(pathname, navItem.href) ? "page" : undefined}>
+                      <Link key={navItem.href} href={navItem.href} prefetch={false} className={`platform-shell__mobile-link ${isActivePath(pathname, navItem.href) ? "is-active" : ""}`} aria-current={isActivePath(pathname, navItem.href) ? "page" : undefined}>
                         <strong>{navItem.label}</strong><small>{navItem.description}</small>
                       </Link>
                     ))}
@@ -923,8 +924,8 @@ export default function PlatformShell() {
             })}
           </div>
           <div className="platform-shell__mobile-personal">
-            <Link href="/cabinet"><UserRound aria-hidden className="eco-icon" />Мой профиль</Link>
-            <Link href="/cabinet?tab=security"><KeyRound aria-hidden className="eco-icon" />Безопасность</Link>
+            <Link href="/cabinet" prefetch={false}><UserRound aria-hidden className="eco-icon" />Мой профиль</Link>
+            <Link href="/cabinet?tab=security" prefetch={false}><KeyRound aria-hidden className="eco-icon" />Безопасность</Link>
             <button type="button" onClick={handleLogout}><LogOut aria-hidden className="eco-icon" />Выйти</button>
           </div>
         </nav>
@@ -966,7 +967,7 @@ export default function PlatformShell() {
             <span>{deadlineToast.body}</span>
           </button>
           <div className="eco-crm-deadline-toast__actions">
-            <Link href={deadlineToast.href} onClick={() => void handleDeadlineAction("acknowledge")}>
+            <Link href={deadlineToast.href} prefetch={false} onClick={() => void handleDeadlineAction("acknowledge")}>
               <span className="eco-crm-deadline-toast__open-full">Открыть дело</span>
               <span className="eco-crm-deadline-toast__open-short">Открыть</span>
             </Link>
