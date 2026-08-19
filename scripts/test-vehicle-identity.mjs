@@ -28,6 +28,12 @@ assert.deepEqual(normalizeVehicleModel("BMW 5 (G30, G31, F90)", "BMW"), {
   generation: undefined,
   bodyCode: "G30",
 });
+assert.deepEqual(normalizeVehicleModel("X-Trail", "NISSAN"), {
+  raw: "X-Trail",
+  canonical: "X-TRAIL",
+  generation: undefined,
+  bodyCode: undefined,
+});
 
 const tronkExtendedVehicle = toVehicle({
   vin: "Z6FDXXEECDEG85039",
@@ -66,7 +72,8 @@ const tronkPrimaryVehicle = toVehicle({
 assert.equal(tronkPrimaryVehicle.makeCanonical, "TOYOTA");
 assert.equal(tronkPrimaryVehicle.modelCanonical, "HIGHLANDER");
 assert.equal(tronkPrimaryVehicle.generationRaw, "III");
-assert.equal(tronkPrimaryVehicle.year, 2016);
+assert.equal(tronkPrimaryVehicle.year, undefined);
+assert.equal(tronkPrimaryVehicle.modelYearFrom, 2016);
 assert.equal(tronkPrimaryVehicle.modelYearTo, 2019);
 assert.equal(tronkPrimaryVehicle.engineVolumeLiters, 3.5);
 assert.equal(tronkPrimaryVehicle.engineVolumeCc, 3456);
@@ -76,6 +83,7 @@ assert.equal(tronkPrimaryVehicle.driveType, "AWD");
 assert.equal(tronkPrimaryVehicle.engineSeries, "2GRFKS");
 
 const datedPrimaryVehicle = toVehicle({ Brand: "ŠKODA", Model: "Octavia", StartYear: "11.12.2012" }, "tronk_vindecode");
-assert.equal(datedPrimaryVehicle.year, 2012);
+assert.equal(datedPrimaryVehicle.year, undefined);
+assert.equal(datedPrimaryVehicle.modelYearFrom, 2012);
 
 console.log("Vehicle identity normalization tests — passed");

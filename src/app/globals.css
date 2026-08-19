@@ -62936,18 +62936,41 @@ html.tgm-print-active .tgm-client-report .qr {
 }
 
 .eco-shipment-new-page .eco-shipment-position-mann-panel {
-  margin: 0 var(--shipment-card-pad) 24px !important;
-  padding-top: 14px !important;
+  margin: 0 var(--shipment-card-pad) 20px !important;
+  padding-top: 12px !important;
 }
 
 .eco-shipment-new-page .eco-shipment-mann-panel-head {
-  min-height: auto !important;
-  padding: 0 0 12px !important;
+  display: flex !important;
+  min-height: 40px !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 8px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-panel-head > strong {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-close {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-close::before {
+  position: absolute;
+  content: "";
+  inset: -4px;
 }
 
 .eco-shipment-new-page .eco-shipment-mann-panel-body,
 .eco-shipment-new-page .eco-vehicle-lookup {
-  gap: 14px !important;
+  gap: 12px !important;
 }
 
 .eco-shipment-new-page .eco-vehicle-lookup__controls {

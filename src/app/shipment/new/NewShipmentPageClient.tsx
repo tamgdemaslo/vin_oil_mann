@@ -1717,6 +1717,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            organizationId: selectedOrg?.id,
             warehouseId: selectedStore?.id,
             mannArticles: [{
               mannArticle: manualMannArticle,
@@ -1829,7 +1830,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [manualMannFilter, productSearch, productOem, productParams, productSearchMode, productSearchRetrySeed, selectedStore?.id, selectedStore?.name]);
+  }, [manualMannFilter, productSearch, productOem, productParams, productSearchMode, productSearchRetrySeed, selectedOrg?.id, selectedStore?.id, selectedStore?.name]);
 
   useEffect(() => {
     if (!authChecked || positionAddMode !== "mann" || mannMakes.length > 0) return;

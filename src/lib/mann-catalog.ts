@@ -607,6 +607,17 @@ export async function listMannVariants(params: { make: string; model: string; ye
     WHERE make_normalized = ${makeNormalized}
       AND model_normalized = ${modelNormalized}
       AND UPPER(BTRIM(COALESCE(effective_vehicle_text, vehicle_text, ''))) NOT IN ('ALL MODELS', 'ВСЕ МОДЕЛИ')
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%FORCOLDCLIMATES%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%RIGHTSIDE%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%USEINDUSTYENVIRONMENTS%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%LEFTHANDDRIVE%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%RIGHTHANDDRIVE%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%INJECTIONSYSTEM%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%QUANTITY%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%OPTIONALLY%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%FILTERELEMENT%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%HOUSING%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%MOUNTINGPOSITION%'
       ${yearSql}
     GROUP BY vehicle_variant_key
     ORDER BY MIN(effective_vehicle_text) NULLS LAST, MIN(vehicle_years) NULLS LAST
@@ -981,16 +992,29 @@ function normalizedOemPartsTokens(value?: string | null): Set<string> {
 }
 
 function productHasMannArticle(
-  product: { name?: string | null; oemParts?: string | null },
+  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null },
   articleOemNormalized: string
 ): { confidence: number; reason: string } | null {
   if (articleOemNormalized.length < 3) return null;
+  const hasArticleMatch = normalizeOemPartsToken(product.article) === articleOemNormalized;
+  const hasCodeMatch = normalizeOemPartsToken(product.code) === articleOemNormalized;
   const hasOemPartsMatch = normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized);
-  const hasNameMatch = normalizeOemPartsToken(product.name).includes(articleOemNormalized);
+  const hasNameMatch = normalizedOemPartsTokens(product.name).has(articleOemNormalized);
+  if (hasArticleMatch && hasCodeMatch) return { confidence: 100, reason: "Article + Code exact" };
+  if (hasArticleMatch) return { confidence: 99, reason: "Article exact" };
+  if (hasCodeMatch) return { confidence: 98, reason: "Code exact" };
   if (hasOemPartsMatch && hasNameMatch) return { confidence: 96, reason: "OEM Parts + Name normalized" };
   if (hasOemPartsMatch) return { confidence: 95, reason: "OEM Parts normalized" };
   if (hasNameMatch) return { confidence: 86, reason: "Name normalized" };
   return null;
+}
+
+/** Pure seam used by catalogue audits; production uses the same matcher below. */
+export function evaluateMannArticleProductMatch(
+  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null },
+  mannArticle: string
+): { confidence: number; reason: string } | null {
+  return productHasMannArticle(product, normalizeOemPartsToken(mannArticle));
 }
 
 function localProductMeta(product: { id: string; entityType?: string | null; localHref?: string | null }) {
@@ -1049,6 +1073,26 @@ export async function matchMannArticlesToLocalProducts(params: {
     ? await prisma.localStore.findFirst({ where: { branchId, OR: [{ id: params.warehouseId }, { id: params.warehouseId }] }, select: { id: true } })
     : null;
   const stockInclude = { where: store?.id ? { storeId: store.id } : undefined, take: store?.id ? 1 : 5 };
+  const organizationId = params.organizationId?.trim() || "default";
+  const explicitLinks = await prisma.productMannLink.findMany({
+    where: {
+      branchId,
+      organizationId,
+      mannArticleNormalized: { in: normalizedArticles },
+    },
+    select: {
+      productId: true,
+      mannArticleNormalized: true,
+      confidence: true,
+      linkType: true,
+    },
+  });
+  const linksByArticle = new Map<string, typeof explicitLinks>();
+  for (const link of explicitLinks) {
+    const links = linksByArticle.get(link.mannArticleNormalized) ?? [];
+    links.push(link);
+    linksByArticle.set(link.mannArticleNormalized, links);
+  }
 
   const results: MannArticleMatchResult[] = [];
   for (const articleNormalized of normalizedArticles) {
@@ -1064,19 +1108,32 @@ export async function matchMannArticlesToLocalProducts(params: {
             AND (
               regexp_replace(upper(COALESCE(oem_parts, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
               OR regexp_replace(upper(COALESCE(name, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
+              OR regexp_replace(upper(COALESCE(article, '')), '[^A-Z0-9]', '', 'g') = ${articleOemNormalized}
+              OR regexp_replace(upper(COALESCE(code, '')), '[^A-Z0-9]', '', 'g') = ${articleOemNormalized}
             )
           LIMIT 200
         `)
       : [];
+    const links = linksByArticle.get(articleNormalized) ?? [];
+    const candidateProductIds = [...new Set([
+      ...candidateIds.map((candidate) => candidate.id),
+      ...links.map((link) => link.productId),
+    ])];
     const candidates = await prisma.localProduct.findMany({
       where: {
-        id: { in: candidateIds.map((candidate) => candidate.id) },
+        branchId,
+        archived: false,
+        entityType: { not: "service" },
+        id: { in: candidateProductIds },
       },
       include: { stockBalances: stockInclude },
     });
     const byProduct = new Map<string, MannLocalProductMatch>();
     for (const product of candidates) {
-      const match = productHasMannArticle(product, articleOemNormalized);
+      const link = links.find((candidate) => candidate.productId === product.id);
+      const match = link
+        ? { confidence: link.confidence, reason: `ProductMannLink:${link.linkType}` }
+        : evaluateMannArticleProductMatch(product, item.mannArticle);
       if (!match) continue;
       const current = byProduct.get(product.id);
       const next = localMatchFromProduct(product, match);

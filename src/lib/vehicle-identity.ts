@@ -79,6 +79,9 @@ const MAKE_ALIASES: Record<string, string> = {
   MERCEDES: "MERCEDES",
   VOLKSWAGEN: "VOLKSWAGEN",
   VW: "VOLKSWAGEN",
+  "VW (VOLKSWAGEN)": "VOLKSWAGEN",
+  "KIA MOTORS": "KIA",
+  "MINI (BMW GROUP)": "MINI",
   LANDROVER: "LAND ROVER",
   "LAND ROVER": "LAND ROVER",
   "SSANG YONG": "SSANGYONG",
@@ -189,10 +192,13 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
   let normalized = raw.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[‐‑‒–—―]/g, "-").replace(/\s+/g, " ").trim();
   if (make && normalized.startsWith(`${make} `)) normalized = normalized.slice(make.length).trim();
   const codes = [...normalized.matchAll(/\b(?:[A-Z]\d{1,3}[A-Z]?|\d[A-Z]\d|[A-Z]{1,3}\d{1,3})\b/g)].map((match) => match[0]);
-  const generation = normalized.match(/\b(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\b/)?.[0];
+  // A Roman generation is a standalone catalogue token. A hyphen is not a
+  // valid boundary here: otherwise X-Trail, X-Type and similar model names are
+  // incorrectly parsed as generation X and lose the first part of the model.
+  const generation = normalized.match(/(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/)?.[1];
   const canonical = normalized
     .replace(/\([^)]*\)/g, " ")
-    .replace(/\b(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\b/g, " ")
+    .replace(/(^|[\s(/,])(?:XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
   return { raw, canonical: canonical || normalized, generation, bodyCode: codes[0] };
@@ -251,7 +257,10 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
   const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["EngineVolume", "Ccm"], ["engine", "volume_cc"], ["tech_param", "displacement"]]);
   const powerHp = firstNumber(data, [["PowerHp"], ["power_hp"], ["EnginePower", "PS"], ["EnginePower", "Hp"], ["tech_param", "power_hp"], ["tech_param", "power"], ["horse_power"], ["power"]]);
   const powerKw = firstNumber(data, [["PowerKw"], ["power_kw"], ["EnginePower", "KW"], ["tech_param", "power_kw"], ["tech_param", "power_kvt"], ["kw"]]);
-  const year = firstYear(data, [["Year"], ["year"], ["StartYear"], ["model_year"], ["year_from"]]);
+  // StartYear/year_from describe the generation's applicability, not this
+  // vehicle's production year. Treating them as the actual year shifts many
+  // plate lookups to the first year of a generation and rejects valid MANN rows.
+  const year = firstYear(data, [["Year"], ["year"], ["model_year"], ["tech_param", "year"]]);
   const resolvedLiters = asNumber(volumeLiters) ?? (asNumber(volumeCc) ? Number((volumeCc! / 1000).toFixed(3)) : undefined);
   const resolvedCc = asNumber(volumeCc) ?? (resolvedLiters ? Math.round(resolvedLiters * 1000) : undefined);
   const resolvedHp = asNumber(powerHp) ?? (asNumber(powerKw) ? Math.round(powerKw! * 1.35962) : undefined);
