@@ -83,6 +83,49 @@ assert.deepEqual(
   { status: 204, next: false, body: null }
 );
 assert.deepEqual(await proxyResult("/records", "GET"), { status: 200, next: true, body: null });
+
+const burstHeaders = {
+  cookie: `${allModeCookie}; eco_session=test-browser-session`,
+  "x-forwarded-for": "203.0.113.10",
+  "user-agent": "request-burst-regression-test",
+};
+for (let index = 0; index < 24; index += 1) {
+  assert.deepEqual(await proxyResult(`/api/auth/session?request=${index}`, "GET", burstHeaders), {
+    status: 200,
+    next: true,
+    body: null,
+  });
+}
+const blockedApiBurst = await proxyResult("/api/auth/session?request=blocked", "GET", burstHeaders);
+assert.equal(blockedApiBurst.status, 429);
+assert.equal(blockedApiBurst.next, false);
+assert.equal(blockedApiBurst.body?.code, "client_request_burst");
+
+const documentBurstHeaders = {
+  cookie: `${allModeCookie}; eco_session=test-restored-tabs-session`,
+  "x-forwarded-for": "203.0.113.10",
+  "user-agent": "restored-tabs-regression-test",
+  accept: "text/html,application/xhtml+xml",
+  "sec-fetch-dest": "document",
+};
+for (let index = 0; index < 6; index += 1) {
+  assert.deepEqual(await proxyResult(`/shipment/restored-${index}`, "GET", documentBurstHeaders), {
+    status: 200,
+    next: true,
+    body: null,
+  });
+}
+const blockedDocumentBurst = await proxyResult("/inventory/restock", "GET", documentBurstHeaders);
+assert.equal(blockedDocumentBurst.status, 429);
+assert.equal(blockedDocumentBurst.next, false);
+assert.equal(blockedDocumentBurst.body?.code, "client_request_burst");
+
+for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version"]) {
+  for (let index = 0; index < 30; index += 1) {
+    assert.deepEqual(await proxyResult(path, "GET", burstHeaders), { status: 200, next: true, body: null });
+  }
+}
+
 assert.deepEqual(await proxyResult("/api/branches"), { status: 200, next: true, body: null });
 assert.deepEqual(await proxyResult("/api/branches", "PUT"), {
   status: 409,
