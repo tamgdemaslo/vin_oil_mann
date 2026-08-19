@@ -21,6 +21,8 @@
     "test:openai-oil": "node scripts/test-openai-oil.mjs",
     "test:vehicle-identity": "node scripts/test-vehicle-identity.mjs",
     "test:mann-vehicle-resolver": "node scripts/test-mann-vehicle-resolver.mjs",
+    "test:mann-vehicle-matching": "node scripts/run-mann-matching-benchmark.mjs",
+    "score:mann-vehicle-matching": "node scripts/score-mann-matching-report.mjs",
     "audit:mann-vehicle-matching": "node scripts/audit-mann-vehicle-matching.mjs",
     "audit:mann-filter-local-matching": "node scripts/audit-mann-filter-local-matching.mjs",
     "test:fluid-catalog": "node scripts/test-fluid-catalog.mjs",

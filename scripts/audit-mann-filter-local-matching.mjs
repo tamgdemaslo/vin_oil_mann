@@ -24,8 +24,10 @@ const productsDumpPath = argument("local-products");
 const stockDumpPath = argument("local-stock");
 const linksDumpPath = argument("mann-links");
 const lookupDumpPath = argument("lookup-cache");
+const outputPath = argument("output");
 const requestedSamples = new Set(String(argument("samples") ?? "").split(",").map((value) => value.trim()).filter(Boolean));
 const liveDecode = process.argv.includes("--live-decode");
+const latestShipmentCount = Math.max(0, Number(argument("latest-shipments")) || 0);
 if (!demandDumpPath || !mannDumpPath || !productsDumpPath || !stockDumpPath || !linksDumpPath) {
   throw new Error("Pass --vehicle-records, --mann-catalog, --local-products, --local-stock and --mann-links data-only SQL files");
 }
@@ -49,7 +51,7 @@ function readCopyRows(filePath, table) {
   return rows;
 }
 
-function demandVehicleRecords(rows) {
+function demandVehicleRecords(rows, { requireRecordedProfile = true } = {}) {
   const records = [];
   for (const row of rows) {
     let attributes;
@@ -64,8 +66,16 @@ function demandVehicleRecords(rows) {
     const rawPlate = String(value(/гос/i) ?? "").trim();
     const plate = normalizePlateInput(rawPlate).normalized;
     const year = Number(String(value(/^год$/i) ?? "").match(/(?:19|20)\d{2}/)?.[0]);
-    if (!sourceModel || !/^[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}$/.test(plate) || year < 1980 || year > 2026) continue;
-    records.push({ plate, sourceModel, year });
+    if (!/^[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}$/.test(plate)) continue;
+    const hasRecordedYear = year >= 1980 && year <= new Date().getFullYear() + 1;
+    if (requireRecordedProfile && (!sourceModel || !hasRecordedYear)) continue;
+    records.push({
+      plate,
+      sourceModel,
+      year: hasRecordedYear ? year : null,
+      shipmentName: row.name,
+      momentAt: row.moment_at,
+    });
   }
   return records;
 }
@@ -100,10 +110,11 @@ const auditProfiles = [
   ["VOLKSWAGEN TOUAREG", 2007],
 ].map(([sourceModel, year], index) => ({ sourceModel, year, sample: `P${index + 21}` }));
 
-const demandRecords = demandVehicleRecords(readCopyRows(demandDumpPath, "local_demands"));
+const demandRows = readCopyRows(demandDumpPath, "local_demands");
+const demandRecords = demandVehicleRecords(demandRows);
 const blockedPlates = new Set(demandRecords.filter((record) => previousProfileKeys.has(`${record.sourceModel}|${record.year}`)).map((record) => record.plate));
 const usedPlates = new Set();
-const selectedProfiles = auditProfiles.map((profile) => {
+const historicalProfiles = auditProfiles.map((profile) => {
   const record = demandRecords.find((candidate) => (
     candidate.sourceModel === profile.sourceModel
     && candidate.year === profile.year
@@ -115,10 +126,25 @@ const selectedProfiles = auditProfiles.map((profile) => {
   return { ...profile, plate: record.plate };
 });
 assert.equal(usedPlates.size, 20, "the second audit must use 20 new distinct plate records");
+const latestShipmentRows = latestShipmentCount > 0
+  ? [...demandRows]
+    .sort((left, right) => String(right.moment_at).localeCompare(String(left.moment_at)))
+    .slice(0, latestShipmentCount)
+  : [];
+const latestPlateRecords = demandVehicleRecords(latestShipmentRows, { requireRecordedProfile: false });
+const latestDistinctPlates = new Set();
+const latestProfiles = latestPlateRecords
+  .filter((record) => {
+    if (latestDistinctPlates.has(record.plate)) return false;
+    latestDistinctPlates.add(record.plate);
+    return true;
+  })
+  .map((record, index) => ({ ...record, sample: `L${String(index + 1).padStart(2, "0")}` }));
+const selectedProfiles = latestShipmentCount > 0 ? latestProfiles : historicalProfiles;
 const profilesToRun = requestedSamples.size > 0
   ? selectedProfiles.filter((profile) => requestedSamples.has(profile.sample))
   : selectedProfiles;
-assert.equal(profilesToRun.length, requestedSamples.size || 20, "all requested sample IDs must exist");
+assert.equal(profilesToRun.length, requestedSamples.size || selectedProfiles.length, "all requested sample IDs must exist");
 
 const mannRows = readCopyRows(mannDumpPath, "mann_filter_applications").map((row) => ({
   vehicleVariantKey: row.vehicle_variant_key,
@@ -303,6 +329,7 @@ const historicalMakes = [
 ];
 
 function vehicleFromHistoricalProfile(profile) {
+  if (!profile.sourceModel || !profile.year) return null;
   const make = historicalMakes.find((candidate) => (
     profile.sourceModel === candidate || profile.sourceModel.startsWith(`${candidate} `)
   ));
@@ -363,7 +390,7 @@ for (const profile of profilesToRun) {
   // the generation start year as the vehicle year, so keep the provider value
   // for diagnostics but use the recorded year when checking MANN applicability.
   const providerYear = decoded.vehicle.year ?? null;
-  decoded.vehicle.year = profile.year;
+  if (profile.year) decoded.vehicle.year = profile.year;
   const normalized = normalizeDecodedVehicleForTest(decoded.vehicle);
   const rowsForMake = normalized
     ? mannRows.filter((row) => normalizeVehicleMake(row.make) === normalized.canonicalMake)
@@ -428,7 +455,12 @@ for (const profile of profilesToRun) {
 const allFilters = results.flatMap((result) => result.filters);
 const summary = {
   sampleSize: results.length,
-  distinctNewHistoricalPlates: profilesToRun.length,
+  sourceShipmentCount: latestShipmentCount || null,
+  sourceArchiveLatestMoment: latestShipmentRows[0]?.moment_at ?? null,
+  shipmentsWithValidPlate: latestShipmentCount > 0 ? latestPlateRecords.length : null,
+  duplicatePlateShipments: latestShipmentCount > 0 ? latestPlateRecords.length - latestDistinctPlates.size : null,
+  distinctPlatesTested: profilesToRun.length,
+  distinctNewHistoricalPlates: latestShipmentCount > 0 ? null : profilesToRun.length,
   decoded: results.filter((result) => result.decode === "found").length,
   decodedFromCache: results.filter((result) => result.decodeSource === "cache").length,
   historicalProfilesOnly: results.filter((result) => result.decodeSource === "historical_profile").length,
@@ -448,4 +480,10 @@ const summary = {
   }).length,
   results,
 };
-console.log(JSON.stringify(summary, null, 2));
+if (outputPath) {
+  fs.writeFileSync(outputPath, `${JSON.stringify(summary, null, 2)}\n`);
+  const conciseSummary = Object.fromEntries(Object.entries(summary).filter(([key]) => key !== "results"));
+  console.log(JSON.stringify({ ...conciseSummary, outputPath }, null, 2));
+} else {
+  console.log(JSON.stringify(summary, null, 2));
+}

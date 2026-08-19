@@ -55,25 +55,8 @@ export async function POST(request: NextRequest) {
       confirmedById: access.session.user.login,
     },
   });
-  if (parsed.data.sourceModel) {
-    await prisma.vehicleModelAlias.upsert({
-      where: { normalizedMake_sourceName: { normalizedMake: make, sourceName: parsed.data.sourceModel } },
-      create: {
-        normalizedMake: make,
-        sourceName: parsed.data.sourceModel,
-        canonicalBaseModel: normalizeMannSearchText(model),
-        canonicalGeneration: parsed.data.generation?.toUpperCase() || undefined,
-        bodyCodesJson: parsed.data.bodyCodes?.map((code) => code.toUpperCase()) ?? [],
-        source: "manual",
-        confirmedById: access.session.user.login,
-      },
-      update: {
-        canonicalBaseModel: normalizeMannSearchText(model),
-        canonicalGeneration: parsed.data.generation?.toUpperCase() || undefined,
-        bodyCodesJson: parsed.data.bodyCodes?.map((code) => code.toUpperCase()) ?? [],
-        confirmedById: access.session.user.login,
-      },
-    });
-  }
+  // A user's confirmation is scoped to the fully described vehicle mapping
+  // above. It must not silently become a global model alias: doing so turns one
+  // observed car into a rule for every future car with the same source label.
   return NextResponse.json({ mapping });
 }

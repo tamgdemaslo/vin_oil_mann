@@ -21,7 +21,10 @@ assert.deepEqual(normalizePlateInput("Т 332 ЕК 39"), { original: "Т 332 ЕК
 assert.deepEqual(normalizePlateInput("T-744-KO-39"), { original: "T-744-KO-39", normalized: "Т744КО39" });
 assert.equal(normalizeVehicleMake("Mercedes-Benz"), "MERCEDES");
 assert.equal(normalizeVehicleMake("LandRover"), "LAND ROVER");
+assert.equal(normalizeVehicleMake("VOLVO CARS"), "VOLVO");
+assert.equal(normalizeVehicleMake("LADA (SHIGULI)"), "LADA");
 assert.equal(normalizeEngineCode("B47 D20-A"), "B47D20A");
+assert.equal(normalizeEngineCode("ВАЗ-21120"), "VAZ21120");
 assert.deepEqual(normalizeVehicleModel("BMW 5 (G30, G31, F90)", "BMW"), {
   raw: "BMW 5 (G30, G31, F90)",
   canonical: "5",
@@ -34,6 +37,7 @@ assert.deepEqual(normalizeVehicleModel("X-Trail", "NISSAN"), {
   generation: undefined,
   bodyCode: undefined,
 });
+assert.equal(normalizeVehicleModel("AB Example", "TEST").bodyCode, "AB", "a leading alphabetic platform token is preserved separately from the model");
 
 const tronkExtendedVehicle = toVehicle({
   vin: "Z6FDXXEECDEG85039",
@@ -52,6 +56,7 @@ assert.equal(tronkExtendedVehicle.engineVolumeLiters, 2.488);
 assert.equal(tronkExtendedVehicle.powerHp, 149);
 assert.equal(tronkExtendedVehicle.powerKw, 110);
 assert.equal(tronkExtendedVehicle.transmissionName, "AUTOMATIC");
+assert.equal(tronkExtendedVehicle.fuelType, "GASOLINE");
 
 const tronkPrimaryVehicle = toVehicle({
   Vin: "5TDDZRFH80S966117",
@@ -85,5 +90,18 @@ assert.equal(tronkPrimaryVehicle.engineSeries, "2GRFKS");
 const datedPrimaryVehicle = toVehicle({ Brand: "ŠKODA", Model: "Octavia", StartYear: "11.12.2012" }, "tronk_vindecode");
 assert.equal(datedPrimaryVehicle.year, undefined);
 assert.equal(datedPrimaryVehicle.modelYearFrom, 2012);
+
+const combinedFallbackCases = [
+  ["ЛЕНД РОВЕР DISCOVERY 3", "LAND ROVER", "DISCOVERY 3"],
+  ["ХЕНДЭ IX55", "HYUNDAI", "IX55"],
+  ["НИССАН КАШКАЙ", "NISSAN", "KASHKAI"],
+  ["ОПЕЛЬ ВЕКТРА 1.8I 16V", "OPEL", "VEKTRA"],
+];
+for (const [providerModel, expectedMake, expectedModel] of combinedFallbackCases) {
+  const fallbackVehicle = toVehicle({ model: providerModel, ModelYear: 2008 }, "tronk_convertb2b");
+  assert.equal(fallbackVehicle.makeCanonical, expectedMake, `${providerModel} yields a canonical make`);
+  assert.equal(fallbackVehicle.modelCanonical, expectedModel, `${providerModel} separates make/model and removes the powertrain suffix`);
+  assert.equal(fallbackVehicle.year, 2008);
+}
 
 console.log("Vehicle identity normalization tests — passed");

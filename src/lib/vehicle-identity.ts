@@ -2,6 +2,9 @@ import crypto from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { tronkClient, type TronkCallResult, type TronkMethod } from "@/lib/integrations/tronk/client";
+import { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel, splitCombinedVehicleDescription } from "@/lib/vehicle-normalization";
+
+export { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-normalization";
 
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
 export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
@@ -72,23 +75,6 @@ type LookupOptions = {
 };
 
 type RecordValue = Record<string, unknown>;
-
-const MAKE_ALIASES: Record<string, string> = {
-  "MERCEDES-BENZ": "MERCEDES",
-  "MERCEDES BENZ": "MERCEDES",
-  MERCEDES: "MERCEDES",
-  VOLKSWAGEN: "VOLKSWAGEN",
-  VW: "VOLKSWAGEN",
-  "VW (VOLKSWAGEN)": "VOLKSWAGEN",
-  "KIA MOTORS": "KIA",
-  "MINI (BMW GROUP)": "MINI",
-  LANDROVER: "LAND ROVER",
-  "LAND ROVER": "LAND ROVER",
-  "SSANG YONG": "SSANGYONG",
-  SSANGYONG: "SSANGYONG",
-  GREATWALL: "GREAT WALL",
-  "GREAT WALL": "GREAT WALL",
-};
 
 // TRONK expects Russian licence plates in Cyrillic.  People often enter the
 // visually identical Latin characters, so convert those to the canonical
@@ -173,42 +159,6 @@ function cleanText(value: string | undefined): string | undefined {
   return normalized || undefined;
 }
 
-export function normalizeVehicleMake(value: unknown): string | undefined {
-  const normalized = String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/Ё/g, "Е")
-    .replace(/[‐‑‒–—―]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!normalized) return undefined;
-  return MAKE_ALIASES[normalized] ?? normalized;
-}
-
-export function normalizeVehicleModel(value: unknown, make?: string): { raw?: string; canonical?: string; generation?: string; bodyCode?: string } {
-  const raw = cleanText(String(value ?? ""));
-  if (!raw) return {};
-  let normalized = raw.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[‐‑‒–—―]/g, "-").replace(/\s+/g, " ").trim();
-  if (make && normalized.startsWith(`${make} `)) normalized = normalized.slice(make.length).trim();
-  const codes = [...normalized.matchAll(/\b(?:[A-Z]\d{1,3}[A-Z]?|\d[A-Z]\d|[A-Z]{1,3}\d{1,3})\b/g)].map((match) => match[0]);
-  // A Roman generation is a standalone catalogue token. A hyphen is not a
-  // valid boundary here: otherwise X-Trail, X-Type and similar model names are
-  // incorrectly parsed as generation X and lose the first part of the model.
-  const generation = normalized.match(/(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/)?.[1];
-  const canonical = normalized
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/(^|[\s(/,])(?:XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-  return { raw, canonical: canonical || normalized, generation, bodyCode: codes[0] };
-}
-
-export function normalizeEngineCode(value: unknown): string | undefined {
-  const normalized = String(value ?? "").toUpperCase().replace(/[‐‑‒–—―\s_-]/g, "").trim();
-  return normalized || undefined;
-}
-
 export function normalizeVinInput(value: string): string {
   return value.trim().toUpperCase().replace(/[\s.\-_/|]+/g, "");
 }
@@ -243,15 +193,18 @@ function asNumber(value?: number): number | undefined {
 
 export function toVehicle(input: RecordValue, method: VehicleSourceMethod, identifiers: Partial<Pick<NormalizedVehicleIdentity, "vin" | "frameNumber" | "licensePlate">> = {}): NormalizedVehicleIdentity {
   const data = asRecord(input.Data ?? input.data ?? input);
-  const makeRaw = firstText(data, [
+  const explicitMakeRaw = firstText(data, [
     ["Brand"], ["brand"], ["mark"], ["make"],
     ["mark_info", "en_name"], ["mark_info", "ru_name"], ["mark_info", "name"], ["mark_info", "name_eng"], ["mark_info", "code"],
   ]);
-  const makeCanonical = normalizeVehicleMake(makeRaw);
-  const modelRaw = firstText(data, [
+  const sourceModelRaw = firstText(data, [
     ["Model"], ["model"],
     ["model_info", "en_name"], ["model_info", "ru_name"], ["model_info", "name"], ["model_info", "name_eng"], ["model_info", "code"],
   ]);
+  const combined = explicitMakeRaw ? {} : splitCombinedVehicleDescription(sourceModelRaw);
+  const makeRaw = explicitMakeRaw ?? combined.makeRaw;
+  const makeCanonical = normalizeVehicleMake(makeRaw) ?? combined.makeCanonical;
+  const modelRaw = combined.modelRaw ?? sourceModelRaw;
   const model = normalizeVehicleModel(modelRaw, makeCanonical);
   const volumeLiters = firstNumber(data, [["EngineVolumeLiters"], ["engine_volume_liters"], ["EngineVolume", "L"], ["engine", "volume"], ["tech_param", "engine_volume"], ["engine_volume"]]);
   const volumeCc = firstNumber(data, [["EngineVolumeCc"], ["engine_volume_cc"], ["EngineVolume", "Ccm"], ["engine", "volume_cc"], ["tech_param", "displacement"]]);
@@ -260,7 +213,7 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
   // StartYear/year_from describe the generation's applicability, not this
   // vehicle's production year. Treating them as the actual year shifts many
   // plate lookups to the first year of a generation and rejects valid MANN rows.
-  const year = firstYear(data, [["Year"], ["year"], ["model_year"], ["tech_param", "year"]]);
+  const year = firstYear(data, [["Year"], ["year"], ["ModelYear"], ["model_year"], ["ProduceDate"], ["produce_date"], ["tech_param", "year"]]);
   const resolvedLiters = asNumber(volumeLiters) ?? (asNumber(volumeCc) ? Number((volumeCc! / 1000).toFixed(3)) : undefined);
   const resolvedCc = asNumber(volumeCc) ?? (resolvedLiters ? Math.round(resolvedLiters * 1000) : undefined);
   const resolvedHp = asNumber(powerHp) ?? (asNumber(powerKw) ? Math.round(powerKw! * 1.35962) : undefined);
@@ -273,13 +226,13 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     modelCanonical: model.canonical,
     generationRaw: firstText(data, [["Generation"], ["generation"], ["super_gen", "name"]]) ?? model.generation,
     generationCanonical: model.generation,
-    bodyName: firstText(data, [["BodyName"], ["body_name"], ["body", "name"], ["human_name"]]),
+    bodyName: firstText(data, [["BodyName"], ["body_name"], ["body", "name"], ["OriginalBodyName"], ["original_body_name"]]),
     bodyCode: firstText(data, [["BodyCode"], ["body_code"]]) ?? model.bodyCode,
-    bodyType: firstText(data, [["BodyType"], ["body_type"]]),
+    bodyType: firstText(data, [["BodyType"], ["body_type"], ["Body"], ["body"]]),
     year: year ? Math.round(year) : undefined,
     modelYearFrom: firstYear(data, [["ModelYearFrom"], ["model_year_from"], ["StartYear"], ["super_gen", "year_from"]]),
     modelYearTo: firstYear(data, [["ModelYearTo"], ["model_year_to"], ["FinishYear"], ["super_gen", "year_to"]]),
-    engineName: firstText(data, [["EngineName"], ["engine_name"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
+    engineName: firstText(data, [["EngineName"], ["engine_name"], ["EngineDescription"], ["engine_description"], ["Modification"], ["engine", "name"], ["tech_param", "human_name"]]),
     engineCode: normalizeEngineCode(firstText(data, [["EngineCode"], ["engine_code"], ["engine", "code"]])),
     engineSeries: normalizeEngineCode(firstText(data, [["EngineSeries"], ["engine_series"], ["engine", "series"]])),
     engineVolumeLiters: resolvedLiters,
@@ -287,13 +240,13 @@ export function toVehicle(input: RecordValue, method: VehicleSourceMethod, ident
     powerHp: resolvedHp,
     powerPs: firstNumber(data, [["PowerPs"], ["power_ps"], ["EnginePower", "PS"], ["tech_param", "power_ps"]]) ?? resolvedHp,
     powerKw: resolvedKw,
-    fuelType: firstText(data, [["FuelType"], ["fuel_type"], ["tech_param", "fuel_type"]]),
-    transmissionType: firstText(data, [["TransmissionType"], ["transmission_type"], ["Gear"], ["tech_param", "gear_type"]]),
+    fuelType: firstText(data, [["FuelType"], ["fuel_type"], ["tech_param", "fuel_type"], ["tech_param", "engine_type"]]),
+    transmissionType: firstText(data, [["TransmissionType"], ["transmission_type"], ["Gear"], ["tech_param", "gear_type"], ["tech_param", "transmission"]]),
     transmissionName: firstText(data, [["TransmissionName"], ["transmission_name"], ["tech_param", "gearbox"], ["tech_param", "transmission"]]),
     driveType: firstText(data, [["DriveType"], ["drive_type"], ["Drive"], ["tech_param", "drive_type"]]),
     steeringPosition: firstText(data, [["SteeringPosition"], ["steering_wheel"], ["steering"]]),
-    market: firstText(data, [["Market"], ["market"]]),
-    countryOfOrigin: firstText(data, [["CountryOfOrigin"], ["country_of_origin"], ["country"]]),
+    market: firstText(data, [["Market"], ["market"], ["vendor_detail", "market"]]),
+    countryOfOrigin: firstText(data, [["CountryOfOrigin"], ["country_of_origin"], ["country"], ["vendor_detail", "assembly_country"]]),
     mileage: firstNumber(data, [["Mileage"], ["mileage"]]),
     ownersCount: firstNumber(data, [["OwnersCount"], ["pts_owners_count"], ["owners_count"]]),
     sourceMethods: [method],

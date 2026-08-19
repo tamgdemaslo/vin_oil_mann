@@ -7,6 +7,7 @@ const jiti = createJiti(import.meta.url, {
 });
 
 const {
+  MANN_MIN_PRESENTABLE_SCORE,
   evaluateMannCandidate,
   normalizeDecodedVehicleForTest,
   rankMannCandidatesForTest,
@@ -16,6 +17,10 @@ const {
   normalizeMannYearInput,
   shouldApplyMannRequest,
 } = await jiti.import("../src/lib/mann-picker-state.ts");
+const {
+  filterMannVehicleVariants,
+  isMannNonVehicleVariantText,
+} = await jiti.import("../src/lib/mann-catalog.ts");
 
 const vehicle = (fields) => ({
   sourceMethods: ["tronk_vindecode"],
@@ -59,11 +64,13 @@ assert.deepEqual(
 const fordThird = evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo III (B4Y)", vehicleText: "2.5 l", vehicleYearFrom: 2000, vehicleYearTo: 2007,
 }));
-assert.ok(fordThird.rejected?.reasons.some((reason) => reason.includes("поколение")));
+assert.ok(fordThird.candidate?.mismatchedFields.includes("поколение"));
+assert.ok(fordThird.candidate?.mismatchedFields.includes("год"));
 const fordFifth = evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "2.5 l", hp: "149", vehicleYearFrom: 2014, vehicleYearTo: 2019,
 }));
 assert.ok(fordFifth.candidate, "Mondeo V remains a valid candidate");
+assert.ok(fordFifth.candidate.score > fordThird.candidate.score, "matching evidence outranks a conflicting generation without hiding the alternative");
 const fordScreenshotBoundary = evaluateMannCandidate(ford, row({
   make: "FORD",
   model: "Mondeo V",
@@ -78,10 +85,10 @@ assert.ok(fordScreenshotBoundary.candidate, "matching generation, 2.5 displaceme
 assert.ok(fordScreenshotBoundary.candidate?.mismatchedFields.includes("год"));
 assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("объём двигателя"));
 assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("мощность"));
-assert.ok(fordScreenshotBoundary.candidate?.warnings.some((warning) => warning.includes("переход модельного года")));
+assert.ok(fordScreenshotBoundary.candidate?.warnings.some((warning) => warning.includes("Граница модельного года")));
 assert.ok(evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "2.0TDCi", vehicleYearFrom: 2014, vehicleYearTo: 2019,
-})).rejected?.reasons.some((reason) => reason.includes("объём")), "2.0TDCi is rejected against 2.488 l");
+})).candidate?.mismatchedFields.includes("объём двигателя"), "2.0TDCi remains visible but is penalized against 2.488 l");
 assert.ok(evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "All models",
 })).rejected?.reasons.some((reason) => reason.includes("общая применяемость")), "All models is context, not a selectable vehicle variant");
@@ -118,7 +125,7 @@ assert.ok(evaluateMannCandidate(mercedesGlk, row({
 })).candidate, "a commercial Mercedes GLK 300 name resolves to the GLK model family");
 
 const landCruiser200 = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "TOYOTA", modelRaw: "Land Cruiser 200 V8", year: 2008 }));
-assert.deepEqual({ model: landCruiser200?.baseModel, codes: landCruiser200?.bodyCodes }, { model: "LAND CRUISER", codes: [] });
+assert.deepEqual({ model: landCruiser200?.baseModel, codes: landCruiser200?.bodyCodes }, { model: "LAND CRUISER 200 V8", codes: [] });
 assert.ok(evaluateMannCandidate(landCruiser200, row({
   make: "TOYOTA", model: "Land Cruiser", vehicleText: "4.7 V8(J20)", vehicleYearFrom: 2007, vehicleYearTo: 2011,
 })).candidate, "Land Cruiser 200 V8 stays in the Land Cruiser family without treating V8 as a body code");
@@ -142,6 +149,38 @@ assert.ok(evaluateMannCandidate(corollaChassis, row({
   make: "TOYOTA", model: "Corolla XI(E18)", vehicleText: "1.8VVT-i", engineCode: "2ZR-FE",
   hp: "136", vehicleYearFrom: 2013, vehicleYearTo: 2018,
 })).candidate, "a detailed chassis such as ZRE182 is compatible with its MANN E18 family code");
+
+const corollaNde150 = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "TOYOTA", modelRaw: "Corolla", generationRaw: "X", bodyName: "NDE150", year: 2008,
+  engineVolumeCc: 1364, powerKw: 66, powerHp: 90, fuelType: "D",
+}));
+const corollaNde150Candidates = rankMannCandidatesForTest(corollaNde150, [
+  row({
+    vehicleVariantKey: "corolla-1nd", make: "TOYOTA", model: "Corolla", vehicleText: "1.4D-4D",
+    engineCode: "1ND-TV", kw: "66", hp: "90", vehicleYearFrom: 2007, vehicleYearTo: 2014,
+  }),
+  row({
+    vehicleVariantKey: "corolla-carbon", make: "TOYOTA", model: "Corolla X(E14/E15)",
+    vehicleText: "Aktivkohlefilter/ActivatedCarbonFilter(60)",
+  }),
+  row({
+    vehicleVariantKey: "corolla-bio", make: "TOYOTA", model: "Corolla X(E14/E15)",
+    vehicleText: "BiofunktionalerInnenraumfilter/Biofunctionalcabinairfilter(298)",
+  }),
+]);
+assert.deepEqual(corollaNde150Candidates.map((candidate) => candidate.applicationId), ["corolla-1nd"]);
+assert.equal(corollaNde150Candidates[0]?.effectiveVehicleText ?? corollaNde150Candidates[0]?.vehicleText, "1.4D-4D");
+assert.equal(isMannNonVehicleVariantText("Aktivkohlefilter/ActivatedCarbonFilter(60)"), true);
+assert.equal(isMannNonVehicleVariantText("BiofunktionalerInnenraumfilter/Biofunctionalcabinairfilter(298)"), true);
+assert.deepEqual(
+  filterMannVehicleVariants([
+    { variantId: "real", vehicleText: "1.4D-4D", effectiveVehicleText: "1.4D-4D" },
+    { variantId: "carbon", vehicleText: "Aktivkohlefilter/ActivatedCarbonFilter(60)", effectiveVehicleText: null },
+    { variantId: "bio", vehicleText: "BiofunktionalerInnenraumfilter/Biofunctionalcabinairfilter(298)", effectiveVehicleText: null },
+  ]).map((variant) => variant.variantId),
+  ["real"],
+  "manual MANN variant lists apply the same qualifier filter as the automatic resolver",
+);
 
 const mazdaZ6 = normalizeDecodedVehicleForTest(vehicle({
   makeRaw: "MAZDA", modelRaw: "3", generationRaw: "I", year: 2006,
@@ -171,9 +210,9 @@ assert.ok(evaluateMannCandidate(miniCooper, row({
 
 const highlander = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "TOYOTA", modelRaw: "Highlander", generationRaw: "III", year: 2017, engineVolumeCc: 3456 }));
 assert.deepEqual({ model: highlander?.baseModel, generation: highlander?.generation }, { model: "HIGHLANDER", generation: "III" });
-assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander II", vehicleYearFrom: 2007, vehicleYearTo: 2013 })).rejected);
+assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander II", vehicleYearFrom: 2007, vehicleYearTo: 2013 })).candidate?.mismatchedFields.includes("поколение"));
 assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander III", vehicleYearFrom: 2014, vehicleYearTo: 2019 })).candidate);
-assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander III", vehicleText: "2.7", vehicleYearFrom: 2014, vehicleYearTo: 2019 })).rejected?.reasons.some((reason) => reason.includes("объём")), "2.7 is rejected against 3.456 l");
+assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander III", vehicleText: "2.7", vehicleYearFrom: 2014, vehicleYearTo: 2019 })).candidate?.mismatchedFields.includes("объём двигателя"), "2.7 is penalized against 3.456 l");
 
 const xTrail = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "NISSAN", modelRaw: "X-Trail", year: 2011 }));
 assert.deepEqual({ model: xTrail?.baseModel, generation: xTrail?.generation }, { model: "X TRAIL", generation: undefined });
@@ -194,7 +233,7 @@ assert.ok(evaluateMannCandidate(bmw5Gt, row({
 const renault16 = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "RENAULT", modelRaw: "Captur", year: 2019, engineVolumeCc: 1598 }));
 assert.ok(evaluateMannCandidate(renault16, row({
   make: "RENAULT", model: "Captur(J5,H5)", vehicleText: "1.5dCi", vehicleYearFrom: 2013, vehicleYearTo: 2019,
-})).rejected?.reasons.some((reason) => reason.includes("объём")), "a 1.6 litre input cannot match a 1.5 litre MANN engine");
+})).candidate?.mismatchedFields.includes("объём двигателя"), "a 1.6 litre input penalizes a 1.5 litre MANN engine");
 
 const civic = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "HONDA", modelRaw: "Civic", generationRaw: "VII", year: 2002 }));
 assert.deepEqual({ model: civic?.baseModel, generation: civic?.generation, year: civic?.year }, { model: "CIVIC", generation: "VII", year: 2002 });
@@ -216,7 +255,7 @@ const bmwWrongBody = evaluateMannCandidate(bmwX1, row({
   model: "X1(F48)",
   vehicleText: "2.0",
 }));
-assert.ok(bmwWrongBody.rejected?.reasons.some((reason) => reason.includes("код кузова")));
+assert.ok(bmwWrongBody.candidate?.mismatchedFields.includes("код кузова"));
 
 const bmwX5 = normalizeDecodedVehicleForTest(vehicle({
   makeRaw: "BMW",
@@ -240,6 +279,61 @@ assert.ok(bmwX5Mann.candidate, "a short TRONK M57 code matches the detailed MANN
 assert.ok(bmwX5Mann.candidate?.matchedFields.includes("семейство двигателя"));
 assert.ok(bmwX5Mann.candidate?.matchedFields.includes("объём двигателя"));
 assert.ok(bmwX5Mann.candidate?.matchedFields.includes("мощность"));
+
+const passatB6 = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "VOLKSWAGEN",
+  modelRaw: "Passat B6",
+  generationRaw: "B6",
+  bodyName: "Седан",
+  year: 2005,
+  engineVolumeCc: 1984,
+  powerKw: 110,
+  powerHp: 150,
+  transmissionType: "MECHANICAL",
+}));
+assert.deepEqual(
+  { model: passatB6?.baseModel, generation: passatB6?.generation, bodyCodes: passatB6?.bodyCodes },
+  { model: "PASSAT B6", generation: undefined, bodyCodes: ["B6"] },
+  "Passat B6 stays a generic model/body token without a one-off marketing alias",
+);
+const rankedPassatB6 = rankMannCandidatesForTest(passatB6, [
+  row({
+    vehicleVariantKey: "passat-b6-fsi",
+    make: "VOLKSWAGEN",
+    model: "Passat B6(3C2/3C5)/Passat CCB6(357)",
+    vehicleText: "2.0FSI",
+    engineCode: "BLR/X/Y,BVX/Y/Z",
+    kw: "110",
+    hp: "150",
+    vehicleYearFrom: 2005,
+    vehicleYearTo: 2010,
+  }),
+  row({
+    vehicleVariantKey: "passat-b6-tdi",
+    make: "VOLKSWAGEN",
+    model: "Passat B6(3C2/3C5)/Passat CCB6(357)",
+    vehicleText: "2.0TDI",
+    kw: "103",
+    hp: "140",
+    vehicleYearFrom: 2005,
+    vehicleYearTo: 2010,
+  }),
+  row({
+    vehicleVariantKey: "passat-b55-tdi",
+    make: "VOLKSWAGEN",
+    model: "Passat B5.5(3B2/3B5)",
+    vehicleText: "2.5TDIV6",
+    kw: "110",
+    hp: "150",
+    vehicleYearFrom: 2000,
+    vehicleYearTo: 2005,
+  }),
+]);
+assert.equal(rankedPassatB6[0]?.applicationId, "passat-b6-fsi");
+assert.equal(rankedPassatB6[0]?.confidence, "medium", "without an engine code or fuel signal the Passat remains confirmable, not automatic");
+assert.ok(rankedPassatB6[0]?.matchedFields.includes("код кузова"));
+assert.ok(rankedPassatB6[0]?.matchedFields.includes("объём двигателя"));
+assert.ok(rankedPassatB6[0]?.matchedFields.includes("мощность"));
 for (const qualifier of [
   "fürkalteKlimazonen/forcoldclimates(116)",
   "Einbaurechts/Rightside(326)",
@@ -247,6 +341,8 @@ for (const qualifier of [
   "Linkslenker/left-handdrive(31)",
   "Einspritzsystem/Injectionsystem(1002)",
   "Automatikgetriebe/Automaticgearbox(2).Getriebe-Code/Gearboxcode(1010)",
+  "Aktivkohlefilter/ActivatedCarbonFilter(60)",
+  "BiofunktionalerInnenraumfilter/Biofunctionalcabinairfilter(298)",
 ]) {
   assert.ok(evaluateMannCandidate(bmwX5, row({
     make: "BMW",
@@ -261,7 +357,7 @@ const sportage = normalizeDecodedVehicleForTest(vehicle({
 }));
 assert.ok(evaluateMannCandidate(sportage, row({
   make: "KIA MOTORS", model: "Sportage III(SL)", vehicleText: "2.0", engineCode: "G4NA", hp: "150", vehicleYearFrom: 2010,
-})).rejected?.reasons.some((reason) => reason.includes("поколение")), "a Roman generation adjacent to a body-code parenthesis remains a hard conflict");
+})).candidate?.mismatchedFields.includes("поколение"), "a conflicting generation remains visible but receives negative evidence");
 assert.ok(evaluateMannCandidate(sportage, row({
   make: "KIA MOTORS", model: "Sportage IV(QL,QLE)", vehicleText: "176 2.0 +++ For our complete",
   engineCode: "NU/G4NA and always up-to-date", hp: "150", vehicleYearFrom: 2015,
@@ -295,10 +391,82 @@ const havalBoundary = evaluateMannCandidate(haval, row({
 }));
 assert.ok(havalBoundary.candidate, "one-year MANN boundary with an exact engine remains confirmable");
 assert.ok(havalBoundary.candidate?.mismatchedFields.includes("год"));
-assert.ok(havalBoundary.candidate?.warnings.some((warning) => warning.includes("переход модельного года")));
+assert.ok(havalBoundary.candidate?.warnings.some((warning) => warning.includes("Граница модельного года")));
 assert.ok(evaluateMannCandidate(haval, row({
   make: "HAVAL", model: "Jolion", vehicleText: "1.5T", engineCode: "GW4G15K", kw: "105", hp: "143", vehicleYearFrom: 2022,
-})).rejected?.reasons.some((reason) => reason.includes("год")), "two-year year mismatch stays a hard conflict");
+})).candidate?.mismatchedFields.includes("год"), "a two-year mismatch is penalized more strongly than a boundary mismatch");
+
+// Algorithmic invariants: these protect whole classes of vehicles and do not encode
+// any plate, VIN or one-off production answer.
+const invariantVehicle = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "BMW", modelRaw: "X5", bodyName: "G05", year: 2019,
+  engineSeries: "B57D30A", engineVolumeCc: 2993, powerHp: 249, fuelType: "DIESEL",
+}));
+const invariantRows = [
+  row({
+    vehicleVariantKey: "exact-a", make: "BMW", model: "X5(G05,F95)", vehicleText: "3.0d xDrive(G05)",
+    engineCode: "B57D30A", hp: "249", vehicleYearFrom: 2018, vehicleYearTo: 2021,
+  }),
+  row({
+    vehicleVariantKey: "exact-b", make: "BMW", model: "X5(G05,F95)", vehicleText: "3.0d xDrive(G05)",
+    engineCode: "B57D30A", hp: "249", vehicleYearFrom: 2018, vehicleYearTo: 2021,
+    condition: "Linkslenker/left-hand drive",
+  }),
+  row({
+    vehicleVariantKey: "wrong-engine", make: "BMW", model: "X5(G05,F95)", vehicleText: "4.4i(G05)",
+    engineCode: "N63B44", hp: "530", vehicleYearFrom: 2018, vehicleYearTo: 2021,
+  }),
+  row({ vehicleVariantKey: "irrelevant", make: "TOYOTA", model: "Camry VII", vehicleText: "2.5" }),
+];
+const invariantRanking = rankMannCandidatesForTest(invariantVehicle, invariantRows);
+assert.equal(invariantRanking[0]?.applicationId, "exact-a");
+assert.deepEqual(new Set(invariantRanking[0]?.variantIds), new Set(["exact-a", "exact-b"]), "semantic duplicate rows consolidate and keep every filter-bearing variant ID");
+assert.ok(invariantRanking[0].score > invariantRanking[1].score, "exact engine, body, year and power evidence outrank a conflicting powertrain");
+assert.ok(invariantRanking.every((candidate) => candidate.score >= 0 && candidate.score <= 100), "all scores stay inside the documented 0-100 range");
+assert.ok(invariantRanking.slice(1).every((candidate) => candidate.confidence !== "high"), "only Top-1 may receive high confidence");
+assert.deepEqual(
+  rankMannCandidatesForTest(invariantVehicle, [...invariantRows].reverse()).map((candidate) => [candidate.applicationId, candidate.score]),
+  invariantRanking.map((candidate) => [candidate.applicationId, candidate.score]),
+  "ranking is stable when source rows are shuffled",
+);
+assert.deepEqual(
+  rankMannCandidatesForTest(invariantVehicle, invariantRows.slice(0, 3)).map((candidate) => [candidate.applicationId, candidate.score]),
+  invariantRanking.map((candidate) => [candidate.applicationId, candidate.score]),
+  "an irrelevant make cannot perturb the ranking",
+);
+
+const gasolineSportage = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "KIA", modelRaw: "Sportage", generationRaw: "II", year: 2009,
+  engineSeries: "G4GC", engineVolumeCc: 1975, powerHp: 141, fuelType: "PO",
+}));
+const sportageFuelRanking = rankMannCandidatesForTest(gasolineSportage, [
+  row({ vehicleVariantKey: "gasoline", make: "KIA MOTORS", model: "Sportage II(JE_)", vehicleText: "2.0i", engineCode: "G4GC", hp: "141", vehicleYearFrom: 2004, vehicleYearTo: 2010 }),
+  row({ vehicleVariantKey: "lpg", make: "KIA MOTORS", model: "Sportage II(JE_)", vehicleText: "2.0LPG", engineCode: "G4GC", hp: "137", vehicleYearFrom: 2009, vehicleYearTo: 2010 }),
+]);
+assert.equal(sportageFuelRanking[0]?.applicationId, "gasoline", "a glued LPG marker is parsed and cannot tie a gasoline modification");
+assert.ok(sportageFuelRanking[1]?.mismatchedFields.includes("топливо"));
+
+const contradictoryMazda = evaluateMannCandidate(
+  normalizeDecodedVehicleForTest(vehicle({ makeRaw: "MAZDA", modelRaw: "6", generationRaw: "I", year: 2005, engineVolumeCc: 2967, powerHp: 220 })),
+  row({ vehicleVariantKey: "wrong-mazda", make: "MAZDA", model: "6(GG/GY)", vehicleText: "2.0", engineCode: "LF", hp: "141", vehicleYearFrom: 2002, vehicleYearTo: 2007 }),
+).candidate;
+assert.ok(contradictoryMazda && contradictoryMazda.score < MANN_MIN_PRESENTABLE_SCORE, "a same-model row with contradictory displacement and power is not presentable as a match");
+
+const prefixedPlatform = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "TEST", modelRaw: "AB Example", bodyCode: "AB", year: 2012, powerHp: 100,
+}));
+const prefixedPlatformMatch = evaluateMannCandidate(prefixedPlatform, row({
+  vehicleVariantKey: "platform-format", make: "TEST", model: "Example II(ABC)", vehicleText: "1.6", hp: "100", vehicleYearFrom: 2010, vehicleYearTo: 2015,
+}));
+assert.ok(prefixedPlatformMatch.candidate?.matchedFields.includes("код кузова"), "a leading provider platform code matches a longer code from the same MANN chassis family");
+
+const numericAlias = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "TEST", modelRaw: "44", year: 2004, engineSeries: "ВАЗ-4400", engineVolumeCc: 1499, powerHp: 91,
+}));
+const numericAliasMatch = evaluateMannCandidate(numericAlias, row({
+  vehicleVariantKey: "numeric-parenthetical-format", make: "TEST", model: "440(44)", vehicleText: "1.5 16V", engineCode: "4400", hp: "91", vehicleYearFrom: 1996, vehicleYearTo: 2005,
+}));
+assert.ok(numericAliasMatch.candidate?.matchedFields.includes("базовая модель"), "a numeric model alias in MANN parentheses participates in retrieval/scoring");
 
 assert.equal(normalizeMannYearInput("2002"), "2002");
 assert.equal(isValidMannYear("2002", 2026), true);

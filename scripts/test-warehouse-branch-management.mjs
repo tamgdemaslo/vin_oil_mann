@@ -22,5 +22,8 @@ assert.match(branchesUi, /Склады/, "branch management must expose a wareho
 assert.match(branchesUi, /Остатки и движения других филиалов не копировались/, "warehouse creation must communicate that no cross-branch stock is copied");
 assert.match(receiptsUi, /stores\.length === 0/, "receipt UI must distinguish an empty warehouse list from a loading error");
 assert.match(receiptsUi, /tab=warehouses/, "receipt UI must lead the owner to warehouse management when the branch has no warehouses");
+assert.match(receiptsUi, /offset: String\(page \* DOCUMENT_PAGE_SIZE\)/, "receipt journal must request older document pages with an offset");
+assert.match(receiptsUi, /documentsMeta\.total\.toLocaleString\("ru-RU"\)/, "receipt journal must show the full document count returned by the API");
+assert.match(receiptsUi, /aria-label="Страницы журнала документов"/, "receipt journal pagination must expose an accessible navigation landmark");
 
 console.log("Warehouse branch management checks: PASS");

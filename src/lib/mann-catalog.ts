@@ -103,6 +103,70 @@ export function normalizeMannSearchText(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
+const MANN_NON_VEHICLE_VARIANT_MARKERS = [
+  "ALLMODELS",
+  "EXPORTMODELL",
+  "EXPORTMODELFOR",
+  "KUNSTSTOFFOLFILTERMODUL",
+  "PLASTICOILFILTERMODULE",
+  "ALUOLFILTERMODUL",
+  "ALUMINIUMOILFILTERMODULE",
+  "GEHAUSEHOUSING",
+  "FURKALTEKLIMAZONEN",
+  "FORCOLDCLIMATES",
+  "EINBAURECHTS",
+  "RIGHTSIDE",
+  "STAUBREICHEEINSATZBEDINGUNGEN",
+  "USEINDUSTYENVIRONMENTS",
+  "LINKSLENKER",
+  "LEFTHANDDRIVE",
+  "RECHTSLENKER",
+  "RIGHTHANDDRIVE",
+  "EINBAULINKS",
+  "LEFTSIDE",
+  "EINSPRITZSYSTEM",
+  "INJECTIONSYSTEM",
+  "ANZAHL",
+  "QUANTITY",
+  "WAHLWEISE",
+  "OPTIONALLY",
+  "FILTERELEMENT",
+  "ANSCHRAUBFILTER",
+  "SPINONFILTER",
+  "FLACHLUFTFILTERELEMENT",
+  "PANELAIRFILTER",
+  "KRAFTSTOFFFILTERAUSSERHALB",
+  "FUELFILTERFITTED",
+  "PARTIKELFILTER",
+  "PARTICULATEFILTER",
+  "AKTIVKOHLEFILTER",
+  "ACTIVATEDCARBONFILTER",
+  "VORFILTER",
+  "PREFILTER",
+  "BIOFUNKTIONALERINNENRAUMFILTER",
+  "BIOFUNCTIONALCABINAIRFILTER",
+  "EINBAUORT",
+  "MOUNTINGPOSITION",
+  "AUTOMATIKGETRIEBE",
+  "AUTOMATICGEARBOX",
+  "GETRIEBECODE",
+  "GEARBOXCODE",
+  "FILTRATIONSSYSTEM",
+  "FILTRATIONSYSTEM",
+];
+
+/** True when a PDF context/qualifier row was imported as if it were a vehicle modification. */
+export function isMannNonVehicleVariantText(value: unknown): boolean {
+  const compact = normalizeMannSearchText(value).replace(/\s+/g, "");
+  if (!compact) return false;
+  return compact === "ВСЕМОДЕЛИ" || MANN_NON_VEHICLE_VARIANT_MARKERS.some((marker) => compact.includes(marker));
+}
+
+/** Final in-memory guard shared by every UI path that displays MANN variants. */
+export function filterMannVehicleVariants<Variant extends { vehicleText?: string | null; effectiveVehicleText?: string | null }>(variants: Variant[]): Variant[] {
+  return variants.filter((variant) => !isMannNonVehicleVariantText(variant.effectiveVehicleText ?? variant.vehicleText));
+}
+
 export function normalizeMannArticle(value: unknown): string {
   return normalizeMannText(value)
     .replace(/[‐‑‒–—―]/g, "-")
@@ -582,7 +646,7 @@ export async function listMannVariants(params: { make: string; model: string; ye
     : params.year
     ? Prisma.sql`AND (vehicle_year_from IS NULL OR vehicle_year_from <= ${params.year}) AND (vehicle_year_to IS NULL OR vehicle_year_to >= ${params.year})`
     : Prisma.empty;
-  return prisma.$queryRaw<Array<{
+  const variants = await prisma.$queryRaw<Array<{
     variantId: string;
     vehicleText: string | null;
     effectiveVehicleText: string | null;
@@ -607,22 +671,14 @@ export async function listMannVariants(params: { make: string; model: string; ye
     WHERE make_normalized = ${makeNormalized}
       AND model_normalized = ${modelNormalized}
       AND UPPER(BTRIM(COALESCE(effective_vehicle_text, vehicle_text, ''))) NOT IN ('ALL MODELS', 'ВСЕ МОДЕЛИ')
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%FORCOLDCLIMATES%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%RIGHTSIDE%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%USEINDUSTYENVIRONMENTS%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%LEFTHANDDRIVE%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%RIGHTHANDDRIVE%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%INJECTIONSYSTEM%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%QUANTITY%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%OPTIONALLY%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%FILTERELEMENT%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%HOUSING%'
-      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') NOT LIKE '%MOUNTINGPOSITION%'
+      AND regexp_replace(UPPER(COALESCE(effective_vehicle_text, vehicle_text, '')), '[^A-Z0-9]', '', 'g') !~
+        '(ALLMODELS|EXPORTMODELL|EXPORTMODELFOR|KUNSTSTOFFOLFILTERMODUL|PLASTICOILFILTERMODULE|ALUOLFILTERMODUL|ALUMINIUMOILFILTERMODULE|GEHAUSEHOUSING|FURKALTEKLIMAZONEN|FORCOLDCLIMATES|EINBAURECHTS|RIGHTSIDE|STAUBREICHEEINSATZBEDINGUNGEN|USEINDUSTYENVIRONMENTS|LINKSLENKER|LEFTHANDDRIVE|RECHTSLENKER|RIGHTHANDDRIVE|EINBAULINKS|LEFTSIDE|EINSPRITZSYSTEM|INJECTIONSYSTEM|ANZAHL|QUANTITY|WAHLWEISE|OPTIONALLY|FILTERELEMENT|ANSCHRAUBFILTER|SPINONFILTER|FLACHLUFTFILTERELEMENT|PANELAIRFILTER|KRAFTSTOFFFILTERAUSSERHALB|FUELFILTERFITTED|PARTIKELFILTER|PARTICULATEFILTER|AKTIVKOHLEFILTER|ACTIVATEDCARBONFILTER|VORFILTER|PREFILTER|BIOFUNKTIONALERINNENRAUMFILTER|BIOFUNCTIONALCABINAIRFILTER|EINBAUORT|MOUNTINGPOSITION|AUTOMATIKGETRIEBE|AUTOMATICGEARBOX|GETRIEBECODE|GEARBOXCODE|FILTRATIONSSYSTEM|FILTRATIONSYSTEM)'
       ${yearSql}
     GROUP BY vehicle_variant_key
     ORDER BY MIN(effective_vehicle_text) NULLS LAST, MIN(vehicle_years) NULLS LAST
     LIMIT 500
   `);
+  return filterMannVehicleVariants(variants);
 }
 
 export type MannCatalogFilter = {

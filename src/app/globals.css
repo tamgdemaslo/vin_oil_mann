@@ -21901,6 +21901,33 @@ select.eco-input::-ms-expand,
   overflow: auto;
 }
 
+.eco-receipt-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+  color: var(--eco-muted);
+  background: var(--eco-surface);
+  border-top: 1px solid var(--eco-line);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-receipt-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eco-receipt-pagination strong {
+  min-width: 58px;
+  color: var(--eco-ink-2);
+  font-size: 13px;
+  text-align: center;
+}
+
 .eco-receipt-doc-table {
   width: 100%;
   min-width: 1040px;
@@ -23657,6 +23684,15 @@ select.eco-input::-ms-expand,
 
   .eco-receipt-doc-table {
     min-width: 920px;
+  }
+
+  .eco-receipt-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-receipt-pagination > div {
+    justify-content: space-between;
   }
 
   .eco-receipt-drawer-head {

@@ -8,6 +8,8 @@ import {
   Ban,
   CheckCircle2,
   CheckSquare2,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Eraser,
   Eye,
@@ -45,6 +47,9 @@ type AdjustmentType = "technical" | "expense";
 type FormMode = "new" | "edit" | "view";
 type SaveAction = "draft" | "conduct";
 type ReceiptAction = "open" | "edit" | "post" | "delete" | "duplicate" | "unpost" | "cancel" | "correction" | "history" | "print-labels";
+type DocumentListMeta = { total: number; limit: number; offset: number; mode?: "branch" | "all" };
+
+const DOCUMENT_PAGE_SIZE = 30;
 
 type StoreOption = { id: string; name: string; isMain?: boolean };
 type CounterpartyOption = { id: string; name: string; phone?: string; legalTitle?: string; inn?: string };
@@ -399,6 +404,8 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
   const [adjustmentReason, setAdjustmentReason] = useState("");
 
   const [documents, setDocuments] = useState<MovementRow[]>([]);
+  const [documentsMeta, setDocumentsMeta] = useState<DocumentListMeta>({ total: 0, limit: DOCUMENT_PAGE_SIZE, offset: 0 });
+  const [documentPage, setDocumentPage] = useState(0);
   const [allBranchesMode, setAllBranchesMode] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
@@ -463,6 +470,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     return [...map.values()].sort((a, b) => a.slotName.localeCompare(b.slotName, "ru"));
   }, [positions, products, selectedStoreId, selectedStoreName]);
   const lastDocument = documents[0] ?? null;
+  const documentPageCount = Math.max(1, Math.ceil(documentsMeta.total / DOCUMENT_PAGE_SIZE));
+  const documentsDisplayStart = documentsMeta.total === 0 ? 0 : documentsMeta.offset + 1;
+  const documentsDisplayEnd = Math.min(documentsMeta.offset + documents.length, documentsMeta.total);
   const documentStats = useMemo(
     () => ({
       count: documents.length,
@@ -659,16 +669,41 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
-  async function loadDocuments(): Promise<MovementRow[]> {
+  async function loadDocuments(requestedPage = documentPage): Promise<MovementRow[]> {
     setDocumentsLoading(true);
     setDocumentsError(null);
     try {
-      const params = new URLSearchParams({ type, limit: "30" });
-      const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
-      const data = await readJson<{ documents?: MovementRow[]; meta?: { mode?: "branch" | "all" }; error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
-      const nextDocuments = Array.isArray(data?.documents) ? data.documents : [];
+      const fetchPage = async (page: number) => {
+        const params = new URLSearchParams({
+          type,
+          limit: String(DOCUMENT_PAGE_SIZE),
+          offset: String(page * DOCUMENT_PAGE_SIZE),
+        });
+        const res = await fetch(`/api/local-inventory/movements?${params.toString()}`, { cache: "no-store" });
+        const data = await readJson<{ documents?: MovementRow[]; meta?: DocumentListMeta; error?: string }>(res);
+        if (!res.ok) throw new Error(data?.error ?? "Не удалось загрузить журнал");
+        const nextDocuments = Array.isArray(data?.documents) ? data.documents : [];
+        const nextMeta: DocumentListMeta = {
+          total: Math.max(0, Number(data?.meta?.total) || 0),
+          limit: Number(data?.meta?.limit) || DOCUMENT_PAGE_SIZE,
+          offset: Number(data?.meta?.offset) || 0,
+          mode: data?.meta?.mode,
+        };
+        return { data, nextDocuments, nextMeta };
+      };
+
+      let safePage = Math.max(0, requestedPage);
+      let result = await fetchPage(safePage);
+      const lastAvailablePage = Math.max(0, Math.ceil(result.nextMeta.total / DOCUMENT_PAGE_SIZE) - 1);
+      if (safePage > lastAvailablePage) {
+        safePage = lastAvailablePage;
+        result = await fetchPage(safePage);
+      }
+
+      const { data, nextDocuments, nextMeta } = result;
       setDocuments(nextDocuments);
+      setDocumentsMeta(nextMeta);
+      setDocumentPage(safePage);
       setAllBranchesMode(data?.meta?.mode === "all");
       return nextDocuments;
     } catch (e) {
@@ -680,12 +715,19 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     }
   }
 
-  async function loadAll() {
-    await Promise.allSettled([loadStores(), loadCounterparties(), loadDocuments()]);
+  async function loadAll(resetDocumentPage = false) {
+    await Promise.allSettled([loadStores(), loadCounterparties(), loadDocuments(resetDocumentPage ? 0 : documentPage)]);
+  }
+
+  function goToDocumentPage(nextPage: number) {
+    if (documentsLoading || nextPage < 0 || nextPage >= documentPageCount || nextPage === documentPage) return;
+    setOpenId(null);
+    setInvoiceDraft(null);
+    void loadDocuments(nextPage);
   }
 
   useEffect(() => {
-    void loadAll();
+    void loadAll(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
 
@@ -1262,7 +1304,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
           : `${title} ${nextDocument.name} сохранена как черновик.`
       );
-      const refreshedDocuments = await loadDocuments();
+      const refreshedDocuments = await loadDocuments(formMode === "new" ? 0 : documentPage);
       const persistedDocument = refreshedDocuments.find((document) => document.id === nextDocument.id);
       if (persistedDocument) setEditingDocument(persistedDocument);
     } catch (e) {
@@ -1771,7 +1813,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           onClose={() => setRosskoReceiptOpen(false)}
           onCreated={(result) => {
             setInfo(`Черновик приёмки ${result.documentNumber} создан из заказа ROSSKO.`);
-            void loadDocuments();
+            void loadDocuments(0);
           }}
         />
       )}
@@ -2566,7 +2608,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
             <EcoBadge tone={isReceipt ? "success" : "warning"} dot>
               {isReceipt ? "Поступление" : "Корректировка"}
             </EcoBadge>
-            <EcoBadge tone="neutral">{documentStats.count} документов</EcoBadge>
+            <EcoBadge tone="neutral">{documentsMeta.total.toLocaleString("ru-RU")} документов</EcoBadge>
           </div>
           <p className="eco-page-subtitle">
             {isReceipt
@@ -2595,32 +2637,32 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
       {documentsLoading ? renderSkeletonKpis() : (
         <div className="eco-receipt-kpis">
           <div className="eco-receipt-kpi is-info">
-            <span>Документы</span>
-            <strong>{documentStats.count}</strong>
-            <em>за последние 30 дней</em>
+            <span>Всего документов</span>
+            <strong>{documentsMeta.total.toLocaleString("ru-RU")}</strong>
+            <em>{documentsDisplayStart}–{documentsDisplayEnd} на странице</em>
           </div>
           <div className="eco-receipt-kpi is-success">
-            <span>Проведено</span>
+            <span>Проведено на странице</span>
             <strong>{documentStats.conducted}</strong>
             <em>{documentStats.drafts} черн. · {documentStats.cancelled} отмен.</em>
           </div>
           <div className="eco-receipt-kpi is-warning">
-            <span>Черновики</span>
+            <span>Черновики на странице</span>
             <strong>{documentStats.drafts}</strong>
             <em>можно редактировать</em>
           </div>
           <div className="eco-receipt-kpi is-neutral">
-            <span>{isReceipt ? "Количество позиций" : "Технические"}</span>
+            <span>{isReceipt ? "Количество на странице" : "Технические на странице"}</span>
             <strong>{isReceipt ? formatQty(documentStats.quantity) : documentStats.technical}</strong>
             <em>{isReceipt ? `${documentStats.positions} строк документов` : `${formatMoney(documentStats.technicalSum)} ₽ без влияния на прибыль`}</em>
           </div>
           <div className="eco-receipt-kpi is-rust">
-            <span>{isReceipt ? "Счета / сумма" : "Обычные списания"}</span>
+            <span>{isReceipt ? "Счета / сумма страницы" : "Списания на странице"}</span>
             <strong>{formatMoney(isReceipt ? documentStats.sum : documentStats.expenseSum)} ₽</strong>
             <em>{isReceipt ? `${documentStats.invoices} счетов` : `${documentStats.expense} документов как расход`}</em>
           </div>
           <div className="eco-receipt-kpi is-neutral">
-            <span>{isReceipt ? "Последнее поступление" : "Последняя корректировка"}</span>
+            <span>Самый новый на странице</span>
             <strong>{lastDocument ? formatDate(lastDocument.documentDate) : "—"}</strong>
             <em>{lastDocument?.name || "документов пока нет"}</em>
           </div>
@@ -2670,13 +2712,15 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         <div className="eco-table-toolbar eco-receipt-journal-head">
           <div>
             <div className="eco-page-kicker">Журнал</div>
-            <h2 className="eco-stock-doc-title">Последние документы</h2>
+            <h2 className="eco-stock-doc-title">Документы</h2>
             <p className="eco-stock-doc-subtitle">
-              {isReceipt ? "Последние локальные приёмки и документы поступления." : "Технические корректировки и обычные списания локального склада."}
+              {isReceipt ? "Локальные приёмки и документы поступления." : "Технические корректировки и обычные списания локального склада."}
             </p>
           </div>
           <div className="grow" />
-          <span className="l-meta">{documents.length} строк · {formatMoney(documentStats.sum)} ₽</span>
+          <span className="l-meta">
+            {documentsDisplayStart}–{documentsDisplayEnd} из {documentsMeta.total.toLocaleString("ru-RU")} · {formatMoney(documentStats.sum)} ₽ на странице
+          </span>
           <div className="eco-row-actions is-visible">
             <EcoButton type="button" onClick={openDocumentForm} size="sm" variant="primary" disabled={allBranchesMode}>
               <PackagePlus size={14} />
@@ -2740,8 +2784,9 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         )}
 
         {!documentsLoading && documents.length > 0 && (
-          <div className="eco-receipt-doc-table-wrap">
-            <table className="eco-receipt-doc-table">
+          <>
+            <div className="eco-receipt-doc-table-wrap">
+              <table className="eco-receipt-doc-table">
               <thead>
                 <tr>
                   <th>№ / дата</th>
@@ -2892,8 +2937,37 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+            <nav className="eco-receipt-pagination" aria-label="Страницы журнала документов">
+              <span>
+                Показано {documentsDisplayStart}–{documentsDisplayEnd} из {documentsMeta.total.toLocaleString("ru-RU")}
+              </span>
+              <div>
+                <EcoButton
+                  type="button"
+                  size="sm"
+                  onClick={() => goToDocumentPage(documentPage - 1)}
+                  disabled={documentsLoading || documentPage === 0}
+                  aria-label="Предыдущая страница"
+                >
+                  <ChevronLeft size={15} aria-hidden />
+                  Назад
+                </EcoButton>
+                <strong aria-live="polite">{documentPage + 1} / {documentPageCount}</strong>
+                <EcoButton
+                  type="button"
+                  size="sm"
+                  onClick={() => goToDocumentPage(documentPage + 1)}
+                  disabled={documentsLoading || documentPage >= documentPageCount - 1}
+                  aria-label="Следующая страница"
+                >
+                  Далее
+                  <ChevronRight size={15} aria-hidden />
+                </EcoButton>
+              </div>
+            </nav>
+          </>
         )}
       </section>
     </div>
