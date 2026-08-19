@@ -15,6 +15,7 @@
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
     "test:rossko-product-import": "node scripts/test-rossko-product-import.mjs",
     "test:product-oem-catalog": "node scripts/test-product-oem-catalog.mjs",
+    "test:product-history": "node scripts/test-product-document-history.mjs",
     "test:rossko-receipt": "node scripts/test-rossko-receipt.mjs",
     "test:rossko-incoming": "node scripts/test-rossko-incoming.mjs",
     "test:oil-search": "node scripts/test-oil-search.mjs",

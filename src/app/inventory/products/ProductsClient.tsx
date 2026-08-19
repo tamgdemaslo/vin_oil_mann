@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import MoneyInput, { parseMoneyInput } from "@/components/MoneyInput";
 import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranchDialog";
+import ProductHistoryPanel from "@/components/products/ProductHistoryPanel";
 import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
 import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
@@ -1560,6 +1561,7 @@ export default function ProductsClient() {
   const [info, setInfo] = useState<string | null>(null);
   const [toast, setToast] = useState<ProductToast | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [mobileEditorView, setMobileEditorView] = useState<"details" | "history">("details");
   const [rosskoImportOpen, setRosskoImportOpen] = useState(false);
   const [rosskoLastImportVisible, setRosskoLastImportVisible] = useState(false);
   const [oemBatchDialog, setOemBatchDialog] = useState<ProductOemBatchDialogState | null>(null);
@@ -2427,6 +2429,7 @@ export default function ProductsClient() {
     setUploadingPhotos(false);
     setDeletingPhotoId(null);
     setFormOpen(false);
+    setMobileEditorView("details");
   }
 
   function openNewProduct() {
@@ -2446,6 +2449,7 @@ export default function ProductsClient() {
     setInfo(null);
     setError(null);
     setFormOpen(true);
+    setMobileEditorView("details");
   }
 
   function openSimilarProduct(product: ProductRow) {
@@ -2476,6 +2480,7 @@ export default function ProductsClient() {
     setInfo(null);
     setError(null);
     setFormOpen(true);
+    setMobileEditorView("details");
   }
 
   function openProductEditor(product: ProductRow) {
@@ -2496,6 +2501,7 @@ export default function ProductsClient() {
     setInfo(null);
     setError(null);
     setFormOpen(true);
+    setMobileEditorView("details");
   }
 
   function closeForm() {
@@ -3493,7 +3499,8 @@ export default function ProductsClient() {
 
   function openProductHistory(row: ProductRow) {
     setActiveActionMenuId(null);
-    setToast({ message: `История движений для "${row.name}" пока не подключена` });
+    openProductEditor(row);
+    setMobileEditorView("history");
   }
 
   function requestArchive(row: ProductRow) {
@@ -4641,7 +4648,29 @@ export default function ProductsClient() {
               ))}
             </nav>
 
-            <div className="product-editor-scroll">
+            <div className="product-history-mobile-tabs" role="tablist" aria-label="Карточка товара">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mobileEditorView === "details"}
+                className={mobileEditorView === "details" ? "is-active" : ""}
+                onClick={() => setMobileEditorView("details")}
+              >
+                Карточка
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mobileEditorView === "history"}
+                className={mobileEditorView === "history" ? "is-active" : ""}
+                disabled={!editingId}
+                onClick={() => setMobileEditorView("history")}
+              >
+                История товара
+              </button>
+            </div>
+
+            <div className={`product-editor-scroll is-${mobileEditorView}-view`}>
               <div className="product-editor-search">
                 <Search aria-hidden className="eco-icon" />
                 <input
@@ -4678,7 +4707,7 @@ export default function ProductsClient() {
                 </div>
               ) : null}
 
-              <div className="product-editor-workspace">
+              <div className={`product-editor-workspace is-${mobileEditorView}-view`}>
                 <div className="product-editor-main-flow">
                   <section id={productEditorSectionElementId("main")} className="product-editor-section product-editor-main-card">
                     <div className="product-editor-section-head">
@@ -4826,7 +4855,8 @@ export default function ProductsClient() {
                   </details>
                 </div>
 
-                <aside className="product-editor-summary-rail" aria-label="Сводка товара">
+                <aside className="product-editor-summary-rail" aria-label="Сводка и история товара">
+                  {editingId ? <ProductHistoryPanel productId={editingId} /> : null}
                   <section className="product-editor-side-card product-editor-summary-card">
                     <div className="product-editor-side-title">
                       <span>Сводка</span>
