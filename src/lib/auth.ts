@@ -73,10 +73,23 @@ type EnvUser = { login: string; name: string; passwordHash: string; role: UserRo
 type PasswordOverrideCache = { expiresAt: number; rows: Map<string, string> } | null;
 type DatabaseUserRow = { login: string; name: string; authRole: string };
 type DatabaseUserCache = { expiresAt: number; rows: DatabaseUserRow[] } | null;
+type AuthRuntimeCache = {
+  passwordOverrides: PasswordOverrideCache;
+  databaseUsers?: DatabaseUserCache;
+  passwordOverridesInFlight?: Promise<Map<string, string>> | null;
+  databaseUsersInFlight?: Promise<DatabaseUserRow[]> | null;
+  generation?: number;
+};
 
 const authCache = ((globalThis as typeof globalThis & {
-  __ecoAuthPasswordOverrideCache?: { passwordOverrides: PasswordOverrideCache; databaseUsers?: DatabaseUserCache };
-}).__ecoAuthPasswordOverrideCache ??= { passwordOverrides: null, databaseUsers: null });
+  __ecoAuthPasswordOverrideCache?: AuthRuntimeCache;
+}).__ecoAuthPasswordOverrideCache ??= {
+  passwordOverrides: null,
+  databaseUsers: null,
+  passwordOverridesInFlight: null,
+  databaseUsersInFlight: null,
+  generation: 0,
+});
 
 function normalizeLoginKey(login: string): string {
   return login.trim().toLowerCase();
@@ -106,14 +119,24 @@ async function getPasswordOverrides(): Promise<Map<string, string>> {
   if (authCache.passwordOverrides && authCache.passwordOverrides.expiresAt > now) {
     return authCache.passwordOverrides.rows;
   }
-  try {
-    const rows = await prisma.authPassword.findMany();
-    const map = new Map(rows.map((row) => [normalizeLoginKey(row.login), row.passwordHash]));
-    authCache.passwordOverrides = { expiresAt: now + AUTH_PASSWORD_CACHE_MS, rows: map };
-    return map;
-  } catch {
-    return new Map();
-  }
+  if (authCache.passwordOverridesInFlight) return authCache.passwordOverridesInFlight;
+
+  const generation = authCache.generation ?? 0;
+  const promise = prisma.authPassword
+    .findMany()
+    .then((rows) => {
+      const map = new Map(rows.map((row) => [normalizeLoginKey(row.login), row.passwordHash]));
+      if ((authCache.generation ?? 0) === generation) {
+        authCache.passwordOverrides = { expiresAt: Date.now() + AUTH_PASSWORD_CACHE_MS, rows: map };
+      }
+      return map;
+    })
+    .catch(() => new Map<string, string>())
+    .finally(() => {
+      if ((authCache.generation ?? 0) === generation) authCache.passwordOverridesInFlight = null;
+    });
+  authCache.passwordOverridesInFlight = promise;
+  return promise;
 }
 
 async function getDatabaseUsers(): Promise<DatabaseUserRow[]> {
@@ -121,17 +144,27 @@ async function getDatabaseUsers(): Promise<DatabaseUserRow[]> {
   if (authCache.databaseUsers && authCache.databaseUsers.expiresAt > now) {
     return authCache.databaseUsers.rows;
   }
-  try {
-    const rows = await prisma.user.findMany({
+  if (authCache.databaseUsersInFlight) return authCache.databaseUsersInFlight;
+
+  const generation = authCache.generation ?? 0;
+  const promise = prisma.user
+    .findMany({
       where: { status: "active" },
       select: { login: true, name: true, authRole: true },
       orderBy: { createdAt: "asc" },
+    })
+    .then((rows) => {
+      if ((authCache.generation ?? 0) === generation) {
+        authCache.databaseUsers = { expiresAt: Date.now() + AUTH_PASSWORD_CACHE_MS, rows };
+      }
+      return rows;
+    })
+    .catch(() => [] as DatabaseUserRow[])
+    .finally(() => {
+      if ((authCache.generation ?? 0) === generation) authCache.databaseUsersInFlight = null;
     });
-    authCache.databaseUsers = { expiresAt: now + AUTH_PASSWORD_CACHE_MS, rows };
-    return rows;
-  } catch {
-    return [];
-  }
+  authCache.databaseUsersInFlight = promise;
+  return promise;
 }
 
 export async function getUsersFromEnv(): Promise<EnvUser[]> {
@@ -225,8 +258,11 @@ export async function setUserPassword(login: string, password: string): Promise<
 }
 
 export function invalidateAuthPasswordCache(): void {
+  authCache.generation = (authCache.generation ?? 0) + 1;
   authCache.passwordOverrides = null;
   authCache.databaseUsers = null;
+  authCache.passwordOverridesInFlight = null;
+  authCache.databaseUsersInFlight = null;
 }
 
 export async function getSession(): Promise<{ user: User } | null> {

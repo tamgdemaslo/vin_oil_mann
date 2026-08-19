@@ -31,6 +31,7 @@ type RequestBurstBucket = {
   blockedUntil: number;
   lastSeenAt: number;
   lastLoggedAt: number;
+  routeCounts: Map<string, number>;
 };
 
 const requestBurstBuckets = ((globalThis as typeof globalThis & {
@@ -60,6 +61,21 @@ function requestClientFingerprint(request: NextRequest, kind: RequestBurstKind) 
     .slice(0, 16);
 }
 
+function requestUserAgentFamily(request: NextRequest) {
+  const userAgent = request.headers.get("user-agent")?.toLowerCase() ?? "";
+  if (userAgent.includes("edg/")) return "edge";
+  if (userAgent.includes("chrome/") || userAgent.includes("chromium/")) return "chromium";
+  if (userAgent.includes("firefox/")) return "firefox";
+  if (userAgent.includes("safari/") && !userAgent.includes("chrome/")) return "safari";
+  return "other";
+}
+
+function requestBranchHash(request: NextRequest) {
+  const branchId = activeBranch(request.cookies.get(ACTIVE_BRANCH_COOKIE)?.value);
+  if (!branchId) return null;
+  return crypto.createHash("sha256").update(branchId, "utf8").digest("hex").slice(0, 12);
+}
+
 function cleanupRequestBurstBuckets(now: number) {
   if (requestBurstBuckets.size <= REQUEST_BURST_BUCKET_LIMIT) return;
   for (const [key, bucket] of requestBurstBuckets) {
@@ -83,10 +99,19 @@ function requestBurstResponse(request: NextRequest) {
   const limits = REQUEST_BURST_LIMITS[kind];
   let bucket = requestBurstBuckets.get(fingerprint);
   if (!bucket || (bucket.blockedUntil <= now && now - bucket.windowStartedAt >= limits.windowMs)) {
-    bucket = { count: 0, windowStartedAt: now, blockedUntil: 0, lastSeenAt: now, lastLoggedAt: 0 };
+    bucket = {
+      count: 0,
+      windowStartedAt: now,
+      blockedUntil: 0,
+      lastSeenAt: now,
+      lastLoggedAt: 0,
+      routeCounts: new Map<string, number>(),
+    };
     requestBurstBuckets.set(fingerprint, bucket);
   }
   bucket.lastSeenAt = now;
+  const routeKey = `${request.method} ${request.nextUrl.pathname}`;
+  bucket.routeCounts.set(routeKey, (bucket.routeCounts.get(routeKey) ?? 0) + 1);
 
   if (bucket.blockedUntil <= now) {
     bucket.count += 1;
@@ -96,12 +121,21 @@ function requestBurstResponse(request: NextRequest) {
 
   if (now - bucket.lastLoggedAt >= limits.blockMs) {
     bucket.lastLoggedAt = now;
+    const topRoutes = [...bucket.routeCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 8)
+      .map(([route, count]) => ({ route, count }));
     console.warn("[request-guard] client burst blocked", {
       fingerprint,
       kind,
       count: bucket.count,
       method: request.method,
       pathname: request.nextUrl.pathname,
+      topRoutes,
+      windowMs: now - bucket.windowStartedAt,
+      userAgentFamily: requestUserAgentFamily(request),
+      branchHash: requestBranchHash(request),
+      release: process.env.APP_COMMIT_SHA ?? process.env.NEXT_PUBLIC_APP_COMMIT_SHA ?? "unknown",
     });
   }
   const retryAfterSeconds = Math.max(1, Math.ceil((bucket.blockedUntil - now) / 1_000));

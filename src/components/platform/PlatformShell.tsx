@@ -267,6 +267,7 @@ export default function PlatformShell() {
   useEffect(() => {
     if (shouldHideShell(pathname)) return;
     let cancelled = false;
+    let started = false;
 
     async function loadShellState(force = false) {
       setLoading(true);
@@ -305,11 +306,25 @@ export default function PlatformShell() {
       }
     }
 
-    void loadShellState();
-    const handleShiftChanged = () => void loadShellState(true);
+    const startWhenVisible = () => {
+      if (cancelled || started || document.visibilityState !== "visible") return;
+      started = true;
+      void loadShellState();
+    };
+    startWhenVisible();
+    document.addEventListener("visibilitychange", startWhenVisible);
+    const handleShiftChanged = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!started) {
+        startWhenVisible();
+        return;
+      }
+      void loadShellState(true);
+    };
     window.addEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", startWhenVisible);
       window.removeEventListener(CASH_SHIFT_EVENT, handleShiftChanged);
     };
   }, [pathname]);

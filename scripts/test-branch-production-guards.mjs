@@ -208,6 +208,9 @@ for (const routePath of [
 }
 
 const messengerProviderSource = fs.readFileSync(new URL("../src/components/messenger/MessengerProvider.tsx", import.meta.url), "utf8");
+const authSource = fs.readFileSync(new URL("../src/lib/auth.ts", import.meta.url), "utf8");
+const platformShellSource = fs.readFileSync(new URL("../src/components/platform/PlatformShell.tsx", import.meta.url), "utf8");
+const shipmentDetailSource = fs.readFileSync(new URL("../src/app/shipment/[id]/page.tsx", import.meta.url), "utf8");
 const telegramSyncWorkerSource = fs.readFileSync(new URL("../src/lib/messenger/telegram-sync-worker.ts", import.meta.url), "utf8");
 const telegramUserSessionSource = fs.readFileSync(new URL("../src/lib/messenger/channels/telegram-user-session.ts", import.meta.url), "utf8");
 const instrumentationSource = fs.readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8");
@@ -215,6 +218,11 @@ const attachmentRetrySource = fs.readFileSync(new URL("../src/app/api/messenger/
 assert.match(messengerProviderSource, /const messengerActive = messengerEnabled && \(isMessagesPagePath\(pathname\) \|\| widgetView !== "collapsed"\)/);
 assert.match(messengerProviderSource, /fetch\("\/api\/messenger\/summary"/);
 assert.doesNotMatch(messengerProviderSource, /telegram-user\/sync/);
+assert.match(authSource, /passwordOverridesInFlight/);
+assert.match(authSource, /databaseUsersInFlight/);
+assert.match(platformShellSource, /document\.visibilityState !== "visible"/);
+assert.match(shipmentDetailSource, /document\.visibilityState !== "visible"/);
+assert.match(shipmentDetailSource, /if \(!data\?\.header\?\.id\) return/);
 assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
 assert.match(telegramSyncWorkerSource, /TELEGRAM_SYNC_WORKER_ENABLED === "1"/);
 assert.doesNotMatch(telegramSyncWorkerSource, /process\.env\.NODE_ENV === "production"/);

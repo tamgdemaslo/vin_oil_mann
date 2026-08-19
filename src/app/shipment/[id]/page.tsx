@@ -783,6 +783,7 @@ export default function ShipmentDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let started = false;
     async function load() {
       setLoading(true);
       setError(null);
@@ -851,9 +852,16 @@ export default function ShipmentDetailPage() {
         if (!cancelled) setLoading(false);
       }
     }
-    if (id) load();
+    const startWhenVisible = () => {
+      if (!id || cancelled || started || document.visibilityState !== "visible") return;
+      started = true;
+      void load();
+    };
+    startWhenVisible();
+    document.addEventListener("visibilitychange", startWhenVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", startWhenVisible);
     };
   }, [id, router]);
 
@@ -875,8 +883,17 @@ export default function ShipmentDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    void refreshDiagnosticRemote();
-  }, [refreshDiagnosticRemote]);
+    if (!data?.header?.id) return;
+    let started = false;
+    const startWhenVisible = () => {
+      if (started || document.visibilityState !== "visible") return;
+      started = true;
+      void refreshDiagnosticRemote();
+    };
+    startWhenVisible();
+    document.addEventListener("visibilitychange", startWhenVisible);
+    return () => document.removeEventListener("visibilitychange", startWhenVisible);
+  }, [data?.header?.id, refreshDiagnosticRemote]);
 
   const copyDiagnosticReportLink = useCallback(async () => {
     if (!diagnosticRemote?.reportUrl) return;
