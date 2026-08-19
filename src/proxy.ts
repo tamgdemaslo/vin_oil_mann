@@ -28,111 +28,20 @@ function activeBranch(value: string | undefined) {
   }
 }
 
-function isRscPrefetch(request: NextRequest) {
+function isRscRequest(request: NextRequest) {
   return (
     request.method === "GET" &&
-    request.headers.get("rsc") === "1" &&
-    request.headers.has("next-router-prefetch")
+    (request.headers.get("rsc") === "1" || request.nextUrl.searchParams.has("_rsc"))
   );
-}
-
-const DYNAMIC_PARAM_TYPES = new Set([
-  "c",
-  "ci(..)(..)",
-  "ci(.)",
-  "ci(..)",
-  "ci(...)",
-  "oc",
-  "d",
-  "di(..)(..)",
-  "di(.)",
-  "di(..)",
-  "di(...)",
-]);
-
-function isRouterSegment(value: unknown) {
-  if (typeof value === "string") return true;
-  return (
-    Array.isArray(value) &&
-    value.length === 4 &&
-    typeof value[0] === "string" &&
-    typeof value[1] === "string" &&
-    typeof value[2] === "string" &&
-    DYNAMIC_PARAM_TYPES.has(value[2]) &&
-    (value[3] === null ||
-      (Array.isArray(value[3]) && value[3].every((item) => typeof item === "string")))
-  );
-}
-
-function isFlightRouterState(value: unknown, depth = 0): boolean {
-  if (!Array.isArray(value) || value.length < 2 || value.length > 5 || depth > 2_000) {
-    return false;
-  }
-  if (!isRouterSegment(value[0])) return false;
-
-  const parallelRoutes = value[1];
-  if (!parallelRoutes || typeof parallelRoutes !== "object" || Array.isArray(parallelRoutes)) {
-    return false;
-  }
-  if (
-    !Object.values(parallelRoutes).every((route) => isFlightRouterState(route, depth + 1))
-  ) {
-    return false;
-  }
-
-  const url = value[2];
-  if (
-    url !== undefined &&
-    url !== null &&
-    (!Array.isArray(url) ||
-      url.length !== 2 ||
-      url.some((part) => typeof part !== "string"))
-  ) {
-    return false;
-  }
-
-  const refresh = value[3];
-  if (
-    refresh !== undefined &&
-    refresh !== null &&
-    refresh !== "refetch" &&
-    refresh !== "inside-shared-layout" &&
-    refresh !== "metadata-only"
-  ) {
-    return false;
-  }
-
-  return value[4] === undefined || typeof value[4] === "number";
-}
-
-function isInvalidRscRouterState(request: NextRequest) {
-  if (request.method !== "GET" || request.headers.get("rsc") !== "1") return false;
-
-  const routerState = request.headers.get("next-router-state-tree");
-  if (!routerState) return false;
-  if (routerState.length > 40_000) return true;
-
-  try {
-    const parsed = JSON.parse(decodeURIComponent(routerState));
-    return !isFlightRouterState(parsed);
-  } catch {
-    return true;
-  }
 }
 
 export function proxy(request: NextRequest) {
-  const blockedRscRequest = isRscPrefetch(request)
-    ? "prefetch"
-    : isInvalidRscRouterState(request)
-      ? "invalid-router-state"
-      : null;
-
-  if (blockedRscRequest) {
+  if (isRscRequest(request)) {
     return new NextResponse(null, {
       status: 204,
       headers: {
         "Cache-Control": "private, no-store",
-        "X-Eco-RSC-Blocked": blockedRscRequest,
+        "X-Eco-RSC-Blocked": "all-rsc",
       },
     });
   }
