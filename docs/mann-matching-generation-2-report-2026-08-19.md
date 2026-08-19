@@ -2,7 +2,7 @@
 
 Дата: 19 августа 2026 г.
 
-Статус: алгоритм заморожен перед Dataset D. Dataset C после анализа является development evidence, а не новым blind holdout. Первый результат D ещё не получен.
+Статус: Dataset D завершён как полноценный blind holdout. Manifest и алгоритм были заморожены до первого вызова TRONK, а raw result — до разметки. После этой оценки D становится development evidence; следующая настройка порогов потребует новый Dataset E.
 
 ## Первый экран
 
@@ -18,6 +18,28 @@
 | Strict end-to-end | 2/100 = 2% | 2/100 = 2% | локальный каталог остаётся bottleneck |
 
 На расширившемся после исправления Top-1 scope C получено 115 корректных MANN-артикулов: 26 unique LocalProduct, 55 неоднозначных, 34 отсутствуют. Этот scope нельзя напрямую сравнивать с исходными 95 артикулами, поэтому delta выше дана на одинаковом baseline scope.
+
+## Blind Dataset D: официальный результат
+
+| Метрика | Результат |
+|---|---:|
+| TRONK usable decode | 90/100 = 90% |
+| Complete / partial / failed decode | 69 / 21 / 10 |
+| MANN catalog coverage среди decoded | 74/90 = 82,2% |
+| Подтверждённые MANN data gaps | 16/90 = 17,8% |
+| MANN Top-1, exact labels | 52/60 = 86,7% |
+| MANN Top-3, exact labels | 58/60 = 96,7% |
+| Top-20 retrieval recall | 59/60 = 98,3% |
+| Automatic HIGH proposals | 12 |
+| Dangerous automatic errors | 0/12 = 0% |
+| Strict ambiguity handling | 11/14 = 78,6% |
+| Strict data-gap/no-match handling | 12/16 = 75% |
+| Correct Top-1 MANN filter precision / recall | 100% / 100% |
+| Strict end-to-end с корректной OEM-семантикой | 37/100 = 37% |
+
+Разметка была создана только после фиксации blind result: 60 однозначных `match`, 14 `ambiguous`, 16 `MANN_DATA_MISSING`, 10 `TRONK_MISSING_DATA`. Все 14 неоднозначных и все 16 data-gap cases были маршрутизированы без автоназначения; strict метрика ниже 100%, потому что часть безопасных manual outcomes попала в соседний класс `confirmation_required`, `ambiguous` или `no_match`.
+
+Из восьми Top-1 ошибок шесть уже имеют правильный вариант в Top-3 и требуют общего исправления scoring. Ещё один вариант есть в Top-20, но теряется на model normalization/acceptance; один не попадает в Top-20 из-за make normalization/retrieval. Поэтому основной резерв качества — ranking и два ограниченных normalization gaps, а не расширение всех порогов.
 
 ## Три независимых слоя
 
@@ -105,7 +127,34 @@ Offline replay C после оптимизации (TRONK cache/replay, поэт
 | LocalProduct mapping | 155,9 мс | 311,8 мс |
 | Offline product path total | 187,3 мс | 369,3 мс |
 
-Live TRONK и полный p50/p95 должны измеряться на первом D-run.
+Live Dataset D, все 100 запросов:
+
+| Этап | p50 | p95 | max |
+|---|---:|---:|---:|
+| TRONK decode | 1,895 с | 5,919 с | 26,495 с |
+| MANN retrieval | 72,8 мс | 132,7 мс | 240,2 мс |
+| MANN scoring | 2,4 мс | 12,0 мс | 21,8 мс |
+| Filters | 2,2 мс | 11,2 мс | 16,6 мс |
+| LocalProduct mapping | 163,8 мс | 314,8 мс | 392,7 мс |
+| Live end-to-end total | 2,136 с | 6,257 с | 26,789 с |
+
+У 10 неуспешных decode не было network/timeout failure: все десять завершили полную цепочку с `VIN_NOT_RESOLVED`, то есть провайдер не нашёл данные.
+
+### LocalProduct на корректном Top-1 D
+
+Для 52 корректно выбранных автомобилей получено 125 MANN article occurrences:
+
+| Local status | Occurrences | Доля |
+|---|---:|---:|
+| Ровно один валидный LocalProduct | 24 | 19,2% |
+| Несколько валидных аналогов | 80 | 64,0% |
+| Только слабое review-evidence, не покрыто | 2 | 1,6% |
+| Evidence отсутствует, не покрыто | 19 | 15,2% |
+| OEM covered (`single + multiple`) | 104 | 83,2% |
+
+Это 95 уникальных MANN-артикулов: 19 имеют один вариант, 57 — несколько валидных аналогов, 2 — только review-evidence, 17 полностью отсутствуют. Несколько OEM-подтверждённых товаров являются корректным ассортиментом, а не ambiguity. У 37 из 52 правильно сопоставленных автомобилей все ожидаемые MANN references покрыты минимум одним LocalProduct; у 15 покрытие неполное. Полный downstream-аудит: `docs/mann-oem-local-layer-audit-2026-08-19.md`.
+
+Главный пробел по типу — топливные фильтры: 12/21 occurrences отсутствуют. Масляные покрыты лучше всего: только 1/50 missing, но 41/50 неоднозначны из-за нескольких аналогов.
 
 ## Dataset D freeze
 
@@ -116,14 +165,15 @@ Live TRONK и полный p50/p95 должны измеряться на пер
 - frozen algorithm: `mann-a0f948870728`;
 - algorithm digest: `a0f94887072877bfca9e25c4e394f5fefa98e0fd5e99bb7be772803758073a31`.
 
-Make distribution ограничена максимум шестью автомобилями на крупную марку; 25 make groups. Year distribution: ≤2005 — 16, 2006–2010 — 28, 2011–2015 — 29, 2016–2020 — 21, 2021+ — 6. Fuel distribution станет известна только после blind TRONK decode и до этого не просматривается.
+Make distribution ограничена максимум шестью автомобилями на крупную марку; 25 make groups. Year distribution manifest: ≤2005 — 16, 2006–2010 — 28, 2011–2015 — 29, 2016–2020 — 21, 2021+ — 6. Среди 90 decoded TRONK вернул 44 gasoline, 20 diesel и 26 без достаточных данных о топливе. Гибридные/газовые классы в D не встретились как явно декодированные.
 
-После первого D-run официальный raw result должен быть сохранён до разметки и любых изменений алгоритма. После этого D станет development evidence; следующая итерация потребует Dataset E.
+Официальный raw result сохранён до разметки. Blind result digest: `8481bb2acbd78143135da7bb2bb3ff44d41c62be9416bda20e8922853e8d8b10`; provider trace digest: `9bd04dc378dd9ecae3654e075b460e1a89891ce8057897d82c67b80df20ec8d5`. Госномера, VIN и raw provider payload не включены в отчёт и остаются в игнорируемой приватной папке.
 
 ## Ограничения и решение
 
-1. 22% C остаются недекодируемыми из-за отсутствия данных TRONK, а не matcher.
-2. Девять C cases имеют подтверждённый MANN data gap и не считаются matcher errors.
-3. 31/95 исходных MANN article occurrences реально отсутствуют в доступном локальном каталоге.
-4. Strict end-to-end пока 2%: рост MANN accuracy сам по себе не устраняет товарный bottleneck.
-5. Безусловный automatic selection не включать до официальной оценки Dataset D; целевая safety-метрика D — 0 dangerous false positives.
+1. D даёт 90% usable decode; оставшиеся 10% — чистый provider no-data, а не matcher и не network failure.
+2. Top-1 86,7% заметно ниже development C = 100%, поэтому C нельзя использовать как доказательство обобщаемости. D показал шесть ranking errors и два normalization/retrieval gaps.
+3. Safety target выполнен: 0/12 dangerous automatic errors. Однако auto coverage равно лишь 12/60 exact matches, поэтому расширять HIGH пороги по D без Dataset E нельзя.
+4. 16/90 decoded cases имеют подтверждённый MANN data gap. Это отдельная задача по полноте каталога, а не scoring.
+5. После исправления бизнес-семантики strict end-to-end равен 37/100: несколько подтверждённых аналогов считаются успехом. На правильном Top-1 scope OEM coverage составляет 104/125 occurrences и 76/95 unique references.
+6. Решение для production: сохранить HIGH как безопасное предложение для автомобиля, не включать безусловное auto-apply, показывать все OEM-подтверждённые LocalProduct и оставить отдельный status только для реального отсутствия покрытия.
