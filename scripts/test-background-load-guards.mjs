@@ -36,6 +36,13 @@ expect("src/components/platform/PlatformShell.tsx", [
   /document\.addEventListener\("visibilitychange", refresh\)/,
 ]);
 
+const platformShellSource = read("src/components/platform/PlatformShell.tsx");
+const shellLinks = platformShellSource.match(/<Link\b[\s\S]*?>/g) ?? [];
+const shellLinksWithoutPrefetchGuard = shellLinks.filter((link) => !/prefetch=\{false\}/.test(link));
+if (shellLinks.length === 0 || shellLinksWithoutPrefetchGuard.length > 0) {
+  failures.push("src/components/platform/PlatformShell.tsx: все Link должны отключать массовый RSC prefetch");
+}
+
 expect("src/lib/product-oem-worker.ts", [
   /PRODUCT_OEM_WORKER_IDLE_INTERVAL_MS/,
   /PRODUCT_OEM_WORKER_ERROR_BACKOFF_MS/,
@@ -59,4 +66,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Background load guard checks passed (single-flight CRM, visible-tab polling, adaptive OEM backoff). ");
+console.log("Background load guard checks passed (single-flight CRM, visible-tab polling, guarded shell prefetch, adaptive OEM backoff). ");
