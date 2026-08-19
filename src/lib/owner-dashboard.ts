@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { BranchContext } from "@/lib/branch-context";
+import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 
 function startOfMonth() {
   const now = new Date();
@@ -17,7 +18,7 @@ export async function getOwnerDashboard(context: BranchContext) {
         _sum: { sumCents: true },
         _avg: { sumCents: true },
       }),
-      prisma.localCounterparty.count({ where: { branchId: branch.id, archived: false } }),
+      prisma.localCounterparty.count({ where: { branchId: branch.id, archived: false, ...anonymousRetailCounterpartyExclusion(branch.id) } }),
       prisma.diagnosticMapSession.count({ where: { branchId: branch.id, vin: { not: null } } }),
       prisma.localProduct.count({ where: { branchId: branch.id, archived: false } }),
       prisma.cashExpenseOrder.aggregate({

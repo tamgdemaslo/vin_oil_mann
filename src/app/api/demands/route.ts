@@ -38,8 +38,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Неверное тело запроса" }, { status: 400 });
   }
 
-  if (!body.organization?.meta?.href || !body.agent?.meta?.href || !body.store?.meta?.href) {
-    return NextResponse.json({ error: "Укажите организацию, контрагента и склад" }, { status: 400 });
+  if (!body.organization?.meta?.href || !body.store?.meta?.href) {
+    return NextResponse.json({ error: "Укажите организацию и склад" }, { status: 400 });
   }
 
   return runWithBranchApiContext(branchAccess.context, async () => {

@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import { Prisma, type LocalCounterparty } from "@prisma/client";
+import {
+  anonymousRetailCounterpartyExclusion,
+  isAnonymousRetailCounterparty,
+} from "@/lib/anonymous-retail-counterparty";
 import { clientCaseStatusLabel, defaultNextActionForCaseStatus } from "@/lib/client-case-shared";
 import { getFirstCrmStage } from "@/lib/crm";
 import { getBookingAvailability } from "@/lib/booking/availability";
@@ -617,9 +621,12 @@ export async function searchMessengerClients(query: string, limit = 10) {
   const q = query.trim();
   const normalizedPhone = normalizePhoneKey(q);
   if (!q && !normalizedPhone) return [];
+  const branchId = getScopedBranchId();
   const clients = await prisma.localCounterparty.findMany({
     where: {
+      branchId,
       archived: false,
+      ...anonymousRetailCounterpartyExclusion(branchId),
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         ...(normalizedPhone
@@ -652,9 +659,12 @@ export async function suggestMessengerClients(conversationId: string) {
   }
 
   if (normalizedPhone) {
+    const branchId = getScopedBranchId();
     const phoneClients = await prisma.localCounterparty.findMany({
       where: {
+        branchId,
         archived: false,
+        ...anonymousRetailCounterpartyExclusion(branchId),
         OR: [{ normalizedPhone }, { phone: { contains: normalizedPhone.slice(-7) } }],
       },
       orderBy: [{ updatedAt: "desc" }],
@@ -669,9 +679,12 @@ export async function suggestMessengerClients(conversationId: string) {
 
   const name = cleanText(row.participantName || row.title);
   if (name.length >= 3) {
+    const branchId = getScopedBranchId();
     const nameClients = await prisma.localCounterparty.findMany({
       where: {
+        branchId,
         archived: false,
+        ...anonymousRetailCounterpartyExclusion(branchId),
         name: { contains: name, mode: "insensitive" },
       },
       orderBy: [{ updatedAt: "desc" }],
@@ -784,6 +797,9 @@ export async function linkClientToConversation(
   await assertConversationVersion(row, input.expectedUpdatedAt);
   const client = await loadClient(input.clientId);
   if (!client) throw new MessengerContextError("Клиент не найден", 404);
+  if (isAnonymousRetailCounterparty(client)) {
+    throw new MessengerContextError("Системного контрагента нельзя привязать к диалогу или автомобилю.", 400);
+  }
   await ensureNoClientIdentityConflict(row, client.id);
 
   await prisma.$transaction(async (tx) => {

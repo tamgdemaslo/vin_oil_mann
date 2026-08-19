@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { ensureAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import type { BranchContext } from "@/lib/branch-context";
 
@@ -175,6 +176,7 @@ export async function createBranch(context: BranchContext, input: BranchInput) {
         legacyOrganizationId: organization.id,
       },
     });
+    await ensureAnonymousRetailCounterparty(created.id, tx);
     if (context.userId) {
       await tx.branchMembership.create({
         data: { branchId: created.id, userId: context.userId, roleId: "branch_owner", status: "active" },

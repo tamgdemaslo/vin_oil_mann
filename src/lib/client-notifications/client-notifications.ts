@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
+import { ANONYMOUS_RETAIL_SYSTEM_ROLE } from "@/lib/anonymous-retail-counterparty";
 import {
   diagnosticCriticalText,
   diagnosticRecommendationText,
@@ -291,6 +292,7 @@ type NotificationCounterpartyRow = {
   name: string;
   phone: string | null;
   normalizedPhone: string | null;
+  isAnonymousRetail: boolean;
 };
 
 type TelegramConnectionTarget = {
@@ -1543,7 +1545,8 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
   const { branchId } = requireSingleBranchSqlContext();
   if (clientId) {
     const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
-      SELECT id, name, phone, normalized_phone AS "normalizedPhone"
+      SELECT id, name, phone, normalized_phone AS "normalizedPhone",
+             COALESCE(raw #>> '{ecoPlatform,systemRole}', '') = ${ANONYMOUS_RETAIL_SYSTEM_ROLE} AS "isAnonymousRetail"
       FROM local_counterparties
       WHERE branch_id = ${branchId}
         AND (id = ${clientId} OR legacy_id = ${clientId})
@@ -1554,7 +1557,8 @@ async function resolveLocalCounterparty(clientId: string | null, phone: string |
   }
   if (!phone) return null;
   const rows = await prisma.$queryRaw<NotificationCounterpartyRow[]>`
-    SELECT id, name, phone, normalized_phone AS "normalizedPhone"
+    SELECT id, name, phone, normalized_phone AS "normalizedPhone",
+           COALESCE(raw #>> '{ecoPlatform,systemRole}', '') = ${ANONYMOUS_RETAIL_SYSTEM_ROLE} AS "isAnonymousRetail"
     FROM local_counterparties
     WHERE branch_id = ${branchId}
       AND (normalized_phone = ${phone}
@@ -1583,7 +1587,7 @@ async function resolveClientIdentity(input: NotificationEventContext) {
     clientName = clientName ?? counterparty.name;
     clientPhone = clientPhone ?? counterparty.phone ?? counterparty.normalizedPhone;
   }
-  return { clientId, clientName, clientPhone };
+  return { clientId, clientName, clientPhone, isAnonymousRetail: counterparty?.isAnonymousRetail === true };
 }
 
 function messengerAccountIdFromExternalChatId(externalChatId: string) {
@@ -1991,6 +1995,19 @@ async function createNotificationJob(rule: NotificationRuleRow, template: Notifi
       : rule;
   const resolved = await resolveClientIdentity(effectiveInput);
   const clientId = resolved.clientId;
+  if (resolved.isAnonymousRetail) {
+    await writeNotificationLog({
+      eventType: effectiveRule.eventType,
+      clientId,
+      appointmentId: nullableString(effectiveInput.appointmentId),
+      diagnosticReportId: nullableString(effectiveInput.diagnosticReportId),
+      templateId: template.id,
+      status: "skipped",
+      errorMessage: "Системному контрагенту анонимной розницы клиентские уведомления не отправляются.",
+      metadata: { ruleId: effectiveRule.id, customerMode: "anonymous_retail" },
+    });
+    return { created: false, reason: "anonymous_retail" as const };
+  }
   if (effectiveRule.eventType === "review_after_visit" && !notificationSettings.postVisitReviewEnabled) {
     await writeNotificationLog({
       eventType: effectiveRule.eventType,

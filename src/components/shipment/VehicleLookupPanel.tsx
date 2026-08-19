@@ -133,6 +133,8 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   const resolutionRequestIdRef = useRef(0);
   const lookupControllerRef = useRef<AbortController | null>(null);
   const resolutionControllerRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastAutomaticLookupRef = useRef("");
 
   const selectedVehicle = lookup && lookup.candidates.length > 1
     ? lookup.candidates.find((candidate) => candidate.key === selectedKey)?.vehicle ?? null
@@ -212,9 +214,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     }
   };
 
-  const runLookup = async (extended = false, refresh = false) => {
-    const value = tab === "plate" ? normalizePlateDraft(input) : normalizeVinInput(input);
-    if (tab === "plate") setInput(value);
+  const runLookup = async (extended = false, refresh = false, rawValue?: string) => {
+    const sourceValue = rawValue ?? input;
+    const value = tab === "plate" ? normalizePlateDraft(sourceValue) : normalizeVinInput(sourceValue);
+    setInput(value);
     if (!value) return;
 
     if (tab === "plate" && !isLikelyRussianPlate(value)) {
@@ -326,6 +329,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
   };
 
   const changeTab = (next: LookupTab) => {
+    if (next === tab) {
+      if (next !== "manual") inputRef.current?.focus();
+      return;
+    }
     lookupRequestIdRef.current += 1;
     resolutionRequestIdRef.current += 1;
     lookupControllerRef.current?.abort();
@@ -336,7 +343,13 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     setFeedback(null);
     setAppliedVehicle(null);
     setAppliedFromCache(false);
-    if (next === "manual") onManualMode({ reason: "manual" });
+    setInput("");
+    lastAutomaticLookupRef.current = "";
+    if (next === "manual") {
+      onManualMode({ reason: "manual" });
+      return;
+    }
+    window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   if (appliedVehicle) {
@@ -381,9 +394,25 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           <label className="eco-field">
             <span>{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
             <input
+              ref={inputRef}
               className="eco-input"
               value={input}
-              onChange={(event) => setInput(tab === "plate" ? normalizePlateDraft(event.target.value) : event.target.value.toUpperCase())}
+              onChange={(event) => {
+                const nextValue = tab === "plate" ? normalizePlateDraft(event.target.value) : event.target.value.toUpperCase();
+                const normalizedValue = tab === "plate" ? normalizePlateDraft(nextValue) : normalizeVinInput(nextValue);
+                const isComplete = tab === "plate"
+                  ? isLikelyRussianPlate(normalizedValue)
+                  : /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedValue);
+                setInput(nextValue);
+                if (!isComplete) {
+                  lastAutomaticLookupRef.current = "";
+                  return;
+                }
+                const lookupKey = `${tab}:${normalizedValue}`;
+                if (lastAutomaticLookupRef.current === lookupKey) return;
+                lastAutomaticLookupRef.current = lookupKey;
+                void runLookup(false, false, nextValue);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !loading) {
                   event.preventDefault();
@@ -399,7 +428,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
           </label>
           <button type="button" className="eco-btn eco-btn--primary" disabled={loading || !input.trim()} onClick={() => void runLookup()}>
             {loading ? <span className="eco-vehicle-lookup__spinner" aria-hidden /> : null}
-            {loading ? "Ищем автомобиль..." : tab === "vin" ? "Расшифровать и подобрать фильтры" : "Найти автомобиль"}
+            {loading ? "Ищем..." : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
           </button>
         </div>
       ) : null}

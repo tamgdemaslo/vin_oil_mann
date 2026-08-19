@@ -3,16 +3,37 @@ import { getSession } from "@/lib/auth";
 import { requireBranchApi } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
+import {
+  anonymousRetailCounterpartyApiModel,
+  anonymousRetailCounterpartyExclusion,
+  ensureAnonymousRetailCounterparty,
+} from "@/lib/anonymous-retail-counterparty";
 
 const meta = (id: string) => ({ href: `local://counterparty/${id}`, type: "counterparty", mediaType: "application/json" });
 export async function GET(request: NextRequest) {
   if (!(await getSession())) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
   const access = await requireBranchApi({ requireActive: false }); if (!access.ok) return access.response;
+  const branchId = access.context.branchId!;
   const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
   const phone = normalizePhoneKey(search);
   const filters = search ? [{ name: { contains: search, mode: "insensitive" as const } }, { phone: { contains: search, mode: "insensitive" as const } }, { searchText: { contains: search.toLowerCase(), mode: "insensitive" as const } }, ...(phone ? [{ normalizedPhone: { contains: phone, mode: "insensitive" as const } }] : [])] : [];
-  const rows = await prisma.localCounterparty.findMany({ where: { branchId: access.context.branchId!, archived: false, ...(filters.length ? { OR: filters } : {}) }, orderBy: { name: "asc" }, take: Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "30", 10) || 30) });
-  return NextResponse.json({ counterparties: rows.map((row) => ({ id: row.id, name: row.name, phone: row.phone, normalizedPhone: row.normalizedPhone, companyType: row.companyType, counterpartyTypeName: row.counterpartyTypeName, legalTitle: row.legalTitle, meta: meta(row.id) })) });
+  const [anonymousRetailCounterparty, rows] = await Promise.all([
+    ensureAnonymousRetailCounterparty(branchId),
+    prisma.localCounterparty.findMany({
+      where: {
+        branchId,
+        archived: false,
+        AND: [anonymousRetailCounterpartyExclusion(branchId)],
+        ...(filters.length ? { OR: filters } : {}),
+      },
+      orderBy: { name: "asc" },
+      take: Math.min(100, parseInt(request.nextUrl.searchParams.get("limit") ?? "30", 10) || 30),
+    }),
+  ]);
+  return NextResponse.json({
+    anonymousRetailCounterparty: anonymousRetailCounterpartyApiModel(anonymousRetailCounterparty),
+    counterparties: rows.map((row) => ({ id: row.id, name: row.name, phone: row.phone, normalizedPhone: row.normalizedPhone, companyType: row.companyType, counterpartyTypeName: row.counterpartyTypeName, legalTitle: row.legalTitle, meta: meta(row.id) })),
+  });
 }
 export async function POST(request: NextRequest) {
   if (!(await getSession())) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });

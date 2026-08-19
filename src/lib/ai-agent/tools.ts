@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { tool, type RunContext } from "@openai/agents";
 import { z } from "zod";
+import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import { getConversationContext } from "@/lib/messenger/messenger-context";
 import { createLocalDemand } from "@/lib/local-demand-write";
@@ -321,6 +322,9 @@ export const saveVehicleTool = tool({
       const plate = clean(vehicle.plate).toUpperCase().replace(/\s+/g, "");
       const client = await prisma.localCounterparty.findFirst({ where: { id: conversation.client.id } });
       if (!client) return { saved: false, reason: "Карточка клиента не найдена" };
+      if (isAnonymousRetailCounterparty(client)) {
+        return { saved: false, reason: "Для сохранения автомобиля нужно указать реального клиента" };
+      }
       const raw = record(client.raw);
       const existingVehicle = record(raw.vehicle);
       const existingVin = clean(existingVehicle.vin).toUpperCase();

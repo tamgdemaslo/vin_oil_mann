@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import { DEFAULT_ROSSKO_MARKUP_RULES, getAgentSettings } from "@/lib/ai-agent/settings";
 import type { AIRosskoMarkupRule } from "@/lib/ai-agent/types";
@@ -353,7 +354,8 @@ async function findMannFilters(args: Record<string, unknown>): Promise<Assistant
 async function lookupClientHistory(args: Record<string, unknown>) {
   const clientId = text(args.clientId, 160);
   const limit = Math.max(1, Math.min(20, Math.round(number(args.limit, 10))));
-  const client = await prisma.localCounterparty.findFirst({ where: { OR: [{ id: clientId }, { id: clientId }] }, select: { id: true, name: true, phone: true, email: true } });
+  const branchId = getScopedBranchId();
+  const client = await prisma.localCounterparty.findFirst({ where: { branchId, ...anonymousRetailCounterpartyExclusion(branchId), OR: [{ id: clientId }, { id: clientId }] }, select: { id: true, name: true, phone: true, email: true } });
   if (!client) return { result: { found: false, clientId } } satisfies AssistantToolResult;
   const demands = await prisma.localDemand.findMany({
     where: { counterpartyId: client.id },
@@ -388,8 +390,9 @@ async function vehicleServiceHistory(args: Record<string, unknown>) {
 async function searchClients(args: Record<string, unknown>) {
   const query = text(args.query, 120);
   const digits = query.replace(/\D/g, "");
+  const branchId = getScopedBranchId();
   const clients = await prisma.localCounterparty.findMany({
-    where: { archived: false, OR: [{ name: { contains: query, mode: "insensitive" } }, { phone: { contains: query, mode: "insensitive" } }, ...(digits ? [{ normalizedPhone: { contains: digits, mode: "insensitive" as const } }] : []), { searchText: { contains: query.toLowerCase(), mode: "insensitive" } }] },
+    where: { branchId, archived: false, ...anonymousRetailCounterpartyExclusion(branchId), OR: [{ name: { contains: query, mode: "insensitive" } }, { phone: { contains: query, mode: "insensitive" } }, ...(digits ? [{ normalizedPhone: { contains: digits, mode: "insensitive" as const } }] : []), { searchText: { contains: query.toLowerCase(), mode: "insensitive" } }] },
     select: { id: true, name: true, phone: true, email: true, inn: true },
     take: 20,
     orderBy: { name: "asc" },

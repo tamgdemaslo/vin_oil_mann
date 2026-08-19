@@ -38,6 +38,7 @@
     "test:cash-shift-policy": "node scripts/test-cash-shift-policy.mjs",
     "test:background-load": "node scripts/test-background-load-guards.mjs",
     "test:booking-system": "node scripts/test-booking-system.mjs",
+    "test:anonymous-retail": "node scripts/test-anonymous-retail-counterparty.mjs",
     "test:price-label-pdf": "node scripts/test-price-label-pdf.mjs",
     "test:price-label-pdf-artifact": "node scripts/test-price-label-pdf.mjs --artifact=.next/standalone",
     "check:timeweb-only": "node scripts/check-timeweb-only.mjs",
@@ -62,6 +63,7 @@
     "db:migrate": "prisma migrate dev",
     "check:moysklad-removed": "node scripts/check-moysklad-removed.mjs",
     "migrate:branch-integrations-from-env": "node scripts/migrate-branch-integrations-from-env.mjs",
+    "backfill:anonymous-retail": "node scripts/backfill-anonymous-retail-counterparties.mjs",
     "worker:messenger-media": "node scripts/messenger-media-worker.mjs"
   },
   "dependencies": {

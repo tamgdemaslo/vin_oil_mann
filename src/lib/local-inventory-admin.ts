@@ -1,4 +1,9 @@
 import { Prisma, type LocalCounterparty } from "@prisma/client";
+import {
+  anonymousRetailCounterpartyExclusion,
+  anonymousRetailCounterpartyId,
+  isAnonymousRetailCounterparty,
+} from "@/lib/anonymous-retail-counterparty";
 import type { User } from "@/lib/auth";
 import { addExpense, getCurrentShift } from "@/lib/cashbox";
 import { parseServiceDateTime, toServiceDateInput } from "@/lib/date-time";
@@ -1761,6 +1766,7 @@ function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterPa
 function mapCounterparty(counterparty: CounterpartyRow) {
   const rawExtra = counterpartyRawExtra(counterparty.raw);
   const category = counterparty.category === "SUPPLIER" ? "SUPPLIER" : "INDIVIDUAL";
+  const isAnonymousRetail = isAnonymousRetailCounterparty(counterparty);
   return {
     id: counterparty.id,
     source: "local" as CounterpartySource,
@@ -1836,6 +1842,8 @@ function mapCounterparty(counterparty: CounterpartyRow) {
       extraSearchText: counterpartyRawSearchText(counterparty.raw),
     }),
     archived: counterparty.archived,
+    isSystem: isAnonymousRetail,
+    isAnonymousRetail,
     meta: localMeta("counterparty", counterparty.id),
   };
 }
@@ -1893,6 +1901,8 @@ function mapSupplierNameCounterparty(name: string): CounterpartyListRow {
       companyType: "supplier",
     }),
     archived: false,
+    isSystem: false,
+    isAnonymousRetail: false,
     meta: localMeta("supplier", supplierSnapshotId(name)),
   };
 }
@@ -2142,6 +2152,8 @@ function mapSnapshotCounterparty(builder: SnapshotCounterpartyBuilder): Counterp
     updatedAt: createdAt,
     searchText,
     archived: false,
+    isSystem: false,
+    isAnonymousRetail: false,
     meta: localMeta("counterparty-snapshot", builder.key),
     demandCount: builder.demandCount,
     totalDemandSumCents: builder.totalDemandSumCents,
@@ -2161,6 +2173,7 @@ async function getDemandSnapshotCounterpartyRows(branchId: string, existingRows:
     const demands = await prisma.localDemand.findMany({
       where: {
         branchId,
+        counterpartyId: { not: anonymousRetailCounterpartyId(branchId) },
         OR: [
           { counterpartyId: { not: null } },
           { agentNameSnapshot: { not: null } },
@@ -2395,6 +2408,7 @@ function counterpartyStats(rows: CounterpartyListRow[]) {
 }
 
 async function fastCounterpartyStats(branchId: string) {
+  const visibleCounterparty = anonymousRetailCounterpartyExclusion(branchId);
   const requisitesMissing: Prisma.LocalCounterpartyWhereInput = {
     AND: [
       { OR: [{ legalTitle: null }, { legalTitle: "" }] },
@@ -2411,12 +2425,12 @@ async function fastCounterpartyStats(branchId: string) {
     ],
   };
   const [total, active, archived, individuals, noPhone, noRequisites] = await Promise.all([
-    prisma.localCounterparty.count({ where: { branchId } }),
-    prisma.localCounterparty.count({ where: { branchId, archived: false } }),
-    prisma.localCounterparty.count({ where: { branchId, archived: true } }),
-    prisma.localCounterparty.count({ where: { branchId, category: "INDIVIDUAL" } }),
-    prisma.localCounterparty.count({ where: { branchId, AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
-    prisma.localCounterparty.count({ where: { branchId, AND: [{ archived: false }, requisitesMissing] } }),
+    prisma.localCounterparty.count({ where: { branchId, ...visibleCounterparty } }),
+    prisma.localCounterparty.count({ where: { branchId, archived: false, ...visibleCounterparty } }),
+    prisma.localCounterparty.count({ where: { branchId, archived: true, ...visibleCounterparty } }),
+    prisma.localCounterparty.count({ where: { branchId, category: "INDIVIDUAL", ...visibleCounterparty } }),
+    prisma.localCounterparty.count({ where: { branchId, ...visibleCounterparty, AND: [{ OR: [{ phone: null }, { phone: "" }] }, { archived: false }] } }),
+    prisma.localCounterparty.count({ where: { branchId, ...visibleCounterparty, AND: [{ archived: false }, requisitesMissing] } }),
   ]);
   return {
     total,
@@ -3106,7 +3120,7 @@ async function getCounterpartyRowsForAdmin(branchId: string, includeArchived?: b
   }
 
   const counterparties = await prisma.localCounterparty.findMany({
-    where: { branchId, ...(includeArchived ? {} : { archived: false }) },
+    where: { branchId, ...anonymousRetailCounterpartyExclusion(branchId), ...(includeArchived ? {} : { archived: false }) },
     orderBy: [{ name: "asc" }],
   });
   const rows = counterparties.map(mapCounterparty);
@@ -3245,6 +3259,7 @@ export async function listLocalAdminCounterparties(params: {
   const direction = normalizeSortDirection(params.direction);
   const where: Prisma.LocalCounterpartyWhereInput = {
     branchId: params.branchId,
+    ...anonymousRetailCounterpartyExclusion(params.branchId),
     ...(status === "active" ? { archived: false } : status === "archive" ? { archived: true } : {}),
     ...(type === "individual" ? { category: "INDIVIDUAL" } : type === "supplier" ? { category: "SUPPLIER" } : {}),
     ...(phone === "with"
@@ -3470,8 +3485,10 @@ export async function createLocalAdminCounterparty(
   const vehicleVin = cleanText(body.vehicleVin);
   const vehicleModel = cleanText(body.vehicleModel);
   const vehicleYear = cleanText(body.vehicleYear);
+  const safeBody = { ...body } as CounterpartyInput & { ecoPlatform?: unknown };
+  delete safeBody.ecoPlatform;
   const rawPayload = {
-    ...body,
+    ...safeBody,
     ...(options.rawMetadata ?? {}),
     additionalPhone,
     comment,
@@ -3568,6 +3585,9 @@ export async function createLocalAdminCounterparty(
 export async function updateLocalAdminCounterparty(id: string, body: CounterpartyInput, branchId: string) {
   const current = await prisma.localCounterparty.findFirst({ where: { branchId, OR: [{ id }, { id: id }] } });
   if (!current) return { ok: false as const, error: "Контрагент не найден", notFound: true };
+  if (isAnonymousRetailCounterparty(current)) {
+    return { ok: false as const, error: "Системного контрагента нельзя изменить, архивировать или удалить" };
+  }
   const name = body.name == null ? current.name : body.name.trim();
   if (!name) return { ok: false as const, error: "Укажите имя или название контрагента" };
   const category = body.category === undefined

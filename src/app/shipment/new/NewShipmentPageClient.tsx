@@ -50,6 +50,9 @@ type Counterparty = {
   vehicleModel?: string | null;
   vehicleYear?: string | null;
   vehicleLabel?: string | null;
+  isSystem?: boolean;
+  isAnonymousRetail?: boolean;
+  subtitle?: string | null;
 };
 type ProductSearchMode = "all" | "product" | "service";
 type PositionAddMode = "catalog" | "mann";
@@ -109,8 +112,8 @@ type SessionJson = { user?: { role?: string } };
 type OrganizationsJson = { organizations?: Org[]; error?: string };
 type StoresJson = { stores?: Store[]; error?: string };
 type StockJson = { stockByAssortment?: Record<string, { quantity: number; reserve?: number; available?: number; slotName?: string; cost?: number }> };
-type AttributesJson = { attributes?: ShipmentAttribute[]; error?: string };
-type CounterpartiesJson = { counterparties?: Counterparty[]; error?: string };
+type AttributesJson = { attributes?: ShipmentAttribute[]; anonymousRetailCounterparty?: Counterparty; error?: string };
+type CounterpartiesJson = { counterparties?: Counterparty[]; anonymousRetailCounterparty?: Counterparty; error?: string };
 type ProductsJson = { products?: Product[]; items?: Product[]; error?: string };
 type AgentCreateJson = { id?: string; name?: string; meta?: Meta; error?: string };
 type DemandCreateJson = { id?: string; name?: string; applicable?: boolean; description?: string; error?: string };
@@ -210,7 +213,7 @@ type DemandDetailJson = {
   attributes?: ShipmentAttribute[];
   positions?: Array<Position & { price: number }>;
   raw?: {
-    agent?: { id?: string; name?: string; meta?: Meta };
+    agent?: Partial<Omit<Counterparty, "meta">> & { meta?: Meta };
     organization?: { id?: string; name?: string; meta?: Meta };
     store?: { id?: string; name?: string; meta?: Meta; isMain?: boolean };
   };
@@ -1084,6 +1087,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentSearchError, setAgentSearchError] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Counterparty | null>(null);
+  const [anonymousRetailAgent, setAnonymousRetailAgent] = useState<Counterparty | null>(null);
+  const [replacingAgent, setReplacingAgent] = useState(false);
   const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
   const [highlightedAgentIndex, setHighlightedAgentIndex] = useState(0);
   const agentSearchRef = useRef<HTMLDivElement | null>(null);
@@ -1242,6 +1247,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setSelectedAgent(exact);
     setAgentSearch(exact.name);
     setAgentOptions([]);
+    setReplacingAgent(false);
   }, [agentOptions, prefillAgentQuery, prefillCounterparty, prefillPhone, selectedAgent]);
 
   useEffect(() => {
@@ -1382,12 +1388,20 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         const vinIdx = nextAttributes.findIndex((a: { name: string }) => /vin/i.test(a.name ?? ""));
         if (vinIdx >= 0) setVin((prev) => prev || formatVehicleAttributeInput(nextAttributes[vinIdx]?.name, attributeValueToString(nextAttributes[vinIdx]?.value)));
       }
+      if (data.anonymousRetailCounterparty) {
+        const anonymousRetail = data.anonymousRetailCounterparty;
+        setAnonymousRetailAgent(anonymousRetail);
+        if (!prefillAgentQuery) {
+          setSelectedAgent((current) => current ?? anonymousRetail);
+          setAgentSearch((current) => current || counterpartyDisplayName(anonymousRetail));
+        }
+      }
     } catch (error) {
       setAttributesError(error instanceof Error ? error.message : "Не удалось загрузить дополнительные поля");
     } finally {
       setAttributesLoading(false);
     }
-  }, [prefillPlate, prefillVehicle, prefillVin]);
+  }, [prefillAgentQuery, prefillPlate, prefillVehicle, prefillVin]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -1492,9 +1506,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             id: rawAgent.id ?? localEntityIdFromMeta(rawAgent.meta),
             name: rawAgent.name ?? json.header.agentName ?? "Контрагент",
             meta: rawAgent.meta,
+            phone: rawAgent.phone,
+            companyType: rawAgent.companyType,
+            counterpartyTypeName: rawAgent.counterpartyTypeName,
+            legalTitle: rawAgent.legalTitle,
+            isSystem: rawAgent.isSystem,
+            isAnonymousRetail: rawAgent.isAnonymousRetail,
+            subtitle: rawAgent.subtitle,
           });
           setAgentSearch(rawAgent.name ?? json.header.agentName ?? "");
           setAgentOptions([]);
+          setReplacingAgent(false);
         }
         const rawStore = json.raw?.store;
         if (rawStore?.meta) {
@@ -1583,7 +1605,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
   useEffect(() => {
     const query = agentSearch.trim();
-    if (!authChecked || selectedAgent || !query || !shouldSearchCounterparties(query)) {
+    if (!authChecked || (selectedAgent && !replacingAgent) || !query || !shouldSearchCounterparties(query)) {
       if (!query || !shouldSearchCounterparties(query)) {
         setAgentOptions([]);
         setAgentSearchError(null);
@@ -1603,6 +1625,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         })
         .then((data) => {
           if (cancelled) return;
+          if (data.anonymousRetailCounterparty) setAnonymousRetailAgent(data.anonymousRetailCounterparty);
           setAgentOptions(data.counterparties ?? []);
           setHighlightedAgentIndex(0);
         })
@@ -1619,11 +1642,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [authChecked, selectedAgent, agentSearch]);
+  }, [authChecked, selectedAgent, replacingAgent, agentSearch]);
 
   const loadInitialCounterparties = useCallback(() => {
     const query = agentSearch.trim();
-    if (!authChecked || selectedAgent || !shouldSearchCounterparties(query)) return;
+    if (!authChecked || (selectedAgent && !replacingAgent) || !shouldSearchCounterparties(query)) return;
     setAgentLoading(true);
     setAgentSearchError(null);
     fetch(`/api/local-inventory/counterparty-options?search=${encodeURIComponent(query)}&limit=20`)
@@ -1633,6 +1656,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         return data;
       })
       .then((data) => {
+        if (data.anonymousRetailCounterparty) setAnonymousRetailAgent(data.anonymousRetailCounterparty);
         setAgentOptions(data.counterparties ?? []);
         setHighlightedAgentIndex(0);
       })
@@ -1641,7 +1665,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         setAgentSearchError(error instanceof Error ? error.message : "Не удалось загрузить контрагентов");
       })
       .finally(() => setAgentLoading(false));
-  }, [authChecked, selectedAgent, agentSearch]);
+  }, [authChecked, selectedAgent, replacingAgent, agentSearch]);
 
   useEffect(() => {
     if (!agentDropdownOpen) return;
@@ -1668,6 +1692,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setAgentOptions([]);
     setAgentDropdownOpen(false);
     setHighlightedAgentIndex(0);
+    setReplacingAgent(false);
   };
 
   const handleAgentSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -2090,6 +2115,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setAgentSearch(data.name);
       setAgentOptions([]);
       setShowCreateAgentForm(false);
+      setReplacingAgent(false);
     } catch (e) {
       setCreateAgentError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
@@ -3434,12 +3460,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     return `/operations/restock?${params.toString()}`;
   };
   const showAgentSearchPanel = Boolean(
-    !selectedAgent &&
+    (!selectedAgent || replacingAgent) &&
     !showCreateAgentForm &&
     agentDropdownOpen &&
       (shouldSearchCounterparties(agentSearch) || agentOptions.length > 0 || agentLoading || agentSearchError),
   );
   const clientPhone = selectedAgent?.phone ?? selectedAgent?.normalizedPhone ?? "";
+  const isAnonymousRetail = selectedAgent?.isAnonymousRetail === true;
+  const hasServicePositions = positions.some((position) => isServiceMeta(position.assortmentMeta));
   const clientDisplayName = selectedAgent ? counterpartyDisplayName(selectedAgent) : "";
   const clientTypeLabel = selectedAgent ? counterpartyTypeLabel(selectedAgent) : "";
   const clientVehicleLabel = selectedAgent ? counterpartyVehicleLabel(selectedAgent) : "";
@@ -3450,6 +3478,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase())
       .join("") || "К";
+  const openAgentPicker = () => {
+    setReplacingAgent(true);
+    setAgentSearch("");
+    setAgentOptions([]);
+    setAgentSearchError(null);
+    setAgentDropdownOpen(false);
+    window.setTimeout(() => document.getElementById("shipment-client-search")?.focus(), 0);
+  };
   const documentTitle = isExistingDraft ? `Отгрузка ${existingDemandName ?? demandIdLocal ?? demandId}` : "Новая отгрузка";
   const saveButtonLabel = submitLoading
     ? isExistingDraft
@@ -3793,18 +3829,32 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
             <span>Шаг 1</span>
             <h2 id="shipment-parties-title">Клиент и автомобиль</h2>
           </div>
-          <p>Сначала выберите клиента. Данные автомобиля можно дополнить сейчас или позже.</p>
+          <p>Без данных клиента можно сразу перейти к товарам. Для сервисной истории укажите клиента.</p>
         </header>
         <div className="eco-shipment-entity-grid">
         <article id="shipment-client-card" className="eco-card eco-shipment-entity-card eco-shipment-client-card">
           <EntityCardHeader
-            title={selectedAgent ? "Клиент" : "Выберите клиента"}
-            status={selectedAgent ? undefined : "Нужно выбрать"}
-            tone={selectedAgent ? "success" : "neutral"}
+            title={replacingAgent ? "Указать клиента" : selectedAgent ? "Клиент" : "Выберите клиента"}
+            status={isAnonymousRetail && !replacingAgent ? "По умолчанию" : selectedAgent ? undefined : "Нужно выбрать"}
+            tone={isAnonymousRetail ? "neutral" : selectedAgent ? "success" : "neutral"}
           />
           <div className={`eco-shipment-card-body ${selectedAgent ? "is-filled-client" : ""}`}>
-            {!selectedAgent ? (
-              <div className="eco-shipment-client-search-row">
+            {!selectedAgent || replacingAgent ? (
+              <div className="eco-shipment-client-picker">
+                {anonymousRetailAgent && (
+                  <button
+                    type="button"
+                    className="eco-anonymous-retail-option"
+                    onClick={() => selectAgentOption(anonymousRetailAgent)}
+                  >
+                    <span>
+                      <strong>Без данных клиента</strong>
+                      <small>Розничный покупатель</small>
+                    </span>
+                    <EcoBadge tone="neutral">По умолчанию</EcoBadge>
+                  </button>
+                )}
+                <div className="eco-shipment-client-search-row">
                 <div ref={agentSearchRef} className="eco-shipment-client-search-wrap">
                   <label className="eco-field eco-shipment-client-search">
                     <span>Поиск по имени, телефону или номеру</span>
@@ -3927,43 +3977,55 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     Новый клиент
                   </EcoButton>
                 )}
+                </div>
               </div>
             ) : (
               <div className="eco-shipment-selected-client-card">
                 <div className="eco-shipment-client-avatar" aria-hidden>{clientInitials}</div>
                 <div className="eco-shipment-client-card-copy">
                   <strong>{clientDisplayName}</strong>
-                  <span>{clientPhone || "Телефон не указан"}</span>
-                  <small>{[clientTypeLabel, clientVehicleLabel ? `Авто: ${clientVehicleLabel}` : "Автомобиль не указан"].filter(Boolean).join(" · ")}</small>
+                  <span>{isAnonymousRetail ? "Без данных клиента" : clientPhone || "Телефон не указан"}</span>
+                  <small>{isAnonymousRetail ? "Розничная продажа без клиентской истории и уведомлений" : [clientTypeLabel, clientVehicleLabel ? `Авто: ${clientVehicleLabel}` : "Автомобиль не указан"].filter(Boolean).join(" · ")}</small>
                 </div>
                 <div className="eco-shipment-client-card-actions">
-                  <ContactActionButton
-                    variant="icon"
-                    size="sm"
-                    entityType="shipment"
-                    counterpartyId={selectedAgent.id}
-                    phone={clientPhone}
-                    displayName={clientDisplayName}
-                    context={{
-                      entityType: "shipment",
-                      entityId: "draft",
-                      car: clientVehicleLabel,
-                      plate: selectedAgent.vehiclePlate,
-                    }}
-                  />
-                  <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-shipment-client-action-icon" title="Открыть карточку клиента" aria-label="Открыть карточку клиента">
-                    <ExternalLink className="eco-icon" aria-hidden />
-                  </Link>
+                  {!isAnonymousRetail && (
+                    <>
+                      <ContactActionButton
+                        variant="icon"
+                        size="sm"
+                        entityType="shipment"
+                        counterpartyId={selectedAgent.id}
+                        phone={clientPhone}
+                        displayName={clientDisplayName}
+                        context={{
+                          entityType: "shipment",
+                          entityId: "draft",
+                          car: clientVehicleLabel,
+                          plate: selectedAgent.vehiclePlate,
+                        }}
+                      />
+                      <Link href={counterpartyCatalogHref(selectedAgent)} className="eco-shipment-client-action-icon" title="Открыть карточку клиента" aria-label="Открыть карточку клиента">
+                        <ExternalLink className="eco-icon" aria-hidden />
+                      </Link>
+                    </>
+                  )}
                   <button
                     type="button"
-                    className="eco-shipment-client-action-icon"
-                    onClick={() => { setSelectedAgent(null); setAgentSearch(""); setAgentOptions([]); setAgentDropdownOpen(false); }}
-                    title="Изменить клиента"
-                    aria-label="Изменить клиента"
+                    className={isAnonymousRetail ? "eco-shipment-client-change-button" : "eco-shipment-client-action-icon"}
+                    onClick={openAgentPicker}
+                    title={isAnonymousRetail ? "Указать клиента" : "Изменить клиента"}
+                    aria-label={isAnonymousRetail ? "Указать клиента" : "Изменить клиента"}
                   >
                     <Pencil className="eco-icon" aria-hidden />
+                    {isAnonymousRetail && <span>Указать клиента</span>}
                   </button>
                 </div>
+              </div>
+            )}
+            {isAnonymousRetail && hasServicePositions && !replacingAgent && (
+              <div className="eco-shipment-anonymous-service-note">
+                <span><strong>Клиент не указан.</strong> История обслуживания не будет сохранена в карточке клиента и автомобиля.</span>
+                <button type="button" onClick={openAgentPicker}>Указать клиента</button>
               </div>
             )}
           </div>
@@ -4367,18 +4429,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         )}
         {positionAddMode === "mann" && (
           <div className="eco-shipment-position-mann-panel">
-            <div className="eco-shipment-mann-panel-head">
-              <strong>Подбор по автомобилю</strong>
-              <button
-                type="button"
-                className="eco-shipment-mann-close"
-                onClick={() => setPositionAddMode("catalog")}
-                aria-label="Закрыть подбор по автомобилю"
-                title="Закрыть подбор"
-              >
-                <X className="eco-icon" aria-hidden />
-              </button>
-            </div>
             <div className="eco-shipment-mann-panel-body">
 
             <VehicleLookupPanel

@@ -14,7 +14,7 @@ export type DemandPositionInput = {
 
 export type CreateDemandBody = {
   organization: { meta: LocalEntityMeta };
-  agent: { meta: LocalEntityMeta };
+  agent?: { meta: LocalEntityMeta };
   store: { meta: LocalEntityMeta };
   name?: string;
   description?: string;

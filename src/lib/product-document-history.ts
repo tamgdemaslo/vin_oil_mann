@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { isAnonymousRetailCounterpartyId } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 
 export const PRODUCT_HISTORY_FILTERS = [
@@ -560,7 +561,10 @@ export async function getProductDocumentHistory(
     const createdRevision = demand.revisions.find((revision) => revision.eventType === "CREATED");
     const postedRevision = [...demand.revisions].reverse().find((revision) => revision.eventType === "POSTED" || revision.eventType === "REPOSTED");
     const status = demand.applicable ? "posted" : "draft";
-    const counterpartyName = clean(demand.counterparty?.displayName) ?? clean(demand.counterparty?.name) ?? clean(demand.agentNameSnapshot);
+    const anonymousRetail = isAnonymousRetailCounterpartyId(demand.counterparty?.id, branchId);
+    const counterpartyName = anonymousRetail
+      ? "Розничная продажа"
+      : clean(demand.counterparty?.displayName) ?? clean(demand.counterparty?.name) ?? clean(demand.agentNameSnapshot);
     ranked.push({
       id: `shipment:${demand.id}`,
       documentType: "shipment",

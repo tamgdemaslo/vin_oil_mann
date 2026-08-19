@@ -1,4 +1,8 @@
 import { Prisma, type LocalCounterparty } from "@prisma/client";
+import {
+  ensureAnonymousRetailCounterparty,
+  isAnonymousRetailCounterparty,
+} from "@/lib/anonymous-retail-counterparty";
 import { type CreateDemandBody } from "@/lib/demand-create-payload";
 import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 import { invalidateDemandListCache } from "@/lib/demand-list-cache";
@@ -1149,7 +1153,7 @@ export async function createLocalDemand(
   const storeId = entityIdFromMeta(body.store?.meta);
   const counterpartyId = entityIdFromMeta(body.agent?.meta);
   const organizationLookupId = entityIdFromMeta(body.organization?.meta);
-  const [store, counterparty, organization] = await Promise.all([
+  const [store, explicitCounterparty, organization] = await Promise.all([
     storeId
       ? prisma.localStore.findFirst({ where: { branchId: scope.branchId, OR: [{ id: storeId }, { id: storeId }] } })
       : null,
@@ -1160,6 +1164,10 @@ export async function createLocalDemand(
       ? prisma.localOrganization.findFirst({ where: { id: scope.organizationId, isActive: true, OR: [{ id: organizationLookupId }, { id: organizationLookupId }] } })
       : null,
   ]);
+
+  const counterparty = explicitCounterparty ?? (
+    counterpartyId ? null : await ensureAnonymousRetailCounterparty(scope.branchId)
+  );
 
   if (!organization) return { ok: false, error: "Организация не найдена в локальной БД. Запустите импорт или seed." };
   if (!store) return { ok: false, error: "Склад не найден в локальной БД. Запустите импорт складского зеркала." };
@@ -1180,6 +1188,8 @@ export async function createLocalDemand(
       const name = body.name?.trim() || generatedNumber?.name || "0001";
       const raw = {
         ...body,
+        agent: body.agent ?? { meta: localMeta("counterparty", counterparty.id) },
+        customerMode: isAnonymousRetailCounterparty(counterparty) ? "anonymous_retail" : "identified",
         ecoUserName: options?.ecoUserName ?? null,
         ...(generatedNumber
           ? {
@@ -1446,6 +1456,12 @@ export async function updateLocalDemand(
         sumCents: sumPositionsCents(nextPositions),
         raw: toJson({
           ...nextRawBase,
+          ...(nextCounterparty
+            ? {
+                agent: { meta: localMeta("counterparty", nextCounterparty.id) },
+                customerMode: isAnonymousRetailCounterparty(nextCounterparty) ? "anonymous_retail" : "identified",
+              }
+            : {}),
           lastLocalUpdate: new Date().toISOString(),
           ...(nextApplicable ? { lastPostedAt: new Date().toISOString(), lastPostedBy: actor?.login ?? null } : {}),
         }),
@@ -1930,6 +1946,9 @@ export async function loadLocalDemandDetailPayload(
             phone: demand.counterparty.phone ?? undefined,
             companyType: demand.counterparty.companyType ?? undefined,
             counterpartyTypeName: demand.counterparty.counterpartyTypeName ?? undefined,
+            isSystem: isAnonymousRetailCounterparty(demand.counterparty),
+            isAnonymousRetail: isAnonymousRetailCounterparty(demand.counterparty),
+            subtitle: isAnonymousRetailCounterparty(demand.counterparty) ? "Без данных клиента" : undefined,
             legalTitle: demand.counterparty.legalTitle ?? undefined,
             inn: demand.counterparty.inn ?? undefined,
             kpp: demand.counterparty.kpp ?? undefined,

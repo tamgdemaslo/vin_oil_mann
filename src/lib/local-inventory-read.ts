@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
@@ -423,9 +424,12 @@ export async function hasLocalInventoryCounterparties(): Promise<boolean> {
 export async function searchLocalCounterparties(params: { search?: string; limit?: number }) {
   const search = params.search?.trim() ?? "";
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
+  const branchId = getScopedBranchId();
   const counterparties = await prisma.localCounterparty.findMany({
     where: {
+      branchId,
       archived: false,
+      ...anonymousRetailCounterpartyExclusion(branchId),
       ...(search
         ? {
             searchText: {

@@ -1,4 +1,5 @@
 import { Prisma, type Booking, type PrismaClient } from "@prisma/client";
+import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { createLocalAdminCounterparty } from "@/lib/local-inventory-admin";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import { prisma } from "@/lib/db";
@@ -244,6 +245,9 @@ async function resolveClient(
       where: { id: input.clientId, branchId: input.branchId, archived: false },
     });
     if (!client) throw new BookingError("Клиент не найден", "booking_client_not_found", 404);
+    if (isAnonymousRetailCounterparty(client)) {
+      throw new BookingError("Для записи нужно указать реального клиента", "booking_client_required", 400);
+    }
     return client;
   }
   const matches = await tx.localCounterparty.findMany({

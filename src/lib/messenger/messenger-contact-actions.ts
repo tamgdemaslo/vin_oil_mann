@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import type { User } from "@/lib/auth";
@@ -49,10 +50,12 @@ export type ContactActionInput = {
 
 type ContactRow = {
   id: string;
+  branchId: string;
   name: string;
   phone: string | null;
   normalizedPhone: string | null;
   counterpartyTypeName: string | null;
+  raw: unknown;
 };
 
 type IdentityRow = {
@@ -170,7 +173,7 @@ async function loadCounterparty(input: ContactActionInput) {
   if (!id) return null;
   return prisma.localCounterparty.findFirst({
     where: { OR: [{ id }, { id: id }] },
-    select: { id: true, name: true, phone: true, normalizedPhone: true, counterpartyTypeName: true },
+    select: { id: true, branchId: true, name: true, phone: true, normalizedPhone: true, counterpartyTypeName: true, raw: true },
   });
 }
 
@@ -381,6 +384,9 @@ export async function getContactStatus(input: ContactActionInput) {
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
   const counterparty = await loadCounterparty(input);
+  if (isAnonymousRetailCounterparty(counterparty)) {
+    throw new ContactActionError("Для связи с клиентом сначала укажите реального клиента.", 400, "anonymous_retail");
+  }
   const phone = phoneFromInput(input, counterparty);
   const normalizedPhone = normalizePhoneKey(phone);
   const account = await getActiveTelegramUserAccount().catch(() => null);
@@ -423,6 +429,9 @@ export async function startContactConversation(input: ContactActionInput, actor?
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
   const counterparty = await loadCounterparty(input);
+  if (isAnonymousRetailCounterparty(counterparty)) {
+    throw new ContactActionError("Системного контрагента нельзя привязать к диалогу.", 400, "anonymous_retail");
+  }
   const id = counterparty?.id ?? contactId(input);
   const entityType = entityTypeForIdentity(input, counterparty);
   const clientId = entityType === "CLIENT" ? id : null;
@@ -517,6 +526,10 @@ export async function sendContactMessage(
   input: ContactActionInput & { conversationId?: string | null; text?: string | null; templateKey?: string | null; templateVars?: Record<string, unknown> | null },
   actor?: User | null
 ) {
+  const counterparty = await loadCounterparty(input);
+  if (isAnonymousRetailCounterparty(counterparty)) {
+    throw new ContactActionError("Системному контрагенту анонимной розницы нельзя отправлять сообщения.", 400, "anonymous_retail");
+  }
   const text =
     cleanText(input.text) ??
     (input.templateKey ? renderContactTemplate(input.templateKey, { ...(input.templateVars ?? {}), clientName: input.displayName }) : null);
@@ -567,6 +580,9 @@ export async function linkContactContext(input: ContactActionInput & { conversat
   await ensureMessengerIntegrationCoreSchema();
   const organizationId = getMessengerOrganizationId();
   const counterparty = await loadCounterparty(input);
+  if (isAnonymousRetailCounterparty(counterparty)) {
+    throw new ContactActionError("Системного контрагента нельзя привязать к диалогу.", 400, "anonymous_retail");
+  }
   const id = counterparty?.id ?? contactId(input);
   const entityType = entityTypeForIdentity(input, counterparty);
   await linkConversationEntities({

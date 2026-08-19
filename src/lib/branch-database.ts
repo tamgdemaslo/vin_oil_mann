@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/db";
+import {
+  anonymousRetailCounterpartyExclusion,
+  anonymousRetailCounterpartyId,
+} from "@/lib/anonymous-retail-counterparty";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 
 export class BranchRelationViolation extends Error {
@@ -33,7 +37,7 @@ export function getBranchDatabaseContext() {
     clients: {
       findById: (id: string) => prisma.localCounterparty.findFirst({ where: { branchId, id } }),
       search: (term: string, take = 50) => prisma.localCounterparty.findMany({
-        where: { branchId, OR: [{ name: { contains: term, mode: "insensitive" } }, { phone: { contains: term } }] },
+        where: { branchId, ...anonymousRetailCounterpartyExclusion(branchId), OR: [{ name: { contains: term, mode: "insensitive" } }, { phone: { contains: term } }] },
         take: Math.min(100, Math.max(1, take)),
       }),
     },
@@ -67,7 +71,12 @@ export function getGroupAnalyticsDatabase() {
   const branchIds = [...tenant.allowedBranchIds];
   return {
     branchIds,
-    countClients: () => prisma.localCounterparty.count({ where: { branchId: { in: branchIds } } }),
+    countClients: () => prisma.localCounterparty.count({
+      where: {
+        branchId: { in: branchIds },
+        id: { notIn: branchIds.map(anonymousRetailCounterpartyId) },
+      },
+    }),
     countShipments: () => prisma.localDemand.count({ where: { branchId: { in: branchIds } } }),
     countProducts: () => prisma.localProduct.count({ where: { branchId: { in: branchIds } } }),
   };

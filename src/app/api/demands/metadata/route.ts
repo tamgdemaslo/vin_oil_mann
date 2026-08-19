@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
+import {
+  anonymousRetailCounterpartyApiModel,
+  ensureAnonymousRetailCounterparty,
+} from "@/lib/anonymous-retail-counterparty";
 import { ensureDemandAttributeMetadata } from "@/lib/demand-attributes";
 
 export async function GET() {
@@ -21,6 +25,11 @@ export async function GET() {
       value: null as string | null,
     }));
 
-    return NextResponse.json({ attributes });
+    const anonymousRetailCounterparty = await ensureAnonymousRetailCounterparty(branchAccess.context.branchId!);
+
+    return NextResponse.json({
+      attributes,
+      anonymousRetailCounterparty: anonymousRetailCounterpartyApiModel(anonymousRetailCounterparty),
+    });
   });
 }

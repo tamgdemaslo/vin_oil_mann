@@ -62487,6 +62487,47 @@ html.tgm-print-active .tgm-client-report .qr {
   gap: 2px !important;
 }
 
+.eco-shipment-new-page .eco-shipment-client-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.eco-shipment-new-page .eco-anonymous-retail-option {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 11px;
+  color: var(--shipment-text, #24241f);
+  text-align: left;
+  background: var(--shipment-surface-muted, #f1eee7);
+  border: 1px solid var(--shipment-border, #ded7ca);
+  border-radius: 8px;
+}
+
+.eco-shipment-new-page .eco-anonymous-retail-option:hover,
+.eco-shipment-new-page .eco-anonymous-retail-option:focus-visible {
+  background: #ebe7df;
+  border-color: var(--shipment-border-strong, #c9bfad);
+}
+
+.eco-shipment-new-page .eco-anonymous-retail-option > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.eco-shipment-new-page .eco-anonymous-retail-option strong {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.eco-shipment-new-page .eco-anonymous-retail-option small {
+  color: var(--shipment-text-soft, #6f6d65);
+  font-size: 12px;
+}
+
 .eco-shipment-new-page .eco-shipment-client-card-copy strong {
   overflow: visible !important;
   text-overflow: clip !important;
@@ -62496,6 +62537,54 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-shipment-new-page .eco-shipment-client-card-actions {
   flex-wrap: nowrap !important;
   gap: 6px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-client-change-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--shipment-text, #24241f);
+  background: #fff;
+  border: 1px solid var(--shipment-border-strong, #c9bfad);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.eco-shipment-new-page .eco-shipment-client-change-button:hover,
+.eco-shipment-new-page .eco-shipment-client-change-button:focus-visible {
+  background: var(--shipment-surface-muted, #f1eee7);
+}
+
+.eco-shipment-new-page .eco-shipment-anonymous-service-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  color: var(--shipment-text-soft, #6f6d65);
+  border-top: 1px solid var(--shipment-border, #ded7ca);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.eco-shipment-new-page .eco-shipment-anonymous-service-note strong {
+  color: var(--shipment-text, #24241f);
+}
+
+.eco-shipment-new-page .eco-shipment-anonymous-service-note button {
+  flex: 0 0 auto;
+  color: var(--shipment-text, #24241f);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .eco-shipment-new-page .eco-shipment-client-action-icon,
@@ -62573,6 +62662,16 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-shipment-new-page .eco-shipment-client-card-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+
+  .eco-shipment-new-page .eco-anonymous-retail-option,
+  .eco-shipment-new-page .eco-shipment-anonymous-service-note {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .eco-shipment-new-page .eco-shipment-client-change-button {
+    width: 100%;
   }
 
   .eco-shipment-new-page .eco-shipment-vehicle-summary .eco-key-value-grid {
@@ -63619,45 +63718,47 @@ html.tgm-print-active .tgm-client-report .qr {
 }
 
 .eco-shipment-new-page .eco-shipment-position-mann-panel {
-  margin: 0 var(--shipment-card-pad) 20px !important;
-  padding-top: 12px !important;
+  margin: 0 var(--shipment-card-pad) 16px !important;
+  padding-top: 10px !important;
 }
 
-.eco-shipment-new-page .eco-shipment-mann-panel-head {
-  display: flex !important;
-  min-height: 40px !important;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 8px !important;
+.eco-shipment-new-page .eco-shipment-mann-panel-body {
+  gap: 10px !important;
+  padding: 0 !important;
 }
 
-.eco-shipment-new-page .eco-shipment-mann-panel-head > strong {
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) {
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: end;
+  gap: 10px 12px !important;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__tabs {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__controls {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
-  line-height: 1.25;
 }
 
-.eco-shipment-new-page .eco-shipment-mann-close {
-  position: relative;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  margin-left: auto;
-}
-
-.eco-shipment-new-page .eco-shipment-mann-close::before {
-  position: absolute;
-  content: "";
-  inset: -4px;
-}
-
-.eco-shipment-new-page .eco-shipment-mann-panel-body,
-.eco-shipment-new-page .eco-vehicle-lookup {
-  gap: 12px !important;
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__feedback,
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__message,
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__candidates,
+.eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__result {
+  grid-column: 1 / -1;
 }
 
 .eco-shipment-new-page .eco-vehicle-lookup__controls {
-  gap: 12px !important;
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+  gap: 8px !important;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__controls .eco-btn {
+  min-width: 136px;
 }
 
 .eco-shipment-new-page .eco-vehicle-lookup__feedback {
@@ -63886,8 +63987,22 @@ html.tgm-print-active .tgm-client-report .qr {
   }
 
   .eco-shipment-new-page .eco-shipment-position-mann-panel {
-    margin: 0 16px 20px !important;
-    padding-top: 14px !important;
+    margin: 0 16px 16px !important;
+    padding-top: 10px !important;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__tabs,
+  .eco-shipment-new-page .eco-vehicle-lookup:not(.is-compact) > .eco-vehicle-lookup__controls {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__controls .eco-btn {
+    min-width: 0;
   }
 
   .eco-shipment-new-page .eco-vehicle-lookup__result,

@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { isAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import {
   documentProfitFromComputedPositions,
   type ComputedPositionForProfit,
@@ -15,6 +16,7 @@ const ACTIVE_DAYS_THRESHOLD = 60;
 
 const demandSelect = {
   id: true,
+  branchId: true,
   name: true,
   momentAt: true,
   documentDate: true,
@@ -28,6 +30,8 @@ const demandSelect = {
       name: true,
       phone: true,
       normalizedPhone: true,
+      branchId: true,
+      raw: true,
     },
   },
   positions: {
@@ -47,9 +51,11 @@ const demandSelect = {
 
 const counterpartySelect = {
   id: true,
+  branchId: true,
   name: true,
   phone: true,
   normalizedPhone: true,
+  raw: true,
 } satisfies Prisma.LocalCounterpartySelect;
 
 type LocalDemandWithRelations = Prisma.LocalDemandGetPayload<{ select: typeof demandSelect }>;
@@ -777,11 +783,38 @@ function buildClientRows(params: {
     });
 }
 
-function buildKpis(clients: CustomerAnalyticsRow[]): CustomerAnalyticsKpis {
+type AnonymousRetailDocumentStats = {
+  visits: number;
+  revenueCents: number;
+  profitCents: number;
+};
+
+function anonymousRetailDocumentStats(
+  demands: LocalDemandWithRelations[],
+  serviceIds: Set<string>,
+  dateFrom: string | null,
+  dateTo: string | null,
+): AnonymousRetailDocumentStats {
+  const rows = demands.filter((demand) =>
+    isAnonymousRetailCounterparty(demand.counterparty) &&
+    demandMatchesServiceFilter(demand, serviceIds) &&
+    ymdInRange(demand.documentDate, dateFrom, dateTo)
+  );
+  return {
+    visits: rows.length,
+    revenueCents: rows.reduce((sum, demand) => sum + demand.sumCents, 0),
+    profitCents: rows.reduce((sum, demand) => sum + documentProfitCents(demand.positions), 0),
+  };
+}
+
+function buildKpis(
+  clients: CustomerAnalyticsRow[],
+  anonymousRetail: AnonymousRetailDocumentStats = { visits: 0, revenueCents: 0, profitCents: 0 },
+): CustomerAnalyticsKpis {
   const clientsInPeriod = clients.filter((client) => client.visitCount > 0).length;
-  const visits = clients.reduce((sum, client) => sum + client.visitCount, 0);
-  const totalRevenueCents = clients.reduce((sum, client) => sum + client.revenueCents, 0);
-  const totalProfitCents = clients.reduce((sum, client) => sum + client.profitCents, 0);
+  const visits = clients.reduce((sum, client) => sum + client.visitCount, 0) + anonymousRetail.visits;
+  const totalRevenueCents = clients.reduce((sum, client) => sum + client.revenueCents, 0) + anonymousRetail.revenueCents;
+  const totalProfitCents = clients.reduce((sum, client) => sum + client.profitCents, 0) + anonymousRetail.profitCents;
   const gapValues = clients.map((client) => client.avgDaysBetweenVisits).filter((value): value is number => value != null);
 
   return {
@@ -862,7 +895,12 @@ function trendBucketForDate(ymd: string, dateFrom: string | null, dateTo: string
   return { bucket: ymd.slice(0, 7), label: ymd.slice(0, 7) };
 }
 
-function buildTrend(clients: CustomerAnalyticsRow[], dateFrom: string | null, dateTo: string | null): CustomerTrendPoint[] {
+function buildTrend(
+  clients: CustomerAnalyticsRow[],
+  dateFrom: string | null,
+  dateTo: string | null,
+  anonymousRetailDemands: LocalDemandWithRelations[] = [],
+): CustomerTrendPoint[] {
   const byBucket = new Map<string, CustomerTrendPoint>();
   for (const client of clients) {
     if (!client.lastVisitInPeriod || client.visitCount === 0) continue;
@@ -871,6 +909,13 @@ function buildTrend(clients: CustomerAnalyticsRow[], dateFrom: string | null, da
     if (client.statuses.includes("new")) current.newClients += 1;
     else current.repeatClients += 1;
     current.revenueCents += client.revenueCents;
+    byBucket.set(bucket, current);
+  }
+  for (const demand of anonymousRetailDemands) {
+    if (!ymdInRange(demand.documentDate, dateFrom, dateTo)) continue;
+    const { bucket, label } = trendBucketForDate(demand.documentDate, dateFrom, dateTo);
+    const current = byBucket.get(bucket) ?? { bucket, label, newClients: 0, repeatClients: 0, revenueCents: 0 };
+    current.revenueCents += demand.sumCents;
     byBucket.set(bucket, current);
   }
   return [...byBucket.values()].sort((a, b) => a.bucket.localeCompare(b.bucket)).slice(-18);
@@ -1048,7 +1093,10 @@ export async function loadCustomerAnalyticsPayload(params: {
     loadCrmDealsForAnalytics(),
   ]);
 
-  const accumulators = buildAccumulators({ counterparties, demands, crmDeals });
+  const customerCounterparties = counterparties.filter((counterparty) => !isAnonymousRetailCounterparty(counterparty));
+  const customerDemands = demands.filter((demand) => !isAnonymousRetailCounterparty(demand.counterparty));
+  const anonymousRetail = anonymousRetailDocumentStats(demands, serviceIdSet, dateFrom, dateTo);
+  const accumulators = buildAccumulators({ counterparties: customerCounterparties, demands: customerDemands, crmDeals });
   const clients = buildClientRows({
     accumulators,
     dateFrom,
@@ -1081,10 +1129,15 @@ export async function loadCustomerAnalyticsPayload(params: {
       { id: "manual", name: "Вручную" },
     ],
     responsibles: buildResponsibles(crmDeals),
-    kpis: buildKpis(clients),
+    kpis: buildKpis(clients, anonymousRetail),
     insights: buildInsights(clients),
     duplicates: buildDuplicates(clients),
-    trend: buildTrend(clients, dateFrom, dateTo),
+    trend: buildTrend(
+      clients,
+      dateFrom,
+      dateTo,
+      demands.filter((demand) => isAnonymousRetailCounterparty(demand.counterparty) && demandMatchesServiceFilter(demand, serviceIdSet)),
+    ),
     segments: buildSegments(clients),
     topServices: buildTopServices(demands, serviceIdSet, dateFrom, dateTo),
     clients,
@@ -1142,7 +1195,11 @@ export async function loadCustomerDemandHistory(params: {
     loadCrmDealsForAnalytics(),
   ]);
 
-  const accumulators = buildAccumulators({ counterparties, demands, crmDeals });
+  const accumulators = buildAccumulators({
+    counterparties: counterparties.filter((counterparty) => !isAnonymousRetailCounterparty(counterparty)),
+    demands: demands.filter((demand) => !isAnonymousRetailCounterparty(demand.counterparty)),
+    crmDeals,
+  });
   const acc =
     accumulators.get(params.clientKey) ??
     (params.normalizedPhone ? accumulators.get(clientKeyFromPhone(params.normalizedPhone) ?? "") : undefined);
