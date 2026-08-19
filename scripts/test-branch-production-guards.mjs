@@ -56,6 +56,27 @@ assert.deepEqual(
   await proxyResult("/records?_rsc=navigation", "GET", { rsc: "1" }),
   { status: 200, next: true, body: null }
 );
+assert.deepEqual(
+  await proxyResult("/inventory/restock?_rsc=stale", "GET", {
+    rsc: "1",
+    "next-router-state-tree": "%7Btruncated",
+  }),
+  { status: 204, next: false, body: null }
+);
+assert.deepEqual(
+  await proxyResult("/inventory/restock?_rsc=invalid-shape", "GET", {
+    rsc: "1",
+    "next-router-state-tree": encodeURIComponent(JSON.stringify(["", { children: {} }])),
+  }),
+  { status: 204, next: false, body: null }
+);
+assert.deepEqual(
+  await proxyResult("/inventory/restock?_rsc=navigation", "GET", {
+    rsc: "1",
+    "next-router-state-tree": encodeURIComponent(JSON.stringify(["", {}])),
+  }),
+  { status: 200, next: true, body: null }
+);
 assert.deepEqual(await proxyResult("/api/branches"), { status: 200, next: true, body: null });
 assert.deepEqual(await proxyResult("/api/branches", "PUT"), {
   status: 409,
