@@ -89,17 +89,37 @@ const burstHeaders = {
   "x-forwarded-for": "203.0.113.10",
   "user-agent": "request-burst-regression-test",
 };
+const originalDateNow = Date.now;
+let burstNow = originalDateNow();
+Date.now = () => burstNow;
 for (let index = 0; index < 24; index += 1) {
-  assert.deepEqual(await proxyResult(`/api/auth/session?request=${index}`, "GET", burstHeaders), {
+  assert.deepEqual(await proxyResult(`/api/cash?request=${index}`, "GET", burstHeaders), {
     status: 200,
     next: true,
     body: null,
   });
 }
-const blockedApiBurst = await proxyResult("/api/auth/session?request=blocked", "GET", burstHeaders);
+const blockedApiBurst = await proxyResult("/api/cash?request=blocked", "GET", burstHeaders);
 assert.equal(blockedApiBurst.status, 429);
 assert.equal(blockedApiBurst.next, false);
 assert.equal(blockedApiBurst.body?.code, "client_request_burst");
+
+burstNow += 30_001;
+for (let index = 0; index < 24; index += 1) {
+  assert.deepEqual(await proxyResult(`/api/cash?second-wave=${index}`, "GET", burstHeaders), {
+    status: 200,
+    next: true,
+    body: null,
+  });
+}
+const secondBlockedApiBurst = await proxyResult("/api/cash?second-wave=blocked", "GET", burstHeaders);
+assert.equal(secondBlockedApiBurst.status, 429);
+assert.equal(secondBlockedApiBurst.body?.code, "client_request_burst");
+burstNow += 30_001;
+const stillBlockedApiBurst = await proxyResult("/api/cash?second-wave=still-blocked", "GET", burstHeaders);
+assert.equal(stillBlockedApiBurst.status, 429);
+assert.equal(stillBlockedApiBurst.body?.code, "client_request_burst");
+Date.now = originalDateNow;
 
 const documentBurstHeaders = {
   cookie: `${allModeCookie}; eco_session=test-restored-tabs-session`,
@@ -120,7 +140,7 @@ assert.equal(blockedDocumentBurst.status, 429);
 assert.equal(blockedDocumentBurst.next, false);
 assert.equal(blockedDocumentBurst.body?.code, "client_request_burst");
 
-for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version"]) {
+for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version", "/api/auth/users"]) {
   for (let index = 0; index < 30; index += 1) {
     assert.deepEqual(await proxyResult(path, "GET", burstHeaders), { status: 200, next: true, body: null });
   }

@@ -9,12 +9,17 @@ const REQUEST_BURST_LIMITS = {
 } as const;
 const REQUEST_BURST_BUCKET_LIMIT = 2_000;
 const REQUEST_BURST_BUCKET_TTL_MS = 5 * 60_000;
+const REQUEST_BURST_MAX_BLOCK_MS = 10 * 60_000;
+const REQUEST_BURST_STRIKE_RESET_MS = 10 * 60_000;
 const REQUEST_BURST_EXEMPT_PATHS = new Set([
   "/api/health/live",
   "/api/health/ready",
   "/api/system/version",
   "/api/auth/login",
   "/api/auth/logout",
+  // The login screen must stay usable while stale authenticated tabs are being
+  // throttled. This read is protected by the auth cache and in-flight dedupe.
+  "/api/auth/users",
 ]);
 const ALLOWED_ALL_MODE_WRITES = new Set([
   "POST /api/session/active-branch",
@@ -30,7 +35,7 @@ type RequestBurstBucket = {
   windowStartedAt: number;
   blockedUntil: number;
   lastSeenAt: number;
-  lastLoggedAt: number;
+  strikes: number;
   routeCounts: Map<string, number>;
 };
 
@@ -99,12 +104,13 @@ function requestBurstResponse(request: NextRequest) {
   const limits = REQUEST_BURST_LIMITS[kind];
   let bucket = requestBurstBuckets.get(fingerprint);
   if (!bucket || (bucket.blockedUntil <= now && now - bucket.windowStartedAt >= limits.windowMs)) {
+    const strikes = bucket && now - bucket.lastSeenAt <= REQUEST_BURST_STRIKE_RESET_MS ? bucket.strikes : 0;
     bucket = {
       count: 0,
       windowStartedAt: now,
       blockedUntil: 0,
       lastSeenAt: now,
-      lastLoggedAt: 0,
+      strikes,
       routeCounts: new Map<string, number>(),
     };
     requestBurstBuckets.set(fingerprint, bucket);
@@ -113,14 +119,20 @@ function requestBurstResponse(request: NextRequest) {
   const routeKey = `${request.method} ${request.nextUrl.pathname}`;
   bucket.routeCounts.set(routeKey, (bucket.routeCounts.get(routeKey) ?? 0) + 1);
 
+  let startedBlock = false;
+  let appliedBlockMs = 0;
   if (bucket.blockedUntil <= now) {
     bucket.count += 1;
-    if (bucket.count > limits.limit) bucket.blockedUntil = now + limits.blockMs;
+    if (bucket.count > limits.limit) {
+      bucket.strikes += 1;
+      appliedBlockMs = Math.min(limits.blockMs * 2 ** (bucket.strikes - 1), REQUEST_BURST_MAX_BLOCK_MS);
+      bucket.blockedUntil = now + appliedBlockMs;
+      startedBlock = true;
+    }
   }
   if (bucket.blockedUntil <= now) return null;
 
-  if (now - bucket.lastLoggedAt >= limits.blockMs) {
-    bucket.lastLoggedAt = now;
+  if (startedBlock) {
     const topRoutes = [...bucket.routeCounts.entries()]
       .sort((left, right) => right[1] - left[1])
       .slice(0, 8)
@@ -129,6 +141,8 @@ function requestBurstResponse(request: NextRequest) {
       fingerprint,
       kind,
       count: bucket.count,
+      strike: bucket.strikes,
+      blockMs: appliedBlockMs,
       method: request.method,
       pathname: request.nextUrl.pathname,
       topRoutes,
