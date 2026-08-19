@@ -13,6 +13,7 @@ const tenant = await jiti.import("../src/lib/request-tenant-store.ts");
 const branchApi = await jiti.import("../src/lib/branch-api.ts");
 const effects = await jiti.import("../src/lib/external-side-effects.ts");
 const messengerStorage = await jiti.import("../src/lib/messenger/messenger-storage.ts");
+const clientSession = await jiti.import("../src/lib/client-session-response.ts");
 const { config: proxyConfig, proxy } = await jiti.import("../src/proxy.ts");
 const { createBranch } = await jiti.import("../src/lib/branches.ts");
 
@@ -104,6 +105,27 @@ assert.equal(blockedApiBurst.status, 429);
 assert.equal(blockedApiBurst.next, false);
 assert.equal(blockedApiBurst.body?.code, "client_request_burst");
 
+const visibleTabHeaders = {
+  ...burstHeaders,
+  "x-eco-tab-id": "active-tab-regression-test",
+  "x-eco-page-visibility": "visible",
+};
+for (let index = 0; index < 24; index += 1) {
+  assert.deepEqual(await proxyResult(`/api/auth/session?visible=${index}`, "GET", visibleTabHeaders), {
+    status: 200,
+    next: true,
+    body: null,
+  });
+}
+const blockedVisibleTab = await proxyResult("/api/auth/session?visible=blocked", "GET", visibleTabHeaders);
+assert.equal(blockedVisibleTab.status, 429);
+assert.equal(blockedVisibleTab.body?.code, "client_request_burst");
+
+// The hidden/profile bucket is already blocked above, but a business write
+// must still reach the normal branch guard instead of becoming an ambiguous
+// 429. The all-branches cookie deliberately makes the next guard return 409.
+assert.equal((await proxyResult("/api/demands/test-shipment", "PUT", burstHeaders)).status, 409);
+
 burstNow += 30_001;
 for (let index = 0; index < 12; index += 1) {
   assert.deepEqual(await proxyResult(`/api/cash?second-wave=${index}`, "GET", burstHeaders), {
@@ -120,6 +142,25 @@ const stillBlockedApiBurst = await proxyResult("/api/cash?second-wave=still-bloc
 assert.equal(stillBlockedApiBurst.status, 429);
 assert.equal(stillBlockedApiBurst.body?.code, "client_request_burst");
 Date.now = originalDateNow;
+
+assert.deepEqual(
+  await clientSession.readClientSessionResponse(new Response(JSON.stringify({ user: { id: "user-1" } }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })),
+  { status: "authenticated", data: { user: { id: "user-1" } } }
+);
+assert.deepEqual(
+  await clientSession.readClientSessionResponse(new Response(JSON.stringify({ user: null }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })),
+  { status: "unauthenticated" }
+);
+assert.deepEqual(
+  await clientSession.readClientSessionResponse(new Response("busy", { status: 429, headers: { "Retry-After": "7" } })),
+  { status: "unavailable", httpStatus: 429, retryAfterSeconds: 7 }
+);
 
 const documentBurstHeaders = {
   cookie: `${allModeCookie}; eco_session=test-restored-tabs-session`,
@@ -231,6 +272,10 @@ const messengerProviderSource = fs.readFileSync(new URL("../src/components/messe
 const authSource = fs.readFileSync(new URL("../src/lib/auth.ts", import.meta.url), "utf8");
 const platformShellSource = fs.readFileSync(new URL("../src/components/platform/PlatformShell.tsx", import.meta.url), "utf8");
 const shipmentDetailSource = fs.readFileSync(new URL("../src/app/shipment/[id]/page.tsx", import.meta.url), "utf8");
+const shipmentEditorSource = fs.readFileSync(new URL("../src/app/shipment/new/NewShipmentPageClient.tsx", import.meta.url), "utf8");
+const shipmentPrecheckSource = fs.readFileSync(new URL("../src/app/shipment/[id]/precheck/page.tsx", import.meta.url), "utf8");
+const rootLayoutSource = fs.readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+const requestContextSource = fs.readFileSync(new URL("../src/lib/browser-request-context.ts", import.meta.url), "utf8");
 const telegramSyncWorkerSource = fs.readFileSync(new URL("../src/lib/messenger/telegram-sync-worker.ts", import.meta.url), "utf8");
 const telegramUserSessionSource = fs.readFileSync(new URL("../src/lib/messenger/channels/telegram-user-session.ts", import.meta.url), "utf8");
 const instrumentationSource = fs.readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8");
@@ -243,6 +288,14 @@ assert.match(authSource, /databaseUsersInFlight/);
 assert.match(platformShellSource, /document\.visibilityState !== "visible"/);
 assert.match(shipmentDetailSource, /document\.visibilityState !== "visible"/);
 assert.match(shipmentDetailSource, /if \(!data\?\.header\?\.id\) return/);
+for (const source of [shipmentDetailSource, shipmentEditorSource, shipmentPrecheckSource]) {
+  assert.match(source, /readClientSessionResponse/);
+  assert.match(source, /sessionResult\.status === "unavailable"/);
+}
+assert.match(rootLayoutSource, /strategy="beforeInteractive"/);
+assert.match(rootLayoutSource, /BROWSER_REQUEST_CONTEXT_SCRIPT/);
+assert.match(requestContextSource, /X-Eco-Tab-Id/);
+assert.match(requestContextSource, /X-Eco-Page-Visibility/);
 assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
 assert.match(telegramSyncWorkerSource, /TELEGRAM_SYNC_WORKER_ENABLED === "1"/);
 assert.doesNotMatch(telegramSyncWorkerSource, /process\.env\.NODE_ENV === "production"/);

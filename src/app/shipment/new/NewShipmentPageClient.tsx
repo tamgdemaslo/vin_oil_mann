@@ -26,6 +26,7 @@ import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { VehicleLookupPanel } from "@/components/shipment/VehicleLookupPanel";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
+import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
 import { formatServiceDateTime, toServiceMomentString } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { isValidMannYear, normalizeMannYearInput, shouldApplyMannRequest } from "@/lib/mann-picker-state";
@@ -1251,13 +1252,18 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session")
-      .then((r) => safeJson<SessionJson>(r, {}))
-      .then(async (data) => {
+      .then((response) => readClientSessionResponse<SessionJson>(response))
+      .then(async (sessionResult) => {
         if (cancelled) return;
-        if (!data?.user) {
+        if (sessionResult.status === "unauthenticated") {
           router.push("/login?from=/shipment/new");
           return;
         }
+        if (sessionResult.status === "unavailable") {
+          setSubmitError(clientSessionUnavailableMessage(sessionResult));
+          return;
+        }
+        const data = sessionResult.data;
         if (data.user.role === "admin" || data.user.role === "master") {
           const cash = await fetch("/api/cash", { cache: "no-store" }).then((r) =>
             r.ok ? safeJson<{ shift?: { status?: string } } | null>(r, null) : null
@@ -1271,7 +1277,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         setAuthChecked(true);
       })
       .catch(() => {
-        if (!cancelled) router.push("/login?from=/shipment/new");
+        if (!cancelled) setSubmitError("Не удалось проверить авторизацию. Проверьте соединение и обновите страницу.");
       });
     return () => {
       cancelled = true;

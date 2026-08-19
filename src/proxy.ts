@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ACTIVE_BRANCH_COOKIE = "eco_active_branch";
 const SESSION_COOKIE = "eco_session";
+const REQUEST_TAB_ID_HEADER = "x-eco-tab-id";
+const REQUEST_VISIBILITY_HEADER = "x-eco-page-visibility";
 const REQUEST_BURST_LIMITS = {
   api: { windowMs: 10_000, limit: 12, blockMs: 30_000 },
+  visibleApi: { windowMs: 10_000, limit: 24, blockMs: 10_000 },
   document: { windowMs: 15_000, limit: 4, blockMs: 30_000 },
 } as const;
 const REQUEST_BURST_BUCKET_LIMIT = 2_000;
@@ -46,7 +49,18 @@ const requestBurstBuckets = ((globalThis as typeof globalThis & {
 function requestBurstKind(request: NextRequest): RequestBurstKind | null {
   const pathname = request.nextUrl.pathname;
   if (REQUEST_BURST_EXEMPT_PATHS.has(pathname) || request.method === "OPTIONS") return null;
-  if (pathname.startsWith("/api/")) return "api";
+  if (pathname.startsWith("/api/")) {
+    // Background/restored tabs create read storms. Business mutations are
+    // user-initiated and may be non-idempotent, so never reject them here:
+    // the route-level auth/branch/idempotency checks remain responsible for
+    // accepting the write. A 429 on a shipment write leaves the operator
+    // unsure whether stock was actually posted and encourages unsafe retries.
+    if (request.method !== "GET" && request.method !== "HEAD") return null;
+    const tabId = request.headers.get(REQUEST_TAB_ID_HEADER);
+    const visible = request.headers.get(REQUEST_VISIBILITY_HEADER) === "visible";
+    if (visible && tabId && /^[a-zA-Z0-9_-]{8,80}$/.test(tabId)) return "visibleApi";
+    return "api";
+  }
   if (request.method !== "GET") return null;
   const destination = request.headers.get("sec-fetch-dest");
   const acceptsHtml = request.headers.get("accept")?.toLowerCase().includes("text/html") ?? false;
@@ -59,9 +73,10 @@ function requestClientFingerprint(request: NextRequest, kind: RequestBurstKind) 
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const address = forwardedFor || request.headers.get("x-real-ip") || "unknown";
   const userAgent = request.headers.get("user-agent") || "unknown";
+  const tabId = kind === "visibleApi" ? request.headers.get(REQUEST_TAB_ID_HEADER) ?? "unknown" : "profile";
   return crypto
     .createHash("sha256")
-    .update(`${kind}\0${session}\0${address}\0${userAgent}`, "utf8")
+    .update(`${kind}\0${session}\0${address}\0${userAgent}\0${tabId}`, "utf8")
     .digest("hex")
     .slice(0, 16);
 }

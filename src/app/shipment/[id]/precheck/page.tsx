@@ -30,6 +30,7 @@ import {
   normalizeProductMarkingSettings,
   productMarkingProblemReasons,
 } from "@/lib/product-marking";
+import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
 
 type Meta = {
   href: string;
@@ -344,9 +345,16 @@ export default function ShipmentPrecheckPage() {
       setError(null);
       setSuccess(null);
       try {
-        const sess = await fetch("/api/auth/session").then((r) => r.json());
-        if (!sess?.user) {
+        const sessionResult = await fetch("/api/auth/session").then((response) => readClientSessionResponse<{ user?: unknown }>(response));
+        if (sessionResult.status === "unauthenticated") {
           router.push(`/login?from=/shipment/${id}/precheck`);
+          return () => {
+            cancelled = true;
+          };
+        }
+        if (sessionResult.status === "unavailable") {
+          setData(null);
+          setError(clientSessionUnavailableMessage(sessionResult));
           return () => {
             cancelled = true;
           };
