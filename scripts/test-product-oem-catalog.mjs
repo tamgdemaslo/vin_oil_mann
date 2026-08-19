@@ -7,7 +7,7 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
 const { splitProductCrossReferences, hasProductCrossReferences, productCrossReferenceCount } = await jiti.import("../src/lib/product-cross-references.ts");
-const { evaluateMannArticleProductMatch } = await jiti.import("../src/lib/mann-catalog.ts");
+const { evaluateMannArticleProductMatch, normalizeMannProductBrand, normalizePartArticle } = await jiti.import("../src/lib/mann-catalog.ts");
 
 assert.deepEqual(splitProductCrossReferences(" 15208-65F0A; 1520865F0A ; ; OC 90 "), ["1520865F0A", "OC90"]);
 assert.equal(productCrossReferenceCount(" ; , \n "), 0);
@@ -15,16 +15,25 @@ assert.equal(hasProductCrossReferences(" ; , \n "), false);
 assert.equal(hasProductCrossReferences("OC 90"), true);
 
 assert.deepEqual(
-  evaluateMannArticleProductMatch({ article: "W 712/95", name: "Фильтр" }, "W712/95"),
-  { confidence: 99, reason: "Article exact" },
+  evaluateMannArticleProductMatch({ article: "W 712/95", name: "Фильтр", brand: "MANN-FILTER" }, "W712/95"),
+  { confidence: 100, reason: "MANN brand + Article exact" },
 );
 assert.deepEqual(
-  evaluateMannArticleProductMatch({ code: "HU-719/7-X", name: "Фильтр" }, "HU719/7X"),
-  { confidence: 98, reason: "Code exact" },
+  evaluateMannArticleProductMatch({ code: "HU-719/7-X", name: "Фильтр", brand: "MANN FILTER" }, "HU719/7X"),
+  { confidence: 99, reason: "MANN brand + Code exact" },
 );
 assert.deepEqual(
-  evaluateMannArticleProductMatch({ name: "Масляный фильтр MANN W 811/80" }, "W811/80"),
-  { confidence: 86, reason: "Name normalized" },
+  evaluateMannArticleProductMatch({ name: "Масляный фильтр MANN W 811/80", brand: "MANN" }, "W811/80"),
+  { confidence: 84, reason: "MANN brand + Name normalized" },
+);
+assert.deepEqual(normalizePartArticle(" HU 719/7 X. "), { structural: "HU719/7X", compact: "HU7197X" });
+assert.deepEqual(normalizePartArticle("HU 719 7 X"), { structural: "HU7197X", compact: "HU7197X" });
+assert.equal(normalizeMannProductBrand("MANN-FILTER"), "MANN");
+assert.equal(normalizeMannProductBrand("MANNOL"), undefined);
+assert.deepEqual(
+  evaluateMannArticleProductMatch({ article: "W 712/95", name: "Аналог", brand: "MANNOL" }, "W712/95"),
+  { confidence: 74, reason: "Article exact, product brand is not MANN" },
+  "an identical article from another manufacturer is review evidence, not a unique MANN product",
 );
 assert.equal(
   evaluateMannArticleProductMatch({ name: "Фильтр W6720" }, "W67/2"),

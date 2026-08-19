@@ -168,12 +168,35 @@ export function filterMannVehicleVariants<Variant extends { vehicleText?: string
 }
 
 export function normalizeMannArticle(value: unknown): string {
-  return normalizeMannText(value)
+  return normalizePartArticle(value).structural;
+}
+
+export type NormalizedPartArticle = {
+  structural: string;
+  compact: string;
+};
+
+/**
+ * Central article normalization. `structural` preserves meaningful slashes;
+ * `compact` is only a retrieval/fallback key and must be combined with brand
+ * evidence before it can become a strong match.
+ */
+export function normalizePartArticle(value: unknown): NormalizedPartArticle {
+  const structural = normalizeMannText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[‐‑‒–—―]/g, "-")
     .replace(/\\/g, "/")
-    .replace(/-/g, "")
-    .replace(/\s+/g, "")
-    .replace(/[^A-ZА-Я0-9/]/g, "");
+    .replace(/[.\s-]+/g, "")
+    .replace(/[^A-Z0-9/]/g, "")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  return { structural, compact: structural.replace(/\//g, "") };
+}
+
+export function normalizeMannProductBrand(value: unknown): "MANN" | undefined {
+  const normalized = normalizeMannSearchText(value).replace(/\s+/g, " ");
+  return ["MANN", "MANN FILTER", "MANNFILTER"].includes(normalized) ? "MANN" : undefined;
 }
 
 function normalizeEngineCode(value: unknown): string | null {
@@ -999,11 +1022,7 @@ export async function listMannFilters(params: { make?: string | null; model?: st
 }
 
 function normalizeOemPartsToken(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
+  return normalizePartArticle(value).compact;
 }
 
 function normalizedOemPartsTokens(value?: string | null): Set<string> {
@@ -1048,29 +1067,44 @@ function normalizedOemPartsTokens(value?: string | null): Set<string> {
 }
 
 function productHasMannArticle(
-  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null },
-  articleOemNormalized: string
+  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null; brand?: string | null },
+  mannArticle: string
 ): { confidence: number; reason: string } | null {
+  const expected = normalizePartArticle(mannArticle);
+  const articleOemNormalized = expected.compact;
   if (articleOemNormalized.length < 3) return null;
-  const hasArticleMatch = normalizeOemPartsToken(product.article) === articleOemNormalized;
-  const hasCodeMatch = normalizeOemPartsToken(product.code) === articleOemNormalized;
+  const article = normalizePartArticle(product.article);
+  const code = normalizePartArticle(product.code);
+  const hasArticleStructuralMatch = Boolean(expected.structural && article.structural === expected.structural);
+  const hasCodeStructuralMatch = Boolean(expected.structural && code.structural === expected.structural);
+  const hasArticleCompactMatch = article.compact === articleOemNormalized;
+  const hasCodeCompactMatch = code.compact === articleOemNormalized;
   const hasOemPartsMatch = normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized);
   const hasNameMatch = normalizedOemPartsTokens(product.name).has(articleOemNormalized);
-  if (hasArticleMatch && hasCodeMatch) return { confidence: 100, reason: "Article + Code exact" };
-  if (hasArticleMatch) return { confidence: 99, reason: "Article exact" };
-  if (hasCodeMatch) return { confidence: 98, reason: "Code exact" };
-  if (hasOemPartsMatch && hasNameMatch) return { confidence: 96, reason: "OEM Parts + Name normalized" };
-  if (hasOemPartsMatch) return { confidence: 95, reason: "OEM Parts normalized" };
-  if (hasNameMatch) return { confidence: 86, reason: "Name normalized" };
+  const mannBrand = normalizeMannProductBrand(product.brand);
+  if (mannBrand && hasArticleStructuralMatch && hasCodeStructuralMatch) return { confidence: 100, reason: "MANN brand + Article + Code exact" };
+  if (mannBrand && hasArticleStructuralMatch) return { confidence: 100, reason: "MANN brand + Article exact" };
+  if (mannBrand && hasCodeStructuralMatch) return { confidence: 99, reason: "MANN brand + Code exact" };
+  if (mannBrand && (hasArticleCompactMatch || hasCodeCompactMatch)) return { confidence: 96, reason: "MANN brand + Article formatting variant" };
+  if (mannBrand && hasOemPartsMatch && hasNameMatch) return { confidence: 94, reason: "MANN brand + OEM Parts + Name normalized" };
+  if (mannBrand && hasOemPartsMatch) return { confidence: 92, reason: "MANN brand + OEM Parts normalized" };
+  if (mannBrand && hasNameMatch) return { confidence: 84, reason: "MANN brand + Name normalized" };
+  // Article numbers are not globally unique between manufacturers. Without a
+  // MANN brand or an explicit ProductMannLink this remains review evidence.
+  if (hasOemPartsMatch && hasNameMatch) return { confidence: 92, reason: "Explicit OEM cross-reference + Name, analog product" };
+  if (hasOemPartsMatch) return { confidence: 90, reason: "Explicit OEM cross-reference, analog product" };
+  if (hasArticleStructuralMatch || hasCodeStructuralMatch) return { confidence: 74, reason: "Article exact, product brand is not MANN" };
+  if (hasArticleCompactMatch || hasCodeCompactMatch) return { confidence: 68, reason: "Article formatting match, product brand is not MANN" };
+  if (hasNameMatch) return { confidence: 60, reason: "Name reference, product brand is not MANN" };
   return null;
 }
 
 /** Pure seam used by catalogue audits; production uses the same matcher below. */
 export function evaluateMannArticleProductMatch(
-  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null },
+  product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null; brand?: string | null },
   mannArticle: string
 ): { confidence: number; reason: string } | null {
-  return productHasMannArticle(product, normalizeOemPartsToken(mannArticle));
+  return productHasMannArticle(product, mannArticle);
 }
 
 function localProductMeta(product: { id: string; entityType?: string | null; localHref?: string | null }) {

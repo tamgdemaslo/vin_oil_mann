@@ -9,6 +9,19 @@ export { normalizeEngineCode, normalizeVehicleMake, normalizeVehicleModel } from
 export type VehicleLookupInputType = "vin" | "plate" | "frame";
 export type VehicleSourceMethod = "tronk_vindecode" | "tronk_vindecode2" | "tronk_plate" | "tronk_frame" | "tronk_convertb2b" | "tronk_convertgate" | "manual" | "mann_manual";
 export type VinStatus = "valid" | "check_digit_absent" | "format_warning" | "invalid" | "frame_number" | "unknown";
+export type VehicleDecodeQualityStatus = "complete" | "partial" | "insufficient";
+export type VehicleDecodeFailureCode =
+  | "INVALID_INPUT"
+  | "PROVIDER_UNAVAILABLE"
+  | "PROVIDER_NO_DATA"
+  | "VIN_NOT_RESOLVED"
+  | "VIN_DECODE_FAILED"
+  | "DECODE_MISSING_MAKE"
+  | "DECODE_MISSING_MODEL"
+  | "DECODE_INSUFFICIENT_CHARACTERISTICS"
+  | "UNSUPPORTED_VEHICLE"
+  | "FRAME_NUMBER"
+  | "UNKNOWN";
 
 export type NormalizedVehicleIdentity = {
   vin?: string;
@@ -55,6 +68,29 @@ export type VehicleLookupCandidate = {
   differences: string[];
 };
 
+export type VehicleDecodeQuality = {
+  status: VehicleDecodeQualityStatus;
+  score: number;
+  present: string[];
+  missing: string[];
+};
+
+export type TronkAttemptDiagnostics = {
+  method: TronkMethod;
+  ok: boolean;
+  fromCache: boolean;
+  durationMs: number;
+  failureCode?: VehicleDecodeFailureCode;
+};
+
+export type VehicleDecodeDiagnostics = {
+  decision: "PRIMARY_COMPLETE" | "PRIMARY_PARTIAL" | "FALLBACK_COMPLETE" | "FALLBACK_PARTIAL" | "FAILED";
+  quality: VehicleDecodeQuality;
+  failureCode?: VehicleDecodeFailureCode;
+  fallbackUsed: boolean;
+  attempts: TronkAttemptDiagnostics[];
+};
+
 export type VehicleLookupResult = {
   status: "found" | "not_found" | "frame_number" | "unavailable";
   vehicle: NormalizedVehicleIdentity | null;
@@ -63,6 +99,7 @@ export type VehicleLookupResult = {
   fromCache: boolean;
   cacheIds: string[];
   sourceMethods: VehicleSourceMethod[];
+  diagnostics: VehicleDecodeDiagnostics;
 };
 
 type LookupOptions = {
@@ -152,11 +189,6 @@ function firstYear(object: RecordValue, paths: string[][]): number | undefined {
     if (year) return Number(year);
   }
   return undefined;
-}
-
-function cleanText(value: string | undefined): string | undefined {
-  const normalized = value?.trim();
-  return normalized || undefined;
 }
 
 export function normalizeVinInput(value: string): string {
@@ -271,18 +303,77 @@ function mergeVehicle(primary: NormalizedVehicleIdentity, secondary: NormalizedV
   return merged;
 }
 
+export function assessVehicleDecodeQuality(vehicle: NormalizedVehicleIdentity | null | undefined): VehicleDecodeQuality {
+  const present: string[] = [];
+  const missing: string[] = [];
+  let score = 0;
+  const add = (field: string, available: boolean, weight: number) => {
+    (available ? present : missing).push(field);
+    if (available) score += weight;
+  };
+  add("make", Boolean(vehicle?.makeCanonical), 20);
+  add("model", Boolean(vehicle?.modelCanonical), 20);
+  add("year", Boolean(vehicle?.year), 10);
+  add("engine", Boolean(vehicle?.engineCode || vehicle?.engineSeries || vehicle?.engineName), 15);
+  add("displacement", Boolean(vehicle?.engineVolumeCc || vehicle?.engineVolumeLiters), 10);
+  add("power", Boolean(vehicle?.powerKw || vehicle?.powerHp || vehicle?.powerPs), 10);
+  add("fuel", Boolean(vehicle?.fuelType), 5);
+  add("generationOrChassis", Boolean(vehicle?.generationCanonical || vehicle?.generationRaw || vehicle?.bodyCode), 10);
+  const hasIdentity = Boolean(vehicle?.makeCanonical && vehicle?.modelCanonical);
+  const hasPowertrainAnchor = Boolean(
+    vehicle?.engineCode || vehicle?.engineSeries || vehicle?.engineName || vehicle?.engineVolumeCc || vehicle?.engineVolumeLiters || vehicle?.powerKw || vehicle?.powerHp
+  );
+  const status: VehicleDecodeQualityStatus = !hasIdentity
+    ? "insufficient"
+    : score >= 65 && hasPowertrainAnchor
+      ? "complete"
+      : "partial";
+  return { status, score, present, missing };
+}
+
+function decodeFailureCode(vehicle: NormalizedVehicleIdentity | null | undefined): VehicleDecodeFailureCode {
+  if (!vehicle?.makeCanonical) return "DECODE_MISSING_MAKE";
+  if (!vehicle.modelCanonical) return "DECODE_MISSING_MODEL";
+  return "DECODE_INSUFFICIENT_CHARACTERISTICS";
+}
+
+function failedDiagnostics(
+  attempts: TronkAttemptDiagnostics[],
+  failureCode: VehicleDecodeFailureCode,
+  fallbackUsed = attempts.length > 1
+): VehicleDecodeDiagnostics {
+  return {
+    decision: "FAILED",
+    quality: assessVehicleDecodeQuality(null),
+    failureCode,
+    fallbackUsed,
+    attempts,
+  };
+}
+
+function diagnosticsForVehicle(
+  vehicle: NormalizedVehicleIdentity | null | undefined,
+  attempts: TronkAttemptDiagnostics[],
+  fallbackUsed: boolean,
+  primaryOnly = false
+): VehicleDecodeDiagnostics {
+  const quality = assessVehicleDecodeQuality(vehicle);
+  if (quality.status === "insufficient") return failedDiagnostics(attempts, decodeFailureCode(vehicle), fallbackUsed);
+  return {
+    decision: primaryOnly
+      ? quality.status === "complete" ? "PRIMARY_COMPLETE" : "PRIMARY_PARTIAL"
+      : quality.status === "complete" ? "FALLBACK_COMPLETE" : "FALLBACK_PARTIAL",
+    quality,
+    fallbackUsed,
+    attempts,
+  };
+}
+
 function primaryReports(raw: RecordValue): RecordValue[] {
   const reports = valueAt(raw, ["decode", "Reports"]) ?? valueAt(raw, ["decode", "reports"]) ?? valueAt(raw, ["Decode", "Reports"]);
   if (Array.isArray(reports)) return reports.filter(isRecord);
   if (isRecord(reports)) return Object.values(reports).filter(isRecord);
   return [];
-}
-
-function usefulPrimary(raw: RecordValue): boolean {
-  return primaryReports(raw).some((report) => {
-    const vehicle = toVehicle(asRecord(report.Data ?? report.data ?? report), "tronk_vindecode");
-    return Boolean(vehicle.makeCanonical && vehicle.modelCanonical);
-  });
 }
 
 function primaryVehicleLacksPowertrain(vehicle: NormalizedVehicleIdentity): boolean {
@@ -309,11 +400,6 @@ function attachPlateToLookup(result: VehicleLookupResult, licensePlate: string):
     candidates: result.candidates.map((candidate) => ({ ...candidate, vehicle: attach(candidate.vehicle) })),
     sourceMethods: [...new Set(["tronk_plate" as const, ...result.sourceMethods])],
   };
-}
-
-function usefulExtended(raw: RecordValue): boolean {
-  const result = asRecord(raw.result);
-  return Object.keys(result).length > 0 && Object.keys(asRecord(result.model_info)).length > 0;
 }
 
 function usefulFrame(raw: RecordValue): boolean {
@@ -419,18 +505,7 @@ async function cachedTronkCall(params: {
   return { call, fromCache: false, cacheId: saved?.id ?? null };
 }
 
-function sourceForMethod(method: TronkMethod): VehicleSourceMethod {
-  switch (method) {
-    case "vindecode": return "tronk_vindecode";
-    case "vindecode2": return "tronk_vindecode2";
-    case "number2vin": return "tronk_plate";
-    case "frameapi": return "tronk_frame";
-    case "convertb2b": return "tronk_convertb2b";
-    case "convertgate": return "tronk_convertgate";
-  }
-}
-
-function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inputVin?: string; message?: string; status?: VehicleLookupResult["status"]; fromCache: boolean; cacheIds: string[]; sourceMethods: VehicleSourceMethod[] }): VehicleLookupResult {
+function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inputVin?: string; message?: string; status?: VehicleLookupResult["status"]; fromCache: boolean; cacheIds: string[]; sourceMethods: VehicleSourceMethod[]; diagnostics?: VehicleDecodeDiagnostics }): VehicleLookupResult {
   const candidates = dedupeCandidates(params.vehicles).map((vehicle): VehicleLookupCandidate => {
     const resolvedVinStatus: VinStatus = vehicle.vinStatus === "unknown" ? (params.inputVin ? "valid" : "unknown") : vehicle.vinStatus;
     return {
@@ -448,6 +523,7 @@ function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inp
     fromCache: params.fromCache,
     cacheIds: params.cacheIds,
     sourceMethods: params.sourceMethods,
+    diagnostics: params.diagnostics ?? diagnosticsForVehicle(best, [], false, true),
   };
   if (best && params.cacheIds.length > 0) {
     void prisma.vehicleLookupCache.updateMany({
@@ -458,69 +534,147 @@ function resultFromVehicles(params: { vehicles: NormalizedVehicleIdentity[]; inp
   return result;
 }
 
+function callFailureCode(call: TronkCallResult): VehicleDecodeFailureCode | undefined {
+  if (call.ok) return undefined;
+  if (call.code === "provider" && /(?:нет\s+данных|not\s+found|no\s+data)/i.test(call.message)) return "PROVIDER_NO_DATA";
+  return "PROVIDER_UNAVAILABLE";
+}
+
+function bestVehicleByQuality(vehicles: NormalizedVehicleIdentity[]): NormalizedVehicleIdentity | null {
+  return [...vehicles].sort((left, right) => assessVehicleDecodeQuality(right).score - assessVehicleDecodeQuality(left).score)[0] ?? null;
+}
+
+function payloadIdentifier(raw: RecordValue): { type: "vin" | "frame"; value: string } | null {
+  const data = asRecord(raw.result ?? raw);
+  const vin = firstText(data, [["vin"], ["VIN"]]);
+  if (vin) {
+    const normalized = normalizeVinInput(vin);
+    if (normalized.length === 17) return { type: "vin", value: normalized };
+  }
+  const frame = firstText(data, [["frame"], ["Frame"], ["body"], ["Body"], ["chassis"], ["Chassis"]]);
+  return frame ? { type: "frame", value: normalizeFrameInput(frame) } : null;
+}
+
 export async function lookupVehicle(options: LookupOptions): Promise<VehicleLookupResult> {
   const rawInput = options.input.trim();
   const normalizedVin = normalizeVinInput(rawInput);
   const plate = normalizePlateInput(rawInput);
   const normalizedInput = options.inputType === "plate" ? plate.normalized : options.inputType === "frame" ? normalizeFrameInput(rawInput) : normalizedVin;
-  if (!normalizedInput) return { status: "not_found", vehicle: null, candidates: [], message: "Введите VIN, госномер или номер кузова", fromCache: false, cacheIds: [], sourceMethods: [] };
+  if (!normalizedInput) return { status: "not_found", vehicle: null, candidates: [], message: "Введите VIN, госномер или номер кузова", fromCache: false, cacheIds: [], sourceMethods: [], diagnostics: failedDiagnostics([], "INVALID_INPUT", false) };
 
   const cacheIds: string[] = [];
+  const attempts: TronkAttemptDiagnostics[] = [];
   let fromCache = true;
   const collect = async (method: TronkMethod, inputType: VehicleLookupInputType, call: () => Promise<TronkCallResult>) => {
     const item = await cachedTronkCall({ organizationId: options.organizationId, inputType, normalizedInput, method, refresh: options.refresh, call });
     if (item.cacheId) cacheIds.push(item.cacheId);
     fromCache &&= item.fromCache;
+    attempts.push({ method, ok: item.call.ok, fromCache: item.fromCache, durationMs: item.call.durationMs, failureCode: callFailureCode(item.call) });
     return item.call;
+  };
+  const markAttempt = (method: TronkMethod, failureCode?: VehicleDecodeFailureCode) => {
+    const attempt = [...attempts].reverse().find((item) => item.method === method);
+    if (attempt) attempt.failureCode = failureCode;
   };
 
   if (options.inputType === "frame" || (options.inputType === "vin" && normalizedVin.length !== 17)) {
     const frame = options.inputType === "frame" ? normalizedInput : normalizedVin;
     const call = await collect("frameapi", "frame", () => tronkClient.lookupVehicleByFrame(frame));
     if (!call.ok || !usefulFrame(call.data)) {
-      return { status: "frame_number", vehicle: null, candidates: [], message: "Похоже, указан номер кузова, а не 17-значный VIN. Данные автомобиля не найдены — выберите MANN вручную.", fromCache, cacheIds, sourceMethods: ["tronk_frame"] };
+      markAttempt("frameapi", call.ok ? "PROVIDER_NO_DATA" : callFailureCode(call));
+      return { status: "frame_number", vehicle: null, candidates: [], message: "Похоже, указан номер кузова, а не 17-значный VIN. Данные автомобиля не найдены — выберите MANN вручную.", fromCache, cacheIds, sourceMethods: ["tronk_frame"], diagnostics: failedDiagnostics(attempts, "FRAME_NUMBER", false) };
     }
     const vehicle = toVehicle(asRecord(call.data.result), "tronk_frame", { frameNumber: frame });
-    return resultFromVehicles({ vehicles: [vehicle], status: "found", fromCache, cacheIds, sourceMethods: ["tronk_frame"] });
+    const diagnostics = diagnosticsForVehicle(vehicle, attempts, false, true);
+    return resultFromVehicles({ vehicles: [vehicle], status: diagnostics.quality.status === "insufficient" ? "frame_number" : "found", fromCache, cacheIds, sourceMethods: ["tronk_frame"], diagnostics });
   }
 
   if (options.inputType === "plate") {
+    let partialVinLookup: VehicleLookupResult | null = null;
     const number2vin = await collect("number2vin", "plate", () => tronkClient.lookupVinByPlate(plate.normalized));
     const numberResult = number2vin.ok ? asRecord(number2vin.data.result) : {};
     const resolvedVin = firstText(numberResult, [["vin"], ["VIN"]]) ?? firstText(number2vin.ok ? number2vin.data : {}, [["vin"], ["VIN"]]);
     if (resolvedVin) {
       const candidate = normalizeVinInput(resolvedVin);
       if (candidate.length === 17) {
-        const decoded = await lookupVehicle({ ...options, inputType: "vin", input: candidate, extended: true, refresh: options.refresh });
-        return attachPlateToLookup(decoded, plate.original);
+        const decoded = await lookupVehicle({ ...options, inputType: "vin", input: candidate, refresh: options.refresh });
+        cacheIds.push(...decoded.cacheIds);
+        fromCache &&= decoded.fromCache;
+        attempts.push(...decoded.diagnostics.attempts);
+        if (decoded.vehicle && decoded.diagnostics.quality.status === "complete") {
+          const attached = attachPlateToLookup(decoded, plate.original);
+          return {
+            ...attached,
+            fromCache,
+            cacheIds: [...new Set(cacheIds)],
+            diagnostics: diagnosticsForVehicle(attached.vehicle, attempts, true),
+          };
+        }
+        if (decoded.vehicle && decoded.diagnostics.quality.status === "partial") partialVinLookup = decoded;
+        markAttempt("number2vin", decoded.vehicle ? "DECODE_INSUFFICIENT_CHARACTERISTICS" : "VIN_DECODE_FAILED");
+      } else {
+        const decoded = await lookupVehicle({ ...options, inputType: "frame", input: candidate, refresh: options.refresh });
+        cacheIds.push(...decoded.cacheIds);
+        fromCache &&= decoded.fromCache;
+        attempts.push(...decoded.diagnostics.attempts);
+        if (decoded.vehicle) {
+          const attached = attachPlateToLookup(decoded, plate.original);
+          return { ...attached, fromCache, cacheIds: [...new Set(cacheIds)], diagnostics: diagnosticsForVehicle(attached.vehicle, attempts, true) };
+        }
       }
-      const decoded = await lookupVehicle({ ...options, inputType: "frame", input: candidate, refresh: options.refresh });
-      return attachPlateToLookup(decoded, plate.original);
+    } else {
+      markAttempt("number2vin", number2vin.ok ? "VIN_NOT_RESOLVED" : callFailureCode(number2vin));
     }
     const b2b = await collect("convertb2b", "plate", () => tronkClient.lookupVehicleByPlate(plate.normalized));
     const b2bVehicle = b2b.ok ? toVehicle(asRecord(b2b.data.result ?? b2b.data), "tronk_convertb2b", { licensePlate: plate.normalized }) : null;
     if (b2bVehicle?.makeCanonical && b2bVehicle.modelCanonical) {
-      return resultFromVehicles({ vehicles: [b2bVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b"] });
+      return resultFromVehicles({ vehicles: [b2bVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b"], diagnostics: diagnosticsForVehicle(b2bVehicle, attempts, true) });
+    }
+    markAttempt("convertb2b", b2b.ok ? decodeFailureCode(b2bVehicle) : callFailureCode(b2b));
+    if (b2b.ok) {
+      const identifier = payloadIdentifier(b2b.data);
+      if (identifier) {
+        const decoded = await lookupVehicle({ ...options, inputType: identifier.type, input: identifier.value, refresh: options.refresh });
+        cacheIds.push(...decoded.cacheIds);
+        fromCache &&= decoded.fromCache;
+        attempts.push(...decoded.diagnostics.attempts);
+        if (decoded.vehicle) {
+          const attached = attachPlateToLookup(decoded, plate.original);
+          return { ...attached, fromCache, cacheIds: [...new Set(cacheIds)], diagnostics: diagnosticsForVehicle(attached.vehicle, attempts, true) };
+        }
+      }
     }
     const gate = await collect("convertgate", "plate", () => tronkClient.lookupVehicleByPlateGate(plate.normalized));
     const gateVehicle = gate.ok ? toVehicle(asRecord(gate.data.result ?? gate.data), "tronk_convertgate", { licensePlate: plate.normalized }) : null;
     if (gateVehicle?.makeCanonical && gateVehicle.modelCanonical) {
-      return resultFromVehicles({ vehicles: [gateVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertgate"] });
+      return resultFromVehicles({ vehicles: [gateVehicle], message: "Автомобиль определён по госномеру, VIN не получен.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertgate"], diagnostics: diagnosticsForVehicle(gateVehicle, attempts, true) });
+    }
+    markAttempt("convertgate", gate.ok ? decodeFailureCode(gateVehicle) : callFailureCode(gate));
+    if (partialVinLookup?.vehicle) {
+      const attached = attachPlateToLookup(partialVinLookup, plate.original);
+      return {
+        ...attached,
+        fromCache,
+        cacheIds: [...new Set(cacheIds)],
+        message: "Автомобиль определён частично. Двигатель или модификацию нужно подтвердить.",
+        diagnostics: diagnosticsForVehicle(attached.vehicle, attempts, true),
+      };
     }
     const calls = [number2vin, b2b, gate];
-    const unavailableCall = calls.find((call) => !call.ok);
-    if (calls.every((call) => !call.ok)) {
+    const unavailableCall = calls.find((call) => callFailureCode(call) === "PROVIDER_UNAVAILABLE");
+    if (unavailableCall && calls.every((call) => !call.ok)) {
       return {
         status: "unavailable",
         vehicle: null,
         candidates: [],
-        message: unavailableCall?.message ?? "Сервис определения автомобиля временно недоступен.",
+        message: unavailableCall && !unavailableCall.ok ? unavailableCall.message : "Сервис определения автомобиля временно недоступен.",
         fromCache,
         cacheIds,
         sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"],
+        diagnostics: failedDiagnostics(attempts, "PROVIDER_UNAVAILABLE", true),
       };
     }
-    return { status: "not_found", vehicle: null, candidates: [], message: "По госномеру автомобиль не найден. Можно продолжить ручной подбор MANN.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"] };
+    return { status: "not_found", vehicle: null, candidates: [], message: "Не удалось точно определить автомобиль по госномеру.", fromCache, cacheIds, sourceMethods: ["tronk_plate", "tronk_convertb2b", "tronk_convertgate"], diagnostics: failedDiagnostics(attempts, resolvedVin ? "VIN_DECODE_FAILED" : "VIN_NOT_RESOLVED", true) };
   }
 
   const primary = await collect("vindecode", "vin", () => tronkClient.decodeVinPrimary(normalizedVin));
@@ -528,35 +682,44 @@ export async function lookupVehicle(options: LookupOptions): Promise<VehicleLook
   const primaryVehicles = primaryRaw
     ? primaryReports(primaryRaw).map((report) => toVehicle(asRecord(report.Data ?? report.data ?? report), "tronk_vindecode", { vin: normalizedVin }))
     : [];
-  const hasPrimary = primaryRaw ? usefulPrimary(primaryRaw) : false;
   // Multiple reports from the legacy endpoint mean that it has not selected one
   // concrete vehicle. In that case vindecode2 is the authoritative tie-breaker:
   // merging it into every legacy report would retain their contradictory make/model.
   const hasAmbiguousPrimaryReports = primaryVehicles.length > 1;
+  const primaryBest = bestVehicleByQuality(primaryVehicles);
+  const primaryQuality = assessVehicleDecodeQuality(primaryBest);
   const wantsExtended = Boolean(
     options.extended ||
-    !hasPrimary ||
+    primaryQuality.status !== "complete" ||
     hasAmbiguousPrimaryReports ||
     primaryVehicles.some(primaryVehicleLacksPowertrain)
   );
+  if (primaryQuality.status === "insufficient") markAttempt("vindecode", primary.ok ? decodeFailureCode(primaryBest) : callFailureCode(primary));
   let mergedVehicles = primaryVehicles;
   if (wantsExtended) {
     const extended = await collect("vindecode2", "vin", () => tronkClient.decodeVinExtended(normalizedVin));
-    if (extended.ok && usefulExtended(extended.data)) {
+    if (extended.ok) {
       const extendedVehicle = toVehicle(asRecord(extended.data.result), "tronk_vindecode2", { vin: normalizedVin });
-      mergedVehicles = hasAmbiguousPrimaryReports
-        ? [extendedVehicle]
-        : primaryVehicles.length > 0
-        ? primaryVehicles.map((vehicle) => mergeVehicle(vehicle, extendedVehicle))
-        : [extendedVehicle];
+      if (assessVehicleDecodeQuality(extendedVehicle).status !== "insufficient") {
+        mergedVehicles = hasAmbiguousPrimaryReports
+          ? [extendedVehicle]
+          : primaryVehicles.length > 0
+            ? primaryVehicles.map((vehicle) => mergeVehicle(vehicle, extendedVehicle))
+            : [extendedVehicle];
+      } else {
+        markAttempt("vindecode2", decodeFailureCode(extendedVehicle));
+      }
     }
   }
-  if (mergedVehicles.length === 0 || !mergedVehicles.some((vehicle) => vehicle.makeCanonical && vehicle.modelCanonical)) {
-    return { status: primary.ok ? "not_found" : "unavailable", vehicle: null, candidates: [], message: primary.ok ? "Не удалось определить автомобиль. Выберите модификацию MANN вручную." : primary.message, fromCache, cacheIds, sourceMethods: ["tronk_vindecode"] };
+  const best = bestVehicleByQuality(mergedVehicles);
+  if (!best || assessVehicleDecodeQuality(best).status === "insufficient") {
+    const anyUnavailable = attempts.some((attempt) => attempt.failureCode === "PROVIDER_UNAVAILABLE");
+    const failureCode = primary.ok ? decodeFailureCode(best ?? primaryBest) : anyUnavailable ? "PROVIDER_UNAVAILABLE" : "VIN_DECODE_FAILED";
+    return { status: anyUnavailable && !primary.ok ? "unavailable" : "not_found", vehicle: null, candidates: [], message: primary.ok ? "Не удалось определить автомобиль. Введите VIN повторно или выберите автомобиль вручную." : primary.message, fromCache, cacheIds, sourceMethods: ["tronk_vindecode", ...(wantsExtended ? ["tronk_vindecode2" as const] : [])], diagnostics: failedDiagnostics(attempts, failureCode, wantsExtended) };
   }
   const status = vinStatus(normalizedVin, primaryRaw);
   mergedVehicles = mergedVehicles.map((vehicle) => ({ ...vehicle, vinStatus: status }));
-  return resultFromVehicles({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))] });
+  return resultFromVehicles({ vehicles: mergedVehicles, inputVin: normalizedVin, fromCache, cacheIds, sourceMethods: [...new Set(mergedVehicles.flatMap((vehicle) => vehicle.sourceMethods))], diagnostics: diagnosticsForVehicle(best, attempts, wantsExtended, !wantsExtended) });
 }
 
 export function vehicleFieldValues(vehicle: NormalizedVehicleIdentity): Partial<Record<string, { value: string; source: VehicleSourceMethod }>> {

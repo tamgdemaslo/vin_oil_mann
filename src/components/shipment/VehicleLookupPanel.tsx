@@ -24,7 +24,14 @@ type Props = {
 };
 
 type LookupResponse = VehicleLookupResult & { error?: string };
-type LookupFeedback = { tone: LookupFeedbackTone; title: string; body?: string; actionLabel?: string };
+type LookupFeedback = {
+  tone: LookupFeedbackTone;
+  title: string;
+  body?: string;
+  actionLabel?: string;
+  action?: "manual" | "vin";
+  secondaryActionLabel?: string;
+};
 
 const PLATE_LATIN_TO_CYRILLIC: Record<string, string> = {
   A: "А",
@@ -257,14 +264,15 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
 
       setLookup(data);
 
-      if (data.status === "not_found" || !data.vehicle) {
+      if (data.status === "not_found" || (!data.vehicle && data.status !== "unavailable")) {
         setFeedback({
           tone: "neutral",
-          title: tab === "plate" ? "По госномеру автомобиль не найден" : "Автомобиль не найден",
-          body: "Выберите автомобиль вручную — мы продолжим подбор по каталогу MANN.",
-          actionLabel: "Перейти к ручному подбору",
+          title: tab === "plate" ? "Не удалось точно определить автомобиль по госномеру" : "Автомобиль не найден",
+          body: tab === "plate" ? "Можно ввести VIN или выбрать марку, модель, год и двигатель вручную." : "Выберите марку, модель, год и двигатель вручную.",
+          actionLabel: tab === "plate" ? "Ввести VIN" : "Выбрать автомобиль вручную",
+          action: tab === "plate" ? "vin" : "manual",
+          secondaryActionLabel: tab === "plate" ? "Выбрать автомобиль вручную" : undefined,
         });
-        openManualMode({ reason: tab === "plate" ? "plate_not_found" : "manual", message: "Продолжите подбор вручную" });
         return;
       }
 
@@ -288,7 +296,7 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         return;
       }
 
-      await handleResolution(data.vehicle, data.fromCache);
+      if (data.vehicle) await handleResolution(data.vehicle, data.fromCache);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
       if (requestId !== lookupRequestIdRef.current) return;
@@ -402,9 +410,23 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             {feedback.body ? <span>{feedback.body}</span> : null}
           </div>
           {feedback.actionLabel ? (
-            <button type="button" onClick={() => openManualMode({ reason: tab === "plate" ? "plate_not_found" : "manual", vehicle: selectedVehicle, message: feedback.title })}>
-              {feedback.actionLabel}
-            </button>
+            <div className="eco-vehicle-lookup__actions">
+              <button type="button" onClick={() => {
+                if (feedback.action === "vin") {
+                  changeTab("vin");
+                  setInput("");
+                  return;
+                }
+                openManualMode({ reason: tab === "plate" ? "plate_not_found" : "manual", vehicle: selectedVehicle, message: feedback.title });
+              }}>
+                {feedback.actionLabel}
+              </button>
+              {feedback.secondaryActionLabel ? (
+                <button type="button" onClick={() => openManualMode({ reason: "plate_not_found", vehicle: selectedVehicle, message: feedback.title })}>
+                  {feedback.secondaryActionLabel}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}

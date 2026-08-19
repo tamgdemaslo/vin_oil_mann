@@ -15,13 +15,13 @@ function argument(name, fallback = undefined) {
 const sourcePath = argument("vehicle-records");
 const datasetId = String(argument("dataset") ?? "").toUpperCase();
 const outputPath = argument("output");
-const count = Number(argument("count", datasetId === "C" ? "100" : "20"));
+const count = Number(argument("count", ["C", "D"].includes(datasetId) ? "100" : "20"));
 const seed = argument("seed", `mann-generalization-${datasetId}-2026-08-19`);
 const excludePaths = argumentsFor("exclude-manifest");
 const requireRecordedProfile = process.argv.includes("--require-recorded-profile");
 
-if (!sourcePath || !outputPath || !/^[ABC]$/.test(datasetId) || !Number.isInteger(count) || count < 1) {
-  throw new Error("Usage: node scripts/prepare-mann-matching-dataset.mjs --vehicle-records=<dump.sql> --dataset=A|B|C --count=20 --seed=<seed> --output=<private.json> [--exclude-manifest=<private.json>]");
+if (!sourcePath || !outputPath || !/^[ABCD]$/.test(datasetId) || !Number.isInteger(count) || count < 1) {
+  throw new Error("Usage: node scripts/prepare-mann-matching-dataset.mjs --vehicle-records=<dump.sql> --dataset=A|B|C|D --count=100 --seed=<seed> --output=<private.json> [--exclude-manifest=<private.json>]");
 }
 
 function unescapeCopyValue(value) {

@@ -25,6 +25,8 @@ const byMake = new Map();
 const byEnginePresence = new Map();
 let top1Correct = 0;
 let top3Correct = 0;
+let retrievalTop20Correct = 0;
+let endToEndSuccess = 0;
 let automatic = 0;
 let falseAutomatic = 0;
 const falseAutomaticSampleIds = [];
@@ -60,8 +62,11 @@ for (const result of evaluated) {
   const topCorrect = label.outcome === "match" && (topGroups[0] ?? []).some((key) => expectedKeys.has(key));
   const top3CorrectForResult = label.outcome === "match"
     && topGroups.slice(0, 3).some((keys) => keys.some((key) => expectedKeys.has(key)));
+  const retrievalCorrectForResult = label.outcome === "match"
+    && (result.retrievalTop20VariantIds ?? topGroups.slice(0, 20).flat()).some((key) => expectedKeys.has(key));
   if (topCorrect) top1Correct += 1;
   if (top3CorrectForResult) top3Correct += 1;
+  if (retrievalCorrectForResult) retrievalTop20Correct += 1;
   if (label.outcome === "match") {
     const make = result.decodedVehicle?.makeCanonical ?? result.decodedVehicle?.makeRaw ?? "UNKNOWN";
     if (!byMake.has(make)) byMake.set(make, { make, matchLabels: 0, top1Correct: 0, top3Correct: 0 });
@@ -85,12 +90,20 @@ for (const result of evaluated) {
     const candidateFilters = result.candidates?.[0]?.filters ?? [];
     const actual = new Set(candidateFilters.map((filter) => normalizeArticle(filter.mannArticleNormalized ?? filter.mannArticle)));
     const expected = new Set(label.expectedFilterArticles.map(normalizeArticle));
-    for (const article of actual) expected.has(article) ? trueFilterPositive += 1 : falseFilterPositive += 1;
+    for (const article of actual) {
+      if (expected.has(article)) trueFilterPositive += 1;
+      else falseFilterPositive += 1;
+    }
     for (const article of expected) if (!actual.has(article)) falseFilterNegative += 1;
     for (const filter of candidateFilters) {
       if (!expected.has(normalizeArticle(filter.mannArticleNormalized ?? filter.mannArticle))) continue;
       const status = Object.hasOwn(localMapping, filter.localStatus) ? filter.localStatus : "unknown";
       localMapping[status] += 1;
+    }
+    const actualExpectedFilters = candidateFilters.filter((filter) => expected.has(normalizeArticle(filter.mannArticleNormalized ?? filter.mannArticle)));
+    const exactFilterSet = actual.size === expected.size && [...actual].every((article) => expected.has(article));
+    if (exactFilterSet && expected.size > 0 && actualExpectedFilters.length === expected.size && actualExpectedFilters.every((filter) => filter.localStatus === "found")) {
+      endToEndSuccess += 1;
     }
   }
 }
@@ -113,8 +126,10 @@ const metrics = {
   matchLabels: matchLabels.length,
   top1Correct,
   top3Correct,
+  retrievalTop20Correct,
   top1Accuracy: matchLabels.length ? top1Correct / matchLabels.length : null,
   top3Accuracy: matchLabels.length ? top3Correct / matchLabels.length : null,
+  retrievalTop20Recall: matchLabels.length ? retrievalTop20Correct / matchLabels.length : null,
   automaticDecisions: automatic,
   falseAutomaticDecisions: falseAutomatic,
   falseAutomaticSampleIds,
@@ -136,6 +151,11 @@ const metrics = {
     ? 2 * filterPrecision * filterRecall / (filterPrecision + filterRecall)
     : null,
   filterEvaluationScope: "filters of correctly selected Top-1 vehicle only",
+  catalogCoverage: {
+    coveredLabels: (outcomeCounts.match ?? 0) + (outcomeCounts.ambiguous ?? 0),
+    dataGaps: outcomeCounts.data_gap ?? 0,
+    rateAmongDecoded: decoded ? ((outcomeCounts.match ?? 0) + (outcomeCounts.ambiguous ?? 0)) / decoded : null,
+  },
   localFilterMapping: {
     ...localMapping,
     total: localMappingTotal,
@@ -146,7 +166,18 @@ const metrics = {
   accuracyByMake: [...byMake.values()].map(withAccuracy).sort((a, b) => a.make.localeCompare(b.make)),
   accuracyByEnginePresence: [...byEnginePresence.values()].map(withAccuracy),
   failureTaxonomy,
-  medianScoringMs: report.summary?.medianScoringMs ?? null,
+  layers: {
+    tronk: report.summary?.layerA ?? null,
+    mannVehicle: report.summary?.layerB ?? null,
+    localProduct: report.summary?.layerC ?? null,
+  },
+  latency: report.summary?.latency ?? null,
+  endToEnd: {
+    strictSuccesses: endToEndSuccess,
+    denominator: evaluated.length,
+    successRate: evaluated.length ? endToEndSuccess / evaluated.length : null,
+    definition: "correct Top-1 vehicle + exact expected MANN filter set + every expected filter has one unique LocalProduct",
+  },
 };
 
 console.log(JSON.stringify(metrics, null, 2));

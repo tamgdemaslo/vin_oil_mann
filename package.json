@@ -25,6 +25,8 @@
     "score:mann-vehicle-matching": "node scripts/score-mann-matching-report.mjs",
     "audit:mann-vehicle-matching": "node scripts/audit-mann-vehicle-matching.mjs",
     "audit:mann-filter-local-matching": "node scripts/audit-mann-filter-local-matching.mjs",
+    "audit:mann-local-product-gaps": "node scripts/audit-mann-local-product-gaps.mjs",
+    "audit:tronk-decode-failures": "node scripts/classify-tronk-decode-failures.mjs",
     "test:fluid-catalog": "node scripts/test-fluid-catalog.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",

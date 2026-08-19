@@ -6,6 +6,7 @@ const jiti = createJiti(import.meta.url, {
   alias: { "@": new URL("../src", import.meta.url).pathname },
 });
 const {
+  assessVehicleDecodeQuality,
   normalizeEngineCode,
   normalizeFrameInput,
   normalizePlateInput,
@@ -23,6 +24,10 @@ assert.equal(normalizeVehicleMake("Mercedes-Benz"), "MERCEDES");
 assert.equal(normalizeVehicleMake("LandRover"), "LAND ROVER");
 assert.equal(normalizeVehicleMake("VOLVO CARS"), "VOLVO");
 assert.equal(normalizeVehicleMake("LADA (SHIGULI)"), "LADA");
+assert.equal(normalizeVehicleMake("МИНИ"), "MINI");
+assert.equal(normalizeVehicleMake("КРАЙСЛЕР"), "CHRYSLER");
+assert.equal(normalizeVehicleMake("DS"), "DS AUTOMOBILES");
+assert.equal(normalizeVehicleMake("LYNK @ CO"), "LYNK & CO");
 assert.equal(normalizeEngineCode("B47 D20-A"), "B47D20A");
 assert.equal(normalizeEngineCode("ВАЗ-21120"), "VAZ21120");
 assert.deepEqual(normalizeVehicleModel("BMW 5 (G30, G31, F90)", "BMW"), {
@@ -38,6 +43,9 @@ assert.deepEqual(normalizeVehicleModel("X-Trail", "NISSAN"), {
   bodyCode: undefined,
 });
 assert.equal(normalizeVehicleModel("AB Example", "TEST").bodyCode, "AB", "a leading alphabetic platform token is preserved separately from the model");
+assert.equal(normalizeVehicleModel("РТ СRUISЕR LIMITED", "CHRYSLER").canonical, "PT CRUISER LIMITED");
+assert.equal(normalizeVehicleModel("БЕЗ МОДЕЛИ 03", "LYNK & CO").canonical, "03");
+assert.equal(normalizeVehicleModel("6 SERII", "BMW").canonical, "6");
 
 const tronkExtendedVehicle = toVehicle({
   vin: "Z6FDXXEECDEG85039",
@@ -57,6 +65,8 @@ assert.equal(tronkExtendedVehicle.powerHp, 149);
 assert.equal(tronkExtendedVehicle.powerKw, 110);
 assert.equal(tronkExtendedVehicle.transmissionName, "AUTOMATIC");
 assert.equal(tronkExtendedVehicle.fuelType, "GASOLINE");
+assert.equal(assessVehicleDecodeQuality(tronkExtendedVehicle).status, "complete");
+assert.equal(assessVehicleDecodeQuality({ ...tronkExtendedVehicle, modelCanonical: undefined }).status, "insufficient");
 
 const tronkPrimaryVehicle = toVehicle({
   Vin: "5TDDZRFH80S966117",

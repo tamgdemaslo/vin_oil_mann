@@ -32,6 +32,7 @@ const productsDumpPath = argument("local-products");
 const stockDumpPath = argument("local-stock");
 const linksDumpPath = argument("mann-links");
 const maximumSamples = Number(argument("max-samples", "0")) || null;
+const sampleFrom = Math.max(0, Number(argument("sample-from", "0")) || 0);
 const algorithmFiles = [
   "src/lib/vehicle-normalization.ts",
   "src/lib/vehicle-identity.ts",
@@ -43,21 +44,22 @@ const algorithmDigest = crypto.createHash("sha256")
   .digest("hex");
 const algorithmVersion = argument("algorithm-version", `mann-${algorithmDigest.slice(0, 12)}`);
 
-if (!manifestPath || !outputPath || !mannDumpPath || !productsDumpPath || !stockDumpPath || !linksDumpPath || !["live", "replay"].includes(mode)) {
-  throw new Error("Usage: node scripts/run-mann-matching-benchmark.mjs --mode=live|replay --manifest=<private.json> --mann-catalog=<dump.sql> --local-products=<dump.sql> --local-stock=<dump.sql> --mann-links=<dump.sql> --output=<private.json> [--replay=<prior-result.json>] [--labels=<labels.json>]");
+if (!manifestPath || !outputPath || !mannDumpPath || !productsDumpPath || !stockDumpPath || !linksDumpPath || !["live", "replay", "hybrid"].includes(mode)) {
+  throw new Error("Usage: node scripts/run-mann-matching-benchmark.mjs --mode=live|replay|hybrid --manifest=<private.json> --mann-catalog=<dump.sql> --local-products=<dump.sql> --local-stock=<dump.sql> --mann-links=<dump.sql> --output=<private.json> [--replay=<prior-result.json>] [--labels=<labels.json>]");
 }
-if (mode === "replay" && !replayPath) throw new Error("--replay is required in replay mode");
-if (mode === "live" && !process.env.TRONK_API_KEY?.trim()) throw new Error("TRONK_API_KEY is not configured");
+if (["replay", "hybrid"].includes(mode) && !replayPath) throw new Error("--replay is required in replay/hybrid mode");
+if (["live", "hybrid"].includes(mode) && !process.env.TRONK_API_KEY?.trim()) throw new Error("TRONK_API_KEY is not configured");
 
 const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   alias: { "@": new URL("../src", import.meta.url).pathname },
 });
 const { tronkClient } = await jiti.import("../src/lib/integrations/tronk/client.ts");
-const { normalizeVehicleMake, toVehicle } = await jiti.import("../src/lib/vehicle-identity.ts");
+const { assessVehicleDecodeQuality, normalizeVehicleMake, toVehicle } = await jiti.import("../src/lib/vehicle-identity.ts");
 const {
   MANN_MIN_PRESENTABLE_SCORE,
   diagnoseMannCandidatesForTest,
+  mannMakeFormsForTest,
   normalizeDecodedVehicleForTest,
 } = await jiti.import("../src/lib/mann-vehicle-resolver.ts");
 const { evaluateMannArticleProductMatch, normalizeMannArticle } = await jiti.import("../src/lib/mann-catalog.ts");
@@ -149,27 +151,48 @@ async function liveTraceForPlate(plate) {
   attempts.push(traceCall("vindecode", primary));
   const reports = primary.ok ? primaryReports(primary.data) : [];
   const primaryVehicles = reports.map((report) => toVehicle(record(report.Data ?? report.data ?? report), "tronk_vindecode", { vin, licensePlate: plate }));
-  const lacksPowertrain = (vehicle) => !(vehicle?.engineCode || vehicle?.engineSeries || vehicle?.engineVolumeCc || vehicle?.powerHp || vehicle?.powerKw);
-  if (!primary.ok || reports.length !== 1 || primaryVehicles.some(lacksPowertrain)) {
+  const primaryBest = [...primaryVehicles].sort((left, right) => assessVehicleDecodeQuality(right).score - assessVehicleDecodeQuality(left).score)[0] ?? null;
+  if (!primary.ok || reports.length !== 1 || assessVehicleDecodeQuality(primaryBest).status !== "complete") {
     const extended = await tronkClient.decodeVinExtended(vin);
     attempts.push(traceCall("vindecode2", extended));
   }
+  const currentTrace = { attempts, vin };
+  if (assessVehicleDecodeQuality(decodedFromTrace(currentTrace, plate)).status !== "complete") {
+    const b2b = await tronkClient.lookupVehicleByPlate(plate);
+    attempts.push(traceCall("convertb2b", b2b));
+    if (assessVehicleDecodeQuality(decodedFromTrace(currentTrace, plate)).status !== "complete") {
+      const gate = await tronkClient.lookupVehicleByPlateGate(plate);
+      attempts.push(traceCall("convertgate", gate));
+    }
+  }
   return { attempts, vin };
+}
+
+async function completeTraceForPlate(priorTrace, plate) {
+  const trace = { attempts: structuredClone(priorTrace?.attempts ?? []), vin: priorTrace?.vin ?? null };
+  const has = (method) => trace.attempts.some((attempt) => attempt.method === method);
+  if (!trace.vin) trace.vin = findVin(trace.attempts.find((attempt) => attempt.method === "number2vin" && attempt.ok)?.data);
+  let decoded = decodedFromTrace(trace, plate);
+  if (trace.vin && assessVehicleDecodeQuality(decoded).status !== "complete" && !has("vindecode2")) {
+    const extended = await tronkClient.decodeVinExtended(trace.vin);
+    trace.attempts.push(traceCall("vindecode2", extended));
+    decoded = decodedFromTrace(trace, plate);
+  }
+  if (assessVehicleDecodeQuality(decoded).status !== "complete" && !has("convertb2b")) {
+    const b2b = await tronkClient.lookupVehicleByPlate(plate);
+    trace.attempts.push(traceCall("convertb2b", b2b));
+    decoded = decodedFromTrace(trace, plate);
+  }
+  if (assessVehicleDecodeQuality(decoded).status !== "complete" && !has("convertgate")) {
+    const gate = await tronkClient.lookupVehicleByPlateGate(plate);
+    trace.attempts.push(traceCall("convertgate", gate));
+  }
+  return trace;
 }
 
 function decodedFromTrace(trace, plate) {
   const successful = (method) => trace.attempts.find((attempt) => attempt.method === method && attempt.ok)?.data;
   const vin = trace.vin ?? findVin(successful("number2vin"));
-  const b2b = successful("convertb2b");
-  if (!vin && b2b) {
-    const vehicle = toVehicle(record(b2b.result ?? b2b), "tronk_convertb2b", { licensePlate: plate });
-    if (vehicle.makeCanonical && vehicle.modelCanonical) return vehicle;
-  }
-  const gate = successful("convertgate");
-  if (!vin && gate) {
-    const vehicle = toVehicle(record(gate.result ?? gate), "tronk_convertgate", { licensePlate: plate });
-    if (vehicle.makeCanonical && vehicle.modelCanonical) return vehicle;
-  }
   const primary = successful("vindecode");
   const primaryVehicles = primaryReports(primary).map((report) => toVehicle(record(report.Data ?? report.data ?? report), "tronk_vindecode", { vin, licensePlate: plate }));
   const extendedRaw = successful("vindecode2");
@@ -181,7 +204,18 @@ function decodedFromTrace(trace, plate) {
       : extendedVehicle
         ? [extendedVehicle]
         : [];
-  return merged.find((vehicle) => vehicle.makeCanonical && vehicle.modelCanonical) ?? null;
+  const usableVehicles = merged.filter((vehicle) => vehicle.makeCanonical && vehicle.modelCanonical);
+  const b2b = successful("convertb2b");
+  if (b2b) {
+    const vehicle = toVehicle(record(b2b.result ?? b2b), "tronk_convertb2b", { licensePlate: plate });
+    if (vehicle.makeCanonical && vehicle.modelCanonical) usableVehicles.push(vehicle);
+  }
+  const gate = successful("convertgate");
+  if (gate) {
+    const vehicle = toVehicle(record(gate.result ?? gate), "tronk_convertgate", { licensePlate: plate });
+    if (vehicle.makeCanonical && vehicle.modelCanonical) usableVehicles.push(vehicle);
+  }
+  return usableVehicles.sort((left, right) => assessVehicleDecodeQuality(right).score - assessVehicleDecodeQuality(left).score)[0] ?? null;
 }
 
 const mannRows = readCopyRows(mannDumpPath, "mann_filter_applications").map((row) => ({
@@ -299,7 +333,13 @@ function publicVehicle(vehicle) {
   return result;
 }
 
-function candidateForReport(candidate) {
+function candidateForReport(candidate, timingAccumulator, trackTimings) {
+  const filtersStartedAt = performance.now();
+  const filters = filtersForVariants(candidate.variantIds);
+  if (trackTimings) timingAccumulator.filtersMs += performance.now() - filtersStartedAt;
+  const localStartedAt = performance.now();
+  const filtersWithLocalProducts = filters.map(localResultForFilter);
+  if (trackTimings) timingAccumulator.localProductsMs += performance.now() - localStartedAt;
   return {
     variantId: candidate.variantId,
     variantIds: candidate.variantIds,
@@ -321,7 +361,7 @@ function candidateForReport(candidate) {
     reasons: candidate.reasons,
     warnings: candidate.warnings,
     featureContributions: candidate.featureContributions,
-    filters: filtersForVariants(candidate.variantIds).map(localResultForFilter),
+    filters: filtersWithLocalProducts,
   };
 }
 
@@ -330,6 +370,28 @@ function classifyDecision(candidates) {
   if (candidates.length === 0) return "no_match";
   const topGap = candidates[0].score - (candidates[1]?.score ?? 0);
   return topGap < 10 ? "ambiguous" : "confirmation_required";
+}
+
+function decodeFailureCodeForTrace(trace) {
+  const attempts = trace?.attempts ?? [];
+  const providerUnavailable = attempts.some((attempt) => !attempt.ok && ["network", "circuit_open", "invalid_response", "not_configured", "limit"].includes(attempt.code));
+  if (providerUnavailable) return "PROVIDER_UNAVAILABLE";
+  const vin = trace?.vin ?? findVin(attempts.find((attempt) => attempt.method === "number2vin" && attempt.ok)?.data);
+  if (!vin) return "VIN_NOT_RESOLVED";
+  const primary = attempts.find((attempt) => attempt.method === "vindecode" && attempt.ok)?.data;
+  const primaryVehicles = primaryReports(primary).map((report) => toVehicle(record(report.Data ?? report.data ?? report), "tronk_vindecode"));
+  const bestPrimary = [...primaryVehicles].sort((left, right) => assessVehicleDecodeQuality(right).score - assessVehicleDecodeQuality(left).score)[0] ?? null;
+  if (bestPrimary?.makeCanonical && !bestPrimary.modelCanonical) return "DECODE_MISSING_MODEL";
+  if (!bestPrimary?.makeCanonical && bestPrimary?.modelCanonical) return "DECODE_MISSING_MAKE";
+  return "VIN_DECODE_FAILED";
+}
+
+function layerCStatus(filters) {
+  if (!filters.length) return "FILTERS_NOT_AVAILABLE";
+  const found = filters.filter((filter) => filter.localStatus === "found").length;
+  if (found === filters.length) return "FILTERS_FOUND_LOCAL_PRODUCTS_COMPLETE";
+  if (found > 0) return "FILTERS_FOUND_LOCAL_PRODUCTS_PARTIAL";
+  return "FILTERS_FOUND_LOCAL_PRODUCTS_MISSING";
 }
 
 function labelMetrics(results, labelDocument) {
@@ -363,7 +425,10 @@ function labelMetrics(results, labelDocument) {
     if (label.outcome === "match" && (topGroups[0] ?? []).some((key) => expectedKeys.has(key)) && Array.isArray(label.expectedFilterArticles)) {
       const actual = new Set((result.candidates[0]?.filters ?? []).map((filter) => filter.mannArticleNormalized));
       const expected = new Set(label.expectedFilterArticles.map(normalizeMannArticle));
-      for (const article of actual) expected.has(article) ? trueFilterPositive += 1 : falseFilterPositive += 1;
+      for (const article of actual) {
+        if (expected.has(article)) trueFilterPositive += 1;
+        else falseFilterPositive += 1;
+      }
       for (const article of expected) if (!actual.has(article)) falseFilterNegative += 1;
     }
   }
@@ -390,12 +455,17 @@ const manifestDigest = crypto.createHash("sha256").update(fs.readFileSync(manife
 const prior = replayPath ? JSON.parse(fs.readFileSync(replayPath, "utf8")) : null;
 if (prior) assert.equal(prior.manifestDigest, manifestDigest, "Replay result does not belong to this manifest");
 const priorBySample = new Map((prior?.results ?? []).map((result) => [result.sampleId, result]));
-const samples = maximumSamples ? manifest.samples.slice(0, maximumSamples) : manifest.samples;
+const samples = maximumSamples ? manifest.samples.slice(sampleFrom, sampleFrom + maximumSamples) : manifest.samples.slice(sampleFrom);
 const results = [];
 
 for (const sample of samples) {
   const startedAt = Date.now();
-  const trace = mode === "live" ? await liveTraceForPlate(sample.plate) : priorBySample.get(sample.sampleId)?.providerTrace;
+  const priorTrace = priorBySample.get(sample.sampleId)?.providerTrace;
+  const trace = mode === "live"
+    ? await liveTraceForPlate(sample.plate)
+    : mode === "hybrid"
+      ? await completeTraceForPlate(priorTrace, sample.plate)
+      : priorTrace;
   if (!trace) throw new Error(`No provider trace for ${sample.sampleId}`);
   const decoded = decodedFromTrace(trace, sample.plate);
   const decodeElapsedMs = Date.now() - startedAt;
@@ -408,20 +478,29 @@ for (const sample of samples) {
       decodedVehicle: null,
       normalizedVehicle: null,
       decision: "decode_failed",
+      layers: {
+        tronk: { status: "DECODE_FAILED", failureCode: decodeFailureCodeForTrace(trace) },
+        mannVehicle: { status: "NOT_RUN", failureCode: "TRONK_UNUSABLE_DECODE" },
+        localProduct: { status: "NOT_RUN", failureCode: "MANN_NOT_RESOLVED" },
+      },
       candidates: [],
-      timings: { decodeAndReplayMs: decodeElapsedMs, scoringMs: 0, totalMs: Date.now() - startedAt },
+      retrievalTop20VariantIds: [],
+      timings: { decodeMs: decodeElapsedMs, retrievalMs: 0, scoringMs: 0, filtersMs: 0, localProductsMs: 0, totalMs: Date.now() - startedAt },
     });
     process.stderr.write(`${sample.sampleId}: decode failed\n`);
     continue;
   }
-  const scoreStartedAt = Date.now();
+  const makeFilterStartedAt = performance.now();
   const normalized = normalizeDecodedVehicleForTest(decoded);
-  const rowsForMake = normalized ? mannRows.filter((row) => normalizeVehicleMake(row.make) === normalized.canonicalMake) : [];
+  const makeForms = normalized ? new Set(mannMakeFormsForTest(normalized.canonicalMake)) : new Set();
+  const rowsForMake = normalized ? mannRows.filter((row) => makeForms.has(row.makeNormalized) || normalizeVehicleMake(row.make) === normalized.canonicalMake) : [];
+  const makeFilterMs = performance.now() - makeFilterStartedAt;
   const diagnosis = normalized ? diagnoseMannCandidatesForTest(normalized, rowsForMake) : { rankedCandidates: [], rejected: [] };
+  const timingAccumulator = { filtersMs: 0, localProductsMs: 0 };
   const candidates = diagnosis.rankedCandidates
     .filter((candidate) => candidate.score >= MANN_MIN_PRESENTABLE_SCORE)
     .slice(0, 5)
-    .map(candidateForReport);
+    .map((candidate, index) => candidateForReport(candidate, timingAccumulator, index === 0));
   const decision = classifyDecision(candidates);
   const rejectionCounts = new Map();
   for (const rejection of diagnosis.rejected) {
@@ -437,21 +516,44 @@ for (const sample of samples) {
     retrievalPoolSize: rowsForMake.length,
     retrievedCandidateCount: diagnosis.retrievedCount ?? 0,
     acceptedCandidateCount: diagnosis.rankedCandidates.length,
+    retrievalTop20VariantIds: diagnosis.rankedCandidates.slice(0, 20).flatMap((candidate) => candidate.variantIds ?? [candidate.variantId]),
     decision,
+    layers: {
+      tronk: { status: assessVehicleDecodeQuality(decoded).status === "complete" ? "DECODE_COMPLETE" : "DECODE_PARTIAL", quality: assessVehicleDecodeQuality(decoded) },
+      mannVehicle: { status: decision === "no_match" ? "VEHICLE_NO_MATCH" : decision === "automatic" ? "VEHICLE_HIGH_PROPOSAL" : "VEHICLE_AMBIGUOUS", failureCode: decision === "no_match" ? "MANN_NO_CANDIDATE" : decision === "automatic" ? undefined : "MANN_CONFIRMATION_REQUIRED" },
+      localProduct: { status: layerCStatus(candidates[0]?.filters ?? []), failureCode: candidates[0]?.filters?.length ? undefined : "FILTERS_NOT_AVAILABLE" },
+    },
     candidates,
     topRejections: [...rejectionCounts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 10).map(([reason, count]) => ({ reason, count })),
     rejectionExamples: diagnosis.rejected
       .filter((rejection) => !rejection.reasons.includes("базовая модель не совпадает"))
       .slice(0, 50),
-    timings: { decodeAndReplayMs: decodeElapsedMs, scoringMs: Date.now() - scoreStartedAt, totalMs: Date.now() - startedAt },
+    timings: {
+      decodeMs: decodeElapsedMs,
+      retrievalMs: makeFilterMs + (diagnosis.timings?.retrievalMs ?? 0),
+      scoringMs: diagnosis.timings?.scoringMs ?? 0,
+      filtersMs: timingAccumulator.filtersMs,
+      localProductsMs: timingAccumulator.localProductsMs,
+      totalMs: decodeElapsedMs + makeFilterMs + (diagnosis.timings?.retrievalMs ?? 0) + (diagnosis.timings?.scoringMs ?? 0) + timingAccumulator.filtersMs + timingAccumulator.localProductsMs,
+      diagnosticWallMs: Date.now() - startedAt,
+    },
   });
   process.stderr.write(`${sample.sampleId}: ${decision}, ${candidates.length} reported candidates\n`);
 }
 
 const labels = labelsPath ? JSON.parse(fs.readFileSync(labelsPath, "utf8")) : null;
 const allCandidateFilters = results.flatMap((result) => result.candidates.flatMap((candidate) => candidate.filters));
+function percentile(values, percentileValue) {
+  const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  return sorted[Math.min(sorted.length - 1, Math.ceil(percentileValue * sorted.length) - 1)];
+}
+const latency = Object.fromEntries(["decodeMs", "retrievalMs", "scoringMs", "filtersMs", "localProductsMs", "totalMs"].map((field) => [field, {
+  p50: percentile(results.map((result) => result.timings[field]), 0.5),
+  p95: percentile(results.map((result) => result.timings[field]), 0.95),
+}]));
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   algorithmVersion,
   algorithmDigest,
   datasetId: manifest.datasetId,
@@ -476,10 +578,10 @@ const report = {
     localMultiple: allCandidateFilters.filter((filter) => filter.localStatus === "multiple_matches").length,
     localNeedsReview: allCandidateFilters.filter((filter) => filter.localStatus === "needs_review").length,
     localNotFound: allCandidateFilters.filter((filter) => filter.localStatus === "not_found").length,
-    medianScoringMs: (() => {
-      const times = results.map((result) => result.timings.scoringMs).sort((left, right) => left - right);
-      return times.length ? times[Math.floor(times.length / 2)] : null;
-    })(),
+    layerA: Object.fromEntries([...new Set(results.map((result) => result.layers.tronk.status))].map((status) => [status, results.filter((result) => result.layers.tronk.status === status).length])),
+    layerB: Object.fromEntries([...new Set(results.map((result) => result.layers.mannVehicle.status))].map((status) => [status, results.filter((result) => result.layers.mannVehicle.status === status).length])),
+    layerC: Object.fromEntries([...new Set(results.map((result) => result.layers.localProduct.status))].map((status) => [status, results.filter((result) => result.layers.localProduct.status === status).length])),
+    latency,
     metrics: labelMetrics(results, labels),
   },
   results,

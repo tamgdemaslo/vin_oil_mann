@@ -19,10 +19,13 @@ export type NormalizedMannVehicle = {
   engineVolumeCc?: number;
   powerKw?: number;
   powerHp?: number;
-  fuelType?: string;
+  fuelType?: MannFuelKind;
   transmissionType?: string;
   driveType?: string;
 };
+
+export type MannFuelKind = "gasoline" | "diesel" | "bifuel" | "lpg" | "cng" | "hev" | "phev" | "mhev" | "electric";
+export type MannFuelCompatibility = "exact" | "compatible" | "conditional" | "conflict" | "unknown";
 
 export type MannVehicleCandidate = {
   applicationId: string;
@@ -91,6 +94,8 @@ export type MannVehicleResolution = {
   filters: Awaited<ReturnType<typeof listMannFilters>>;
   localMatches: MannArticleMatchResult[];
   usedManualMapping: boolean;
+  endToEndStatus: "VEHICLE_NO_MATCH" | "VEHICLE_AMBIGUOUS" | "VEHICLE_MATCHED_FILTERS_FOUND" | "FILTERS_FOUND_LOCAL_PRODUCTS_PARTIAL" | "FILTERS_FOUND_LOCAL_PRODUCTS_COMPLETE";
+  failureCode?: "MANN_NORMALIZATION_FAILED" | "MANN_NO_CANDIDATE" | "MANN_AMBIGUOUS" | "LOCAL_PRODUCTS_PARTIAL" | "LOCAL_PRODUCTS_MISSING";
   trace?: MannResolutionTrace;
 };
 
@@ -128,6 +133,8 @@ const MANN_MAKE_FORMS: Record<string, string[]> = {
   VOLKSWAGEN: ["VOLKSWAGEN", "VW", "VW (VOLKSWAGEN)"],
   KIA: ["KIA", "KIA MOTORS"],
   MINI: ["MINI", "MINI (BMW GROUP)"],
+  "DS AUTOMOBILES": ["DS AUTOMOBILES", "DS"],
+  CHEVROLET: ["CHEVROLET", "CHEVROLET EUROPE / DAEWOO (GM)"],
   "LAND ROVER": ["LAND ROVER", "LANDROVER"],
   SSANGYONG: ["SSANGYONG", "SSANG YONG"],
   "GREAT WALL": ["GREAT WALL", "GREATWALL"],
@@ -136,7 +143,7 @@ const MANN_MAKE_FORMS: Record<string, string[]> = {
 };
 
 const ROMAN_GENERATION = /(?:^|[\s(/,])(XV|XIV|XIII|XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)(?=$|[\s(),/])/g;
-const BODY_CODE = /\b(?:[A-Z]{1,3}\d{1,3}[A-Z]?|\d[A-Z]{1,3})\b/g;
+const BODY_CODE = /\b(?:[A-Z]{1,3}\d{1,3}[A-Z]{0,3}|\d[A-Z]{1,3})\b/g;
 
 function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
@@ -201,7 +208,7 @@ function modelComparisonKey(value?: string): string {
 }
 
 function phoneticModelKey(value?: string): string {
-  return modelComparisonKey(value).replace(/Q/g, "K").replace(/C(?=[A-Z])/g, "K");
+  return modelComparisonKey(value).replace(/Q/g, "K").replace(/C(?=[A-Z])/g, "K").replace(/OO/g, "U");
 }
 
 function editDistance(left: string, right: string): number {
@@ -297,26 +304,46 @@ function engineCodes(value?: string | null): string[] {
   )));
 }
 
-function normalizeFuel(value?: string | null): string | undefined {
+export function normalizeMannFuel(value?: string | null): MannFuelKind | undefined {
   const normalized = text(value).toUpperCase();
   if (!normalized) return undefined;
-  // Fuel markers are commonly glued to displacement ("2.0LPG", "2.5CNG"),
-  // so a leading word boundary would silently miss them.
-  if (/(?:LPG|CNG|AUTOGAS|PROPANE|METHANE|ГАЗ)/.test(normalized)) return "gas";
-  if (/\b(?:HYBRID|ГИБРИД)\b/.test(normalized)) return "hybrid";
-  if (/\b(?:EL|ELECTRIC|ЭЛЕКТ)\b/.test(normalized)) return "electric";
-  if (normalized === "D" || /(?:DIESEL|ДИЗЕЛ|TDI|TDCI|DCI|CRDI|CDI|D-?4D|DI-?D|HDI|JTD|MULTIJET|BLUEHDI|BLUETEC)/.test(normalized)) return "diesel";
+  // Order matters: plug-in/mild/bi-fuel markers are more specific than their
+  // component words. Markers are often glued to displacement ("2.0LPG").
+  if (/(?:PHEV|PLUG[ -]?IN\s+HYBRID)/.test(normalized)) return "phev";
+  if (/(?:MHEV|MILD[ -]?HYBRID)/.test(normalized)) return "mhev";
+  if (/(?:BI[ -]?FUEL|BIVALENT|DUAL[ -]?FUEL)/.test(normalized)) return "bifuel";
+  if (/(?:LPG|AUTOGAS|PROPANE|ПРОПАН)/.test(normalized)) return "lpg";
+  if (/(?:CNG|METHANE|МЕТАН)/.test(normalized)) return "cng";
+  if (/\b(?:HEV|FULL[ -]?HYBRID|HYBRID|ГИБРИД)\b/.test(normalized)) return "hev";
+  if (/\b(?:BEV|EV|EL|ELECTRIC|ЭЛЕКТР)\b/.test(normalized)) return "electric";
+  if (normalized === "D" || /(?:DIESEL|ДИЗЕЛ|TDI|TDCI|DCI|DDIS|CRDI|CDI|D-?4D|DI-?D|HDI|JTD|MULTIJET|BLUEHDI|BLUETEC)/.test(normalized)) return "diesel";
   if (/^(?:PO|PA)$/.test(normalized) || /(?:PETROL|GASOLINE|БЕНЗ|GDI|MPI|TSI|TFSI|FSI|VVT|CVVT|ECOBOOST)/.test(normalized)) return "gasoline";
   return undefined;
 }
 
-function fuelFromRow(row: MannRow): string | undefined {
-  return normalizeFuel(`${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
+export function mannFuelCompatibility(input?: MannFuelKind, candidate?: MannFuelKind): MannFuelCompatibility {
+  if (!input || !candidate) return "unknown";
+  if (input === candidate) return "exact";
+  if ((input === "bifuel" && ["lpg", "cng"].includes(candidate)) || (candidate === "bifuel" && ["lpg", "cng"].includes(input))) return "compatible";
+  if ([input, candidate].includes("electric")) return "conflict";
+  if (["hev", "phev", "mhev"].includes(input) || ["hev", "phev", "mhev"].includes(candidate)) return "conditional";
+  // A dedicated LPG/CNG/BiFuel MANN row describes a different powertrain
+  // variant. A plain gasoline decode must not be treated as an exact match.
+  if (["bifuel", "lpg", "cng"].includes(input) || ["bifuel", "lpg", "cng"].includes(candidate)) return "conflict";
+  return "conflict";
+}
+
+function fuelFromRow(row: MannRow): MannFuelKind | undefined {
+  return normalizeMannFuel(`${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
 }
 
 function makeForms(make: string): string[] {
   const canonical = normalizeVehicleMake(make) ?? normalizeMannText(make);
   return unique([canonical, ...(MANN_MAKE_FORMS[canonical] ?? [])].map((item) => normalizeMannText(item)));
+}
+
+export function mannMakeFormsForTest(make: string): string[] {
+  return makeForms(make);
 }
 
 function jsonStrings(value: unknown): string[] {
@@ -355,7 +382,7 @@ export async function normalizeDecodedVehicle(vehicle: DecodedVehicle): Promise<
     engineVolumeCc: vehicle.engineVolumeCc ?? (vehicle.engineVolumeLiters ? Math.round(vehicle.engineVolumeLiters * 1000) : undefined),
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
-    fuelType: normalizeFuel(vehicle.fuelType),
+    fuelType: normalizeMannFuel(vehicle.fuelType),
     transmissionType: text(vehicle.transmissionType || vehicle.transmissionName) || undefined,
     driveType: text(vehicle.driveType) || undefined,
   };
@@ -442,6 +469,34 @@ function normalizedDrive(value?: string | null): "awd" | "fwd" | "rwd" | undefin
   return undefined;
 }
 
+function yearMatchesRow(year: number | undefined, row: MannRow): boolean {
+  if (!year || (row.vehicleYearFrom == null && row.vehicleYearTo == null)) return false;
+  return (row.vehicleYearFrom == null || year >= row.vehicleYearFrom) && (row.vehicleYearTo == null || year <= row.vehicleYearTo);
+}
+
+function powerMatchesRow(vehicle: NormalizedMannVehicle, row: MannRow): boolean {
+  const candidateKw = numberFromText(row.kw);
+  const candidateHp = numberFromText(row.hp);
+  if (vehicle.powerKw && candidateKw != null) return Math.abs(vehicle.powerKw - candidateKw) <= Math.max(3, vehicle.powerKw * 0.035);
+  if (vehicle.powerHp && candidateHp != null) return Math.abs(vehicle.powerHp - candidateHp) <= Math.max(5, vehicle.powerHp * 0.035);
+  return false;
+}
+
+function rowAnchorStrength(vehicle: NormalizedMannVehicle, row: MannRow): number {
+  let strength = 0;
+  const codes = engineCodes(row.engineCode);
+  const families = unique(codes.map(engineFamily));
+  if (vehicle.exactEngineCode && codes.includes(vehicle.exactEngineCode)) strength += 4;
+  else if (vehicle.engineFamily && families.includes(vehicle.engineFamily)) strength += 3;
+  const vehicleCodes = vehicle.bodyCodes.filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
+  const candidateCodes = rowBodyCodes(row).filter((code) => normalizeMannSearchText(code) !== vehicle.baseModel);
+  if (vehicleCodes.some((vehicleCode) => candidateCodes.some((candidateCode) => bodyCodesCompatible(vehicleCode, candidateCode)))) strength += 3;
+  if (yearMatchesRow(vehicle.year, row)) strength += 1;
+  if (engineVolumeMatches(vehicle.engineVolumeCc, engineVolumeCcFromRow(row))) strength += 2;
+  if (powerMatchesRow(vehicle, row)) strength += 2;
+  return strength;
+}
+
 function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEvaluation {
   const reject = (reason: string) => ({ rejected: { applicationId: row.vehicleVariantKey, model: row.model, reasons: [reason] } });
   if (isGenericMannVariant(row)) return reject("общая применяемость MANN, не модификация автомобиля");
@@ -450,7 +505,8 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   if (!rowMake || rowMake !== vehicle.canonicalMake) return reject("марка не совпадает");
   const rowModels = candidateBaseModels(row, vehicle.canonicalMake);
   const baseModelSimilarity = Math.max(0, ...rowModels.map((rowModel) => modelSimilarity(rowModel, vehicle.baseModel)));
-  if (baseModelSimilarity < 0.8) return reject("базовая модель не совпадает");
+  const anchorStrength = rowAnchorStrength(vehicle, row);
+  if (baseModelSimilarity < 0.8 && anchorStrength < 3) return reject("базовая модель не совпадает");
 
   let rawScore = 0;
   const matchedFields: string[] = [];
@@ -468,8 +524,12 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   };
 
   contribute("марка", `${vehicle.canonicalMake} = ${row.make}`, 8, "match");
-  contribute("базовая модель", `${vehicle.baseModel} ↔ ${rowModels.join(" / ")}`, Math.round(22 * baseModelSimilarity), "match");
+  contribute("базовая модель", `${vehicle.baseModel} ↔ ${rowModels.join(" / ")}`, baseModelSimilarity >= 0.8 ? Math.round(22 * baseModelSimilarity) : -12, baseModelSimilarity >= 0.8 ? "match" : "mismatch");
   reasons.push(`model similarity ${baseModelSimilarity.toFixed(2)}`);
+  if (baseModelSimilarity < 0.8) {
+    contribute("структурированные признаки", `anchor strength ${anchorStrength}`, Math.min(14, anchorStrength * 4), "match");
+    reasons.push(`retrieved by structured anchors ${anchorStrength}`);
+  }
 
   const candidateGeneration = rowGeneration(row);
   if (vehicle.generation && candidateGeneration) {
@@ -505,16 +565,18 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
 
   const candidateCodes = engineCodes(row.engineCode);
   const candidateFamilies = unique(candidateCodes.map(engineFamily));
+  const hasSpecificCandidateEngineCode = candidateCodes.some((code) => code.replace(/[^A-Z0-9]/g, "").length >= 4);
   const exactEngineMatch = Boolean(vehicle.exactEngineCode && candidateCodes.includes(vehicle.exactEngineCode));
   const familyEngineMatch = Boolean(vehicle.engineFamily && candidateFamilies.includes(vehicle.engineFamily));
   if (vehicle.exactEngineCode) {
     if (exactEngineMatch) contribute("точный код двигателя", `${vehicle.exactEngineCode}`, 24, "match");
     else if (familyEngineMatch) contribute("семейство двигателя", `${vehicle.engineFamily}`, 17, "match");
-    else if (candidateCodes.length > 0) contribute("код двигателя", `${vehicle.exactEngineCode} ≠ ${candidateCodes.join(",")}`, -24, "mismatch");
+    else if (candidateCodes.length > 0 && hasSpecificCandidateEngineCode) contribute("код двигателя", `${vehicle.exactEngineCode} ≠ ${candidateCodes.join(",")}`, -24, "mismatch");
+    else if (candidateCodes.length > 0) contribute("код двигателя MANN", `${candidateCodes.join(",")} — общее обозначение семейства`, 0, "missing");
     else contribute("код двигателя MANN", "код отсутствует", 0, "missing");
   } else if (vehicle.engineFamily) {
     if (familyEngineMatch) contribute("семейство двигателя", `${vehicle.engineFamily}`, 17, "match");
-    else if (candidateFamilies.length > 0) contribute("семейство двигателя", `${vehicle.engineFamily} ≠ ${candidateFamilies.join(",")}`, -18, "mismatch");
+    else if (candidateFamilies.length > 0 && hasSpecificCandidateEngineCode) contribute("семейство двигателя", `${vehicle.engineFamily} ≠ ${candidateFamilies.join(",")}`, -18, "mismatch");
   }
 
   const candidateVolumeCc = engineVolumeCcFromRow(row);
@@ -554,8 +616,11 @@ function scoreRow(vehicle: NormalizedMannVehicle, row: MannRow): MannCandidateEv
   const rowFuel = fuelFromRow(row);
   if (vehicle.fuelType) {
     if (rowFuel) {
-      const compatible = vehicle.fuelType === rowFuel;
-      contribute("топливо", `${vehicle.fuelType} ${compatible ? "=" : "≠"} ${rowFuel}`, compatible ? 7 : -12, compatible ? "match" : "mismatch");
+      const compatibility = mannFuelCompatibility(vehicle.fuelType, rowFuel);
+      const weight = compatibility === "exact" ? 7 : compatibility === "compatible" ? 3 : compatibility === "conditional" ? -4 : -18;
+      const isMatch = compatibility === "exact" || compatibility === "compatible";
+      contribute("топливо", `${vehicle.fuelType} ${compatibility} ${rowFuel}`, weight, isMatch ? "match" : "mismatch");
+      if (compatibility === "conditional") warnings.push("Тип гибридной силовой установки нужно подтвердить.");
     } else {
       contribute("топливо MANN", "тип топлива не извлечён", 0, "missing");
     }
@@ -610,7 +675,7 @@ export function normalizeDecodedVehicleForTest(vehicle: DecodedVehicle): Normali
     engineVolumeCc: vehicle.engineVolumeCc ?? (vehicle.engineVolumeLiters ? Math.round(vehicle.engineVolumeLiters * 1000) : undefined),
     powerKw: vehicle.powerKw ? Math.round(vehicle.powerKw) : undefined,
     powerHp: vehicle.powerHp ? Math.round(vehicle.powerHp) : vehicle.powerPs ? Math.round(vehicle.powerPs) : undefined,
-    fuelType: normalizeFuel(vehicle.fuelType),
+    fuelType: normalizeMannFuel(vehicle.fuelType),
     transmissionType: text(vehicle.transmissionType || vehicle.transmissionName) || undefined,
     driveType: text(vehicle.driveType) || undefined,
   };
@@ -627,13 +692,17 @@ function confidenceFor(candidate: MannVehicleCandidate, runnerUp: MannVehicleCan
   const evidenceCount = candidate.matchedFields.filter((field) => !["марка", "базовая модель"].includes(field)).length;
   const completenessDenominator = evidenceCount + candidate.mismatchedFields.length + candidate.missingFields.length;
   const completeness = completenessDenominator > 0 ? evidenceCount / completenessDenominator : 0;
-  const separated = gap >= 10;
+  const separated = gap >= 12;
+  const hasStrongModel = candidate.featureContributions.some((item) => item.feature === "базовая модель" && item.weight >= 20);
+  const strongGroups = [hasStrongModel, hasPowertrainAnchor, hasChassisAnchor].filter(Boolean).length;
   if (
-    candidate.score >= 75
+    candidate.score >= 78
     && separated
     && candidate.mismatchedFields.length === 0
     && hasPowertrainAnchor
-    && (hasChassisAnchor || evidenceCount >= 3)
+    && hasStrongModel
+    && strongGroups >= 2
+    && (hasChassisAnchor || evidenceCount >= 4)
     && completeness >= 0.5
   ) return "high";
   if (candidate.score >= 50 && (hasPowertrainAnchor || hasChassisAnchor)) return "medium";
@@ -652,21 +721,27 @@ function retrieveMannRows(vehicle: NormalizedMannVehicle, rows: MannRow[], limit
     if (!current || rowEvidenceCompleteness(row) > rowEvidenceCompleteness(current)) byVariant.set(row.vehicleVariantKey, row);
   }
 
-  return [...byVariant.values()]
+  const evaluated = [...byVariant.values()]
     .filter((row) => !isGenericMannVariant(row) && !isQualifierOnlyVariant(row))
     .map((row) => ({
       row,
       similarity: Math.max(0, ...candidateBaseModels(row, vehicle.canonicalMake).map((model) => modelSimilarity(model, vehicle.baseModel))),
-    }))
-    .filter((candidate) => candidate.similarity >= 0.72)
-    .sort((left, right) => right.similarity - left.similarity || rowEvidenceCompleteness(right.row) - rowEvidenceCompleteness(left.row) || left.row.vehicleVariantKey.localeCompare(right.row.vehicleVariantKey))
+      anchorStrength: rowAnchorStrength(vehicle, row),
+    }));
+  const hasModelCandidates = evaluated.some((candidate) => candidate.similarity >= 0.72);
+  return evaluated
+    .filter((candidate) => candidate.similarity >= 0.72 || (!hasModelCandidates && candidate.anchorStrength >= 3))
+    .sort((left, right) => Number(right.anchorStrength >= 3) - Number(left.anchorStrength >= 3) || right.similarity - left.similarity || right.anchorStrength - left.anchorStrength || rowEvidenceCompleteness(right.row) - rowEvidenceCompleteness(left.row) || left.row.vehicleVariantKey.localeCompare(right.row.vehicleVariantKey))
     .slice(0, limit)
     .map((candidate) => candidate.row);
 }
 
 function rankMannRows(vehicle: NormalizedMannVehicle, rows: MannRow[]) {
+  const retrievalStartedAt = performance.now();
   const retrievedRows = retrieveMannRows(vehicle, rows);
+  const retrievalMs = performance.now() - retrievalStartedAt;
 
+  const scoringStartedAt = performance.now();
   const accepted: MannVehicleCandidate[] = [];
   const rejected: Rejection[] = [];
   for (const row of retrievedRows) {
@@ -693,6 +768,7 @@ function rankMannRows(vehicle: NormalizedMannVehicle, rows: MannRow[]) {
   }
   const consolidated = [...groupedCandidates.values()];
   consolidated.sort((left, right) => right.score - left.score || left.model.localeCompare(right.model, "ru") || left.applicationId.localeCompare(right.applicationId));
+  const scoringMs = performance.now() - scoringStartedAt;
   return {
     rankedCandidates: consolidated.map((candidate, index, all) => ({
       ...candidate,
@@ -701,6 +777,7 @@ function rankMannRows(vehicle: NormalizedMannVehicle, rows: MannRow[]) {
     rejected,
     sourceRowCount: rows.length,
     retrievedCount: retrievedRows.length,
+    timings: { retrievalMs, scoringMs },
   };
 }
 
@@ -776,7 +853,7 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
   const normalized = await normalizeDecodedVehicle(options.vehicle);
   const emptyPrefill: MannSafePrefill = { makeId: null, makeLabel: null, modelQuery: "", selectedModelId: null, year: null, modificationQuery: "", selectedModificationId: null };
   if (!normalized) {
-    return { status: "unresolved", decision: "NO_MATCH", decodeConfidence: options.vehicle.confidence, mannConfidence: "none", safePrefill: emptyPrefill, selectedApplication: null, selection: null, candidates: [], filters: [], localMatches: [], usedManualMapping: false };
+    return { status: "unresolved", decision: "NO_MATCH", decodeConfidence: options.vehicle.confidence, mannConfidence: "none", safePrefill: emptyPrefill, selectedApplication: null, selection: null, candidates: [], filters: [], localMatches: [], usedManualMapping: false, endToEndStatus: "VEHICLE_NO_MATCH", failureCode: "MANN_NORMALIZATION_FAILED" };
   }
 
   const forms = makeForms(normalized.canonicalMake);
@@ -800,7 +877,10 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
     orderBy: { updatedAt: "desc" },
   });
   const mapping = mappings.find((item) => mappingMatchesVehicle(item, normalized));
-  let selectedApplication = candidates[0]?.confidence === "high" ? candidates[0] : null;
+  // Until the new blind holdout is complete, HIGH means "safe proposal", not
+  // an unconditional selection. Only a persisted human confirmation resolves
+  // the vehicle and triggers filter/product lookup.
+  let selectedApplication: MannVehicleCandidate | null = null;
   let usedManualMapping = false;
   if (mapping) {
     const mapped = rankedCandidates.find((candidate) => candidate.variantIds.includes(mapping.mannApplicationId));
@@ -832,6 +912,26 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
     console.info("[mann-resolver]", JSON.stringify({ decision, mannConfidence, sourceRowCount, retrievedCount, topScore: candidates[0]?.score ?? null, topGap: candidates[0] ? candidates[0].score - (candidates[1]?.score ?? 0) : null, timingsMs }));
   }
 
+  const uniqueLocalProducts = data.localMatches.filter((match) => match.status === "found").length;
+  const endToEndStatus: MannVehicleResolution["endToEndStatus"] = status === "unresolved"
+    ? "VEHICLE_NO_MATCH"
+    : status === "candidates"
+      ? "VEHICLE_AMBIGUOUS"
+      : data.filters.length > 0 && uniqueLocalProducts === data.filters.length
+        ? "FILTERS_FOUND_LOCAL_PRODUCTS_COMPLETE"
+        : uniqueLocalProducts > 0
+          ? "FILTERS_FOUND_LOCAL_PRODUCTS_PARTIAL"
+          : "VEHICLE_MATCHED_FILTERS_FOUND";
+  const failureCode: MannVehicleResolution["failureCode"] = status === "unresolved"
+    ? "MANN_NO_CANDIDATE"
+    : status === "candidates"
+      ? "MANN_AMBIGUOUS"
+      : data.filters.length > 0 && uniqueLocalProducts === 0
+        ? "LOCAL_PRODUCTS_MISSING"
+        : data.filters.length > uniqueLocalProducts
+          ? "LOCAL_PRODUCTS_PARTIAL"
+          : undefined;
+
   return {
     status,
     decision,
@@ -844,6 +944,8 @@ export async function resolveMannVehicle(options: ResolveOptions): Promise<MannV
     filters: data.filters,
     localMatches: data.localMatches,
     usedManualMapping,
+    endToEndStatus,
+    failureCode,
     trace,
   };
 }

@@ -11,6 +11,15 @@ const MAKE_ALIASES: Record<string, string> = {
   "KIA MOTORS": "KIA",
   КИА: "KIA",
   "MINI (BMW GROUP)": "MINI",
+  MINI: "MINI",
+  МИНИ: "MINI",
+  CHRYSLER: "CHRYSLER",
+  КРАЙСЛЕР: "CHRYSLER",
+  DS: "DS AUTOMOBILES",
+  "DS AUTOMOBILES": "DS AUTOMOBILES",
+  "LYNK & CO": "LYNK & CO",
+  "LYNK @ CO": "LYNK & CO",
+  "LYNK AND CO": "LYNK & CO",
   LANDROVER: "LAND ROVER",
   "LAND ROVER": "LAND ROVER",
   "ЛЕНД РОВЕР": "LAND ROVER",
@@ -66,6 +75,7 @@ const MAKE_ALIASES: Record<string, string> = {
   LEXUS: "LEXUS",
   ЛЕКСУС: "LEXUS",
   CHEVROLET: "CHEVROLET",
+  "CHEVROLET EUROPE / DAEWOO (GM)": "CHEVROLET",
   ШЕВРОЛЕ: "CHEVROLET",
   SUBARU: "SUBARU",
   СУБАРУ: "SUBARU",
@@ -85,12 +95,24 @@ const CYRILLIC_TRANSLITERATION: Record<string, string> = {
   Х: "KH", Ц: "TS", Ч: "CH", Ш: "SH", Щ: "SHCH", Ъ: "", Ы: "Y", Ь: "", Э: "E", Ю: "YU", Я: "YA",
 };
 
+// Registration providers sometimes return one word with Latin and Cyrillic
+// lookalikes mixed together (for example "СRUISЕR").  Transliteration is
+// wrong for those characters: Cyrillic С is the visual Latin C, not "S".
+const CYRILLIC_HOMOGLYPHS: Record<string, string> = {
+  А: "A", В: "B", Е: "E", К: "K", М: "M", Н: "H", О: "O", Р: "P", С: "C", Т: "T", У: "Y", Х: "X",
+};
+
 function normalizedText(value: unknown): string {
   return String(value ?? "")
+    .toUpperCase()
+    // Preserve Russian letters that decompose into a base letter + accent;
+    // the following accent removal is intended for Latin catalogue spelling.
+    .replace(/Й/g, "\uE000")
+    .replace(/Ё/g, "\uE001")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/Ё/g, "Е")
+    .replace(/\uE000/g, "Й")
+    .replace(/\uE001/g, "Е")
     .replace(/[‐‑‒–—―]/g, "-")
     .replace(/\s+/g, " ")
     .trim();
@@ -100,10 +122,26 @@ export function transliterateVehicleText(value: unknown): string {
   return normalizedText(value).replace(/[А-ЯЁ]/g, (character) => CYRILLIC_TRANSLITERATION[character] ?? character);
 }
 
+function normalizeMixedAlphabet(value: string): string {
+  const globallyMixed = /[A-Z]/.test(value) && /[А-Я]/.test(value);
+  if (!globallyMixed) return value;
+  return value.replace(/[A-ZА-Я]+/g, (token) => {
+    const mixedToken = /[A-Z]/.test(token) && /[А-Я]/.test(token);
+    const shortVisualToken = token.length <= 3 && /^[АВЕКМНОРСТУХ]+$/.test(token);
+    if (!mixedToken && !shortVisualToken) return token;
+    return token.replace(/[АВЕКМНОРСТУХ]/g, (character) => CYRILLIC_HOMOGLYPHS[character] ?? character);
+  });
+}
+
 export function normalizeVehicleMake(value: unknown): string | undefined {
   const normalized = normalizedText(value);
   if (!normalized) return undefined;
-  return MAKE_ALIASES[normalized] ?? normalized;
+  const exact = MAKE_ALIASES[normalized];
+  if (exact) return exact;
+  const mixed = normalizeMixedAlphabet(normalized).replace(/\s*@\s*/g, " & ").replace(/\s+/g, " ").trim();
+  if (MAKE_ALIASES[mixed]) return MAKE_ALIASES[mixed];
+  const transliterated = transliterateVehicleText(mixed);
+  return MAKE_ALIASES[transliterated] ?? transliterated;
 }
 
 export function vehicleMakeAliasEntries(): Array<[string, string]> {
@@ -140,7 +178,15 @@ export function normalizeVehicleModel(value: unknown, make?: string): { raw?: st
     const matchingForm = makeForms.find((form) => normalized === form || normalized.startsWith(`${form} `));
     if (matchingForm) normalized = normalized.slice(matchingForm.length).trim();
   }
-  normalized = transliterateVehicleText(normalized);
+  normalized = transliterateVehicleText(normalizeMixedAlphabet(normalized));
+  // Provider placeholders are metadata, not a model family. Keep the payload
+  // that follows them because it can still contain a useful family or code.
+  normalized = normalized
+    .replace(/^(?:BEZ\s+MODELI|WITHOUT\s+(?:A\s+)?MODEL|MODEL\s+(?:UNKNOWN|NOT\s+SPECIFIED)|UNKNOWN\s+MODEL)\s*/u, "")
+    .replace(/^(\d{1,2})\s+(?:SERIES|SERIE|SERIYA|SERII)\b/u, "$1")
+    .replace(/\b(?:SERIES|SERIE|SERIYA|SERII)\s*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const codes = [...normalized.matchAll(/\b(?:[A-Z]\d{1,3}[A-Z]?|\d[A-Z]\d|[A-Z]{1,3}\d{1,3})\b/g)].map((match) => match[0]);
   // Some providers prepend an alphabetic platform code to the commercial model
   // (for example "XX MODEL") while catalogues put it in parentheses. Restrict

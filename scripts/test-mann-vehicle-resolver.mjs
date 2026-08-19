@@ -9,6 +9,8 @@ const jiti = createJiti(import.meta.url, {
 const {
   MANN_MIN_PRESENTABLE_SCORE,
   evaluateMannCandidate,
+  mannFuelCompatibility,
+  normalizeMannFuel,
   normalizeDecodedVehicleForTest,
   rankMannCandidatesForTest,
 } = await jiti.import("../src/lib/mann-vehicle-resolver.ts");
@@ -86,6 +88,14 @@ assert.ok(fordScreenshotBoundary.candidate?.mismatchedFields.includes("год"))
 assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("объём двигателя"));
 assert.ok(fordScreenshotBoundary.candidate?.matchedFields.includes("мощность"));
 assert.ok(fordScreenshotBoundary.candidate?.warnings.some((warning) => warning.includes("Граница модельного года")));
+assert.equal(normalizeMannFuel("2.0BiFuel"), "bifuel");
+assert.equal(normalizeMannFuel("1.6 DDiS"), "diesel");
+assert.equal(normalizeMannFuel("PHEV"), "phev");
+assert.equal(normalizeMannFuel("MHEV"), "mhev");
+assert.equal(mannFuelCompatibility("gasoline", "bifuel"), "conflict");
+assert.equal(mannFuelCompatibility("bifuel", "lpg"), "compatible");
+assert.equal(mannFuelCompatibility("gasoline", "hev"), "conditional");
+assert.ok(fordScreenshotBoundary.candidate?.mismatchedFields.includes("топливо"), "plain gasoline must not auto-match a CNG application");
 assert.ok(evaluateMannCandidate(ford, row({
   make: "FORD", model: "Mondeo V", vehicleText: "2.0TDCi", vehicleYearFrom: 2014, vehicleYearTo: 2019,
 })).candidate?.mismatchedFields.includes("объём двигателя"), "2.0TDCi remains visible but is penalized against 2.488 l");
@@ -213,6 +223,14 @@ assert.deepEqual({ model: highlander?.baseModel, generation: highlander?.generat
 assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander II", vehicleYearFrom: 2007, vehicleYearTo: 2013 })).candidate?.mismatchedFields.includes("поколение"));
 assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander III", vehicleYearFrom: 2014, vehicleYearTo: 2019 })).candidate);
 assert.ok(evaluateMannCandidate(highlander, row({ make: "TOYOTA", model: "Highlander III", vehicleText: "2.7", vehicleYearFrom: 2014, vehicleYearTo: 2019 })).candidate?.mismatchedFields.includes("объём двигателя"), "2.7 is penalized against 3.456 l");
+
+const noisyCayenne = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "PORSCHE", modelRaw: "BEZ MODELI SAUENNE", year: 2004, powerHp: 250 }));
+const noisyCayenneCandidates = rankMannCandidatesForTest(noisyCayenne, [
+  row({ vehicleVariantKey: "cayenne-32", make: "PORSCHE", model: "Cayenne", vehicleText: "3.2", hp: "250", vehicleYearFrom: 2003, vehicleYearTo: 2007 }),
+  row({ vehicleVariantKey: "panamera", make: "PORSCHE", model: "Panamera", vehicleText: "3.6", hp: "300", vehicleYearFrom: 2009, vehicleYearTo: 2013 }),
+]);
+assert.equal(noisyCayenneCandidates[0]?.applicationId, "cayenne-32", "strong year+power anchors retrieve a candidate when provider model text is malformed");
+assert.ok(noisyCayenneCandidates[0]?.mismatchedFields.includes("базовая модель"), "anchor retrieval does not pretend that the model text matched");
 
 const xTrail = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "NISSAN", modelRaw: "X-Trail", year: 2011 }));
 assert.deepEqual({ model: xTrail?.baseModel, generation: xTrail?.generation }, { model: "X TRAIL", generation: undefined });
