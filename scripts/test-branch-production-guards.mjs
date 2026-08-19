@@ -84,6 +84,17 @@ assert.deepEqual(
   { status: 204, next: false, body: null }
 );
 assert.deepEqual(await proxyResult("/records", "GET"), { status: 200, next: true, body: null });
+const htmlPassThrough = proxy(new NextRequest("http://localhost/records", {
+  method: "GET",
+  headers: {
+    accept: "text/html,application/xhtml+xml",
+    "sec-fetch-dest": "document",
+  },
+}));
+assert.equal(htmlPassThrough.headers.get("cache-control"), "private, no-cache, no-store, max-age=0, must-revalidate");
+assert.equal(htmlPassThrough.headers.get("cdn-cache-control"), "no-store");
+assert.equal(htmlPassThrough.headers.get("surrogate-control"), "no-store");
+assert.equal(htmlPassThrough.headers.get("x-eco-html-cache"), "no-store");
 
 const burstHeaders = {
   cookie: `${allModeCookie}; eco_session=test-browser-session`,
@@ -111,13 +122,13 @@ const visibleTabHeaders = {
   "x-eco-page-visibility": "visible",
 };
 for (let index = 0; index < 24; index += 1) {
-  assert.deepEqual(await proxyResult(`/api/auth/session?visible=${index}`, "GET", visibleTabHeaders), {
+  assert.deepEqual(await proxyResult(`/api/cash?visible=${index}`, "GET", visibleTabHeaders), {
     status: 200,
     next: true,
     body: null,
   });
 }
-const blockedVisibleTab = await proxyResult("/api/auth/session?visible=blocked", "GET", visibleTabHeaders);
+const blockedVisibleTab = await proxyResult("/api/cash?visible=blocked", "GET", visibleTabHeaders);
 assert.equal(blockedVisibleTab.status, 429);
 assert.equal(blockedVisibleTab.body?.code, "client_request_burst");
 
@@ -181,7 +192,7 @@ assert.equal(blockedDocumentBurst.status, 429);
 assert.equal(blockedDocumentBurst.next, false);
 assert.equal(blockedDocumentBurst.body?.code, "client_request_burst");
 
-for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version", "/api/auth/users"]) {
+for (const path of ["/api/health/live", "/api/health/ready", "/api/system/version", "/api/auth/users", "/api/auth/session"]) {
   for (let index = 0; index < 30; index += 1) {
     assert.deepEqual(await proxyResult(path, "GET", burstHeaders), { status: 200, next: true, body: null });
   }
@@ -276,6 +287,9 @@ const shipmentEditorSource = fs.readFileSync(new URL("../src/app/shipment/new/Ne
 const shipmentPrecheckSource = fs.readFileSync(new URL("../src/app/shipment/[id]/precheck/page.tsx", import.meta.url), "utf8");
 const rootLayoutSource = fs.readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
 const requestContextSource = fs.readFileSync(new URL("../src/lib/browser-request-context.ts", import.meta.url), "utf8");
+const authSessionRouteSource = fs.readFileSync(new URL("../src/app/api/auth/session/route.ts", import.meta.url), "utf8");
+const loginLayoutSource = fs.readFileSync(new URL("../src/app/login/layout.tsx", import.meta.url), "utf8");
+const newShipmentPageSource = fs.readFileSync(new URL("../src/app/shipment/new/page.tsx", import.meta.url), "utf8");
 const telegramSyncWorkerSource = fs.readFileSync(new URL("../src/lib/messenger/telegram-sync-worker.ts", import.meta.url), "utf8");
 const telegramUserSessionSource = fs.readFileSync(new URL("../src/lib/messenger/channels/telegram-user-session.ts", import.meta.url), "utf8");
 const instrumentationSource = fs.readFileSync(new URL("../src/instrumentation.ts", import.meta.url), "utf8");
@@ -296,6 +310,13 @@ assert.match(rootLayoutSource, /strategy="beforeInteractive"/);
 assert.match(rootLayoutSource, /BROWSER_REQUEST_CONTEXT_SCRIPT/);
 assert.match(requestContextSource, /X-Eco-Tab-Id/);
 assert.match(requestContextSource, /X-Eco-Page-Visibility/);
+assert.match(authSessionRouteSource, /SESSION_RESPONSE_CACHE_MS = 3_000/);
+assert.match(authSessionRouteSource, /__ecoSessionResponseCache/);
+assert.match(authSessionRouteSource, /"Cache-Control": "private, no-store"/);
+for (const source of [loginLayoutSource, newShipmentPageSource]) {
+  assert.match(source, /export const dynamic = "force-dynamic"/);
+  assert.match(source, /export const revalidate = 0/);
+}
 assert.match(telegramSyncWorkerSource, /runForActiveBranches\(\(\) => syncTelegramUserAccount/);
 assert.match(telegramSyncWorkerSource, /TELEGRAM_SYNC_WORKER_ENABLED === "1"/);
 assert.doesNotMatch(telegramSyncWorkerSource, /process\.env\.NODE_ENV === "production"/);

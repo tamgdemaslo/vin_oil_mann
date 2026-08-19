@@ -20,6 +20,9 @@ const REQUEST_BURST_EXEMPT_PATHS = new Set([
   "/api/system/version",
   "/api/auth/login",
   "/api/auth/logout",
+  // This route has its own short-lived per-session response cache. Never let
+  // a read storm turn a valid session into a false client-side logout.
+  "/api/auth/session",
   // The login screen must stay usable while stale authenticated tabs are being
   // throttled. This read is protected by the auth cache and in-flight dedupe.
   "/api/auth/users",
@@ -46,6 +49,28 @@ const requestBurstBuckets = ((globalThis as typeof globalThis & {
   __ecoRequestBurstBuckets?: Map<string, RequestBurstBucket>;
 }).__ecoRequestBurstBuckets ??= new Map<string, RequestBurstBucket>());
 
+function isHtmlDocumentRequest(request: NextRequest) {
+  if (request.method !== "GET") return false;
+  const destination = request.headers.get("sec-fetch-dest");
+  const acceptsHtml = request.headers.get("accept")?.toLowerCase().includes("text/html") ?? false;
+  return destination === "document" || acceptsHtml;
+}
+
+function passThroughResponse(request: NextRequest) {
+  const response = NextResponse.next();
+  if (!request.nextUrl.pathname.startsWith("/api/") && isHtmlDocumentRequest(request)) {
+    // HTML must always belong to the current deployment. Hashed JS/CSS/image
+    // assets stay outside the proxy matcher and retain their immutable cache.
+    response.headers.set("Cache-Control", "private, no-cache, no-store, max-age=0, must-revalidate");
+    response.headers.set("CDN-Cache-Control", "no-store");
+    response.headers.set("Surrogate-Control", "no-store");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+    response.headers.set("X-Eco-HTML-Cache", "no-store");
+  }
+  return response;
+}
+
 function requestBurstKind(request: NextRequest): RequestBurstKind | null {
   const pathname = request.nextUrl.pathname;
   if (REQUEST_BURST_EXEMPT_PATHS.has(pathname) || request.method === "OPTIONS") return null;
@@ -61,10 +86,7 @@ function requestBurstKind(request: NextRequest): RequestBurstKind | null {
     if (visible && tabId && /^[a-zA-Z0-9_-]{8,80}$/.test(tabId)) return "visibleApi";
     return "api";
   }
-  if (request.method !== "GET") return null;
-  const destination = request.headers.get("sec-fetch-dest");
-  const acceptsHtml = request.headers.get("accept")?.toLowerCase().includes("text/html") ?? false;
-  return destination === "document" || acceptsHtml ? "document" : null;
+  return isHtmlDocumentRequest(request) ? "document" : null;
 }
 
 function requestClientFingerprint(request: NextRequest, kind: RequestBurstKind) {
@@ -218,8 +240,8 @@ export function proxy(request: NextRequest) {
   }
   const burstResponse = requestBurstResponse(request);
   if (burstResponse) return burstResponse;
-  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return NextResponse.next();
-  if (ALLOWED_ALL_MODE_WRITES.has(`${request.method} ${request.nextUrl.pathname}`)) return NextResponse.next();
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return passThroughResponse(request);
+  if (ALLOWED_ALL_MODE_WRITES.has(`${request.method} ${request.nextUrl.pathname}`)) return passThroughResponse(request);
   const branchId = activeBranch(request.cookies.get(ACTIVE_BRANCH_COOKIE)?.value);
   if (branchId === "all") {
     return NextResponse.json(
@@ -227,7 +249,7 @@ export function proxy(request: NextRequest) {
       { status: 409 }
     );
   }
-  return NextResponse.next();
+  return passThroughResponse(request);
 }
 
 export const config = {
