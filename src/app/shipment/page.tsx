@@ -143,7 +143,9 @@ function normalizeDateParam(value?: string): string {
 }
 
 function normalizeMoneyParam(value?: string): string {
-  const normalized = String(value ?? "").replace(/\s/g, "").replace(",", ".");
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const normalized = raw.replace(/\s/g, "").replace(",", ".");
   const amount = Number(normalized);
   return Number.isFinite(amount) && amount >= 0 ? String(amount) : "";
 }

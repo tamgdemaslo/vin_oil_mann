@@ -64,6 +64,10 @@ export type AICalculationRules = {
   totalRoundingCents: number;
   maxAutomaticDiscountCents: number;
   quoteValidityHours: number;
+  /** Service-specific policy used by the internal quote-and-tech-card workflow. */
+  transmissionMachineExchangeMultiplier: number;
+  transmissionMinimumBillableLiters: number;
+  maxTechnicalVerificationPasses: number;
 };
 
 export type AIHandoffRules = {

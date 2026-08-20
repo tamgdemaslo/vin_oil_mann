@@ -70,6 +70,9 @@ const settingsSchema = z.object({
     totalRoundingCents: z.number().int().min(1).max(100_000),
     maxAutomaticDiscountCents: moneyRule,
     quoteValidityHours: z.number().int().min(1).max(168),
+    transmissionMachineExchangeMultiplier: z.number().min(1).max(3),
+    transmissionMinimumBillableLiters: z.number().min(0).max(200),
+    maxTechnicalVerificationPasses: z.number().int().min(0).max(2),
   }).optional(),
   handoffRules: z.object({
     lowConfidenceThreshold: z.number().min(0).max(1),

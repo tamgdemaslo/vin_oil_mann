@@ -23,6 +23,9 @@ export const DEFAULT_CALCULATION_RULES: AICalculationRules = {
   totalRoundingCents: 100,
   maxAutomaticDiscountCents: 0,
   quoteValidityHours: 24,
+  transmissionMachineExchangeMultiplier: 1.7,
+  transmissionMinimumBillableLiters: 0,
+  maxTechnicalVerificationPasses: 2,
 };
 
 export const DEFAULT_HANDOFF_RULES: AIHandoffRules = {
@@ -100,6 +103,9 @@ function calculationRules(value: Prisma.JsonValue): AICalculationRules {
     totalRoundingCents: Math.round(boundedNumber(row.totalRoundingCents, DEFAULT_CALCULATION_RULES.totalRoundingCents, 1, 100_000)),
     maxAutomaticDiscountCents: money(row.maxAutomaticDiscountCents, DEFAULT_CALCULATION_RULES.maxAutomaticDiscountCents),
     quoteValidityHours: Math.round(boundedNumber(row.quoteValidityHours, DEFAULT_CALCULATION_RULES.quoteValidityHours, 1, 168)),
+    transmissionMachineExchangeMultiplier: boundedNumber(row.transmissionMachineExchangeMultiplier, DEFAULT_CALCULATION_RULES.transmissionMachineExchangeMultiplier, 1, 3),
+    transmissionMinimumBillableLiters: boundedNumber(row.transmissionMinimumBillableLiters, DEFAULT_CALCULATION_RULES.transmissionMinimumBillableLiters, 0, 200),
+    maxTechnicalVerificationPasses: Math.round(boundedNumber(row.maxTechnicalVerificationPasses, DEFAULT_CALCULATION_RULES.maxTechnicalVerificationPasses, 0, 2)),
   };
 }
 

@@ -10,6 +10,8 @@ import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeA
 import { createOpenAIClient } from "@/lib/openai-client";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
+import { parseQuoteAndTechCardResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { getAgentSettings } from "@/lib/ai-agent/settings";
 
 const MAX_MESSAGE_CHARS = 12_000;
 // Six turns preserve room for independent catalogue, MANN, ROSSKO and quote checks
@@ -100,9 +102,10 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
     "Для технических задач web-исследование обычно запускается раннером. Продолжай его, используя результаты и ссылки; не утверждай, что интернет не дал результатов, если в trace нет успешного web_search. Если инструмент web-поиска недоступен, не прекращай работу: продолжи с VIN, локальной базой, MANN и ROSSKO, явно отдели неподтверждённые технические данные и попроси финальную проверку только там, где она влияет на сценарий.",
     "Не останавливай расчёт из-за одного неподтверждённого параметра. Разделяй ПОДТВЕРЖДЕНО, РАБОЧЕЕ ДОПУЩЕНИЕ и ТРЕБУЕТ ФИНАЛЬНОЙ ПРОВЕРКИ. При средней уверенности дай полезный предварительный расчёт; при низкой — 2–3 сценария или один вопрос, только если ответ существенно меняет расчёт.",
     "Используй VIN максимально: сначала lookup_vehicle, затем данные автомобиля, историю и внешние каталоги. Если точный код агрегата не найден, продолжай по модели, двигателю, году, приводу, рынку и найденным OEM/каталожным связкам. Не перекладывай цифровой поиск на сотрудника.",
-    "Для замены масла считай услугу под ключ: жидкость, фильтр или поддон с фильтром, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Нахождение только жидкости никогда не завершает исследование.",
+    "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз: он вернёт независимые техкарту, варианты сметы и текст клиенту. Не вызывай после него calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество. Дополнительные проверки допускаются только когда они действительно меняют совместимость или цену, максимум два прохода.",
+    "Для замены масла считай услугу под ключ: жидкость, доступные без разборки фильтр/поддон, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Внутренний фильтр трансмиссии, требующий разборки агрегата, не включай в смету и не ищи для него ROSSKO: явно передай filterAccess=internal_requires_disassembly.",
     "Для трансмиссионного расчёта всегда передавай в calculate_service_quote_v2 точный requiredFluidSpec, requiredFluidVolumeLiters и OEM-артикул основной жидкости в requiredFluidOemArticle. По умолчанию fluidPreference=prefer_local_compatible: не добавляй основную жидкость в selectedProducts, backend сам выберет совместимый локальный товар с достаточным остатком и заменит им поставщицкую жидкость. Название в OEM-документации вроде «Toyota Genuine CVT Fluid FE» фиксирует требуемую спецификацию, но само по себе не запрещает аналог с явно указанной совместимостью. fluidPreference=original_only допустим только если сотрудник явно потребовал оригинал или источник прямо запрещает аналоги. Оригинал из ROSSKO оставляй как запасной вариант до решения backend.",
-    "Для моторного масла, АКПП/CVT и воздушного/салонного фильтра используй calculate_service_quote_v2. Сначала укажи технический сценарий и владельца материалов, затем передай товары и расходники. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
+    "Для quote_and_tech_card материалы по умолчанию принадлежат сервису; customer допускается только если сотрудник явно указал материалы клиента. Локальный каталог всегда проверяй первым. ROSSKO передавай в build_quote_and_tech_card только для конкретных обязательных позиций, которых нет локально. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
     "Тарифы ИИ-помощника: моторное масло — 0 ₽ с маслом сервиса / 1 500 ₽ с маслом клиента; частичная трансмиссия без поддона — 4 000 / 6 000 ₽; аппаратная без поддона — 5 000 / 8 000 ₽; частичная с поддоном и фильтром — 5 000 / 10 000 ₽; аппаратная с поддоном и фильтром — 6 000 / 12 000 ₽; два фильтра грубой очистки — 6 000 / 12 000 ₽ частично и 7 000 / 14 000 ₽ аппаратно. Материалы всегда отдельными строками. Тариф «материалы сервиса» применим только когда сервис продаёт основной объём жидкости; при смешанных материалах не выбирай тариф — запроси решение сотрудника.",
     "После технического исследования ищи точный OEM, номер производителя агрегата и кросс-номера в локальном каталоге. Если позиции нет локально — используй ROSSKO. Для воздушного и салонного фильтра используй подтверждённое правило сложности; иначе покажи диапазон 200–800 ₽ и попроси сотрудника выбрать точную цену.",
     "Для запроса без указанного способа обслуживания покажи применимые сценарии: минимум частичную замену и сервис с поддоном/фильтром; расширенную замену — только если она допустима. Покажи точную сумму по найденным позициям или честный диапазон, если конкретный комплект ещё уточняется.",
@@ -312,13 +315,14 @@ async function continueAfterTechnicalResearch(client: OpenAI, args: { previousRe
   } as never) as Promise<unknown>;
 }
 
-async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean; finalizationWarning?: string }) {
+async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean; finalizationWarning?: string; forceQuoteAndTechCard?: boolean }) {
   return client.responses.create({
     model: args.model,
     instructions: args.finalizationWarning ? `${args.instructions}\n\n${args.finalizationWarning}` : args.instructions,
     reasoning: { effort: toolReasoning(args.reasoning) },
     text: { verbosity: "high" },
     tools: [...(args.allowWebSearch ? [{ type: "web_search", search_context_size: "high" }] : []), ...assistantFunctionTools],
+    ...(args.forceQuoteAndTechCard ? { tool_choice: { type: "function", name: "build_quote_and_tech_card" } } : {}),
     ...(args.allowWebSearch ? { include: ["web_search_call.action.sources"] } : {}),
     store: true,
     previous_response_id: args.previousResponseId,
@@ -531,8 +535,11 @@ export async function runAssistantThread(input: { threadId: string; organization
   const toolSources: AssistantToolSource[] = [];
   const toolSummaries: Array<Record<string, unknown>> = [];
   const savedQuoteIds: string[] = [];
+  let quoteAndTechCard: QuoteAndTechCardResult | null = null;
   try {
     const technicalRequest = isTechnicalRequest(message);
+    const technicalVerificationPassLimit = technicalRequest ? (await getAgentSettings(input.organizationId)).calculationRules.maxTechnicalVerificationPasses : 0;
+    let technicalVerificationPasses = 0;
     const vinContext = technicalRequest ? await requiredVinContext({ runId: run.id, organizationId: input.organizationId, actor: input.actor, vin: vinFromMessage(message) }) : null;
     if (vinContext) {
       toolSources.push(...vinContext.sources);
@@ -560,7 +567,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     responses.push(response);
     let toolCallCount = await prisma.aIAssistantToolCall.count({ where: { runId: run.id } });
     let limitReason: "tool_calls" | "iterations" | "duration" | null = null;
-    for (let turn = 0; turn < MAX_AGENT_ITERATIONS; turn += 1) {
+    agentLoop: for (let turn = 0; turn < MAX_AGENT_ITERATIONS; turn += 1) {
       if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
       const calls = functionCalls(response);
       if (!calls.length) break;
@@ -600,8 +607,30 @@ export async function runAssistantThread(input: { threadId: string; organization
           });
           toolSources.push(...(executed.sources ?? []));
           let resultForModel: Record<string, unknown> = executed.result;
-          if (isAssistantCalculationTool(toolName)) calculationCompletedThisTurn = true;
-          if (isAssistantCalculationTool(toolName) && executed.result.finalQuote !== false) {
+          if (toolName === "build_quote_and_tech_card") {
+            const parsed = parseQuoteAndTechCardResult(executed.result);
+            if (!parsed) throw new Error("Инструмент вернул непроверенный контракт техкарты и сметы");
+            quoteAndTechCard = parsed;
+            const snapshots = Array.isArray(executed.result.quoteSnapshots) ? executed.result.quoteSnapshots : [];
+            for (const snapshot of snapshots.slice(0, 2)) {
+              const row = record(snapshot);
+              const preview = record(row?.preview);
+              if (!row || !preview || preview.finalQuote !== true) continue;
+              const quote = await saveAssistantQuoteSnapshot({
+                organizationId: input.organizationId,
+                threadId: thread.id,
+                runId: run.id,
+                createdById: input.actor.id,
+                argumentsValue: row.argumentsValue ?? {},
+                preview,
+              });
+              savedQuoteIds.push(quote.id);
+            }
+            resultForModel = { ...parsed, quoteIds: savedQuoteIds };
+            calculationCompletedThisTurn = true;
+            quoteSavedThisTurn = savedQuoteIds.length > 0;
+          } else if (isAssistantCalculationTool(toolName)) calculationCompletedThisTurn = true;
+          if (toolName !== "build_quote_and_tech_card" && isAssistantCalculationTool(toolName) && executed.result.finalQuote !== false) {
             const quote = await saveAssistantQuoteSnapshot({
               organizationId: input.organizationId,
               threadId: thread.id,
@@ -626,6 +655,9 @@ export async function runAssistantThread(input: { threadId: string; organization
           outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage, ...(code ? { code } : {}) }) });
         }
       }
+      if (quoteAndTechCard) break agentLoop;
+      const nonCatalogVerification = technicalRequest && calls.some((call) => text(call.name, 120) !== "search_local_catalog");
+      if (nonCatalogVerification) technicalVerificationPasses += 1;
       if (!limitReason && turn >= MAX_AGENT_ITERATIONS - 1) limitReason = "iterations";
       const finalizeNow = shouldFinalizeAssistantToolTurn({
         turn,
@@ -663,22 +695,27 @@ export async function runAssistantThread(input: { threadId: string; organization
             reasoning: config.reasoning,
             allowWebSearch: !technicalRequest,
             finalizationWarning:
-              turn === MAX_AGENT_ITERATIONS - 2
+              technicalRequest && technicalVerificationPasses >= technicalVerificationPassLimit
+                ? "Лимит дополнительных проверок достигнут. Сейчас обязательно вызови build_quote_and_tech_card с подтверждёнными данными и всеми рабочими оговорками; не вызывай другие инструменты."
+                : turn === MAX_AGENT_ITERATIONS - 2
                 ? `Остался один цикл инструментов. Заверши исследование и подготовь итог. Краткое резюме уже найденного: ${compactToolEvidence(toolSummaries)}`
                 : undefined,
+            forceQuoteAndTechCard: technicalRequest && technicalVerificationPasses >= technicalVerificationPassLimit,
           });
       responses.push(response);
       if (finalizeNow) break;
     }
-    if (functionCalls(response).length) {
+    if (!quoteAndTechCard && functionCalls(response).length) {
       throw new AssistantRunLimitError("failed_tool_limit", "ИИ-помощник не сформировал итог после отключения инструментов");
     }
     if (!await activeRun(run.id)) return { runId: run.id, cancelled: true };
     const rawAnswer = outputText(response);
-    const structuredResponse = savedQuoteIds.length ? parseAIAssistantStructuredResponse(rawAnswer) : null;
-    const answer = structuredResponse
-      ? structuredResponseToMarkdown(structuredResponse)
-      : rawAnswer || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";
+    const structuredResponse = quoteAndTechCard ? null : savedQuoteIds.length ? parseAIAssistantStructuredResponse(rawAnswer) : null;
+    const answer = quoteAndTechCard
+      ? quoteAndTechCard.customerMessage
+      : structuredResponse
+        ? structuredResponseToMarkdown(structuredResponse)
+        : rawAnswer || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";
     const citations = responses.flatMap(citationsFromResponse).filter((item, index, list) => list.findIndex((other) => other.url === item.url) === index).slice(0, 30);
     const assistantMessage = await prisma.aIAssistantMessage.create({
       data: {
@@ -688,7 +725,7 @@ export async function runAssistantThread(input: { threadId: string; organization
         role: "assistant",
         content: answer,
         citationsJson: json(citations),
-        attachmentsJson: json(savedQuoteIds.length ? { kind: "technical_quote", quoteIds: savedQuoteIds, structuredResponse } : []),
+        attachmentsJson: json(quoteAndTechCard ? { kind: "quote_and_tech_card", quoteIds: savedQuoteIds, quoteAndTechCard } : savedQuoteIds.length ? { kind: "technical_quote", quoteIds: savedQuoteIds, structuredResponse } : []),
         runId: run.id,
         createdById: "ai_assistant",
       },
@@ -697,8 +734,8 @@ export async function runAssistantThread(input: { threadId: string; organization
     if (sources.length) await prisma.aIAssistantSource.createMany({ data: sources.map((source) => ({ branchId, runId: run.id, messageId: assistantMessage.id, organizationId: input.organizationId, sourceType: source.sourceType, title: source.title, url: source.url ?? null, excerpt: source.excerpt ?? null, metadataJson: safeAssistantJson(source.metadata ?? {}) })) });
     const usage = usageTotals(responses);
     await Promise.all([
-      prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "completed", responseId: text(field(response, "id"), 180) || null, toolSummaryJson: json(toolSummaries), inputTokens: usage.inputTokens || null, outputTokens: usage.outputTokens || null, durationMs: Date.now() - startedAt, completedAt: new Date() } }),
-      prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { lastResponseId: text(field(response, "id"), 180) || null, lastMessageAt: new Date() } }),
+      prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "completed", responseId: quoteAndTechCard ? null : text(field(response, "id"), 180) || null, toolSummaryJson: json(toolSummaries), inputTokens: usage.inputTokens || null, outputTokens: usage.outputTokens || null, durationMs: Date.now() - startedAt, completedAt: new Date() } }),
+      prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { lastResponseId: quoteAndTechCard ? null : text(field(response, "id"), 180) || null, lastMessageAt: new Date() } }),
     ]);
     return { runId: run.id, messageId: assistantMessage.id, cancelled: false };
   } catch (error) {

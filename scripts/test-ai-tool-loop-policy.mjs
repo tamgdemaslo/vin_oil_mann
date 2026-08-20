@@ -13,6 +13,7 @@ const {
 
 assert.equal(isAssistantCalculationTool("calculate_service_quote_v2"), true);
 assert.equal(isAssistantCalculationTool("calculate_quote_preview"), true);
+assert.equal(isAssistantCalculationTool("build_quote_and_tech_card"), true);
 assert.equal(isAssistantCalculationTool("search_rossko"), false);
 
 assert.equal(shouldFinalizeAssistantToolTurn({ turn: 1, maxToolTurns: 6, calculationCompleted: true }), true);

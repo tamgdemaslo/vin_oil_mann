@@ -28,6 +28,9 @@ type CalculationRules = {
   totalRoundingCents: number;
   maxAutomaticDiscountCents: number;
   quoteValidityHours: number;
+  transmissionMachineExchangeMultiplier: number;
+  transmissionMinimumBillableLiters: number;
+  maxTechnicalVerificationPasses: number;
 };
 
 type HandoffRules = {
@@ -297,7 +300,11 @@ export default function AIAgentSettingsClient() {
               <NumberField label="Округлять масло до" value={settings.calculationRules.literRoundingStep} onChange={(value) => patchCalculation("literRoundingStep", value)} min={0.1} max={10} step={0.1} suffix="л" />
               <NumberField label="Норматив записи" value={settings.calculationRules.serviceDurationMinutes} onChange={(value) => patchCalculation("serviceDurationMinutes", Math.round(value))} min={10} max={480} suffix="мин" />
               <NumberField label="Расчёт действует" value={settings.calculationRules.quoteValidityHours} onChange={(value) => patchCalculation("quoteValidityHours", Math.round(value))} min={1} max={168} suffix="ч" />
+              <NumberField label="Коэффициент аппаратной замены" hint="Умножает полный объём трансмиссии для расчёта жидкости; значение можно настроить под филиал." value={settings.calculationRules.transmissionMachineExchangeMultiplier} onChange={(value) => patchCalculation("transmissionMachineExchangeMultiplier", value)} min={1} max={3} step={0.1} />
+              <NumberField label="Минимальный объём трансмиссии" hint="Минимальный оплачиваемый объём жидкости при замене." value={settings.calculationRules.transmissionMinimumBillableLiters} onChange={(value) => patchCalculation("transmissionMinimumBillableLiters", value)} min={0} max={200} step={0.5} suffix="л" />
+              <NumberField label="Дополнительных техпроверок" hint="Не более двух; после лимита помощник возвращает честный предварительный результат." value={settings.calculationRules.maxTechnicalVerificationPasses} onChange={(value) => patchCalculation("maxTechnicalVerificationPasses", Math.round(value))} min={0} max={2} />
             </div>
+            <p className="eco-agent-settings__note">Фильтр трансмиссии, требующий разборки агрегата, в услугу ТГМ и смету не включается.</p>
           </div>
         </EcoCard>
 

@@ -1,6 +1,7 @@
 const CALCULATION_TOOL_NAMES = new Set([
   "calculate_quote_preview",
   "calculate_service_quote_v2",
+  "build_quote_and_tech_card",
 ]);
 
 export function isAssistantCalculationTool(toolName: string) {

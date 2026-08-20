@@ -31,6 +31,7 @@
     "test:fluid-catalog": "node scripts/test-fluid-catalog.mjs",
     "test:ai-vehicle-resolution": "node scripts/test-ai-vehicle-resolution.mjs",
     "test:ai-material-selection": "node scripts/test-ai-material-selection.mjs",
+    "test:ai-quote-and-tech-card": "node scripts/test-ai-quote-and-tech-card.mjs",
     "test:ai-answer-formatting": "node scripts/test-ai-answer-formatting.mjs",
     "test:ai-tool-loop-policy": "node scripts/test-ai-tool-loop-policy.mjs",
     "test:ai-assistant-branch-context": "node scripts/test-ai-assistant-branch-context.mjs",

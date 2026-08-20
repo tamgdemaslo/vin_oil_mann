@@ -3,6 +3,7 @@
 import { Archive, ArchiveRestore, Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
+import { parseQuoteAndTechCardResult, type QuoteAndTechCardResult } from "@/lib/ai-assistant/quote-and-tech-card";
 import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 
 type Thread = { id: string; branchId: string; title: string; status: "active" | "archived"; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
@@ -93,6 +94,11 @@ function structuredResponseForMessage(message: Message): AIAssistantStructuredRe
   if (parsed) return parsed;
   if (attachmentKind(message) !== "client_message") return undefined;
   return { summaryMarkdown: "", confirmed: [], assumptions: [], requiresVerification: [], recommendations: [], clientMessage: message.content };
+}
+
+function quoteAndTechCardForMessage(message: Message): QuoteAndTechCardResult | undefined {
+  if (attachmentKind(message) !== "quote_and_tech_card") return undefined;
+  return parseQuoteAndTechCardResult(asObject(message.attachmentsJson).quoteAndTechCard) ?? undefined;
 }
 
 export default function AIAssistantClient() {
@@ -415,16 +421,22 @@ export default function AIAssistantClient() {
               const isClientMessage = attachmentKind(message) === "client_message" && Boolean(clientQuoteId(message));
               const isMissingQuote = attachmentKind(message) === "missing_quote";
               const structuredResponse = structuredResponseForMessage(message);
+              const quoteAndTechCard = quoteAndTechCardForMessage(message);
+              const answerSources = [
+                ...(message.citationsJson ?? []).map((citation) => ({ title: citation.title, url: citation.url, sourceType: "web" })),
+                ...(quoteAndTechCard?.evidence ?? []).filter((source) => Boolean(source.url)).map((source) => ({ title: source.title, url: source.url!, excerpt: source.excerpt, sourceType: "web" })),
+              ];
               return <article key={message.id} className={`eco-aiw-message is-${message.role}`}>
                 <div className="eco-aiw-message__meta">{message.role === "assistant" ? "ИИ-помощник" : "Вы"} · {formatTime(message.createdAt)}</div>
                 {message.role === "assistant" ? <AIAssistantAnswerRenderer
                   content={message.content}
                   structuredResponse={structuredResponse}
+                  quoteAndTechCard={quoteAndTechCard}
                   status="completed"
-                  sources={(message.citationsJson ?? []).map((citation) => ({ title: citation.title, url: citation.url, sourceType: "web" }))}
-                  quote={linkedQuotes[0]}
+                  sources={answerSources}
+                  quote={quoteAndTechCard ? undefined : linkedQuotes[0]}
                 /> : <div className="eco-aiw-message__body">{message.content}</div>}
-                {linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
+                {!quoteAndTechCard && linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
                 {linkedQuotes.map((quote) => <div className="eco-aiw-quote-actions" key={quote.id}>
                   {quote.status === "draft" ? <div className="eco-aiw-quote-actions__buttons">
                     <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working || activeThreadIsArchived}>Короткое сообщение</button>
