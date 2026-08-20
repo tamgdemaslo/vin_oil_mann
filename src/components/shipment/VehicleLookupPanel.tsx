@@ -355,6 +355,18 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
 
+  const chooseAnotherVehicle = () => {
+    lookupRequestIdRef.current += 1;
+    resolutionRequestIdRef.current += 1;
+    lookupControllerRef.current?.abort();
+    resolutionControllerRef.current?.abort();
+    resetLookupState();
+    setInput("");
+    lastAutomaticLookupRef.current = "";
+    onLookupStart();
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   if (appliedVehicle) {
     return (
       <section className="eco-vehicle-lookup is-compact" aria-label="Определить автомобиль и подобрать фильтры">
@@ -371,9 +383,17 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
             <button type="button" onClick={() => openManualMode({ reason: "manual", vehicle: appliedVehicle })}>
               Изменить
             </button>
-            <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
-              Определить заново
-            </button>
+            <details className="eco-vehicle-lookup__more">
+              <summary aria-label="Другие действия с автомобилем" title="Другие действия">⋯</summary>
+              <div>
+                <button type="button" onClick={() => void runLookup(false, true)} disabled={loading}>
+                  Повторить определение
+                </button>
+                <button type="button" onClick={chooseAnotherVehicle}>
+                  Выбрать другой автомобиль
+                </button>
+              </div>
+            </details>
           </div>
         </div>
       </section>

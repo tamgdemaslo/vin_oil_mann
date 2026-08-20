@@ -65831,3 +65831,963 @@ select[size="1"]::-ms-expand {
     width: 100%;
   }
 }
+
+/* Shipment composition workbench: vehicle -> search -> compatible categories -> SKUs. */
+.eco-shipment-new-page #shipment-positions-add.eco-shipment-new-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-position-mann-panel,
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-position-mann-panel > .eco-shipment-mann-panel-body {
+  display: contents;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-vehicle-lookup {
+  order: 1;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-fast-search {
+  order: 2;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-product-results {
+  order: 3;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-manual,
+.eco-shipment-new-page #shipment-positions-add .eco-vin-alert,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-panel-body > .eco-product-results-state,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-variant-summary {
+  order: 4;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-filter-list,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-vin-empty {
+  order: 5;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-direct-vin {
+  order: 6;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup,
+.eco-shipment-new-page .eco-vehicle-lookup.is-compact {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible;
+  background: #fff !important;
+  border: 1px solid #ddd6ca !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__selected {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 20px;
+  min-height: 80px;
+  padding: 14px 16px !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__identity {
+  min-width: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__identity-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__status,
+.eco-shipment-new-page .eco-vehicle-lookup__status.is-ready {
+  padding: 0 !important;
+  color: #237146 !important;
+  background: transparent !important;
+  border: 0 !important;
+  font-size: 11px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__identity-head em {
+  color: #757067;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__identity > strong {
+  display: block;
+  overflow: hidden;
+  color: #26241f;
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__identity > span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #6c675f;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: visible;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__actions > button {
+  min-height: 36px;
+  padding: 0 13px;
+  color: #45413a;
+  background: #fff;
+  border: 1px solid #cec6b8;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more,
+.eco-shipment-new-page .eco-shipment-mann-more {
+  position: relative;
+  overflow: visible;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > summary,
+.eco-shipment-new-page .eco-shipment-mann-more > summary {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  color: #514d46;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  list-style: none;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > summary::-webkit-details-marker,
+.eco-shipment-new-page .eco-shipment-mann-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > summary:hover,
+.eco-shipment-new-page .eco-vehicle-lookup__more > summary:focus-visible,
+.eco-shipment-new-page .eco-shipment-mann-more > summary:hover,
+.eco-shipment-new-page .eco-shipment-mann-more > summary:focus-visible,
+.eco-shipment-new-page .eco-vehicle-lookup__more[open] > summary,
+.eco-shipment-new-page .eco-shipment-mann-more[open] > summary {
+  background: #f3f0e9;
+  border-color: #d8d1c5;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > div,
+.eco-shipment-new-page .eco-shipment-mann-more > div {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  gap: 2px;
+  padding: 6px;
+  color: #37342f;
+  background: #fff;
+  border: 1px solid #d9d2c6;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(54 45 33 / 12%);
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > div button,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 9px 10px;
+  color: #34312c;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: none;
+}
+
+.eco-shipment-new-page .eco-vehicle-lookup__more > div button:hover,
+.eco-shipment-new-page .eco-vehicle-lookup__more > div button:focus-visible,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a:hover,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a:focus-visible {
+  background: #f3f0e9;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-fast-search {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-searchbar {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1fr) max-content max-content !important;
+  align-items: stretch;
+  gap: 8px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-search-field {
+  min-width: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-position-search-field .eco-input,
+.eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn {
+  min-height: 44px !important;
+  height: 44px !important;
+  border-radius: 8px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-search-field .eco-input {
+  padding-inline: 40px 14px !important;
+  background: #fff !important;
+  border-color: #cfc7ba !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn {
+  gap: 7px;
+  padding-inline: 13px !important;
+  color: #46423c !important;
+  background: #fff !important;
+  border: 1px solid #cfc7ba !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn.is-active {
+  color: #7f351b !important;
+  background: #fbf7f2 !important;
+  border-color: #d9b39f !important;
+}
+
+.eco-shipment-new-page .eco-shipment-advanced-search {
+  width: max-content;
+  margin-top: 7px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-advanced-search > summary {
+  padding: 2px 0;
+  color: #6b665e;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.eco-shipment-new-page .eco-product-results {
+  width: 100%;
+  max-height: min(440px, 55vh);
+  margin: -4px 0 0 !important;
+  overflow: auto;
+  background: #fff !important;
+  border: 1px solid #d9d2c6 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 6px 18px rgb(54 45 33 / 8%) !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-manual,
+.eco-shipment-new-page .eco-vin-alert,
+.eco-shipment-new-page .eco-shipment-mann-variant-summary,
+.eco-shipment-new-page .eco-shipment-vin-empty {
+  margin: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-list {
+  gap: 0 !important;
+  margin: 0 !important;
+  overflow: visible;
+  background: #fff !important;
+  border: 1px solid #d9d2c6 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  min-height: 60px;
+  padding: 12px 16px;
+  background: #f7f5f0;
+  border-bottom: 1px solid #ded8cd;
+  border-radius: 9px 9px 0 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head > div {
+  min-width: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head strong,
+.eco-shipment-new-page .eco-shipment-mann-results-head span {
+  display: block;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head strong {
+  color: #282621;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head > div > span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #6f6a61;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head > span {
+  color: #5e5951;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-shell {
+  margin: 0 !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-shell + .eco-shipment-mann-filter-shell {
+  border-top: 1px solid #d9d2c6 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter {
+  display: grid !important;
+  grid-template-columns: 40px minmax(220px, 1fr) minmax(170px, max-content) 36px !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 72px !important;
+  margin: 0 !important;
+  padding: 12px 16px !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-kind-icon {
+  display: grid !important;
+  width: 36px !important;
+  height: 36px !important;
+  margin: 0 !important;
+  place-items: center;
+  color: #9b4324 !important;
+  background: #fbf2ec !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-main {
+  min-width: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-main > div {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-main strong {
+  overflow: hidden;
+  color: #25231f !important;
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  line-height: 1.25 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-main span {
+  color: #736e65 !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-local {
+  display: grid !important;
+  grid-column: auto !important;
+  justify-items: end;
+  min-width: 0;
+  gap: 2px;
+  text-align: right;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-local b {
+  color: #247248 !important;
+  font-size: 11px !important;
+  font-weight: 750 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-local span {
+  color: #68635b !important;
+  font-size: 11px !important;
+  font-weight: 550 !important;
+  line-height: 1.25;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-actions {
+  grid-column: auto !important;
+  justify-self: end !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more > div {
+  gap: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more-copy {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #ebe6dd;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more-copy:last-child {
+  margin-top: 3px;
+  border-top: 1px solid #ebe6dd;
+  border-bottom: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more-copy strong {
+  color: #3d3933;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more-copy span {
+  color: #777168;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-panel {
+  display: grid !important;
+  gap: 0 !important;
+  margin: 0 !important;
+  padding: 0 16px 12px 68px !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-product-group {
+  display: grid;
+  gap: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-product-group h4 {
+  display: flex;
+  align-items: center;
+  min-height: 28px !important;
+  gap: 6px;
+  margin: 0 !important;
+  color: #6a655d !important;
+  font-size: 10px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.05em !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-product-group h4 span {
+  display: inline-grid;
+  min-width: 18px !important;
+  height: 18px !important;
+  padding: 0 5px;
+  place-items: center;
+  color: #5f5a52;
+  background: #eeeae3 !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  font-size: 9px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-list {
+  display: grid !important;
+  gap: 0 !important;
+  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-option {
+  display: grid !important;
+  grid-template-columns: minmax(240px, 1fr) minmax(190px, max-content) minmax(128px, max-content) !important;
+  align-items: center !important;
+  gap: 16px !important;
+  min-height: 64px !important;
+  margin: 0 !important;
+  padding: 9px 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-top: 1px solid #ebe6dd !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-option.is-recommended {
+  background: #f7fbf8 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-copy,
+.eco-shipment-new-page .eco-shipment-mann-sku-stock {
+  min-width: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-title strong {
+  overflow: hidden;
+  color: #2d2a25 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-title span {
+  flex: none;
+  padding: 3px 6px;
+  color: #247147;
+  background: #e9f6ee;
+  border-radius: 9px;
+  font-size: 9px !important;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-copy small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #777168;
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-stock {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-stock strong {
+  color: #292722;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-stock span {
+  color: #267247;
+  font-size: 10px !important;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-sku-stock.is-order span {
+  color: #786c5c;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-add {
+  min-width: 128px;
+  min-height: 36px !important;
+  padding: 0 13px !important;
+  border-radius: 7px !important;
+  font-size: 11px !important;
+  font-weight: 750 !important;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-add.is-primary {
+  color: #fff !important;
+  background: #a94421 !important;
+  border: 1px solid #a94421 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-add.is-order {
+  color: #6e3b27 !important;
+  background: #fff !important;
+  border: 1px solid #d4aa94 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  min-width: 128px;
+  color: #247147;
+  animation: eco-shipment-added-in 180ms ease-out both;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added > span {
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added > div {
+  display: grid;
+  grid-template-columns: 30px minmax(36px, max-content) 30px;
+  align-items: center;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #b9d8c5;
+  border-radius: 7px;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  color: #286b48;
+  background: transparent;
+  border: 0;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added button:hover:not(:disabled),
+.eco-shipment-new-page .eco-shipment-mann-added button:focus-visible {
+  background: #eaf5ee;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added button:disabled {
+  color: #b7b2aa;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-added b {
+  color: #2d3b32;
+  font-size: 11px;
+  text-align: center;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-empty {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  color: #6d675f;
+  border-top: 1px solid #ebe6dd;
+  font-size: 11px;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-empty strong {
+  color: #403c36;
+  font-size: 11px;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-footer {
+  display: flex;
+  justify-content: flex-start !important;
+  margin: 0 !important;
+  padding: 2px 0 0 !important;
+  border: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-footer button {
+  min-height: auto !important;
+  padding: 5px 0 !important;
+  color: #77361e !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-footer button:hover,
+.eco-shipment-new-page .eco-shipment-mann-choice-footer button:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  outline: 0;
+}
+
+@keyframes eco-shipment-added-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 960px) {
+  .eco-shipment-new-page .eco-shipment-position-searchbar {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn:last-child {
+    grid-column: 2;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn.is-active {
+    grid-column: 1 / -1;
+    justify-self: start;
+    width: auto;
+    height: 34px !important;
+    min-height: 34px !important;
+    color: #77361e !important;
+    background: transparent !important;
+    border-color: transparent !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(220px, 1fr) minmax(160px, max-content) minmax(122px, max-content) !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .eco-shipment-new-page #shipment-positions-add.eco-shipment-new-add {
+    gap: 10px;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__selected {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+    min-height: 72px;
+    gap: 8px;
+    padding: 12px !important;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__identity > strong,
+  .eco-shipment-new-page .eco-vehicle-lookup__identity > span {
+    white-space: normal;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__actions > button {
+    min-width: 36px;
+    width: 36px;
+    padding: 0;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__actions > button::before {
+    color: #4b4740;
+    content: "✎";
+    font-size: 15px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar,
+  .eco-shipment-new-page .eco-shipment-position-searchbar.has-vin,
+  .eco-shipment-new-page .eco-shipment-position-searchbar.has-service-only {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__query .eco-vehicle-lookup__tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    justify-self: stretch !important;
+    width: 100% !important;
+  }
+
+  .eco-shipment-new-page .eco-vehicle-lookup__query .eco-vehicle-lookup__tabs button {
+    width: auto !important;
+    padding-inline: 6px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn {
+    min-width: 44px;
+    width: 44px;
+    padding: 0 !important;
+    overflow: hidden;
+    font-size: 0 !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn .eco-icon {
+    flex: none;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn.is-active {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: auto;
+    width: auto;
+    padding-inline: 2px !important;
+    overflow: visible;
+    font-size: 11px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn:last-child {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-search-field .eco-input {
+    font-size: 16px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-results-head {
+    padding: 11px 12px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-filter {
+    grid-template-columns: 36px minmax(0, 1fr) 36px !important;
+    min-height: 68px !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-local {
+    grid-column: 2 !important;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-actions {
+    grid-column: 3 !important;
+    grid-row: 1 / span 2;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-filter-main > div {
+    flex-wrap: wrap;
+    gap: 2px 7px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-panel {
+    padding: 0 12px 10px 58px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+    gap: 8px 12px !important;
+    padding: 10px 0 !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-sku-copy {
+    grid-column: 1 / -1;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-sku-stock {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 480px) {
+  .eco-shipment-new-page .eco-shipment-mann-results-head > div > span,
+  .eco-shipment-new-page .eco-shipment-mann-results-head > span {
+    display: none;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-filter {
+    grid-template-columns: 32px minmax(0, 1fr) 32px !important;
+    gap: 8px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-kind-icon,
+  .eco-shipment-new-page .eco-shipment-mann-more > summary {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-panel {
+    padding-left: 12px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-sku-copy,
+  .eco-shipment-new-page .eco-shipment-mann-sku-stock,
+  .eco-shipment-new-page .eco-shipment-mann-add,
+  .eco-shipment-new-page .eco-shipment-mann-added {
+    grid-column: 1;
+    justify-self: stretch;
+    justify-items: start;
+    width: 100%;
+    text-align: left;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-add {
+    width: 100%;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-added {
+    grid-template-columns: max-content 1fr;
+    align-items: center;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-added > div {
+    justify-self: end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eco-shipment-new-page .eco-shipment-mann-added {
+    animation: none;
+  }
+}

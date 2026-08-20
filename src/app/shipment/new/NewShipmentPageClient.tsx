@@ -11,7 +11,6 @@ import {
   ExternalLink,
   Fan,
   Fuel,
-  PackagePlus,
   Pencil,
   Plus,
   Receipt,
@@ -618,16 +617,6 @@ function getMannFilterGroupPath(type?: string): string {
   }
 }
 
-function mannMatchStatusLabel(status?: MannArticleMatch["status"]): string {
-  switch (status) {
-    case "found":
-      return "OEM-связь найдена";
-    case "not_found":
-    default:
-      return "Нет в локальном каталоге";
-  }
-}
-
 function MannFilterTypeIcon({ type }: { type?: string }) {
   const label = getMannFilterTypeLabel(type);
   const Icon = type === "oil" ? Droplet : type === "air" ? Wind : type === "fuel" ? Fuel : type === "cabin" ? Fan : Circle;
@@ -641,13 +630,14 @@ function MannFilterTypeIcon({ type }: { type?: string }) {
 function describeMannChoiceAvailability(match: MannLocalMatch): { label: string; outOfStock: boolean } {
   const stock = Number.isFinite(match.stock) ? Math.max(0, match.stock) : 0;
   const available = Number.isFinite(match.available) ? Math.max(0, match.available) : 0;
-  const parts = [formatShipmentMoney(match.price)];
+  const parts: string[] = [];
   if (available > 0) {
-    parts.push(`доступно ${formatQuantityInput(available)}`);
-  } else if (stock > 0) {
-    parts.push("доступно 0");
+    parts.push(`Остаток: ${formatQuantityInput(stock)} шт.`);
+    if (match.reserve) parts.push(`доступно ${formatQuantityInput(available)} шт.`);
+  } else if (match.orderable) {
+    parts.push("Под заказ");
   } else {
-    parts.push("нет остатка");
+    parts.push("Нет в наличии");
   }
   if (match.cell) parts.push(`ячейка ${match.cell}`);
   return { label: parts.join(" · "), outOfStock: available <= 0 };
@@ -658,6 +648,22 @@ function formatMannMatchCount(count: number): string {
   const mod10 = abs % 10;
   const mod100 = abs % 100;
   const word = mod10 === 1 && mod100 !== 11 ? "совпадение" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "совпадения" : "совпадений";
+  return `${count} ${word}`;
+}
+
+function formatMannVariantCount(count: number): string {
+  const abs = Math.abs(count);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? "вариант" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "варианта" : "вариантов";
+  return `${count} ${word}`;
+}
+
+function formatMannCategoryCount(count: number): string {
+  const abs = Math.abs(count);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? "категория" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "категории" : "категорий";
   return `${count} ${word}`;
 }
 
@@ -1043,7 +1049,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [vehicleEditorOpen, setVehicleEditorOpen] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleDraftValues, setVehicleDraftValues] = useState<Record<string, string>>({});
-  const [positionAddMode, setPositionAddMode] = useState<PositionAddMode>("catalog");
+  const [positionAddMode, setPositionAddMode] = useState<PositionAddMode>("mann");
 
   const [showCreateAgentForm, setShowCreateAgentForm] = useState(false);
   const [prefillApplied, setPrefillApplied] = useState(false);
@@ -3950,12 +3956,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           </div>
           <p>Найдите позиции, затем проверьте количество, скидку и доступный остаток.</p>
         </header>
-      <section id="shipment-positions-add" className="eco-card eco-card--padded eco-shipment-new-add">
-        <div className="eco-card__head">
-          <div>
-            <h2><PackagePlus className="eco-icon" aria-hidden /> Поиск и добавление</h2>
-          </div>
-        </div>
+      <section id="shipment-positions-add" className="eco-shipment-new-add" aria-label="Поиск и подбор позиций">
+        <h3 className="sr-only">Поиск и подбор позиций</h3>
         {(positionAddMode === "catalog" || positionAddMode === "mann") && (
           <>
         <div className="eco-shipment-fast-search">
@@ -3993,8 +3995,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   productSearchMode === "service"
                     ? "Поиск услуги по названию..."
                   : productSearchMode === "product"
-                      ? "Поиск товара, артикула, OEM..."
-                      : "Поиск товара, услуги, артикула, OEM..."
+                      ? "Найти товар по названию, артикулу или OEM"
+                      : "Найти товар или услугу по названию, артикулу или OEM"
                 }
 	              className="eco-input"
 	            />
@@ -4013,11 +4015,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               aria-expanded={positionAddMode === "mann"}
             >
                 <Sparkles className="eco-icon" aria-hidden />
-                {positionAddMode === "mann" ? "Скрыть подбор" : "Подобрать по авто"}
+                {positionAddMode === "mann" ? "Скрыть автоподбор" : "Подбор по автомобилю"}
             </button>
             <button type="button" className="eco-shipment-link-btn" onClick={openServiceSearch} title="Добавить услугу, которой нет в каталоге">
               <Plus className="eco-icon" aria-hidden />
-              Услуга
+              Добавить услугу
             </button>
           </div>
           {oneOffServiceOpen && (
@@ -4407,15 +4409,21 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
             {mannSortedFilters.length > 0 ? (
               <div className="eco-shipment-mann-filter-list">
+                <div className="eco-shipment-mann-results-head">
+                  <div>
+                    <strong>Подбор для автомобиля</strong>
+                    <span>{mannVehicleModificationLabel || "Подходящие категории и товары из локального склада"}</span>
+                  </div>
+                  <span>{formatMannCategoryCount(mannSortedFilters.length)}</span>
+                </div>
                 {mannSortedFilters.map((filter) => {
                   const match = mannMatches[filter.mannArticleNormalized];
                   const status = match?.status ?? "not_found";
                   const compatibleProducts = match?.compatibleProducts ?? match?.localMatches ?? [];
                   const availableProducts = compatibleProducts.filter((product) => product.available > 0);
-                  const orderProducts = compatibleProducts.filter((product) => product.available <= 0);
-                  const rowStatusLabel = compatibleProducts.length > 0
-                    ? `${formatMannMatchCount(compatibleProducts.length)} по OEM`
-                    : mannMatchStatusLabel(status);
+                  const orderableProducts = compatibleProducts.filter((product) => product.available <= 0 && product.orderable);
+                  const unavailableProducts = compatibleProducts.filter((product) => product.available <= 0 && !product.orderable);
+                  const categoryLabel = getMannFilterTypeLabel(filter.filterType);
                   const filterMeta = [
                     filter.engineCode,
                     filter.vehicleYears,
@@ -4425,9 +4433,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                   const filterApplicability = mannVehicleModificationLabel || (filter.vehicleText === "All models"
                     ? "Для всех двигателей этой модели"
                     : filterMeta);
-                  const stockLine = compatibleProducts.length > 0
-                    ? `В наличии: ${availableProducts.length} · под заказ / без остатка: ${orderProducts.length}`
-                    : `MANN ${filter.mannArticle} не найден в локальном каталоге`;
+                  const categoryAvailability = [
+                    availableProducts.length > 0 ? `${formatMannVariantCount(availableProducts.length)} в наличии` : "",
+                    orderableProducts.length > 0 ? `${formatMannVariantCount(orderableProducts.length)} под заказ` : "",
+                    unavailableProducts.length > 0 && availableProducts.length === 0 && orderableProducts.length === 0 ? "Нет вариантов в наличии" : "",
+                  ].filter(Boolean).join(" · ") || "Товар в базе не найден";
                   const renderProductGroup = (label: string, products: MannLocalMatch[]) => products.length > 0 ? (
                     <section className="eco-shipment-mann-product-group" aria-label={`${label}: MANN ${filter.mannArticle}`}>
                       <h4>{label} <span>{products.length}</span></h4>
@@ -4435,21 +4445,61 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                         {products.map((local) => {
                           const localAvailability = describeMannChoiceAvailability(local);
                           const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
+                          const addedPositionIndex = positions.findIndex((position) => position.assortmentMeta?.href === `local://product/${local.id}`);
+                          const addedPosition = addedPositionIndex >= 0 ? positions[addedPositionIndex] : null;
+                          const isRecommended = match?.bestMatch?.id === local.id;
                           return (
-                            <div key={local.id} className="eco-shipment-mann-choice-option">
-                              <div>
-                                <strong title={local.name}>{local.name}</strong>
-                                <span>{[localMeta, localAvailability.label].filter(Boolean).join(" · ")}</span>
+                            <div key={local.id} className={`eco-shipment-mann-choice-option ${isRecommended ? "is-recommended" : ""}`}>
+                              <div className="eco-shipment-mann-sku-copy">
+                                <div className="eco-shipment-mann-sku-title">
+                                  <strong title={local.name}>{local.name}</strong>
+                                  {isRecommended ? <span>Рекомендуем</span> : null}
+                                </div>
+                                {localMeta ? <small>{localMeta}</small> : null}
                               </div>
-                              <button
-                                type="button"
-                                className={localAvailability.outOfStock ? "is-negative" : ""}
-                                onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
-                              >
-                                {localAvailability.outOfStock
-                                  ? local.orderable ? "Добавить под заказ" : "Добавить в минус"
-                                  : "Добавить"}
-                              </button>
+                              <div className={`eco-shipment-mann-sku-stock ${localAvailability.outOfStock ? "is-order" : "is-available"}`}>
+                                <strong>{formatShipmentMoney(local.price)}</strong>
+                                <span>{localAvailability.label}</span>
+                              </div>
+                              {addedPosition ? (
+                                <div className="eco-shipment-mann-added" role="status" aria-label={`${local.name} добавлен в отгрузку`}>
+                                  <span>✓ Добавлено</span>
+                                  <div aria-label="Количество в отгрузке">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = [...positions];
+                                        next[addedPositionIndex] = { ...addedPosition, quantity: Math.max(1, (addedPosition.quantity || 1) - 1) };
+                                        setPositions(next);
+                                        markDraftDirty();
+                                      }}
+                                      disabled={(addedPosition.quantity || 1) <= 1}
+                                      aria-label="Уменьшить количество"
+                                    >−</button>
+                                    <b>{formatQuantityInput(addedPosition.quantity || 1)}</b>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = [...positions];
+                                        next[addedPositionIndex] = { ...addedPosition, quantity: (addedPosition.quantity || 0) + 1 };
+                                        setPositions(next);
+                                        markDraftDirty();
+                                      }}
+                                      aria-label="Увеличить количество"
+                                    >+</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={`eco-shipment-mann-add ${localAvailability.outOfStock ? "is-order" : "is-primary"}`}
+                                  onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
+                                >
+                                  {localAvailability.outOfStock
+                                    ? local.orderable ? "Добавить под заказ" : "Добавить без остатка"
+                                    : "Добавить"}
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -4467,25 +4517,25 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                         <MannFilterTypeIcon type={filter.filterType} />
                         <div className="eco-shipment-mann-filter-main">
                           <div>
-                            <strong>MANN {filter.mannArticle}</strong>
-                            {filter.filterSubtype || filter.filterNote ? (
-                              <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span>
-                            ) : null}
-                            {filterApplicability ? <em>{filterApplicability}</em> : null}
-                            {filter.condition ? <em>Условие MANN: {filter.condition}</em> : null}
+                            <strong>{categoryLabel}</strong>
+                            <span>MANN {filter.mannArticle}</span>
                           </div>
                         </div>
                         <div className="eco-shipment-mann-local">
-                          <b>{rowStatusLabel}</b>
-                          <span title={stockLine}>{stockLine}</span>
+                          <b>✓ Подходит</b>
+                          <span>{categoryAvailability}</span>
                         </div>
                         <div className="eco-shipment-mann-actions">
-                          <button type="button" onClick={() => startMannManualSearch(filter)}>
-                            Найти вручную
-                          </button>
                           <details className="eco-shipment-mann-more">
-                            <summary>Ещё</summary>
+                            <summary aria-label={`Дополнительные действия: ${categoryLabel}`} title="Дополнительные действия">⋯</summary>
                             <div>
+                              <div className="eco-shipment-mann-more-copy">
+                                <strong>Техническая информация</strong>
+                                {filterApplicability ? <span>{filterApplicability}</span> : null}
+                                {filter.condition ? <span>Условие MANN: {filter.condition}</span> : null}
+                                {filter.filterSubtype || filter.filterNote ? <span>{[filter.filterSubtype ? `Тип ${filter.filterSubtype}` : "", filter.filterNote].filter(Boolean).join(" · ")}</span> : null}
+                                {match ? <span>Совместимость подтверждена по {formatMannMatchCount(match.diagnostics.compatibleCount)}.</span> : null}
+                              </div>
                               <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
                                 Создать товар
                               </Link>
@@ -4495,31 +4545,35 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                               <Link href={mannRosskoHref(filter)} target="_blank" rel="noreferrer">
                                 ROSSKO
                               </Link>
+                              {match ? (
+                                <div className="eco-shipment-mann-more-copy">
+                                  <strong>Диагностика сопоставления</strong>
+                                  <span>Канонический артикул: {match.diagnostics.canonicalArticle}</span>
+                                  <span>Кандидатов: {match.diagnostics.candidateCount} · совместимых: {match.diagnostics.compatibleCount}</span>
+                                  <span>Поиск: {match.diagnostics.totalMs.toFixed(1)} мс</span>
+                                  {match.diagnostics.compactCollisionBlocked ? <span>Компактное сравнение заблокировано защитой от коллизий.</span> : null}
+                                </div>
+                              ) : null}
                             </div>
                           </details>
                         </div>
                       </article>
-                      {compatibleProducts.length > 0 ? (
-                        <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Совместимые товары для MANN ${filter.mannArticle}`}>
-                          {renderProductGroup("В наличии", availableProducts)}
-                          {renderProductGroup("Под заказ / без остатка", orderProducts)}
-                          <details className="eco-shipment-mann-diagnostics">
-                            <summary>Диагностика сопоставления</summary>
-                            <span>Канонический артикул: {match?.diagnostics.canonicalArticle}</span>
-                            <span>Кандидатов: {match?.diagnostics.candidateCount} · совместимых: {match?.diagnostics.compatibleCount}</span>
-                            <span>Поиск кандидатов: {match?.diagnostics.localProductScanMs.toFixed(1)} мс · parser: {match?.diagnostics.parsingMs.toFixed(1)} мс · всего: {match?.diagnostics.totalMs.toFixed(1)} мс</span>
-                            {match?.diagnostics.compactCollisionBlocked ? <span>Компактное сравнение заблокировано защитой от коллизий.</span> : null}
-                          </details>
-                          <div className="eco-shipment-mann-choice-footer">
-                            <button type="button" onClick={() => startMannManualSearch(filter)}>
-                              Найти вручную
-                            </button>
-                            <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
-                              Создать товар
-                            </Link>
+                      <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Подходящие товары для MANN ${filter.mannArticle}`}>
+                        {renderProductGroup("В наличии", availableProducts)}
+                        {renderProductGroup("Под заказ", orderableProducts)}
+                        {renderProductGroup("Нет на складе", unavailableProducts)}
+                        {compatibleProducts.length === 0 ? (
+                          <div className="eco-shipment-mann-choice-empty">
+                            <strong>Подходящий товар ещё не связан с каталогом</strong>
+                            <span>Можно найти существующий товар вручную или создать новую карточку через меню ⋯.</span>
                           </div>
+                        ) : null}
+                        <div className="eco-shipment-mann-choice-footer">
+                          <button type="button" onClick={() => startMannManualSearch(filter)}>
+                            Найти другой товар
+                          </button>
                         </div>
-                      ) : null}
+                      </div>
                     </div>
                   );
                 })}
@@ -5119,7 +5173,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
 
       <div className="eco-shipment-bottom-bar">
         <button type="button" className="eco-shipment-bottom-total" onClick={() => setSummarySheetOpen(true)}>
-          <span>К оплате</span>
+          <span>В отгрузке: {positions.length} поз. · {positionsQty} ед.</span>
           <strong>{formatShipmentMoney(positionsTotal)}</strong>
         </button>
         <EcoButton type="button" onClick={handleSubmit} disabled={saveDisabled} title={saveDisabledReason} variant="primary">
