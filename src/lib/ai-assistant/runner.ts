@@ -10,7 +10,7 @@ import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeA
 import { createOpenAIClient } from "@/lib/openai-client";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
-import { parseQuoteAndTechCardResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { parseQuoteAndTechCardToolResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import { jsonSafe } from "./json-safe";
 
@@ -625,7 +625,7 @@ export async function runAssistantThread(input: { threadId: string; organization
           toolSources.push(...(executed.sources ?? []));
           let resultForModel: Record<string, unknown> = executed.result;
           if (toolName === "build_quote_and_tech_card") {
-            const parsed = parseQuoteAndTechCardResult(executed.result);
+            const parsed = parseQuoteAndTechCardToolResult(executed.result);
             if (!parsed) throw new Error("Инструмент вернул непроверенный контракт техкарты и сметы");
             quoteAndTechCard = parsed;
             const snapshots = Array.isArray(executed.result.quoteSnapshots) ? executed.result.quoteSnapshots : [];

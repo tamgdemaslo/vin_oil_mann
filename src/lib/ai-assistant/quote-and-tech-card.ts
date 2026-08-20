@@ -192,6 +192,23 @@ export const QuoteAndTechCardResultSchema = z.object({
 }).strict();
 export type QuoteAndTechCardResult = z.infer<typeof QuoteAndTechCardResultSchema>;
 export function parseQuoteAndTechCardResult(value: unknown): QuoteAndTechCardResult | null { const parsed = QuoteAndTechCardResultSchema.safeParse(value); return parsed.success ? parsed.data : null; }
+/**
+ * The tool envelope contains operational metadata (for example a quote
+ * snapshot to persist) in addition to the customer-facing contract.  Keep
+ * the public schema strict, but validate only its declared fields here.
+ */
+export function parseQuoteAndTechCardToolResult(value: unknown): QuoteAndTechCardResult | null {
+  const row = object(value);
+  return parseQuoteAndTechCardResult({
+    scenario: row.scenario,
+    status: row.status,
+    vehicle: row.vehicle,
+    quote: row.quote,
+    techCard: row.techCard,
+    customerMessage: row.customerMessage,
+    evidence: row.evidence,
+  });
+}
 export function quoteStatus(options: Array<{ status: "ready" | "preliminary" | "blocked" }>, hardBlockers: unknown[]) { if (hardBlockers.length || !options.some((option) => option.status !== "blocked")) return "blocked" as const; return options.every((option) => option.status === "ready") ? "ready" as const : "preliminary" as const; }
 export function scenarioStatus(quote: "ready" | "preliminary" | "blocked", techCard: "ready" | "partial" | "blocked", customerMessage: "ready" | "blocked") { if (quote === "blocked") return "blocked" as const; return quote === "ready" && techCard === "ready" && customerMessage === "ready" ? "ready" as const : "partial" as const; }
 

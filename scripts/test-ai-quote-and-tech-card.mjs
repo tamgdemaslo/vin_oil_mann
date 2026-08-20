@@ -11,6 +11,7 @@ const {
   normalizeQuoteAndTechCardInput,
   parseQuoteAndTechCardInput,
   parseQuoteAndTechCardResult,
+  parseQuoteAndTechCardToolResult,
   QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
   quoteAndTechCardMaterials,
   quoteStatus,
@@ -91,6 +92,9 @@ assert.equal(scenarioStatus(qStatus, techCard.status, customerMessage.status), "
 
 const result = parseQuoteAndTechCardResult({ scenario: "quote_and_tech_card", status: "partial", vehicle: { displayName: "Hyundai Tucson 2.0 AT", aggregate: "A6MF1" }, quote: { status: qStatus, options, hardBlockers: [], warnings: [] }, techCard, customerMessage, evidence: parsedInput.evidence });
 assert.ok(result, "final shared contract accepts the runtime-shaped regression result");
+const toolEnvelope = { ...result, quoteSnapshots: [{ argumentsValue: {}, preview: {} }], finalQuote: false };
+assert.equal(parseQuoteAndTechCardResult(toolEnvelope), null, "the public contract intentionally stays strict about tool metadata");
+assert.ok(parseQuoteAndTechCardToolResult(toolEnvelope), "runner strips operational tool metadata before validating the public contract");
 
 const decimalPayload = jsonSafe({ available: new Prisma.Decimal("59.96"), nested: [123n, new Date("2026-08-20T10:00:00.000Z"), { fn: () => "skip" }] });
 assert.deepEqual(decimalPayload, { available: "59.96", nested: ["123", "2026-08-20T10:00:00.000Z", {}] }, "Decimal, BigInt, Date and nested values become plain JSON");
