@@ -9,11 +9,13 @@ import { ContactActionButton } from "@/components/messenger/ContactActionButton"
 import MoneyInput from "@/components/MoneyInput";
 import { ShipmentPrintMenu } from "@/components/shipment/ShipmentPrintMenu";
 import { hasOpenCashShiftAccess } from "@/lib/cash-shift-access";
+import { clientSessionUnavailableMessage, readClientSessionResponse } from "@/lib/client-session-response";
 import { formatServiceDateTime } from "@/lib/date-time";
 import { inferDiagnosticVehicleHintsFromLookup } from "@/lib/diagnostic-vehicle-hints";
 import { getOilLineBaseName } from "@/lib/oil-pack-volume";
 
 type Meta = { href: string; type: string; mediaType: string };
+type SessionJson = { user?: { role?: string } };
 
 type Header = {
   id: string;
@@ -783,15 +785,21 @@ export default function ShipmentDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let started = false;
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const sess = await fetch("/api/auth/session").then((r) => r.json());
-        if (!sess?.user) {
+        const sessionResult = await fetch("/api/auth/session").then((response) => readClientSessionResponse<SessionJson>(response));
+        if (sessionResult.status === "unauthenticated") {
           router.push(`/login?from=/shipment/${id}`);
           return;
         }
+        if (sessionResult.status === "unavailable") {
+          setError(clientSessionUnavailableMessage(sessionResult));
+          return;
+        }
+        const sess = sessionResult.data;
         if (sess.user.role === "admin" || sess.user.role === "master") {
           const cash = await fetch("/api/cash", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null));
           if (!hasOpenCashShiftAccess(sess.user.role, cash?.shift)) {
@@ -851,9 +859,16 @@ export default function ShipmentDetailPage() {
         if (!cancelled) setLoading(false);
       }
     }
-    if (id) load();
+    const startWhenVisible = () => {
+      if (!id || cancelled || started || document.visibilityState !== "visible") return;
+      started = true;
+      void load();
+    };
+    startWhenVisible();
+    document.addEventListener("visibilitychange", startWhenVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", startWhenVisible);
     };
   }, [id, router]);
 
@@ -875,8 +890,17 @@ export default function ShipmentDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    void refreshDiagnosticRemote();
-  }, [refreshDiagnosticRemote]);
+    if (!data?.header?.id) return;
+    let started = false;
+    const startWhenVisible = () => {
+      if (started || document.visibilityState !== "visible") return;
+      started = true;
+      void refreshDiagnosticRemote();
+    };
+    startWhenVisible();
+    document.addEventListener("visibilitychange", startWhenVisible);
+    return () => document.removeEventListener("visibilitychange", startWhenVisible);
+  }, [data?.header?.id, refreshDiagnosticRemote]);
 
   const copyDiagnosticReportLink = useCallback(async () => {
     if (!diagnosticRemote?.reportUrl) return;

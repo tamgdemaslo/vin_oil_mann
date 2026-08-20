@@ -36,7 +36,7 @@
     "test:ai-assistant-branch-context": "node scripts/test-ai-assistant-branch-context.mjs",
     "test:branch-operational-integrations": "node scripts/test-branch-operational-integrations.mjs",
     "test:cash-shift-policy": "node scripts/test-cash-shift-policy.mjs",
-    "test:background-load": "node scripts/test-background-load-guards.mjs",
+    "test:background-load": "node scripts/test-background-load-guards.mjs && node scripts/test-prisma-pool-config.mjs",
     "test:booking-system": "node scripts/test-booking-system.mjs",
     "test:anonymous-retail": "node scripts/test-anonymous-retail-counterparty.mjs",
     "test:price-label-pdf": "node scripts/test-price-label-pdf.mjs",

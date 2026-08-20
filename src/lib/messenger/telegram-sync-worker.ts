@@ -1,5 +1,6 @@
 import { runForActiveBranches } from "@/lib/branch-workers";
 import { syncTelegramUserAccount } from "@/lib/messenger/channels/telegram-user-session";
+import { inProcessBackgroundWorkersEnabled } from "@/lib/background-worker-policy";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const MIN_INTERVAL_MS = 30_000;
@@ -34,7 +35,7 @@ function workerEnabled() {
   if (process.env.TELEGRAM_SYNC_WORKER_DISABLED === "1" || isBuildProcess()) return false;
   // Telegram user-session sync is an external, stateful integration. Keep it
   // opt-in so a broken transport cannot start a retry storm on every replica.
-  return process.env.TELEGRAM_SYNC_WORKER_ENABLED === "1";
+  return inProcessBackgroundWorkersEnabled() && process.env.TELEGRAM_SYNC_WORKER_ENABLED === "1";
 }
 
 function intervalMs() {

@@ -96,7 +96,11 @@ requireText("src/lib/branch-integration-credentials.ts", [/branch_credential_mis
 if (/LEGACY_INTEGRATION_BRANCH_ID|legacyIntegrationEnvAllowed/.test(read("src/lib/branch-integration-credentials.ts"))) {
   failures.push("src/lib/branch-integration-credentials.ts: legacy credential fallback запрещён");
 }
-requireText("src/proxy.ts", [/branchId === "all"/, /concrete_branch_required/, /matcher: \["\/api\/:path\*"\]/]);
+requireText("src/proxy.ts", [
+  /branchId === "all"/,
+  /concrete_branch_required/,
+  /matcher:\s*\[\s*"\/api\/:path\*"/,
+]);
 requireText("src/app/api/session/active-branch/route.ts", [/selectActiveBranch/]);
 for (const route of [
   "src/app/api/analytics/customers/route.ts",

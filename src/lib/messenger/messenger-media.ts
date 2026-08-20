@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { ensureMessengerIntegrationCoreSchema } from "./messenger-schema";
+import { inProcessBackgroundWorkersEnabled } from "@/lib/background-worker-policy";
 import { getMessengerOrganizationId } from "./messenger-tenant";
 import { isMessengerStorageProxyUrl, messengerStorageStatus } from "./messenger-storage";
 import { isPhotoAttachmentType, normalizeMessengerAttachment, normalizeMessengerAttachmentType } from "./messenger-attachment-normalization";
@@ -346,7 +347,7 @@ export async function processMessengerMediaJobs(input: { limit?: number; workerI
 
 export function kickMessengerMediaWorker() {
   if (typeof window !== "undefined") return;
-  if (process.env.MESSENGER_MEDIA_IN_PROCESS_WORKER === "false") return;
+  if (!inProcessBackgroundWorkersEnabled() || process.env.MESSENGER_MEDIA_IN_PROCESS_WORKER !== "true") return;
   if (inProcessWorkerStarted) return;
   inProcessWorkerStarted = true;
   const tick = async () => {
