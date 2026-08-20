@@ -9,7 +9,8 @@ import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
-import { buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, parseQuoteAndTechCardResult, resultStatus } from "./quote-and-tech-card";
+import { buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
+import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
   sourceType: "internal_catalog" | "mann" | "tronk" | "rossko";
@@ -135,14 +136,7 @@ export const assistantFunctionTools = [
     type: "function",
     name: "build_quote_and_tech_card",
     description: "Собрать единый предсказуемый результат «техкарта + смета» для внутреннего сотрудника. Используй после VIN/технической проверки и проверки локального каталога. Инструмент сам округляет объём, выбирает совместимую жидкость из локального остатка, применяет правило работы и формирует клиентский текст только из готовой сметы. Передавай не более двух процедур. Внутренний фильтр АКПП/CVT/DSG, требующий разборки агрегата, помечай filterAccess=internal_requires_disassembly и не передавай в rosskoItems.",
-    parameters: {
-      type: "object", additionalProperties: false, required: ["input"], properties: {
-        input: {
-          type: "object", additionalProperties: true,
-          description: "Строгий контракт: locationId; vehicle {id?,displayName,aggregateCode?,snapshot?}; service {type,name,aggregate?,requiredFluidSpec,requiredFluidOemArticle?,partialVolumeLiters?,totalCapacityLiters?,standardVolumeLiters?,procedures?,transmissionConfiguration?,filterAccess,materialsOwner?,torqueNotes?,levelProcedure?,servicePoints?,criticalChecks?,technicalWarnings?}; selectedProducts[], consumables[], rosskoItems[] (только отсутствующие локально, role fluid|external_filter|consumable), localCatalogChecked, fluidMissingLocally, softWarnings[], evidence[].",
-        },
-      },
-    },
+    parameters: QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
   },
   {
     type: "function",
@@ -744,19 +738,23 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const baseBlockers = [...plan.hardBlockers];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
   let selectedMaterial: { name: string; quantity: number; compatibilityEvidence: string | null } | null = null;
-  const options: Array<Record<string, unknown>> = [];
+  const options: QuoteAndTechCardQuoteOption[] = [];
 
   for (const option of plan.options) {
     const blockers = [...baseBlockers];
-    const warnings = [...plan.softWarnings, ...input.service.technicalWarnings];
     if (option.blockedReason) blockers.push({ code: "NO_MATERIAL_PRICE", message: option.blockedReason, requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." });
     if (blockers.length) {
-      options.push({ code: option.code, label: option.label, status: "blocked", confidence: "preliminary", requiredLiters: option.billableLiters, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: uniqueWarnings(warnings) });
+      options.push({ code: option.code, label: option.label, status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
       continue;
     }
-    const supplierRows = input.rosskoItems
-      .filter((item) => item.role !== "internal_filter")
-      .filter((item) => item.role !== "fluid" || (input.fluidMissingLocally && Boolean(input.service.requiredFluidOemArticle)))
+    // Local-first is code, not an instruction: check the compatible local ATF
+    // before passing any supplier ATF into quoteLines. Internal filters never
+    // enter a standard TGM calculation at all.
+    const localFluid = plan.isTransmission && input.service.materialsOwner === "service"
+      ? await automaticLocalFluidSelection({ serviceFamily: "transmission_fluid", materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference: "prefer_local_compatible" }, context)
+      : null;
+    const materials = quoteAndTechCardMaterials(input, Boolean(localFluid));
+    const supplierRows = materials.rosskoItems
       .map(({ article, brand, offerId, quantity }) => ({ article, brand: brand ?? null, offerId: offerId ?? null, quantity }));
     const quoteArgs: Record<string, unknown> = {
       serviceFamily: serviceFamilyForTechCard(input.service.type),
@@ -768,48 +766,55 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       vehicleSnapshot: input.vehicle.snapshot ?? {},
       aggregateCode: input.vehicle.aggregateCode ?? input.service.aggregate ?? null,
       requiredFluidSpec: input.service.requiredFluidSpec ?? null,
-      requiredFluidVolumeLiters: option.billableLiters,
+      requiredFluidVolumeLiters: option.billableQuantityLiters,
       requiredFluidOemArticle: input.service.requiredFluidOemArticle ?? null,
       fluidPreference: "prefer_local_compatible",
       locationId: input.locationId,
-      selectedProducts: input.selectedProducts,
-      consumables: input.consumables,
+      selectedProducts: [...(localFluid ? [{ productId: localFluid.productId, quantity: localFluid.quantity }] : []), ...materials.selectedProducts],
+      consumables: materials.consumables,
       rosskoItems: supplierRows,
       manualLaborPriceCents: null,
       fallbackServiceProductId: null,
       serviceName: input.service.name,
       selectedScenario: option.label,
       optionalItems: input.service.filterAccess === "internal_requires_disassembly" ? ["Внутренний фильтр не входит в услугу: для его замены требуется разборка агрегата."] : [],
-      assumptions: plan.softWarnings,
-      internalWarnings: uniqueWarnings([...input.service.technicalWarnings, ...plan.softWarnings]),
+      assumptions: plan.quoteWarnings,
+      internalWarnings: uniqueWarnings(plan.quoteWarnings),
       customerSafeWarnings: input.service.filterAccess === "internal_requires_disassembly" ? ["Перед работой проверим состояние жидкости и доступные без разборки элементы."] : [],
     };
     try {
       const calculated = await serviceQuoteV2(quoteArgs, context);
       const quote = calculated.result;
-      const lines = Array.isArray(quote.lines) ? quote.lines as Array<Record<string, unknown>> : [];
+      const lines = (Array.isArray(quote.lines) ? quote.lines as Array<Record<string, unknown>> : []).map((line) => ({
+        source: text(line.source, 80) || undefined,
+        type: text(line.type, 80) || null,
+        name: text(line.name, 220) || "Позиция",
+        article: text(line.article, 120) || null,
+        quantity: Math.max(0.001, number(line.quantity, 1)),
+        unitPriceCents: Math.max(0, Math.round(number(line.unitPriceCents))),
+        totalCents: Math.max(0, Math.round(number(line.totalCents))),
+      }));
       const hasPricedMaterial = input.service.materialsOwner === "customer" || lines.some((line) => text(line.type, 80) !== "labor" && number(line.totalCents) > 0);
       if (!hasPricedMaterial) blockers.push({ code: "NO_MATERIAL_PRICE", message: "Не найдена цена совместимого материала в локальном каталоге или у поставщика.", requiredToContinue: "Подтвердить совместимый материал и его цену либо выбрать вариант с материалами клиента." });
       if (quote.finalQuote !== true) blockers.push({ code: "MISSING_LABOR_RULE", message: "Для услуги нет применимого правила стоимости работ.", requiredToContinue: "Настроить тарифное правило или указать подтверждённую стоимость работы." });
       const automatic = object(quote.automaticMaterialDecision);
       if (!selectedMaterial && text(automatic.productName, 220)) selectedMaterial = { name: text(automatic.productName, 220), quantity: number(automatic.quantity, 0), compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
-      const status = blockers.length ? "blocked" : "ready";
-      const confidence = status === "ready" && !warnings.length ? "final" : "preliminary";
+      const status = blockers.length ? "blocked" : plan.quoteWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
       options.push({
         code: option.code,
         label: option.label,
         status,
-        confidence,
-        requiredLiters: option.billableLiters,
+        technicalQuantityLiters: option.technicalQuantityLiters,
+        billableQuantityLiters: option.billableQuantityLiters,
         lines,
-        totalCents: status === "ready" ? Math.round(number(quote.totalCents)) : null,
-        maximumTotalCents: status === "ready" && number(maximum.totalCents) > number(quote.totalCents) ? Math.round(number(maximum.totalCents)) : null,
+        totalCents: status !== "blocked" ? Math.round(number(quote.totalCents)) : null,
+        maximumTotalCents: status !== "blocked" && number(maximum.totalCents) > number(quote.totalCents) ? Math.round(number(maximum.totalCents)) : null,
         validUntil: text(quote.validUntil, 100) || null,
         blockers,
-        warnings: uniqueWarnings(warnings),
+        warnings: uniqueWarnings(plan.quoteWarnings),
       });
-      if (status === "ready") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
+      if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
     } catch (error) {
       const message = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
       const supplierFailure = /rossko|поставщик|предложен/i.test(message);
@@ -817,14 +822,14 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         code: option.code,
         label: option.label,
         status: "blocked",
-        confidence: "preliminary",
-        requiredLiters: option.billableLiters,
+        technicalQuantityLiters: option.technicalQuantityLiters,
+        billableQuantityLiters: option.billableQuantityLiters,
         lines: [],
         totalCents: null,
         maximumTotalCents: null,
         validUntil: null,
         blockers: [{ code: supplierFailure ? "NO_MATERIAL_PRICE" : "MISSING_LABOR_RULE", message, requiredToContinue: supplierFailure ? "Найти совместимый материал с ценой в локальном каталоге или у поставщика." : "Подтвердить правило стоимости работ." }],
-        warnings: uniqueWarnings(warnings),
+        warnings: uniqueWarnings(plan.quoteWarnings),
       });
     }
   }
@@ -834,35 +839,41 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
-  const resultBase = {
+  const calculatedQuoteStatus = quoteStatus(options, hardBlockers);
+  // Enrichment is intentionally isolated from quote calculation: missing
+  // torque/evidence/visual material degrades only the tech card.
+  const techCardStatus: "ready" | "partial" | "blocked" = calculatedQuoteStatus === "blocked" ? "blocked" : plan.techCardWarnings.length || !selectedMaterial ? "partial" : "ready";
+  const draft = {
     scenario: "quote_and_tech_card" as const,
-    status: resultStatus(options as Array<{ status: "ready" | "blocked" }>, hardBlockers),
+    status: "partial" as const,
     vehicle: { displayName: text(input.vehicle.displayName, 180) || "Автомобиль уточняется", aggregate: text(input.vehicle.aggregateCode ?? input.service.aggregate, 160) || null },
+    quote: { status: calculatedQuoteStatus, options, hardBlockers, warnings: uniqueWarnings(plan.quoteWarnings) },
     techCard: {
+      status: techCardStatus,
       serviceName: input.service.name,
       serviceType: input.service.type,
       requiredFluidSpec: text(input.service.requiredFluidSpec, 160) || null,
-      filterPolicy: input.service.filterAccess === "internal_requires_disassembly" ? "Внутренний фильтр с разборкой агрегата исключён из услуги ТГМ." : "В расчёт включаются только доступные без разборки расходники, подтверждённые для процедуры.",
+      filterPolicy: input.service.filterAccess === "internal_requires_disassembly" ? "Фильтр внутренний; в рамках стандартной замены ТГМ не меняет." : "В расчёт включаются только подтверждённые без разборки расходники.",
+      levelTemperature: text(input.service.levelTemperature, 180) || null,
       levelProcedure: text(input.service.levelProcedure, 500) || null,
       servicePoints: input.service.servicePoints.map((item) => text(item, 300)).filter(Boolean).slice(0, 16),
       torqueNotes: input.service.torqueNotes.map((item) => text(item, 300)).filter(Boolean).slice(0, 12),
-      criticalChecks: input.service.criticalChecks.map((item) => text(item, 300)).filter(Boolean).slice(0, 16),
+      criticalChecks: input.service.criticalChecks.map((item) => text(item, 300)).filter(Boolean).slice(0, 3),
       selectedMaterial,
+      warnings: uniqueWarnings(plan.techCardWarnings).slice(0, 3),
     },
-    options,
-    hardBlockers,
-    softWarnings: uniqueWarnings([...plan.softWarnings, ...input.service.technicalWarnings]),
-    evidence: input.evidence.map((item) => ({ title: item.title, url: item.url ?? null, excerpt: item.excerpt ?? null })),
-    customerMessage: "",
+    customerMessage: { status: "blocked" as const, text: "" },
+    evidence: input.evidence,
   };
-  const checked = parseQuoteAndTechCardResult(resultBase);
-  if (!checked) throw new Error("Не удалось сформировать проверенный контракт техкарты и сметы");
-  const result = { ...checked, customerMessage: buildQuoteAndTechCardCustomerMessage(checked) };
+  const customerMessage = buildQuoteAndTechCardCustomerMessage(draft);
+  const resultBase = { ...draft, customerMessage, status: scenarioStatus(calculatedQuoteStatus, techCardStatus, customerMessage.status) };
+  const result = parseQuoteAndTechCardResult(resultBase);
+  if (!result) throw new Error("Не удалось сформировать проверенный контракт техкарты и сметы");
   return {
     result: { ...result, quoteSnapshots, finalQuote: false },
     sources: [
       { sourceType: "internal_catalog" as const, title: "Техкарта и смета: детерминированный сценарий", excerpt: `Проверочных проходов: не более ${plan.rules.maxTechnicalVerificationPasses}; вариантов процедуры: ${options.length}.` },
-      ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.title, url: item.url ?? null, excerpt: item.excerpt ?? null })),
+      ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.source, url: item.url ?? null, excerpt: item.fact })),
     ],
   } satisfies AssistantToolResult;
 }
@@ -910,5 +921,5 @@ export async function executeAssistantTool(name: string, argumentsValue: unknown
 }
 
 export function safeAssistantJson(value: unknown) {
-  return safeJson(value);
+  return safeJson(jsonSafe(value));
 }

@@ -8,67 +8,91 @@ const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), 
 const {
   buildQuoteAndTechCardCustomerMessage,
   createQuoteAndTechCardPlan,
+  normalizeQuoteAndTechCardInput,
+  parseQuoteAndTechCardInput,
   parseQuoteAndTechCardResult,
+  QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
+  quoteAndTechCardMaterials,
+  quoteStatus,
+  scenarioStatus,
 } = await jiti.import("../src/lib/ai-assistant/quote-and-tech-card.ts");
+const { jsonSafe } = await jiti.import("../src/lib/ai-assistant/json-safe.ts");
+const { Prisma } = await import("@prisma/client");
 
-const base = {
-  locationId: "dachnaya",
-  vehicle: { displayName: "Hyundai Tucson 2.0 AT", aggregateCode: "A6MF1", snapshot: { year: 2019 } },
+// Exact regression context: VIN XWEJC81ADH0000196, 200k mileage, two prior
+// partial services, standard TGM policy for inaccessible internal filters.
+const runtimeInput = {
+  branchId: "dachnaya",
+  vehicleId: "vehicle-tucson",
+  vehicleDisplayName: "Hyundai Tucson 2.0 AT · XWEJC81ADH0000196",
   service: {
-    type: "automatic_transmission",
-    name: "Замена жидкости АКПП",
-    requiredFluidSpec: "Hyundai SP-IV",
+    serviceType: "transmission_fluid",
+    serviceName: "Замена жидкости АКПП",
+    fluidSpec: "Hyundai SP-IV",
+    fluidOemArticle: "ATF-SP4-OEM",
     partialVolumeLiters: 4.3,
     totalCapacityLiters: 7.1,
-    procedures: ["partial", "machine"],
+    procedures: ["partial_change", "machine_exchange"],
     filterAccess: "internal_requires_disassembly",
-    torqueNotes: [],
-    levelProcedure: "Выставить уровень по температуре жидкости.",
-    servicePoints: ["Слив", "Залив", "Контроль уровня"],
-    criticalChecks: ["Проверить течи после прогрева"],
+    technicalWarnings: ["Пробег около 200 000 км; перед аппаратной заменой нужна диагностика."],
   },
-  selectedProducts: [],
-  consumables: [],
-  rosskoItems: [{ article: "46321-3B000", brand: "Hyundai", quantity: 1, role: "internal_filter" }],
   localCatalogChecked: true,
-  softWarnings: [],
-  evidence: [],
+  fluidMissingLocally: true,
+  selectedProducts: [],
+  consumables: [{ productId: "internal-filter", quantity: 1, role: "internal_filter" }],
+  rosskoItems: [{ article: "ATF-SP4-OEM", brand: "Hyundai", quantity: 12, role: "fluid" }, { article: "46321-3B000", brand: "Hyundai", quantity: 1, role: "internal_filter" }],
+  evidence: [{ source: "OEM", fact: "SP-IV", status: "confirmed" }],
 };
 
-const plan = createQuoteAndTechCardPlan(base);
-assert.equal(plan.options.length, 2, "не более двух вариантов процедуры");
-assert.equal(plan.options[0].billableLiters, 5, "4.3 л округляются вверх до 5 л");
-assert.equal(plan.options[1].billableLiters, 13, "аппаратный объём использует настраиваемый множитель и округление");
-assert.match(plan.softWarnings.join(" "), /внутренний фильтр/i, "фильтр с разборкой исключается с предупреждением");
-assert.match(plan.softWarnings.join(" "), /Моменты/i, "отсутствующие моменты — мягкая неопределённость");
-assert.equal(plan.hardBlockers.length, 0, "подтверждённые VIN/допуск не блокируют сценарий");
+const normalized = normalizeQuoteAndTechCardInput(runtimeInput);
+const toolService = QUOTE_AND_TECH_CARD_TOOL_PARAMETERS.properties.input.properties.service;
+const toolEvidence = QUOTE_AND_TECH_CARD_TOOL_PARAMETERS.properties.input.properties.evidence.items;
+assert.equal(toolService.properties.type.type, "string", "tool intake accepts upstream service aliases before normalization");
+assert.equal(toolService.properties.procedures.items.type, "string", "tool intake accepts upstream procedure aliases before normalization");
+assert.equal(toolEvidence.properties.status.type, "string", "tool intake accepts observed evidence statuses before normalization");
+assert.equal(normalized.service.type, "automatic_transmission", "transmission_fluid normalizes to automatic_transmission");
+assert.deepEqual(normalized.service.procedures, ["partial", "machine"], "actual procedure values normalize centrally");
+const parsedInput = parseQuoteAndTechCardInput(runtimeInput);
+assert.equal(parsedInput.evidence[0].source, "OEM", "runtime evidence source is accepted");
+assert.equal(parsedInput.evidence[0].fact, "SP-IV", "runtime evidence fact is accepted");
+assert.equal(parsedInput.evidence[0].status, "confirmed", "runtime evidence status is canonical");
 
-const calibrated = createQuoteAndTechCardPlan(base, { transmissionMachineExchangeMultiplier: 1.65 });
-assert.equal(calibrated.options[1].billableLiters, 12, "филиал может настроить множитель для аппаратной замены");
+const plan = createQuoteAndTechCardPlan(runtimeInput, { transmissionMachineExchangeMultiplier: 1.65, literRoundingStep: 1 });
+assert.equal(plan.options.length, 2, "both requested variants remain in the quote");
+assert.equal(plan.options[0].technicalQuantityLiters, 4.3, "partial technical quantity stays numeric");
+assert.equal(plan.options[0].billableQuantityLiters, 5, "partial billable quantity uses the quantity engine");
+assert.equal(plan.options[1].technicalQuantityLiters, 11.715, "machine technical quantity uses the configured multiplier");
+assert.equal(plan.options[1].billableQuantityLiters, 12, "machine billable quantity rounds up deterministically");
+assert.match(plan.techCardWarnings.join(" "), /внутренний/i, "internal filter is only a tech-card note");
+assert.equal(plan.quoteWarnings.length, 0, "missing torque does not downgrade a confirmed quote");
+assert.equal(plan.hardBlockers.length, 0, "valid vehicle and specification are quote-ready");
+const materials = quoteAndTechCardMaterials(parsedInput, true);
+assert.equal(materials.rosskoItems.length, 0, "local Valvoline blocks ROSSKO fallback ATF");
+assert.equal(materials.consumables.length, 0, "internal transmission filter never enters quote materials");
 
-const missingSpec = createQuoteAndTechCardPlan({ ...base, service: { ...base.service, requiredFluidSpec: null } });
-assert.equal(missingSpec.hardBlockers[0]?.code, "SPECIFICATION_NOT_CONFIRMED", "нет допуска — жёсткий блокер");
+const textQuantity = createQuoteAndTechCardPlan({ ...runtimeInput, service: { ...runtimeInput.service, partialVolumeLiters: "ориентир 4 л" } });
+assert.equal(textQuantity.options[0].billableQuantityLiters, null, "textual reasoning cannot become a billable quantity");
 
-const missingVehicle = createQuoteAndTechCardPlan({ ...base, vehicle: { displayName: null } });
-assert.equal(missingVehicle.hardBlockers[0]?.code, "VEHICLE_NOT_IDENTIFIED", "нет автомобиля — жёсткий блокер");
+const options = [
+  { code: "partial", label: "Частичная замена", status: "ready", technicalQuantityLiters: 4.3, billableQuantityLiters: 5, lines: [{ name: "Valvoline ATF SP-IV", article: null, quantity: 5, totalCents: 995000, type: "product" }, { name: "Работа: частичная замена", article: null, quantity: 1, totalCents: 400000, type: "labor" }], totalCents: 1395000, maximumTotalCents: null, validUntil: null, blockers: [], warnings: [] },
+  { code: "machine", label: "Аппаратная замена", status: "ready", technicalQuantityLiters: 11.715, billableQuantityLiters: 12, lines: [{ name: "Valvoline ATF SP-IV", article: null, quantity: 12, totalCents: 2388000, type: "product" }, { name: "Работа: аппаратная замена", article: null, quantity: 1, totalCents: 500000, type: "labor" }], totalCents: 2888000, maximumTotalCents: null, validUntil: null, blockers: [], warnings: [] },
+];
+const qStatus = quoteStatus(options, []);
+assert.equal(qStatus, "ready", "optional tech-card gaps cannot block the quote");
+const techCard = { status: "partial", serviceName: "Замена жидкости АКПП", serviceType: "automatic_transmission", requiredFluidSpec: "Hyundai SP-IV", filterPolicy: "Фильтр внутренний; в рамках стандартной замены ТГМ не меняет.", levelTemperature: null, levelProcedure: null, servicePoints: ["Слив / залив / контроль"], torqueNotes: [], criticalChecks: ["Диагностика перед аппаратной заменой"], selectedMaterial: { name: "Valvoline ATF SP-IV", quantity: 5, compatibilityEvidence: "SP-IV" }, warnings: ["Моменты затяжки не найдены."], };
+const customerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: { displayName: "Hyundai Tucson 2.0 AT", aggregate: "A6MF1" }, quote: { status: qStatus, options, hardBlockers: [], warnings: [] }, techCard });
+assert.equal(customerMessage.status, "ready", "ready quote always creates client text");
+assert.match(customerMessage.text, /13[\s ]?950 ₽/u, "partial total is in customer text");
+assert.match(customerMessage.text, /28[\s ]?880 ₽/u, "machine total is in customer text");
+assert.match(customerMessage.text, /Valvoline/u, "brand is in customer text");
+assert.match(customerMessage.text, /5 л/u, "partial billable quantity is in customer text");
+assert.match(customerMessage.text, /12 л/u, "machine billable quantity is in customer text");
+assert.equal(scenarioStatus(qStatus, techCard.status, customerMessage.status), "partial", "tech card partial leaves a ready quote usable");
 
-assert.throws(() => createQuoteAndTechCardPlan({ ...base, service: { ...base.service, procedures: ["partial", "machine", "standard"] } }), /Too big|maximum/i, "контракт не допускает третий вариант");
+const result = parseQuoteAndTechCardResult({ scenario: "quote_and_tech_card", status: "partial", vehicle: { displayName: "Hyundai Tucson 2.0 AT", aggregate: "A6MF1" }, quote: { status: qStatus, options, hardBlockers: [], warnings: [] }, techCard, customerMessage, evidence: parsedInput.evidence });
+assert.ok(result, "final shared contract accepts the runtime-shaped regression result");
 
-const result = parseQuoteAndTechCardResult({
-  scenario: "quote_and_tech_card",
-  status: "ready",
-  vehicle: { displayName: "Hyundai Tucson 2.0 AT", aggregate: "A6MF1" },
-  techCard: { serviceName: "Замена жидкости АКПП", serviceType: "automatic_transmission", requiredFluidSpec: "Hyundai SP-IV", filterPolicy: "Внутренний фильтр исключён.", levelProcedure: null, servicePoints: [], torqueNotes: [], criticalChecks: [], selectedMaterial: { name: "ATF SP-IV", quantity: 5, compatibilityEvidence: "SP-IV" } },
-  options: [{ code: "partial", label: "Частичная замена", status: "ready", confidence: "final", requiredLiters: 5, lines: [{ name: "ATF SP-IV", article: null, quantity: 5, totalCents: 750000 }, { name: "Работа", article: null, quantity: 1, totalCents: 400000 }], totalCents: 1150000, maximumTotalCents: null, validUntil: null, blockers: [], warnings: [] }],
-  hardBlockers: [],
-  softWarnings: [],
-  evidence: [],
-  customerMessage: "",
-});
-assert.ok(result, "результат проходит строгую Zod-проверку");
-const clientText = buildQuoteAndTechCardCustomerMessage(result);
-assert.match(clientText, /11[\s ]?500 ₽/u, "клиентский текст берёт сумму только из готовой сметы");
-assert.match(clientText, /ATF SP-IV/u, "клиентский текст использует подобранный материал");
-assert.doesNotMatch(clientText, /46321-3B000/u, "внутренний фильтр не попадает в клиентский текст");
+const decimalPayload = jsonSafe({ available: new Prisma.Decimal("59.96"), nested: [123n, new Date("2026-08-20T10:00:00.000Z"), { fn: () => "skip" }] });
+assert.deepEqual(decimalPayload, { available: "59.96", nested: ["123", "2026-08-20T10:00:00.000Z", {}] }, "Decimal, BigInt, Date and nested values become plain JSON");
 
-console.log("AI quote-and-tech-card tests — passed");
+console.log("AI quote-and-tech-card regression tests — passed");

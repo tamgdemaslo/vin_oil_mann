@@ -12,6 +12,7 @@ import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
 import { parseQuoteAndTechCardResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
+import { jsonSafe } from "./json-safe";
 
 const MAX_MESSAGE_CHARS = 12_000;
 // Six turns preserve room for independent catalogue, MANN, ROSSKO and quote checks
@@ -20,7 +21,7 @@ const MAX_AGENT_ITERATIONS = 6;
 const MAX_TOOL_CALLS = 18;
 const MAX_RUN_DURATION_MS = 4 * 60_000;
 const TECHNICAL_RESEARCH_TIMEOUT_MS = 75_000;
-const TECHNICAL_RESEARCH_INSTRUCTIONS = "Ты выполняешь только краткое техническое web-исследование для внутреннего расчёта автосервиса. Используй web search, отдавай приоритет официальным документам, OEM и каталогам производителей агрегатов и жидкостей. Не считай цены, не вызывай внутренние инструменты и не повторяй общие правила работы помощника.";
+const TECHNICAL_RESEARCH_INSTRUCTIONS = "Ты выполняешь только обязательную техническую верификацию для внутреннего расчёта: автомобиль/агрегат, допуск жидкости, подтверждённый технический объём и допустимая процедура. Используй web search с приоритетом OEM и производителя агрегата. Не ищи моменты, изображения, расширенные рекомендации или альтернативные бренды: они обогащают техкарту только после готовой сметы.";
 const TECHNICAL_REQUEST_RE = /(акпп|автоматическ\S*\s*(?:короб|трансмисс)|вариатор|\bcvt\b|\bdsg\b|мкпп|механическ\S*\s*(?:короб|трансмисс)|редуктор|раздатк|haldex|халдекс|трансмиссион\S*|\batf\b|двигател\S*|моторн\S*\s*масл|масл\S*\s*(?:двигател|мотор|короб|акпп|трансмисс)|поддон|гидроблок|допуск|вязкост|объ[её]м|фильтр|сервисн\S*\s*комплект|\boem\b|оригинальн\S*\s*номер|техническ\S*\s*(?:подбор|расч))/i;
 type AssistantActor = { id: string; name: string; role: string };
 type Citation = { title: string | null; url: string; startIndex?: number | null; endIndex?: number | null };
@@ -36,7 +37,7 @@ class AssistantRunLimitError extends Error {
 }
 
 function json(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(jsonSafe(value ?? null))) as Prisma.InputJsonValue;
 }
 
 function text(value: unknown, max = 12_000) {
@@ -86,11 +87,15 @@ function publicRunError(error: unknown) {
   return message || "Не удалось выполнить запрос помощника";
 }
 
-function mask(value: unknown): unknown {
+function maskPlain(value: unknown): unknown {
   if (typeof value === "string") return value.replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, (vin) => `${vin.slice(0, 4)}•••••••••${vin.slice(-4)}`).replace(/(?:\+?7|8)[\s()-]*\d(?:[\s()-]*\d){9}/g, "[телефон скрыт]").slice(0, 800);
-  if (Array.isArray(value)) return value.slice(0, 20).map(mask);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 40).map(([key, item]) => [key, mask(item)]));
+  if (Array.isArray(value)) return value.slice(0, 20).map(maskPlain);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 40).map(([key, item]) => [key, maskPlain(item)]));
   return value;
+}
+
+function mask(value: unknown): unknown {
+  return maskPlain(jsonSafe(value));
 }
 
 function workspacePrompt(actor: AssistantActor, organizationId: string) {
@@ -217,11 +222,11 @@ function technicalResearchPrompt(message: string, history: Array<{ role: string;
   const context = history.slice(-4).map((item) => `${item.role === "assistant" ? "Помощник" : "Сотрудник"}: ${text(item.content, 1_000)}`).join("\n");
   const internal = internalContext ? text(JSON.stringify(internalContext), 5_000) : "";
   return [
-    "Выполни целевое интернет-исследование для внутреннего автосервисного расчёта. Реально используй web search до вывода; не отвечай по памяти. Ограничься шестью наиболее полезными поисковыми запросами.",
+    "Выполни целевое интернет-исследование для внутреннего автосервисного расчёта. Реально используй web search до вывода; не отвечай по памяти. Ограничься двумя наиболее полезными поисковыми запросами.",
     "Исследуй только агрегаты и работы, названные сотрудником. Сначала установи автомобиль и список технических вопросов. Затем ищи официальные документы, OEM-каталоги, каталоги производителя агрегата и жидкости, каталоги фильтров и проверенные технические источники.",
     "Если точный код агрегата или OE-номер не найден, не прекращай исследование: проверь наиболее вероятную ветку по VIN, модели, двигателю, году, приводу, рынку и доступным каталогам. Отделяй подтверждённое от рабочего допущения и финальной проверки.",
-    "Для трансмиссии собери, насколько доступно: тип/семейство агрегата, жидкость, полный/сливной/сервисный объём, поддон или фильтр, прокладку, крепёж, пробки и уплотнения, температуру/процедуру уровня и допустимые способы обслуживания.",
-    "Верни компактное исследовательское досье с ссылками, которое следующий этап использует для поиска товаров и расчёта. Не проси подтверждения и не перекладывай поиск кода на сотрудника.",
+    "Для трансмиссии собери только тип/семейство агрегата, требуемую жидкость, полный или сервисный технический объём и допустимую процедуру. Не ищи моменты затяжки, визуальные ссылки, альтернативы жидкости, фильтры с разборкой и прочие optional-детали до расчёта.",
+    "Верни компактный набор подтверждённых значений с ссылками для поиска товара и расчёта. Не проси подтверждения и не перекладывай поиск кода на сотрудника.",
     `Текущий запрос сотрудника: ${message}`,
     context ? `Контекст диалога:\n${context}` : "",
     internal ? `Данные внутренней базы, уже полученные до поиска:\n${internal}` : "",
@@ -311,7 +316,7 @@ async function continueAfterTechnicalResearch(client: OpenAI, args: { previousRe
     tool_choice: { type: "function", name: "search_local_catalog" },
     store: true,
     previous_response_id: args.previousResponseId,
-    input: "Продолжи на основе обязательного исследования: используй локальные инструменты, найди товары, работу и ROSSKO при отсутствии, собери полезный предварительный расчёт. Не повторяй исследование дословно и не проси разрешения на него.",
+    input: "Продолжи в строгом порядке: локальный каталог → остаток → правило количества → тариф работы → build_quote_and_tech_card. ROSSKO напрямую не вызывай: сценарий сам обратится к нему только для обязательного материала, отсутствующего локально. Моменты, изображения и подробные источники не задерживают смету.",
   } as never) as Promise<unknown>;
 }
 
@@ -440,8 +445,12 @@ async function requiredVinContext(input: { runId: string; organizationId: string
     const startedAt = Date.now();
     try {
       const executed = await executeAssistantTool(check.toolName, check.argumentsValue, { organizationId: input.organizationId, actorId: input.actor.id, actorName: input.actor.name, actorRole: input.actor.role });
-      const summary = mask(executed.result) as Prisma.InputJsonValue;
-      await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: summary, durationMs: Date.now() - startedAt, completedAt: new Date() } });
+      const summary = json(mask(executed.result));
+      try {
+        await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: summary, durationMs: Date.now() - startedAt, completedAt: new Date() } });
+      } catch (auditError) {
+        summaries.push({ toolName: "assistant_tool_audit", status: "failed", forTool: check.toolName, error: text(auditError instanceof Error ? auditError.message : String(auditError), 360) });
+      }
       results.push({ toolName: check.toolName, result: executed.result });
       sources.push(...(executed.sources ?? []));
       summaries.push({ toolName: check.toolName, status: "completed", durationMs: Date.now() - startedAt, result: summary });
@@ -581,6 +590,14 @@ export async function runAssistantThread(input: { threadId: string; organization
         const toolName = text(call.name, 120);
         const callId = text(call.callId, 240);
         if (!callId) throw new Error(`OpenAI вернул вызов инструмента «${toolName || "без имени"}» без call_id`);
+        if (technicalRequest && toolName === "search_rossko") {
+          // Supplier fallback is owned by build_quote_and_tech_card. This keeps
+          // a locally compatible ATF from being followed by needless OEM or
+          // alternative searches before the deterministic calculator runs.
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: "ROSSKO controlled by quote_and_tech_card after local compatibility and stock checks." }) });
+          toolSummaries.push({ toolName, status: "skipped", reason: "quote_and_tech_card_local_first" });
+          continue;
+        }
         if (!limitReason && runDurationExceeded(startedAt)) limitReason = "duration";
         if (!limitReason && toolCallCount >= MAX_TOOL_CALLS) limitReason = "tool_calls";
         if (limitReason) {
@@ -644,9 +661,15 @@ export async function runAssistantThread(input: { threadId: string; organization
             resultForModel = { ...executed.result, quoteId: quote.id, quoteStatus: quote.status, quoteSaved: true };
           }
           const summary = mask(resultForModel) as Prisma.InputJsonValue;
-          await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: summary, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
+          try {
+            await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "completed", resultSummary: json(summary), durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
+          } catch (auditError) {
+            // A successful business tool (for example get_stock with Decimal)
+            // must never become unavailable merely because its audit row failed.
+            toolSummaries.push({ toolName: "assistant_tool_audit", status: "failed", forTool: toolName, error: text(auditError instanceof Error ? auditError.message : String(auditError), 360) });
+          }
           toolSummaries.push({ toolName, status: "completed", durationMs: Date.now() - toolStartedAt, result: summary });
-          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(resultForModel) });
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(jsonSafe(resultForModel)) });
         } catch (error) {
           const errorMessage = text(error instanceof Error ? error.message : String(error), 800) || "Инструмент недоступен";
           await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
@@ -712,7 +735,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     const rawAnswer = outputText(response);
     const structuredResponse = quoteAndTechCard ? null : savedQuoteIds.length ? parseAIAssistantStructuredResponse(rawAnswer) : null;
     const answer = quoteAndTechCard
-      ? quoteAndTechCard.customerMessage
+      ? quoteAndTechCard.customerMessage.text
       : structuredResponse
         ? structuredResponseToMarkdown(structuredResponse)
         : rawAnswer || "Не удалось подготовить ответ. Уточните запрос и повторите попытку.";

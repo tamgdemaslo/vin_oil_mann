@@ -424,7 +424,7 @@ export default function AIAssistantClient() {
               const quoteAndTechCard = quoteAndTechCardForMessage(message);
               const answerSources = [
                 ...(message.citationsJson ?? []).map((citation) => ({ title: citation.title, url: citation.url, sourceType: "web" })),
-                ...(quoteAndTechCard?.evidence ?? []).filter((source) => Boolean(source.url)).map((source) => ({ title: source.title, url: source.url!, excerpt: source.excerpt, sourceType: "web" })),
+                ...(quoteAndTechCard?.evidence ?? []).filter((source) => Boolean(source.url)).map((source) => ({ title: source.source, url: source.url!, excerpt: source.fact, sourceType: "web" })),
               ];
               return <article key={message.id} className={`eco-aiw-message is-${message.role}`}>
                 <div className="eco-aiw-message__meta">{message.role === "assistant" ? "ИИ-помощник" : "Вы"} · {formatTime(message.createdAt)}</div>
