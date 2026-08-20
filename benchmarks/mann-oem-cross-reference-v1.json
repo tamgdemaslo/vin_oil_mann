@@ -1,0 +1,679 @@
+{
+  "schemaVersion": 1,
+  "benchmarkId": "mann-oem-cross-reference-v1",
+  "frozenAt": "2026-08-19T21:30:16.045Z",
+  "selection": "95 Dataset D references + C27161/C2716/1 safety pair + deterministic SHA-256 catalog fill",
+  "evidencePolicy": "exact product MANN identity, exact/safe OEM evidence, or explicit ProductMannLink; product IDs are SHA-256 pseudonyms",
+  "sourceHashes": {
+    "localProducts": "876ee6fa4013be7cb1a26ef42cfd034dada728cf102213a1421ddeb8df5cd546",
+    "mannCatalog": "53146c361ff654e14a73b8a19c829abaf420544ed8d8950840164b99e36ce085",
+    "mannLinks": "28e7560badd232f90fa59c32dd63a4736f37bd1ac219282b0c751531bd7a42d4"
+  },
+  "references": [
+    {
+      "reference": "C35154",
+      "expectedProductIdHashes": [
+        "62eaddff1e75a2e51f37",
+        "664bf4f5068518ab15e4",
+        "31a5e65df830b6263626"
+      ]
+    },
+    {
+      "reference": "W719/45",
+      "expectedProductIdHashes": [
+        "489d586e0bbf69f3e27d",
+        "31ff54b7648639c47490"
+      ]
+    },
+    {
+      "reference": "C25016",
+      "expectedProductIdHashes": [
+        "ba5647e5050472cca1ee",
+        "10c48374287147390adf"
+      ]
+    },
+    {
+      "reference": "W811/80",
+      "expectedProductIdHashes": [
+        "7c99e0e3f84bff3b8923",
+        "8ffbb0b1ad01048f67c4",
+        "b52be2693e4e10351db1",
+        "115922d73e154b641f75",
+        "282af9bcc9f0208194e2"
+      ]
+    },
+    {
+      "reference": "C1858/2",
+      "expectedProductIdHashes": [
+        "e98a370e53323e811202",
+        "6d562bbbf8a010e939ff",
+        "f93953159a93d519140d",
+        "f55ff8b99c5108fd70e1",
+        "0dd914478def3856998f"
+      ]
+    },
+    {
+      "reference": "W75/3",
+      "expectedProductIdHashes": [
+        "7c7a44041446f5271236",
+        "419cadb2fffbfcc69b73"
+      ]
+    },
+    {
+      "reference": "C3434",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "W610/6",
+      "expectedProductIdHashes": [
+        "ba08c334c54fb0cb8a01",
+        "de0d6e30a3a9bd14e687",
+        "ffe6ce4ea02c045bcdf4"
+      ]
+    },
+    {
+      "reference": "C2136/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "W610/3",
+      "expectedProductIdHashes": [
+        "84066ec44de33b344603",
+        "ffe6ce4ea02c045bcdf4",
+        "7f5dc2bf9e0a15f0300c"
+      ]
+    },
+    {
+      "reference": "C2512",
+      "expectedProductIdHashes": [
+        "468a6efdca1b073e1b51",
+        "7c7a44041446f5271236",
+        "419cadb2fffbfcc69b73"
+      ]
+    },
+    {
+      "reference": "WK6002",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C2159",
+      "expectedProductIdHashes": [
+        "bf424b56c2f8c95867ee"
+      ]
+    },
+    {
+      "reference": "WK6031",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C4371/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C20106",
+      "expectedProductIdHashes": [
+        "8a27aff6667ffa4b74cc"
+      ]
+    },
+    {
+      "reference": "C27030",
+      "expectedProductIdHashes": [
+        "cff7ea01fa59707bcbb2"
+      ]
+    },
+    {
+      "reference": "W914/2",
+      "expectedProductIdHashes": [
+        "81b6277c63536a487c77",
+        "87749efca48cee22da48",
+        "b0b373c60511cc46ebf2",
+        "3b7fd234272e557e1bc0",
+        "d8afb2022ef7ee0b150d"
+      ]
+    },
+    {
+      "reference": "W67/1",
+      "expectedProductIdHashes": [
+        "996b667fa55b2cb259de",
+        "05b42f9fbefdb545539f",
+        "e2edd715ee53e2b676bc",
+        "240e6422654751c6d1d3",
+        "353496c3ccc302408978",
+        "7f5dc2bf9e0a15f0300c"
+      ]
+    },
+    {
+      "reference": "HU8001X",
+      "expectedProductIdHashes": [
+        "dce45d0631ab2b70a633",
+        "e043bd67ae57b5fc4f69",
+        "02b2befcfb4633d8ffe5"
+      ]
+    },
+    {
+      "reference": "PU8007",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C32191",
+      "expectedProductIdHashes": [
+        "7a79dc91c973c034fe1c"
+      ]
+    },
+    {
+      "reference": "HU719/7X",
+      "expectedProductIdHashes": [
+        "0a4b2985f035ccb36669",
+        "b62169035a2b8068ca48",
+        "e658d164c5a9f2647b8a"
+      ]
+    },
+    {
+      "reference": "C25040",
+      "expectedProductIdHashes": [
+        "e1c14689e4b9c85bc3ab",
+        "da320d165a93e44377e9",
+        "d82219cbb03a7429b6f0",
+        "6fac008b544e0c54497f",
+        "20866799edefb6032dc7",
+        "5b6f149767835829d383"
+      ]
+    },
+    {
+      "reference": "C21014",
+      "expectedProductIdHashes": [
+        "b73911344ed0523e71bb",
+        "2eea46e646707461270d"
+      ]
+    },
+    {
+      "reference": "W712/95",
+      "expectedProductIdHashes": [
+        "4295b206350298bd414b",
+        "5506de19e378477a8b48",
+        "3df85228aed17c6842c9"
+      ]
+    },
+    {
+      "reference": "C16005",
+      "expectedProductIdHashes": [
+        "4f86cffb816fb89d08a8",
+        "9500447bb5ff657d4d9f",
+        "b765a3d10a424dbd34f1",
+        "c50e0cb8f5009d5a3560",
+        "5860015866a0323fef98",
+        "f8976ff519fb73b20d1c"
+      ]
+    },
+    {
+      "reference": "HU7029Z",
+      "expectedProductIdHashes": [
+        "908299bed7fce2807864",
+        "8aea4841ff98f75f3a06",
+        "d30c363dc4f881a133ee"
+      ]
+    },
+    {
+      "reference": "C25654",
+      "expectedProductIdHashes": [
+        "d1e80c0b85c6e73d94c6",
+        "b0fb418326d882c5ec21",
+        "caf028ba7011f8703f98"
+      ]
+    },
+    {
+      "reference": "C5082/2",
+      "expectedProductIdHashes": [
+        "e8e4bd87fe3be2cb050f",
+        "52b24718304dfb799870"
+      ]
+    },
+    {
+      "reference": "HU711/51X",
+      "expectedProductIdHashes": [
+        "ceed561245e3caa36358",
+        "9012f9a66dff53c33358"
+      ]
+    },
+    {
+      "reference": "C30130",
+      "expectedProductIdHashes": [
+        "22b47890d9234d44c57b",
+        "00efb3c2fe84cf36e947"
+      ]
+    },
+    {
+      "reference": "HU612/2X",
+      "expectedProductIdHashes": [
+        "334a037ad12d0abc09b5",
+        "5207392474b2121af0f9",
+        "e20ea861ad027e9933b4",
+        "ce59f507cbead8308bc3"
+      ]
+    },
+    {
+      "reference": "C22117",
+      "expectedProductIdHashes": [
+        "64fbcf7350948863f0be"
+      ]
+    },
+    {
+      "reference": "WK512",
+      "expectedProductIdHashes": [
+        "0b6a6994e99ead1167ff",
+        "b918a52da1d439c290ce"
+      ]
+    },
+    {
+      "reference": "C22009",
+      "expectedProductIdHashes": [
+        "616695e9180bb9e3549b",
+        "594e3209a06969a6b193",
+        "9de2a455ee9f84dc7aa0"
+      ]
+    },
+    {
+      "reference": "HU7019Z",
+      "expectedProductIdHashes": [
+        "94f84ed0e24115a68cdd",
+        "70a5fc908ef5f9e13b6b",
+        "a4ee36f27bfa0abe6b22"
+      ]
+    },
+    {
+      "reference": "C30115",
+      "expectedProductIdHashes": [
+        "fd95c04e6ed21d3550cf",
+        "620e862e5c3e8a36056e"
+      ]
+    },
+    {
+      "reference": "HU826X",
+      "expectedProductIdHashes": [
+        "abeb13e2b16f31918e06"
+      ]
+    },
+    {
+      "reference": "C3880",
+      "expectedProductIdHashes": [
+        "4f057d0dba0e2ac40971"
+      ]
+    },
+    {
+      "reference": "W712/52",
+      "expectedProductIdHashes": [
+        "2cd7ce484745f097e874"
+      ]
+    },
+    {
+      "reference": "WK69/2",
+      "expectedProductIdHashes": [
+        "276d1b02b6e22cfa71c0"
+      ]
+    },
+    {
+      "reference": "C24005",
+      "expectedProductIdHashes": [
+        "cbc9d1e8f22c1bcd4f14",
+        "2a7de2b467bd514abfc3",
+        "e2a0ae291b442e4cb275",
+        "eb5086f39d08cdcf42f2",
+        "fc2c29b1ccab5a14a95a",
+        "0f8e9cc3a6bbbe6f069b"
+      ]
+    },
+    {
+      "reference": "HU6006Z",
+      "expectedProductIdHashes": [
+        "e69f4cd5ca3f1150cd6f",
+        "c993d3f7ff77f4a30eb4",
+        "aa1241ddd76d1360ba74"
+      ]
+    },
+    {
+      "reference": "W68/3",
+      "expectedProductIdHashes": [
+        "3a124573bac4fd970efd",
+        "53db49b129bfa9882f02",
+        "dfe2ea30fb41b5f5de8b"
+      ]
+    },
+    {
+      "reference": "HU718/1K",
+      "expectedProductIdHashes": [
+        "bc590fe1c95ba2ebeb26",
+        "f0f9e25dee1a62d0b0ee",
+        "5166978e289d1a454aae",
+        "e5b16a5ed2379ba76bf9"
+      ]
+    },
+    {
+      "reference": "WK822/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "WK820/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C38145",
+      "expectedProductIdHashes": [
+        "ad35d2af5fcb249d619a",
+        "22df74f6fb748fec7860"
+      ]
+    },
+    {
+      "reference": "C12133",
+      "expectedProductIdHashes": [
+        "a9ec748c7cdbf26ef306"
+      ]
+    },
+    {
+      "reference": "C2433/2",
+      "expectedProductIdHashes": [
+        "b7191788f2b505e48393",
+        "c6c211f3ac54cdb470b5"
+      ]
+    },
+    {
+      "reference": "C2240",
+      "expectedProductIdHashes": [
+        "ce1ba17c7290175ca211"
+      ]
+    },
+    {
+      "reference": "C3766",
+      "expectedProductIdHashes": [
+        "b909728499f352873490",
+        "6ca5ece4bec5a36375cd",
+        "91bbb5a9f34864bd7395"
+      ]
+    },
+    {
+      "reference": "C33006",
+      "expectedProductIdHashes": [
+        "b074a409ae4a8def9945",
+        "3346631ce9739d4d8b06",
+        "ff2676c16aa75ab291e7",
+        "88de7dc5cca95de73b1b"
+      ]
+    },
+    {
+      "reference": "C3282",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "HU716/2X",
+      "expectedProductIdHashes": [
+        "51b98cb142835411f6fa",
+        "ddf90f4abeeded2891cd"
+      ]
+    },
+    {
+      "reference": "WK939/2Z",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C30005",
+      "expectedProductIdHashes": [
+        "8ad76a0e391456c023a8",
+        "cb00321d2c81221c6d4c",
+        "febed03100fd53e0aa91"
+      ]
+    },
+    {
+      "reference": "HU6013Z",
+      "expectedProductIdHashes": [
+        "75d527811e88ee89ffb2"
+      ]
+    },
+    {
+      "reference": "C30135",
+      "expectedProductIdHashes": [
+        "6d678e3ad258cb792b8e",
+        "ec7b498a886076e5b90d"
+      ]
+    },
+    {
+      "reference": "HU721/5X",
+      "expectedProductIdHashes": [
+        "648c138af05942236cfa",
+        "a068203cfb7b3df874ff",
+        "941424eecce525dd0e7c"
+      ]
+    },
+    {
+      "reference": "WK5010",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C26028",
+      "expectedProductIdHashes": [
+        "397ce2843a99ac3d298e",
+        "1aed4c64cfee697dc7d6"
+      ]
+    },
+    {
+      "reference": "W7061",
+      "expectedProductIdHashes": [
+        "58d4dd4a51c22084852d"
+      ]
+    },
+    {
+      "reference": "WK8052Z",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C32130",
+      "expectedProductIdHashes": [
+        "abd3bd5c1f17bc903e01",
+        "35d0c7f758a904b9e874"
+      ]
+    },
+    {
+      "reference": "C26048",
+      "expectedProductIdHashes": [
+        "e8f714180b4c96152a3a",
+        "9a763c2e29524ab356ed"
+      ]
+    },
+    {
+      "reference": "C24011",
+      "expectedProductIdHashes": [
+        "4aa25cf7241e0160915f",
+        "fca96450aa4b57f2833e",
+        "0b14133990e7d1d588b0",
+        "ed87af4d0e8c4a37e981"
+      ]
+    },
+    {
+      "reference": "W9066",
+      "expectedProductIdHashes": [
+        "1634f2d890c25c217cb1"
+      ]
+    },
+    {
+      "reference": "WK9023Z",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "WK8053Z",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C2672/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C26013",
+      "expectedProductIdHashes": [
+        "a0f73caeed856f0d17d5"
+      ]
+    },
+    {
+      "reference": "HU7027Z",
+      "expectedProductIdHashes": [
+        "e40d458c9ce7942434cd"
+      ]
+    },
+    {
+      "reference": "WK8019/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C2964",
+      "expectedProductIdHashes": [
+        "5f621e1b7a3e3ef80490",
+        "6aefb582e192c964572c"
+      ]
+    },
+    {
+      "reference": "C37153",
+      "expectedProductIdHashes": [
+        "4a5bea093924ed4ced41"
+      ]
+    },
+    {
+      "reference": "HU726/2X",
+      "expectedProductIdHashes": [
+        "99b84ac8ecee1ce5f035",
+        "0abd291da09f811591c7"
+      ]
+    },
+    {
+      "reference": "WK853/3X",
+      "expectedProductIdHashes": [
+        "3eeb183e9321af9a2150",
+        "81a08a8f4005d6d83040"
+      ]
+    },
+    {
+      "reference": "C51001",
+      "expectedProductIdHashes": [
+        "3cf6300e74ce781a5328",
+        "bdaa5fd649b07305a226"
+      ]
+    },
+    {
+      "reference": "HU720/3X",
+      "expectedProductIdHashes": [
+        "95704eec54e728df12c2",
+        "d842a0463fa5bbfc8b59"
+      ]
+    },
+    {
+      "reference": "WK5002",
+      "expectedProductIdHashes": [
+        "867420b0b786694ad88e",
+        "06b6c1b7ad9cc72f9571"
+      ]
+    },
+    {
+      "reference": "C1652",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "HU7005X",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "WK720/4",
+      "expectedProductIdHashes": [
+        "fc880f8866cc517d871f"
+      ]
+    },
+    {
+      "reference": "C16134/2",
+      "expectedProductIdHashes": [
+        "b8475abc92db761af952",
+        "3af057392e5f10ffbc28",
+        "f6640d9796ad99b6baec"
+      ]
+    },
+    {
+      "reference": "W7008",
+      "expectedProductIdHashes": [
+        "7f7beaa051ff1f55ec52",
+        "b9541799f22ceeebf1ab"
+      ]
+    },
+    {
+      "reference": "W7015",
+      "expectedProductIdHashes": [
+        "e89e6f58bbc759e202f4",
+        "ee87ab1fd56affde57e8"
+      ]
+    },
+    {
+      "reference": "C26089",
+      "expectedProductIdHashes": [
+        "d82219cbb03a7429b6f0",
+        "6fac008b544e0c54497f"
+      ]
+    },
+    {
+      "reference": "C15143/1",
+      "expectedProductIdHashes": [
+        "4d03f06fc2482d8355f4",
+        "28aa9291749483748314",
+        "a264443a76e4325611e5"
+      ]
+    },
+    {
+      "reference": "HU818X",
+      "expectedProductIdHashes": [
+        "e43dbe0058dbccf59447",
+        "01979c65cbf58fdfefec",
+        "740d968ca7a02b3eab4d"
+      ]
+    },
+    {
+      "reference": "WK841/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C27192/1",
+      "expectedProductIdHashes": [
+        "bd0b683b700a23d3c6b1",
+        "3bcf75e1ac8e574208d7"
+      ]
+    },
+    {
+      "reference": "W719/30",
+      "expectedProductIdHashes": [
+        "ded59b7924d6cf22a431",
+        "924adbb5d6c044f2bc16",
+        "f4b50d7e6c99dc5c9bdb"
+      ]
+    },
+    {
+      "reference": "WK730/1",
+      "expectedProductIdHashes": [
+        "e92af11d46e16ac4264d"
+      ]
+    },
+    {
+      "reference": "C27161",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C2716/1",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "FP5141",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "HU7026Z",
+      "expectedProductIdHashes": []
+    },
+    {
+      "reference": "C12003",
+      "expectedProductIdHashes": [
+        "2f6ce0c95b6834b3aa81",
+        "d244e8922f841c491ee3"
+      ]
+    }
+  ]
+}

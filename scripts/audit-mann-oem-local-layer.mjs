@@ -31,6 +31,11 @@ const {
   normalizePartArticle,
 } = await jiti.import("../src/lib/mann-catalog.ts");
 const { splitProductCrossReferences } = await jiti.import("../src/lib/product-cross-references.ts");
+const {
+  buildPartNumberCollisionIndex,
+  normalizePartNumberForCrossMatch,
+  parseOemParts,
+} = await jiti.import("../src/lib/part-number-cross-reference.ts");
 const { normalizeRosskoArticle, normalizeRosskoBrand } = await jiti.import("../src/lib/rossko-product-import.ts");
 
 function unescapeCopyValue(value) {
@@ -153,6 +158,7 @@ const products = productRows
     archived: row.archived === "t",
     oemParts: row.oem_parts,
     oemTokens: normalizedCurrentOemTokens(row.oem_parts),
+    parsedOemParts: parseOemParts(row.oem_parts),
   }));
 const activeProducts = products.filter((product) => !product.archived);
 const productsById = new Map(products.map((product) => [product.id, product]));
@@ -242,6 +248,15 @@ const collisions = {
   localOwnArticlesAndCodes: collisionSummary(ownArticleEntries, (entry) => normalizePartArticle(entry.raw).structural, (entry) => normalizePartArticle(entry.raw).compact),
   oemRawSegments: collisionSummary(oemTokenEntries, (entry) => normalizePartArticle(entry.raw).structural, (entry) => normalizePartArticle(entry.raw).compact),
 };
+const authoritativeCollisionIndex = buildPartNumberCollisionIndex([
+  ...mannCatalogArticles.map((entry) => entry.raw),
+  ...activeProducts.flatMap((product) => normalizeMannProductBrand(product.brand)
+    ? [product.article, product.article ? null : product.code]
+    : []),
+]);
+const safeCompactKeys = new Set([...authoritativeCollisionIndex]
+  .filter(([, canonicals]) => canonicals.size === 1)
+  .map(([compact]) => compact));
 
 const duplicateGroups = new Map();
 for (const product of activeProducts) {
@@ -303,16 +318,20 @@ function setEquals(left, right) {
 }
 
 function productEvidence(product, rawArticle) {
-  const expected = normalizePartArticle(rawArticle);
-  const ownArticle = normalizePartArticle(product.article);
-  const ownCode = normalizePartArticle(product.code);
+  const expected = normalizePartNumberForCrossMatch(rawArticle);
+  const ownArticle = normalizePartNumberForCrossMatch(product.article);
+  const ownCode = normalizePartNumberForCrossMatch(product.code);
   const exactMannOwn = Boolean(normalizeMannProductBrand(product.brand)) && (
-    ownArticle.structural === expected.structural
-    || ownCode.structural === expected.structural
-    || ownArticle.compact === expected.compact
-    || ownCode.compact === expected.compact
+    ownArticle.canonical === expected.canonical
+    || (!ownArticle.canonical && ownCode.canonical === expected.canonical)
   );
-  const oemEvidence = product.oemTokens.get(expected.compact) ?? [];
+  const oemEvidence = product.parsedOemParts.filter((entry) => (
+    (entry.brand == null || entry.brand === "MANN")
+    && (
+      entry.canonical === expected.canonical
+      || (safeCompactKeys.has(expected.compactCandidate) && entry.compactCandidate === expected.compactCandidate)
+    )
+  ));
   return { exactMannOwn, oemEvidence };
 }
 
@@ -332,7 +351,7 @@ const articleAudit = new Map();
 for (const [article, rawArticle] of articlesNeeded) {
   const matches = [];
   for (const product of activeProducts) {
-    const evaluated = evaluateMannArticleProductMatch(product, rawArticle);
+    const evaluated = evaluateMannArticleProductMatch(product, rawArticle, { safeCompactKeys });
     const evidence = productEvidence(product, rawArticle);
     if (!evaluated && !evidence.exactMannOwn && evidence.oemEvidence.length === 0) continue;
     matches.push({ product, evaluated, evidence });
@@ -416,7 +435,7 @@ const falseMatchDetails = uniqueAudits.flatMap((item) => item.policyInvalidStron
 })));
 
 const output = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedAt: new Date().toISOString(),
   datasetId: report.datasetId,
   sourceHashes: Object.fromEntries([

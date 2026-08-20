@@ -2,6 +2,14 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireSingleBranchSqlContext } from "@/lib/branch-sql-context";
+import {
+  buildPartNumberCollisionIndex,
+  isSafeCompactKey,
+  listPartNumberCollisions,
+  normalizeCrossReferenceBrand,
+  normalizePartNumberForCrossMatch,
+  parseOemParts,
+} from "@/lib/part-number-cross-reference";
 
 const LEGACY_MANN_EXPECTED_COUNTS = {
   applicationRows: 24502,
@@ -67,16 +75,27 @@ export type MannLocalProductMatch = {
   cell?: string | null;
   buyPriceCents?: number | null;
   cost?: number;
+  orderable: boolean;
+  matchType: MannLocalProductMatchType;
   matchConfidence: number;
   matchReason: string;
 };
+
+export type MannLocalProductMatchType =
+  | "EXACT_PRODUCT_BRAND_ARTICLE"
+  | "OEM_EXACT_BRAND_ARTICLE"
+  | "OEM_EXACT_ARTICLE"
+  | "OEM_SAFE_COMPACT"
+  | "PRODUCT_MANN_LINK";
 
 export type MannArticleMatchResult = {
   mannArticle: string;
   mannArticleNormalized: string;
   filterType?: string;
   filterSubtype?: string | null;
+  compatibleProducts: MannLocalProductMatch[];
   localMatches: MannLocalProductMatch[];
+  /** @deprecated Compatibility alias for the first commercially ranked product. */
   bestMatch: MannLocalProductMatch | null;
   matchConfidence: number;
   matchReason: string;
@@ -84,7 +103,19 @@ export type MannArticleMatchResult = {
   available: number;
   price: number | null;
   cell?: string | null;
-  status: "found" | "multiple_matches" | "not_found" | "needs_review";
+  status: "found" | "not_found";
+  coverageStatus: "OEM_COVERED" | "OEM_NOT_COVERED";
+  diagnostics: {
+    candidateCount: number;
+    compatibleCount: number;
+    canonicalArticle: string;
+    compactCandidate: string;
+    compactCollisionBlocked: boolean;
+    collisionCanonicalArticles: string[];
+    localProductScanMs: number;
+    parsingMs: number;
+    totalMs: number;
+  };
 };
 
 export function normalizeMannText(value: unknown): string {
@@ -182,21 +213,12 @@ export type NormalizedPartArticle = {
  * evidence before it can become a strong match.
  */
 export function normalizePartArticle(value: unknown): NormalizedPartArticle {
-  const structural = normalizeMannText(value)
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[‐‑‒–—―]/g, "-")
-    .replace(/\\/g, "/")
-    .replace(/[.\s-]+/g, "")
-    .replace(/[^A-Z0-9/]/g, "")
-    .replace(/\/{2,}/g, "/")
-    .replace(/^\/+|\/+$/g, "");
-  return { structural, compact: structural.replace(/\//g, "") };
+  const normalized = normalizePartNumberForCrossMatch(value);
+  return { structural: normalized.canonical, compact: normalized.compactCandidate };
 }
 
 export function normalizeMannProductBrand(value: unknown): "MANN" | undefined {
-  const normalized = normalizeMannSearchText(value).replace(/\s+/g, " ");
-  return ["MANN", "MANN FILTER", "MANNFILTER"].includes(normalized) ? "MANN" : undefined;
+  return normalizeCrossReferenceBrand(value) === "MANN" ? "MANN" : undefined;
 }
 
 function normalizeEngineCode(value: unknown): string | null {
@@ -1021,90 +1043,62 @@ export async function listMannFilters(params: { make?: string | null; model?: st
   return dedupeMannFilters([...filters, ...contextual]);
 }
 
-function normalizeOemPartsToken(value: unknown): string {
-  return normalizePartArticle(value).compact;
-}
-
-function normalizedOemPartsTokens(value?: string | null): Set<string> {
-  const tokens = new Set<string>();
-  const add = (candidate: unknown) => {
-    const normalized = normalizeOemPartsToken(candidate);
-    if (normalized.length >= 3) tokens.add(normalized);
-  };
-
-  for (const segment of String(value ?? "").split(/[\n\r,;|]+/)) {
-    const cleanSegment = segment.trim();
-    if (!cleanSegment) continue;
-    add(cleanSegment);
-
-    const parts = cleanSegment.split(/\s+/).filter(Boolean);
-    for (const part of parts) add(part);
-
-    for (let start = 0; start < parts.length; start += 1) {
-      const first = normalizeOemPartsToken(parts[start]);
-      if (!/^[A-Z]{1,4}$/.test(first)) continue;
-      let grouped = parts[start];
-      let hasDigit = false;
-      for (let index = start + 1; index < parts.length; index += 1) {
-        const next = normalizeOemPartsToken(parts[index]);
-        if (!next) break;
-        if (/\d/.test(next)) {
-          grouped += parts[index];
-          hasDigit = true;
-          continue;
-        }
-        if (hasDigit && (next === "X" || next === "Z")) {
-          grouped += parts[index];
-          continue;
-        }
-        break;
-      }
-      if (hasDigit) add(grouped);
-    }
-  }
-
-  return tokens;
-}
-
 function productHasMannArticle(
   product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null; brand?: string | null },
-  mannArticle: string
-): { confidence: number; reason: string } | null {
-  const expected = normalizePartArticle(mannArticle);
-  const articleOemNormalized = expected.compact;
-  if (articleOemNormalized.length < 3) return null;
-  const article = normalizePartArticle(product.article);
-  const code = normalizePartArticle(product.code);
-  const hasArticleStructuralMatch = Boolean(expected.structural && article.structural === expected.structural);
-  const hasCodeStructuralMatch = Boolean(expected.structural && code.structural === expected.structural);
-  const hasArticleCompactMatch = article.compact === articleOemNormalized;
-  const hasCodeCompactMatch = code.compact === articleOemNormalized;
-  const hasOemPartsMatch = normalizedOemPartsTokens(product.oemParts).has(articleOemNormalized);
-  const hasNameMatch = normalizedOemPartsTokens(product.name).has(articleOemNormalized);
+  mannArticle: string,
+  options: { safeCompactKeys?: ReadonlySet<string> } = {},
+): { confidence: number; reason: string; matchType: MannLocalProductMatchType } | null {
+  const expected = normalizePartNumberForCrossMatch(mannArticle);
+  if (expected.canonical.length < 3) return null;
+  const article = normalizePartNumberForCrossMatch(product.article);
+  const code = normalizePartNumberForCrossMatch(product.code);
   const mannBrand = normalizeMannProductBrand(product.brand);
-  if (mannBrand && hasArticleStructuralMatch && hasCodeStructuralMatch) return { confidence: 100, reason: "MANN brand + Article + Code exact" };
-  if (mannBrand && hasArticleStructuralMatch) return { confidence: 100, reason: "MANN brand + Article exact" };
-  if (mannBrand && hasCodeStructuralMatch) return { confidence: 99, reason: "MANN brand + Code exact" };
-  if (mannBrand && (hasArticleCompactMatch || hasCodeCompactMatch)) return { confidence: 96, reason: "MANN brand + Article formatting variant" };
-  if (mannBrand && hasOemPartsMatch && hasNameMatch) return { confidence: 94, reason: "MANN brand + OEM Parts + Name normalized" };
-  if (mannBrand && hasOemPartsMatch) return { confidence: 92, reason: "MANN brand + OEM Parts normalized" };
-  if (mannBrand && hasNameMatch) return { confidence: 84, reason: "MANN brand + Name normalized" };
-  // Article numbers are not globally unique between manufacturers. Without a
-  // MANN brand or an explicit ProductMannLink this remains review evidence.
-  if (hasOemPartsMatch && hasNameMatch) return { confidence: 92, reason: "Explicit OEM cross-reference + Name, analog product" };
-  if (hasOemPartsMatch) return { confidence: 90, reason: "Explicit OEM cross-reference, analog product" };
-  if (hasArticleStructuralMatch || hasCodeStructuralMatch) return { confidence: 74, reason: "Article exact, product brand is not MANN" };
-  if (hasArticleCompactMatch || hasCodeCompactMatch) return { confidence: 68, reason: "Article formatting match, product brand is not MANN" };
-  if (hasNameMatch) return { confidence: 60, reason: "Name reference, product brand is not MANN" };
+  if (mannBrand && article.canonical === expected.canonical) {
+    return { confidence: 100, reason: "Exact MANN product brand + article", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" };
+  }
+  if (mannBrand && !article.canonical && code.canonical === expected.canonical) {
+    return { confidence: 99, reason: "Exact MANN product brand + legacy code", matchType: "EXACT_PRODUCT_BRAND_ARTICLE" };
+  }
+
+  const entries = parseOemParts(product.oemParts);
+  const exactBranded = entries.find((entry) => entry.brand === "MANN" && entry.canonical === expected.canonical);
+  if (exactBranded) {
+    return { confidence: 98, reason: "Exact MANN brand + article in OEM Parts", matchType: "OEM_EXACT_BRAND_ARTICLE" };
+  }
+  const exactArticleOnly = entries.find((entry) => entry.brand == null && entry.canonical === expected.canonical);
+  if (exactArticleOnly) {
+    return { confidence: 96, reason: "Exact article-only reference in OEM Parts", matchType: "OEM_EXACT_ARTICLE" };
+  }
+
+  if (options.safeCompactKeys?.has(expected.compactCandidate)) {
+    if (
+      mannBrand
+      && article.canonical
+      && article.compactCandidate === expected.compactCandidate
+    ) {
+      return { confidence: 92, reason: "Collision-free compact MANN product article", matchType: "OEM_SAFE_COMPACT" };
+    }
+    const safeCompact = entries.find((entry) => (
+      (entry.brand == null || entry.brand === "MANN")
+      && entry.compactCandidate === expected.compactCandidate
+    ));
+    if (safeCompact) {
+      return { confidence: 90, reason: "Collision-free compact OEM candidate", matchType: "OEM_SAFE_COMPACT" };
+    }
+    if (mannBrand && !article.canonical && code.compactCandidate === expected.compactCandidate) {
+      return { confidence: 90, reason: "Collision-free compact MANN legacy code", matchType: "OEM_SAFE_COMPACT" };
+    }
+  }
   return null;
 }
 
 /** Pure seam used by catalogue audits; production uses the same matcher below. */
 export function evaluateMannArticleProductMatch(
   product: { name?: string | null; oemParts?: string | null; article?: string | null; code?: string | null; brand?: string | null },
-  mannArticle: string
-): { confidence: number; reason: string } | null {
-  return productHasMannArticle(product, mannArticle);
+  mannArticle: string,
+  options: { safeCompactKeys?: ReadonlySet<string> } = {},
+): { confidence: number; reason: string; matchType: MannLocalProductMatchType } | null {
+  return productHasMannArticle(product, mannArticle, options);
 }
 
 function localProductMeta(product: { id: string; entityType?: string | null; localHref?: string | null }) {
@@ -1118,7 +1112,7 @@ function localProductMeta(product: { id: string; entityType?: string | null; loc
 
 function localMatchFromProduct(
   product: Prisma.LocalProductGetPayload<{ include: { stockBalances: true } }>,
-  match: { confidence: number; reason: string }
+  match: { confidence: number; reason: string; matchType: MannLocalProductMatchType }
 ): MannLocalProductMatch {
   const stock = product.stockBalances[0];
   const buyPriceCents = stock?.buyPriceCents ?? product.buyPriceCents ?? null;
@@ -1137,6 +1131,8 @@ function localMatchFromProduct(
     cell: stock?.slotName ?? product.cell,
     buyPriceCents,
     cost: buyPriceCents != null ? buyPriceCents / 100 : undefined,
+    orderable: Boolean(product.supplierCounterpartyId || product.legacySupplierName),
+    matchType: match.matchType,
     matchConfidence: match.confidence,
     matchReason: match.reason,
   };
@@ -1186,8 +1182,10 @@ export async function matchMannArticlesToLocalProducts(params: {
 
   const results: MannArticleMatchResult[] = [];
   for (const articleNormalized of normalizedArticles) {
+    const lookupStartedAt = performance.now();
     const item = articleByNormalized.get(articleNormalized)!;
-    const articleOemNormalized = normalizeOemPartsToken(item.mannArticle);
+    const reference = normalizePartNumberForCrossMatch(item.mannArticle);
+    const articleOemNormalized = reference.compactCandidate;
     const candidateIds = articleOemNormalized.length >= 3
       ? await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id
@@ -1197,11 +1195,9 @@ export async function matchMannArticlesToLocalProducts(params: {
             AND entity_type <> 'service'
             AND (
               regexp_replace(upper(COALESCE(oem_parts, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
-              OR regexp_replace(upper(COALESCE(name, '')), '[^A-Z0-9]', '', 'g') LIKE ${`%${articleOemNormalized}%`}
               OR regexp_replace(upper(COALESCE(article, '')), '[^A-Z0-9]', '', 'g') = ${articleOemNormalized}
               OR regexp_replace(upper(COALESCE(code, '')), '[^A-Z0-9]', '', 'g') = ${articleOemNormalized}
             )
-          LIMIT 200
         `)
       : [];
     const links = linksByArticle.get(articleNormalized) ?? [];
@@ -1218,37 +1214,58 @@ export async function matchMannArticlesToLocalProducts(params: {
       },
       include: { stockBalances: stockInclude },
     });
+    const localProductScanMs = performance.now() - lookupStartedAt;
+    const parsingStartedAt = performance.now();
+    const collisionRows = await prisma.$queryRaw<Array<{ mannArticleNormalized: string }>>(Prisma.sql`
+      SELECT DISTINCT mann_article_normalized AS "mannArticleNormalized"
+      FROM mann_filter_applications
+      WHERE replace(mann_article_normalized, '/', '') = ${articleOemNormalized}
+    `);
+    const authoritativeValues = [
+      item.mannArticle,
+      ...collisionRows.map((row) => row.mannArticleNormalized),
+      ...candidates.flatMap((product) => normalizeMannProductBrand(product.brand) ? [product.article, product.article ? null : product.code] : []).filter(Boolean),
+    ];
+    const authoritativeCollisionIndex = buildPartNumberCollisionIndex(authoritativeValues);
+    const observedCollisionIndex = buildPartNumberCollisionIndex([
+      ...authoritativeValues,
+      ...candidates.flatMap((product) => parseOemParts(product.oemParts).map((entry) => entry.articleRaw)),
+    ]);
+    const safeCompactKeys = new Set<string>();
+    // Safety is decided inside the authoritative MANN/product-identity namespace.
+    // OEM representations are observed for diagnostics, but a formatting-only
+    // slash difference across namespaces is not itself a second MANN SKU.
+    if (isSafeCompactKey(authoritativeCollisionIndex, articleOemNormalized)) safeCompactKeys.add(articleOemNormalized);
+    const observedCollision = listPartNumberCollisions(observedCollisionIndex).find((collision) => collision.compactKey === articleOemNormalized);
+    const parsingMs = performance.now() - parsingStartedAt;
     const byProduct = new Map<string, MannLocalProductMatch>();
     for (const product of candidates) {
       const link = links.find((candidate) => candidate.productId === product.id);
       const match = link
-        ? { confidence: link.confidence, reason: `ProductMannLink:${link.linkType}` }
-        : evaluateMannArticleProductMatch(product, item.mannArticle);
+        ? { confidence: link.confidence, reason: `ProductMannLink:${link.linkType}`, matchType: "PRODUCT_MANN_LINK" as const }
+        : evaluateMannArticleProductMatch(product, item.mannArticle, { safeCompactKeys });
       if (!match) continue;
       const current = byProduct.get(product.id);
       const next = localMatchFromProduct(product, match);
       if (!current || next.matchConfidence > current.matchConfidence) byProduct.set(product.id, next);
     }
     const localMatches = [...byProduct.values()].sort((a, b) => {
-      if (b.matchConfidence !== a.matchConfidence) return b.matchConfidence - a.matchConfidence;
       if (b.available !== a.available) return b.available - a.available;
+      const exactRank = (match: MannLocalProductMatch) => match.matchType === "EXACT_PRODUCT_BRAND_ARTICLE" ? 1 : 0;
+      if (exactRank(b) !== exactRank(a)) return exactRank(b) - exactRank(a);
+      if (Number(b.orderable) !== Number(a.orderable)) return Number(b.orderable) - Number(a.orderable);
+      if (b.matchConfidence !== a.matchConfidence) return b.matchConfidence - a.matchConfidence;
+      if (a.price !== b.price) return a.price - b.price;
       return a.name.localeCompare(b.name, "ru");
     });
-    const strongMatches = localMatches.filter((match) => match.matchConfidence >= 80);
-    const status =
-      strongMatches.length === 1
-        ? "found"
-        : strongMatches.length > 1
-          ? "multiple_matches"
-          : localMatches.length > 0
-            ? "needs_review"
-            : "not_found";
-    const bestMatch = status === "found" ? strongMatches[0] : localMatches[0] ?? null;
+    const status = localMatches.length > 0 ? "found" : "not_found";
+    const bestMatch = localMatches[0] ?? null;
     results.push({
       mannArticle: item.mannArticle,
       mannArticleNormalized: articleNormalized,
       filterType: item.filterType,
       filterSubtype: item.filterSubtype,
+      compatibleProducts: localMatches,
       localMatches,
       bestMatch,
       matchConfidence: bestMatch?.matchConfidence ?? 0,
@@ -1258,6 +1275,18 @@ export async function matchMannArticlesToLocalProducts(params: {
       price: bestMatch?.price ?? null,
       cell: bestMatch?.cell,
       status,
+      coverageStatus: localMatches.length > 0 ? "OEM_COVERED" : "OEM_NOT_COVERED",
+      diagnostics: {
+        candidateCount: candidates.length,
+        compatibleCount: localMatches.length,
+        canonicalArticle: reference.canonical,
+        compactCandidate: reference.compactCandidate,
+        compactCollisionBlocked: !safeCompactKeys.has(articleOemNormalized),
+        collisionCanonicalArticles: observedCollision?.canonicalArticles ?? [],
+        localProductScanMs,
+        parsingMs,
+        totalMs: performance.now() - lookupStartedAt,
+      },
     });
   }
   return results;

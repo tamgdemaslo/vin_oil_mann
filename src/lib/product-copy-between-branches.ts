@@ -3,6 +3,8 @@ import { type BranchContext, type BranchSummary } from "@/lib/branch-context";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { dashboardPermissionsFromJson } from "@/lib/dashboard-variant";
 import { prisma } from "@/lib/db";
+import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
+import { sameExactProductIdentity } from "@/lib/product-identity";
 
 export const PRODUCT_COPY_PERMISSION = "products.copy_between_branches";
 
@@ -62,6 +64,7 @@ type TargetProduct = Pick<
   LocalProduct,
   "id" | "name" | "brand" | "article" | "code" | "barcodeEan13" | "barcodeEan8" | "barcodeCode128"
   | "sourceProductId" | "salePriceCents" | "buyPriceCents" | "minimumBalance" | "supplierCounterpartyId"
+  | "uomName" | "packageVolume" | "volume" | "weight" | "modificationCode"
 > & Record<string, unknown>;
 
 function normalized(value: string | null | undefined) {
@@ -189,14 +192,21 @@ async function findDuplicate(targetBranchId: string, source: SourceProduct): Pro
   if (source.barcodeEan13) or.push({ barcodeEan13: source.barcodeEan13 });
   if (source.barcodeEan8) or.push({ barcodeEan8: source.barcodeEan8 });
   if (source.barcodeCode128) or.push({ barcodeCode128: source.barcodeCode128 });
-  if (!or.length) return null;
+  const compactArticle = normalizePartNumberForCrossMatch(source.article).compactCandidate.toLocaleLowerCase("ru-RU");
+  const normalizedArticleCandidates = compactArticle ? await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM local_products
+    WHERE branch_id = ${targetBranchId}
+      AND regexp_replace(lower(COALESCE(article, '')), '[^0-9a-zа-я]', '', 'g') = ${compactArticle}
+  `) : [];
+  if (!or.length && normalizedArticleCandidates.length === 0) return null;
+  if (normalizedArticleCandidates.length > 0) or.push({ id: { in: normalizedArticleCandidates.map((row) => row.id) } });
 
   const candidates = await prisma.localProduct.findMany({
     where: { branchId: targetBranchId, OR: or },
     select: duplicateSelect,
-    take: 60,
   }) as TargetProduct[];
-  const articleBrand = candidates.find((candidate) => sameNonEmpty(candidate.article as string | null, source.article) && sameNonEmpty(candidate.brand as string | null, source.brand));
+  const articleBrand = candidates.find((candidate) => sameExactProductIdentity(candidate, source));
   if (articleBrand) return { product: articleBrand, method: "BRAND_ARTICLE" };
   const barcode = candidates.find((candidate) =>
     sameNonEmpty(candidate.barcodeEan13 as string | null, source.barcodeEan13) ||
@@ -222,6 +232,11 @@ const duplicateSelect = {
   buyPriceCents: true,
   minimumBalance: true,
   supplierCounterpartyId: true,
+  uomName: true,
+  packageVolume: true,
+  volume: true,
+  weight: true,
+  modificationCode: true,
 } as const;
 
 async function supplierForTarget(source: SourceProduct, targetBranchId: string, enabled: boolean) {

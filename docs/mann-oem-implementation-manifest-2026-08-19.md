@@ -115,3 +115,7 @@ SQL substring используется только для retrieval, но фи�
 5. Возвращать все `compatibleProducts` с четырьмя явными match types.
 6. Сортировать только после compatibility: in-stock → exact MANN → orderable → остальные.
 7. Пересчитать отдельные `TECHNICAL_COVERAGE` и `IN_STOCK_COVERAGE`.
+
+## Post-implementation namespace note
+
+После сборки runtime collision index обнаружились дополнительные cross-namespace formatting pairs: MANN catalog хранит slash, а LocalProduct/OEM часто хранит тот же номер без slash. Они не считаются вторым MANN SKU сами по себе. Safety решается в authoritative MANN/product-identity namespace; все OEM representations остаются в diagnostics. Это блокирует реальную пару `C27161`/`C2716/1`, но не снижает coverage из-за обычного supplier formatting.

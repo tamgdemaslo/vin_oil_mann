@@ -11,6 +11,8 @@ import { prisma } from "@/lib/db";
 import { getRequestTenant, getScopedBranchId } from "@/lib/request-tenant-store";
 import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
+import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
+import { sameExactProductIdentity } from "@/lib/product-identity";
 import { invalidateLocalInventoryFinanceCache } from "@/lib/local-inventory-finance";
 import { normalizePhoneKey } from "@/lib/phone-normalize";
 import {
@@ -2775,6 +2777,48 @@ export async function createLocalAdminProduct(
   if (!marking.ok) return { ok: false as const, error: marking.error };
   const markingConfiguredManually = booleanFromInput(body.markingConfiguredManually) === true;
   const client = options.transaction ?? prisma;
+  if (entityType !== "service" && brand && article) {
+    const compactArticle = normalizePartNumberForCrossMatch(article).compactCandidate.toLocaleLowerCase("ru-RU");
+    const candidates = compactArticle ? await client.$queryRaw<Array<{
+      id: string;
+      name: string;
+      brand: string | null;
+      article: string | null;
+      uomName: string | null;
+      packageVolume: string | null;
+      volume: Prisma.Decimal | null;
+      weight: Prisma.Decimal | null;
+      modificationCode: string | null;
+    }>>(Prisma.sql`
+      SELECT
+        id,
+        name,
+        brand,
+        article,
+        uom_name AS "uomName",
+        package_volume AS "packageVolume",
+        volume,
+        weight,
+        modification_code AS "modificationCode"
+      FROM local_products
+      WHERE branch_id = ${branchId}
+        AND archived = false
+        AND entity_type <> 'service'
+        AND regexp_replace(lower(COALESCE(article, '')), '[^0-9a-zа-я]', '', 'g') = ${compactArticle}
+    `) : [];
+    const duplicate = candidates.find((candidate) => sameExactProductIdentity(candidate, {
+      brand,
+      article,
+      uomName,
+      packageVolume,
+      volume: body.volume,
+      weight: body.weight,
+      modificationCode,
+    }));
+    if (duplicate) {
+      return { ok: false as const, error: `Товар с такой канонической карточкой уже существует: ${duplicate.name}` };
+    }
+  }
   const product = await client.localProduct.create({
     data: {
       branchId,

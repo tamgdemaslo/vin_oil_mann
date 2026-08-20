@@ -3,12 +3,12 @@
   "counts": {
     "GLOBAL_SAFE": 0,
     "GROUP_SCOPED": 0,
-    "BRANCH_SCOPED": 221,
-    "BRANCH_SCOPED_BY_PARENT": 5,
+    "BRANCH_SCOPED": 229,
+    "BRANCH_SCOPED_BY_PARENT": 6,
     "OWNER_MULTI_BRANCH_READ_ONLY": 0,
     "MIGRATION_ONLY": 4,
     "UNSAFE": 0,
-    "UNKNOWN": 0
+    "UNKNOWN": 3
   },
   "findings": [
     {
@@ -35,7 +35,7 @@
     },
     {
       "file": "src/app/api/crm/deals/route.ts",
-      "line": 243,
+      "line": 241,
       "function": "loadStagesWithLegacyDeals",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -57,7 +57,7 @@
     },
     {
       "file": "src/app/api/messenger/attachments/[id]/route.ts",
-      "line": 15,
+      "line": 17,
       "function": "GET",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -79,7 +79,7 @@
     },
     {
       "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
-      "line": 74,
+      "line": 76,
       "function": "POST",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -101,7 +101,7 @@
     },
     {
       "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
-      "line": 140,
+      "line": 142,
       "function": "POST",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -123,7 +123,7 @@
     },
     {
       "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
-      "line": 147,
+      "line": 149,
       "function": "POST",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -145,7 +145,7 @@
     },
     {
       "file": "src/app/api/messenger/conversations/[id]/attachments/route.ts",
-      "line": 158,
+      "line": 160,
       "function": "POST",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -190,6 +190,28 @@
       "annotation": null
     },
     {
+      "file": "src/app/api/messenger/summary/route.ts",
+      "line": 16,
+      "function": "GET",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P3",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
       "file": "src/app/api/vehicle-lookup/apply-to-shipment/route.ts",
       "line": 67,
       "function": "POST",
@@ -213,7 +235,7 @@
     },
     {
       "file": "src/lib/catalog-search.ts",
-      "line": 669,
+      "line": 689,
       "function": "findNormalizedCatalogCandidateIds",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -235,7 +257,7 @@
     },
     {
       "file": "src/lib/catalog-search.ts",
-      "line": 689,
+      "line": 709,
       "function": "findStrictNameOemCandidateIds",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -279,7 +301,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 906,
+      "line": 920,
       "function": "loadTemplate",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -301,7 +323,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1040,
+      "line": 1054,
       "function": "rerenderNotificationJobWithCurrentTemplate",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -323,7 +345,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1053,
+      "line": 1067,
       "function": "repairLegacyCarTemplateErrorJobs",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -345,7 +367,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1095,
+      "line": 1109,
       "function": "repairLegacyCarTemplateErrorJobs",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -367,7 +389,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1120,
+      "line": 1134,
       "function": "loadEnabledRules",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -389,7 +411,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1533,
+      "line": 1547,
       "function": "resolveLocalCounterparty",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -411,7 +433,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1544,
+      "line": 1559,
       "function": "resolveLocalCounterparty",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -433,7 +455,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1584,
+      "line": 1600,
       "function": "findTelegramConnectionTarget",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -455,7 +477,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1630,
+      "line": 1646,
       "function": "upsertTelegramConversationFromConnection",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -477,7 +499,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1676,
+      "line": 1692,
       "function": "findTelegramConversation",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -505,7 +527,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 1885,
+      "line": 1901,
       "function": "writeNotificationLog",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -527,7 +549,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2115,
+      "line": 2144,
       "function": "createNotificationJob",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -549,7 +571,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2204,
+      "line": 2233,
       "function": "processDueClientNotificationJobs",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -571,7 +593,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2268,
+      "line": 2297,
       "function": "finishJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -593,7 +615,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2336,
+      "line": 2365,
       "function": "processClientNotificationJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -615,7 +637,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2458,
+      "line": 2487,
       "function": "cancelAppointmentScheduledNotifications",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -637,7 +659,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2520,
+      "line": 2549,
       "function": "appointmentCreationNotificationExists",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -659,7 +681,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2677,
+      "line": 2702,
       "function": "requeueDiagnosticNotificationJobs",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -681,7 +703,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2749,
+      "line": 2774,
       "function": "markDiagnosticReportSent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -703,7 +725,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2757,
+      "line": 2782,
       "function": "markDiagnosticReportSent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -725,7 +747,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2781,
+      "line": 2806,
       "function": "updateClientNotificationSettings",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -747,7 +769,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2800,
+      "line": 2825,
       "function": "listClientNotificationSettings",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -775,7 +797,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2808,
+      "line": 2833,
       "function": "listClientNotificationSettings",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -801,7 +823,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2817,
+      "line": 2842,
       "function": "listClientNotificationSettings",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -825,7 +847,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2829,
+      "line": 2854,
       "function": "listClientNotificationSettings",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -847,7 +869,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2897,
+      "line": 2922,
       "function": "updateNotificationRule",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -869,7 +891,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2920,
+      "line": 2945,
       "function": "createReminderRule",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -891,7 +913,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2936,
+      "line": 2961,
       "function": "deleteNotificationRule",
       "rawApi": "$executeRaw",
       "sqlOperation": "DELETE",
@@ -913,7 +935,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 2970,
+      "line": 2995,
       "function": "updateNotificationTemplate",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -935,7 +957,7 @@
     },
     {
       "file": "src/lib/client-notifications/client-notifications.ts",
-      "line": 3028,
+      "line": 3053,
       "function": "retryNotificationJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1159,7 +1181,7 @@
     },
     {
       "file": "src/lib/local-inventory-read.ts",
-      "line": 129,
+      "line": 130,
       "function": "findNormalizedProductIds",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1181,7 +1203,7 @@
     },
     {
       "file": "src/lib/mann-catalog.ts",
-      "line": 1057,
+      "line": 1190,
       "function": "matchMannArticlesToLocalProducts",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1203,7 +1225,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 499,
+      "line": 579,
       "function": "listTelegramUserAccounts",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1227,7 +1249,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 540,
+      "line": 620,
       "function": "getSessionByAccount",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1249,7 +1271,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 574,
+      "line": 654,
       "function": "updateAccountStatus",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1271,7 +1293,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 586,
+      "line": 666,
       "function": "updateAccountStatus",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1293,7 +1315,51 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 631,
+      "line": 701,
+      "function": "deactivateOtherTelegramAccounts",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 715,
+      "function": "deactivateOtherTelegramAccounts",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "telegram_user_sessions"
+      ],
+      "tableScopes": {
+        "telegram_user_sessions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 761,
       "function": "startTelegramUserAuth",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1315,7 +1381,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 652,
+      "line": 782,
       "function": "startTelegramUserAuth",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -1337,7 +1403,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 677,
+      "line": 807,
       "function": "startTelegramUserAuth",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -1359,7 +1425,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 700,
+      "line": 830,
       "function": "startTelegramUserAuth",
       "rawApi": "$executeRaw",
       "sqlOperation": "DELETE",
@@ -1383,7 +1449,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 709,
+      "line": 839,
       "function": "startTelegramUserAuth",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1405,7 +1471,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 719,
+      "line": 849,
       "function": "startTelegramUserAuth",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -1427,7 +1493,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 775,
+      "line": 905,
       "function": "resendTelegramUserCode",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1449,7 +1515,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 785,
+      "line": 915,
       "function": "resendTelegramUserCode",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1471,7 +1537,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 892,
+      "line": 1024,
       "function": "createOrUpdateQrSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -1493,7 +1559,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 909,
+      "line": 1041,
       "function": "createOrUpdateQrSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -1515,7 +1581,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1020,
+      "line": 1152,
       "function": "finalizeQrRuntimeAttempt",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1537,7 +1603,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1220,
+      "line": 1361,
       "function": "checkTelegramUserQrAuth",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1559,7 +1625,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1393,
+      "line": 1535,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1581,7 +1647,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1407,
+      "line": 1549,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "DELETE",
@@ -1603,7 +1669,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1413,
+      "line": 1555,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "DELETE",
@@ -1625,7 +1691,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1419,
+      "line": 1561,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1647,7 +1713,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1433,
+      "line": 1575,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -1669,7 +1735,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1454,
+      "line": 1596,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -1691,7 +1757,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1474,
+      "line": 1616,
       "function": "saveAuthorizedTelegramSession",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1713,7 +1779,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1522,
+      "line": 1666,
       "function": "confirmTelegramUserCode",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1735,7 +1801,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1877,
+      "line": 2021,
       "function": "upsertAttachmentRows",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -1757,7 +1823,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1937,
+      "line": 2081,
       "function": "refreshTelegramDialogAvatar",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1779,7 +1845,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1948,
+      "line": 2092,
       "function": "refreshTelegramDialogAvatar",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1801,7 +1867,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1979,
+      "line": 2123,
       "function": "refreshTelegramDialogAvatar",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1823,7 +1889,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 1992,
+      "line": 2136,
       "function": "refreshTelegramDialogAvatar",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1845,7 +1911,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2022,
+      "line": 2166,
       "function": "upsertTelegramDialog",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -1867,7 +1933,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2118,
+      "line": 2262,
       "function": "upsertTelegramConversationFromUser",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -1889,7 +1955,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2138,
+      "line": 2282,
       "function": "upsertTelegramConversationFromUser",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -1911,7 +1977,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2255,
+      "line": 2399,
       "function": "archiveSkippedTelegramConversations",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -1933,7 +1999,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2294,
+      "line": 2438,
       "function": "upsertTelegramMessage",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -1955,7 +2021,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2311,
+      "line": 2455,
       "function": "upsertTelegramMessage",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -1977,7 +2043,51 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2418,
+      "line": 2515,
+      "function": "claimTelegramWorkerLease",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2539,
+      "function": "releaseTelegramWorkerLease",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_accounts"
+      ],
+      "tableScopes": {
+        "messenger_accounts": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/channels/telegram-user-session.ts",
+      "line": 2621,
       "function": "messages",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -1999,7 +2109,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2425,
+      "line": 2628,
       "function": "messages",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2021,7 +2131,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2560,
+      "line": 2812,
       "function": "accountIdForOutbox",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2043,7 +2153,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2725,
+      "line": 2977,
       "function": "saveTelegramConversationPeer",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2065,7 +2175,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2809,
+      "line": 3061,
       "function": "setAttachmentTerminalStatus",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2087,7 +2197,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2820,
+      "line": 3072,
       "function": "setAttachmentTerminalStatus",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2109,7 +2219,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2897,
+      "line": 3149,
       "function": "downloadTelegramAttachmentMedia",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2131,7 +2241,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 2948,
+      "line": 3200,
       "function": "messages",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2153,7 +2263,7 @@
     },
     {
       "file": "src/lib/messenger/channels/telegram-user-session.ts",
-      "line": 3019,
+      "line": 3271,
       "function": "disconnectTelegramUserAccount",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2351,7 +2461,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 158,
+      "line": 161,
       "function": "writeAudit",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2373,7 +2483,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 180,
+      "line": 183,
       "function": "findIdentity",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2395,7 +2505,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 214,
+      "line": 217,
       "function": "findConversation",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2417,7 +2527,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 282,
+      "line": 285,
       "function": "upsertContactIdentity",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2439,7 +2549,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 320,
+      "line": 323,
       "function": "linkConversationEntities",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2461,7 +2571,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 344,
+      "line": 347,
       "function": "linkConversationEntities",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2483,7 +2593,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-contact-actions.ts",
-      "line": 466,
+      "line": 475,
       "function": "startContactConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2505,7 +2615,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 256,
+      "line": 285,
       "function": "loadConversationRow",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2527,7 +2637,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 331,
+      "line": 360,
       "function": "insertAudit",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2549,7 +2659,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 341,
+      "line": 370,
       "function": "insertSystemMessage",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2571,7 +2681,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 362,
+      "line": 391,
       "function": "upsertEntityLink",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2593,7 +2703,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 374,
+      "line": 403,
       "function": "deletePrimaryLinks",
       "rawApi": "$executeRaw",
       "sqlOperation": "DELETE",
@@ -2615,7 +2725,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 399,
+      "line": 428,
       "function": "upsertCommunicationIdentity",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -2637,7 +2747,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 768,
+      "line": 806,
       "function": "linkClientToConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2659,7 +2769,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 875,
+      "line": 911,
       "function": "createAndLinkClient",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2681,7 +2791,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 931,
+      "line": 967,
       "function": "unlinkClientFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2703,7 +2813,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 941,
+      "line": 977,
       "function": "unlinkClientFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2725,7 +2835,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 976,
+      "line": 1012,
       "function": "classifyConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2747,7 +2857,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1083,
+      "line": 1116,
       "function": "createCaseForConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2769,7 +2879,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1125,
+      "line": 1158,
       "function": "linkCaseToConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2791,8 +2901,8 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1174,
-      "function": "createAppointmentForConversation",
+      "line": 1250,
+      "function": "vehicleWords",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
       "mutation": true,
@@ -2813,7 +2923,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-context.ts",
-      "line": 1244,
+      "line": 1320,
       "function": "createShipmentForConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2835,7 +2945,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-diagnostics.ts",
-      "line": 176,
+      "line": 177,
       "function": "findTelegramConnection",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -2857,7 +2967,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-diagnostics.ts",
-      "line": 200,
+      "line": 201,
       "function": "upsertTelegramConversation",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -2879,7 +2989,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-diagnostics.ts",
-      "line": 230,
+      "line": 231,
       "function": "insertDiagnosticReportMessage",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -2901,7 +3011,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-diagnostics.ts",
-      "line": 243,
+      "line": 244,
       "function": "markReportSent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -2923,7 +3033,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-diagnostics.ts",
-      "line": 251,
+      "line": 252,
       "function": "markReportSent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3011,7 +3121,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 199,
+      "line": 220,
       "function": "messengerAccountIdForConversation",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3033,7 +3143,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 212,
+      "line": 233,
       "function": "messengerAccountMode",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3055,7 +3165,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 338,
+      "line": 359,
       "function": "listConversations",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3079,7 +3189,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 417,
+      "line": 438,
       "function": "getConversation",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3101,7 +3211,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 455,
+      "line": 476,
       "function": "listMessages",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3123,7 +3233,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 486,
+      "line": 507,
       "function": "markConversationRead",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3145,7 +3255,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 500,
+      "line": 521,
       "function": "archiveConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3167,7 +3277,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 518,
+      "line": 539,
       "function": "setConversationPinned",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3189,7 +3299,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 536,
+      "line": 557,
       "function": "setConversationImportant",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3211,7 +3321,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 551,
+      "line": 572,
       "function": "linkConversationClient",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3233,7 +3343,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 571,
+      "line": 592,
       "function": "unlinkConversationClient",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3255,7 +3365,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 580,
+      "line": 601,
       "function": "unlinkConversationClient",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -3277,7 +3387,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 600,
+      "line": 621,
       "function": "createCaseFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3299,7 +3409,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 607,
+      "line": 628,
       "function": "createCaseFromConversation",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -3321,7 +3431,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 659,
+      "line": 680,
       "function": "sendMessage",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3343,7 +3453,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 682,
+      "line": 703,
       "function": "sendMessage",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3365,7 +3475,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 715,
+      "line": 736,
       "function": "upsertConnectionFromIncoming",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3387,7 +3497,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 740,
+      "line": 761,
       "function": "upsertConversationFromIncoming",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3409,7 +3519,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 790,
+      "line": 811,
       "function": "insertIncomingMessage",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3431,7 +3541,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 849,
+      "line": 870,
       "function": "saveWebhookEvent",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3453,7 +3563,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 863,
+      "line": 884,
       "function": "finishWebhookEvent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3475,7 +3585,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 923,
+      "line": 944,
       "function": "handleTelegramCommand",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3497,7 +3607,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 931,
+      "line": 952,
       "function": "handleTelegramCommand",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3519,7 +3629,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 957,
+      "line": 978,
       "function": "handleTelegramCommand",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3529,28 +3639,6 @@
       ],
       "tableScopes": {
         "messenger_connections": "BRANCH_SCOPED"
-      },
-      "classification": "BRANCH_SCOPED",
-      "branchSource": "parameterized branch_id",
-      "businessGroupSource": "none",
-      "risk": "P0",
-      "requiredFix": "none",
-      "test": "cross-branch mutation must affect zero rows or fail",
-      "status": "SAFE_BRANCH",
-      "annotation": null
-    },
-    {
-      "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 965,
-      "function": "handleTelegramCommand",
-      "rawApi": "$executeRaw",
-      "sqlOperation": "UPDATE",
-      "mutation": true,
-      "tables": [
-        "messenger_conversations"
-      ],
-      "tableScopes": {
-        "messenger_conversations": "BRANCH_SCOPED"
       },
       "classification": "BRANCH_SCOPED",
       "branchSource": "parameterized branch_id",
@@ -3564,6 +3652,28 @@
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
       "line": 986,
+      "function": "handleTelegramCommand",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_conversations"
+      ],
+      "tableScopes": {
+        "messenger_conversations": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-gateway.ts",
+      "line": 1007,
       "function": "ingestIncomingEvent",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -3585,7 +3695,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 1005,
+      "line": 1026,
       "function": "ingestIncomingEvent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3607,7 +3717,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-gateway.ts",
-      "line": 1013,
+      "line": 1034,
       "function": "ingestIncomingEvent",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3761,7 +3871,29 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 162,
+      "line": 159,
+      "function": "disconnectEmployeeTelegram",
+      "rawApi": "$executeRaw",
+      "sqlOperation": "UPDATE",
+      "mutation": true,
+      "tables": [
+        "messenger_connections"
+      ],
+      "tableScopes": {
+        "messenger_connections": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P0",
+      "requiredFix": "none",
+      "test": "cross-branch mutation must affect zero rows or fail",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/messenger/messenger-linking.ts",
+      "line": 179,
       "function": "createClientTelegramLinkToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -3783,7 +3915,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 178,
+      "line": 195,
       "function": "createEmployeeTelegramLinkToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -3805,7 +3937,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 191,
+      "line": 208,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3827,7 +3959,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 224,
+      "line": 241,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3849,7 +3981,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 233,
+      "line": 250,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3871,7 +4003,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 248,
+      "line": 265,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -3893,7 +4025,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 271,
+      "line": 288,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -3915,7 +4047,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 297,
+      "line": 314,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3937,7 +4069,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 309,
+      "line": 326,
       "function": "linkTelegramClientFromStartToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -3959,7 +4091,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 327,
+      "line": 344,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -3981,7 +4113,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 360,
+      "line": 377,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4003,7 +4135,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 369,
+      "line": 386,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4025,7 +4157,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 384,
+      "line": 401,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -4047,7 +4179,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 407,
+      "line": 424,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$queryRaw",
       "sqlOperation": "INSERT",
@@ -4069,7 +4201,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 435,
+      "line": 452,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4091,7 +4223,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-linking.ts",
-      "line": 447,
+      "line": 464,
       "function": "linkTelegramEmployeeFromStartToken",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4113,7 +4245,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 116,
+      "line": 130,
       "function": "listMessageAttachmentProjection",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4135,7 +4267,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 147,
+      "line": 161,
       "function": "refreshMessageAttachmentsJson",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4157,7 +4289,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 167,
+      "line": 181,
       "function": "enqueueMessengerMediaJob",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4179,7 +4311,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 182,
+      "line": 196,
       "function": "enqueueMessengerMediaJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4201,7 +4333,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 196,
+      "line": 210,
       "function": "claimMessengerMediaJobs",
       "rawApi": "$queryRaw",
       "sqlOperation": "UPDATE",
@@ -4223,7 +4355,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 241,
+      "line": 255,
       "function": "completeJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4245,7 +4377,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 258,
+      "line": 272,
       "function": "failJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4267,7 +4399,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 270,
+      "line": 284,
       "function": "failJob",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4289,7 +4421,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 283,
+      "line": 297,
       "function": "failJob",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4311,7 +4443,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 301,
+      "line": 315,
       "function": "processJob",
       "rawApi": "$queryRaw",
       "sqlOperation": "SELECT",
@@ -4333,7 +4465,7 @@
     },
     {
       "file": "src/lib/messenger/messenger-media.ts",
-      "line": 404,
+      "line": 418,
       "function": "repairMessengerAttachmentMetadata",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4575,7 +4707,7 @@
     },
     {
       "file": "src/lib/payroll-motivation.ts",
-      "line": 255,
+      "line": 257,
       "function": "createPayrollGoal",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4597,7 +4729,7 @@
     },
     {
       "file": "src/lib/payroll-motivation.ts",
-      "line": 306,
+      "line": 308,
       "function": "updatePayrollGoal",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4619,7 +4751,7 @@
     },
     {
       "file": "src/lib/payroll-motivation.ts",
-      "line": 421,
+      "line": 425,
       "function": "createEmployeeRecognition",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4641,7 +4773,7 @@
     },
     {
       "file": "src/lib/payroll-motivation.ts",
-      "line": 525,
+      "line": 529,
       "function": "upsertMotivationSettings",
       "rawApi": "$executeRaw",
       "sqlOperation": "UPDATE",
@@ -4663,7 +4795,7 @@
     },
     {
       "file": "src/lib/payroll-motivation.ts",
-      "line": 543,
+      "line": 547,
       "function": "upsertMotivationSettings",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4685,7 +4817,7 @@
     },
     {
       "file": "src/lib/payroll-periods.ts",
-      "line": 483,
+      "line": 489,
       "function": "closePayrollPeriod",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4707,7 +4839,7 @@
     },
     {
       "file": "src/lib/payroll-periods.ts",
-      "line": 515,
+      "line": 521,
       "function": "closePayrollPeriod",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4729,7 +4861,7 @@
     },
     {
       "file": "src/lib/payroll-periods.ts",
-      "line": 554,
+      "line": 560,
       "function": "closePayrollPeriod",
       "rawApi": "$executeRaw",
       "sqlOperation": "INSERT",
@@ -4974,6 +5106,82 @@
       "annotation": null
     },
     {
+      "file": "src/lib/product-copy-between-branches.ts",
+      "line": 196,
+      "function": "findDuplicate",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/product-document-history.ts",
+      "line": 320,
+      "function": "getAppliedMovementSummary",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_demands",
+        "inventory_sessions",
+        "inventory_lines",
+        "local_demand_positions",
+        "local_inventory_documents",
+        "local_inventory_document_positions"
+      ],
+      "tableScopes": {
+        "local_demands": "BRANCH_SCOPED",
+        "inventory_sessions": "BRANCH_SCOPED",
+        "inventory_lines": "BRANCH_SCOPED",
+        "local_demand_positions": "BRANCH_SCOPED",
+        "local_inventory_documents": "BRANCH_SCOPED",
+        "local_inventory_document_positions": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED_BY_PARENT",
+      "branchSource": "parameterized parent JOIN branch_id",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "src/lib/rossko-product-import.ts",
+      "line": 450,
+      "function": "duplicateByBrandArticle",
+      "rawApi": "$queryRaw",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_products"
+      ],
+      "tableScopes": {
+        "local_products": "BRANCH_SCOPED"
+      },
+      "classification": "BRANCH_SCOPED",
+      "branchSource": "parameterized branch_id",
+      "businessGroupSource": "none",
+      "risk": "P2",
+      "requiredFix": "none",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
       "file": "src/lib/vin-lookup-cache.ts",
       "line": 70,
       "function": "getVinLookupCache",
@@ -5015,6 +5223,110 @@
       "requiredFix": "none",
       "test": "cross-branch mutation must affect zero rows or fail",
       "status": "SAFE_BRANCH",
+      "annotation": null
+    },
+    {
+      "file": "scripts/audit-inventory-branch-isolation.mjs",
+      "line": 25,
+      "function": "scalar",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "branches",
+        "local_stores",
+        "local_products",
+        "local_stock_balances",
+        "local_inventory_documents",
+        "local_inventory_document_positions",
+        "local_supplier_invoices",
+        "local_supplier_invoice_payments"
+      ],
+      "tableScopes": {
+        "branches": "GROUP_SCOPED",
+        "local_stores": "BRANCH_SCOPED",
+        "local_products": "BRANCH_SCOPED",
+        "local_stock_balances": "BRANCH_SCOPED",
+        "local_inventory_documents": "BRANCH_SCOPED",
+        "local_inventory_document_positions": "BRANCH_SCOPED",
+        "local_supplier_invoices": "BRANCH_SCOPED",
+        "local_supplier_invoice_payments": "BRANCH_SCOPED"
+      },
+      "classification": "UNKNOWN",
+      "branchSource": "none",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "Add parameterized branch_id or a verified branch-scoped parent JOIN",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "REVIEW_REQUIRED",
+      "annotation": null
+    },
+    {
+      "file": "scripts/audit-inventory-branch-isolation.mjs",
+      "line": 30,
+      "function": "scalar",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_stores",
+        "local_products",
+        "local_stock_balances",
+        "local_inventory_documents",
+        "local_inventory_document_positions",
+        "local_supplier_invoices",
+        "local_supplier_invoice_payments"
+      ],
+      "tableScopes": {
+        "local_stores": "BRANCH_SCOPED",
+        "local_products": "BRANCH_SCOPED",
+        "local_stock_balances": "BRANCH_SCOPED",
+        "local_inventory_documents": "BRANCH_SCOPED",
+        "local_inventory_document_positions": "BRANCH_SCOPED",
+        "local_supplier_invoices": "BRANCH_SCOPED",
+        "local_supplier_invoice_payments": "BRANCH_SCOPED"
+      },
+      "classification": "UNKNOWN",
+      "branchSource": "none",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "Add parameterized branch_id or a verified branch-scoped parent JOIN",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "REVIEW_REQUIRED",
+      "annotation": null
+    },
+    {
+      "file": "scripts/audit-inventory-branch-isolation.mjs",
+      "line": 36,
+      "function": "scalar",
+      "rawApi": "$queryRawUnsafe",
+      "sqlOperation": "SELECT",
+      "mutation": false,
+      "tables": [
+        "local_stores",
+        "local_products",
+        "local_stock_balances",
+        "local_inventory_documents",
+        "local_inventory_document_positions",
+        "local_supplier_invoices",
+        "local_supplier_invoice_payments"
+      ],
+      "tableScopes": {
+        "local_stores": "BRANCH_SCOPED",
+        "local_products": "BRANCH_SCOPED",
+        "local_stock_balances": "BRANCH_SCOPED",
+        "local_inventory_documents": "BRANCH_SCOPED",
+        "local_inventory_document_positions": "BRANCH_SCOPED",
+        "local_supplier_invoices": "BRANCH_SCOPED",
+        "local_supplier_invoice_payments": "BRANCH_SCOPED"
+      },
+      "classification": "UNKNOWN",
+      "branchSource": "none",
+      "businessGroupSource": "none",
+      "risk": "P1",
+      "requiredFix": "Add parameterized branch_id or a verified branch-scoped parent JOIN",
+      "test": "Branch A query must not return Branch B rows",
+      "status": "REVIEW_REQUIRED",
       "annotation": null
     },
     {

@@ -4,6 +4,7 @@ import { buildCatalogSearchText } from "@/lib/catalog-search";
 import { prisma } from "@/lib/db";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
+import { productIdentityKey, sameExactProductIdentity } from "@/lib/product-identity";
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{
   include: { stockBalances: true };
@@ -715,7 +716,8 @@ function validateAfter(after: Record<string, unknown>, parsed: ParsedImportRow, 
     if (matches.length) errors.push(`${label} уже используется: ${text}`);
   };
   checkUnique("code", "Код", after.code);
-  checkUnique("article", "Артикул", after.article);
+  const duplicateIdentity = existingProducts.find((product) => product.id !== matchedId && sameExactProductIdentity(product, after));
+  if (duplicateIdentity) errors.push(`Каноническая карточка товара уже существует: ${duplicateIdentity.name}`);
   checkUnique("barcodeEan13", "EAN13", after.barcodeEan13);
   checkUnique("barcodeEan8", "EAN8", after.barcodeEan8);
   return { errors, warnings };
@@ -731,7 +733,15 @@ function resolveMatch(parsed: ParsedImportRow, products: ProductWithStock[], opt
     byExact((product) => product.id, value("internal_id")),
     byExact((product) => product.externalCode, value("external_id")),
     byExact((product) => product.code, value("code")),
-    byExact((product) => product.article, value("article")),
+    value("article") && value("brand") ? products.filter((product) => sameExactProductIdentity(product, {
+      article: value("article"),
+      brand: value("brand"),
+      uomName: value("unit"),
+      packageVolume: value("package_volume"),
+      volume: value("volume"),
+      weight: value("weight"),
+      modificationCode: value("modification_code"),
+    })) : [],
     byExact((product) => product.barcodeEan13, value("ean13")),
     byExact((product) => product.barcodeEan8, value("ean8")),
     byExact((product) => product.barcodeCode128, value("code128")),
@@ -784,9 +794,11 @@ async function buildPreviewRows(rows: ParsedImportRow[], options: Required<Produ
     const changedFields = buildChangedFields(before, after);
     const validation = validateAfter(after, parsed, products, product?.id ?? null);
     validation.warnings.push(...rowWarnings);
-    const fingerprintParts = ["external_id", "code", "article", "ean13", "ean8", "code128"]
+    const identityFingerprint = productIdentityKey(after);
+    const fingerprintParts = ["external_id", "code", "ean13", "ean8", "code128"]
       .map((key) => `${key}:${normalizeText(parsed.values[key])}`)
       .filter((part) => !part.endsWith(":"));
+    if (identityFingerprint) fingerprintParts.push(`product_identity:${identityFingerprint}`);
     for (const part of fingerprintParts) {
       const previous = seenKeys.get(part);
       if (previous) validation.errors.push(`Дубль внутри Excel: ${part} уже встречался в строке ${previous}`);

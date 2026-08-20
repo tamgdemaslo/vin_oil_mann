@@ -7,7 +7,10 @@ import {
   ArrowLeft,
   Circle,
   CreditCard,
+  Droplet,
   ExternalLink,
+  Fan,
+  Fuel,
   PackagePlus,
   Pencil,
   Plus,
@@ -17,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   UserPlus,
+  Wind,
   X,
 } from "lucide-react";
 import { DiagnosticMapModal } from "@/components/diagnostic/DiagnosticMapModal";
@@ -177,6 +181,13 @@ type MannLocalMatch = {
   cell?: string | null;
   buyPriceCents?: number | null;
   cost?: number;
+  orderable: boolean;
+  matchType:
+    | "EXACT_PRODUCT_BRAND_ARTICLE"
+    | "OEM_EXACT_BRAND_ARTICLE"
+    | "OEM_EXACT_ARTICLE"
+    | "OEM_SAFE_COMPACT"
+    | "PRODUCT_MANN_LINK";
   matchConfidence: number;
   matchReason: string;
 };
@@ -186,6 +197,7 @@ type MannArticleMatch = {
   mannArticleNormalized: string;
   filterType?: string;
   filterSubtype?: string | null;
+  compatibleProducts: MannLocalMatch[];
   localMatches: MannLocalMatch[];
   bestMatch: MannLocalMatch | null;
   matchConfidence: number;
@@ -194,7 +206,19 @@ type MannArticleMatch = {
   available: number;
   price: number | null;
   cell?: string | null;
-  status: "found" | "multiple_matches" | "not_found" | "needs_review";
+  status: "found" | "not_found";
+  coverageStatus: "OEM_COVERED" | "OEM_NOT_COVERED";
+  diagnostics: {
+    candidateCount: number;
+    compatibleCount: number;
+    canonicalArticle: string;
+    compactCandidate: string;
+    compactCollisionBlocked: boolean;
+    collisionCanonicalArticles: string[];
+    localProductScanMs: number;
+    parsingMs: number;
+    totalMs: number;
+  };
 };
 
 type MannMatchJson = { matches?: MannArticleMatch[]; error?: string };
@@ -596,58 +620,21 @@ function getMannFilterGroupPath(type?: string): string {
 function mannMatchStatusLabel(status?: MannArticleMatch["status"]): string {
   switch (status) {
     case "found":
-      return "Найден";
-    case "multiple_matches":
-      return "Несколько совпадений";
-    case "needs_review":
-      return "Требует проверки";
+      return "OEM-связь найдена";
     case "not_found":
     default:
       return "Нет в локальном каталоге";
   }
 }
 
-function getMannFilterTypeShortLabel(type?: string): string {
-  switch (type) {
-    case "oil":
-      return "Масляный";
-    case "air":
-      return "Воздушный";
-    case "fuel":
-      return "Топливный";
-    case "cabin":
-      return "Салонный";
-    default:
-      return "Прочее";
-  }
-}
-
-function describeMannAvailability(match: MannLocalMatch): { label: string; outOfStock: boolean } {
-  const stock = Number.isFinite(match.stock) ? Math.max(0, match.stock) : 0;
-  const available = Number.isFinite(match.available) ? Math.max(0, match.available) : 0;
-  const reserve = Math.max(0, stock - available);
-  if (available > 0) {
-    return {
-      label: [
-        `Остаток: ${formatQuantityInput(stock)}`,
-        reserve > 0 ? `резерв: ${formatQuantityInput(reserve)}` : "",
-        `доступно: ${formatQuantityInput(available)}`,
-        match.cell ? `ячейка ${match.cell}` : "",
-        formatShipmentMoney(match.price),
-      ].filter(Boolean).join(" · "),
-      outOfStock: false,
-    };
-  }
-  if (stock > 0 && reserve > 0) {
-    return {
-      label: [`Остаток: ${formatQuantityInput(stock)}`, `резерв: ${formatQuantityInput(reserve)}`, "доступно: 0", match.cell ? `ячейка ${match.cell}` : "", formatShipmentMoney(match.price)].filter(Boolean).join(" · "),
-      outOfStock: true,
-    };
-  }
-  return {
-    label: ["Нет остатка", "доступно: 0", match.cell ? `ячейка ${match.cell}` : "", formatShipmentMoney(match.price)].filter(Boolean).join(" · "),
-    outOfStock: true,
-  };
+function MannFilterTypeIcon({ type }: { type?: string }) {
+  const label = getMannFilterTypeLabel(type);
+  const Icon = type === "oil" ? Droplet : type === "air" ? Wind : type === "fuel" ? Fuel : type === "cabin" ? Fan : Circle;
+  return (
+    <span className="eco-shipment-mann-kind-icon" data-filter-type={type ?? "other"} title={label} aria-label={label}>
+      <Icon size={18} strokeWidth={1.9} aria-hidden />
+    </span>
+  );
 }
 
 function describeMannChoiceAvailability(match: MannLocalMatch): { label: string; outOfStock: boolean } {
@@ -671,46 +658,6 @@ function formatMannMatchCount(count: number): string {
   const mod100 = abs % 100;
   const word = mod10 === 1 && mod100 !== 11 ? "совпадение" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "совпадения" : "совпадений";
   return `${count} ${word}`;
-}
-
-function formatMannPositionCount(count: number): string {
-  const abs = Math.abs(count);
-  const mod10 = abs % 10;
-  const mod100 = abs % 100;
-  const word = mod10 === 1 && mod100 !== 11 ? "позиция" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "позиции" : "позиций";
-  return `${count} ${word}`;
-}
-
-function formatMannWillBeAdded(count: number): string {
-  const abs = Math.abs(count);
-  const mod10 = abs % 10;
-  const mod100 = abs % 100;
-  const verb = mod10 === 1 && mod100 !== 11
-    ? "будет добавлена"
-    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-      ? "будут добавлены"
-      : "будет добавлено";
-  return `${formatMannPositionCount(count)} ${verb}`;
-}
-
-function formatMannWillAddPrefix(count: number): string {
-  if (count === 1) return "Будет добавлена";
-  if (count > 1) return "Будут добавлены";
-  return "Будет добавлено";
-}
-
-function formatMannAddFoundLabel(count: number): string {
-  if (count === 1) return "Добавить найденную";
-  if (count > 1) return `Добавить найденные · ${count}`;
-  return "Добавить найденные";
-}
-
-function formatMannActionCount(count: number): string {
-  const abs = Math.abs(count);
-  const mod10 = abs % 10;
-  const mod100 = abs % 100;
-  const verb = mod10 === 1 && mod100 !== 11 ? "требует" : "требуют";
-  return `${count} ${verb} действия`;
 }
 
 function mannFilterGroupOrder(type?: string): number {
@@ -1165,10 +1112,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [manualMannFilter, setManualMannFilter] = useState<MannFilter | null>(null);
   const [mannPickerExpanded, setMannPickerExpanded] = useState(false);
   const [mannManualCue, setMannManualCue] = useState<MannManualCue>("idle");
-  const [mannSelectedMatches, setMannSelectedMatches] = useState<Record<string, MannLocalMatch>>({});
-  const [mannExpandedChoiceArticle, setMannExpandedChoiceArticle] = useState<string | null>(null);
-  const [mannChoiceHighlightedIndex, setMannChoiceHighlightedIndex] = useState(0);
-  const [mannRecentlySelectedArticle, setMannRecentlySelectedArticle] = useState<string | null>(null);
   const mannAutoSelectionRef = useRef<{ make: string; model: string; variantId: string } | null>(null);
   const mannModelsRequestIdRef = useRef(0);
   const mannVariantsRequestIdRef = useRef(0);
@@ -1186,33 +1129,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const markDraftDirty = useCallback(() => {
     if (isExistingDraft) setSaveState("dirty");
   }, [isExistingDraft]);
-
-  useEffect(() => {
-    setMannSelectedMatches({});
-    setMannExpandedChoiceArticle(null);
-    setMannChoiceHighlightedIndex(0);
-    setMannRecentlySelectedArticle(null);
-  }, [selectedMannVariantId]);
-
-  useEffect(() => {
-    if (!mannExpandedChoiceArticle) return;
-    const handleMouseDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const shell = target.closest("[data-mann-choice-shell]");
-      if (shell?.getAttribute("data-mann-choice-shell") === mannExpandedChoiceArticle) return;
-      setMannExpandedChoiceArticle(null);
-      setMannChoiceHighlightedIndex(0);
-    };
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [mannExpandedChoiceArticle]);
-
-  useEffect(() => {
-    if (!mannRecentlySelectedArticle) return;
-    const timer = window.setTimeout(() => setMannRecentlySelectedArticle(null), 1800);
-    return () => window.clearTimeout(timer);
-  }, [mannRecentlySelectedArticle]);
 
   useEffect(() => {
     if (prefillApplied) return;
@@ -1759,12 +1675,16 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
           .then((data) => {
             if (cancelled) return;
             const match = data.matches?.[0] ?? null;
-            const products = (match?.localMatches ?? []).map((local): Product => {
-              const reason = local.matchReason.includes("OEM Parts") && local.matchReason.includes("Name")
-                ? "Название + OEM PARTS"
-                : local.matchReason.includes("OEM Parts")
-                  ? "OEM PARTS"
-                  : "Название";
+            const products = (match?.compatibleProducts ?? match?.localMatches ?? []).map((local): Product => {
+              const reason = local.matchType === "EXACT_PRODUCT_BRAND_ARTICLE"
+                ? "точный бренд + артикул товара"
+                : local.matchType === "OEM_EXACT_BRAND_ARTICLE"
+                  ? "точный бренд + артикул в OEM Parts"
+                  : local.matchType === "OEM_EXACT_ARTICLE"
+                    ? "точный артикул в OEM Parts"
+                    : local.matchType === "OEM_SAFE_COMPACT"
+                      ? "безопасный compact OEM без коллизий"
+                      : "подтверждённая связь MANN";
               return {
                 id: local.id,
                 name: local.name,
@@ -1781,7 +1701,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 availableQuantity: local.available,
                 buyPriceCents: local.buyPriceCents ?? undefined,
                 cost: local.cost,
-                matchSummary: `Совпадение: ${reason} · строгая нормализация`,
+                matchSummary: `Техническая связь: ${reason}`,
               };
             });
             setProductOptions(products);
@@ -2166,8 +2086,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   };
 
   const startMannManualSearch = (filter: MannFilter) => {
-    setMannExpandedChoiceArticle(null);
-    setMannChoiceHighlightedIndex(0);
     setManualMannFilter(filter);
     setProductSearchMode("product");
     setProductOem("");
@@ -2178,47 +2096,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     setHighlightedProductIndex(0);
     window.requestAnimationFrame(() => document.getElementById("shipment-product-search")?.focus());
   };
-
-  const toggleMannChoice = useCallback((filter: MannFilter) => {
-    setMannExpandedChoiceArticle((current) => current === filter.mannArticleNormalized ? null : filter.mannArticleNormalized);
-    setMannChoiceHighlightedIndex(0);
-  }, []);
-
-  const selectMannLocalMatch = useCallback((filter: MannFilter, match: MannLocalMatch) => {
-    setMannSelectedMatches((prev) => ({
-      ...prev,
-      [filter.mannArticleNormalized]: match,
-    }));
-    setMannExpandedChoiceArticle(null);
-    setMannChoiceHighlightedIndex(0);
-    setMannRecentlySelectedArticle(filter.mannArticleNormalized);
-    setProductAddNotice(`Товар выбран для MANN ${filter.mannArticle}`);
-  }, []);
-
-  const handleMannChoiceKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>, filter: MannFilter, matches: MannLocalMatch[]) => {
-    if (matches.length === 0) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setMannExpandedChoiceArticle(null);
-      setMannChoiceHighlightedIndex(0);
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setMannChoiceHighlightedIndex((index) => Math.min(matches.length - 1, index + 1));
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setMannChoiceHighlightedIndex((index) => Math.max(0, index - 1));
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const index = Math.min(matches.length - 1, Math.max(0, mannChoiceHighlightedIndex));
-      selectMannLocalMatch(filter, matches[index]);
-    }
-  }, [mannChoiceHighlightedIndex, selectMannLocalMatch]);
 
   const addManualMannProductToPosition = (product: Product) => {
     const filter = manualMannFilter;
@@ -2239,6 +2116,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       cell: product.cell ?? product.slotName ?? null,
       buyPriceCents: product.buyPriceCents ?? null,
       cost: product.cost,
+      orderable: false,
+      matchType: "PRODUCT_MANN_LINK",
       matchConfidence: 100,
       matchReason: "manual_link",
     };
@@ -2249,6 +2128,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         mannArticleNormalized: filter.mannArticleNormalized,
         filterType: filter.filterType,
         filterSubtype: filter.filterSubtype,
+        compatibleProducts: [localMatch],
         localMatches: [localMatch],
         bestMatch: localMatch,
         matchConfidence: 100,
@@ -2258,6 +2138,18 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         price: localMatch.price,
         cell: localMatch.cell,
         status: "found",
+        coverageStatus: "OEM_COVERED",
+        diagnostics: {
+          candidateCount: 1,
+          compatibleCount: 1,
+          canonicalArticle: filter.mannArticleNormalized,
+          compactCandidate: filter.mannArticleNormalized.replace(/\//g, ""),
+          compactCollisionBlocked: false,
+          collisionCanonicalArticles: [],
+          localProductScanMs: 0,
+          parsingMs: 0,
+          totalMs: 0,
+        },
       },
     }));
     void fetch("/api/mann-catalog/product-links", {
@@ -3357,7 +3249,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       variant.condition,
     ].filter(Boolean).join(" "),
   }));
-  const mannVehicleCompactLabel = selectedMannVariant
+  const mannVehicleModificationLabel = selectedMannVariant
     ? `${selectedMannMake} ${selectedMannModel} · ${describeMannVariant(selectedMannVariant)}`
     : [selectedMannMake, selectedMannModel].filter(Boolean).join(" ");
   const mannManualReady = Boolean(selectedMannMake && selectedMannModel && selectedMannVariantId);
@@ -3372,51 +3264,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const mannSortedFilters = mannFilters
     .slice()
     .sort((left, right) => mannFilterGroupOrder(left.filterType) - mannFilterGroupOrder(right.filterType) || left.mannArticle.localeCompare(right.mannArticle, "ru"));
-  const mannFoundKitItems = mannSortedFilters.flatMap((filter) => {
-    const selectedMatch = mannSelectedMatches[filter.mannArticleNormalized];
-    const articleMatch = mannMatches[filter.mannArticleNormalized];
-    const match = selectedMatch ?? (articleMatch?.status === "found" ? articleMatch.bestMatch : null);
-    return filter && match ? [{ filter, match }] : [];
-  });
-  const mannChoiceItems = mannSortedFilters.flatMap((filter) => {
-    if (mannSelectedMatches[filter.mannArticleNormalized]) return [];
-    const match = mannMatches[filter.mannArticleNormalized];
-    return match?.status === "multiple_matches" ? [{ filter, status: match.status }] : [];
-  });
-  const mannMissingItems = mannSortedFilters.flatMap((filter) => {
-    const match = mannMatches[filter.mannArticleNormalized];
-    return !match || match.status === "not_found" ? [{ filter, status: "not_found" as const }] : [];
-  });
-  const mannFoundKitSummary = mannFoundKitItems
-    .map((item) => `${getMannFilterTypeShortLabel(item.filter.filterType).toLowerCase()} ${item.filter.mannArticle}`)
-    .join(", ");
-  const mannChoiceSummary = mannChoiceItems
-    .map((item) => `${getMannFilterTypeShortLabel(item.filter.filterType).toLowerCase()} ${item.filter.mannArticle} — ${mannMatchStatusLabel(item.status).toLowerCase()}`)
-    .join(", ");
-  const mannMissingSummary = mannMissingItems
-    .map((item) => `${getMannFilterTypeShortLabel(item.filter.filterType).toLowerCase()} ${item.filter.mannArticle}`)
-    .join(", ");
-  const mannActionRequiredCount = mannChoiceItems.length + mannMissingItems.length;
-  const mannKitSummaryLine = [
-    `Найдено: ${mannFoundKitItems.length} из ${mannFilters.length}`,
-    mannChoiceItems.length > 0 ? `Требует выбора: ${mannChoiceItems.length}` : "",
-    mannMissingItems.length > 0 ? `Не найдено: ${mannMissingItems.length}` : "",
-  ].filter(Boolean).join(" · ");
-  const confirmAddMannFoundKit = () => {
-    if (mannFoundKitItems.length === 0) {
-      setProductAddNotice("Нет однозначно найденных фильтров для добавления");
-      return;
-    }
-    const preview = mannFilters.map((filter) => {
-      const match = mannMatches[filter.mannArticleNormalized];
-      const label = `${getMannFilterTypeLabel(filter.filterType)} MANN ${filter.mannArticle}`;
-      if (match?.status === "found" && match.bestMatch) return `${label} — будет добавлен: ${match.bestMatch.name}`;
-      return `${label} — не будет добавлен: ${mannMatchStatusLabel(match?.status ?? "not_found")}`;
-    });
-    if (window.confirm(`Добавить найденные фильтры?\n\n${preview.join("\n")}`)) {
-      addMannMatchesToPositions(mannFoundKitItems);
-    }
-  };
   const mannActionParams = (filter: MannFilter, extra?: Record<string, string>) => {
     const params = new URLSearchParams({
       source: "mann-picker",
@@ -4441,15 +4288,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               onManualMode={openMannManualPicker}
             />
 
-            {selectedMannVariant && !mannPickerExpanded ? (
-              <div className="eco-shipment-mann-selected-row">
-                <strong title={mannVehicleCompactLabel}>{mannVehicleCompactLabel}</strong>
-                <button type="button" onClick={() => setMannPickerExpanded(true)}>
-                  Изменить
-                </button>
-              </div>
-            ) : null}
-
             {mannPickerExpanded ? (
               <section className={`eco-shipment-mann-manual ${mannManualCue !== "idle" ? "is-guided" : ""}`} id="shipment-mann-manual">
                 <div className="eco-shipment-mann-manual-head">
@@ -4561,43 +4399,16 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </div>
             )}
 
-            {mannFilters.length > 0 && (
-              <div className="eco-shipment-mann-kit">
-                <div>
-                  <strong>{mannKitSummaryLine}</strong>
-                  <em>{formatMannWillBeAdded(mannFoundKitItems.length)} · {formatMannActionCount(mannActionRequiredCount)}</em>
-                  <span>
-                    {formatMannWillAddPrefix(mannFoundKitItems.length)}: {mannFoundKitSummary || "нет уверенно найденных товаров"}
-                  </span>
-                  {mannChoiceItems.length > 0 && (
-                    <span>Требует выбора: {mannChoiceSummary}</span>
-                  )}
-                  {mannMissingItems.length > 0 && (
-                    <span>Не найдено: {mannMissingSummary}</span>
-                  )}
-                </div>
-                <button type="button" className="eco-btn eco-btn--primary" disabled={mannFoundKitItems.length === 0} onClick={confirmAddMannFoundKit}>
-                  {formatMannAddFoundLabel(mannFoundKitItems.length)}
-                </button>
-              </div>
-            )}
-
             {mannSortedFilters.length > 0 ? (
               <div className="eco-shipment-mann-filter-list">
                 {mannSortedFilters.map((filter) => {
                   const match = mannMatches[filter.mannArticleNormalized];
-                  const selectedMatch = mannSelectedMatches[filter.mannArticleNormalized] ?? null;
-                  const bestMatch = match?.bestMatch ?? null;
-                  const previewMatch = selectedMatch ?? bestMatch ?? match?.localMatches[0] ?? null;
                   const status = match?.status ?? "not_found";
-                  const addableMatch = selectedMatch ?? bestMatch;
-                  const canAddBest = Boolean(addableMatch && (selectedMatch || status === "found" || status === "needs_review"));
-                  const availability = previewMatch ? describeMannAvailability(previewMatch) : null;
-                  const bestAvailability = addableMatch ? describeMannAvailability(addableMatch) : null;
-                  const rowStatusLabel = selectedMatch
-                    ? "Выбран"
-                    : availability?.outOfStock && (status === "found" || status === "needs_review")
-                    ? "Нет остатка"
+                  const compatibleProducts = match?.compatibleProducts ?? match?.localMatches ?? [];
+                  const availableProducts = compatibleProducts.filter((product) => product.available > 0);
+                  const orderProducts = compatibleProducts.filter((product) => product.available <= 0);
+                  const rowStatusLabel = compatibleProducts.length > 0
+                    ? `${formatMannMatchCount(compatibleProducts.length)} по OEM`
                     : mannMatchStatusLabel(status);
                   const filterMeta = [
                     filter.engineCode,
@@ -4605,23 +4416,49 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                     filter.kw ? `${filter.kw} kW` : "",
                     filter.hp ? `${filter.hp} hp` : "",
                   ].filter(Boolean).join(" · ");
-                  const filterApplicability = filter.vehicleText === "All models"
+                  const filterApplicability = mannVehicleModificationLabel || (filter.vehicleText === "All models"
                     ? "Для всех двигателей этой модели"
-                    : filterMeta;
-                  const stockLine = availability?.label ?? `MANN ${filter.mannArticle} не найден в локальном каталоге`;
-                  const choiceMatches = match?.localMatches ?? [];
-                  const choiceOpen = mannExpandedChoiceArticle === filter.mannArticleNormalized && status === "multiple_matches" && choiceMatches.length > 0;
+                    : filterMeta);
+                  const stockLine = compatibleProducts.length > 0
+                    ? `В наличии: ${availableProducts.length} · под заказ / без остатка: ${orderProducts.length}`
+                    : `MANN ${filter.mannArticle} не найден в локальном каталоге`;
+                  const renderProductGroup = (label: string, products: MannLocalMatch[]) => products.length > 0 ? (
+                    <section className="eco-shipment-mann-product-group" aria-label={`${label}: MANN ${filter.mannArticle}`}>
+                      <h4>{label} <span>{products.length}</span></h4>
+                      <div className="eco-shipment-mann-choice-list">
+                        {products.map((local) => {
+                          const localAvailability = describeMannChoiceAvailability(local);
+                          const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
+                          return (
+                            <div key={local.id} className="eco-shipment-mann-choice-option">
+                              <div>
+                                <strong title={local.name}>{local.name}</strong>
+                                <span>{[localMeta, localAvailability.label].filter(Boolean).join(" · ")}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className={localAvailability.outOfStock ? "is-negative" : ""}
+                                onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
+                              >
+                                {localAvailability.outOfStock
+                                  ? local.orderable ? "Добавить под заказ" : "Добавить в минус"
+                                  : "Добавить"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : null;
                   return (
                     <div
                       key={`${filter.filterType}-${filter.filterSubtype ?? ""}-${filter.mannArticleNormalized}`}
                       className="eco-shipment-mann-filter-shell"
-                      data-mann-choice-shell={filter.mannArticleNormalized}
-                      onKeyDown={choiceOpen ? (event) => handleMannChoiceKeyDown(event, filter, choiceMatches) : undefined}
                     >
                       <article
-                        className={`eco-shipment-mann-filter is-${status} ${selectedMatch ? "is-selected" : ""} ${mannRecentlySelectedArticle === filter.mannArticleNormalized ? "is-choice-selected" : ""} ${availability?.outOfStock ? "is-out-of-stock" : ""}`}
+                        className={`eco-shipment-mann-filter is-${status}`}
                       >
-                        <span className="eco-shipment-vin-kind">{getMannFilterTypeShortLabel(filter.filterType)}</span>
+                        <MannFilterTypeIcon type={filter.filterType} />
                         <div className="eco-shipment-mann-filter-main">
                           <div>
                             <strong>MANN {filter.mannArticle}</strong>
@@ -4634,41 +4471,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                         </div>
                         <div className="eco-shipment-mann-local">
                           <b>{rowStatusLabel}</b>
-                          {previewMatch ? (
-                            <>
-                              <strong title={previewMatch.name}>{previewMatch.name}</strong>
-                              <span title={stockLine}>{stockLine}</span>
-                            </>
-                          ) : (
-                            <span title={stockLine}>{stockLine}</span>
-                          )}
+                          <span title={stockLine}>{stockLine}</span>
                         </div>
                         <div className="eco-shipment-mann-actions">
-                          {canAddBest && addableMatch ? (
-                            <>
-                              <button
-                                type="button"
-                                className={`eco-shipment-mann-row-action ${bestAvailability?.outOfStock ? "is-negative" : ""}`}
-                                title={bestAvailability?.outOfStock ? "Нет доступного остатка: позиция уйдёт в минус" : "Добавить в отгрузку"}
-                                onClick={() => addMannMatchesToPositions([{ filter, match: addableMatch }])}
-                              >
-                                {bestAvailability?.outOfStock ? "Добавить в минус" : "Добавить"}
-                              </button>
-                              {selectedMatch && choiceMatches.length > 1 ? (
-                                <button type="button" className="eco-shipment-mann-change" onClick={() => toggleMannChoice(filter)}>
-                                  Изменить товар
-                                </button>
-                              ) : null}
-                            </>
-                          ) : status === "multiple_matches" && choiceMatches.length ? (
-                            <button type="button" className="eco-shipment-mann-change" onClick={() => toggleMannChoice(filter)} aria-expanded={choiceOpen}>
-                              Выбрать товар
-                            </button>
-                          ) : (
-                            <button type="button" onClick={() => startMannManualSearch(filter)}>
-                              Найти вручную
-                            </button>
-                          )}
+                          <button type="button" onClick={() => startMannManualSearch(filter)}>
+                            Найти вручную
+                          </button>
                           <details className="eco-shipment-mann-more">
                             <summary>Ещё</summary>
                             <div>
@@ -4685,43 +4493,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                           </details>
                         </div>
                       </article>
-                      {choiceOpen ? (
-                        <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Выбор товара для MANN ${filter.mannArticle}`}>
-                          <div className="eco-shipment-mann-choice-head">
-                            <div>
-                              <strong>Выберите товар для MANN {filter.mannArticle}</strong>
-                              <span>Найдено {formatMannMatchCount(choiceMatches.length)} в локальном каталоге</span>
-                            </div>
-                            <button type="button" onClick={() => setMannExpandedChoiceArticle(null)}>
-                              Свернуть
-                            </button>
-                          </div>
-                          <div className="eco-shipment-mann-choice-list" role="listbox" aria-label={`Локальные товары для MANN ${filter.mannArticle}`}>
-                            {choiceMatches.map((local, index) => {
-                              const localAvailability = describeMannChoiceAvailability(local);
-                              const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
-                              const isActive = index === mannChoiceHighlightedIndex;
-                              const isSelected = selectedMatch?.id === local.id;
-                              return (
-                                <div
-                                  key={local.id}
-                                  role="option"
-                                  aria-selected={isSelected}
-                                  className={`eco-shipment-mann-choice-option ${isActive ? "is-active" : ""} ${isSelected ? "is-selected" : ""}`}
-                                  onMouseEnter={() => setMannChoiceHighlightedIndex(index)}
-                                >
-                                  <div>
-                                    <strong title={local.name}>{local.name}</strong>
-                                    {localMeta ? <span>{localMeta}</span> : null}
-                                    <em>{localAvailability.label}</em>
-                                  </div>
-                                  <button type="button" onClick={() => selectMannLocalMatch(filter, local)}>
-                                    {localAvailability.outOfStock ? "Выбрать в минус" : "Выбрать"}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
+                      {compatibleProducts.length > 0 ? (
+                        <div className="eco-shipment-mann-choice-panel" role="region" aria-label={`Совместимые товары для MANN ${filter.mannArticle}`}>
+                          {renderProductGroup("В наличии", availableProducts)}
+                          {renderProductGroup("Под заказ / без остатка", orderProducts)}
+                          <details className="eco-shipment-mann-diagnostics">
+                            <summary>Диагностика сопоставления</summary>
+                            <span>Канонический артикул: {match?.diagnostics.canonicalArticle}</span>
+                            <span>Кандидатов: {match?.diagnostics.candidateCount} · совместимых: {match?.diagnostics.compatibleCount}</span>
+                            <span>Поиск кандидатов: {match?.diagnostics.localProductScanMs.toFixed(1)} мс · parser: {match?.diagnostics.parsingMs.toFixed(1)} мс · всего: {match?.diagnostics.totalMs.toFixed(1)} мс</span>
+                            {match?.diagnostics.compactCollisionBlocked ? <span>Компактное сравнение заблокировано защитой от коллизий.</span> : null}
+                          </details>
                           <div className="eco-shipment-mann-choice-footer">
                             <button type="button" onClick={() => startMannManualSearch(filter)}>
                               Найти вручную
@@ -4729,9 +4511,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                             <Link href={mannCreateProductHref(filter)} target="_blank" rel="noreferrer">
                               Создать товар
                             </Link>
-                            <button type="button" onClick={() => setMannExpandedChoiceArticle(null)}>
-                              Свернуть
-                            </button>
                           </div>
                         </div>
                       ) : null}

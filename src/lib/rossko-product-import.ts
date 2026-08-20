@@ -4,6 +4,7 @@ import type { User } from "@/lib/auth";
 import type { BranchContext } from "@/lib/branch-context";
 import { prisma } from "@/lib/db";
 import { createLocalAdminProduct, supplierCounterpartyIdentityWhere } from "@/lib/local-inventory-admin";
+import { normalizePartNumberForCrossMatch } from "@/lib/part-number-cross-reference";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
 
 const MAX_IMPORT_ROWS = 240;
@@ -186,6 +187,11 @@ export function normalizeRosskoArticle(value: unknown): string {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+/** Product identity keeps meaningful `/`; provider lookup normalization stays compact. */
+export function normalizeRosskoProductIdentityArticle(value: unknown): string {
+  return normalizePartNumberForCrossMatch(value).canonical;
+}
+
 export function recommendedRosskoRetailCents(purchasePriceCents: number | null): number | null {
   if (purchasePriceCents == null || !Number.isFinite(purchasePriceCents) || purchasePriceCents < 0) return null;
   return purchasePriceCents <= 100_000
@@ -214,7 +220,7 @@ export function extractRosskoOrderLines(data: unknown, orderId: string): RosskoO
     const purchaseRub = readNumber(row, ["price", "cost", "buyPrice", "purchasePrice", "unitPrice"]);
     const sourceName = readText(row, ["name", "partName", "title", "caption", "description"]) || `${brand} ${article}`;
     const categoryText = readText(row, ["category", "categoryName", "parttype", "partType", "group", "groupName"]);
-    const identity = `${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
+    const identity = `${normalizeRosskoBrand(brand)}:${normalizeRosskoProductIdentityArticle(article)}`;
     const occurrence = (occurrences.get(identity) ?? 0) + 1;
     occurrences.set(identity, occurrence);
     result.push({
@@ -234,14 +240,14 @@ export function extractRosskoOrderLines(data: unknown, orderId: string): RosskoO
 
   const exactSeen = new Set<string>();
   return result.filter((line) => {
-    const key = [normalizeRosskoBrand(line.brand), normalizeRosskoArticle(line.article), line.quantity, line.purchasePriceCents ?? ""].join(":");
+    const key = [normalizeRosskoBrand(line.brand), normalizeRosskoProductIdentityArticle(line.article), line.quantity, line.purchasePriceCents ?? ""].join(":");
     if (exactSeen.has(key)) return false;
     exactSeen.add(key);
     return true;
   }).map((line, index, all) => {
     const occurrence = all.slice(0, index + 1).filter((candidate) =>
       normalizeRosskoBrand(candidate.brand) === normalizeRosskoBrand(line.brand) &&
-      normalizeRosskoArticle(candidate.article) === normalizeRosskoArticle(line.article)
+      normalizeRosskoProductIdentityArticle(candidate.article) === normalizeRosskoProductIdentityArticle(line.article)
     ).length;
     return { ...line, rowId: rowId(orderId, line.brand, line.article, occurrence) };
   });
@@ -351,7 +357,7 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
   const exact = new Map<string, CatalogIdentityRow>();
   const byArticle = new Map<string, CatalogIdentityRow[]>();
   for (const product of products) {
-    const articleKey = normalizeRosskoArticle(product.article);
+    const articleKey = normalizeRosskoProductIdentityArticle(product.article);
     const brandKey = normalizeRosskoBrand(product.brand);
     if (!articleKey) continue;
     if (brandKey && !exact.has(`${brandKey}:${articleKey}`)) exact.set(`${brandKey}:${articleKey}`, product);
@@ -361,7 +367,7 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
   const rows = lines.map<RosskoImportPreviewRow>((source) => {
     const article = source.article;
     const brandKey = normalizeRosskoBrand(source.brand);
-    const articleKey = normalizeRosskoArticle(article);
+    const articleKey = normalizeRosskoProductIdentityArticle(article);
     const brand = brandDisplays.get(brandKey) || source.brand.trim();
     const duplicate = exact.get(`${brandKey}:${articleKey}`) ?? null;
     const possible = !duplicate ? (byArticle.get(articleKey) ?? [])[0] ?? null : null;
@@ -439,7 +445,7 @@ async function duplicateByBrandArticle(
   article: string,
 ) {
   const brandKey = normalizeRosskoBrand(brand).toLocaleLowerCase("ru-RU");
-  const articleKey = normalizeRosskoArticle(article).toLocaleLowerCase("ru-RU");
+  const articleKey = normalizeRosskoProductIdentityArticle(article).toLocaleLowerCase("ru-RU");
   if (!brandKey || !articleKey) return null;
   const rows = await client.$queryRaw<DuplicateProductRow[]>(Prisma.sql`
     SELECT id, name
@@ -447,7 +453,12 @@ async function duplicateByBrandArticle(
     WHERE branch_id = ${branchId}
       AND archived = false
       AND regexp_replace(replace(lower(COALESCE(brand, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') = ${brandKey}
-      AND regexp_replace(replace(lower(COALESCE(article, '')), 'ё', 'е'), '[^0-9a-zа-я]', '', 'g') = ${articleKey}
+      AND regexp_replace(
+        regexp_replace(replace(replace(replace(replace(lower(COALESCE(article, '')), 'ё', 'е'), '–', '-'), '—', '-'), '−', '-'), '[.[:space:]-]+', '', 'g'),
+        '[^0-9a-zа-я/]',
+        '',
+        'g'
+      ) = ${articleKey}
     LIMIT 1
   `);
   return rows[0] ?? null;
@@ -459,7 +470,7 @@ async function lockRosskoProductIdentity(
   brand: string,
   article: string,
 ) {
-  const lockKey = `rossko-product:${branchId}:${normalizeRosskoBrand(brand)}:${normalizeRosskoArticle(article)}`;
+  const lockKey = `rossko-product:${branchId}:${normalizeRosskoBrand(brand)}:${normalizeRosskoProductIdentityArticle(article)}`;
   await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
   `);

@@ -299,7 +299,10 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
         return;
       }
 
-      if (data.vehicle) await handleResolution(data.vehicle, data.fromCache);
+      if (data.vehicle) {
+        setLoading(false);
+        await handleResolution(data.vehicle, data.fromCache);
+      }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
       if (requestId !== lookupRequestIdRef.current) return;
@@ -383,53 +386,72 @@ export function VehicleLookupPanel({ organizationId, warehouseId, initialVin, on
       aria-label="Определить автомобиль и подобрать фильтры"
       aria-busy={loading || resolving}
     >
-      <span className="eco-vehicle-lookup__decode-glow" aria-hidden />
-      <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
-        <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>VIN</button>
-        <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>Госномер</button>
-        <button type="button" role="tab" aria-selected={tab === "manual"} className={tab === "manual" ? "is-active" : ""} onClick={() => changeTab("manual")}>Вручную</button>
+      <div className="eco-vehicle-lookup__query">
+        <div className="eco-vehicle-lookup__tabs" role="tablist" aria-label="Способ определения автомобиля">
+          <button type="button" role="tab" aria-selected={tab === "vin"} className={tab === "vin" ? "is-active" : ""} onClick={() => changeTab("vin")}>VIN</button>
+          <button type="button" role="tab" aria-selected={tab === "plate"} className={tab === "plate" ? "is-active" : ""} onClick={() => changeTab("plate")}>Госномер</button>
+          <button type="button" role="tab" aria-selected={tab === "manual"} className={tab === "manual" ? "is-active" : ""} onClick={() => changeTab("manual")}>Вручную</button>
+        </div>
+        {tab !== "manual" ? (
+          <div className="eco-vehicle-lookup__controls">
+            <label className="eco-vehicle-lookup__field">
+              <span className="eco-sr-only">{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
+              <input
+                ref={inputRef}
+                className="eco-input"
+                value={input}
+                onChange={(event) => {
+                  const nextValue = tab === "plate" ? normalizePlateDraft(event.target.value) : event.target.value.toUpperCase();
+                  const normalizedValue = tab === "plate" ? normalizePlateDraft(nextValue) : normalizeVinInput(nextValue);
+                  const isComplete = tab === "plate"
+                    ? isLikelyRussianPlate(normalizedValue)
+                    : /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedValue);
+                  setInput(nextValue);
+                  if (!isComplete) {
+                    lastAutomaticLookupRef.current = "";
+                    return;
+                  }
+                  const lookupKey = `${tab}:${normalizedValue}`;
+                  if (lastAutomaticLookupRef.current === lookupKey) return;
+                  lastAutomaticLookupRef.current = lookupKey;
+                  void runLookup(false, false, nextValue);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !loading) {
+                    event.preventDefault();
+                    void runLookup();
+                  }
+                }}
+                placeholder={tab === "vin" ? "Введите VIN — поиск начнётся автоматически" : "Введите госномер, например Т332ЕК39"}
+                autoCapitalize="characters"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </label>
+            <button type="button" className="eco-btn eco-btn--primary" disabled={loading || resolving || !input.trim()} onClick={() => void runLookup()}>
+              {loading || resolving ? <span className="eco-vehicle-lookup__spinner" aria-hidden /> : null}
+              {loading ? "Определяем" : resolving ? "Подбираем" : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
+            </button>
+          </div>
+        ) : null}
       </div>
-      {tab !== "manual" ? (
-        <div className="eco-vehicle-lookup__controls">
-          <label className="eco-field">
-            <span>{tab === "vin" ? "VIN или номер кузова" : "Госномер"}</span>
-            <input
-              ref={inputRef}
-              className="eco-input"
-              value={input}
-              onChange={(event) => {
-                const nextValue = tab === "plate" ? normalizePlateDraft(event.target.value) : event.target.value.toUpperCase();
-                const normalizedValue = tab === "plate" ? normalizePlateDraft(nextValue) : normalizeVinInput(nextValue);
-                const isComplete = tab === "plate"
-                  ? isLikelyRussianPlate(normalizedValue)
-                  : /^[A-HJ-NPR-Z0-9]{17}$/.test(normalizedValue);
-                setInput(nextValue);
-                if (!isComplete) {
-                  lastAutomaticLookupRef.current = "";
-                  return;
-                }
-                const lookupKey = `${tab}:${normalizedValue}`;
-                if (lastAutomaticLookupRef.current === lookupKey) return;
-                lastAutomaticLookupRef.current = lookupKey;
-                void runLookup(false, false, nextValue);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !loading) {
-                  event.preventDefault();
-                  void runLookup();
-                }
-              }}
-              placeholder={tab === "vin" ? "Введите 17-значный VIN" : "Например, Т332ЕК39"}
-              autoCapitalize="characters"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </label>
-          <button type="button" className="eco-btn eco-btn--primary" disabled={loading || !input.trim()} onClick={() => void runLookup()}>
-            {loading ? <span className="eco-vehicle-lookup__spinner" aria-hidden /> : null}
-            {loading ? "Ищем..." : tab === "vin" ? "Найти по VIN" : "Найти по номеру"}
-          </button>
+      {loading || resolving ? (
+        <div className="eco-vehicle-lookup__loading" role="status" aria-live="polite">
+          <span className="eco-vehicle-lookup__loading-mark" aria-hidden>
+            <i />
+          </span>
+          <div className="eco-vehicle-lookup__loading-copy">
+            <strong>{loading ? "Определяем автомобиль" : "Автомобиль найден — подбираем фильтры"}</strong>
+            <span>
+              {loading
+                ? tab === "plate"
+                  ? "Ищем VIN и характеристики по госномеру"
+                  : "Проверяем VIN и получаем характеристики"
+                : "Сопоставляем модификацию с каталогом MANN"}
+            </span>
+          </div>
+          <span className="eco-vehicle-lookup__loading-track" aria-hidden><i /></span>
         </div>
       ) : null}
       {feedback && !(selectedVehicle && resolution?.status === "candidates") ? (
