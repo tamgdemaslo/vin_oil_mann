@@ -36225,7 +36225,7 @@ select.eco-input::-ms-expand,
   text-align: center;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 980px) {
   .eco-shipment-page {
     padding-inline: 14px;
   }
@@ -36325,7 +36325,7 @@ select.eco-input::-ms-expand,
 
   .eco-shipment-mobile-card__grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px;
   }
 
@@ -51804,6 +51804,747 @@ html.tgm-print-active .tgm-client-report .qr {
 
   100% {
     background-color: transparent;
+  }
+}
+
+/* ============================================================
+   Shipment register — dense operational workspace.
+   Keeps filters progressive and makes selection/actions predictable.
+   ============================================================ */
+.eco-shipment-page {
+  width: 100%;
+  max-width: 1680px;
+  margin-inline: auto;
+}
+
+.eco-shipment-page .eco-page-head {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.eco-shipment-page .eco-tabs {
+  margin-bottom: 12px;
+}
+
+.eco-shipment-filters {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--eco-line);
+  padding-bottom: 12px;
+}
+
+.eco-shipment-filters__main {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(190px, auto) auto auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.eco-shipment-filters__search.eco-search-wrap {
+  width: 100%;
+  max-width: none;
+}
+
+.eco-shipment-period-control {
+  display: flex;
+  height: 36px;
+  min-width: 190px;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 4px;
+  padding-left: 10px;
+  background: var(--eco-surface);
+  color: var(--eco-muted);
+  white-space: nowrap;
+}
+
+.eco-shipment-period-control:focus-within {
+  border-color: var(--eco-rust);
+  box-shadow: 0 0 0 3px var(--eco-rust-tint);
+}
+
+.eco-shipment-period-control > span {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.eco-shipment-period-control select {
+  min-width: 0;
+  height: 34px;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 0 28px 0 0;
+  background-color: transparent;
+  color: var(--eco-ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.eco-shipment-filter-toggle > span {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--eco-surface-deep);
+  color: var(--eco-ink-2);
+  font-size: 10px;
+}
+
+.eco-shipment-filter-toggle.is-active {
+  border-color: var(--eco-rust);
+  color: var(--eco-rust);
+  background: var(--eco-rust-tint);
+}
+
+.eco-shipment-custom-period,
+.eco-shipment-advanced-filters {
+  display: none;
+}
+
+.eco-shipment-custom-period.is-visible {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.eco-shipment-custom-period label {
+  display: grid;
+  gap: 4px;
+  width: min(210px, 100%);
+}
+
+.eco-shipment-custom-period label > span {
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.eco-shipment-advanced-filters.is-open {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--eco-line);
+  padding-top: 10px;
+}
+
+.eco-shipment-plate-input,
+.eco-shipment-vin-input {
+  text-transform: uppercase;
+}
+
+.eco-shipment-plate-input::placeholder,
+.eco-shipment-vin-input::placeholder {
+  text-transform: none;
+}
+
+.eco-shipment-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eco-shipment-filter-chips button {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 13px;
+  padding: 3px 8px 3px 10px;
+  background: var(--eco-surface);
+  color: var(--eco-ink-3);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.eco-shipment-filter-chips button:hover {
+  border-color: var(--eco-rust);
+  color: var(--eco-rust);
+}
+
+.eco-shipment-filter-chips svg {
+  width: 13px;
+  height: 13px;
+}
+
+.eco-shipment-list-workspace {
+  position: relative;
+}
+
+.eco-shipment-bulk-bar {
+  display: none;
+}
+
+.eco-shipment-bulk-bar.is-visible {
+  position: sticky;
+  z-index: 19;
+  top: calc(var(--eco-topbar-h) + var(--eco-substrip-h) + 6px);
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 5px;
+  padding: 7px 9px 7px 12px;
+  background: color-mix(in srgb, var(--eco-surface) 96%, transparent);
+  color: var(--eco-ink);
+  backdrop-filter: blur(10px);
+}
+
+.eco-shipment-bulk-bar > strong {
+  font-size: 12px;
+}
+
+.eco-shipment-bulk-bar > span {
+  margin-right: 4px;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-shipment-clear-selection {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--eco-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.eco-shipment-clear-selection:hover {
+  color: var(--eco-ink);
+}
+
+.eco-shipment-clear-selection svg {
+  width: 14px;
+  height: 14px;
+}
+
+.eco-shipment-list-notice {
+  margin-bottom: 8px;
+  border: 1px solid color-mix(in srgb, var(--eco-success) 25%, var(--eco-line));
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--eco-success-tint) 46%, var(--eco-surface));
+  color: var(--eco-ink-2);
+  font-size: 12px;
+}
+
+.eco-shipment-list-wrap {
+  overflow: visible;
+}
+
+.eco-shipment-list-wrap .eco-table-toolbar {
+  min-height: 42px;
+  padding-block: 6px;
+}
+
+.eco-shipment-list-wrap .eco-table-toolbar .l-meta {
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-shipment-columns-menu,
+.eco-shipment-bulk-more,
+.eco-shipment-row-menu {
+  position: relative;
+}
+
+.eco-shipment-columns-menu > summary,
+.eco-shipment-bulk-more > summary,
+.eco-shipment-row-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.eco-shipment-columns-menu > summary::-webkit-details-marker,
+.eco-shipment-bulk-more > summary::-webkit-details-marker,
+.eco-shipment-row-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.eco-shipment-columns-menu > div,
+.eco-shipment-bulk-more > div,
+.eco-shipment-row-menu__popover {
+  position: absolute;
+  z-index: 48;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  min-width: 210px;
+  overflow: hidden;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 5px;
+  padding: 5px;
+  background: var(--eco-surface);
+  box-shadow: var(--eco-shadow-md);
+}
+
+.eco-shipment-columns-menu > div {
+  gap: 2px;
+  padding: 8px;
+}
+
+.eco-shipment-columns-menu > div > strong {
+  padding: 2px 4px 6px;
+  color: var(--eco-muted);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.eco-shipment-columns-menu label {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 3px;
+  padding: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.eco-shipment-columns-menu label:hover {
+  background: var(--eco-surface-sunk);
+}
+
+.eco-shipment-bulk-more > div button,
+.eco-shipment-row-menu__popover > a,
+.eco-shipment-row-menu__popover > button,
+.eco-shipment-row-menu__popover .eco-contact-action,
+.eco-shipment-row-menu__popover [role="button"] {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border: 0;
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--eco-ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+
+.eco-shipment-bulk-more > div button:hover,
+.eco-shipment-row-menu__popover > a:hover,
+.eco-shipment-row-menu__popover > button:hover,
+.eco-shipment-row-menu__popover .eco-contact-action:hover,
+.eco-shipment-row-menu__popover [role="button"]:hover {
+  background: var(--eco-surface-sunk);
+}
+
+.eco-shipment-bulk-more > div svg,
+.eco-shipment-row-menu__popover svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.eco-shipment-bulk-more > div .is-danger,
+.eco-shipment-row-menu__popover .is-danger {
+  color: var(--eco-danger);
+}
+
+.eco-shipment-bulk-more > div .is-danger:hover,
+.eco-shipment-row-menu__popover .is-danger:hover {
+  background: var(--eco-danger-tint);
+}
+
+.eco-shipment-row-menu__divider {
+  height: 1px;
+  margin: 4px;
+  background: var(--eco-line);
+}
+
+.eco-shipment-row-menu > summary {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--eco-muted);
+}
+
+.eco-shipment-row-menu > summary:hover,
+.eco-shipment-row-menu[open] > summary {
+  border-color: var(--eco-line-strong);
+  background: var(--eco-surface-sunk);
+  color: var(--eco-ink);
+}
+
+.eco-shipment-row-menu > summary svg {
+  width: 17px;
+  height: 17px;
+}
+
+.eco-shipment-row-menu__popover {
+  width: 220px;
+}
+
+.eco-shipment-list-table {
+  width: 100%;
+  min-width: 1080px;
+  table-layout: fixed;
+}
+
+.eco-shipment-list-table thead th {
+  position: sticky;
+  z-index: 17;
+  top: calc(var(--eco-topbar-h) + var(--eco-substrip-h));
+  background: var(--eco-surface-sunk);
+}
+
+.eco-shipment-list-table th,
+.eco-shipment-list-table td {
+  overflow: hidden;
+  padding-inline: 10px;
+  text-overflow: ellipsis;
+}
+
+.eco-shipment-list-table td {
+  height: 56px;
+  border-bottom: 1px solid var(--eco-line);
+  vertical-align: middle;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--select {
+  width: 38px;
+  padding-inline: 11px 4px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--document {
+  width: 94px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--client {
+  width: 15%;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--phone {
+  width: 128px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--vehicle {
+  width: 19%;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--vin {
+  width: 150px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--store {
+  width: 12%;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--creator {
+  width: 11%;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--status {
+  width: 104px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--payment {
+  width: 112px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--sum {
+  width: 100px;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--actions {
+  width: 42px;
+  overflow: visible;
+  padding-inline: 2px 8px;
+}
+
+.eco-shipment-select {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--eco-rust);
+  cursor: pointer;
+}
+
+.eco-shipment-list-table tbody tr.eco-shipment-list-row:nth-child(odd) td,
+.eco-shipment-list-table tbody tr.eco-shipment-list-row:nth-child(even) td {
+  background: var(--eco-surface);
+}
+
+.eco-shipment-list-table tbody tr.eco-shipment-list-row:hover td {
+  background: color-mix(in srgb, var(--eco-surface-sunk) 72%, var(--eco-surface)) !important;
+}
+
+.eco-shipment-list-table tbody tr.eco-shipment-list-row.is-selected td,
+.eco-shipment-list-table tbody tr.eco-shipment-list-row.is-selected:hover td {
+  background: color-mix(in srgb, var(--eco-rust-tint) 34%, var(--eco-surface)) !important;
+}
+
+.eco-shipment-list-table tbody tr.eco-shipment-list-row:focus-visible td {
+  background: color-mix(in srgb, var(--eco-surface-sunk) 74%, var(--eco-surface)) !important;
+  box-shadow: inset 0 1px 0 var(--eco-rust), inset 0 -1px 0 var(--eco-rust);
+}
+
+.eco-shipment-list-number-link,
+.eco-shipment-list-counterparty-link,
+.eco-shipment-list-strong,
+.eco-shipment-list-secondary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-list-table .eco-shipment-cell--store,
+.eco-shipment-list-table .eco-shipment-cell--creator {
+  white-space: nowrap;
+}
+
+.eco-shipment-list-counterparty-link {
+  max-width: 100%;
+}
+
+.eco-shipment-list-soft {
+  color: var(--eco-faint);
+}
+
+.eco-shipment-list-empty-row td {
+  height: 120px;
+  color: var(--eco-muted);
+  text-align: center;
+}
+
+.eco-shipment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px 0;
+  color: var(--eco-muted);
+  font-size: 11px;
+}
+
+.eco-shipment-pagination > div {
+  display: flex;
+  gap: 6px;
+}
+
+.eco-shipment-mobile-card__number {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.eco-shipment-mobile-card__number a {
+  overflow: hidden;
+  color: var(--eco-ink);
+  font-weight: 750;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-shipment-mobile-card__number span {
+  color: var(--eco-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+@media (max-width: 1180px) {
+  .eco-shipment-filters__main {
+    grid-template-columns: minmax(260px, 1fr) minmax(190px, auto) auto auto;
+  }
+
+  .eco-shipment-filters__main > a:last-child {
+    grid-column: 4;
+  }
+
+  .eco-shipment-advanced-filters.is-open {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .eco-shipment-page .eco-page-head {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .eco-shipment-page .eco-page-head .eco-btn {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .eco-shipment-filters__main {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .eco-shipment-filters__search {
+    grid-column: 1 / -1;
+  }
+
+  .eco-shipment-period-control {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .eco-shipment-filters__main > a:last-child {
+    grid-column: auto;
+  }
+
+  .eco-shipment-custom-period.is-visible,
+  .eco-shipment-advanced-filters.is-open {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-shipment-custom-period.is-visible {
+    display: grid;
+  }
+
+  .eco-shipment-custom-period label {
+    width: 100%;
+  }
+
+  .eco-shipment-bulk-bar.is-visible {
+    top: calc(var(--eco-topbar-h) + var(--eco-substrip-h) + 4px);
+    flex-wrap: wrap;
+  }
+
+  .eco-shipment-bulk-bar > span {
+    flex: 1;
+  }
+
+  .eco-shipment-clear-selection {
+    margin-left: 0;
+  }
+
+  .eco-shipment-list-wrap .eco-table-toolbar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 10px;
+  }
+
+  .eco-shipment-list-wrap .eco-table-toolbar .l-meta {
+    width: 100%;
+  }
+
+  .eco-shipment-page .eco-table-toolbar .eco-btn {
+    width: auto;
+  }
+
+  .eco-shipment-mobile-card {
+    box-shadow: none;
+  }
+
+  .eco-shipment-mobile-card.is-selected {
+    border-color: color-mix(in srgb, var(--eco-rust) 42%, var(--eco-line));
+    background: color-mix(in srgb, var(--eco-rust-tint) 24%, var(--eco-surface));
+  }
+
+  .eco-shipment-mobile-card__top {
+    align-items: center;
+    gap: 9px;
+  }
+
+  .eco-shipment-mobile-card__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-shipment-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-shipment-pagination > div,
+  .eco-shipment-pagination .eco-btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .eco-shipment-filters__main {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .eco-shipment-filters__search,
+  .eco-shipment-period-control {
+    grid-column: 1 / -1;
+  }
+
+  .eco-shipment-page .eco-page-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eco-shipment-page .eco-page-head .eco-btn {
+    width: 100%;
+  }
+
+  .eco-shipment-advanced-filters.is-open,
+  .eco-shipment-custom-period.is-visible,
+  .eco-shipment-mobile-card__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .eco-shipment-bulk-bar .eco-btn {
+    flex: 1;
+  }
+}
+
+@media print {
+  body.eco-print-selected-shipments .eco-shipment-list-row:not(.is-selected) {
+    display: none !important;
+  }
+
+  .eco-shipment-page .eco-page-head .eco-btn,
+  .eco-shipment-page .eco-tabs,
+  .eco-shipment-filters,
+  .eco-shipment-bulk-bar,
+  .eco-shipment-list-wrap .eco-table-toolbar,
+  .eco-shipment-pagination,
+  .eco-shipment-cell--select,
+  .eco-shipment-cell--actions {
+    display: none !important;
+  }
+
+  .eco-shipment-page,
+  .eco-shipment-list-wrap {
+    max-width: none;
+    padding: 0;
+    border: 0;
+  }
+
+  .eco-shipment-list-table {
+    display: table !important;
+    min-width: 0;
+    font-size: 10px;
+  }
+
+  .eco-shipment-list-table thead th {
+    position: static;
   }
 }
 

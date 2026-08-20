@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { anonymousRetailCounterpartyExclusion } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
+import { demandPaymentStatusFromRaw } from "@/lib/demand-payment";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 
 type LocalEntityMeta = {
@@ -31,6 +32,13 @@ type LocalDemandListParams = {
   counterparty?: string;
   plate?: string;
   phone?: string;
+  vin?: string;
+  store?: string;
+  createdBy?: string;
+  status?: "draft" | "posted";
+  payment?: "paid" | "unpaid";
+  minSumCents?: number;
+  maxSumCents?: number;
   dateFrom?: string;
   dateTo?: string;
   offset?: number;
@@ -587,6 +595,24 @@ function demandPlateText(attributes: unknown): string {
   return normalizePlate(parts.join(" "));
 }
 
+function demandVinText(attributes: unknown): string {
+  return jsonArray(attributes)
+    .filter((attr) => /vin|вин/i.test(String(attr.name ?? "")))
+    .map((attr) => String(attr.value ?? ""))
+    .join(" ")
+    .replace(/\s/g, "")
+    .toUpperCase();
+}
+
+function demandCreatedByText(attributes: unknown): string {
+  return jsonArray(attributes)
+    .filter((attr) => String(attr.name ?? "").trim().toLowerCase() === "эко пользователь")
+    .map((attr) => String(attr.value ?? ""))
+    .join(" ")
+    .trim()
+    .toLowerCase();
+}
+
 function demandAttributesText(attributes: unknown): string {
   return jsonArray(attributes)
     .flatMap((attr) => [attr.name, attr.value])
@@ -676,17 +702,41 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   const counterparty = params.counterparty?.trim() ?? "";
   const plate = params.plate?.trim() ?? "";
   const phone = params.phone?.trim() ?? "";
+  const vin = params.vin?.replace(/\s/g, "").toUpperCase() ?? "";
+  const store = params.store?.trim() ?? "";
+  const createdBy = params.createdBy?.trim().toLowerCase() ?? "";
+  const minSumCents = Number.isFinite(params.minSumCents) ? Math.max(0, Math.round(params.minSumCents ?? 0)) : undefined;
+  const maxSumCents = Number.isFinite(params.maxSumCents) ? Math.max(0, Math.round(params.maxSumCents ?? 0)) : undefined;
   const dateFrom = normalizeDateFilter(params.dateFrom);
   const dateTo = normalizeDateFilter(params.dateTo);
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(100, Math.max(1, params.limit ?? 50));
-  const needsPostFilter = Boolean(search || plate || phone);
+  const needsPostFilter = Boolean(search || plate || phone || vin || createdBy || params.payment);
 
   const and = [];
   if (counterparty) {
     and.push({
       counterparty: {
         searchText: { contains: counterparty.toLowerCase(), mode: "insensitive" as const },
+      },
+    });
+  }
+  if (store) {
+    and.push({
+      OR: [
+        { store: { name: { contains: store, mode: "insensitive" as const } } },
+        { storeNameSnapshot: { contains: store, mode: "insensitive" as const } },
+      ],
+    });
+  }
+  if (params.status === "draft" || params.status === "posted") {
+    and.push({ applicable: params.status === "posted" });
+  }
+  if (minSumCents !== undefined || maxSumCents !== undefined) {
+    and.push({
+      sumCents: {
+        ...(minSumCents !== undefined ? { gte: minSumCents } : {}),
+        ...(maxSumCents !== undefined ? { lte: maxSumCents } : {}),
       },
     });
   }
@@ -705,7 +755,7 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
       prisma.localDemand.count({ where }),
       prisma.localDemand.findMany({
         where,
-        include: { counterparty: true, store: true },
+        include: { counterparty: true, store: true, _count: { select: { positions: true } } },
         orderBy: [{ momentAt: "desc" }],
         skip: offset,
         take: limit,
@@ -719,7 +769,7 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
 
   const rows = await prisma.localDemand.findMany({
     where,
-    include: { counterparty: true, store: true },
+    include: { counterparty: true, store: true, _count: { select: { positions: true } } },
     orderBy: [{ momentAt: "desc" }],
   });
 
@@ -727,6 +777,9 @@ export async function loadLocalDemandList(params: LocalDemandListParams) {
   const filtered = rows.filter((row) => {
     if (search && !demandMatchesSearch(row, search)) return false;
     if (plateNorm && !demandPlateText(row.attributes).includes(plateNorm)) return false;
+    if (vin && !demandVinText(row.attributes).includes(vin)) return false;
+    if (createdBy && !demandCreatedByText(row.attributes).includes(createdBy)) return false;
+    if (params.payment && demandPaymentStatusFromRaw(row.raw, row.applicable) !== params.payment) return false;
     if (phone) {
       const phoneValues = [
         row.counterparty?.phone,
@@ -757,6 +810,9 @@ type LocalDemandWithRelations = Awaited<ReturnType<typeof prisma.localDemand.fin
   store?: {
     name: string;
   } | null;
+  _count?: {
+    positions: number;
+  };
 };
 
 function localDemandToApiShape(row: LocalDemandWithRelations) {
@@ -768,6 +824,7 @@ function localDemandToApiShape(row: LocalDemandWithRelations) {
     name: row.name,
     moment: row.momentAt.toISOString(),
     applicable: row.applicable,
+    paymentStatus: demandPaymentStatusFromRaw(row.raw, row.applicable),
     sum: row.sumCents,
     description: row.description ?? "",
     agent: row.counterparty
@@ -793,5 +850,6 @@ function localDemandToApiShape(row: LocalDemandWithRelations) {
       name: typeof attr.name === "string" ? attr.name : undefined,
       value: attr.value,
     })),
+    positionCount: row._count?.positions ?? 0,
   };
 }

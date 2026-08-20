@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type KeyboardEvent, type MouseEvent } from "react";
-import { ContactActionButton } from "@/components/messenger/ContactActionButton";
+import { type ChangeEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { EcoBadge } from "@/components/platform/EcoUI";
 import { ShipmentRowActions } from "./ShipmentRowActions";
 
@@ -12,6 +11,7 @@ type ShipmentListRowProps = {
     id: string;
     name: string;
     applicable: boolean;
+    paymentStatus: "paid" | "unpaid" | "unknown";
     sum: number;
     organization?: { name?: string };
     store?: { name?: string };
@@ -25,6 +25,15 @@ type ShipmentListRowProps = {
   vehicleTitle: string;
   ecoUserName: string;
   sumLabel: string;
+  phone: string;
+  vin: string;
+  positionCount: number;
+  selected: boolean;
+  selectionActive: boolean;
+  showPhone: boolean;
+  showVin: boolean;
+  showPositionCount: boolean;
+  onSelectionChange: (selected: boolean) => void;
 };
 
 function shipmentNumberLabel(name: string): string {
@@ -53,6 +62,15 @@ export function ShipmentListRow({
   vehicleTitle,
   ecoUserName,
   sumLabel,
+  phone,
+  vin,
+  positionCount,
+  selected,
+  selectionActive,
+  showPhone,
+  showVin,
+  showPositionCount,
+  onSelectionChange,
 }: ShipmentListRowProps) {
   const router = useRouter();
   const href = `/shipment/${row.id}`;
@@ -60,6 +78,10 @@ export function ShipmentListRow({
 
   function openRow(event: MouseEvent<HTMLTableRowElement>) {
     if (isInteractiveTarget(event.target)) return;
+    if (selectionActive) {
+      onSelectionChange(!selected);
+      return;
+    }
     router.push(href);
   }
 
@@ -67,30 +89,46 @@ export function ShipmentListRow({
     if (event.key !== "Enter" && event.key !== " ") return;
     if (isInteractiveTarget(event.target)) return;
     event.preventDefault();
+    if (selectionActive) {
+      onSelectionChange(!selected);
+      return;
+    }
     router.push(href);
+  }
+
+  function toggleSelection(event: ChangeEvent<HTMLInputElement>) {
+    event.stopPropagation();
+    onSelectionChange(event.target.checked);
   }
 
   return (
     <tr
-      className="eco-shipment-list-row"
+      className={`eco-shipment-list-row ${selected ? "is-selected" : ""}`}
       onClick={openRow}
       onKeyDown={openRowFromKeyboard}
       tabIndex={0}
       role="link"
       aria-label={`Открыть отгрузку ${row.name}`}
     >
-      <td data-row-action>
-        <span className="eco-check" />
+      <td className="eco-shipment-cell--select" data-row-action>
+        <input
+          type="checkbox"
+          className="eco-shipment-select"
+          checked={selected}
+          onChange={toggleSelection}
+          onClick={(event) => event.stopPropagation()}
+          aria-label={`Выбрать отгрузку ${numberLabel}`}
+        />
       </td>
-      <td>
+      <td className="eco-shipment-cell--document">
         <Link href={href} className="l-mono eco-shipment-list-number-link">
           {numberLabel}
         </Link>
         <div className="l-mono eco-shipment-list-subtext">
-          {moment.date} · {moment.time}
+          {moment.date} · {moment.time}{showPositionCount && positionCount > 0 ? ` · ${positionCount} поз.` : ""}
         </div>
       </td>
-      <td>
+      <td className="eco-shipment-cell--client">
         {counterpartyHref ? (
           <Link
             href={counterpartyHref}
@@ -102,46 +140,36 @@ export function ShipmentListRow({
         ) : (
           <div className="eco-shipment-list-strong">{counterpartyName}</div>
         )}
-        <div className="l-mono eco-shipment-list-subtext">телефон в карточке клиента</div>
       </td>
-      <td title={vehicleTitle}>
-        <div className="eco-shipment-list-strong">{vehiclePrimary}</div>
-        <div className="l-mono eco-shipment-list-subtext">{vehicleSecondary || " "}</div>
+      {showPhone ? <td className="l-mono eco-shipment-list-secondary eco-shipment-cell--phone">{phone || "—"}</td> : null}
+      <td className="eco-shipment-cell--vehicle" title={vehicleTitle}>
+        <div className={vehiclePrimary === "—" ? "eco-shipment-list-soft" : "eco-shipment-list-strong"}>{vehiclePrimary}</div>
+        {vehicleSecondary ? <div className="l-mono eco-shipment-list-subtext">{vehicleSecondary}</div> : null}
       </td>
-      <td>
+      {showVin ? <td className="l-mono eco-shipment-list-secondary eco-shipment-cell--vin" title={vin}>{vin || "—"}</td> : null}
+      <td className="eco-shipment-cell--store">
         <div>{row.store?.name ?? "—"}</div>
-        <div className="eco-shipment-list-subtext">склад отгрузки</div>
       </td>
-      <td>{ecoUserName}</td>
-      <td>
+      <td className="eco-shipment-cell--creator">{ecoUserName}</td>
+      <td className="eco-shipment-cell--status">
         <EcoBadge tone={row.applicable ? "success" : "neutral"} dot>
           {row.applicable ? "Проведено" : "Черновик"}
         </EcoBadge>
       </td>
-      <td>
-        <EcoBadge tone={row.sum > 0 ? "success" : "warning"} dot>
-          {row.sum > 0 ? "Оплачено" : "Не оплачено"}
+      <td className="eco-shipment-cell--payment">
+        <EcoBadge tone={row.paymentStatus === "paid" ? "success" : row.paymentStatus === "unpaid" ? "warning" : "neutral"} dot>
+          {row.paymentStatus === "paid" ? "Оплачено" : row.paymentStatus === "unpaid" ? "Не оплачено" : "Не указано"}
         </EcoBadge>
       </td>
-      <td className="l-money eco-shipment-list-sum">{sumLabel}</td>
-      <td className="eco-shipment-list-actions" data-row-action>
-        <div className="eco-row-actions">
-          <ContactActionButton
-            variant="icon"
-            size="sm"
-            entityType="shipment"
-            entityId={row.id}
-            counterpartyId={counterpartyId}
-            displayName={counterpartyName}
-            context={{
-              entityType: "shipment",
-              entityId: row.id,
-              shipmentId: row.id,
-              car: vehicleTitle || vehiclePrimary,
-            }}
-          />
-          <ShipmentRowActions shipmentId={row.id} />
-        </div>
+      <td className="l-money eco-shipment-list-sum eco-shipment-cell--sum">{sumLabel}</td>
+      <td className="eco-shipment-list-actions eco-shipment-cell--actions" data-row-action>
+        <ShipmentRowActions
+          shipmentId={row.id}
+          counterpartyId={counterpartyId}
+          counterpartyName={counterpartyName}
+          phone={phone}
+          vehicleLabel={vehicleTitle || vehiclePrimary}
+        />
       </td>
     </tr>
   );

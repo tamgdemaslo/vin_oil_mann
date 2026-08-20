@@ -7,6 +7,7 @@ import { getCurrentShift, listOperationsForShift } from "@/lib/cashbox";
 import { clientCaseStatusLabel, normalizeClientCaseStatus } from "@/lib/client-case-shared";
 import { SERVICE_TIME_ZONE, formatServiceTime, toServiceDateInput } from "@/lib/date-time";
 import { prisma } from "@/lib/db";
+import { demandPaymentStatusFromRaw } from "@/lib/demand-payment";
 import { resolveDashboardAccessForBranch } from "@/lib/dashboard-variant";
 import { buildJournalFreeWindows } from "@/lib/booking/journal-windows";
 import { localDateIsoWeekday } from "@/lib/booking/timezone";
@@ -104,24 +105,6 @@ function stringValue(value: unknown) {
 
 function arrayValue<T = unknown>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
-}
-
-function truthyPaymentValue(value: unknown) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value > 0;
-  const text = stringValue(value).toLowerCase();
-  return ["true", "yes", "paid", "оплачено", "оплачен", "оплачена", "проведена"].includes(text);
-}
-
-function paymentStatusFromRaw(raw: unknown, applicable: boolean) {
-  const record = asRecord(raw);
-  const stateName = stringValue(nestedValue(record, ["state", "name"])).toLowerCase();
-  const paymentStatus = stringValue(record.paymentStatus ?? record.payment_status ?? record.paidStatus).toLowerCase();
-  const paidFlag = truthyPaymentValue(record.paid ?? record.isPaid ?? record.payed ?? record.paymentCompleted);
-  if (paidFlag || stateName.includes("оплачен") || paymentStatus.includes("paid") || paymentStatus.includes("оплачен")) {
-    return "paid" as const;
-  }
-  return applicable ? ("unknown" as const) : ("unpaid" as const);
 }
 
 function paymentKindFromRaw(raw: unknown) {
@@ -481,7 +464,7 @@ export async function GET() {
   );
   const paidStats = todayShipments.reduce(
     (acc, demand) => {
-      const paymentStatus = paymentStatusFromRaw(demand.raw, demand.applicable);
+      const paymentStatus = demandPaymentStatusFromRaw(demand.raw, demand.applicable);
       const kind = paymentKindFromRaw(demand.raw);
       if (paymentStatus === "paid") acc.paidCents += demand.sumCents;
       if (paymentStatus === "unpaid") acc.unpaidCents += demand.sumCents;
@@ -612,7 +595,7 @@ export async function GET() {
     });
   }
 
-  const unpaidToday = todayShipments.filter((demand) => paymentStatusFromRaw(demand.raw, demand.applicable) === "unpaid");
+  const unpaidToday = todayShipments.filter((demand) => demandPaymentStatusFromRaw(demand.raw, demand.applicable) === "unpaid");
   if (unpaidToday.length > 0) {
     notifications.push({
       id: "unpaid-demands-today",
@@ -822,7 +805,7 @@ export async function GET() {
         creator: stringValue(asRecord(demand.raw).ecoUserName) || "",
         applicable: demand.applicable,
         sumCents: audience === "master" ? null : demand.sumCents,
-        paymentStatus: paymentStatusFromRaw(demand.raw, demand.applicable),
+        paymentStatus: demandPaymentStatusFromRaw(demand.raw, demand.applicable),
         hasDiagnostic: demand.diagnosticMapSessions.length > 0,
       })),
     },
