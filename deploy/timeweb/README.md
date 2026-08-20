@@ -31,6 +31,21 @@ The platform filesystem is replaced on every deployment. Do not use
 `/app/.data` as the durable source of business files: store them in PostgreSQL
 or object storage instead.
 
+## OpenAI WireGuard route
+
+If the App Platform region cannot reach OpenAI directly, set
+`WIREPROXY_CONFIG` to a standard WireGuard client profile as a multiline secret.
+The container validates the profile, appends an HTTP CONNECT listener bound only
+to `127.0.0.1:8888`, and exports `OPENAI_PROXY_URL` to the application. Only
+OpenAI clients use that URL; application and database traffic keep their normal
+route.
+
+Do not add proxy sections to the stored profile and do not set a public bind
+address. Startup removes the profile from the Node process environment, checks
+the configuration, and requires an HTTP 401 response from the unauthenticated
+OpenAI models endpoint through the tunnel. A regional HTTP 403 or an unavailable
+tunnel stops the container instead of silently falling back to a direct route.
+
 ## Database changes
 
 App startup never applies Prisma migrations. Before a schema change reaches

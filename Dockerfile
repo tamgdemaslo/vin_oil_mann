@@ -1,5 +1,29 @@
 # syntax=docker/dockerfile:1.7
 
+FROM node:20-bookworm AS wireproxy
+
+ARG TARGETARCH=amd64
+ARG WIREPROXY_VERSION=v1.1.3
+
+# Download a pinned upstream release instead of installing WireGuard kernel
+# tooling. wireproxy runs entirely in userspace, which is compatible with App
+# Platform containers. Both supported artifacts are verified before extraction.
+RUN set -eu; \
+  case "$TARGETARCH" in \
+    amd64) wireproxy_sha256="e88c1d090740373fc606c1bafd81d9a5eadc642cce5667616e20e9d7a444f51c" ;; \
+    arm64) wireproxy_sha256="370e00bd2167960d1ecd1c3c1439715bbaa94a0a110a2040468670c9af6021b6" ;; \
+    *) echo "Unsupported wireproxy architecture: $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  archive="/tmp/wireproxy_linux_${TARGETARCH}.tar.gz"; \
+  curl --fail --location --silent --show-error \
+    --retry 3 --retry-all-errors \
+    --output "$archive" \
+    "https://github.com/windtf/wireproxy/releases/download/${WIREPROXY_VERSION}/wireproxy_linux_${TARGETARCH}.tar.gz"; \
+  echo "$wireproxy_sha256  $archive" | sha256sum --check --strict; \
+  tar --extract --gzip --file "$archive" --directory /usr/local/bin wireproxy; \
+  chmod 0555 /usr/local/bin/wireproxy; \
+  /usr/local/bin/wireproxy --version
+
 FROM node:20-bookworm AS dependencies
 
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -126,6 +150,7 @@ COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
 COPY --from=build --chown=app:app /app/assets/price-label-fonts ./assets/price-label-fonts
 COPY --from=build --chown=app:app /app/prisma ./prisma
+COPY --from=wireproxy /usr/local/bin/wireproxy /usr/local/bin/wireproxy
 COPY --from=build --chown=app:app /app/deploy/timeweb/start-app.sh /usr/local/bin/start-app
 RUN chmod 755 /usr/local/bin/start-app
 
