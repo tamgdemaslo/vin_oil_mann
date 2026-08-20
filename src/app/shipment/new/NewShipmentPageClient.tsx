@@ -1085,6 +1085,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   const [productAddNotice, setProductAddNotice] = useState("");
   const [productSearchRetrySeed, setProductSearchRetrySeed] = useState(0);
   const [recentlyAddedPositionIndex, setRecentlyAddedPositionIndex] = useState<number | null>(null);
+  const [positionsExpanded, setPositionsExpanded] = useState(false);
   const productResultsDismissedRef = useRef(false);
   const [oneOffServiceOpen, setOneOffServiceOpen] = useState(false);
   const [oneOffServiceName, setOneOffServiceName] = useState("");
@@ -2176,7 +2177,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       }),
     }).catch(() => undefined);
     setManualMannFilter(null);
-    setProductAddNotice(`Товар добавлен и связан с MANN ${filter.mannArticle}`);
+    setProductAddNotice("Товар добавлен в отгрузку");
   };
 
   const focusProductSearch = () => {
@@ -2540,6 +2541,22 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       setProductAddNotice("Нет найденных локальных товаров для добавления");
       return;
     }
+    const projectedIndexes = new Map(
+      positions.map((position, index) => [position.assortmentMeta?.href, index] as const)
+    );
+    let projectedLength = positions.length;
+    let highlightedIndex: number | null = null;
+    for (const item of items) {
+      const href = `local://product/${item.match.id}`;
+      const existingIndex = projectedIndexes.get(href);
+      if (existingIndex != null) {
+        highlightedIndex = existingIndex;
+      } else {
+        highlightedIndex = projectedLength;
+        projectedIndexes.set(href, projectedLength);
+        projectedLength += 1;
+      }
+    }
     setPositions((prev) => {
       const next = [...prev];
       const indexByHref = new Map(next.map((position, index) => [position.assortmentMeta?.href, index] as const));
@@ -2574,6 +2591,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       }
       return next;
     });
+    setRecentlyAddedPositionIndex(highlightedIndex);
     void Promise.all(items.map((item) =>
       fetch("/api/mann-catalog/product-links", {
         method: "POST",
@@ -2589,7 +2607,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     ));
     setProductAddNotice(items.length === 1 ? "Фильтр добавлен в отгрузку" : "Комплект фильтров добавлен в отгрузку");
     markDraftDirty();
-  }, [markDraftDirty, selectedOrg?.id]);
+  }, [markDraftDirty, positions, selectedOrg?.id]);
 
   const removePosition = (index: number) => {
     const position = positions[index];
@@ -2903,16 +2921,27 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     return sum + base * (1 - disc / 100);
   }, 0);
   const indexedPositions = positions.map((position, index) => ({ position, index }));
+  const collapsedPositionLimit = 4;
+  const latestIndexedPositions = indexedPositions.slice(-collapsedPositionLimit);
+  const recentlyAddedIndexedPosition = recentlyAddedPositionIndex == null
+    ? null
+    : indexedPositions[recentlyAddedPositionIndex] ?? null;
+  const collapsedIndexedPositions = recentlyAddedIndexedPosition
+    && !latestIndexedPositions.some(({ index }) => index === recentlyAddedIndexedPosition.index)
+      ? [recentlyAddedIndexedPosition, ...latestIndexedPositions.slice(-(collapsedPositionLimit - 1))]
+      : latestIndexedPositions;
+  const visibleIndexedPositions = positionsExpanded ? indexedPositions : collapsedIndexedPositions;
+  const hiddenPositionsCount = Math.max(0, indexedPositions.length - visibleIndexedPositions.length);
   const positionGroups = [
     {
       key: "services",
       title: "Услуги",
-      items: indexedPositions.filter(({ position }) => isServiceMeta(position.assortmentMeta)),
+      items: visibleIndexedPositions.filter(({ position }) => isServiceMeta(position.assortmentMeta)),
     },
     {
       key: "products",
       title: "Товары",
-      items: indexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
+      items: visibleIndexedPositions.filter(({ position }) => !isServiceMeta(position.assortmentMeta)),
     },
   ].filter((group) => group.items.length > 0);
   const positionsDiscount = Math.max(0, positionsSubtotal - positionsTotal);
@@ -4239,9 +4268,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       type="button"
                       onClick={() => addProductFromSearch(p)}
                       className="eco-product-result-add"
-                      title={unavailable ? "Нет доступного остатка, проверьте наличие перед добавлением" : manualMannFilter ? `Добавить и связать с MANN ${manualMannFilter.mannArticle}` : "Добавить в отгрузку"}
+                      title={unavailable ? "Нет доступного остатка, проверьте наличие перед добавлением" : "Добавить в отгрузку"}
                     >
-                      {manualMannFilter ? "Добавить и связать" : "Добавить"}
+                      Добавить
                     </button>
                   </div>
                 </li>
@@ -4492,11 +4521,12 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                               ) : (
                                 <button
                                   type="button"
-                                  className={`eco-shipment-mann-add ${localAvailability.outOfStock ? "is-order" : "is-primary"}`}
+                                  className={`eco-shipment-mann-add ${localAvailability.outOfStock ? local.orderable ? "is-order" : "is-unavailable" : "is-primary"}`}
                                   onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
+                                  disabled={localAvailability.outOfStock && !local.orderable}
                                 >
                                   {localAvailability.outOfStock
-                                    ? local.orderable ? "Добавить под заказ" : "Добавить без остатка"
+                                    ? local.orderable ? "Добавить под заказ" : "Нет в наличии"
                                     : "Добавить"}
                                 </button>
                               )}
@@ -4545,6 +4575,9 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                               <Link href={mannRosskoHref(filter)} target="_blank" rel="noreferrer">
                                 ROSSKO
                               </Link>
+                              <button type="button" onClick={() => startMannManualSearch(filter)}>
+                                Найти другой товар
+                              </button>
                               {match ? (
                                 <div className="eco-shipment-mann-more-copy">
                                   <strong>Диагностика сопоставления</strong>
@@ -4568,11 +4601,6 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                             <span>Можно найти существующий товар вручную или создать новую карточку через меню ⋯.</span>
                           </div>
                         ) : null}
-                        <div className="eco-shipment-mann-choice-footer">
-                          <button type="button" onClick={() => startMannManualSearch(filter)}>
-                            Найти другой товар
-                          </button>
-                        </div>
                       </div>
                     </div>
                   );
@@ -4701,30 +4729,36 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
       </section>
 
       {positions.length === 0 && (
-        <section id="shipment-position-list" className="eco-card eco-card--padded eco-shipment-new-positions">
+        <section id="shipment-position-list" className="eco-card eco-card--padded eco-shipment-new-positions" aria-live="polite">
           <div className="eco-card__head">
             <div className="eco-position-title-stack">
               <div className="eco-position-title-row">
-                <h2>Добавлено в отгрузку</h2>
-                <EcoBadge tone="neutral">0</EcoBadge>
+                <h2>Текущая отгрузка</h2>
               </div>
+            </div>
+            <div className="eco-shipment-position-summary">
+              <span>0 поз. · 0 ед.</span>
+              <strong>{formatShipmentMoney(0)}</strong>
             </div>
           </div>
           <div className="eco-shipment-empty-state">
-            <strong>В отгрузке пока нет позиций</strong>
-            <span>Найдите товар или добавьте услугу.</span>
+            <strong>Позиции пока не добавлены</strong>
+            <span>Найдите товар выше или добавьте услугу.</span>
           </div>
         </section>
       )}
 
       {positions.length > 0 && (
-        <section id="shipment-position-list" className="eco-card eco-shipment-new-positions">
+        <section id="shipment-position-list" className="eco-card eco-shipment-new-positions" aria-live="polite">
           <div className="eco-card__head">
             <div className="eco-position-title-stack">
               <div className="eco-position-title-row">
-                <h2>Добавлено в отгрузку</h2>
-                <EcoBadge tone="rust">{positions.length}</EcoBadge>
+                <h2>Текущая отгрузка</h2>
               </div>
+            </div>
+            <div className="eco-shipment-position-summary">
+              <span>{positions.length} поз. · {positionsQty} ед.</span>
+              <strong>{formatShipmentMoney(positionsTotal)}</strong>
             </div>
           </div>
           <div className="eco-position-cards">
@@ -5029,6 +5063,16 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               </tbody>
             </table>
           </div>
+          {positions.length > collapsedPositionLimit && (
+            <button
+              type="button"
+              className="eco-shipment-position-reveal"
+              onClick={() => setPositionsExpanded((current) => !current)}
+              aria-expanded={positionsExpanded}
+            >
+              {positionsExpanded ? "Свернуть список" : `Показать ещё ${hiddenPositionsCount}`}
+            </button>
+          )}
           <div className="eco-shipment-new-table-foot">
             <span>Позиций: {positions.length}</span>
             <span>Кол-во всего: {positionsQty}</span>

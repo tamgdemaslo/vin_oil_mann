@@ -66791,3 +66791,479 @@ select[size="1"]::-ms-expand {
     animation: none;
   }
 }
+
+/* Shipment flow: search -> results -> the single live shipment -> auxiliary VIN matches. */
+.eco-shipment-new-page .eco-shipment-workflow-section--positions {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-workflow-section--positions > .eco-shipment-workflow-section-head {
+  order: 0;
+}
+
+.eco-shipment-new-page #shipment-positions-add.eco-shipment-new-add {
+  display: contents !important;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-vehicle-lookup {
+  order: 1;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-fast-search {
+  order: 2;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-product-results {
+  order: 3;
+}
+
+.eco-shipment-new-page #shipment-position-list {
+  order: 4;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-manual,
+.eco-shipment-new-page #shipment-positions-add .eco-vin-alert,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-panel-body > .eco-product-results-state,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-variant-summary {
+  order: 5;
+}
+
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-mann-filter-list,
+.eco-shipment-new-page #shipment-positions-add .eco-shipment-vin-empty {
+  order: 6;
+}
+
+.eco-shipment-new-page #shipment-positions-add > .eco-shipment-direct-vin {
+  order: 7;
+}
+
+/* The shipment is a compact live work area, not a second cart. */
+.eco-shipment-new-page .eco-shipment-new-positions {
+  overflow: hidden !important;
+  background: #fff !important;
+  border: 1px solid #d7d0c4 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-card__head {
+  display: flex !important;
+  min-height: 48px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px;
+  padding: 8px 14px !important;
+  background: #f7f5f0 !important;
+  border-bottom: 1px solid #ddd6ca !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-position-title-row {
+  gap: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-card__head h2 {
+  color: #292722 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: #6e685f;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.eco-shipment-new-page .eco-shipment-position-summary strong {
+  color: #8f3f22;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-empty-state {
+  display: flex !important;
+  min-height: 52px !important;
+  align-items: baseline;
+  gap: 8px !important;
+  margin: 0 !important;
+  padding: 11px 14px !important;
+  color: #777168 !important;
+  background: #fff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-empty-state strong,
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-empty-state span {
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-empty-state strong {
+  color: #3d3933 !important;
+  font-weight: 750 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-table-wrap {
+  border-top: 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-new-table th {
+  padding-block: 8px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-new-table td {
+  height: 60px !important;
+  padding-block: 7px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-position-reveal {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  color: #6a3b28;
+  background: #faf8f4;
+  border: 0;
+  border-top: 1px solid #e7e1d7;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.eco-shipment-new-page .eco-shipment-position-reveal:hover,
+.eco-shipment-new-page .eco-shipment-position-reveal:focus-visible {
+  color: #8f3f22;
+  background: #f5f1ea;
+  outline: 0;
+}
+
+.eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-new-table-foot {
+  display: none !important;
+}
+
+/* Search columns preserve the decision order: name, price, stock, metadata, action. */
+.eco-shipment-new-page .eco-product-results-head,
+.eco-shipment-new-page .eco-product-result-row {
+  grid-template-columns: minmax(260px, 1fr) 108px 132px 72px 96px !important;
+  gap: 12px !important;
+}
+
+.eco-shipment-new-page .eco-product-results-head > span:nth-child(2),
+.eco-shipment-new-page .eco-product-result-row > span:nth-child(2) {
+  grid-column: 3;
+}
+
+.eco-shipment-new-page .eco-product-results-head > span:nth-child(3),
+.eco-shipment-new-page .eco-product-result-row > span:nth-child(3) {
+  grid-column: 4;
+}
+
+.eco-shipment-new-page .eco-product-results-head > span:nth-child(4),
+.eco-shipment-new-page .eco-product-result-row > span:nth-child(4) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.eco-shipment-new-page .eco-product-results-head > span:nth-child(5),
+.eco-shipment-new-page .eco-product-result-row > .eco-product-result-add {
+  grid-column: 5;
+}
+
+.eco-shipment-new-page .eco-product-result-add {
+  width: 96px !important;
+  white-space: nowrap;
+}
+
+/* VIN categories are secondary, flat and dense. */
+.eco-shipment-new-page .eco-shipment-mann-results-head {
+  min-height: 48px !important;
+  padding: 8px 12px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-results-head strong {
+  font-size: 13px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter {
+  grid-template-columns: 36px minmax(220px, 1fr) minmax(150px, max-content) 32px !important;
+  min-height: 54px !important;
+  gap: 10px !important;
+  padding: 8px 12px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-kind-icon {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 7px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-filter-main strong {
+  font-size: 13px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-panel {
+  padding: 0 12px 6px 54px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-product-group h4 {
+  display: none !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-choice-option {
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, max-content) minmax(136px, max-content) !important;
+  min-height: 50px !important;
+  gap: 12px !important;
+  padding: 6px 0 !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-add {
+  min-width: 136px;
+  min-height: 34px !important;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-add.is-unavailable,
+.eco-shipment-new-page .eco-shipment-mann-add:disabled {
+  color: #938d84 !important;
+  background: #f2f0eb !important;
+  border: 1px solid #ddd7cd !important;
+  cursor: not-allowed;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more > div > button,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 9px 10px;
+  color: #34312c;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: none;
+}
+
+.eco-shipment-new-page .eco-shipment-mann-more > div > button:hover,
+.eco-shipment-new-page .eco-shipment-mann-more > div > button:focus-visible,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a:hover,
+.eco-shipment-new-page .eco-shipment-mann-more > div > a:focus-visible {
+  background: #f3f0e9;
+  outline: 0;
+}
+
+@media (max-width: 960px) {
+  .eco-shipment-new-page .eco-product-results-head,
+  .eco-shipment-new-page .eco-product-result-row {
+    grid-template-columns: minmax(220px, 1fr) 96px 118px 64px 88px !important;
+    gap: 8px !important;
+  }
+
+  .eco-shipment-new-page .eco-product-result-add {
+    width: 88px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(190px, 1fr) minmax(140px, max-content) minmax(128px, max-content) !important;
+    gap: 10px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .eco-shipment-new-page .eco-shipment-position-searchbar,
+  .eco-shipment-new-page .eco-shipment-position-searchbar.has-vin,
+  .eco-shipment-new-page .eco-shipment-position-searchbar.has-service-only {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-search-field {
+    grid-column: 1 / -1;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn,
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn.is-active,
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn:last-child {
+    grid-row: 2;
+    min-width: 0;
+    width: 100% !important;
+    min-height: 36px !important;
+    height: 36px !important;
+    padding-inline: 8px !important;
+    overflow: hidden;
+    font-size: 10px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn.is-active {
+    grid-column: 1;
+    justify-self: stretch;
+    color: #77361e !important;
+    background: #fbf7f2 !important;
+    border-color: #d9b39f !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-searchbar > .eco-shipment-link-btn:last-child {
+    grid-column: 2;
+  }
+
+  .eco-shipment-new-page .eco-shipment-new-positions .eco-card__head {
+    align-items: flex-start !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-summary {
+    display: grid;
+    justify-items: end;
+    gap: 1px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-new-positions .eco-shipment-empty-state {
+    display: grid !important;
+    gap: 2px !important;
+  }
+
+  .eco-shipment-new-page .eco-position-cards {
+    gap: 8px !important;
+    padding: 9px !important;
+  }
+
+  .eco-shipment-new-page .eco-position-card-group-title {
+    padding: 2px 2px 0;
+    font-size: 10px;
+  }
+
+  .eco-shipment-new-page .eco-position-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .eco-shipment-new-page .eco-position-card-head strong {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .eco-shipment-new-page .eco-position-card-head span {
+    font-size: 10px;
+  }
+
+  .eco-shipment-new-page .eco-position-card-controls {
+    grid-template-columns: minmax(88px, 1fr) 64px minmax(92px, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .eco-shipment-new-page .eco-position-card-controls label {
+    gap: 3px;
+    font-size: 9px;
+  }
+
+  .eco-shipment-new-page .eco-position-card-controls .eco-position-discount,
+  .eco-shipment-new-page .eco-position-card-controls .eco-position-edit-input.is-price,
+  .eco-shipment-new-page .eco-position-card-controls .eco-position-edit-input.is-qty {
+    width: 100% !important;
+    min-height: 32px !important;
+    height: 32px !important;
+  }
+
+  .eco-shipment-new-page .eco-position-card-controls .eco-position-discount input,
+  .eco-shipment-new-page .eco-position-card-controls .eco-position-discount select {
+    min-height: 32px !important;
+    height: 32px !important;
+  }
+
+  .eco-shipment-new-page .eco-position-card-total {
+    padding-top: 7px;
+  }
+
+  .eco-shipment-new-page .eco-position-card-total strong {
+    font-size: 16px;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+    gap: 7px 10px !important;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row > span:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row > span:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row > span:nth-child(3) {
+    display: none;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row > span:nth-child(4) {
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: start;
+  }
+
+  .eco-shipment-new-page .eco-product-result-row > .eco-product-result-add {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    align-self: center;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-filter {
+    min-height: 52px !important;
+    padding: 7px 10px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-panel {
+    padding: 0 10px 6px 52px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+    gap: 6px 10px !important;
+    padding: 7px 0 !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-sku-copy {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .eco-shipment-new-page .eco-shipment-new-positions .eco-card__head {
+    padding-inline: 12px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-summary span {
+    font-size: 10px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-position-summary strong {
+    font-size: 14px;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-panel {
+    padding-left: 10px !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-choice-option {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .eco-shipment-new-page .eco-shipment-mann-sku-copy,
+  .eco-shipment-new-page .eco-shipment-mann-sku-stock,
+  .eco-shipment-new-page .eco-shipment-mann-add,
+  .eco-shipment-new-page .eco-shipment-mann-added {
+    grid-column: 1;
+  }
+}
