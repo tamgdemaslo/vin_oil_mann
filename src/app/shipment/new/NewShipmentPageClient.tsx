@@ -627,22 +627,6 @@ function MannFilterTypeIcon({ type }: { type?: string }) {
   );
 }
 
-function describeMannChoiceAvailability(match: MannLocalMatch): { label: string; outOfStock: boolean } {
-  const stock = Number.isFinite(match.stock) ? Math.max(0, match.stock) : 0;
-  const available = Number.isFinite(match.available) ? Math.max(0, match.available) : 0;
-  const parts: string[] = [];
-  if (available > 0) {
-    parts.push(`Остаток: ${formatQuantityInput(stock)} шт.`);
-    if (match.reserve) parts.push(`доступно ${formatQuantityInput(available)} шт.`);
-  } else if (match.orderable) {
-    parts.push("Под заказ");
-  } else {
-    parts.push("Нет в наличии");
-  }
-  if (match.cell) parts.push(`ячейка ${match.cell}`);
-  return { label: parts.join(" · "), outOfStock: available <= 0 };
-}
-
 function formatMannMatchCount(count: number): string {
   const abs = Math.abs(count);
   const mod10 = abs % 10;
@@ -2057,12 +2041,14 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
   };
 
   const addPosition = (p: Product) => {
-    if (positions.some((r) => r.assortmentMeta?.href === p.meta.href)) {
-      setProductAddNotice("Позиция уже есть в отгрузке");
-      setProductSearch("");
-      setProductOptions([]);
-      setProductResultsOpen(false);
-      productResultsDismissedRef.current = false;
+    const existingIndex = positions.findIndex((position) => position.assortmentMeta?.href === p.meta.href);
+    if (existingIndex >= 0) {
+      setPositions((prev) => prev.map((position, index) => index === existingIndex
+        ? { ...position, quantity: (position.quantity || 0) + 1 }
+        : position));
+      setRecentlyAddedPositionIndex(existingIndex);
+      setProductAddNotice("");
+      markDraftDirty();
       focusProductSearch();
       return;
     }
@@ -2087,15 +2073,18 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
         },
       },
     ]);
-    setProductSearch("");
-    setProductOptions([]);
-    setProductResultsOpen(false);
-    setHighlightedProductIndex(0);
     productResultsDismissedRef.current = false;
-    setProductAddNotice("Позиция добавлена в отгрузку");
+    setProductAddNotice("");
     setRecentlyAddedPositionIndex(nextIndex);
     markDraftDirty();
     focusProductSearch();
+  };
+
+  const changePositionQuantity = (index: number, delta: number) => {
+    setPositions((prev) => prev.map((position, positionIndex) => positionIndex === index
+      ? { ...position, quantity: Math.max(1, (position.quantity || 1) + delta) }
+      : position));
+    markDraftDirty();
   };
 
   const startMannManualSearch = (filter: MannFilter) => {
@@ -3106,7 +3095,7 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
     { key: "oil", label: "Моторное масло", value: attrOil || "—" },
     { key: "vin", label: "VIN", value: documentVin || "—", wide: true },
   ];
-  const documentMomentLabel = momentStr ? formatServiceDateTime(momentStr) : formatServiceDateTime(new Date());
+  const documentMomentLabel = momentStr ? formatServiceDateTime(momentStr) : "Дата и время...";
   const documentParamsSummary = [
     loadingOrgs ? "Организация..." : selectedOrg?.name ?? "Организация не выбрана",
     loadingStores ? "Склад..." : selectedStore?.name ?? "Склад не выбран",
@@ -4237,6 +4226,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                 const slot = p.cell ?? p.slotName;
                 const availabilityTone = productSearchAvailabilityClass(p, isService);
                 const unavailable = !isService && (p.availableQuantity ?? p.stockQuantity ?? 0) <= 0;
+                const addedPositionIndex = positions.findIndex((position) => position.assortmentMeta?.href === p.meta.href);
+                const addedPosition = addedPositionIndex >= 0 ? positions[addedPositionIndex] : null;
                 return (
                 <li key={p.id}>
                   <div
@@ -4264,14 +4255,34 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       {isService ? "—" : slot ? String(slot) : "не указана"}
                     </span>
                     <span className="shrink-0 text-zinc-500">{formatShipmentMoney(p.price)}</span>
-                    <button
-                      type="button"
-                      onClick={() => addProductFromSearch(p)}
-                      className="eco-product-result-add"
-                      title={unavailable ? "Нет доступного остатка, проверьте наличие перед добавлением" : "Добавить в отгрузку"}
-                    >
-                      Добавить
-                    </button>
+                    {addedPosition ? (
+                      <div className="eco-product-result-added" role="status" aria-label={`${p.name} добавлен в отгрузку`}>
+                        <span>✓ Добавлено</span>
+                        <div aria-label="Количество в отгрузке">
+                          <button
+                            type="button"
+                            onClick={() => changePositionQuantity(addedPositionIndex, -1)}
+                            disabled={(addedPosition.quantity || 1) <= 1}
+                            aria-label="Уменьшить количество"
+                          >−</button>
+                          <b>{formatQuantityInput(addedPosition.quantity || 1)}</b>
+                          <button
+                            type="button"
+                            onClick={() => changePositionQuantity(addedPositionIndex, 1)}
+                            aria-label="Увеличить количество"
+                          >+</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addProductFromSearch(p)}
+                        className="eco-product-result-add"
+                        title={unavailable ? "Нет доступного остатка, проверьте наличие перед добавлением" : "Добавить в отгрузку"}
+                      >
+                        Добавить
+                      </button>
+                    )}
                   </div>
                 </li>
                 );
@@ -4440,8 +4451,8 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
               <div className="eco-shipment-mann-filter-list">
                 <div className="eco-shipment-mann-results-head">
                   <div>
-                    <strong>Подбор для автомобиля</strong>
-                    <span>{mannVehicleModificationLabel || "Подходящие категории и товары из локального склада"}</span>
+                    <strong>Подходит для выбранного автомобиля</strong>
+                    <span>{mannVehicleModificationLabel || "Товары из локального каталога и склада"}</span>
                   </div>
                   <span>{formatMannCategoryCount(mannSortedFilters.length)}</span>
                 </div>
@@ -4472,11 +4483,17 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                       <h4>{label} <span>{products.length}</span></h4>
                       <div className="eco-shipment-mann-choice-list">
                         {products.map((local) => {
-                          const localAvailability = describeMannChoiceAvailability(local);
                           const localMeta = [local.article ? `арт. ${local.article}` : "", local.code ? `код ${local.code}` : "", local.brand].filter(Boolean).join(" · ");
                           const addedPositionIndex = positions.findIndex((position) => position.assortmentMeta?.href === `local://product/${local.id}`);
                           const addedPosition = addedPositionIndex >= 0 ? positions[addedPositionIndex] : null;
                           const isRecommended = match?.bestMatch?.id === local.id;
+                          const isAvailable = local.available > 0;
+                          const availabilityLabel = isAvailable
+                            ? `${formatQuantityInput(local.available)} шт.`
+                            : local.orderable ? "Под заказ" : "Недоступно";
+                          const stockLabel = isAvailable && local.reserve
+                            ? `Остаток ${formatQuantityInput(local.stock)} · резерв ${formatQuantityInput(local.reserve)}`
+                            : isAvailable ? `Остаток ${formatQuantityInput(local.stock)}` : "";
                           return (
                             <div key={local.id} className={`eco-shipment-mann-choice-option ${isRecommended ? "is-recommended" : ""}`}>
                               <div className="eco-shipment-mann-sku-copy">
@@ -4486,34 +4503,26 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                                 </div>
                                 {localMeta ? <small>{localMeta}</small> : null}
                               </div>
-                              <div className={`eco-shipment-mann-sku-stock ${localAvailability.outOfStock ? "is-order" : "is-available"}`}>
-                                <strong>{formatShipmentMoney(local.price)}</strong>
-                                <span>{localAvailability.label}</span>
+                              <div className={`eco-shipment-mann-sku-availability ${isAvailable ? "is-available" : local.orderable ? "is-order" : "is-unavailable"}`}>
+                                <strong>{availabilityLabel}</strong>
+                                {stockLabel ? <span>{stockLabel}</span> : null}
                               </div>
+                              <span className="eco-shipment-mann-sku-cell">{local.cell || "—"}</span>
+                              <strong className="eco-shipment-mann-sku-price">{formatShipmentMoney(local.price)}</strong>
                               {addedPosition ? (
                                 <div className="eco-shipment-mann-added" role="status" aria-label={`${local.name} добавлен в отгрузку`}>
                                   <span>✓ Добавлено</span>
                                   <div aria-label="Количество в отгрузке">
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        const next = [...positions];
-                                        next[addedPositionIndex] = { ...addedPosition, quantity: Math.max(1, (addedPosition.quantity || 1) - 1) };
-                                        setPositions(next);
-                                        markDraftDirty();
-                                      }}
+                                      onClick={() => changePositionQuantity(addedPositionIndex, -1)}
                                       disabled={(addedPosition.quantity || 1) <= 1}
                                       aria-label="Уменьшить количество"
                                     >−</button>
                                     <b>{formatQuantityInput(addedPosition.quantity || 1)}</b>
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        const next = [...positions];
-                                        next[addedPositionIndex] = { ...addedPosition, quantity: (addedPosition.quantity || 0) + 1 };
-                                        setPositions(next);
-                                        markDraftDirty();
-                                      }}
+                                      onClick={() => changePositionQuantity(addedPositionIndex, 1)}
                                       aria-label="Увеличить количество"
                                     >+</button>
                                   </div>
@@ -4521,13 +4530,11 @@ function NewShipmentForm({ demandId, copied = false }: NewShipmentFormProps) {
                               ) : (
                                 <button
                                   type="button"
-                                  className={`eco-shipment-mann-add ${localAvailability.outOfStock ? local.orderable ? "is-order" : "is-unavailable" : "is-primary"}`}
+                                  className={`eco-shipment-mann-add ${isAvailable ? "is-primary" : local.orderable ? "is-order" : "is-unavailable"}`}
                                   onClick={() => addMannMatchesToPositions([{ filter, match: local }])}
-                                  disabled={localAvailability.outOfStock && !local.orderable}
+                                  disabled={!isAvailable && !local.orderable}
                                 >
-                                  {localAvailability.outOfStock
-                                    ? local.orderable ? "Добавить под заказ" : "Нет в наличии"
-                                    : "Добавить"}
+                                  {isAvailable ? "Добавить" : local.orderable ? "Добавить под заказ" : "Недоступно"}
                                 </button>
                               )}
                             </div>
