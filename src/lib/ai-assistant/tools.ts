@@ -9,7 +9,7 @@ import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
-import { buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -553,7 +553,7 @@ async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItem
     const product = byId.get(productId)!;
     const quantity = Math.round(Math.max(0.001, Math.min(100, number(item.quantity, 1))) * 1000) / 1000;
     const totalCents = Math.round(product.salePriceCents * quantity);
-    return { source: "local", productId, type: product.entityType, name: product.name, article: product.article, quantity, unitPriceCents: product.salePriceCents, totalCents };
+    return { source: "local", productId, role: text(item.role, 40) || "unknown", type: product.entityType, name: product.name, article: product.article, quantity, unitPriceCents: product.salePriceCents, totalCents };
   });
   const supplierResults = await Promise.all(rosskoItems.map(async (item) => ({ item, search: await rossko({ article: text(item.article, 80), brand: text(item.brand, 80) }, context) })));
   const rosskoLines = supplierResults.map(({ item, search }) => {
@@ -566,7 +566,7 @@ async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItem
     const article = text(selected.article, 80) || text(item.article, 80);
     const brand = text(selected.brand, 80) || text(item.brand, 80) || null;
     const fallbackName = ["Запчасть", brand, article].filter(Boolean).join(" ");
-    return { source: "rossko", offerId: text(selected.id, 100), type: "product", name: text(selected.name, 180) || fallbackName || "Запчасть по каталогу", article, brand, quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), availability: text(selected.stock, 80) || "уточняется", delivery: text(selected.delivery, 100) || "уточняется" };
+    return { source: "rossko", offerId: text(selected.id, 100), role: text(item.role, 40) || "unknown", type: "product", name: text(selected.name, 180) || fallbackName || "Запчасть по каталогу", article, brand, quantity, unitPriceCents, totalCents: Math.round(unitPriceCents * quantity), availability: text(selected.stock, 80) || "уточняется", delivery: text(selected.delivery, 100) || "уточняется" };
   });
   const lines = [...localLines, ...rosskoLines];
   const totalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
@@ -617,7 +617,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
       throw new Error("Локальное совместимое масло найдено; укажите requiredFluidOemArticle, чтобы backend безопасно исключил его ROSSKO-аналог");
     }
     selectedProducts = [
-      { productId: automaticFluid.productId, quantity: automaticFluid.quantity },
+      { productId: automaticFluid.productId, quantity: automaticFluid.quantity, role: "fluid" },
       ...selectedProducts.filter((item) => text(item.productId, 160) !== automaticFluid.productId),
     ];
     if (fallbackArticle) rosskoItems = rosskoItems.filter((item) => normalizedArticle(item.article) !== fallbackArticle);
@@ -638,6 +638,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   });
   const laborLine = appliedRule.laborPriceCents == null ? null : {
     source: "labor_rule",
+    role: "labor",
     type: "labor",
     name: `Работа: ${appliedRule.name}`,
     quantity: 1,
@@ -651,6 +652,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   const totalCents = roundTotal(unroundedTotalCents);
   const roundingLine = totalCents > unroundedTotalCents ? {
     source: "calculation_rule",
+    role: "rounding",
     type: "rounding",
     name: "Округление итога",
     quantity: 1,
@@ -756,6 +758,29 @@ function uniqueWarnings(values: string[]) {
   return [...new Set(values.map((value) => text(value, 360)).filter(Boolean))].slice(0, 24);
 }
 
+export class QuoteAndTechCardIntegrityError extends Error {
+  constructor(message: string) { super(message); this.name = "QuoteAndTechCardIntegrityError"; }
+}
+
+/** Fails closed before the option or snapshot can expose contradictory quantities or totals. */
+export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "billableQuantityLiters" | "lines" | "totalCents">) {
+  const lineTotal = option.lines.reduce((sum, line) => sum + line.totalCents, 0);
+  if (option.totalCents == null || lineTotal !== option.totalCents) {
+    throw new QuoteAndTechCardIntegrityError("Итог сметы не равен сумме строк. Расчёт не сохранён.");
+  }
+  for (const line of option.lines) {
+    if (line.unitPriceCents != null && line.totalCents !== line.unitPriceCents * line.quantity) {
+      throw new QuoteAndTechCardIntegrityError(`Строка «${line.customerDisplayName}» имеет противоречивую цену и количество. Расчёт не сохранён.`);
+    }
+  }
+  if (option.billableQuantityLiters != null) {
+    const primaryFluid = option.lines.filter((line) => line.role === "fluid");
+    if (primaryFluid.length !== 1 || primaryFluid[0].quantity !== option.billableQuantityLiters) {
+      throw new QuoteAndTechCardIntegrityError("Количество основной жидкости не совпадает с расчётным объёмом. Расчёт не сохранён.");
+    }
+  }
+}
+
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
   const settings = await getAgentSettings(context.organizationId);
   const plan = createQuoteAndTechCardPlan(args.input, {
@@ -767,14 +792,14 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const input = plan.input;
   const baseBlockers = [...plan.hardBlockers];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
-  let selectedMaterial: { name: string; quantity: number; compatibilityEvidence: string | null } | null = null;
+  let selectedMaterial: { name: string; catalogName: string; customerDisplayName: string; specification: string | null; quantity: number; compatibilityEvidence: string | null } | null = null;
   const options: QuoteAndTechCardQuoteOption[] = [];
 
   for (const option of plan.options) {
     const blockers = [...baseBlockers];
     if (option.blockedReason) blockers.push({ code: "NO_MATERIAL_PRICE", message: option.blockedReason, requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." });
     if (blockers.length) {
-      options.push({ code: option.code, label: option.label, status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
+      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
       continue;
     }
     // Local-first is code, not an instruction: check the compatible local ATF
@@ -785,6 +810,12 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       : null;
     const materials = quoteAndTechCardMaterials(input, Boolean(localFluid));
     const supplierRows = quoteAndTechCardSupplierRows(input, Boolean(localFluid), option.billableQuantityLiters);
+    const selectedProducts = applyBillableQuantityToPrimaryFluid([
+      ...(localFluid ? [{ productId: localFluid.productId, quantity: localFluid.quantity, role: "fluid" }] : []),
+      ...materials.selectedProducts,
+    ], option.billableQuantityLiters, plan.isTransmission);
+    const requiredFluidArticle = text(input.service.requiredFluidOemArticle, 80).toUpperCase();
+    const scopedSupplierRows = supplierRows.map((row) => ({ ...row, role: requiredFluidArticle && row.article.toUpperCase() === requiredFluidArticle ? "fluid" : "consumable" }));
     const fallbackServiceProductId = await quoteAndTechCardFallbackServiceProductId(input.service.type, option.code);
     const quoteArgs: Record<string, unknown> = {
       serviceFamily: serviceFamilyForTechCard(input.service.type),
@@ -800,40 +831,51 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       requiredFluidOemArticle: input.service.requiredFluidOemArticle ?? null,
       fluidPreference: "prefer_local_compatible",
       locationId: input.locationId,
-      selectedProducts: [...(localFluid ? [{ productId: localFluid.productId, quantity: localFluid.quantity }] : []), ...materials.selectedProducts],
+      selectedProducts,
       consumables: materials.consumables,
-      rosskoItems: supplierRows,
+      rosskoItems: scopedSupplierRows,
       manualLaborPriceCents: null,
       fallbackServiceProductId,
       serviceName: input.service.name,
       selectedScenario: option.label,
-      optionalItems: input.service.filterAccess === "internal_requires_disassembly" ? ["Внутренний фильтр не входит в услугу: для его замены требуется разборка агрегата."] : [],
+      optionalItems: [],
       assumptions: plan.quoteWarnings,
       internalWarnings: uniqueWarnings(plan.quoteWarnings),
-      customerSafeWarnings: input.service.filterAccess === "internal_requires_disassembly" ? ["Перед работой проверим состояние жидкости и доступные без разборки элементы."] : [],
+      customerSafeWarnings: [],
     };
     try {
       const calculated = await serviceQuoteV2(quoteArgs, context);
       const quote = calculated.result;
-      const lines = (Array.isArray(quote.lines) ? quote.lines as Array<Record<string, unknown>> : []).map((line) => ({
-        source: text(line.source, 80) || undefined,
-        type: text(line.type, 80) || null,
-        name: text(line.name, 220) || "Позиция",
-        article: text(line.article, 120) || null,
-        quantity: Math.max(0.001, number(line.quantity, 1)),
-        unitPriceCents: Math.max(0, Math.round(number(line.unitPriceCents))),
-        totalCents: Math.max(0, Math.round(number(line.totalCents))),
-      }));
+      const lines = (Array.isArray(quote.lines) ? quote.lines as Array<Record<string, unknown>> : []).map((line) => {
+        const role = ["fluid", "external_filter", "consumable", "internal_filter", "labor", "rounding"].includes(text(line.role, 40)) ? text(line.role, 40) as "fluid" | "external_filter" | "consumable" | "internal_filter" | "labor" | "rounding" : "unknown" as const;
+        const catalogName = text(line.name, 220) || "Позиция";
+        const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName);
+        return {
+          source: text(line.source, 80) || undefined,
+          type: text(line.type, 80) || null,
+          role,
+          productId: text(line.productId, 160) || null,
+          name: catalogName,
+          catalogName,
+          customerDisplayName,
+          article: text(line.article, 120) || null,
+          quantity: Math.max(0.001, number(line.quantity, 1)),
+          unitPriceCents: Math.max(0, Math.round(number(line.unitPriceCents))),
+          totalCents: Math.max(0, Math.round(number(line.totalCents))),
+        };
+      });
       const hasPricedMaterial = input.service.materialsOwner === "customer" || lines.some((line) => text(line.type, 80) !== "labor" && number(line.totalCents) > 0);
       if (!hasPricedMaterial) blockers.push({ code: "NO_MATERIAL_PRICE", message: "Не найдена цена совместимого материала в локальном каталоге или у поставщика.", requiredToContinue: "Подтвердить совместимый материал и его цену либо выбрать вариант с материалами клиента." });
       if (quote.finalQuote !== true) blockers.push({ code: "MISSING_LABOR_RULE", message: "Для услуги нет применимого правила стоимости работ.", requiredToContinue: "Настроить тарифное правило или указать подтверждённую стоимость работы." });
       const automatic = object(quote.automaticMaterialDecision);
-      if (!selectedMaterial && text(automatic.productName, 220)) selectedMaterial = { name: text(automatic.productName, 220), quantity: number(automatic.quantity, 0), compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
+      const primaryFluid = lines.find((line) => line.role === "fluid");
+      if (!selectedMaterial && primaryFluid) selectedMaterial = { name: primaryFluid.customerDisplayName, catalogName: primaryFluid.catalogName, customerDisplayName: primaryFluid.customerDisplayName, specification: text(input.service.requiredFluidSpec, 160) || null, quantity: primaryFluid.quantity, compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
       const status = blockers.length ? "blocked" : plan.quoteWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
-      options.push({
+      const quoteOption: QuoteAndTechCardQuoteOption = {
         code: option.code,
         label: option.label,
+        customerDisplayName: customerProcedureDisplayName(input.service.type, option.code),
         status,
         technicalQuantityLiters: option.technicalQuantityLiters,
         billableQuantityLiters: option.billableQuantityLiters,
@@ -843,14 +885,18 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         validUntil: text(quote.validUntil, 100) || null,
         blockers,
         warnings: uniqueWarnings(plan.quoteWarnings),
-      });
+      };
+      if (status !== "blocked") assertQuoteAndTechCardOptionIntegrity(quoteOption);
+      options.push(quoteOption);
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
     } catch (error) {
       const message = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
+      const integrityFailure = error instanceof QuoteAndTechCardIntegrityError;
       const supplierFailure = /rossko|поставщик|предложен/i.test(message);
       options.push({
         code: option.code,
         label: option.label,
+        customerDisplayName: customerProcedureDisplayName(input.service.type, option.code),
         status: "blocked",
         technicalQuantityLiters: option.technicalQuantityLiters,
         billableQuantityLiters: option.billableQuantityLiters,
@@ -858,14 +904,14 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         totalCents: null,
         maximumTotalCents: null,
         validUntil: null,
-        blockers: [{ code: supplierFailure ? "NO_MATERIAL_PRICE" : "MISSING_LABOR_RULE", message, requiredToContinue: supplierFailure ? "Найти совместимый материал с ценой в локальном каталоге или у поставщика." : "Подтвердить правило стоимости работ." }],
+        blockers: [{ code: integrityFailure ? "QUOTE_INTEGRITY_ERROR" : supplierFailure ? "NO_MATERIAL_PRICE" : "MISSING_LABOR_RULE", message, requiredToContinue: integrityFailure ? "Проверить количество, цену и итог в backend-калькуляторе." : supplierFailure ? "Найти совместимый материал с ценой в локальном каталоге или у поставщика." : "Подтвердить правило стоимости работ." }],
         warnings: uniqueWarnings(plan.quoteWarnings),
       });
     }
   }
   const allOptionBlockers = options.flatMap((option) => Array.isArray(option.blockers) ? option.blockers : []) as Array<{ code: string; message: string; requiredToContinue: string }>;
   const hardBlockers = [...baseBlockers];
-  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE"]) {
+  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR"]) {
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
@@ -877,18 +923,19 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     scenario: "quote_and_tech_card" as const,
     status: "partial" as const,
     vehicle: { displayName: text(input.vehicle.displayName, 180) || "Автомобиль уточняется", aggregate: text(input.vehicle.aggregateCode ?? input.service.aggregate, 160) || null },
-    quote: { status: calculatedQuoteStatus, options, hardBlockers, warnings: uniqueWarnings(plan.quoteWarnings) },
+    quote: { status: calculatedQuoteStatus, confidence: calculatedQuoteStatus === "ready" ? "confirmed" as const : "preliminary" as const, options, hardBlockers, warnings: uniqueWarnings(plan.quoteWarnings) },
     techCard: {
       status: techCardStatus,
       serviceName: input.service.name,
       serviceType: input.service.type,
       requiredFluidSpec: text(input.service.requiredFluidSpec, 160) || null,
-      filterPolicy: input.service.filterAccess === "internal_requires_disassembly" ? "Фильтр внутренний; в рамках стандартной замены ТГМ не меняет." : "В расчёт включаются только подтверждённые без разборки расходники.",
+      filterPolicy: plan.filterPolicy.customerText,
+      filter: plan.filterPolicy,
       levelTemperature: text(input.service.levelTemperature, 180) || null,
       levelProcedure: text(input.service.levelProcedure, 500) || null,
       servicePoints: input.service.servicePoints.map((item) => text(item, 300)).filter(Boolean).slice(0, 16),
       torqueNotes: input.service.torqueNotes.map((item) => text(item, 300)).filter(Boolean).slice(0, 12),
-      criticalChecks: input.service.criticalChecks.map((item) => text(item, 300)).filter(Boolean).slice(0, 3),
+      criticalChecks: input.service.criticalChecks.map((item) => text(item, 300)).filter((item) => Boolean(item) && !(input.service.filterAccess === "internal_requires_disassembly" && /(фильтр|filter|epc|oe[\s-]?номер|заказ)/iu.test(item))).slice(0, 3),
       selectedMaterial,
       warnings: uniqueWarnings(plan.techCardWarnings).slice(0, 3),
     },

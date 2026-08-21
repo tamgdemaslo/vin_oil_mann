@@ -162,12 +162,12 @@ function ClientMessageCard({ message }: { message: string }) {
 
 function QuoteAndTechCardOption({ option }: { option: QuoteAndTechCardResult["quote"]["options"][number] }) {
   const range = option.maximumTotalCents != null && option.totalCents != null && option.maximumTotalCents > option.totalCents;
-  return <section className={`eco-ai-answer__quote eco-ai-answer__quote-option is-${option.status}`} aria-label={option.label}>
+  return <section className={`eco-ai-answer__quote eco-ai-answer__quote-option is-${option.status}`} aria-label={option.customerDisplayName}>
     <header className="eco-ai-answer__quote-head">
-      <div><ReceiptText size={18} aria-hidden /><div><strong>{option.label}</strong><span>{option.billableQuantityLiters != null ? `Техн. ${quantity(option.technicalQuantityLiters ?? option.billableQuantityLiters)} л · к расчёту ${quantity(option.billableQuantityLiters)} л` : "Объём требует уточнения"}</span></div></div>
+      <div><ReceiptText size={18} aria-hidden /><div><strong>{option.customerDisplayName}</strong><span>{option.billableQuantityLiters != null ? `Техн. ${quantity(option.technicalQuantityLiters ?? option.billableQuantityLiters)} л · к расчёту ${quantity(option.billableQuantityLiters)} л` : "Объём требует уточнения"}</span></div></div>
       <span className="eco-ai-answer__quote-status">{option.status === "ready" ? "Подтверждено" : option.status === "preliminary" ? "Предварительно" : "Нужны данные"}</span>
     </header>
-    {option.lines.length > 0 && <div className="eco-ai-answer__quote-table-wrap"><table className="eco-ai-answer__quote-table"><thead><tr><th scope="col">Позиция</th><th scope="col">Кол-во</th><th scope="col">Сумма</th></tr></thead><tbody>{option.lines.map((line, index) => <tr key={`${line.name}-${line.article ?? index}`}><td><strong>{line.name}</strong>{line.article && <span>{line.article}</span>}</td><td>{quantity(line.quantity)}</td><td>{money(line.totalCents)}</td></tr>)}</tbody></table></div>}
+    {option.lines.length > 0 && <div className="eco-ai-answer__quote-table-wrap"><table className="eco-ai-answer__quote-table"><thead><tr><th scope="col">Позиция</th><th scope="col">Кол-во</th><th scope="col">Сумма</th></tr></thead><tbody>{option.lines.map((line, index) => <tr key={`${line.catalogName}-${line.article ?? index}`}><td><strong>{line.customerDisplayName}</strong></td><td>{quantity(line.quantity)}</td><td>{money(line.totalCents)}</td></tr>)}</tbody></table></div>}
     {option.totalCents != null && <div className="eco-ai-answer__quote-total"><span>{range ? "Диапазон стоимости" : "Итого"}</span><strong>{range ? `${money(option.totalCents)} — ${money(option.maximumTotalCents!)}` : money(option.totalCents)}</strong></div>}
     {option.blockers.length > 0 && <div className="eco-ai-answer__blockers">{option.blockers.map((blocker) => <p key={blocker.code}><strong>{blocker.message}</strong><span>{blocker.requiredToContinue}</span></p>)}</div>}
     {option.warnings.length > 0 && <details><summary>Проверить перед работой · {option.warnings.length}</summary><ul>{option.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
@@ -179,7 +179,7 @@ function QuoteAndTechCardView({ result }: { result: QuoteAndTechCardResult }) {
     ["Автомобиль", result.vehicle.displayName],
     ["Агрегат", result.vehicle.aggregate],
     ["Спецификация", result.techCard.requiredFluidSpec],
-    ["Материал", result.techCard.selectedMaterial ? `${result.techCard.selectedMaterial.name} · ${quantity(result.techCard.selectedMaterial.quantity)}` : null],
+    ["Материал", result.techCard.selectedMaterial ? `${result.techCard.selectedMaterial.customerDisplayName} · ${quantity(result.techCard.selectedMaterial.quantity)} л` : null],
     ["Температура уровня", result.techCard.levelTemperature],
     ["Выставление уровня", result.techCard.levelProcedure],
     ["Фильтр", result.techCard.filterPolicy],
@@ -196,7 +196,7 @@ function QuoteAndTechCardView({ result }: { result: QuoteAndTechCardResult }) {
       {result.quote.hardBlockers.length > 0 && <div className="eco-ai-answer__blockers">{result.quote.hardBlockers.map((blocker) => <p key={blocker.code}><strong>{blocker.message}</strong><span>{blocker.requiredToContinue}</span></p>)}</div>}
       {(result.techCard.warnings.length > 0 || result.evidence.length > 0) && <details><summary>Исследование и источники · {result.techCard.warnings.length + result.evidence.length}</summary><ul>{result.techCard.warnings.map((warning, index) => <li key={`warning-${index}`}>{warning}</li>)}{result.evidence.map((item, index) => <li key={`evidence-${index}`}>{item.source}: {item.fact}</li>)}</ul></details>}
     </section>
-    <section className="eco-ai-answer__quote-options" aria-label="Варианты сметы"><header><ReceiptText size={17} aria-hidden /><strong>Смета</strong><span>{result.quote.status === "ready" ? "Стоимость подтверждена" : result.quote.status === "preliminary" ? "Предварительный расчёт" : "Расчёт заблокирован"}</span></header>{result.quote.options.map((option) => <QuoteAndTechCardOption key={option.code} option={option} />)}</section>
+    <section className="eco-ai-answer__quote-options" aria-label="Варианты сметы"><header><ReceiptText size={17} aria-hidden /><strong>Смета</strong><span>{result.quote.status === "blocked" ? "Расчёт заблокирован" : result.quote.confidence === "confirmed" ? "Стоимость подтверждена" : "Предварительный расчёт"}</span></header>{result.quote.options.map((option) => <QuoteAndTechCardOption key={option.code} option={option} />)}</section>
     {result.customerMessage.status === "ready" ? <ClientMessageCard message={result.customerMessage.text} /> : <div className="eco-ai-answer__blockers"><p><strong>Текст клиенту пока не готов.</strong><span>{result.customerMessage.text}</span></p></div>}
   </>;
 }
