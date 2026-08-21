@@ -26,6 +26,7 @@ export type LocalFluidCandidate = {
 };
 
 export type LocalFluidSelection = {
+  source: "local_catalog";
   productId: string;
   productName: string;
   quantity: number;
@@ -33,6 +34,23 @@ export type LocalFluidSelection = {
   packageLiters: number;
   totalCents: number;
   compatibilityEvidence: string;
+};
+
+export type LocalFluidCandidateTrace = {
+  productId: string;
+  catalogName: string;
+  compatible: boolean;
+  availableQuantity: number;
+  requiredQuantity: number;
+  packageLiters: number;
+  unitPriceCents: number;
+  eligible: boolean;
+  exclusionReason: "incompatible_specification" | "price_missing" | "stock_insufficient" | null;
+};
+
+export type LocalFluidSelectionEvaluation = {
+  selected: LocalFluidSelection | null;
+  candidates: LocalFluidCandidateTrace[];
 };
 
 /**
@@ -161,18 +179,42 @@ function evidenceFor(candidate: LocalFluidCandidate, requiredSpec: string) {
   return words.slice(Math.max(0, before - 3), Math.min(words.length, before + tokens.length + 4)).join(" ");
 }
 
-export function selectPreferredLocalFluid(candidates: LocalFluidCandidate[], requiredSpec: string, requiredLiters: number): LocalFluidSelection | null {
-  if (!Number.isFinite(requiredLiters) || requiredLiters <= 0 || !normalizeFluidSpecification(requiredSpec)) return null;
-  const eligible = candidates.flatMap((candidate) => {
-    if (candidate.salePriceCents <= 0 || candidate.availableUnits <= 0 || !fluidSpecificationMatches(candidate, requiredSpec)) return [];
+export function evaluatePreferredLocalFluid(candidates: LocalFluidCandidate[], requiredSpec: string, requiredLiters: number): LocalFluidSelectionEvaluation {
+  if (!Number.isFinite(requiredLiters) || requiredLiters <= 0 || !normalizeFluidSpecification(requiredSpec)) return { selected: null, candidates: [] };
+  const evaluated = candidates.map((candidate) => {
     const { litersPerUnit, quantity } = quantityForLiters(candidate, requiredLiters);
-    if (quantity <= 0 || candidate.availableUnits + 0.0001 < quantity) return [];
-    return [{ candidate, litersPerUnit, quantity, totalCents: Math.round(candidate.salePriceCents * quantity) }];
+    const compatible = fluidSpecificationMatches(candidate, requiredSpec);
+    const exclusionReason = !compatible
+      ? "incompatible_specification" as const
+      : candidate.salePriceCents <= 0
+        ? "price_missing" as const
+        : candidate.availableUnits + 0.0001 < quantity
+          ? "stock_insufficient" as const
+          : null;
+    return {
+      candidate,
+      litersPerUnit,
+      quantity,
+      totalCents: Math.round(candidate.salePriceCents * quantity),
+      trace: {
+        productId: candidate.id,
+        catalogName: candidate.name,
+        compatible,
+        availableQuantity: candidate.availableUnits,
+        requiredQuantity: quantity,
+        packageLiters: litersPerUnit,
+        unitPriceCents: candidate.salePriceCents,
+        eligible: exclusionReason === null,
+        exclusionReason,
+      } satisfies LocalFluidCandidateTrace,
+    };
   });
+  const eligible = evaluated.filter((entry) => entry.trace.eligible);
   eligible.sort((left, right) => left.totalCents - right.totalCents || right.candidate.availableUnits - left.candidate.availableUnits || left.candidate.name.localeCompare(right.candidate.name, "ru"));
   const selected = eligible[0];
-  if (!selected) return null;
-  return {
+  if (!selected) return { selected: null, candidates: evaluated.map((entry) => entry.trace) };
+  return { selected: {
+    source: "local_catalog",
     productId: selected.candidate.id,
     productName: selected.candidate.name,
     quantity: selected.quantity,
@@ -180,5 +222,9 @@ export function selectPreferredLocalFluid(candidates: LocalFluidCandidate[], req
     packageLiters: selected.litersPerUnit,
     totalCents: selected.totalCents,
     compatibilityEvidence: evidenceFor(selected.candidate, requiredSpec),
-  };
+  }, candidates: evaluated.map((entry) => entry.trace) };
+}
+
+export function selectPreferredLocalFluid(candidates: LocalFluidCandidate[], requiredSpec: string, requiredLiters: number): LocalFluidSelection | null {
+  return evaluatePreferredLocalFluid(candidates, requiredSpec, requiredLiters).selected;
 }

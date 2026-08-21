@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 const messageSchema = z.object({
   message: z.string().trim().min(1).max(12_000),
   selectedQuoteId: z.string().trim().min(1).max(160).optional().nullable(),
+  quoteSetMessageId: z.string().trim().min(1).max(160).optional().nullable(),
   clientMessageMode: z.enum(["short_with_price", "short_without_price", "detailed_with_price", "only_final_price", "recommendation"]).optional().nullable(),
 });
 
@@ -24,6 +25,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       actor: { id: access.actorId, name: access.session.user.name, role: access.session.user.role },
       message: body.message,
       selectedQuoteId: body.selectedQuoteId,
+      quoteSetMessageId: body.quoteSetMessageId,
       clientMessageMode: body.clientMessageMode,
     }));
     return NextResponse.json(result);

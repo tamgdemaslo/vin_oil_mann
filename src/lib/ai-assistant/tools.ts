@@ -8,8 +8,8 @@ import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/li
 import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
-import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
+import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationTokens, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -152,6 +152,7 @@ type ToolContext = {
   actorName: string;
   actorRole: string;
   employeeRequestedOriginalFluidOnly?: boolean;
+  requestMessage?: string;
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -165,6 +166,15 @@ function text(value: unknown, max = 160) {
 function number(value: unknown, fallback = 0) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Keeps a customer-supplied date window through the deterministic quote path. */
+export function requestedDateRangeFromText(value: unknown) {
+  const source = text(value, 12_000).replace(/\s+/g, " ");
+  const range = source.match(/(\d{1,2})\s*(?:[-–—]|и)\s*(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/iu);
+  if (range) return `${range[1]}–${range[2]} ${range[3]}`;
+  const single = source.match(/(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/iu);
+  return single ? `${single[1]} ${single[2]}` : null;
 }
 
 function safeJson(value: unknown): Prisma.InputJsonValue {
@@ -494,12 +504,20 @@ function normalizedArticle(value: unknown) {
   return text(value, 100).toLocaleUpperCase("ru-RU").replace(/[^A-ZА-Я0-9]/g, "");
 }
 
-async function automaticLocalFluidSelection(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidSelection | null> {
-  if (text(args.serviceFamily, 60) !== "transmission_fluid" || text(args.materialsOwner, 30) !== "service") return null;
-  if (shouldRequireOriginalFluid({
+type LocalFluidResolution = {
+  selection: LocalFluidSelection | null;
+  candidates: LocalFluidCandidateTrace[];
+  fallbackReason: string | null;
+  originalOnlyOverride: boolean;
+};
+
+async function automaticLocalFluidResolution(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidResolution> {
+  if (text(args.serviceFamily, 60) !== "transmission_fluid" || text(args.materialsOwner, 30) !== "service") return { selection: null, candidates: [], fallbackReason: "Материалы не принадлежат сервису.", originalOnlyOverride: false };
+  const originalOnlyOverride = shouldRequireOriginalFluid({
     fluidPreference: text(args.fluidPreference, 40) || null,
     employeeRequestedOriginalOnly: Boolean(context.employeeRequestedOriginalFluidOnly),
-  })) return null;
+  });
+  if (originalOnlyOverride) return { selection: null, candidates: [], fallbackReason: "Сотрудник явно запросил оригинальную жидкость.", originalOnlyOverride: true };
   const requiredSpec = text(args.requiredFluidSpec, 160);
   const requiredLiters = number(args.requiredFluidVolumeLiters);
   const tokens = fluidSpecificationTokens(requiredSpec).filter((token) => token.length >= 2).slice(0, 8);
@@ -517,8 +535,9 @@ async function automaticLocalFluidSelection(args: Record<string, unknown>, conte
       branchId,
       archived: false,
       entityType: "product",
-      salePriceCents: { gt: 0 },
-      stockBalances: { some: { branchId, available: { gt: 0 } } },
+      // Keep zero-price and out-of-stock matches in the trace.  The shared
+      // selector below rejects them deterministically, but the employee can
+      // then see why each local candidate was not eligible.
       AND: tokens.map((token) => ({ OR: fields(token) })),
     },
     select: {
@@ -536,10 +555,20 @@ async function automaticLocalFluidSelection(args: Record<string, unknown>, conte
     orderBy: [{ salePriceCents: "asc" }, { name: "asc" }],
     take: 100,
   });
-  return selectPreferredLocalFluid(rows.map((row) => ({
+  const evaluation = evaluatePreferredLocalFluid(rows.map((row) => ({
     ...row,
     availableUnits: row.stockBalances.reduce((sum, stock) => sum + Number(stock.available), 0),
   })), requiredSpec, requiredLiters);
+  return {
+    selection: evaluation.selected,
+    candidates: evaluation.candidates,
+    fallbackReason: evaluation.selected ? null : evaluation.candidates.length ? "Подходящего локального товара с достаточным остатком нет." : "Локальный каталог не вернул совместимых кандидатов.",
+    originalOnlyOverride: false,
+  };
+}
+
+async function automaticLocalFluidSelection(args: Record<string, unknown>, context: ToolContext): Promise<LocalFluidSelection | null> {
+  return (await automaticLocalFluidResolution(args, context)).selection;
 }
 
 async function quoteLines(itemValues: Array<Record<string, unknown>>, rosskoItems: Array<Record<string, unknown>>, context: ToolContext) {
@@ -610,7 +639,8 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
   let selectedProducts = quoteInputRows(args.selectedProducts, 30);
   const consumables = quoteInputRows(args.consumables, 20);
   let rosskoItems = quoteInputRows(args.rosskoItems, 12);
-  const automaticFluid = await automaticLocalFluidSelection(args, context);
+  const automaticFluidResolution = await automaticLocalFluidResolution(args, context);
+  const automaticFluid = automaticFluidResolution.selection;
   if (automaticFluid) {
     const fallbackArticle = normalizedArticle(args.requiredFluidOemArticle);
     if (!fallbackArticle && rosskoItems.length) {
@@ -618,7 +648,10 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
     }
     selectedProducts = [
       { productId: automaticFluid.productId, quantity: automaticFluid.quantity, role: "fluid" },
-      ...selectedProducts.filter((item) => text(item.productId, 160) !== automaticFluid.productId),
+      // A required OEM article is compatibility evidence only.  Once a local
+      // compatible ATF is selected, no upstream fluid row may add a second,
+      // more expensive product to the primary quote.
+      ...selectedProducts.filter((item) => text(item.role, 40) !== "fluid" && text(item.productId, 160) !== automaticFluid.productId),
     ];
     if (fallbackArticle) rosskoItems = rosskoItems.filter((item) => normalizedArticle(item.article) !== fallbackArticle);
   }
@@ -674,6 +707,8 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
     };
   })() : null;
   const finalQuote = laborLine !== null && !appliedRule.requiresHumanConfirmation;
+  const selectedFluidLine = material.lines.find((line) => line.role === "fluid") ?? null;
+  const fallbackSupplierUsed = !automaticFluid && material.lines.some((line) => line.source === "rossko" && line.role === "fluid");
   return {
     result: {
       lines,
@@ -699,6 +734,18 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
         compatibilityEvidence: automaticFluid.compatibilityEvidence,
         replacedRosskoArticle: text(args.requiredFluidOemArticle, 80) || null,
       } : null,
+      materialSelectionTrace: {
+        requiredSpecification: text(args.requiredFluidSpec, 160) || null,
+        oemReference: { brand: "OEM", article: text(args.requiredFluidOemArticle, 80) || null },
+        localCandidates: automaticFluidResolution.candidates,
+        selectedLocalCandidate: automaticFluid ? automaticFluidResolution.candidates.find((candidate) => candidate.productId === automaticFluid.productId) ?? null : null,
+        selectedProduct: selectedFluidLine ? { source: selectedFluidLine.source === "local" ? "local_catalog" : selectedFluidLine.source === "rossko" ? "supplier" : "customer_materials", productId: "productId" in selectedFluidLine ? text(selectedFluidLine.productId, 160) || null : null, catalogName: text(selectedFluidLine.name, 220) || null } : { source: "none", productId: null, catalogName: null },
+        localAvailableQuantity: automaticFluid?.availableUnits ?? null,
+        requiredQuantity: automaticFluid?.quantity ?? (number(args.requiredFluidVolumeLiters) || null),
+        fallbackSupplierUsed,
+        fallbackReason: fallbackSupplierUsed ? automaticFluidResolution.fallbackReason ?? "Для основной жидкости использован поставщик после проверки локального остатка." : automaticFluidResolution.fallbackReason,
+        originalOnlyOverride: automaticFluidResolution.originalOnlyOverride,
+      },
       message: finalQuote
         ? "Стоимость рассчитана backend-калькулятором по применённому правилу."
         : "Нужна проверка сотрудника: итоговая цена работы не зафиксирована автоматически.",
@@ -762,6 +809,62 @@ export class QuoteAndTechCardIntegrityError extends Error {
   constructor(message: string) { super(message); this.name = "QuoteAndTechCardIntegrityError"; }
 }
 
+export class LocalFirstInvariantError extends Error {
+  constructor(message: string) { super(message); this.name = "LocalFirstInvariantError"; }
+}
+
+function traceCandidates(value: unknown): QuoteAndTechCardMaterialSelectionTrace["localCandidates"] {
+  if (!Array.isArray(value)) return [];
+  return value.map(object).map((candidate) => ({
+    productId: text(candidate.productId, 160),
+    catalogName: text(candidate.catalogName, 220),
+    compatible: candidate.compatible === true,
+    availableQuantity: Math.max(0, number(candidate.availableQuantity)),
+    requiredQuantity: Math.max(0.001, number(candidate.requiredQuantity)),
+    packageLiters: Math.max(0.001, number(candidate.packageLiters, 1)),
+    unitPriceCents: Math.max(0, Math.round(number(candidate.unitPriceCents))),
+    eligible: candidate.eligible === true,
+    exclusionReason: ["incompatible_specification", "price_missing", "stock_insufficient"].includes(text(candidate.exclusionReason, 80)) ? text(candidate.exclusionReason, 80) as "incompatible_specification" | "price_missing" | "stock_insufficient" : null,
+  })).filter((candidate) => Boolean(candidate.productId) && Boolean(candidate.catalogName)).slice(0, 100);
+}
+
+function materialSelectionTrace(value: unknown, lines: QuoteAndTechCardQuoteOption["lines"]): QuoteAndTechCardMaterialSelectionTrace {
+  const raw = object(value);
+  const candidates = traceCandidates(raw.localCandidates);
+  const selectedLocalId = text(object(raw.selectedLocalCandidate).productId, 160);
+  const primaryFluid = lines.find((line) => line.role === "fluid") ?? null;
+  const selectedSource = text(object(raw.selectedProduct).source, 40);
+  return {
+    requiredSpecification: text(raw.requiredSpecification, 160) || null,
+    oemReference: { brand: text(object(raw.oemReference).brand, 100) || null, article: text(object(raw.oemReference).article, 80) || null },
+    localCandidates: candidates,
+    selectedLocalCandidate: candidates.find((candidate) => candidate.productId === selectedLocalId) ?? null,
+    selectedProduct: primaryFluid ? {
+      source: primaryFluid.source === "local_catalog" || selectedSource === "local_catalog" ? "local_catalog" : primaryFluid.source === "supplier" || selectedSource === "supplier" ? "supplier" : "customer_materials",
+      productId: primaryFluid.productId ?? null,
+      catalogName: primaryFluid.catalogName,
+      customerDisplayName: primaryFluid.customerDisplayName,
+    } : { source: "none", productId: null, catalogName: null, customerDisplayName: null },
+    localAvailableQuantity: number(raw.localAvailableQuantity) || null,
+    requiredQuantity: number(raw.requiredQuantity) || primaryFluid?.quantity || null,
+    fallbackSupplierUsed: raw.fallbackSupplierUsed === true,
+    fallbackReason: text(raw.fallbackReason, 360) || null,
+  };
+}
+
+/** A local compatible ATF with enough stock must remain the primary quoted product. */
+export function assertLocalFirstInvariant(trace: QuoteAndTechCardMaterialSelectionTrace, originalOnlyOverride = false) {
+  const local = trace.selectedLocalCandidate;
+  const validLocalProductExists = Boolean(local?.compatible && local.eligible && local.unitPriceCents > 0);
+  const localStockIsEnough = Boolean(local && trace.requiredQuantity != null && local.availableQuantity + 0.0001 >= trace.requiredQuantity);
+  if (validLocalProductExists && localStockIsEnough && !originalOnlyOverride && trace.selectedProduct.source !== "local_catalog") {
+    throw new LocalFirstInvariantError("Найден совместимый локальный товар с достаточным остатком, но основная жидкость выбрана не из локального каталога. Расчёт не сохранён.");
+  }
+  if (validLocalProductExists && trace.fallbackSupplierUsed && !originalOnlyOverride) {
+    throw new LocalFirstInvariantError("ROSSKO не должен использоваться для основной жидкости при наличии подходящего локального товара. Расчёт не сохранён.");
+  }
+}
+
 /** Fails closed before the option or snapshot can expose contradictory quantities or totals. */
 export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechCardQuoteOption, "billableQuantityLiters" | "lines" | "totalCents">) {
   const lineTotal = option.lines.reduce((sum, line) => sum + line.totalCents, 0);
@@ -783,7 +886,11 @@ export function assertQuoteAndTechCardOptionIntegrity(option: Pick<QuoteAndTechC
 
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
   const settings = await getAgentSettings(context.organizationId);
-  const plan = createQuoteAndTechCardPlan(args.input, {
+  const rawInput = object(args.input);
+  const plan = createQuoteAndTechCardPlan({
+    ...rawInput,
+    requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
+  }, {
     literRoundingStep: settings.calculationRules.literRoundingStep,
     transmissionMachineExchangeMultiplier: settings.calculationRules.transmissionMachineExchangeMultiplier,
     transmissionMinimumBillableLiters: settings.calculationRules.transmissionMinimumBillableLiters,
@@ -794,19 +901,20 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
   let selectedMaterial: { name: string; catalogName: string; customerDisplayName: string; specification: string | null; quantity: number; compatibilityEvidence: string | null } | null = null;
   const options: QuoteAndTechCardQuoteOption[] = [];
+  const fluidPreference = context.employeeRequestedOriginalFluidOnly ? "original_only" : "prefer_local_compatible";
 
   for (const option of plan.options) {
     const blockers = [...baseBlockers];
     if (option.blockedReason) blockers.push({ code: "NO_MATERIAL_PRICE", message: option.blockedReason, requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." });
     if (blockers.length) {
-      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
+      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blockedReason }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
       continue;
     }
     // Local-first is code, not an instruction: check the compatible local ATF
     // before passing any supplier ATF into quoteLines. Internal filters never
     // enter a standard TGM calculation at all.
     const localFluid = plan.isTransmission && input.service.materialsOwner === "service"
-      ? await automaticLocalFluidSelection({ serviceFamily: "transmission_fluid", materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference: "prefer_local_compatible" }, context)
+      ? await automaticLocalFluidSelection({ serviceFamily: "transmission_fluid", materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference }, context)
       : null;
     const materials = quoteAndTechCardMaterials(input, Boolean(localFluid));
     const supplierRows = quoteAndTechCardSupplierRows(input, Boolean(localFluid), option.billableQuantityLiters);
@@ -829,7 +937,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       requiredFluidSpec: input.service.requiredFluidSpec ?? null,
       requiredFluidVolumeLiters: option.billableQuantityLiters,
       requiredFluidOemArticle: input.service.requiredFluidOemArticle ?? null,
-      fluidPreference: "prefer_local_compatible",
+      fluidPreference,
       locationId: input.locationId,
       selectedProducts,
       consumables: materials.consumables,
@@ -851,7 +959,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         const catalogName = text(line.name, 220) || "Позиция";
         const customerDisplayName = role === "labor" || text(line.type, 80) === "labor" ? "Работа" : role === "rounding" || text(line.type, 80) === "rounding" ? "Округление" : customerMaterialDisplayName(catalogName);
         return {
-          source: text(line.source, 80) || undefined,
+          source: text(line.source, 80) === "local" ? "local_catalog" : text(line.source, 80) === "rossko" ? "supplier" : text(line.source, 80) || undefined,
           type: text(line.type, 80) || null,
           role,
           productId: text(line.productId, 160) || null,
@@ -862,6 +970,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
           quantity: Math.max(0.001, number(line.quantity, 1)),
           unitPriceCents: Math.max(0, Math.round(number(line.unitPriceCents))),
           totalCents: Math.max(0, Math.round(number(line.totalCents))),
+          internalOnly: role === "rounding" || text(line.type, 80) === "rounding",
         };
       });
       const hasPricedMaterial = input.service.materialsOwner === "customer" || lines.some((line) => text(line.type, 80) !== "labor" && number(line.totalCents) > 0);
@@ -872,6 +981,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       if (!selectedMaterial && primaryFluid) selectedMaterial = { name: primaryFluid.customerDisplayName, catalogName: primaryFluid.catalogName, customerDisplayName: primaryFluid.customerDisplayName, specification: text(input.service.requiredFluidSpec, 160) || null, quantity: primaryFluid.quantity, compatibilityEvidence: text(automatic.compatibilityEvidence, 700) || null };
       const status = blockers.length ? "blocked" : plan.quoteWarnings.length ? "preliminary" : "ready";
       const maximum = object(quote.maximum);
+      const selectionTrace = materialSelectionTrace(quote.materialSelectionTrace, lines);
       const quoteOption: QuoteAndTechCardQuoteOption = {
         code: option.code,
         label: option.label,
@@ -879,6 +989,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         status,
         technicalQuantityLiters: option.technicalQuantityLiters,
         billableQuantityLiters: option.billableQuantityLiters,
+        quantityTrace: option.quantityTrace,
+        materialSelectionTrace: selectionTrace,
         lines,
         totalCents: status !== "blocked" ? Math.round(number(quote.totalCents)) : null,
         maximumTotalCents: status !== "blocked" && number(maximum.totalCents) > number(quote.totalCents) ? Math.round(number(maximum.totalCents)) : null,
@@ -886,12 +998,14 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         blockers,
         warnings: uniqueWarnings(plan.quoteWarnings),
       };
+      assertLocalFirstInvariant(selectionTrace, object(quote.materialSelectionTrace).originalOnlyOverride === true);
       if (status !== "blocked") assertQuoteAndTechCardOptionIntegrity(quoteOption);
       options.push(quoteOption);
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
     } catch (error) {
       const message = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
       const integrityFailure = error instanceof QuoteAndTechCardIntegrityError;
+      const localFirstFailure = error instanceof LocalFirstInvariantError;
       const supplierFailure = /rossko|поставщик|предложен/i.test(message);
       options.push({
         code: option.code,
@@ -900,18 +1014,20 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
         status: "blocked",
         technicalQuantityLiters: option.technicalQuantityLiters,
         billableQuantityLiters: option.billableQuantityLiters,
+        quantityTrace: option.quantityTrace,
+        materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: message },
         lines: [],
         totalCents: null,
         maximumTotalCents: null,
         validUntil: null,
-        blockers: [{ code: integrityFailure ? "QUOTE_INTEGRITY_ERROR" : supplierFailure ? "NO_MATERIAL_PRICE" : "MISSING_LABOR_RULE", message, requiredToContinue: integrityFailure ? "Проверить количество, цену и итог в backend-калькуляторе." : supplierFailure ? "Найти совместимый материал с ценой в локальном каталоге или у поставщика." : "Подтвердить правило стоимости работ." }],
+        blockers: [{ code: localFirstFailure ? "LOCAL_FIRST_POLICY_ERROR" : integrityFailure ? "QUOTE_INTEGRITY_ERROR" : supplierFailure ? "NO_MATERIAL_PRICE" : "MISSING_LABOR_RULE", message, requiredToContinue: localFirstFailure ? "Проверить выбор основной жидкости: при достаточном локальном остатке должна использоваться локальная позиция." : integrityFailure ? "Проверить количество, цену и итог в backend-калькуляторе." : supplierFailure ? "Найти совместимый материал с ценой в локальном каталоге или у поставщика." : "Подтвердить правило стоимости работ." }],
         warnings: uniqueWarnings(plan.quoteWarnings),
       });
     }
   }
   const allOptionBlockers = options.flatMap((option) => Array.isArray(option.blockers) ? option.blockers : []) as Array<{ code: string; message: string; requiredToContinue: string }>;
   const hardBlockers = [...baseBlockers];
-  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR"]) {
+  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR"]) {
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
@@ -923,7 +1039,18 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     scenario: "quote_and_tech_card" as const,
     status: "partial" as const,
     vehicle: { displayName: text(input.vehicle.displayName, 180) || "Автомобиль уточняется", aggregate: text(input.vehicle.aggregateCode ?? input.service.aggregate, 160) || null },
-    quote: { status: calculatedQuoteStatus, confidence: calculatedQuoteStatus === "ready" ? "confirmed" as const : "preliminary" as const, options, hardBlockers, warnings: uniqueWarnings(plan.quoteWarnings) },
+    quoteSet: {
+      id: `quote-set:${input.vehicle.id ?? input.vehicle.displayName ?? "vehicle"}:${options.map((option) => option.code).join("+")}`.slice(0, 240),
+      vehicleId: input.vehicle.id ?? null,
+      serviceType: input.service.type,
+      requestedProcedures: plan.requestedProcedures,
+      requestedDates: input.requestedDates ?? null,
+      status: calculatedQuoteStatus,
+      confidence: calculatedQuoteStatus === "ready" ? "confirmed" as const : "preliminary" as const,
+      options,
+      hardBlockers,
+      warnings: uniqueWarnings(plan.quoteWarnings),
+    },
     techCard: {
       status: techCardStatus,
       serviceName: input.service.name,
@@ -931,6 +1058,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       requiredFluidSpec: text(input.service.requiredFluidSpec, 160) || null,
       filterPolicy: plan.filterPolicy.customerText,
       filter: plan.filterPolicy,
+      procedureVolumes: options.map((option) => ({ code: option.code, customerDisplayName: option.customerDisplayName, technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters })),
       levelTemperature: text(input.service.levelTemperature, 180) || null,
       levelProcedure: text(input.service.levelProcedure, 500) || null,
       servicePoints: input.service.servicePoints.map((item) => text(item, 300)).filter(Boolean).slice(0, 16),

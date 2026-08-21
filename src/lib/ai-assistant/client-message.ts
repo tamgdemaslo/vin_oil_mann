@@ -71,14 +71,13 @@ export function explicitCustomerRecommendation(message: string) {
   return value.slice(0, 260);
 }
 
-function roundStepRubles() {
-  const configured = Number(process.env.AI_ASSISTANT_CLIENT_PRICE_ROUNDING_RUBLES);
-  return Number.isInteger(configured) && configured >= 1 && configured <= 1_000 ? configured : 100;
-}
-
 function formatPrice(cents: number) {
-  const roundedRubles = Math.round(cents / 100 / roundStepRubles()) * roundStepRubles();
-  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(roundedRubles)} ₽`;
+  // A quote is already rounded by the calculation rule.  The formatter must
+  // only render the stored amount, never apply another customer-text rounding.
+  const integerCents = Math.trunc(cents);
+  const rubles = Math.trunc(integerCents / 100);
+  const kopecks = Math.abs(integerCents % 100);
+  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(rubles)}${kopecks ? `,${String(kopecks).padStart(2, "0")}` : ""} ₽`;
 }
 
 function listItems(quote: QuoteForClientMessage, detailed: boolean) {

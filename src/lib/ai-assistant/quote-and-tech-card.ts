@@ -38,7 +38,7 @@ export const QuoteAndTechCardInputSchema = z.object({
     partialTechnicalQuantityLiters: z.number().positive().max(200).nullable().optional(), totalTechnicalQuantityLiters: z.number().positive().max(200).nullable().optional(), standardTechnicalQuantityLiters: z.number().positive().max(200).nullable().optional(), procedures: z.array(z.enum(QUOTE_AND_TECH_CARD_PROCEDURES)).min(1).max(2).optional(),
     transmissionConfiguration: z.enum(["no_pan", "pan_and_filter", "two_coarse_filters", "not_applicable"]).nullable().optional(), filterAccess: z.enum(["none", "external_replaceable", "pan_service", "internal_requires_disassembly", "unknown"]).default("unknown"), materialsOwner: z.enum(["service", "customer"]).default("service"), levelTemperature: z.string().trim().max(180).nullable().optional(), visualReference: z.string().trim().max(1_200).nullable().optional(), torqueNotes: z.array(z.string().trim().min(1).max(300)).max(12).default([]), levelProcedure: z.string().trim().max(500).nullable().optional(), servicePoints: z.array(z.string().trim().min(1).max(300)).max(16).default([]), criticalChecks: z.array(z.string().trim().min(1).max(300)).max(16).default([]), technicalWarnings: z.array(z.string().trim().min(1).max(300)).max(16).default([]),
   }).strict(),
-  requestedProcedures: z.array(z.enum(QUOTE_AND_TECH_CARD_PROCEDURES)).max(2).default([]), selectedProducts: z.array(ProductRowSchema).max(30).default([]), consumables: z.array(ProductRowSchema).max(20).default([]), rosskoItems: z.array(RosskoRowSchema).max(12).default([]), localCatalogChecked: z.boolean().default(false), fluidMissingLocally: z.boolean().default(false), softWarnings: z.array(z.string().trim().min(1).max(360)).max(16).default([]), evidence: z.array(QuoteAndTechCardEvidenceSchema).max(20).default([]),
+  requestedProcedures: z.array(z.enum(QUOTE_AND_TECH_CARD_PROCEDURES)).max(2).default([]), requestedDates: z.string().trim().max(120).nullable().optional(), selectedProducts: z.array(ProductRowSchema).max(30).default([]), consumables: z.array(ProductRowSchema).max(20).default([]), rosskoItems: z.array(RosskoRowSchema).max(12).default([]), localCatalogChecked: z.boolean().default(false), fluidMissingLocally: z.boolean().default(false), softWarnings: z.array(z.string().trim().min(1).max(360)).max(16).default([]), evidence: z.array(QuoteAndTechCardEvidenceSchema).max(20).default([]),
 }).strict();
 export type QuoteAndTechCardInput = z.infer<typeof QuoteAndTechCardInputSchema>;
 
@@ -148,7 +148,7 @@ export function normalizeQuoteAndTechCardInput(value: unknown): Record<string, u
       type: serviceType, name: text(sourceService.name ?? sourceService.serviceName ?? row.serviceName, 180) || (serviceType === "automatic_transmission" ? "Замена жидкости АКПП" : "Техническое обслуживание"), aggregate: text(sourceService.aggregate ?? row.aggregate, 160) || null, requiredFluidSpec: text(sourceService.requiredFluidSpec ?? sourceService.fluidSpec ?? sourceService.specification ?? row.requiredFluidSpec, 160) || null, requiredFluidOemArticle: text(sourceService.requiredFluidOemArticle ?? sourceService.fluidOemArticle ?? row.requiredFluidOemArticle, 80) || null,
       partialTechnicalQuantityLiters: numberOrNull(sourceService.partialTechnicalQuantityLiters ?? sourceService.partialVolumeLiters ?? sourceService.partialQuantityLiters), totalTechnicalQuantityLiters: numberOrNull(sourceService.totalTechnicalQuantityLiters ?? sourceService.totalCapacityLiters ?? sourceService.totalQuantityLiters), standardTechnicalQuantityLiters: numberOrNull(sourceService.standardTechnicalQuantityLiters ?? sourceService.standardVolumeLiters ?? sourceService.quantityLiters), procedures: procedures.length ? procedures : undefined, transmissionConfiguration, filterAccess, materialsOwner, levelTemperature: text(sourceService.levelTemperature ?? sourceService.levelTemperatureRange, 180) || null, visualReference: text(sourceService.visualReference ?? sourceService.visualReferenceUrl, 1_200) || null, torqueNotes: stringList(sourceService.torqueNotes, 12), levelProcedure: text(sourceService.levelProcedure, 500) || null, servicePoints: stringList(sourceService.servicePoints, 16), criticalChecks: stringList(sourceService.criticalChecks, 16), technicalWarnings: stringList(sourceService.technicalWarnings, 16),
     },
-    requestedProcedures: procedures, selectedProducts: normalizeProductRows(row.selectedProducts), consumables: normalizeProductRows(row.consumables), rosskoItems: normalizeRosskoRows(row.rosskoItems), localCatalogChecked: row.localCatalogChecked === true, fluidMissingLocally: row.fluidMissingLocally === true, softWarnings: stringList(row.softWarnings, 16, 360), evidence: normalizeEvidence(row.evidence),
+    requestedProcedures: procedures, requestedDates: text(row.requestedDates ?? row.requestedDateRange ?? sourceService.requestedDates, 120) || null, selectedProducts: normalizeProductRows(row.selectedProducts), consumables: normalizeProductRows(row.consumables), rosskoItems: normalizeRosskoRows(row.rosskoItems), localCatalogChecked: row.localCatalogChecked === true, fluidMissingLocally: row.fluidMissingLocally === true, softWarnings: stringList(row.softWarnings, 16, 360), evidence: normalizeEvidence(row.evidence),
   };
 }
 export function parseQuoteAndTechCardInput(value: unknown): QuoteAndTechCardInput { return QuoteAndTechCardInputSchema.parse(normalizeQuoteAndTechCardInput(value)); }
@@ -176,7 +176,7 @@ export function quoteAndTechCardFilterPolicy(filterAccess: QuoteAndTechCardInput
       requiredForQuote: false,
       searchPart: false,
       rosskoSearch: false,
-      customerText: "Внутренний, требует разборки АКПП. TGM при стандартной замене не меняет.",
+      customerText: "Фильтр на этой АКПП находится внутри агрегата и для его замены требуется разборка коробки, поэтому при стандартной замене масла мы его не меняем.",
     };
   }
   return {
@@ -238,10 +238,35 @@ export function quoteAndTechCardSupplierRows(input: QuoteAndTechCardInput, local
 
 export type QuoteAndTechCardRules = { literRoundingStep: number; transmissionMachineExchangeMultiplier: number; transmissionMinimumBillableLiters: number; maxTechnicalVerificationPasses: number };
 export const DEFAULT_QUOTE_AND_TECH_CARD_RULES: QuoteAndTechCardRules = { literRoundingStep: 1, transmissionMachineExchangeMultiplier: 1.7, transmissionMinimumBillableLiters: 0, maxTechnicalVerificationPasses: 2 };
-export type QuoteAndTechCardPlanOption = { code: QuoteAndTechCardProcedure; label: string; technicalQuantityLiters: number | null; billableQuantityLiters: number | null; blockedReason: string | null };
+export const QuoteAndTechCardQuantityTraceSchema = z.object({
+  sourceCapacity: z.number().positive().nullable(),
+  sourceCapacityEvidence: z.string().max(700).nullable(),
+  configuredMultiplier: z.number().positive(),
+  configuredAdditionalVolume: z.number().nonnegative(),
+  calculationMode: z.string().min(1).max(100),
+  rawCalculatedQuantity: z.number().positive().nullable(),
+  packageStep: z.number().positive(),
+  roundingRule: z.string().min(1).max(180),
+  technicalQuantity: z.number().positive().nullable(),
+  billableQuantity: z.number().positive().nullable(),
+}).strict();
+export type QuoteAndTechCardQuantityTrace = z.infer<typeof QuoteAndTechCardQuantityTraceSchema>;
+export type QuoteAndTechCardPlanOption = { code: QuoteAndTechCardProcedure; label: string; technicalQuantityLiters: number | null; billableQuantityLiters: number | null; quantityTrace: QuoteAndTechCardQuantityTrace; blockedReason: string | null };
 export type QuoteAndTechCardPlan = { input: QuoteAndTechCardInput; rules: QuoteAndTechCardRules; isTransmission: boolean; requestedProcedures: QuoteAndTechCardProcedure[]; filterPolicy: QuoteAndTechCardFilterPolicy; hardBlockers: Array<{ code: string; message: string; requiredToContinue: string }>; quoteWarnings: string[]; techCardWarnings: string[]; options: QuoteAndTechCardPlanOption[] };
 function isTransmission(type: QuoteAndTechCardServiceType) { return ["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential"].includes(type); }
 function roundUp(value: number, step: number) { const normalizedStep = Math.max(0.1, Math.min(10, step || 1)); return Math.ceil((value - 1e-8) / normalizedStep) * normalizedStep; }
+
+function quantitySource(input: QuoteAndTechCardInput, code: QuoteAndTechCardProcedure) {
+  if (code === "machine") return { capacity: input.service.totalTechnicalQuantityLiters, mode: "total_capacity_x_machine_multiplier" } as const;
+  if (code === "partial") return { capacity: input.service.partialTechnicalQuantityLiters ?? input.service.standardTechnicalQuantityLiters, mode: "partial_capacity" } as const;
+  return { capacity: input.service.standardTechnicalQuantityLiters ?? input.service.partialTechnicalQuantityLiters, mode: "standard_capacity" } as const;
+}
+
+function sourceCapacityEvidence(input: QuoteAndTechCardInput, capacity: number | null | undefined) {
+  if (capacity == null) return null;
+  const matching = input.evidence.find((item) => /(?:объ[её]м|capacity|литр|\bл\b)/iu.test(item.fact) && item.status !== "unavailable");
+  return matching ? `${matching.source}: ${matching.fact}`.slice(0, 700) : "Подтверждённый технический объём из service context.";
+}
 
 export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<QuoteAndTechCardRules> = {}): QuoteAndTechCardPlan {
   const input = parseQuoteAndTechCardInput(rawInput);
@@ -260,24 +285,142 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
   const requestedProcedures: readonly QuoteAndTechCardProcedure[] = input.requestedProcedures.length ? input.requestedProcedures : input.service.procedures?.length ? input.service.procedures : transmission ? ["partial"] : ["standard"];
   const configured = (QUOTE_AND_TECH_CARD_PROCEDURES.filter((procedure) => requestedProcedures.includes(procedure)) as QuoteAndTechCardProcedure[]).slice(0, 2);
   const options = configured.slice(0, 2).map((code): QuoteAndTechCardPlanOption => {
-    const technicalQuantityLiters = code === "machine" ? input.service.totalTechnicalQuantityLiters == null ? null : Math.round(input.service.totalTechnicalQuantityLiters * rules.transmissionMachineExchangeMultiplier * 1_000) / 1_000 : code === "partial" ? input.service.partialTechnicalQuantityLiters ?? input.service.standardTechnicalQuantityLiters ?? null : input.service.standardTechnicalQuantityLiters ?? input.service.partialTechnicalQuantityLiters ?? null;
+    const source = quantitySource(input, code);
+    const multiplier = code === "machine" ? rules.transmissionMachineExchangeMultiplier : 1;
+    const rawCalculatedQuantity = source.capacity == null ? null : source.capacity * multiplier;
+    const technicalQuantityLiters = rawCalculatedQuantity == null ? null : Math.round(rawCalculatedQuantity * 1_000) / 1_000;
     const billableQuantityLiters = technicalQuantityLiters == null ? null : roundUp(Math.max(technicalQuantityLiters, transmission ? rules.transmissionMinimumBillableLiters : 0), rules.literRoundingStep);
-    return { code, label: code === "machine" ? "Аппаратная замена" : code === "partial" ? "Частичная замена" : input.service.name, technicalQuantityLiters, billableQuantityLiters, blockedReason: billableQuantityLiters == null ? "Не определён рабочий объём жидкости для этого варианта." : null };
+    const quantityTrace: QuoteAndTechCardQuantityTrace = {
+      sourceCapacity: source.capacity ?? null,
+      sourceCapacityEvidence: sourceCapacityEvidence(input, source.capacity),
+      configuredMultiplier: multiplier,
+      configuredAdditionalVolume: 0,
+      calculationMode: source.mode,
+      rawCalculatedQuantity,
+      packageStep: rules.literRoundingStep,
+      roundingRule: `Округление вверх до шага ${rules.literRoundingStep} л; минимум ${transmission ? rules.transmissionMinimumBillableLiters : 0} л.`,
+      technicalQuantity: technicalQuantityLiters,
+      billableQuantity: billableQuantityLiters,
+    };
+    return { code, label: code === "machine" ? "Аппаратная замена" : code === "partial" ? "Частичная замена" : input.service.name, technicalQuantityLiters, billableQuantityLiters, quantityTrace, blockedReason: billableQuantityLiters == null ? "Не определён рабочий объём жидкости для этого варианта." : null };
   });
   return { input, rules, isTransmission: transmission, requestedProcedures: [...requestedProcedures], filterPolicy, hardBlockers, quoteWarnings, techCardWarnings: [...new Set(techCardWarnings)], options };
 }
 
-const QuoteLineSchema = z.object({ source: z.string().trim().max(80).optional(), type: z.string().trim().max(80).nullable().optional(), role: z.enum(["fluid", "external_filter", "consumable", "internal_filter", "labor", "rounding", "unknown"]).optional(), productId: z.string().trim().max(160).nullable().optional(), name: z.string().trim().min(1).max(220), catalogName: z.string().trim().min(1).max(220), customerDisplayName: z.string().trim().min(1).max(160), article: z.string().trim().max(120).nullable().optional(), quantity: z.number().positive(), unitPriceCents: z.number().int().nonnegative().optional(), totalCents: z.number().int().nonnegative() }).strict();
-export const QuoteAndTechCardQuoteOptionSchema = z.object({ code: z.enum(QUOTE_AND_TECH_CARD_PROCEDURES), label: z.string().min(1).max(180), customerDisplayName: z.string().min(1).max(180), status: z.enum(["ready", "preliminary", "blocked"]), technicalQuantityLiters: z.number().positive().nullable(), billableQuantityLiters: z.number().positive().nullable(), lines: z.array(QuoteLineSchema).max(40), totalCents: z.number().int().nonnegative().nullable(), maximumTotalCents: z.number().int().nonnegative().nullable(), validUntil: z.string().max(100).nullable(), blockers: z.array(z.object({ code: z.string().min(1).max(80), message: z.string().min(1).max(360), requiredToContinue: z.string().min(1).max(360) }).strict()).max(6), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict();
+const QuoteLineSchema = z.object({ source: z.string().trim().max(80).optional(), type: z.string().trim().max(80).nullable().optional(), role: z.enum(["fluid", "external_filter", "consumable", "internal_filter", "labor", "rounding", "unknown"]).optional(), productId: z.string().trim().max(160).nullable().optional(), name: z.string().trim().min(1).max(220), catalogName: z.string().trim().min(1).max(220), customerDisplayName: z.string().trim().min(1).max(160), article: z.string().trim().max(120).nullable().optional(), quantity: z.number().positive(), unitPriceCents: z.number().int().nonnegative().optional(), totalCents: z.number().int().nonnegative(), internalOnly: z.boolean().default(false) }).strict();
+const QuoteAndTechCardMaterialCandidateSchema = z.object({ productId: z.string().max(160), catalogName: z.string().max(220), compatible: z.boolean(), availableQuantity: z.number().nonnegative(), requiredQuantity: z.number().positive(), packageLiters: z.number().positive(), unitPriceCents: z.number().int().nonnegative(), eligible: z.boolean(), exclusionReason: z.enum(["incompatible_specification", "price_missing", "stock_insufficient"]).nullable() }).strict();
+export const QuoteAndTechCardMaterialSelectionTraceSchema = z.object({
+  requiredSpecification: z.string().max(160).nullable(),
+  oemReference: z.object({ brand: z.string().max(100).nullable(), article: z.string().max(80).nullable() }).strict(),
+  localCandidates: z.array(QuoteAndTechCardMaterialCandidateSchema).max(100),
+  selectedLocalCandidate: QuoteAndTechCardMaterialCandidateSchema.nullable(),
+  selectedProduct: z.object({ source: z.enum(["local_catalog", "supplier", "customer_materials", "none"]), productId: z.string().max(160).nullable(), catalogName: z.string().max(220).nullable(), customerDisplayName: z.string().max(160).nullable() }).strict(),
+  localAvailableQuantity: z.number().nonnegative().nullable(),
+  requiredQuantity: z.number().positive().nullable(),
+  fallbackSupplierUsed: z.boolean(),
+  fallbackReason: z.string().max(360).nullable(),
+}).strict();
+export type QuoteAndTechCardMaterialSelectionTrace = z.infer<typeof QuoteAndTechCardMaterialSelectionTraceSchema>;
+export const QuoteAndTechCardQuoteOptionSchema = z.object({ code: z.enum(QUOTE_AND_TECH_CARD_PROCEDURES), label: z.string().min(1).max(180), customerDisplayName: z.string().min(1).max(180), status: z.enum(["ready", "preliminary", "blocked"]), technicalQuantityLiters: z.number().positive().nullable(), billableQuantityLiters: z.number().positive().nullable(), quantityTrace: QuoteAndTechCardQuantityTraceSchema, materialSelectionTrace: QuoteAndTechCardMaterialSelectionTraceSchema, lines: z.array(QuoteLineSchema).max(40), totalCents: z.number().int().nonnegative().nullable(), maximumTotalCents: z.number().int().nonnegative().nullable(), validUntil: z.string().max(100).nullable(), blockers: z.array(z.object({ code: z.string().min(1).max(80), message: z.string().min(1).max(360), requiredToContinue: z.string().min(1).max(360) }).strict()).max(6), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict();
 export type QuoteAndTechCardQuoteOption = z.infer<typeof QuoteAndTechCardQuoteOptionSchema>;
+export const QuoteAndTechCardQuoteSetSchema = z.object({ id: z.string().min(1).max(240), vehicleId: z.string().max(160).nullable(), serviceType: z.enum(QUOTE_AND_TECH_CARD_SERVICE_TYPES), requestedProcedures: z.array(z.enum(QUOTE_AND_TECH_CARD_PROCEDURES)).min(1).max(2), requestedDates: z.string().max(120).nullable(), status: z.enum(["ready", "preliminary", "blocked"]), confidence: z.enum(["confirmed", "preliminary"]), options: z.array(QuoteAndTechCardQuoteOptionSchema).min(1).max(2), hardBlockers: z.array(z.object({ code: z.string().min(1).max(80), message: z.string().min(1).max(360), requiredToContinue: z.string().min(1).max(360) }).strict()).max(8), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict();
+export type QuoteAndTechCardQuoteSet = z.infer<typeof QuoteAndTechCardQuoteSetSchema>;
 export const QuoteAndTechCardResultSchema = z.object({
   scenario: z.literal("quote_and_tech_card"), status: z.enum(["ready", "partial", "blocked"]), vehicle: z.object({ displayName: z.string().min(1).max(180), aggregate: z.string().max(160).nullable() }).strict(),
-  quote: z.object({ status: z.enum(["ready", "preliminary", "blocked"]), confidence: z.enum(["confirmed", "preliminary"]), options: z.array(QuoteAndTechCardQuoteOptionSchema).min(1).max(2), hardBlockers: z.array(z.object({ code: z.string().min(1).max(80), message: z.string().min(1).max(360), requiredToContinue: z.string().min(1).max(360) }).strict()).max(8), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict(),
-  techCard: z.object({ status: z.enum(["ready", "partial", "blocked"]), serviceName: z.string().min(1).max(180), serviceType: z.enum(QUOTE_AND_TECH_CARD_SERVICE_TYPES), requiredFluidSpec: z.string().max(160).nullable(), filterPolicy: z.string().min(1).max(360), filter: QuoteAndTechCardFilterPolicySchema, levelTemperature: z.string().max(180).nullable(), levelProcedure: z.string().max(500).nullable(), servicePoints: z.array(z.string().min(1).max(300)).max(16), torqueNotes: z.array(z.string().min(1).max(300)).max(12), criticalChecks: z.array(z.string().min(1).max(300)).max(16), selectedMaterial: z.object({ name: z.string().max(160), catalogName: z.string().max(220), customerDisplayName: z.string().max(160), specification: z.string().max(160).nullable(), quantity: z.number().positive(), compatibilityEvidence: z.string().max(700).nullable() }).nullable(), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict(),
+  quoteSet: QuoteAndTechCardQuoteSetSchema,
+  techCard: z.object({ status: z.enum(["ready", "partial", "blocked"]), serviceName: z.string().min(1).max(180), serviceType: z.enum(QUOTE_AND_TECH_CARD_SERVICE_TYPES), requiredFluidSpec: z.string().max(160).nullable(), filterPolicy: z.string().min(1).max(360), filter: QuoteAndTechCardFilterPolicySchema, procedureVolumes: z.array(z.object({ code: z.enum(QUOTE_AND_TECH_CARD_PROCEDURES), customerDisplayName: z.string().max(180), technicalQuantityLiters: z.number().positive().nullable(), billableQuantityLiters: z.number().positive().nullable() }).strict()).max(2), levelTemperature: z.string().max(180).nullable(), levelProcedure: z.string().max(500).nullable(), servicePoints: z.array(z.string().min(1).max(300)).max(16), torqueNotes: z.array(z.string().min(1).max(300)).max(12), criticalChecks: z.array(z.string().min(1).max(300)).max(16), selectedMaterial: z.object({ name: z.string().max(160), catalogName: z.string().max(220), customerDisplayName: z.string().max(160), specification: z.string().max(160).nullable(), quantity: z.number().positive(), compatibilityEvidence: z.string().max(700).nullable() }).nullable(), warnings: z.array(z.string().min(1).max(360)).max(20) }).strict(),
   customerMessage: z.object({ status: z.enum(["ready", "blocked"]), text: z.string().max(4_000) }).strict(), evidence: z.array(QuoteAndTechCardEvidenceSchema).max(20),
 }).strict();
 export type QuoteAndTechCardResult = z.infer<typeof QuoteAndTechCardResultSchema>;
-export function parseQuoteAndTechCardResult(value: unknown): QuoteAndTechCardResult | null { const parsed = QuoteAndTechCardResultSchema.safeParse(value); return parsed.success ? parsed.data : null; }
+
+/**
+ * Result attachments are durable chat records.  Keep the previous public
+ * `quote` shape readable while new runs use QuoteSet, so opening an older
+ * thread or clicking its client-message action cannot make its tech card
+ * disappear during this contract migration.
+ */
+function upgradeLegacyQuoteAndTechCard(row: Record<string, unknown>) {
+  if (row.quoteSet) return row;
+  const { quote: legacyQuoteValue, ...publicResult } = row;
+  const legacyQuote = object(legacyQuoteValue);
+  const legacyOptions = Array.isArray(legacyQuote.options) ? legacyQuote.options.map(object) : [];
+  const serviceType = text(object(row.techCard).serviceType, 80);
+  const canonicalServiceType = QUOTE_AND_TECH_CARD_SERVICE_TYPES.includes(serviceType as QuoteAndTechCardServiceType) ? serviceType as QuoteAndTechCardServiceType : "automatic_transmission";
+  const options: Array<Record<string, unknown>> = legacyOptions.map((legacyOption) => {
+    const code = QUOTE_AND_TECH_CARD_PROCEDURES.includes(text(legacyOption.code, 40) as QuoteAndTechCardProcedure) ? text(legacyOption.code, 40) as QuoteAndTechCardProcedure : "standard";
+    const technicalQuantity = numberOrNull(legacyOption.technicalQuantityLiters);
+    const billableQuantity = numberOrNull(legacyOption.billableQuantityLiters);
+    const primaryFluid = (Array.isArray(legacyOption.lines) ? legacyOption.lines.map(object) : []).find((line) => text(line.role, 40) === "fluid");
+    const source = text(primaryFluid?.source, 80);
+    return {
+      ...legacyOption,
+      quantityTrace: {
+        sourceCapacity: technicalQuantity,
+        sourceCapacityEvidence: null,
+        configuredMultiplier: 1,
+        configuredAdditionalVolume: 0,
+        calculationMode: "legacy_snapshot",
+        rawCalculatedQuantity: technicalQuantity,
+        packageStep: 1,
+        roundingRule: "Сохранённый расчёт: правило округления не было записано.",
+        technicalQuantity,
+        billableQuantity,
+      },
+      materialSelectionTrace: {
+        requiredSpecification: text(object(row.techCard).requiredFluidSpec, 160) || null,
+        oemReference: { brand: null, article: null },
+        localCandidates: [],
+        selectedLocalCandidate: null,
+        selectedProduct: primaryFluid ? {
+          source: source === "local" || source === "local_catalog" ? "local_catalog" : source === "rossko" || source === "supplier" ? "supplier" : "customer_materials",
+          productId: text(primaryFluid.productId, 160) || null,
+          catalogName: text(primaryFluid.catalogName ?? primaryFluid.name, 220) || null,
+          customerDisplayName: text(primaryFluid.customerDisplayName ?? primaryFluid.name, 160) || null,
+        } : { source: "none", productId: null, catalogName: null, customerDisplayName: null },
+        localAvailableQuantity: null,
+        requiredQuantity: billableQuantity,
+        fallbackSupplierUsed: source === "rossko" || source === "supplier",
+        fallbackReason: null,
+      },
+    };
+  });
+  const techCard = object(row.techCard);
+  return {
+    ...publicResult,
+    quoteSet: {
+      id: `legacy:${text(object(row.vehicle).displayName, 160) || "quote"}:${options.map((option) => text(option.code, 40)).join("+")}`.slice(0, 240),
+      vehicleId: null,
+      serviceType: canonicalServiceType,
+      requestedProcedures: options.map((option) => text(option.code, 40)).filter((code): code is QuoteAndTechCardProcedure => QUOTE_AND_TECH_CARD_PROCEDURES.includes(code as QuoteAndTechCardProcedure)).slice(0, 2),
+      requestedDates: null,
+      status: text(legacyQuote.status, 40) || "blocked",
+      confidence: text(legacyQuote.confidence, 40) || "preliminary",
+      options,
+      hardBlockers: legacyQuote.hardBlockers ?? [],
+      warnings: legacyQuote.warnings ?? [],
+    },
+    techCard: {
+      ...techCard,
+      serviceType: canonicalServiceType,
+      filter: techCard.filter ?? quoteAndTechCardFilterPolicy("unknown"),
+      procedureVolumes: options.map((option) => ({
+        code: option.code,
+        customerDisplayName: text(option.customerDisplayName, 180),
+        technicalQuantityLiters: numberOrNull(option.technicalQuantityLiters),
+        billableQuantityLiters: numberOrNull(option.billableQuantityLiters),
+      })),
+    },
+  };
+}
+
+export function parseQuoteAndTechCardResult(value: unknown): QuoteAndTechCardResult | null {
+  const row = object(value);
+  const publicKeys = new Set(["scenario", "status", "vehicle", "quote", "quoteSet", "techCard", "customerMessage", "evidence"]);
+  if (Object.keys(row).some((key) => !publicKeys.has(key))) return null;
+  const candidate = upgradeLegacyQuoteAndTechCard(row);
+  const parsed = QuoteAndTechCardResultSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
 /**
  * The tool envelope contains operational metadata (for example a quote
  * snapshot to persist) in addition to the customer-facing contract.  Keep
@@ -289,7 +432,7 @@ export function parseQuoteAndTechCardToolResult(value: unknown): QuoteAndTechCar
     scenario: row.scenario,
     status: row.status,
     vehicle: row.vehicle,
-    quote: row.quote,
+    quoteSet: row.quoteSet ?? row.quote,
     techCard: row.techCard,
     customerMessage: row.customerMessage,
     evidence: row.evidence,
@@ -298,20 +441,52 @@ export function parseQuoteAndTechCardToolResult(value: unknown): QuoteAndTechCar
 export function quoteStatus(options: Array<{ status: "ready" | "preliminary" | "blocked" }>, hardBlockers: unknown[]) { if (hardBlockers.length || !options.some((option) => option.status !== "blocked")) return "blocked" as const; return options.every((option) => option.status === "ready") ? "ready" as const : "preliminary" as const; }
 export function scenarioStatus(quote: "ready" | "preliminary" | "blocked", techCard: "ready" | "partial" | "blocked", customerMessage: "ready" | "blocked") { if (quote === "blocked") return "blocked" as const; return quote === "ready" && techCard === "ready" && customerMessage === "ready" ? "ready" as const : "partial" as const; }
 
-export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCardResult, "vehicle" | "quote" | "techCard">): QuoteAndTechCardResult["customerMessage"] {
-  const ready = input.quote.options.filter((option) => option.status !== "blocked" && option.totalCents != null);
-  if (!ready.length) { const blocker = input.quote.hardBlockers[0] ?? input.quote.options.flatMap((option) => option.blockers)[0]; return { status: "blocked", text: blocker ? `Чтобы подготовить расчёт для ${input.vehicle.displayName}, нужно уточнить: ${blocker.requiredToContinue}` : `Для ${input.vehicle.displayName} пока нельзя подготовить расчёт.` }; }
-  const rubles = (cents: number) => `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(cents / 100)} ₽`;
+export type QuoteAndTechCardCustomerMessageMode = "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price" | "recommendation";
+
+/** Formatting only: quote values arrive already calculated and are never re-rounded here. */
+export function customerMoneyFromCents(cents: number) {
+  const integerCents = Math.trunc(cents);
+  const rubles = Math.trunc(integerCents / 100);
+  const kopecks = Math.abs(integerCents % 100);
+  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(rubles)}${kopecks ? `,${String(kopecks).padStart(2, "0")}` : ""} ₽`;
+}
+
+function customerVehicleDisplayName(value: string) {
+  return value.replace(/(?:\s*[·,;—-]\s*)?[A-HJ-NPR-Z0-9]{17}\b/giu, "").replace(/\s{2,}/g, " ").trim() || value;
+}
+
+function customerQuantity(value: number | null) { return value == null ? "—" : String(value); }
+
+export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCardResult, "vehicle" | "quoteSet" | "techCard">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardResult["customerMessage"] {
+  const ready = input.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null);
+  if (!ready.length) { const blocker = input.quoteSet.hardBlockers[0] ?? input.quoteSet.options.flatMap((option) => option.blockers)[0]; return { status: "blocked", text: blocker ? `Чтобы подготовить расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)}, нужно уточнить: ${blocker.requiredToContinue}` : `Для ${customerVehicleDisplayName(input.vehicle.displayName)} пока нельзя подготовить расчёт.` }; }
+  const showPrice = mode !== "short_without_price" && mode !== "recommendation";
+  const detailed = mode === "detailed_with_price" || mode === "recommendation";
   const optionText = ready.map((option) => {
-    const material = option.lines.find((line) => line.role === "fluid") ?? option.lines.find((line) => line.type !== "labor" && line.type !== "rounding");
+    const material = option.lines.find((line) => line.role === "fluid") ?? option.lines.find((line) => line.type !== "labor" && line.type !== "rounding" && !line.internalOnly);
     const labor = option.lines.find((line) => line.role === "labor" || line.type === "labor");
     const materialName = material?.customerDisplayName ?? input.techCard.selectedMaterial?.customerDisplayName ?? "жидкость по допуску";
-    const materialLine = `${materialName}${input.techCard.requiredFluidSpec ? ` с допуском ${input.techCard.requiredFluidSpec}` : ""} — ${option.billableQuantityLiters ?? "—"} л`;
-    return `${option.customerDisplayName}\n${materialLine}\n${labor ? `Работа — ${rubles(labor.totalCents)}` : "Работа — по согласованному тарифу"}\nИтого: ${rubles(option.totalCents ?? 0)}`;
+    if (mode === "only_final_price") return `${option.customerDisplayName} — ${customerMoneyFromCents(option.totalCents!)}`;
+    if (!detailed) return `${option.customerDisplayName}: ${materialName} — ${customerQuantity(option.billableQuantityLiters)} л${showPrice ? `, ${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    return [
+      option.customerDisplayName,
+      `${materialName}${input.techCard.requiredFluidSpec ? ` с допуском ${input.techCard.requiredFluidSpec}` : ""} — ${customerQuantity(option.billableQuantityLiters)} л`,
+      showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
+      showPrice ? `Итого: ${customerMoneyFromCents(option.totalCents!)}` : "",
+    ].filter(Boolean).join("\n");
   });
-  const intro = `Добрый день! По вашему ${input.vehicle.displayName}${input.techCard.requiredFluidSpec ? ` требуется жидкость спецификации ${input.techCard.requiredFluidSpec}` : " подготовлен расчёт"}.`;
-  const preliminary = input.quote.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
-  const filter = input.techCard.filter.replaceFilter === false ? input.techCard.filter.customerText : "";
+  const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
+  const intro = mode === "only_final_price"
+    ? `Стоимость обслуживания ${vehicle}:`
+    : `Добрый день! Для вашего ${vehicle}${input.techCard.requiredFluidSpec ? ` требуется ATF спецификации ${input.techCard.requiredFluidSpec}` : " подготовлен расчёт"}.`;
+  const preliminary = input.quoteSet.confidence === "preliminary" ? " Предварительная стоимость указана по текущим данным." : "";
+  const filter = input.techCard.filter.replaceFilter === false && /разборк|внутр/iu.test(input.techCard.filter.customerText) ? input.techCard.filter.customerText : "";
   const machineCondition = ready.some((option) => option.code === "machine") ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
-  return { status: "ready", text: [intro + preliminary, ...optionText, filter, machineCondition, "Подберём удобное время и подтвердим запись."].filter(Boolean).join("\n\n") };
+  const dates = input.quoteSet.requestedDates ? `Вы писали про ${input.quoteSet.requestedDates} — можем проверить свободное время.` : "Подберём удобное время и подтвердим запись.";
+  // The recommendation action may not invent an upsell.  With no explicit
+  // employee wording, it can only repeat the already-grounded diagnostic
+  // condition for an аппаратная replacement.
+  const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
+  const recommendationText = mode === "recommendation" && safeRecommendation ? `Дополнительно: ${safeRecommendation}` : "";
+  return { status: "ready", text: [intro + preliminary, ...optionText, filter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
 }

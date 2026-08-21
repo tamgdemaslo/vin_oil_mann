@@ -85,6 +85,11 @@ function clientQuoteId(message: Message) {
   return typeof quoteId === "string" ? quoteId : null;
 }
 
+function clientQuoteSetId(message: Message) {
+  const quoteSetId = asObject(message.attachmentsJson).quoteSetId;
+  return typeof quoteSetId === "string" ? quoteSetId : null;
+}
+
 function formatTokens(value: number) {
   return new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
@@ -296,6 +301,31 @@ export default function AIAssistantClient() {
     } finally { setSending(false); }
   }, [activeThreadId, activeThreadIsArchived, loadThread, loadThreads, working]);
 
+  const requestQuoteSetClientMessage = useCallback(async (quoteSetMessageId: string, mode: "short_with_price" | "short_without_price" | "detailed_with_price" | "only_final_price" | "recommendation") => {
+    if (!activeThreadId || working || activeThreadIsArchived) return;
+    const labels = {
+      short_with_price: "Короткое сообщение для клиента с расчётом",
+      short_without_price: "Короткое сообщение для клиента без цены",
+      detailed_with_price: "Подробное сообщение для клиента с расчётом",
+      only_final_price: "Только итоговая цена для клиента",
+      recommendation: "Добавь рекомендацию к сообщению клиенту",
+    };
+    setSending(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/ai-assistant/threads/${encodeURIComponent(activeThreadId)}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: labels[mode], quoteSetMessageId, clientMessageMode: mode }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(asError(payload));
+      await Promise.all([loadThread(activeThreadId), loadThreads()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось подготовить клиентский текст");
+    } finally { setSending(false); }
+  }, [activeThreadId, activeThreadIsArchived, loadThread, loadThreads, working]);
+
   const copyText = useCallback(async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -418,7 +448,7 @@ export default function AIAssistantClient() {
             {messages.map((message) => {
               const quoteIds = quoteIdsForMessage(message);
               const linkedQuotes = quoteIds.map((id) => quotes.find((quote) => quote.id === id)).filter((quote): quote is Quote => Boolean(quote));
-              const isClientMessage = attachmentKind(message) === "client_message" && Boolean(clientQuoteId(message));
+              const isClientMessage = attachmentKind(message) === "client_message" && Boolean(clientQuoteId(message) || clientQuoteSetId(message));
               const isMissingQuote = attachmentKind(message) === "missing_quote";
               const structuredResponse = structuredResponseForMessage(message);
               const quoteAndTechCard = quoteAndTechCardForMessage(message);
@@ -437,7 +467,16 @@ export default function AIAssistantClient() {
                   quote={quoteAndTechCard ? undefined : linkedQuotes[0]}
                 /> : <div className="eco-aiw-message__body">{message.content}</div>}
                 {!quoteAndTechCard && linkedQuotes.slice(1).map((quote) => <AIAssistantAnswerRenderer key={quote.id} content="" status="completed" quote={quote} />)}
-                {linkedQuotes.map((quote) => <div className="eco-aiw-quote-actions" key={quote.id}>
+                {quoteAndTechCard && <div className="eco-aiw-quote-actions">
+                  <div className="eco-aiw-quote-actions__buttons">
+                    <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "short_with_price")} disabled={working || activeThreadIsArchived}>Короткое сообщение</button>
+                    <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "short_with_price")} disabled={working || activeThreadIsArchived}>С расчётом</button>
+                    <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "short_without_price")} disabled={working || activeThreadIsArchived}>Без расчёта</button>
+                    <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "detailed_with_price")} disabled={working || activeThreadIsArchived}>Подробное сообщение</button>
+                    <button type="button" onClick={() => void requestQuoteSetClientMessage(message.id, "recommendation")} disabled={working || activeThreadIsArchived}>Добавить рекомендацию</button>
+                  </div>
+                </div>}
+                {!quoteAndTechCard && linkedQuotes.map((quote) => <div className="eco-aiw-quote-actions" key={quote.id}>
                   {quote.status === "draft" ? <div className="eco-aiw-quote-actions__buttons">
                     <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working || activeThreadIsArchived}>Короткое сообщение</button>
                     <button type="button" onClick={() => void requestClientMessage(quote.id, "short_with_price")} disabled={working || activeThreadIsArchived}>С расчётом</button>

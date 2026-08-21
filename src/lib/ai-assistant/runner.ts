@@ -10,7 +10,7 @@ import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeA
 import { createOpenAIClient } from "@/lib/openai-client";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
-import { parseQuoteAndTechCardToolResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { buildQuoteAndTechCardCustomerMessage, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import { jsonSafe } from "./json-safe";
 
@@ -173,14 +173,22 @@ async function createDeterministicClientMessage(input: {
   actor: AssistantActor;
   message: string;
   selectedQuoteId?: string | null;
+  quoteSetMessageId?: string | null;
   mode: ClientMessageMode;
   startedAt: number;
 }) {
   const branchId = getScopedBranchId();
-  const quote = await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId });
-  const content = quote
-    ? buildClientMessage(quote, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null)
+  const quoteSetMessage = input.quoteSetMessageId
+    ? await prisma.aIAssistantMessage.findFirst({ where: { id: input.quoteSetMessageId, threadId: input.threadId, organizationId: input.organizationId, role: "assistant" }, select: { attachmentsJson: true } })
     : null;
+  const quoteSet = quoteSetMessage ? parseQuoteAndTechCardResult(record(quoteSetMessage.attachmentsJson)?.quoteAndTechCard) : null;
+  const quote = quoteSet ? null : await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId });
+  const content = quoteSet
+    ? (() => {
+      const customerMessage = buildQuoteAndTechCardCustomerMessage(quoteSet, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null);
+      return customerMessage.status === "ready" ? { message: customerMessage.text, quoteId: null, quoteSetId: quoteSet.quoteSet.id, mode: input.mode, includedPrice: input.mode !== "short_without_price" && input.mode !== "recommendation", usedBaseTotal: null, usedMaximumTotal: null, includedInternalWarnings: [], includedCustomerWarnings: [], callToAction: quoteSet.quoteSet.requestedDates ? `Проверить свободное время на ${quoteSet.quoteSet.requestedDates}` : "Подобрать удобное время" } : null;
+    })()
+    : quote ? { ...buildClientMessage(quote, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null), quoteSetId: null } : null;
   const assistantMessage = await prisma.aIAssistantMessage.create({
     data: {
       branchId,
@@ -195,7 +203,7 @@ async function createDeterministicClientMessage(input: {
     },
   });
   const summary = content
-    ? [{ toolName: "generate_client_message", status: "completed", quoteId: content.quoteId, mode: content.mode, includedPrice: content.includedPrice, baseTotalCents: content.usedBaseTotal, maximumTotalCents: content.usedMaximumTotal }]
+    ? [{ toolName: "generate_client_message", status: "completed", quoteId: content.quoteId, quoteSetId: content.quoteSetId, mode: content.mode, includedPrice: content.includedPrice, baseTotalCents: content.usedBaseTotal, maximumTotalCents: content.usedMaximumTotal }]
     : [{ toolName: "generate_client_message", status: "needs_quote", mode: input.mode }];
   await Promise.all([
     prisma.aIAssistantRun.update({
@@ -206,7 +214,7 @@ async function createDeterministicClientMessage(input: {
     // rather than chaining an older Responses item which does not contain it.
     prisma.aIAssistantThread.update({ where: { id: input.threadId }, data: { lastResponseId: null, lastMessageAt: new Date() } }),
   ]);
-  return { runId: input.runId, messageId: assistantMessage.id, cancelled: false, clientMessage: true, quoteId: content?.quoteId ?? null };
+  return { runId: input.runId, messageId: assistantMessage.id, cancelled: false, clientMessage: true, quoteId: content?.quoteId ?? null, quoteSetId: content?.quoteSetId ?? null };
 }
 
 function webSearchTrace(response: unknown) {
@@ -517,7 +525,7 @@ export async function cancelAssistantRun(input: { threadId: string; organization
   return { cancelled: result.count > 0 };
 }
 
-export async function runAssistantThread(input: { threadId: string; organizationId: string; actor: AssistantActor; message: string; selectedQuoteId?: string | null; clientMessageMode?: string | null }) {
+export async function runAssistantThread(input: { threadId: string; organizationId: string; actor: AssistantActor; message: string; selectedQuoteId?: string | null; quoteSetMessageId?: string | null; clientMessageMode?: string | null }) {
   const message = text(input.message, MAX_MESSAGE_CHARS + 1);
   if (!message || message.length > MAX_MESSAGE_CHARS || message.includes("\u0000")) throw new Error("Сообщение слишком большое или содержит недопустимые символы");
   const config = adminAssistantConfig();
@@ -531,7 +539,7 @@ export async function runAssistantThread(input: { threadId: string; organization
   await prisma.aIAssistantThread.update({ where: { id: thread.id }, data: { title: thread.title === "Новый разговор" ? titleForMessage(message) : thread.title, lastMessageAt: new Date() } });
   const clientMessageMode = detectClientMessageMode(message, input.clientMessageMode);
   const startedAt = run.startedAt.getTime();
-  if (clientMessageMode) return createDeterministicClientMessage({ threadId: thread.id, organizationId: input.organizationId, runId: run.id, actor: input.actor, message, selectedQuoteId: input.selectedQuoteId, mode: clientMessageMode, startedAt });
+  if (clientMessageMode) return createDeterministicClientMessage({ threadId: thread.id, organizationId: input.organizationId, runId: run.id, actor: input.actor, message, selectedQuoteId: input.selectedQuoteId, quoteSetMessageId: input.quoteSetMessageId, mode: clientMessageMode, startedAt });
   if (!config.enabled) {
     const error = "OPENAI_API_KEY не задан для внутреннего ИИ-помощника";
     await prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "failed", errorCode: "assistant_not_configured", errorMessage: error, durationMs: Date.now() - startedAt, completedAt: new Date() } });
@@ -621,6 +629,7 @@ export async function runAssistantThread(input: { threadId: string; organization
             actorName: input.actor.name,
             actorRole: input.actor.role,
             employeeRequestedOriginalFluidOnly: employeeRequestedOriginalOnly,
+            requestMessage: message,
           });
           toolSources.push(...(executed.sources ?? []));
           let resultForModel: Record<string, unknown> = executed.result;
