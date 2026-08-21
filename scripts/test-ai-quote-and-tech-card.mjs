@@ -14,9 +14,11 @@ const {
   parseQuoteAndTechCardToolResult,
   QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
   quoteAndTechCardMaterials,
+  quoteAndTechCardSupplierRows,
   quoteStatus,
   scenarioStatus,
 } = await jiti.import("../src/lib/ai-assistant/quote-and-tech-card.ts");
+const { selectQuoteAndTechCardFallbackServiceCard } = await jiti.import("../src/lib/ai-assistant/tools.ts");
 const { jsonSafe } = await jiti.import("../src/lib/ai-assistant/json-safe.ts");
 const { Prisma } = await import("@prisma/client");
 
@@ -70,6 +72,18 @@ assert.equal(plan.hardBlockers.length, 0, "valid vehicle and specification are q
 const materials = quoteAndTechCardMaterials(parsedInput, true);
 assert.equal(materials.rosskoItems.length, 0, "local Valvoline blocks ROSSKO fallback ATF");
 assert.equal(materials.consumables.length, 0, "internal transmission filter never enters quote materials");
+const automaticSupplierRows = quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5);
+assert.deepEqual(automaticSupplierRows, [{ article: "ATF-SP4-OEM", brand: null, offerId: null, quantity: 5 }], "verified OEM ATF automatically becomes the supplier fallback only after local selection misses");
+assert.deepEqual(quoteAndTechCardSupplierRows(parsedInput, true, 5), [], "a local compatible fluid keeps the supplier ATF out of the quote");
+
+const fallbackCards = [
+  { id: "generic-atf", name: "Замена масла АКПП", code: null, searchText: null },
+  { id: "partial-atf", name: "АКПП: частичная замена", code: null, searchText: "ATF" },
+  { id: "machine-atf", name: "АКПП: аппаратная замена", code: null, searchText: "ATF" },
+];
+assert.equal(selectQuoteAndTechCardFallbackServiceCard(fallbackCards, "automatic_transmission", "partial")?.id, "partial-atf", "a matching service card is used only as a deterministic labour fallback");
+assert.equal(selectQuoteAndTechCardFallbackServiceCard(fallbackCards, "automatic_transmission", "machine")?.id, "machine-atf", "machine replacement cannot borrow the partial-replacement card");
+assert.equal(selectQuoteAndTechCardFallbackServiceCard([...fallbackCards, { id: "duplicate", name: "АКПП: частичная замена", code: null, searchText: "ATF" }], "automatic_transmission", "partial"), null, "ambiguous service-card fallbacks remain blocked instead of choosing a random tariff");
 
 const textQuantity = createQuoteAndTechCardPlan({ ...runtimeInput, service: { ...runtimeInput.service, partialVolumeLiters: "ориентир 4 л" } });
 assert.equal(textQuantity.options[0].billableQuantityLiters, null, "textual reasoning cannot become a billable quantity");

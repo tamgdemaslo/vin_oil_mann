@@ -147,10 +147,31 @@ export function parseQuoteAndTechCardInput(value: unknown): QuoteAndTechCardInpu
 export function quoteAndTechCardMaterials(input: QuoteAndTechCardInput, localFluidFound: boolean) {
   const allowedLocal = input.selectedProducts.filter((item) => item.role !== "internal_filter");
   const allowedConsumables = input.consumables.filter((item) => item.role !== "internal_filter");
+  const requiredFluidArticle = text(input.service.requiredFluidOemArticle, 80);
   const allowedRossko = input.rosskoItems
     .filter((item) => item.role !== "internal_filter")
-    .filter((item) => item.role !== "fluid" || (!localFluidFound && input.fluidMissingLocally && Boolean(input.service.requiredFluidOemArticle)));
+    .filter((item) => item.role !== "fluid" || (!localFluidFound && Boolean(requiredFluidArticle) && text(item.article, 80).toUpperCase() === requiredFluidArticle.toUpperCase()));
   return { selectedProducts: allowedLocal, consumables: allowedConsumables, rosskoItems: allowedRossko };
+}
+
+/**
+ * The builder owns the supplier fallback. It only appears after a failed local
+ * compatibility-and-stock check and is limited to the verified OEM article,
+ * never a model-suggested alternative ATF.
+ */
+export function quoteAndTechCardSupplierRows(input: QuoteAndTechCardInput, localFluidFound: boolean, quantity: number | null) {
+  const materialRows = quoteAndTechCardMaterials(input, localFluidFound);
+  const rows = materialRows.rosskoItems.map(({ article, brand, offerId, quantity: itemQuantity }) => ({ article, brand: brand ?? null, offerId: offerId ?? null, quantity: itemQuantity }));
+  const requiredFluidArticle = text(input.service.requiredFluidOemArticle, 80);
+  const canAddFallback = input.service.materialsOwner === "service"
+    && !localFluidFound
+    && Boolean(requiredFluidArticle)
+    && typeof quantity === "number"
+    && Number.isFinite(quantity)
+    && quantity > 0;
+  const hasRequiredFluid = rows.some((row) => row.article.toUpperCase() === requiredFluidArticle.toUpperCase());
+  if (canAddFallback && !hasRequiredFluid) rows.unshift({ article: requiredFluidArticle, brand: null, offerId: null, quantity });
+  return rows;
 }
 
 export type QuoteAndTechCardRules = { literRoundingStep: number; transmissionMachineExchangeMultiplier: number; transmissionMinimumBillableLiters: number; maxTechnicalVerificationPasses: number };

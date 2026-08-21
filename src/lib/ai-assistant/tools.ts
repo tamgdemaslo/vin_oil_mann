@@ -9,7 +9,7 @@ import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { fluidSpecificationExcerpt, fluidSpecificationTokens, selectPreferredLocalFluid, shouldRequireOriginalFluid, type LocalFluidSelection } from "./material-selection";
-import { buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
+import { buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -722,6 +722,36 @@ function procedureForTechCard(code: "partial" | "machine" | "standard", serviceT
   return serviceType === "engine_oil" ? "oil_change" : "replace";
 }
 
+type FallbackServiceCard = { id: string; name: string; code: string | null; searchText: string | null };
+
+/** Selects only an unambiguous service-card fallback; special AI tariffs keep priority in resolveLaborPrice. */
+export function selectQuoteAndTechCardFallbackServiceCard(cards: FallbackServiceCard[], serviceType: string, procedure: "partial" | "machine" | "standard") {
+  const requiredPatterns = serviceType === "engine_oil" && procedure === "standard"
+    ? [/(двигател|мотор)/iu, /(масл|oil|замен)/iu]
+    : ["automatic_transmission", "cvt", "dsg", "manual_transmission"].includes(serviceType) && procedure === "partial"
+      ? [/(акпп|atf|трансмис|автоматическ)/iu, /(частич|partial|слив)/iu]
+      : ["automatic_transmission", "cvt", "dsg", "manual_transmission"].includes(serviceType) && procedure === "machine"
+        ? [/(акпп|atf|трансмис|автоматическ)/iu, /(аппарат|machine|полн\S*\s+замен)/iu]
+        : null;
+  if (!requiredPatterns) return null;
+  const matches = cards.filter((card) => {
+    const searchable = `${card.name} ${card.code ?? ""} ${card.searchText ?? ""}`;
+    return requiredPatterns.every((pattern) => pattern.test(searchable));
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function quoteAndTechCardFallbackServiceProductId(serviceType: string, procedure: "partial" | "machine" | "standard") {
+  const branchId = getScopedBranchId();
+  const cards = await prisma.localProduct.findMany({
+    where: { branchId, archived: false, entityType: "service", pricingMode: { not: "assistant_rule" }, salePriceCents: { gt: 0 } },
+    select: { id: true, name: true, code: true, searchText: true },
+    take: 100,
+    orderBy: [{ name: "asc" }],
+  });
+  return selectQuoteAndTechCardFallbackServiceCard(cards, serviceType, procedure)?.id ?? null;
+}
+
 function uniqueWarnings(values: string[]) {
   return [...new Set(values.map((value) => text(value, 360)).filter(Boolean))].slice(0, 24);
 }
@@ -754,8 +784,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       ? await automaticLocalFluidSelection({ serviceFamily: "transmission_fluid", materialsOwner: "service", requiredFluidSpec: input.service.requiredFluidSpec, requiredFluidVolumeLiters: option.billableQuantityLiters, fluidPreference: "prefer_local_compatible" }, context)
       : null;
     const materials = quoteAndTechCardMaterials(input, Boolean(localFluid));
-    const supplierRows = materials.rosskoItems
-      .map(({ article, brand, offerId, quantity }) => ({ article, brand: brand ?? null, offerId: offerId ?? null, quantity }));
+    const supplierRows = quoteAndTechCardSupplierRows(input, Boolean(localFluid), option.billableQuantityLiters);
+    const fallbackServiceProductId = await quoteAndTechCardFallbackServiceProductId(input.service.type, option.code);
     const quoteArgs: Record<string, unknown> = {
       serviceFamily: serviceFamilyForTechCard(input.service.type),
       procedureType: procedureForTechCard(option.code, input.service.type),
@@ -774,7 +804,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       consumables: materials.consumables,
       rosskoItems: supplierRows,
       manualLaborPriceCents: null,
-      fallbackServiceProductId: null,
+      fallbackServiceProductId,
       serviceName: input.service.name,
       selectedScenario: option.label,
       optionalItems: input.service.filterAccess === "internal_requires_disassembly" ? ["Внутренний фильтр не входит в услугу: для его замены требуется разборка агрегата."] : [],
