@@ -1720,6 +1720,10 @@ export default function RestockClient() {
                   <ShoppingCart size={15} />
                   Корзина ({rosskoCartTotal})
                 </EcoButton>
+                <Link className="eco-btn" href="/inventory/receipts?rossko=1">
+                  <PackageSearch size={15} />
+                  Заказы ROSSKO
+                </Link>
               </div>
             ) : isSetupMode ? (
               <p className="eco-restock-command-note">Откройте товар из списка ниже и укажите категорию либо поставщика.</p>

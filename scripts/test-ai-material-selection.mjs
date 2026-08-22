@@ -8,6 +8,8 @@ const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), 
 const {
   fluidSpecificationMatches,
   fluidSpecificationExcerpt,
+  fluidSpecificationAlternatives,
+  fluidSpecificationSearchTokenGroups,
   normalizeFluidSpecification,
   packageVolumeLiters,
   employeeRequestedOriginalFluidOnly,
@@ -43,6 +45,22 @@ assert.equal(selected.productId, "valvoline-cvt");
 assert.equal(selected.quantity, 8);
 assert.equal(selected.totalCents, 1_592_000);
 assert.match(selected.compatibilityEvidence, /toyota\s+cvtf fe/i);
+
+// The model can explicitly offer alternatives as "SP-IV / SP4-M".  A local
+// product must be found if it states one of those alternatives; the resolver
+// must not require the same catalog row to contain both names.
+const hyundaiSpIv = {
+  ...valvoline,
+  id: "valvoline-hyundai-sp-iv",
+  name: "ATF Hyundai/Kia SP-IV, 1 л",
+  atf: "Hyundai/Kia ATF SP-IV; Toyota ATF WS",
+  searchText: "Valvoline ATF Hyundai Kia SP-IV",
+};
+assert.deepEqual(fluidSpecificationAlternatives("Hyundai ATF SP-IV / SP4-M"), ["Hyundai ATF SP-IV", "SP4-M"]);
+assert.deepEqual(fluidSpecificationSearchTokenGroups("Hyundai ATF SP-IV / SP4-M"), [["hyundai", "atf", "sp", "iv"], ["sp4", "m"]]);
+assert.equal(fluidSpecificationMatches(hyundaiSpIv, "Hyundai ATF SP-IV / SP4-M"), true);
+assert.match(fluidSpecificationExcerpt(hyundaiSpIv.atf, "Hyundai ATF SP-IV / SP4-M"), /Hyundai\/Kia ATF SP-IV/i);
+assert.equal(selectPreferredLocalFluid([hyundaiSpIv], "Hyundai ATF SP-IV / SP4-M", 5)?.productId, "valvoline-hyundai-sp-iv");
 
 const insufficient = selectPreferredLocalFluid([{ ...valvoline, availableUnits: 7.99 }], "Toyota CVTF FE", 8);
 assert.equal(insufficient, null);

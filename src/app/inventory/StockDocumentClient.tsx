@@ -367,6 +367,7 @@ function displayCells(cells: KnownCell[]) {
 export default function StockDocumentClient({ type }: { type: StockDocumentType }) {
   const searchParams = useSearchParams();
   const autoOpenedDocumentRef = useRef<string | null>(null);
+  const autoOpenedRosskoRef = useRef(false);
   const isReceipt = type === "receipt";
   const title = isReceipt ? "Приёмка" : "Корректировка остатка";
   const actionLabel = isReceipt ? "Создать приёмку" : "Списать / скорректировать";
@@ -730,6 +731,12 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
     void loadAll(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
+
+  useEffect(() => {
+    if (!isReceipt || searchParams.get("rossko") !== "1" || autoOpenedRosskoRef.current) return;
+    autoOpenedRosskoRef.current = true;
+    setRosskoReceiptOpen(true);
+  }, [isReceipt, searchParams]);
 
   useEffect(() => {
     const documentId = searchParams.get("document");
@@ -2624,7 +2631,7 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
           {isReceipt && (
             <EcoButton type="button" onClick={() => setRosskoReceiptOpen(true)} disabled={allBranchesMode}>
               <Truck size={15} />
-              Принять из ROSSKO
+              Заказы ROSSKO
             </EcoButton>
           )}
           <EcoButton type="button" variant="primary" onClick={openDocumentForm}>

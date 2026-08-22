@@ -456,13 +456,13 @@ export default function RosskoReceiptWorkspace({
 
   return (
     <div className="eco-restock-cart-shell is-workspace" role="presentation">
-      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть приёмку из ROSSKO" onClick={onClose} />
+      <button type="button" className="eco-restock-cart-backdrop" aria-label="Закрыть управление заказами ROSSKO" onClick={onClose} />
       <section className="eco-restock-cart-drawer eco-restock-incoming-drawer is-workspace" role="dialog" aria-modal="true" aria-labelledby="rossko-workspace-title">
         <header className="eco-restock-cart-head">
           <div>
-            <span>Склад · Приёмка</span>
-            <h2 id="rossko-workspace-title">Приёмка из ROSSKO</h2>
-            <p>Актуальные статусы GetOrders, локальные закрытия и история приёмок.</p>
+            <span>Склад · Поставки</span>
+            <h2 id="rossko-workspace-title">Заказы ROSSKO</h2>
+            <p>Статусы поставок, локальное закрытие ожидаемых позиций и переход к приёмке.</p>
           </div>
           <div className="eco-restock-incoming-head-actions">
             <span>{relativeUpdatedAt(updatedAt)}</span>

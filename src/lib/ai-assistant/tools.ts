@@ -8,7 +8,7 @@ import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/li
 import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
-import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationTokens, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
+import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
 import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
@@ -524,8 +524,8 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
   if (originalOnlyOverride) return { selection: null, candidates: [], fallbackReason: "Сотрудник явно запросил оригинальную жидкость.", originalOnlyOverride: true };
   const requiredSpec = text(args.requiredFluidSpec, 160);
   const requiredLiters = number(args.requiredFluidVolumeLiters);
-  const tokens = fluidSpecificationTokens(requiredSpec).filter((token) => token.length >= 2).slice(0, 8);
-  if (!requiredSpec || requiredLiters <= 0 || tokens.length < 2) {
+  const alternativeTokens = fluidSpecificationSearchTokenGroups(requiredSpec);
+  if (!requiredSpec || requiredLiters <= 0 || !alternativeTokens.length) {
     throw new Error("Для трансмиссионного расчёта укажите requiredFluidSpec и requiredFluidVolumeLiters, чтобы backend проверил локальное масло");
   }
   const branchId = getScopedBranchId();
@@ -542,7 +542,10 @@ async function automaticLocalFluidResolution(args: Record<string, unknown>, cont
       // Keep zero-price and out-of-stock matches in the trace.  The shared
       // selector below rejects them deterministically, but the employee can
       // then see why each local candidate was not eligible.
-      AND: tokens.map((token) => ({ OR: fields(token) })),
+      // A model may give documented alternatives as "SP-IV / SP4-M".  Query
+      // each alternative separately, then let the shared selector verify that
+      // the chosen product explicitly supports one of them.
+      OR: alternativeTokens.map((tokens) => ({ AND: tokens.map((token) => ({ OR: fields(token) })) })),
     },
     select: {
       id: true,

@@ -92,6 +92,24 @@ export function fluidSpecificationTokens(value: string) {
   return normalizedWords(value).filter((word) => !FLUID_STOP_WORDS.has(word));
 }
 
+/**
+ * A slash surrounded by spaces is how the assistant represents a documented
+ * alternative specification (for example, "SP-IV / SP4-M").  It is not the
+ * same as a slash inside a manufacturer name such as "Hyundai/Kia".
+ */
+export function fluidSpecificationAlternatives(value: string) {
+  const source = String(value ?? "").trim();
+  const alternatives = source.split(/\s+\/\s+/u).map((part) => part.trim()).filter(Boolean);
+  return alternatives.length > 1 ? alternatives : source ? [source] : [];
+}
+
+/** Token groups for the local-catalog prefilter; groups are alternatives, not cumulative requirements. */
+export function fluidSpecificationSearchTokenGroups(value: string) {
+  return fluidSpecificationAlternatives(value)
+    .map((alternative) => fluidSpecificationTokens(alternative).slice(0, 8))
+    .filter((tokens) => tokens.length >= 2 || tokens.some((token) => /\d/u.test(token)));
+}
+
 export function normalizeFluidSpecification(value: string) {
   return fluidSpecificationTokens(value).join(" ");
 }
@@ -112,8 +130,10 @@ export function fluidSpecificationMatchIndex(source: string, requiredSpec: strin
 export function fluidSpecificationExcerpt(sourceValue: string, requiredSpec: string, max = 360) {
   const source = String(sourceValue ?? "").trim();
   if (!source) return null;
-  const foundAt = fluidSpecificationMatchIndex(source, requiredSpec);
-  if (foundAt < 0) return null;
+  const matchingAlternative = fluidSpecificationAlternatives(requiredSpec).find((alternative) => fluidSpecificationMatchesSingle(source, alternative));
+  if (!matchingAlternative) return null;
+  const foundAt = fluidSpecificationMatchIndex(source, matchingAlternative);
+  if (foundAt < 0) return source.length <= max ? source : `${source.slice(0, Math.max(1, max - 1))}…`;
   const start = Math.max(0, foundAt - Math.floor(max / 3));
   const end = Math.min(source.length, start + max);
   return `${start > 0 ? "…" : ""}${source.slice(start, end)}${end < source.length ? "…" : ""}`;
@@ -127,17 +147,35 @@ function technicalText(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "
   return [candidate.atf, candidate.oemAtf, candidate.searchText].filter(Boolean).join("\n");
 }
 
-export function fluidSpecificationMatches(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "searchText">, requiredSpec: string) {
-  const source = technicalText(candidate);
+function normalizedSourceVariants(source: string) {
+  const normalized = normalizeFluidSpecification(source);
+  // Catalogs commonly state a shared application as "Hyundai/Kia".  Removing
+  // the joined second make preserves the stated specification (SP-IV remains
+  // mandatory) while allowing a Hyundai-only request to match that evidence.
+  return [
+    normalized,
+    normalized.replace(/\bhyundai kia\b/gu, "hyundai"),
+    normalized.replace(/\bhyundai kia\b/gu, "kia"),
+    normalized.replace(/\bkia hyundai\b/gu, "hyundai"),
+    normalized.replace(/\bkia hyundai\b/gu, "kia"),
+  ];
+}
+
+function fluidSpecificationMatchesSingle(source: string, requiredSpec: string) {
   const normalizedRequired = normalizeFluidSpecification(requiredSpec);
   const normalizedSource = normalizeFluidSpecification(source);
   if (!normalizedRequired || !normalizedSource) return false;
-  if (normalizedSource.includes(normalizedRequired)) return true;
+  if (normalizedSourceVariants(source).some((variant) => variant.includes(normalizedRequired))) return true;
 
   const codes = specificationCodes(requiredSpec);
   if (!codes.length || !codes.every((code) => source.toLocaleLowerCase("ru-RU").includes(code.toLocaleLowerCase("ru-RU")))) return false;
   const nonNumericTokens = fluidSpecificationTokens(requiredSpec).filter((token) => /\p{L}/u.test(token));
   return nonNumericTokens.length === 0 || nonNumericTokens.every((token) => normalizedSource.includes(token));
+}
+
+export function fluidSpecificationMatches(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "searchText">, requiredSpec: string) {
+  const source = technicalText(candidate);
+  return fluidSpecificationAlternatives(requiredSpec).some((alternative) => fluidSpecificationMatchesSingle(source, alternative));
 }
 
 function localizedNumber(value: string) {
