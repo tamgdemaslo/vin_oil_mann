@@ -24,6 +24,8 @@ const {
 const {
   assertLocalFirstInvariant,
   assertQuoteAndTechCardOptionIntegrity,
+  assertServicePackageIntegrity,
+  classifyQuoteAndTechCardFailure,
   LocalFirstInvariantError,
   QuoteAndTechCardIntegrityError,
   requestedDateRangeFromText,
@@ -105,12 +107,88 @@ assert.deepEqual(plan.options[1].quantityTrace, {
 }, "quantity trace records capacity, settings and rounding rule");
 assert.equal(plan.techCardWarnings.some((warning) => /фильтр|epc|заказ/iu.test(warning)), false, "internal-filter policy removes search instructions from tech-card warnings");
 assert.deepEqual(plan.filterPolicy, {
+  presence: "present",
+  access: "internal_requires_disassembly",
+  tgmAction: "do_not_replace",
+  filterPartRequiredForQuote: false,
+  panServiceRequired: false,
+  reason: "Фильтр находится внутри агрегата; его замена требует разборки коробки и не входит в стандартную замену жидкости.",
+  evidence: null,
   replaceFilter: false,
   requiredForQuote: false,
   searchPart: false,
   rosskoSearch: false,
   customerText: "Фильтр на этой АКПП находится внутри агрегата и для его замены требуется разборка коробки, поэтому при стандартной замене масла мы его не меняем.",
 }, "internal filter policy is deterministic and customer-safe");
+assert.deepEqual(plan.options[1].servicePackage, {
+  procedure: "machine",
+  diagnosticsRequired: true,
+  machineExchange: true,
+  chemicalFlush: false,
+  panRemoval: false,
+  filterReplacement: false,
+  levelAdjustment: true,
+  requiredParts: [],
+  requiredHardware: [],
+  includedOperations: ["Диагностика АКПП до аппаратной замены", "Аппаратная замена жидкости", "Контроль и корректировка уровня жидкости"],
+}, "service package is deterministic and does not promise an internal-filter replacement");
+
+const panServicePlan = createQuoteAndTechCardPlan({
+  ...runtimeInput,
+  service: {
+    ...runtimeInput.service,
+    filterAccess: "pan_service",
+    filterEvidence: "OEM: фильтр меняется после снятия сервисного поддона.",
+  },
+});
+assert.deepEqual(panServicePlan.filterPolicy, {
+  presence: "present",
+  access: "pan_service",
+  tgmAction: "replace_with_pan",
+  filterPartRequiredForQuote: true,
+  panServiceRequired: true,
+  reason: "Фильтр доступен при снятии сервисного поддона и должен входить в сервис с поддоном.",
+  evidence: "OEM: фильтр меняется после снятия сервисного поддона.",
+  replaceFilter: true,
+  requiredForQuote: true,
+  searchPart: true,
+  rosskoSearch: true,
+  customerText: "Фильтр доступен при снятии сервисного поддона: в сервис с поддоном его включаем только вместе с подтверждёнными прокладкой и крепежом.",
+}, "a pan-service filter has a distinct structured policy even when the customer did not mention a filter");
+assert.equal(panServicePlan.options[0].servicePackage.panRemoval, true, "pan service package requires pan removal");
+assert.equal(panServicePlan.options[0].servicePackage.filterReplacement, true, "pan service package requires the accessible filter");
+assert.equal(panServicePlan.options[0].servicePackage.requiredParts[0]?.type, "external_filter", "the required filter is machine-readable");
+
+const integratedPanPlan = createQuoteAndTechCardPlan({
+  ...runtimeInput,
+  service: { ...runtimeInput.service, filterAccess: "integrated_with_pan" },
+});
+assert.equal(integratedPanPlan.filterPolicy.access, "integrated_with_pan", "integrated pan is not conflated with a removable filter");
+assert.equal(integratedPanPlan.options[0].servicePackage.requiredParts[0]?.type, "integrated_pan", "integrated pan becomes a distinct required part");
+
+const manualMismatchPlan = createQuoteAndTechCardPlan({
+  ...runtimeInput,
+  vehicleDisplayName: "Volkswagen Golf · WVWZZZ1KZBW588069",
+  vehicle: { displayName: "Volkswagen Golf", snapshot: { transmissionType: "MECHANICAL" } },
+});
+assert.equal(manualMismatchPlan.hardBlockers[0]?.code, "TRANSMISSION_SERVICE_MISMATCH", "a VIN-resolved manual transmission cannot enter an ATF quote path");
+
+const unverifiedHybridPlan = createQuoteAndTechCardPlan({
+  ...runtimeInput,
+  vehicle: { displayName: "Audi Q5 Hybrid", snapshot: { fuelType: "Hybrid", transmissionType: "Automatic" } },
+  service: { ...runtimeInput.service, aggregate: "0BK" },
+  evidence: [{ source: "Catalog", fact: "Audi Q5 Hybrid; ATF needs verification.", status: "needs_verification" }],
+});
+assert.equal(unverifiedHybridPlan.hardBlockers.some((blocker) => blocker.code === "HYBRID_TRANSMISSION_NOT_VERIFIED"), true, "hybrid transmissions require a sourced aggregate/specification branch before a quote");
+assert.equal(unverifiedHybridPlan.hardBlockers.some((blocker) => blocker.code === "SAFETY_CRITICAL_POWERTRAIN_PROFILE_MISMATCH"), true, "the Audi Q5 Hybrid family cannot fall back to a conventional 0BK/ZF branch");
+
+const verifiedQ5HybridPlan = createQuoteAndTechCardPlan({
+  ...runtimeInput,
+  vehicle: { displayName: "Audi Q5 Hybrid", aggregateCode: "0BW", snapshot: { fuelType: "Hybrid", transmissionType: "Automatic" } },
+  service: { ...runtimeInput.service, aggregate: "0BW", fluidSpec: undefined, requiredFluidSpec: "VW G 060 162 A2" },
+  evidence: [{ source: "Audi OEM", fact: "Audi Q5 Hybrid 0BW requires VW G 060 162 A2.", status: "confirmed", url: "https://static.nhtsa.gov/odi/tsbs/2015/MC-10120918-9999.pdf" }],
+});
+assert.equal(verifiedQ5HybridPlan.hardBlockers.some((blocker) => /HYBRID|SAFETY_CRITICAL/u.test(blocker.code)), false, "the correct hybrid family profile is allowed without a VIN-specific exception");
 
 const localValvoline = {
   id: "valvoline-atf",
@@ -134,17 +212,20 @@ const materials = quoteAndTechCardMaterials(parsedInput, true);
 assert.equal(materials.rosskoItems.length, 0, "A: local fluid blocks supplier fallback ATF");
 assert.equal(materials.consumables.length, 0, "J: inaccessible internal filter never enters quote materials");
 assert.deepEqual(quoteAndTechCardMaterials(parsedInput, false).rosskoItems.map((item) => item.article), ["04500-00115"], "B: OEM article is used only as verified fallback if local fluid is absent");
-assert.deepEqual(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5), [{ article: "04500-00115", brand: null, offerId: null, quantity: 5 }], "supplier fallback is explicit and controlled");
+assert.deepEqual(quoteAndTechCardSupplierRows({ ...parsedInput, rosskoItems: [] }, false, 5), [{ article: "04500-00115", brand: null, offerId: null, quantity: 5, role: "fluid" }], "supplier fallback is explicit and controlled");
 assert.deepEqual(quoteAndTechCardSupplierRows(parsedInput, true, 5), [], "A: no supplier ATF is added with a local compatible product");
 
 const primaryFluid = applyBillableQuantityToPrimaryFluid([{ productId: "valvoline-atf", quantity: 12.41, role: "fluid" }], 13, true);
 assert.equal(primaryFluid[0].quantity, 13, "one billable value is reused by product line and quote");
 const materialTrace = {
   requiredSpecification: "Hyundai/Kia ATF SP-IV",
+  oemRequirement: { specification: "Hyundai/Kia ATF SP-IV", evidence: "Hyundai/Kia ATF SP-IV" },
   oemReference: { brand: "Hyundai/Kia", article: "04500-00115" },
   localCandidates: evaluatedLocal.candidates,
   selectedLocalCandidate: evaluatedLocal.candidates[0],
+  compatibleProduct: { productId: "valvoline-atf", catalogName: localValvoline.name, compatibilityEvidence: "Hyundai/Kia ATF SP-IV" },
   selectedProduct: { source: "local_catalog", productId: "valvoline-atf", catalogName: localValvoline.name, customerDisplayName: "Valvoline ATF" },
+  selectedSellableProduct: { source: "local_catalog", productId: "valvoline-atf", catalogName: localValvoline.name, customerDisplayName: "Valvoline ATF" },
   localAvailableQuantity: 59.96,
   requiredQuantity: 13,
   fallbackSupplierUsed: false,
@@ -178,17 +259,20 @@ const machineTotal = machineFluidLine.totalCents + machineLaborLine.totalCents +
 const options = [
   {
     code: "partial", label: "Частичная замена", customerDisplayName: "Частичная замена масла в АКПП", status: "ready",
-    technicalQuantityLiters: 4.3, billableQuantityLiters: 5, quantityTrace: plan.options[0].quantityTrace, materialSelectionTrace: { ...materialTrace, requiredQuantity: 5, selectedLocalCandidate: { ...evaluatedLocal.candidates[0], requiredQuantity: 5 } },
+    technicalQuantityLiters: 4.3, billableQuantityLiters: 5, quantityTrace: plan.options[0].quantityTrace, servicePackage: plan.options[0].servicePackage, materialSelectionTrace: { ...materialTrace, requiredQuantity: 5, selectedLocalCandidate: { ...evaluatedLocal.candidates[0], requiredQuantity: 5 } },
     lines: [partialFluidLine, partialLaborLine, roundingLine], totalCents: partialTotal, maximumTotalCents: null, validUntil: "2026-08-30", blockers: [], warnings: [],
   },
   {
     code: "machine", label: "Аппаратная замена", customerDisplayName: "Аппаратная замена масла в АКПП", status: "ready",
-    technicalQuantityLiters: 12.41, billableQuantityLiters: 13, quantityTrace: plan.options[1].quantityTrace, materialSelectionTrace: materialTrace,
+    technicalQuantityLiters: 12.41, billableQuantityLiters: 13, quantityTrace: plan.options[1].quantityTrace, servicePackage: plan.options[1].servicePackage, materialSelectionTrace: materialTrace,
     lines: [machineFluidLine, machineLaborLine, roundingLine], totalCents: machineTotal, maximumTotalCents: null, validUntil: "2026-08-30", blockers: [], warnings: [],
   },
 ];
 assert.doesNotThrow(() => assertQuoteAndTechCardOptionIntegrity(options[1]), "quantity and total invariant accepts the confirmed machine option");
 assert.throws(() => assertQuoteAndTechCardOptionIntegrity({ ...options[1], totalCents: machineTotal - 200 }), QuoteAndTechCardIntegrityError, "contradictory totals are rejected before persistence");
+assert.throws(() => assertServicePackageIntegrity({ servicePackage: panServicePlan.options[0].servicePackage, lines: [partialFluidLine, partialLaborLine] }), QuoteAndTechCardIntegrityError, "a filter/pan service cannot be quoted without its mandatory package part");
+assert.equal(classifyQuoteAndTechCardFailure(new Error("Unexpected JSON payload")).code, "QUOTE_CALCULATION_ERROR", "an unexpected calculator failure is not misreported as a missing labor rule");
+assert.equal(classifyQuoteAndTechCardFailure(new Error("Для услуги нет правила стоимости работ")).code, "MISSING_LABOR_RULE", "a true labor-rule gap has a distinct machine-readable blocker");
 assert.equal(options[1].lines.filter((line) => line.role === "fluid").length, 1, "A: OEM fluid is not added as a second priced line");
 assert.equal(options[1].materialSelectionTrace.oemReference.article, "04500-00115", "B: OEM article remains a compatibility reference");
 assert.equal(options[1].lines[0].catalogName, localValvoline.name, "B: quote line remains the selected local Valvoline product");
@@ -220,9 +304,12 @@ const techCard = {
   serviceName: "Диагностика и замена ATF в АКПП",
   serviceType: "automatic_transmission",
   requiredFluidSpec: "Hyundai/Kia ATF SP-IV",
-  filterPolicy: quoteAndTechCardFilterPolicy("internal_requires_disassembly").customerText,
+  filterPolicy: quoteAndTechCardFilterPolicy("internal_requires_disassembly"),
+  filterSummary: quoteAndTechCardFilterPolicy("internal_requires_disassembly").customerText,
   filter: quoteAndTechCardFilterPolicy("internal_requires_disassembly"),
   procedureVolumes: options.map((option) => ({ code: option.code, customerDisplayName: option.customerDisplayName, technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters })),
+  servicePackages: options.map((option) => option.servicePackage),
+  serviceHardware: [],
   levelTemperature: null,
   levelProcedure: null,
   servicePoints: ["Слив / залив / контроль"],
@@ -231,13 +318,14 @@ const techCard = {
   selectedMaterial: { name: "Valvoline ATF", catalogName: localValvoline.name, customerDisplayName: "Valvoline ATF", specification: "Hyundai/Kia ATF SP-IV", quantity: 13, compatibilityEvidence: "Hyundai/Kia ATF SP-IV" },
   warnings: ["Моменты затяжки не найдены."],
 };
-const customerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: { displayName: "Hyundai Tucson 2.0 CRDi · XWEJC81ADH0000196", aggregate: "A6LF2" }, quoteSet, techCard });
+const customerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: { displayName: "Hyundai Tucson 2.0 CRDi, VIN XWEJC81ADH0000196", aggregate: "A6LF2" }, quoteSet, techCard });
 assert.equal(customerMessage.status, "ready", "F: whole QuoteSet creates a single client message");
 assert.equal(compact(customerMoneyFromCents(1_396_200)), "13962₽", "G: formatter keeps exact 13 962 ₽ amount");
 assert.equal(compact(customerMessage.text).includes("13962₽"), true, "G: customer text does not re-round 13 962 ₽ to 14 000 ₽");
 assert.equal(compact(customerMessage.text).includes("30862₽"), true, "G: customer text keeps exact 30 862 ₽ amount");
 assert.match(customerMessage.text, /Valvoline/u, "H: customer text uses the cleaned product display name");
 assert.doesNotMatch(customerMessage.text, /Масло трансмиссионное|Округление|XWEJC81ADH0000196/u, "H/I: raw ERP name, rounding line and VIN never leak into client text");
+assert.doesNotMatch(customerMessage.text, /VIN\s*(?:,|\.|!|$)/iu, "H/I: removing a VIN also removes its label");
 assert.match(customerMessage.text, /5 л/u, "F: partial option stays in one client message");
 assert.match(customerMessage.text, /13 л/u, "F: machine option stays in the same client message");
 assert.match(customerMessage.text, /Фильтр на этой АКПП находится внутри агрегата/u, "J: filter explanation is human-readable");
@@ -263,8 +351,18 @@ const result = parseQuoteAndTechCardResult({
   scenario: "quote_and_tech_card", status: "partial", vehicle: { displayName: "Hyundai Tucson 2.0 CRDi", aggregate: "A6LF2" }, quoteSet, techCard, customerMessage, evidence: parsedInput.evidence,
 });
 assert.ok(result, "shared public contract accepts QuoteSet result with material and quantity traces");
-const legacyOptions = options.map(({ quantityTrace, materialSelectionTrace, ...option }) => option);
-const { procedureVolumes, ...legacyTechCard } = techCard;
+const legacyOptions = options.map((option) => {
+  const legacyOption = { ...option };
+  delete legacyOption.quantityTrace;
+  delete legacyOption.materialSelectionTrace;
+  delete legacyOption.servicePackage;
+  return legacyOption;
+});
+const legacyTechCard = { ...techCard };
+delete legacyTechCard.procedureVolumes;
+delete legacyTechCard.servicePackages;
+delete legacyTechCard.serviceHardware;
+delete legacyTechCard.filterSummary;
 const migratedLegacyResult = parseQuoteAndTechCardResult({
   scenario: "quote_and_tech_card",
   status: "partial",

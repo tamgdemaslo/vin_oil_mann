@@ -183,7 +183,7 @@ function QuoteAndTechCardView({ result }: { result: QuoteAndTechCardResult }) {
     ["Материал", result.techCard.selectedMaterial ? `${result.techCard.selectedMaterial.customerDisplayName} · ${quantity(result.techCard.selectedMaterial.quantity)} л` : null],
     ["Температура уровня", result.techCard.levelTemperature],
     ["Выставление уровня", result.techCard.levelProcedure],
-    ["Фильтр", result.techCard.filterPolicy],
+    ["Фильтр", result.techCard.filterSummary],
     ...result.techCard.procedureVolumes.map((option) => [option.customerDisplayName, option.billableQuantityLiters != null ? `Техн. ${quantity(option.technicalQuantityLiters ?? option.billableQuantityLiters)} л · к расчёту ${quantity(option.billableQuantityLiters)} л` : "Объём требует уточнения"] as [string, string]),
   ].filter((row): row is [string, string] => Boolean(row[1]));
   return <>
