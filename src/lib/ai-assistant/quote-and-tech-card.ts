@@ -99,6 +99,20 @@ generatedEvidence.items = generatedEvidenceItems;
 generatedInput.properties = { ...object(generatedInput.properties), evidence: generatedEvidence };
 generatedToolParameters.properties = { ...object(generatedToolParameters.properties), input: generatedInput };
 export const QUOTE_AND_TECH_CARD_TOOL_PARAMETERS = generatedToolParameters;
+export const QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS = {
+  type: "object",
+  additionalProperties: false,
+  required: ["inputs"],
+  properties: {
+    inputs: {
+      type: "array",
+      minItems: 2,
+      maxItems: 3,
+      description: "Независимые сервисы одного визита. Не объединяй объёмы или материалы между ними.",
+      items: generatedInput,
+    },
+  },
+};
 function normalizeToken(value: unknown) { return text(value, 120).toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-zа-я0-9_]/g, ""); }
 
 export function normalizeQuoteAndTechCardServiceType(value: unknown, context: Record<string, unknown> = {}): QuoteAndTechCardServiceType | null {
@@ -500,6 +514,23 @@ export const QuoteAndTechCardResultSchema = z.object({
 export type QuoteAndTechCardResult = z.infer<typeof QuoteAndTechCardResultSchema>;
 
 /**
+ * A complex visit keeps every requested service in its own established
+ * QuoteSet.  The bundle is only a presentation and customer-message wrapper:
+ * it never combines quantities, prices or technical assumptions across
+ * aggregates.
+ */
+export const QuoteAndTechCardBundleSchema = z.object({
+  scenario: z.literal("quote_and_tech_card_bundle"),
+  status: z.enum(["ready", "partial", "blocked"]),
+  vehicle: z.object({ displayName: z.string().min(1).max(180), aggregate: z.string().max(160).nullable() }).strict(),
+  results: z.array(QuoteAndTechCardResultSchema).min(2).max(3),
+  customerMessage: z.object({ status: z.enum(["ready", "blocked"]), text: z.string().max(6_000) }).strict(),
+  evidence: z.array(QuoteAndTechCardEvidenceSchema).max(40),
+}).strict();
+export type QuoteAndTechCardBundle = z.infer<typeof QuoteAndTechCardBundleSchema>;
+export type QuoteAndTechCardArtifact = QuoteAndTechCardResult | QuoteAndTechCardBundle;
+
+/**
  * Result attachments are durable chat records.  Keep the previous public
  * `quote` shape readable while new runs use QuoteSet, so opening an older
  * thread or clicking its client-message action cannot make its tech card
@@ -607,13 +638,32 @@ export function parseQuoteAndTechCardResult(value: unknown): QuoteAndTechCardRes
   const parsed = QuoteAndTechCardResultSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
 }
+
+export function parseQuoteAndTechCardArtifact(value: unknown): QuoteAndTechCardArtifact | null {
+  const row = object(value);
+  if (row.scenario === "quote_and_tech_card_bundle") {
+    const parsed = QuoteAndTechCardBundleSchema.safeParse(row);
+    return parsed.success ? parsed.data : null;
+  }
+  return parseQuoteAndTechCardResult(row);
+}
 /**
  * The tool envelope contains operational metadata (for example a quote
  * snapshot to persist) in addition to the customer-facing contract.  Keep
  * the public schema strict, but validate only its declared fields here.
  */
-export function parseQuoteAndTechCardToolResult(value: unknown): QuoteAndTechCardResult | null {
+export function parseQuoteAndTechCardToolResult(value: unknown): QuoteAndTechCardArtifact | null {
   const row = object(value);
+  if (row.scenario === "quote_and_tech_card_bundle") {
+    return parseQuoteAndTechCardArtifact({
+      scenario: row.scenario,
+      status: row.status,
+      vehicle: row.vehicle,
+      results: row.results,
+      customerMessage: row.customerMessage,
+      evidence: row.evidence,
+    });
+  }
   return parseQuoteAndTechCardResult({
     scenario: row.scenario,
     status: row.status,
@@ -679,4 +729,50 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
   const recommendationText = mode === "recommendation" && safeRecommendation ? `Дополнительно: ${safeRecommendation}` : "";
   return { status: "ready", text: [intro + preliminary, ...optionText, filter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
+}
+
+/** A single customer message for several independently calculated services. */
+export function buildQuoteAndTechCardBundleCustomerMessage(input: Pick<QuoteAndTechCardBundle, "vehicle" | "results">, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null): QuoteAndTechCardBundle["customerMessage"] {
+  const readyCards = input.results.map((card) => ({ card, options: card.quoteSet.options.filter((option) => option.status !== "blocked" && option.totalCents != null) })).filter((entry) => entry.options.length > 0);
+  if (!readyCards.length) {
+    const firstBlocked = input.results.flatMap((card) => [card.quoteSet.hardBlockers[0], ...card.quoteSet.options.flatMap((option) => option.blockers)]).find(Boolean);
+    return { status: "blocked", text: firstBlocked ? `Чтобы подготовить расчёт для ${customerVehicleDisplayName(input.vehicle.displayName)}, нужно уточнить: ${firstBlocked.requiredToContinue}` : `Для ${customerVehicleDisplayName(input.vehicle.displayName)} пока нельзя подготовить расчёт.` };
+  }
+  const showPrice = mode !== "short_without_price" && mode !== "recommendation";
+  const detailed = mode === "detailed_with_price" || mode === "recommendation";
+  const sections = readyCards.flatMap(({ card, options }) => options.map((option) => {
+    const material = option.lines.find((line) => line.role === "fluid") ?? option.lines.find((line) => line.type !== "labor" && line.type !== "rounding" && !line.internalOnly);
+    const labor = option.lines.find((line) => line.role === "labor" || line.type === "labor");
+    const materialName = material?.customerDisplayName ?? card.techCard.selectedMaterial?.customerDisplayName ?? "жидкость по допуску";
+    const title = input.results.length > 1 ? `${card.techCard.serviceName}\n${option.customerDisplayName}` : option.customerDisplayName;
+    if (mode === "only_final_price") return `${title} — ${customerMoneyFromCents(option.totalCents!)}`;
+    if (!detailed) return `${title}: ${materialName} — ${customerQuantity(option.billableQuantityLiters)} л${showPrice ? `, ${customerMoneyFromCents(option.totalCents!)}` : ""}.`;
+    return [
+      title,
+      `${materialName}${card.techCard.requiredFluidSpec ? ` с допуском ${card.techCard.requiredFluidSpec}` : ""} — ${customerQuantity(option.billableQuantityLiters)} л`,
+      showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
+      showPrice ? `Итого: ${customerMoneyFromCents(option.totalCents!)}` : "",
+    ].filter(Boolean).join("\n");
+  }));
+  const preliminary = readyCards.some(({ card }) => card.quoteSet.confidence === "preliminary") ? " Предварительная стоимость указана по текущим данным." : "";
+  const filter = readyCards.map(({ card }) => card.techCard.filterPolicy.tgmAction === "do_not_replace" && card.techCard.filterPolicy.presence === "present" ? card.techCard.filterPolicy.customerText : "").filter(Boolean);
+  const machineCondition = readyCards.some(({ options }) => options.some((option) => option.servicePackage.diagnosticsRequired)) ? "Перед аппаратной заменой сначала проведём диагностику коробки; при отсутствии противопоказаний сможем выполнить замену сразу." : "";
+  const unresolvedServices = input.results
+    .filter((card) => !readyCards.some((entry) => entry.card === card))
+    .map((card) => {
+      const blocker = card.quoteSet.hardBlockers[0] ?? card.quoteSet.options.flatMap((option) => option.blockers)[0];
+      return blocker ? `По услуге «${card.techCard.serviceName}»: ${blocker.requiredToContinue}` : `По услуге «${card.techCard.serviceName}» требуется уточнение перед расчётом.`;
+    });
+  const requestedDates = input.results.map((card) => card.quoteSet.requestedDates).find((value): value is string => Boolean(value));
+  const dates = requestedDates ? `Вы писали про ${requestedDates} — можем проверить свободное время.` : "Подберём удобное время и подтвердим запись.";
+  const recommendationText = mode === "recommendation" && recommendation ? `Дополнительно: ${recommendation}` : "";
+  const vehicle = customerVehicleDisplayName(input.vehicle.displayName);
+  const intro = mode === "only_final_price" ? `Стоимость обслуживания ${vehicle}:` : `Добрый день! Для вашего ${vehicle} подготовили расчёт по нескольким работам.`;
+  return { status: "ready", text: [intro + preliminary, ...sections, ...filter, machineCondition, ...unresolvedServices, recommendationText, dates].filter(Boolean).join("\n\n") };
+}
+
+export function buildQuoteAndTechCardArtifactCustomerMessage(input: QuoteAndTechCardArtifact, mode: QuoteAndTechCardCustomerMessageMode = "detailed_with_price", recommendation: string | null = null) {
+  return input.scenario === "quote_and_tech_card_bundle"
+    ? buildQuoteAndTechCardBundleCustomerMessage(input, mode, recommendation)
+    : buildQuoteAndTechCardCustomerMessage(input, mode, recommendation);
 }

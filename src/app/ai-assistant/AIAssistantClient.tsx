@@ -3,7 +3,7 @@
 import { Archive, ArchiveRestore, Bot, Building2, ChevronRight, CircleStop, Clipboard, ExternalLink, FileSearch, LoaderCircle, MessageSquarePlus, Send, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AIAssistantAnswerRenderer, { type AIServiceQuote } from "./AIAssistantAnswerRenderer";
-import { parseQuoteAndTechCardResult, type QuoteAndTechCardResult } from "@/lib/ai-assistant/quote-and-tech-card";
+import { parseQuoteAndTechCardArtifact, type QuoteAndTechCardArtifact } from "@/lib/ai-assistant/quote-and-tech-card";
 import { parseAIAssistantStructuredResponse, type AIAssistantStructuredResponse } from "@/lib/ai-assistant/structured-response";
 
 type Thread = { id: string; branchId: string; title: string; status: "active" | "archived"; createdById: string; lastMessageAt: string; createdAt: string; _count?: { messages: number } };
@@ -101,9 +101,9 @@ function structuredResponseForMessage(message: Message): AIAssistantStructuredRe
   return { summaryMarkdown: "", confirmed: [], assumptions: [], requiresVerification: [], recommendations: [], clientMessage: message.content };
 }
 
-function quoteAndTechCardForMessage(message: Message): QuoteAndTechCardResult | undefined {
+function quoteAndTechCardForMessage(message: Message): QuoteAndTechCardArtifact | undefined {
   if (attachmentKind(message) !== "quote_and_tech_card") return undefined;
-  return parseQuoteAndTechCardResult(asObject(message.attachmentsJson).quoteAndTechCard) ?? undefined;
+  return parseQuoteAndTechCardArtifact(asObject(message.attachmentsJson).quoteAndTechCard) ?? undefined;
 }
 
 export default function AIAssistantClient() {

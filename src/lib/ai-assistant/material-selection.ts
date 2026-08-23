@@ -103,11 +103,30 @@ export function fluidSpecificationAlternatives(value: string) {
   return alternatives.length > 1 ? alternatives : source ? [source] : [];
 }
 
+const EXPLICIT_FLUID_SIGNATURE_PATTERNS = [
+  /\b(?:aw|sp|dw)\s*[- ]?\s*(?:(?:\d+)(?:\s*[- ]?\s*[a-z0-9]{1,4})?|ii|iii|iv|v|vi)\b/giu,
+  /\b(?:jws|mercon|dexron|lifeguardfluid)\s*[- ]?\s*[a-z0-9]+\b/giu,
+  /\bg\s*\d{3}(?:\s*\d{3}){1,3}(?:\s*[a-z0-9]{1,3})?\b/giu,
+  /\bwss\s*[- ]?[a-z0-9-]+\b/giu,
+];
+
+/**
+ * An explicit approval such as AW-2 is sufficient compatibility evidence.
+ * It must not be hidden merely because the catalog describes the gearbox
+ * maker differently (or does not repeat it at all).
+ */
+export function explicitFluidSpecificationSignatures(value: string) {
+  const source = String(value ?? "");
+  return [...new Set(EXPLICIT_FLUID_SIGNATURE_PATTERNS.flatMap((pattern) => [...source.matchAll(pattern)].map((match) => normalizeFluidSpecification(match[0])).filter(Boolean)))];
+}
+
 /** Token groups for the local-catalog prefilter; groups are alternatives, not cumulative requirements. */
 export function fluidSpecificationSearchTokenGroups(value: string) {
-  return fluidSpecificationAlternatives(value)
-    .map((alternative) => fluidSpecificationTokens(alternative).slice(0, 8))
-    .filter((tokens) => tokens.length >= 2 || tokens.some((token) => /\d/u.test(token)));
+  const groups = fluidSpecificationAlternatives(value).flatMap((alternative) => [
+    fluidSpecificationTokens(alternative).slice(0, 8),
+    ...explicitFluidSpecificationSignatures(alternative).map((signature) => fluidSpecificationTokens(signature)),
+  ]).filter((tokens) => tokens.length >= 2 || tokens.some((token) => /\d/u.test(token)));
+  return groups.filter((tokens, index) => groups.findIndex((other) => other.join("\u0000") === tokens.join("\u0000")) === index);
 }
 
 export function normalizeFluidSpecification(value: string) {
@@ -147,6 +166,13 @@ function technicalText(candidate: Pick<LocalFluidCandidate, "atf" | "oemAtf" | "
   return [candidate.atf, candidate.oemAtf, candidate.searchText].filter(Boolean).join("\n");
 }
 
+function containsTokenSequence(source: string, needle: string) {
+  const sourceTokens = source.split(" ").filter(Boolean);
+  const needleTokens = needle.split(" ").filter(Boolean);
+  if (!needleTokens.length || needleTokens.length > sourceTokens.length) return false;
+  return sourceTokens.some((_, start) => needleTokens.every((token, offset) => sourceTokens[start + offset] === token));
+}
+
 function normalizedSourceVariants(source: string) {
   const normalized = normalizeFluidSpecification(source);
   // Catalogs commonly state a shared application as "Hyundai/Kia".  Removing
@@ -165,7 +191,10 @@ function fluidSpecificationMatchesSingle(source: string, requiredSpec: string) {
   const normalizedRequired = normalizeFluidSpecification(requiredSpec);
   const normalizedSource = normalizeFluidSpecification(source);
   if (!normalizedRequired || !normalizedSource) return false;
-  if (normalizedSourceVariants(source).some((variant) => variant.includes(normalizedRequired))) return true;
+  if (normalizedSourceVariants(source).some((variant) => containsTokenSequence(variant, normalizedRequired))) return true;
+
+  const signatures = explicitFluidSpecificationSignatures(requiredSpec);
+  if (signatures.some((signature) => containsTokenSequence(normalizedSource, signature))) return true;
 
   const codes = specificationCodes(requiredSpec);
   if (!codes.length || !codes.every((code) => source.toLocaleLowerCase("ru-RU").includes(code.toLocaleLowerCase("ru-RU")))) return false;

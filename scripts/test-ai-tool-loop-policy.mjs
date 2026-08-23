@@ -14,6 +14,7 @@ const {
 assert.equal(isAssistantCalculationTool("calculate_service_quote_v2"), true);
 assert.equal(isAssistantCalculationTool("calculate_quote_preview"), true);
 assert.equal(isAssistantCalculationTool("build_quote_and_tech_card"), true);
+assert.equal(isAssistantCalculationTool("build_quote_and_tech_card_bundle"), true);
 assert.equal(isAssistantCalculationTool("search_rossko"), false);
 
 assert.equal(shouldFinalizeAssistantToolTurn({ turn: 1, maxToolTurns: 6, calculationCompleted: true }), true);
@@ -28,5 +29,7 @@ assert.match(runner, /tool_choice: "none"/);
 assert.match(runner, /status: "failed_run_timeout"/);
 assert.match(runner, /"failed_tool_limit"/);
 assert.match(runner, /Остался один цикл инструментов/);
+assert.match(runner, /build_quote_and_tech_card_bundle/);
+assert.match(runner, /complex_request_requires_bundle/);
 
 console.log("AI tool loop policy tests — passed");

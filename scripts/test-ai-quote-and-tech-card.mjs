@@ -7,11 +7,14 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { alias: { "@": resolve(process.cwd(), "src") } });
 const {
   applyBillableQuantityToPrimaryFluid,
+  buildQuoteAndTechCardArtifactCustomerMessage,
+  buildQuoteAndTechCardBundleCustomerMessage,
   buildQuoteAndTechCardCustomerMessage,
   createQuoteAndTechCardPlan,
   customerMoneyFromCents,
   normalizeQuoteAndTechCardInput,
   parseQuoteAndTechCardInput,
+  parseQuoteAndTechCardArtifact,
   parseQuoteAndTechCardResult,
   parseQuoteAndTechCardToolResult,
   QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
@@ -351,6 +354,57 @@ const result = parseQuoteAndTechCardResult({
   scenario: "quote_and_tech_card", status: "partial", vehicle: { displayName: "Hyundai Tucson 2.0 CRDi", aggregate: "A6LF2" }, quoteSet, techCard, customerMessage, evidence: parsedInput.evidence,
 });
 assert.ok(result, "shared public contract accepts QuoteSet result with material and quantity traces");
+
+const enginePlan = createQuoteAndTechCardPlan({
+  vehicle: { id: "vehicle-tucson", displayName: "Hyundai Tucson 2.0 CRDi", aggregateCode: null, snapshot: {} },
+  service: { type: "engine_oil", name: "Замена масла в двигателе", requiredFluidSpec: "PSA B71 2312", standardTechnicalQuantityLiters: 4, filterAccess: "none", serviceHardware: [], materialsOwner: "service" },
+  requestedProcedures: ["standard"], selectedProducts: [], consumables: [], rosskoItems: [], localCatalogChecked: true, fluidMissingLocally: false, softWarnings: [], evidence: [{ source: "OEM", fact: "Двигатель требует PSA B71 2312, объём 4 л.", status: "confirmed", url: null }],
+});
+const engineFluidLine = makeLine({ role: "fluid", type: "product", productId: "engine-oil", name: "Моторное масло PSA B71 2312", customerDisplayName: "Моторное масло 0W-30", quantity: 4, unitPriceCents: 150000 });
+const engineLaborLine = makeLine({ role: "labor", type: "labor", source: "labor_rule", name: "Работа: замена моторного масла", customerDisplayName: "Работа", quantity: 1, unitPriceCents: 0 });
+const engineOption = {
+  code: "standard", label: "Замена масла в двигателе", customerDisplayName: "Замена масла в двигателе", status: "ready",
+  technicalQuantityLiters: 4, billableQuantityLiters: 4, quantityTrace: enginePlan.options[0].quantityTrace, servicePackage: enginePlan.options[0].servicePackage, materialSelectionTrace: { ...materialTrace, requiredSpecification: "PSA B71 2312", requiredQuantity: 4, selectedLocalCandidate: { ...evaluatedLocal.candidates[0], requiredQuantity: 4 } },
+  lines: [engineFluidLine, engineLaborLine], totalCents: engineFluidLine.totalCents, maximumTotalCents: null, validUntil: "2026-08-30", blockers: [], warnings: [],
+};
+const engineQuoteSet = { id: "quote-set:vehicle-tucson:engine", vehicleId: "vehicle-tucson", serviceType: "engine_oil", requestedProcedures: ["standard"], requestedDates: "29–30 августа", status: "ready", confidence: "confirmed", options: [engineOption], hardBlockers: [], warnings: [] };
+const engineTechCard = {
+  ...techCard,
+  status: "ready",
+  serviceName: "Замена масла в двигателе",
+  serviceType: "engine_oil",
+  requiredFluidSpec: "PSA B71 2312",
+  filterPolicy: quoteAndTechCardFilterPolicy("none"),
+  filterSummary: quoteAndTechCardFilterPolicy("none").customerText,
+  filter: quoteAndTechCardFilterPolicy("none"),
+  procedureVolumes: [{ code: "standard", customerDisplayName: "Замена масла в двигателе", technicalQuantityLiters: 4, billableQuantityLiters: 4 }],
+  servicePackages: [engineOption.servicePackage],
+  selectedMaterial: { name: "Моторное масло 0W-30", catalogName: engineFluidLine.name, customerDisplayName: engineFluidLine.customerDisplayName, specification: "PSA B71 2312", quantity: 4, compatibilityEvidence: "PSA B71 2312" },
+};
+const engineCustomerMessage = buildQuoteAndTechCardCustomerMessage({ vehicle: result.vehicle, quoteSet: engineQuoteSet, techCard: engineTechCard });
+const engineResult = parseQuoteAndTechCardResult({ scenario: "quote_and_tech_card", status: "ready", vehicle: result.vehicle, quoteSet: engineQuoteSet, techCard: engineTechCard, customerMessage: engineCustomerMessage, evidence: [{ source: "OEM", fact: "Двигатель требует PSA B71 2312, объём 4 л.", status: "confirmed", url: null }] });
+assert.ok(engineResult, "engine service keeps the same checked QuoteSet contract");
+const bundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [engineResult, result] });
+assert.equal(bundleMessage.status, "ready", "a ready engine quote must not be lost beside a partial transmission tech card");
+assert.match(bundleMessage.text, /Замена масла в двигателе/u, "bundle customer text includes the engine service");
+assert.match(bundleMessage.text, /Частичная замена масла в АКПП/u, "bundle customer text includes the transmission service");
+assert.match(bundleMessage.text, /Моторное масло 0W-30/u, "bundle keeps an engine material separate from ATF");
+assert.match(bundleMessage.text, /Valvoline ATF/u, "bundle keeps the transmission material separate from engine oil");
+const bundle = parseQuoteAndTechCardArtifact({ scenario: "quote_and_tech_card_bundle", status: "partial", vehicle: result.vehicle, results: [engineResult, result], customerMessage: bundleMessage, evidence: [...engineResult.evidence, ...result.evidence] });
+assert.equal(bundle?.scenario, "quote_and_tech_card_bundle", "bundle is accepted as a strict public attachment contract");
+assert.equal(bundle?.results.length, 2, "bundle preserves two independent technical cards and quote sets");
+assert.equal(buildQuoteAndTechCardArtifactCustomerMessage(bundle).status, "ready", "deterministic customer-message actions also support a complex quote");
+assert.equal(parseQuoteAndTechCardToolResult({ ...bundle, quoteSnapshots: [{ argumentsValue: {}, preview: {} }], finalQuote: false })?.scenario, "quote_and_tech_card_bundle", "runner strips operational metadata before validating a complex quote attachment");
+const engineBlocker = { code: "SPECIFICATION_NOT_CONFIRMED", message: "Не подтверждён допуск моторного масла.", requiredToContinue: "Укажите VIN либо модель, год и допуск масла." };
+const blockedEngineResult = parseQuoteAndTechCardResult({
+  ...engineResult,
+  status: "blocked",
+  quoteSet: { ...engineQuoteSet, status: "blocked", options: [{ ...engineOption, status: "blocked", lines: [], totalCents: null, blockers: [engineBlocker] }], hardBlockers: [engineBlocker] },
+  customerMessage: { status: "blocked", text: "Нужен VIN." },
+});
+const partialBundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [blockedEngineResult, result] });
+assert.equal(partialBundleMessage.status, "ready", "a blocked engine line does not erase a ready transmission quote");
+assert.match(partialBundleMessage.text, /Замена масла в двигателе.*Укажите VIN/u, "the client message keeps the unresolved second service visible");
 const legacyOptions = options.map((option) => {
   const legacyOption = { ...option };
   delete legacyOption.quantityTrace;

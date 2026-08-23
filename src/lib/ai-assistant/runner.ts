@@ -10,7 +10,7 @@ import { AssistantToolError, assistantFunctionTools, executeAssistantTool, safeA
 import { createOpenAIClient } from "@/lib/openai-client";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { employeeRequestedOriginalFluidOnly } from "./material-selection";
-import { buildQuoteAndTechCardCustomerMessage, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { buildQuoteAndTechCardArtifactCustomerMessage, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardToolResult, type QuoteAndTechCardArtifact } from "./quote-and-tech-card";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import { jsonSafe } from "./json-safe";
 
@@ -107,10 +107,10 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
     "Для технических задач web-исследование обычно запускается раннером. Продолжай его, используя результаты и ссылки; не утверждай, что интернет не дал результатов, если в trace нет успешного web_search. Если инструмент web-поиска недоступен, не прекращай работу: продолжи с VIN, локальной базой, MANN и ROSSKO, явно отдели неподтверждённые технические данные и попроси финальную проверку только там, где она влияет на сценарий.",
     "Не останавливай расчёт из-за одного неподтверждённого параметра. Разделяй ПОДТВЕРЖДЕНО, РАБОЧЕЕ ДОПУЩЕНИЕ и ТРЕБУЕТ ФИНАЛЬНОЙ ПРОВЕРКИ. При средней уверенности дай полезный предварительный расчёт; при низкой — 2–3 сценария или один вопрос, только если ответ существенно меняет расчёт.",
     "Используй VIN максимально: сначала lookup_vehicle, затем данные автомобиля, историю и внешние каталоги. Если точный код агрегата не найден, продолжай по модели, двигателю, году, приводу, рынку и найденным OEM/каталожным связкам. Не перекладывай цифровой поиск на сотрудника.",
-    "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз: он вернёт независимые техкарту, варианты сметы и текст клиенту. Не вызывай после него calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество. Дополнительные проверки допускаются только когда они действительно меняют совместимость или цену, максимум два прохода.",
+    "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз для одной услуги. Если сотрудник явно запросил разные агрегаты одного визита (например, двигатель и АКПП), вызови вместо него build_quote_and_tech_card_bundle ровно один раз и передай независимый input для каждой услуги. Не теряй услугу и не смешивай её допуск, объём, товар или тариф с другой. Не вызывай после сценария calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество.",
     "Для замены масла считай услугу под ключ: жидкость, доступные без разборки фильтр/поддон, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Внутренний фильтр трансмиссии, требующий разборки агрегата, не включай в смету и не ищи для него ROSSKO: явно передай filterAccess=internal_requires_disassembly. После этого не ищи OE-номер, прокладки или связанные детали внутреннего фильтра и не добавляй в техкарту рекомендаций по его заказу.",
     "Для трансмиссионного расчёта всегда передавай в calculate_service_quote_v2 точный requiredFluidSpec, requiredFluidVolumeLiters и OEM-артикул основной жидкости в requiredFluidOemArticle. По умолчанию fluidPreference=prefer_local_compatible: не добавляй основную жидкость в selectedProducts, backend сам выберет совместимый локальный товар с достаточным остатком и заменит им поставщицкую жидкость. Название в OEM-документации вроде «Toyota Genuine CVT Fluid FE» фиксирует требуемую спецификацию, но само по себе не запрещает аналог с явно указанной совместимостью. fluidPreference=original_only допустим только если сотрудник явно потребовал оригинал или источник прямо запрещает аналоги. Оригинал из ROSSKO оставляй как запасной вариант до решения backend.",
-    "Для quote_and_tech_card материалы по умолчанию принадлежат сервису; customer допускается только если сотрудник явно указал материалы клиента. Локальный каталог всегда проверяй первым. ROSSKO передавай в build_quote_and_tech_card только для конкретных обязательных позиций, которых нет локально. Если сотрудник запросил частичную и аппаратную замену, передай обе в requestedProcedures и service.procedures: [partial, machine]; не теряй вариант, который пока нельзя посчитать. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
+    "Для quote_and_tech_card материалы по умолчанию принадлежат сервису; customer допускается только если сотрудник явно указал материалы клиента. Локальный каталог всегда проверяй первым. ROSSKO передавай в build_quote_and_tech_card только для конкретных обязательных позиций, которых нет локально. В комплексном сценарии локальный каталог и ROSSKO проверяются независимо для каждой услуги. Если сотрудник запросил частичную и аппаратную замену, передай обе в requestedProcedures и service.procedures: [partial, machine]; не теряй вариант, который пока нельзя посчитать. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
     "Тарифы ИИ-помощника: моторное масло — 0 ₽ с маслом сервиса / 1 500 ₽ с маслом клиента; частичная трансмиссия без поддона — 4 000 / 6 000 ₽; аппаратная без поддона — 5 000 / 8 000 ₽; частичная с поддоном и фильтром — 5 000 / 10 000 ₽; аппаратная с поддоном и фильтром — 6 000 / 12 000 ₽; два фильтра грубой очистки — 6 000 / 12 000 ₽ частично и 7 000 / 14 000 ₽ аппаратно. Материалы всегда отдельными строками. Тариф «материалы сервиса» применим только когда сервис продаёт основной объём жидкости; при смешанных материалах не выбирай тариф — запроси решение сотрудника.",
     "После технического исследования ищи точный OEM, номер производителя агрегата и кросс-номера в локальном каталоге. Если позиции нет локально — используй ROSSKO. Для воздушного и салонного фильтра используй подтверждённое правило сложности; иначе покажи диапазон 200–800 ₽ и попроси сотрудника выбрать точную цену.",
     "Для запроса без указанного способа обслуживания покажи применимые сценарии: минимум частичную замену и сервис с поддоном/фильтром; расширенную замену — только если она допустима. Покажи точную сумму по найденным позициям или честный диапазон, если конкретный комплект ещё уточняется.",
@@ -166,6 +166,15 @@ function isTechnicalRequest(message: string) {
   return TECHNICAL_REQUEST_RE.test(message);
 }
 
+function isComplexEngineAndTransmissionRequest(message: string) {
+  const source = String(message ?? "");
+  return /(?:двигател|моторн\S*\s*масл)/iu.test(source) && /(?:акпп|автоматическ\S*\s*(?:короб|трансмисс)|\batf\b|aisin|eat8|cvt|dsg)/iu.test(source);
+}
+
+function continuesCurrentTechnicalRequest(message: string) {
+  return /(?:текущ\S*\s+запрос|эт\S*\s+запрос|выполн\S*\s+(?:техническ\S*\s+подбор|расч[её]т)|сначала\s+выполн\S*\s+расч[её]т)/iu.test(message);
+}
+
 async function createDeterministicClientMessage(input: {
   threadId: string;
   organizationId: string;
@@ -181,12 +190,14 @@ async function createDeterministicClientMessage(input: {
   const quoteSetMessage = input.quoteSetMessageId
     ? await prisma.aIAssistantMessage.findFirst({ where: { id: input.quoteSetMessageId, threadId: input.threadId, organizationId: input.organizationId, role: "assistant" }, select: { attachmentsJson: true } })
     : null;
-  const quoteSet = quoteSetMessage ? parseQuoteAndTechCardResult(record(quoteSetMessage.attachmentsJson)?.quoteAndTechCard) : null;
+  const quoteSet = quoteSetMessage ? parseQuoteAndTechCardArtifact(record(quoteSetMessage.attachmentsJson)?.quoteAndTechCard) : null;
   const quote = quoteSet ? null : await getSelectedAssistantQuote({ organizationId: input.organizationId, threadId: input.threadId, quoteId: input.selectedQuoteId });
   const content = quoteSet
     ? (() => {
-      const customerMessage = buildQuoteAndTechCardCustomerMessage(quoteSet, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null);
-      return customerMessage.status === "ready" ? { message: customerMessage.text, quoteId: null, quoteSetId: quoteSet.quoteSet.id, mode: input.mode, includedPrice: input.mode !== "short_without_price" && input.mode !== "recommendation", usedBaseTotal: null, usedMaximumTotal: null, includedInternalWarnings: [], includedCustomerWarnings: [], callToAction: quoteSet.quoteSet.requestedDates ? `Проверить свободное время на ${quoteSet.quoteSet.requestedDates}` : "Подобрать удобное время" } : null;
+      const customerMessage = buildQuoteAndTechCardArtifactCustomerMessage(quoteSet, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null);
+      const firstQuoteSet = quoteSet.scenario === "quote_and_tech_card_bundle" ? quoteSet.results[0]?.quoteSet : quoteSet.quoteSet;
+      const requestedDates = quoteSet.scenario === "quote_and_tech_card_bundle" ? quoteSet.results.map((result) => result.quoteSet.requestedDates).find(Boolean) : quoteSet.quoteSet.requestedDates;
+      return customerMessage.status === "ready" ? { message: customerMessage.text, quoteId: null, quoteSetId: firstQuoteSet?.id ?? null, mode: input.mode, includedPrice: input.mode !== "short_without_price" && input.mode !== "recommendation", usedBaseTotal: null, usedMaximumTotal: null, includedInternalWarnings: [], includedCustomerWarnings: [], callToAction: requestedDates ? `Проверить свободное время на ${requestedDates}` : "Подобрать удобное время" } : null;
     })()
     : quote ? { ...buildClientMessage(quote, input.mode, input.mode === "recommendation" ? explicitCustomerRecommendation(input.message) : null), quoteSetId: null } : null;
   const assistantMessage = await prisma.aIAssistantMessage.create({
@@ -314,7 +325,7 @@ async function createInitialResponse(client: OpenAI, args: { lastResponseId: str
   return client.responses.create({ ...request, input: historyInput(args.history) } as never) as Promise<unknown>;
 }
 
-async function continueAfterTechnicalResearch(client: OpenAI, args: { previousResponseId: string; instructions: string; model: string; reasoning: string }) {
+async function continueAfterTechnicalResearch(client: OpenAI, args: { previousResponseId: string; instructions: string; model: string; reasoning: string; quoteToolName: "build_quote_and_tech_card" | "build_quote_and_tech_card_bundle" }) {
   return client.responses.create({
     model: args.model,
     instructions: args.instructions,
@@ -324,18 +335,18 @@ async function continueAfterTechnicalResearch(client: OpenAI, args: { previousRe
     tool_choice: { type: "function", name: "search_local_catalog" },
     store: true,
     previous_response_id: args.previousResponseId,
-    input: "Продолжи в строгом порядке: локальный каталог → остаток → правило количества → тариф работы → build_quote_and_tech_card. ROSSKO напрямую не вызывай: сценарий сам обратится к нему только для обязательного материала, отсутствующего локально. Моменты, изображения и подробные источники не задерживают смету.",
+    input: `Продолжи в строгом порядке: локальный каталог → остаток → правило количества → тариф работы → ${args.quoteToolName}. ROSSKO напрямую не вызывай: сценарий сам обратится к нему только для обязательного материала, отсутствующего локально. Моменты, изображения и подробные источники не задерживают смету.`,
   } as never) as Promise<unknown>;
 }
 
-async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean; finalizationWarning?: string; forceQuoteAndTechCard?: boolean }) {
+async function continueResponse(client: OpenAI, args: { previousResponseId: string; outputs: Array<Record<string, unknown>>; instructions: string; model: string; reasoning: string; allowWebSearch: boolean; finalizationWarning?: string; forceQuoteToolName?: "build_quote_and_tech_card" | "build_quote_and_tech_card_bundle" }) {
   return client.responses.create({
     model: args.model,
     instructions: args.finalizationWarning ? `${args.instructions}\n\n${args.finalizationWarning}` : args.instructions,
     reasoning: { effort: toolReasoning(args.reasoning) },
     text: { verbosity: "high" },
     tools: [...(args.allowWebSearch ? [{ type: "web_search", search_context_size: "high" }] : []), ...assistantFunctionTools],
-    ...(args.forceQuoteAndTechCard ? { tool_choice: { type: "function", name: "build_quote_and_tech_card" } } : {}),
+    ...(args.forceQuoteToolName ? { tool_choice: { type: "function", name: args.forceQuoteToolName } } : {}),
     ...(args.allowWebSearch ? { include: ["web_search_call.action.sources"] } : {}),
     store: true,
     previous_response_id: args.previousResponseId,
@@ -552,9 +563,12 @@ export async function runAssistantThread(input: { threadId: string; organization
   const toolSources: AssistantToolSource[] = [];
   const toolSummaries: Array<Record<string, unknown>> = [];
   const savedQuoteIds: string[] = [];
-  let quoteAndTechCard: QuoteAndTechCardResult | null = null;
+  let quoteAndTechCard: QuoteAndTechCardArtifact | null = null;
   try {
     const technicalRequest = isTechnicalRequest(message);
+    const previousUserRequest = history.slice(0, -1).reverse().find((item) => item.role === "user")?.content ?? "";
+    const scenarioRequest = continuesCurrentTechnicalRequest(message) ? `${previousUserRequest}\n${message}` : message;
+    const quoteToolName = isComplexEngineAndTransmissionRequest(scenarioRequest) ? "build_quote_and_tech_card_bundle" as const : "build_quote_and_tech_card" as const;
     const technicalVerificationPassLimit = technicalRequest ? (await getAgentSettings(input.organizationId)).calculationRules.maxTechnicalVerificationPasses : 0;
     let technicalVerificationPasses = 0;
     const vinContext = technicalRequest ? await requiredVinContext({ runId: run.id, organizationId: input.organizationId, actor: input.actor, vin: vinFromMessage(message) }) : null;
@@ -570,7 +584,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     const responses: unknown[] = research?.response ? [research.response] : [];
     const researchResponseId = text(field(research?.response, "id"), 240);
     let response = researchResponseId
-      ? await continueAfterTechnicalResearch(client, { previousResponseId: researchResponseId, instructions, model: config.model, reasoning: config.reasoning })
+      ? await continueAfterTechnicalResearch(client, { previousResponseId: researchResponseId, instructions, model: config.model, reasoning: config.reasoning, quoteToolName })
       : await createInitialResponse(client, {
           lastResponseId: thread.lastResponseId,
           message: research?.error
@@ -599,6 +613,11 @@ export async function runAssistantThread(input: { threadId: string; organization
         const toolName = text(call.name, 120);
         const callId = text(call.callId, 240);
         if (!callId) throw new Error(`OpenAI вернул вызов инструмента «${toolName || "без имени"}» без call_id`);
+        if (quoteToolName === "build_quote_and_tech_card_bundle" && toolName === "build_quote_and_tech_card") {
+          outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: "В текущем запросе есть несколько независимых агрегатов. Используйте build_quote_and_tech_card_bundle и передайте отдельный input для каждой услуги." }) });
+          toolSummaries.push({ toolName, status: "skipped", reason: "complex_request_requires_bundle" });
+          continue;
+        }
         if (technicalRequest && toolName === "search_rossko") {
           // Supplier fallback is owned by build_quote_and_tech_card. This keeps
           // a locally compatible ATF from being followed by needless OEM or
@@ -635,12 +654,12 @@ export async function runAssistantThread(input: { threadId: string; organization
           });
           toolSources.push(...(executed.sources ?? []));
           let resultForModel: Record<string, unknown> = executed.result;
-          if (toolName === "build_quote_and_tech_card") {
+          if (toolName === "build_quote_and_tech_card" || toolName === "build_quote_and_tech_card_bundle") {
             const parsed = parseQuoteAndTechCardToolResult(executed.result);
             if (!parsed) throw new Error("Инструмент вернул непроверенный контракт техкарты и сметы");
             quoteAndTechCard = parsed;
             const snapshots = Array.isArray(executed.result.quoteSnapshots) ? executed.result.quoteSnapshots : [];
-            for (const snapshot of snapshots.slice(0, 2)) {
+            for (const snapshot of snapshots.slice(0, 6)) {
               const row = record(snapshot);
               const preview = record(row?.preview);
               if (!row || !preview || preview.finalQuote !== true) continue;
@@ -658,7 +677,7 @@ export async function runAssistantThread(input: { threadId: string; organization
             calculationCompletedThisTurn = true;
             quoteSavedThisTurn = savedQuoteIds.length > 0;
           } else if (isAssistantCalculationTool(toolName)) calculationCompletedThisTurn = true;
-          if (toolName !== "build_quote_and_tech_card" && isAssistantCalculationTool(toolName) && executed.result.finalQuote !== false) {
+          if (toolName !== "build_quote_and_tech_card" && toolName !== "build_quote_and_tech_card_bundle" && isAssistantCalculationTool(toolName) && executed.result.finalQuote !== false) {
             const quote = await saveAssistantQuoteSnapshot({
               organizationId: input.organizationId,
               threadId: thread.id,
@@ -735,11 +754,11 @@ export async function runAssistantThread(input: { threadId: string; organization
             allowWebSearch: !technicalRequest,
             finalizationWarning:
               technicalRequest && technicalVerificationPasses >= technicalVerificationPassLimit
-                ? "Лимит дополнительных проверок достигнут. Сейчас обязательно вызови build_quote_and_tech_card с подтверждёнными данными и всеми рабочими оговорками; не вызывай другие инструменты."
+                ? `Лимит дополнительных проверок достигнут. Сейчас обязательно вызови ${quoteToolName} с подтверждёнными данными и всеми рабочими оговорками; не вызывай другие инструменты.`
                 : turn === MAX_AGENT_ITERATIONS - 2
                 ? `Остался один цикл инструментов. Заверши исследование и подготовь итог. Краткое резюме уже найденного: ${compactToolEvidence(toolSummaries)}`
                 : undefined,
-            forceQuoteAndTechCard: technicalRequest && technicalVerificationPasses >= technicalVerificationPassLimit,
+            forceQuoteToolName: technicalRequest && technicalVerificationPasses >= technicalVerificationPassLimit ? quoteToolName : undefined,
           });
       responses.push(response);
       if (finalizeNow) break;

@@ -9,7 +9,7 @@ import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardResult, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -137,6 +137,12 @@ export const assistantFunctionTools = [
     name: "build_quote_and_tech_card",
     description: "Собрать единый предсказуемый результат «техкарта + смета» для внутреннего сотрудника. Используй после VIN/технической проверки и проверки локального каталога. Инструмент сам округляет объём, выбирает совместимую жидкость из локального остатка, применяет правило работы и формирует клиентский текст только из готовой сметы. Передавай не более двух процедур. Внутренний фильтр АКПП/CVT/DSG, требующий разборки агрегата, помечай filterAccess=internal_requires_disassembly и не передавай в rosskoItems.",
     parameters: QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
+  },
+  {
+    type: "function",
+    name: "build_quote_and_tech_card_bundle",
+    description: "Собрать комплекс одного визита из 2–3 независимых техкарт и смет. Используй только когда сотрудник явно запросил несколько разных агрегатов, например двигатель и АКПП. Каждый input рассчитывается отдельно: не объединяй допуски, объёмы, позиции или тарифы между сервисами.",
+    parameters: QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS,
   },
   {
     type: "function",
@@ -1152,6 +1158,50 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   } satisfies AssistantToolResult;
 }
 
+/**
+ * The existing single-service builder remains the only calculator.  A complex
+ * visit simply runs it once per aggregate and returns the independent results
+ * together, so quantities and tariffs cannot leak from engine service into
+ * the transmission (or vice versa).
+ */
+async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, context: ToolContext) {
+  const rawInputs = Array.isArray(args.inputs) ? args.inputs.slice(0, 3) : [];
+  if (rawInputs.length < 2) throw new Error("Для комплексного расчёта укажите минимум две независимые услуги.");
+  const results: QuoteAndTechCardResult[] = [];
+  const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
+  const sources: AssistantToolSource[] = [];
+  for (const rawInput of rawInputs) {
+    const built = await buildQuoteAndTechCard({ input: rawInput }, context);
+    const parsed = parseQuoteAndTechCardToolResult(built.result);
+    if (!parsed || parsed.scenario !== "quote_and_tech_card") throw new Error("Одна из услуг комплекса вернула непроверенный контракт техкарты и сметы.");
+    results.push(parsed);
+    const snapshots = Array.isArray(built.result.quoteSnapshots) ? built.result.quoteSnapshots : [];
+    quoteSnapshots.push(...snapshots.map(object).filter((snapshot) => object(snapshot.argumentsValue) && object(snapshot.preview)) as Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }>);
+    sources.push(...(built.sources ?? []));
+  }
+  const vehicle = results[0]?.vehicle ?? { displayName: "Автомобиль уточняется", aggregate: null };
+  const quotedServiceCount = results.filter((result) => result.quoteSet.options.some((option) => option.status !== "blocked" && option.totalCents != null)).length;
+  const bundleStatus = quotedServiceCount === 0 ? "blocked" as const : results.every((result) => result.status === "ready") ? "ready" as const : "partial" as const;
+  const draft = {
+    scenario: "quote_and_tech_card_bundle" as const,
+    status: bundleStatus,
+    vehicle,
+    results,
+    customerMessage: { status: "blocked" as const, text: "" },
+    evidence: results.flatMap((result) => result.evidence).filter((item, index, list) => list.findIndex((other) => `${other.source}:${other.url ?? ""}:${other.fact}` === `${item.source}:${item.url ?? ""}:${item.fact}`) === index).slice(0, 40),
+  };
+  const customerMessage = buildQuoteAndTechCardBundleCustomerMessage(draft);
+  const result = parseQuoteAndTechCardArtifact({ ...draft, customerMessage, status: customerMessage.status === "ready" ? bundleStatus : "blocked" });
+  if (!result || result.scenario !== "quote_and_tech_card_bundle") throw new Error("Не удалось сформировать проверенный контракт комплексного расчёта.");
+  return {
+    result: { ...result, quoteSnapshots, finalQuote: false },
+    sources: [
+      { sourceType: "internal_catalog" as const, title: "Комплексная техкарта и смета", excerpt: `Независимых услуг: ${results.length}; рассчитано: ${quotedServiceCount}.` },
+      ...sources,
+    ],
+  } satisfies AssistantToolResult;
+}
+
 async function auditLegacyClientAgent(args: Record<string, unknown>, organizationId: string) {
   const limit = Math.max(1, Math.min(100, Math.round(number(args.limit, 30))));
   const [runs, quotes, cases] = await Promise.all([
@@ -1190,6 +1240,7 @@ export async function executeAssistantTool(name: string, argumentsValue: unknown
   if (name === "calculate_quote_preview") return quotePreview(args, context);
   if (name === "calculate_service_quote_v2") return serviceQuoteV2(args, context);
   if (name === "build_quote_and_tech_card") return buildQuoteAndTechCard(args, context);
+  if (name === "build_quote_and_tech_card_bundle") return buildQuoteAndTechCardBundle(args, context);
   if (name === "audit_legacy_client_agent") return auditLegacyClientAgent(args, context.organizationId);
   throw new Error(`Недоступный инструмент: ${name}`);
 }

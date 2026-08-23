@@ -9,6 +9,7 @@ const {
   fluidSpecificationMatches,
   fluidSpecificationExcerpt,
   fluidSpecificationAlternatives,
+  explicitFluidSpecificationSignatures,
   fluidSpecificationSearchTokenGroups,
   normalizeFluidSpecification,
   packageVolumeLiters,
@@ -57,10 +58,24 @@ const hyundaiSpIv = {
   searchText: "Valvoline ATF Hyundai Kia SP-IV",
 };
 assert.deepEqual(fluidSpecificationAlternatives("Hyundai ATF SP-IV / SP4-M"), ["Hyundai ATF SP-IV", "SP4-M"]);
-assert.deepEqual(fluidSpecificationSearchTokenGroups("Hyundai ATF SP-IV / SP4-M"), [["hyundai", "atf", "sp", "iv"], ["sp4", "m"]]);
+assert.deepEqual(fluidSpecificationSearchTokenGroups("Hyundai ATF SP-IV / SP4-M"), [["hyundai", "atf", "sp", "iv"], ["sp", "iv"], ["sp4", "m"]]);
 assert.equal(fluidSpecificationMatches(hyundaiSpIv, "Hyundai ATF SP-IV / SP4-M"), true);
 assert.match(fluidSpecificationExcerpt(hyundaiSpIv.atf, "Hyundai ATF SP-IV / SP4-M"), /Hyundai\/Kia ATF SP-IV/i);
 assert.equal(selectPreferredLocalFluid([hyundaiSpIv], "Hyundai ATF SP-IV / SP4-M", 5)?.productId, "valvoline-hyundai-sp-iv");
+
+// AW-2 is the technical approval.  Its absence from a catalog's manufacturer
+// label must not hide an explicitly compatible local ATF behind ROSSKO.
+const aisinAw2 = {
+  ...valvoline,
+  id: "ravenol-aw-2",
+  name: "Ravenol ATF T-ULV Fluid, 1 л",
+  atf: "AW-2; VW G 053 001 A2",
+  searchText: "Ravenol ATF T-ULV compatible with AW-2",
+};
+assert.deepEqual(explicitFluidSpecificationSignatures("AISIN ATF AW-2"), ["aw 2"]);
+assert.deepEqual(fluidSpecificationSearchTokenGroups("AISIN ATF AW-2"), [["aisin", "atf", "aw", "2"], ["aw", "2"]]);
+assert.equal(fluidSpecificationMatches(aisinAw2, "AISIN ATF AW-2"), true);
+assert.equal(selectPreferredLocalFluid([aisinAw2], "AISIN ATF AW-2", 4)?.productId, "ravenol-aw-2");
 
 const insufficient = selectPreferredLocalFluid([{ ...valvoline, availableUnits: 7.99 }], "Toyota CVTF FE", 8);
 assert.equal(insufficient, null);
