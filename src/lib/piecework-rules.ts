@@ -279,10 +279,51 @@ export function normalizeText(value: string) {
   return value
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/ё/g, "е")
     .trim()
     .toLowerCase()
+    .replace(/ё/g, "е")
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Imported product groups occasionally contain Latin lookalikes (for example
+ * `Maслo`) or hierarchy separators. They look identical in the UI but do not
+ * compare equal to a rule title. Keep this normalization limited to payroll
+ * groups: ordinary product names and logins must retain their original text.
+ */
+const LATIN_TO_CYRILLIC_LOOKALIKE: Record<string, string> = {
+  a: "а",
+  b: "в",
+  c: "с",
+  e: "е",
+  h: "н",
+  k: "к",
+  m: "м",
+  o: "о",
+  p: "р",
+  t: "т",
+  x: "х",
+  y: "у",
+};
+
+export function normalizeProductGroupName(value: string) {
+  return normalizeText(value)
+    .replace(/[abcehkmoptxy]/g, (character) => LATIN_TO_CYRILLIC_LOOKALIKE[character] ?? character)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function productGroupNamesMatch(left: string, right: string) {
+  const normalizedLeft = normalizeProductGroupName(left);
+  const normalizedRight = normalizeProductGroupName(right);
+  return Boolean(
+    normalizedLeft &&
+      normalizedRight &&
+      (normalizedLeft === normalizedRight ||
+        normalizedLeft.includes(normalizedRight) ||
+        normalizedRight.includes(normalizedLeft))
+  );
 }
 
 function defaultRulesToList(): PieceworkRuleView[] {
@@ -326,10 +367,9 @@ export function calculatePieceworkAmountCents(
 
 export function resolveProductGroupTargetId(pathName?: string): string | null {
   if (!pathName) return null;
-  const normalizedPath = normalizeText(pathName);
   for (const target of DEFAULT_TARGETS) {
     if (target.targetType !== "product_group") continue;
-    if ((target.matchers ?? []).some((matcher) => normalizedPath.includes(normalizeText(matcher)))) {
+    if ((target.matchers ?? []).some((matcher) => productGroupNamesMatch(pathName, matcher))) {
       return target.targetId;
     }
   }
@@ -353,14 +393,13 @@ export function resolveProductGroupPieceworkRule(params: {
     if (directRule) return { targetId: directTargetId, rule: directRule };
   }
 
-  const normalizedGroup = normalizeText(groupPath ?? "");
-  if (!normalizedGroup) return { targetId: null, rule: undefined };
+  if (!normalizeProductGroupName(groupPath ?? "")) return { targetId: null, rule: undefined };
 
   const candidates = [...ruleMap.values()].filter(
     (rule) =>
       rule.targetType === "product_group" &&
       rule.role === role &&
-      normalizeText(rule.targetName) === normalizedGroup
+      productGroupNamesMatch(rule.targetName, groupPath ?? "")
   );
   if (candidates.length !== 1) {
     return { targetId: directTargetId, rule: undefined };
