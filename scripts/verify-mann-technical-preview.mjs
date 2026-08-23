@@ -59,8 +59,11 @@ const checks = {
     ? preview.sourceSnapshot.currentTimewebSnapshot === true
       && summary.gates.currentTimewebSnapshotAudited === true
       && /^[a-f0-9]{64}$/u.test(preview.sourceSnapshot.backupSha256)
+      && capacityAudit.source.currentTimewebSnapshot === true
+      && capacityAudit.source.backupSha256 === preview.sourceSnapshot.backupSha256
     : preview.sourceSnapshot.currentTimewebSnapshot === false
-      && summary.gates.currentTimewebSnapshotAudited === false,
+      && summary.gates.currentTimewebSnapshotAudited === false
+      && capacityAudit.source.currentTimewebSnapshot === false,
   noGoGatesPreserved: summary.gates.decision === "NO_GO"
     && summary.gates.goldenOrManualMatcherSetAvailable === false
     && summary.gates.activeSampleManuallyReviewed === false
