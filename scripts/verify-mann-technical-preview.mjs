@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 
 const outputArgument = process.argv.find((argument) => argument.startsWith("--output-dir="));
 const outputDir = resolve(outputArgument?.slice("--output-dir=".length) || "outputs/mann-technical-catalog-v2-frozen-2026-08-23");
+const expectCurrentTimeweb = process.argv.includes("--expect-current-timeweb");
 const readJson = async (name) => JSON.parse(await readFile(resolve(outputDir, name), "utf8"));
 
 const [summary, preview, activeSample, dangerousReview, capacityAudit] = await Promise.all([
@@ -54,7 +55,17 @@ const checks = {
     && capacityAudit.counts.horsepowerTokensParsedAsCapacity === 0,
   realGoldenSetHas200DistinctCases: golden.cases.length === 200 && new Set(golden.cases.map((item) => item.text)).size === 200,
   databaseWriteModeForbidden: preview.writeMode === "DRY_RUN_ONLY" && preview.sourceSnapshot.transactionReadOnly === true,
-  noGoWithoutCurrentTimewebAudit: preview.sourceSnapshot.currentTimewebSnapshot === false && summary.gates.decision === "NO_GO",
+  timewebSnapshotExpectationSatisfied: expectCurrentTimeweb
+    ? preview.sourceSnapshot.currentTimewebSnapshot === true
+      && summary.gates.currentTimewebSnapshotAudited === true
+      && /^[a-f0-9]{64}$/u.test(preview.sourceSnapshot.backupSha256)
+    : preview.sourceSnapshot.currentTimewebSnapshot === false
+      && summary.gates.currentTimewebSnapshotAudited === false,
+  noGoGatesPreserved: summary.gates.decision === "NO_GO"
+    && summary.gates.goldenOrManualMatcherSetAvailable === false
+    && summary.gates.activeSampleManuallyReviewed === false
+    && summary.gates.dangerousSystemsManuallyReviewed === false
+    && summary.gates.blockingReasons.length > 0,
 };
 
 for (const [name, passed] of Object.entries(checks)) assert.equal(passed, true, name);

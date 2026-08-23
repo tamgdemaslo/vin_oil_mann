@@ -13,16 +13,33 @@ import { createJiti } from "jiti";
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputArgument = process.argv.find((argument) => argument.startsWith("--output-dir="));
 const maxArgument = process.argv.find((argument) => argument.startsWith("--max-requirements="));
+const snapshotIdArgument = process.argv.find((argument) => argument.startsWith("--snapshot-id="));
+const snapshotCreatedAtArgument = process.argv.find((argument) => argument.startsWith("--snapshot-created-at="));
+const snapshotSha256Argument = process.argv.find((argument) => argument.startsWith("--snapshot-sha256="));
+const currentTimewebSnapshot = process.argv.includes("--current-timeweb-snapshot");
 const outputDir = resolve(
   workspaceRoot,
   outputArgument?.slice("--output-dir=".length) || "outputs/mann-technical-catalog-v2-frozen-2026-08-23",
 );
 const maxRequirements = maxArgument ? Number(maxArgument.slice("--max-requirements=".length)) : null;
+const snapshotId = snapshotIdArgument?.slice("--snapshot-id=".length)
+  || "railway-final-frozen-backup-2026-08-02-codex-019fb41a";
+const snapshotCreatedAt = snapshotCreatedAtArgument?.slice("--snapshot-created-at=".length) || null;
+const snapshotSha256 = snapshotSha256Argument?.slice("--snapshot-sha256=".length) || null;
 if (process.argv.some((argument) => ["--apply", "--write-db", "--materialize"].includes(argument))) {
   throw new Error("This command is permanently dry-run-only; database write flags are forbidden");
 }
 if (maxRequirements !== null && (!Number.isInteger(maxRequirements) || maxRequirements <= 0)) {
   throw new Error("--max-requirements must be a positive integer");
+}
+if (currentTimewebSnapshot && (!snapshotIdArgument || !snapshotCreatedAt || !snapshotSha256)) {
+  throw new Error("Current Timeweb snapshots require --snapshot-id, --snapshot-created-at and --snapshot-sha256");
+}
+if (snapshotSha256 && !/^[a-f0-9]{64}$/u.test(snapshotSha256)) {
+  throw new Error("--snapshot-sha256 must be a lowercase SHA-256 digest");
+}
+if (snapshotCreatedAt && Number.isNaN(Date.parse(snapshotCreatedAt))) {
+  throw new Error("--snapshot-created-at must be an ISO-8601 timestamp");
 }
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -623,9 +640,11 @@ try {
     commit,
     algorithms: { matcher: MANN_FLUID_MATCHER_VERSION, capacityParser: FLUID_CAPACITY_PARSER_VERSION },
     sourceSnapshot: {
-      kind: "frozen-local-postgresql-snapshot",
-      archiveId: "railway-final-frozen-backup-2026-08-02-codex-019fb41a",
-      currentTimewebSnapshot: false,
+      kind: currentTimewebSnapshot ? "timeweb-logical-backup-local-restore" : "frozen-local-postgresql-snapshot",
+      archiveId: snapshotId,
+      backupStartedAt: snapshotCreatedAt,
+      backupSha256: snapshotSha256,
+      currentTimewebSnapshot,
       transactionReadOnly: true,
     },
     proposedAssociations: associations,
@@ -669,13 +688,13 @@ try {
       noDatabaseWrites: true,
       sourceSnapshotReadOnly: true,
       runtimeCutover: false,
-      currentTimewebSnapshotAudited: false,
+      currentTimewebSnapshotAudited: currentTimewebSnapshot,
       goldenOrManualMatcherSetAvailable: false,
       activeSampleManuallyReviewed: false,
       dangerousSystemsManuallyReviewed: false,
       decision: "NO_GO",
       blockingReasons: [
-        "нет актуального read-only Timeweb snapshot/backup",
+        ...(!currentTimewebSnapshot ? ["нет актуального read-only Timeweb snapshot/backup"] : []),
         "Top-N измерен только на legacy proxy, не на golden/manual truth set",
         "200 ACTIVE и dangerous-system samples ожидают независимого ручного review",
       ],
