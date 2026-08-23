@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { parseFluidCapacities, type ParsedFluidCapacity } from "@/lib/fluid-capacity-parser";
 
 const SOURCE_NAME = "podbormasla.ru";
 const SOURCE_URL = "https://podbormasla.ru";
@@ -79,11 +80,8 @@ export type FluidSystemCode =
   | "FUEL_TANK"
   | "OTHER";
 
-type Capacity = {
+type Capacity = Pick<ParsedFluidCapacity, "minLiters" | "maxLiters" | "nominalLiters" | "toleranceLiters" | "context" | "confidence" | "raw" | "qualifier"> & {
   kind: "service" | "total" | "partial" | "with_filter" | "without_filter" | "unspecified";
-  minLiters: number;
-  maxLiters: number;
-  raw: string;
 };
 
 type Specification = { type: string; value: string };
@@ -606,44 +604,32 @@ function transmissionType(systemCode: FluidSystemCode): string | null {
 }
 
 export function parseCapacities(value: unknown): Capacity[] {
-  const text = String(value ?? "").replace(/\u00a0/g, " ");
-  const capacities: Capacity[] = [];
-  for (const match of text.matchAll(/(\d{1,4}(?:[.,]\d{1,3})?)(?:\s*[-–—]\s*(\d{1,4}(?:[.,]\d{1,3})?))?\s*л\.?/gi)) {
-    const first = Number(match[1]?.replace(",", "."));
-    const second = match[2] ? Number(match[2].replace(",", ".")) : first;
-    if (!Number.isFinite(first) || !Number.isFinite(second) || first < 0 || second > 5000) continue;
-    const matchIndex = match.index ?? 0;
-    const previousBreak = text.lastIndexOf("\n", matchIndex);
-    const nextBreak = text.indexOf("\n", matchIndex + match[0].length);
-    const start = previousBreak >= 0 ? previousBreak + 1 : Math.max(0, matchIndex - 35);
-    const end = nextBreak >= 0 ? nextBreak : Math.min(text.length, matchIndex + match[0].length + 35);
-    const context = text.slice(start, end).toLowerCase();
-    let kind: Capacity["kind"] = "unspecified";
-    if (/без\s+фильтр/.test(context)) kind = "without_filter";
-    else if (/с\s+фильтр/.test(context)) kind = "with_filter";
-    else if (/частич/.test(context)) kind = "partial";
-    else if (/полн|общ/.test(context)) kind = "total";
-    else if (/сервис/.test(context)) kind = "service";
-    capacities.push({
-      kind,
-      minLiters: Math.min(first, second),
-      maxLiters: Math.max(first, second),
-      raw: clean(match[0]),
-    });
-  }
-  return capacities;
+  const kindMap: Record<ParsedFluidCapacity["kind"], Capacity["kind"]> = {
+    SERVICE: "service",
+    TOTAL: "total",
+    PARTIAL: "partial",
+    WITH_FILTER: "with_filter",
+    WITHOUT_FILTER: "without_filter",
+    DRY_FILL: "total",
+    REFILL: "service",
+    UNKNOWN: "unspecified",
+  };
+  return parseFluidCapacities(value).capacities.map((capacity) => ({
+    ...capacity,
+    kind: kindMap[capacity.kind],
+  }));
 }
 
 function capacitySummary(capacities: Capacity[]) {
-  const mins = capacities.map((capacity) => capacity.minLiters);
-  const maxs = capacities.map((capacity) => capacity.maxLiters);
+  const mins = capacities.flatMap((capacity) => (capacity.minLiters === null ? [] : [capacity.minLiters]));
+  const maxs = capacities.flatMap((capacity) => (capacity.maxLiters === null ? [] : [capacity.maxLiters]));
   const service = capacities.find((capacity) => ["service", "partial", "with_filter", "unspecified"].includes(capacity.kind));
   const total = capacities.find((capacity) => capacity.kind === "total");
   return {
     min: mins.length ? Math.min(...mins) : null,
     max: maxs.length ? Math.max(...maxs) : null,
-    service: service?.maxLiters ?? null,
-    total: total?.maxLiters ?? null,
+    service: service?.nominalLiters ?? service?.maxLiters ?? null,
+    total: total?.nominalLiters ?? total?.maxLiters ?? null,
   };
 }
 
