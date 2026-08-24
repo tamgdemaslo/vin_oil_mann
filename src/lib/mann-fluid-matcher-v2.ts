@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v4" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v5" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -129,6 +129,9 @@ const DRIVE_EVIDENCE_REQUIRED_SYSTEMS = new Set([
   "TRANSFER_CASE", "FRONT_DIFFERENTIAL", "REAR_DIFFERENTIAL", "DIFFERENTIAL_GENERIC", "AWD_COUPLING",
 ]);
 const SYSTEM_TYPE_EVIDENCE_REQUIRED = new Set(["POWER_STEERING", "SUSPENSION_HYDRAULIC", "HYDRAULIC_SYSTEM"]);
+const EXACT_ENGINE_REQUIRED_SYSTEMS = new Set([
+  "ENGINE_OIL", "ENGINE_COOLANT", "INTERCOOLER_COOLANT", "INVERTER_COOLANT", "SPARK_PLUG", "GENERATOR_OIL",
+]);
 
 function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
@@ -180,11 +183,24 @@ function technicalApplicabilityBlockers(
   requirement: MannFluidRequirementForMatch,
   family: MannFluidSystemFamily,
   row: MannResolverTestRow,
+  candidate: MannVehicleCandidate,
 ): string[] {
   const blockers: string[] = [];
   const rowText = normalizeMannSearchText(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
   const identifiers = componentIdentifiers(requirement.componentModel);
   const componentConfirmed = identifiers.length > 0 && identifiers.some((identifier) => rowText.includes(identifier));
+
+  if (/\+{3}|FOR OUR COMPLETE|VISIT CATALOG/u.test(rowText)) {
+    blockers.push("строка MANN содержит признаки загрязнения текстом PDF");
+  }
+
+  if (EXACT_ENGINE_REQUIRED_SYSTEMS.has(requirement.systemCode)) {
+    const engineCodes = sourceEngineCodes(requirement);
+    if (engineCodes.length >= 5) blockers.push("source requirement объединяет слишком много кодов двигателя");
+    if (engineCodes.length > 0 && !candidate.matchedFields.includes("точный код двигателя")) {
+      blockers.push("для этой технической системы не подтверждён точный код двигателя");
+    }
+  }
 
   if (SYSTEM_TYPE_EVIDENCE_REQUIRED.has(requirement.systemCode)) {
     const systemEvidence = requirement.systemCode === "POWER_STEERING"
@@ -401,7 +417,7 @@ function assessCandidate(
     const reviewBlockers = independent
       ? unique([
           ...(!conditionCovered(requirement, row.condition) ? ["не подтверждено дополнительное условие применяемости MANN"] : []),
-          ...technicalApplicabilityBlockers(requirement, family, row),
+          ...technicalApplicabilityBlockers(requirement, family, row, independent),
         ])
       : [];
     targets.push({

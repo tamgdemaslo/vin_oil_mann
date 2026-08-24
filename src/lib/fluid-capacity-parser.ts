@@ -1,4 +1,4 @@
-export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v3" as const;
+export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v4" as const;
 
 export type FluidCapacityKind =
   | "SERVICE"
@@ -83,6 +83,11 @@ const HORSEPOWER_PATTERN = new RegExp(
   String.raw`(?<value>${NUMBER_SOURCE})\s*(?:лс\.?|л\.с\.?|л\.\s+с\.|л\s+с\.)`,
   "giu",
 );
+const STANDALONE_NUMBER_PATTERN = new RegExp(
+  String.raw`(?<![\p{L}\p{N}.])(?<value>${NUMBER_SOURCE})(?![\p{L}\p{N}])`,
+  "giu",
+);
+const CONDITIONAL_MARKER_PATTERN = /(?:ДЛЯ|\bFOR\b|БЕНЗИН|ДИЗЕЛ|АКПП|МКПП|\bCVT\b|\bDCT\b|\b2WD\b|\b4WD\b|КУЗОВ)/iu;
 
 const KIND_MARKERS: Array<{ kind: FluidCapacityKind; pattern: RegExp; priority: number }> = [
   { kind: "WITHOUT_FILTER", pattern: /без\s+(?:маслян(?:ого|ый)\s+)?фильтр[а-я]*/giu, priority: 10 },
@@ -372,6 +377,31 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
       start: Math.min(...involved.map((capacity) => capacity.start)),
       end: Math.max(...involved.map((capacity) => capacity.end)),
     });
+  }
+
+  if (
+    capacities.length > 0
+    && !suspicious.some((diagnostic) => diagnostic.code === "UNRESOLVED_CONDITIONAL_CAPACITY")
+    && CONDITIONAL_MARKER_PATTERN.test(text)
+  ) {
+    STANDALONE_NUMBER_PATTERN.lastIndex = 0;
+    const unmatchedPlausibleNumbers = [...text.matchAll(STANDALONE_NUMBER_PATTERN)].filter((match) => {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (capacities.some((capacity) => capacity.start <= start && end <= capacity.end)) return false;
+      if (rejected.some((diagnostic) => diagnostic.start <= start && end <= diagnostic.end)) return false;
+      const number = parseNumber(match.groups?.value);
+      return number !== null && number >= limits.min && number <= limits.max;
+    });
+    if (unmatchedPlausibleNumbers.length > 0) {
+      suspicious.push({
+        code: "UNRESOLVED_CONDITIONAL_CAPACITY",
+        message: "Условная строка содержит правдоподобное число без единицы измерения рядом с другим объёмом; автопубликация запрещена.",
+        raw: text,
+        start: 0,
+        end: text.length,
+      });
+    }
   }
 
   return {

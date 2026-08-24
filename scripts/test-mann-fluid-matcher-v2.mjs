@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v4");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v5");
 
 const single = matchFluidRequirementToMann(requirement(), [row({})]);
 assert.equal(single.status, "CONFIRMED_SINGLE");
@@ -166,4 +166,25 @@ const unprovenPowerSteering = matchFluidRequirementToMann(requirement({
 assert.equal(unprovenPowerSteering.status, "REVIEW_REQUIRED");
 assert.ok(unprovenPowerSteering.topCandidates[0]?.reviewBlockers.includes("MANN variant не подтверждает наличие этой гидравлической системы"));
 
-console.log("MANN fluid matcher v4 system-aware policy tests — passed");
+const engineFamilyOnly = matchFluidRequirementToMann(requirement({
+  engineCodeNormalized: "2AZ",
+  engineCodesJson: ["2AZ"],
+}), [row({})]);
+assert.equal(engineFamilyOnly.status, "REVIEW_REQUIRED");
+assert.ok(engineFamilyOnly.topCandidates[0]?.reviewBlockers.includes("для этой технической системы не подтверждён точный код двигателя"));
+
+const broadEngineGroup = matchFluidRequirementToMann(requirement({
+  engineCodeNormalized: "2AZ-FE",
+  engineCodesJson: ["2AZ-FE", "2AZ-FXE", "1AZ-FE", "1AZ-FSE", "3ZR-FE"],
+}), [row({})]);
+assert.equal(broadEngineGroup.status, "REVIEW_REQUIRED");
+assert.ok(broadEngineGroup.topCandidates[0]?.reviewBlockers.includes("source requirement объединяет слишком много кодов двигателя"));
+
+const contaminatedMannRow = matchFluidRequirementToMann(requirement(), [row({
+  vehicleText: "2.4 gasoline 4WD +++ For our complete catalog",
+  effectiveVehicleText: "2.4 gasoline 4WD +++ For our complete catalog",
+})]);
+assert.equal(contaminatedMannRow.status, "REVIEW_REQUIRED");
+assert.ok(contaminatedMannRow.topCandidates[0]?.reviewBlockers.includes("строка MANN содержит признаки загрязнения текстом PDF"));
+
+console.log("MANN fluid matcher v5 system-aware policy tests — passed");
