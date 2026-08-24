@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v2");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v3");
 
 const single = matchFluidRequirementToMann(requirement(), [row({})]);
 assert.equal(single.status, "CONFIRMED_SINGLE");
@@ -103,4 +103,45 @@ assert.equal(insufficient.status, "INSUFFICIENT_SOURCE_CONTEXT");
 const gap = matchFluidRequirementToMann(requirement(), []);
 assert.equal(gap.status, "MANN_CATALOG_GAP");
 
-console.log("MANN fluid matcher v2 system-aware policy tests — passed");
+const componentConfirmed = matchFluidRequirementToMann(requirement({
+  systemCode: "CVT_TRANSMISSION",
+  transmissionType: "cvt",
+  componentModel: "K111",
+}), [row({ vehicleText: "2.4 gasoline 4WD CVT K111 (A3)", effectiveVehicleText: "2.4 gasoline 4WD CVT K111 (A3)" })]);
+assert.equal(componentConfirmed.status, "CONFIRMED_SINGLE");
+
+const componentUnconfirmed = matchFluidRequirementToMann(requirement({
+  systemCode: "CVT_TRANSMISSION",
+  transmissionType: "cvt",
+  componentModel: "K111",
+}), [row({})]);
+assert.equal(componentUnconfirmed.status, "REVIEW_REQUIRED");
+assert.ok(componentUnconfirmed.topCandidates[0]?.reviewBlockers.includes("MANN variant не подтверждает тип или модель коробки"));
+
+const conditionalComponents = matchFluidRequirementToMann(requirement({
+  systemCode: "CVT_TRANSMISSION",
+  transmissionType: "cvt",
+  componentModel: "K111 / K111F",
+  fillVolumeText: "8.9 л. для K111, 7.1 л. для K111F",
+}), [row({ vehicleText: "2.4 gasoline 4WD CVT K111 (A3)", effectiveVehicleText: "2.4 gasoline 4WD CVT K111 (A3)" })]);
+assert.equal(conditionalComponents.status, "REVIEW_REQUIRED");
+assert.ok(conditionalComponents.topCandidates[0]?.reviewBlockers.includes("несколько component/capacity альтернатив не разделены на условия"));
+
+const missingChassisIdentity = matchFluidRequirementToMann(requirement({ bodyCodesJson: [] }), [
+  row({ model: "RAV4", modelNormalized: "RAV4", vehicleText: "2.4 gasoline", effectiveVehicleText: "2.4 gasoline" }),
+]);
+assert.equal(missingChassisIdentity.status, "REVIEW_REQUIRED");
+
+const modelLevelBrakeFluid = matchFluidRequirementToMann(requirement({
+  systemCode: "BRAKE_FLUID",
+  systemNameRaw: "Тормозная жидкость",
+  transmissionType: null,
+  componentModel: null,
+}), [
+  row({ vehicleVariantKey: "variant-a" }),
+  row({ vehicleVariantKey: "variant-b", engineCode: "1AZ-FE", engineCodeNormalized: "1AZFE", kw: "112", hp: "152" }),
+]);
+assert.equal(modelLevelBrakeFluid.status, "CONFIRMED_MULTI_APPLICABILITY");
+assert.deepEqual(modelLevelBrakeFluid.targets.map((target) => target.vehicleVariantKey).sort(), ["variant-a", "variant-b"]);
+
+console.log("MANN fluid matcher v3 system-aware policy tests — passed");

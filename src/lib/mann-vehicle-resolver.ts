@@ -415,13 +415,15 @@ function isGenericMannVariant(row: MannRow): boolean {
 }
 
 function isQualifierOnlyVariant(row: MannRow): boolean {
-  return !isGenericMannVariant(row) && isMannNonVehicleVariantText(row.effectiveVehicleText ?? row.vehicleText);
+  const vehicleText = row.effectiveVehicleText ?? row.vehicleText;
+  return !isGenericMannVariant(row) && isMannNonVehicleVariantText(vehicleText);
 }
 
 function cleanCandidateText(value: string | null): string | null {
   if (!value) return value;
-  const contaminated = value.match(/^\d{2,3}\s+(\d(?:[.,]\d{1,3}))\s+\+{3}/);
-  return contaminated?.[1]?.replace(",", ".") ?? value;
+  const contaminated = value.match(/^\d{2,3}\s+(\d(?:[.,]\d{1,3}))((?:4WD|AWD|FWD|RWD)?)\s+\+{3}/i);
+  if (!contaminated?.[1]) return value;
+  return [contaminated[1].replace(",", "."), contaminated[2]?.toUpperCase()].filter(Boolean).join(" ");
 }
 
 function cleanCandidateEngineCode(value: string | null): string | null {

@@ -238,6 +238,20 @@ assert.ok(evaluateMannCandidate(xTrail, row({
   make: "NISSAN", model: "X-Trail II(T31)", vehicleText: "2.0dCi(T31)", vehicleYearFrom: 2007, vehicleYearTo: 2014,
 })).candidate, "X-Trail keeps X as part of the model name");
 
+const teana = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "NISSAN", modelRaw: "Teana", year: 2011, engineSeries: "QR25DE", engineVolumeCc: 2488,
+}));
+const teanaCatalogContinuation = evaluateMannCandidate(teana, row({
+  make: "NISSAN", model: "Teana II(J32)", vehicleText: "266 2.54WD +++ For our complete",
+  effectiveVehicleText: "266 2.54WD +++ For our complete", engineCode: "QR25DE",
+  vehicleYearFrom: 2008, vehicleYearTo: 2013,
+}));
+assert.equal(
+  teanaCatalogContinuation.candidate?.effectiveVehicleText,
+  "2.5 4WD",
+  "a MANN PDF continuation artifact is cleaned into its actual vehicle variant",
+);
+
 const kiaCeed = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "KIA", modelRaw: "Ceed", year: 2015 }));
 assert.ok(evaluateMannCandidate(kiaCeed, row({
   make: "KIA MOTORS", model: "Cee’d II/Pro Cee’d II/Sports Wagon II(JD)", vehicleText: "1.6GDI", vehicleYearFrom: 2012, vehicleYearTo: 2018,

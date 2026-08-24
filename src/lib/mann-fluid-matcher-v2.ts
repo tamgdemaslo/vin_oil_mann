@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v2" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v3" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -123,6 +123,8 @@ const DRIVETRAIN_SYSTEMS = new Set([
   "TRANSFER_CASE", "FRONT_DIFFERENTIAL", "REAR_DIFFERENTIAL",
   "DIFFERENTIAL_GENERIC", "AWD_COUPLING", "PTO", "RETARDER",
 ]);
+const MODEL_LEVEL_SYSTEMS = new Set(["BRAKE_FLUID"]);
+const AWD_ONLY_SYSTEMS = new Set(["TRANSFER_CASE", "AWD_COUPLING"]);
 
 function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
@@ -130,6 +132,76 @@ function unique(values: Array<string | null | undefined>): string[] {
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? unique(value.filter((item): item is string => typeof item === "string")) : [];
+}
+
+function sourceEngineCodes(requirement: MannFluidRequirementForMatch): string[] {
+  if (MODEL_LEVEL_SYSTEMS.has(requirement.systemCode)) return [];
+  return unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
+}
+
+function meaningfulComponentModel(value?: string | null): string | null {
+  const normalized = value?.trim();
+  return normalized && !/^(?:-|—|N\/A|NONE)$/iu.test(normalized) ? normalized : null;
+}
+
+function componentIdentifiers(value?: string | null): string[] {
+  const normalized = normalizeMannSearchText(meaningfulComponentModel(value));
+  return unique(normalized.match(/\b[A-Z0-9]+(?:-[A-Z0-9]+)*\b/gu) ?? [])
+    .filter((token) => token.length >= 3 && /[A-Z]/u.test(token) && /\d/u.test(token));
+}
+
+function capacityTokenCount(value?: string | null): number {
+  return [...(value ?? "").matchAll(/\d+(?:[.,]\d+)?\s*(?:±\s*\d+(?:[.,]\d+)?\s*)?(?:л(?:ит(?:р(?:а|ов)?)?)?\.?|l(?:it(?:er|re)s?)?)(?=\s|[.,;:)]|$)/giu)].length;
+}
+
+function hasConditionalTechnicalAlternatives(requirement: MannFluidRequirementForMatch): boolean {
+  const identifiers = componentIdentifiers(requirement.componentModel);
+  const fillText = normalizeMannSearchText(requirement.fillVolumeText);
+  if (capacityTokenCount(requirement.fillVolumeText) < 2) return false;
+  const referencedComponents = identifiers.filter((identifier) => fillText.includes(identifier));
+  const fillIdentifiers = componentIdentifiers(requirement.fillVolumeText);
+  const namedDrivetrainAlternatives = /SUPER SELECT.*SUPER SELECT.*\bII\b/u.test(fillText);
+  return referencedComponents.length >= 2 || fillIdentifiers.length >= 2 || namedDrivetrainAlternatives;
+}
+
+function transmissionEvidencePattern(systemCode: string): RegExp | null {
+  if (systemCode === "CVT_TRANSMISSION") return /\b(?:CVT|JF\d|RE0F\d)\b/u;
+  if (systemCode === "ROBOT_TRANSMISSION") return /\b(?:DCT|DSG|S[ -]?TRONIC|POWERSHIFT|MPS6|DQ\d|DL\d)\b/u;
+  if (systemCode === "MANUAL_TRANSMISSION") return /\b(?:MT|MANUAL|5MT|6MT)\b/u;
+  if (systemCode === "AUTOMATIC_TRANSMISSION") return /\b(?:AT|AUTOMATIC|TIPTRONIC|AL\d|8F\d|6F\d|JATCO)\b/u;
+  return null;
+}
+
+function technicalApplicabilityBlockers(
+  requirement: MannFluidRequirementForMatch,
+  family: MannFluidSystemFamily,
+  row: MannResolverTestRow,
+): string[] {
+  if (!["TRANSMISSION", "DRIVETRAIN"].includes(family)) return [];
+  const blockers: string[] = [];
+  const rowText = normalizeMannSearchText(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
+  const identifiers = componentIdentifiers(requirement.componentModel);
+  const componentConfirmed = identifiers.length > 0 && identifiers.some((identifier) => rowText.includes(identifier));
+
+  if (hasConditionalTechnicalAlternatives(requirement)) {
+    blockers.push("несколько component/capacity альтернатив не разделены на условия");
+  }
+
+  if (family === "TRANSMISSION") {
+    const transmissionPattern = transmissionEvidencePattern(requirement.systemCode);
+    const transmissionConfirmed = transmissionPattern?.test(rowText) ?? false;
+    if (!componentConfirmed && !transmissionConfirmed) {
+      blockers.push("MANN variant не подтверждает тип или модель коробки");
+    }
+  }
+
+  if (family === "DRIVETRAIN") {
+    const driveConfirmed = /\b(?:4WD|AWD|QUATTRO|4MATIC|XDRIVE)\b/u.test(rowText);
+    if ((requirement.driveType || AWD_ONLY_SYSTEMS.has(requirement.systemCode) || identifiers.length > 0) && !componentConfirmed && !driveConfirmed) {
+      blockers.push("MANN variant не подтверждает привод или модель агрегата");
+    }
+  }
+  return blockers;
 }
 
 export function fluidSystemFamily(systemCode: string): MannFluidSystemFamily {
@@ -147,7 +219,8 @@ function representativeYear(requirement: MannFluidRequirementForMatch): number |
 }
 
 export function normalizeFluidRequirementVehicle(requirement: MannFluidRequirementForMatch): NormalizedMannVehicle | null {
-  const engineCodes = unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
+  const engineCodes = sourceEngineCodes(requirement);
+  const engineIndependent = MODEL_LEVEL_SYSTEMS.has(requirement.systemCode);
   const bodyCodes = strings(requirement.bodyCodesJson);
   return normalizeDecodedVehicleForTest({
     makeRaw: requirement.make,
@@ -162,10 +235,10 @@ export function normalizeFluidRequirementVehicle(requirement: MannFluidRequireme
     modelYearTo: requirement.yearTo ?? undefined,
     engineCode: engineCodes[0],
     engineSeries: engineCodes[1],
-    engineVolumeCc: requirement.engineVolumeCc ?? undefined,
-    powerKw: requirement.powerKw ?? undefined,
-    powerHp: requirement.powerHp ?? undefined,
-    fuelType: requirement.fuelType ?? undefined,
+    engineVolumeCc: engineIndependent ? undefined : requirement.engineVolumeCc ?? undefined,
+    powerKw: engineIndependent ? undefined : requirement.powerKw ?? undefined,
+    powerHp: engineIndependent ? undefined : requirement.powerHp ?? undefined,
+    fuelType: engineIndependent ? undefined : requirement.fuelType ?? undefined,
     transmissionType: requirement.transmissionType ?? undefined,
     driveType: requirement.driveType ?? undefined,
     sourceMethods: ["manual"],
@@ -198,7 +271,7 @@ function representativeRowsByVariant(rows: MannResolverTestRow[]): Map<string, M
 }
 
 function sourceContextScore(requirement: MannFluidRequirementForMatch, family: MannFluidSystemFamily): number {
-  const engineCodes = unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
+  const engineCodes = sourceEngineCodes(requirement);
   const hasEngineAnchor = engineCodes.length > 0 || Boolean(requirement.engineVolumeCc && (requirement.powerKw || requirement.powerHp));
   const hasChassisAnchor = Boolean(requirement.generation || strings(requirement.bodyCodesJson).length || requirement.yearFrom || requirement.yearTo);
   const hasSystemAnchor = family === "TRANSMISSION"
@@ -255,6 +328,7 @@ function candidateEvidence(candidate: MannVehicleCandidate) {
     volume: matched.has("объём двигателя"),
     power: matched.has("мощность"),
     fuel: matched.has("топливо"),
+    chassisIdentity: matched.has("поколение") || matched.has("код кузова"),
     chassis: matched.has("поколение") || matched.has("код кузова") || matched.has("год"),
   };
 }
@@ -268,14 +342,16 @@ function eligibleCandidate(
   if (hardConflicts.length > 0) return false;
   const evidence = candidateEvidence(candidate);
   if (!evidence.strongModel) return false;
-  const sourceEngineCodes = unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
-  const engineAnchor = sourceEngineCodes.length > 0
+  const engineCodes = sourceEngineCodes(requirement);
+  const engineAnchor = engineCodes.length > 0
     ? evidence.exactEngine || evidence.engineFamily
     : evidence.volume && (evidence.power || evidence.fuel || evidence.chassis);
+  const explicitChassisIdentity = Boolean(requirement.generation || strings(requirement.bodyCodesJson).length > 0);
+  if (explicitChassisIdentity && !evidence.chassisIdentity) return false;
   if (family === "ENGINE") return candidate.score >= 64 && engineAnchor && (evidence.chassis || evidence.power || evidence.fuel);
   if (family === "TRANSMISSION") return candidate.score >= 62 && engineAnchor && (evidence.chassis || Boolean(requirement.componentModel));
   if (family === "DRIVETRAIN") return candidate.score >= 60 && (engineAnchor || evidence.chassis) && (evidence.chassis || Boolean(requirement.driveType));
-  if (sourceEngineCodes.length > 0) return candidate.score >= 60 && engineAnchor;
+  if (engineCodes.length > 0) return candidate.score >= 60 && engineAnchor;
   return candidate.score >= 50 && evidence.chassis;
 }
 
@@ -303,8 +379,11 @@ function assessCandidate(
     }
     const independent = evaluateMannCandidate(normalizeFluidRequirementVehicle(requirement) as NormalizedMannVehicle, row).candidate;
     const hardConflicts = independent ? hardConflictsFor(requirement, family, independent, row) : ["production resolver отклонил цель"];
-    const reviewBlockers = independent && !conditionCovered(requirement, row.condition)
-      ? ["не подтверждено дополнительное условие применяемости MANN"]
+    const reviewBlockers = independent
+      ? unique([
+          ...(!conditionCovered(requirement, row.condition) ? ["не подтверждено дополнительное условие применяемости MANN"] : []),
+          ...technicalApplicabilityBlockers(requirement, family, row),
+        ])
       : [];
     targets.push({
       vehicleVariantKey: variantId,
@@ -330,14 +409,14 @@ function assessCandidate(
   };
 }
 
-function candidateSemanticSignature(candidate: MannVehicleCandidate, family: MannFluidSystemFamily): string {
+function candidateSemanticSignature(candidate: MannVehicleCandidate, family: MannFluidSystemFamily, includeEngine = true): string {
   const text = normalizeMannSearchText(candidate.effectiveVehicleText ?? candidate.vehicleText);
   const transmission = family === "TRANSMISSION" ? text.match(/\b(?:AT|MT|CVT|DCT|DSG|AUTOMATIC|MANUAL)\b/g)?.sort().join(",") : "";
   const drive = family === "DRIVETRAIN" ? text.match(/\b(?:4WD|AWD|FWD|RWD|QUATTRO|4MATIC|XDRIVE)\b/g)?.sort().join(",") : "";
   return [
-    normalizeMannSearchText(candidate.engineCode),
-    normalizeMannSearchText(candidate.kw),
-    normalizeMannSearchText(candidate.hp),
+    includeEngine ? normalizeMannSearchText(candidate.engineCode) : "",
+    includeEngine ? normalizeMannSearchText(candidate.kw) : "",
+    includeEngine ? normalizeMannSearchText(candidate.hp) : "",
     normalizeMannSearchText(candidate.vehicleYears),
     transmission ?? "",
     drive ?? "",
@@ -351,8 +430,8 @@ function equivalentMultiApplicability(
 ): boolean {
   if (assessments.length <= 1) return true;
   if (!assessments.every((assessment) => assessment.eligible)) return false;
-  const sourceEngineCodes = unique([requirement.engineCodeNormalized, ...strings(requirement.engineCodesJson)]);
-  if (sourceEngineCodes.length > 0) {
+  const engineCodes = sourceEngineCodes(requirement);
+  if (engineCodes.length > 0) {
     const allExact = assessments.every((assessment) => assessment.candidate.matchedFields.includes("точный код двигателя"));
     if (allExact) return true;
     const allFamily = assessments.every((assessment) => {
@@ -363,7 +442,11 @@ function equivalentMultiApplicability(
     const familySignatures = new Set(assessments.map((assessment) => candidateSemanticSignature(assessment.candidate, family)));
     return familySignatures.size === 1;
   }
-  const signatures = new Set(assessments.map((assessment) => candidateSemanticSignature(assessment.candidate, family)));
+  const signatures = new Set(assessments.map((assessment) => candidateSemanticSignature(
+    assessment.candidate,
+    family,
+    !MODEL_LEVEL_SYSTEMS.has(requirement.systemCode),
+  )));
   return signatures.size === 1;
 }
 

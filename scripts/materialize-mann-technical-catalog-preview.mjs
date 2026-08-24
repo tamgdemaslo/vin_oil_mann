@@ -112,12 +112,34 @@ function stableCapacity(capacity) {
   };
 }
 
+function normalizedApplicability(requirement) {
+  const componentModel = requirement.componentModel?.trim();
+  const meaningfulComponentModel = componentModel && !/^(?:-|—|N\/A|NONE)$/iu.test(componentModel)
+    ? componentModel.toUpperCase()
+    : null;
+  const inferredDriveType = requirement.driveType
+    || (["TRANSFER_CASE", "AWD_COUPLING"].includes(requirement.systemCode) ? "awd" : null);
+  return {
+    yearFrom: requirement.yearFrom,
+    yearTo: requirement.yearTo,
+    engineCodes: unique([
+      requirement.engineCodeNormalized,
+      ...(Array.isArray(requirement.engineCodesJson) ? requirement.engineCodesJson.map(String) : []),
+    ]),
+    transmissionType: requirement.transmissionType,
+    driveType: inferredDriveType,
+    driveTypeInferredFromSystem: !requirement.driveType && Boolean(inferredDriveType),
+    componentModel: meaningfulComponentModel,
+    rawComponentModel: componentModel || null,
+  };
+}
+
 function normalizedTechnicalPayload(requirement, capacityParsed) {
   const specifications = Array.isArray(requirement.specificationsJson) ? requirement.specificationsJson : [];
   const viscosities = Array.isArray(requirement.viscosityGradesJson) ? requirement.viscosityGradesJson : [];
   return {
     systemCode: requirement.systemCode,
-    componentModel: requirement.componentModel?.trim().toUpperCase() || null,
+    applicability: normalizedApplicability(requirement),
     capacities: capacityParsed.capacities.map((capacity) => ({
       kind: capacity.kind,
       minLiters: capacity.minLiters,
@@ -376,6 +398,7 @@ try {
           systemCode: requirement.systemCode,
           systemFamily: match.systemFamily,
           componentModel: requirement.componentModel,
+          applicability: normalizedApplicability(requirement),
           proposedState: capacityParsed.needsReview ? "REVIEW" : "ACTIVE",
           matchStatus: match.status,
           matchScore: target.score,
@@ -401,6 +424,10 @@ try {
             yearFrom: requirement.yearFrom,
             yearTo: requirement.yearTo,
             engineCode: requirement.engineCodeNormalized,
+            engineCodes: unique([
+              requirement.engineCodeNormalized,
+              ...(Array.isArray(requirement.engineCodesJson) ? requirement.engineCodesJson.map(String) : []),
+            ]),
             engineVolumeCc: requirement.engineVolumeCc,
             powerKw: requirement.powerKw,
             powerHp: requirement.powerHp,

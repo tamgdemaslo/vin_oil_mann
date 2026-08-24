@@ -1,0 +1,42 @@
+{
+  "version": "mann-fluid-review-truth-v1",
+  "reviewedAt": "2026-08-24",
+  "scope": "Thirty high-risk historical MANN-to-fluid links reviewed against primary technical sources. This file is an evaluation gate and is not matcher input.",
+  "policy": {
+    "APPROVE": "Safe to materialize automatically",
+    "REJECT": "Technical source disproves the historical association",
+    "REVIEW": "Evidence is insufficient or the source requirement must be split before materialization"
+  },
+  "cases": [
+    { "requirementId": "b51de563ac0888e176613d4561d5557c71682e378ae06712c7e0366734253180", "vehicle": "Peugeot 208 I", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REJECT", "reason": "AL4 applicability is not valid for every engine variant in the grouped source row" },
+    { "requirementId": "02790a3028e98b481120e89ce903490ee2998682bf862dd8b9a1f4359171a750", "vehicle": "Peugeot 3008 I", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REJECT", "reason": "The historical MANN vehicle link does not establish the AL4 transmission condition" },
+    { "requirementId": "338cfeced4def63479f1100fa8fd12a88c0359941f1fe466b7f218a4c5896c60", "vehicle": "BMW X5 II", "system": "TRANSFER_CASE", "verdict": "REJECT", "reason": "ATC450 and ATC700 capacities are conditional alternatives, not one vehicle-wide value" },
+    { "requirementId": "2af7fb659cff91a8456ff77ba239442590ff5627a1a55c94c5d16fb59c29fb6d", "vehicle": "BMW X6 I", "system": "TRANSFER_CASE", "verdict": "REJECT", "reason": "ATC45L and ATC700 capacities are conditional alternatives, not one vehicle-wide value" },
+    { "requirementId": "387fc4959f6fbb9d53edcb0f25221ea637f228889f5d588913e70ce3e37c310f", "vehicle": "Skoda Kodiaq", "system": "ROBOT_TRANSMISSION", "verdict": "REVIEW", "reason": "DQ380, DQ500 and DQ381 values must be split by transmission" },
+    { "requirementId": "29870969570586d266f626030f9a7455246b0ca1da34b93783c680e117a3867e", "vehicle": "Skoda Octavia", "system": "ROBOT_TRANSMISSION", "verdict": "REJECT", "reason": "DQ200 gearbox and mechatronic capacities cannot be applied as one material value" },
+    { "requirementId": "922db5818fe3f8e5505cdafbb7ef03959a9cc2526e809b29e6299dd8ba004c38", "vehicle": "Ford Focus IV", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REJECT", "reason": "The source reverses official Ford 8F24 and 8F35 capacity applicability" },
+    { "requirementId": "305403b58ddb43f8d4d2f390f804e980acc62da48ef212df4d960aead1a1c78b", "vehicle": "Nissan Juke I", "system": "CVT_TRANSMISSION", "verdict": "REVIEW", "reason": "JF015E and RE0F10B alternatives must be split by CVT model" },
+    { "requirementId": "acb6a2c116ad61405d0a70b42a55a2d06875e8dc18da3eae9a3e88b10ddac581", "vehicle": "Audi A6 II", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REJECT", "reason": "Two-wheel-drive and gearbox-version conditions are not represented by the historical link" },
+    { "requirementId": "bf73eee74e3af1a8519fc726ca4c422b5bf78084052c1c4d4046c8a432c1c341", "vehicle": "Audi A4 IV", "system": "ROBOT_TRANSMISSION", "verdict": "REJECT", "reason": "DL501 transmission applicability is not proven for the linked MANN variant" },
+    { "requirementId": "cebd394aa3496ea9c600524bcc28d68c04e04b9691021d040a46f59a95221fd0", "vehicle": "Chevrolet Aveo I", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REVIEW", "reason": "JATCO applicability is year-conditional and requires a transmission-specific split" },
+    { "requirementId": "e3a49dceb607b8d16af3dd2fb733dd95f5bd9b51c141ec7f2590ed8308aefddf", "vehicle": "Mitsubishi L200 IV", "system": "AUTOMATIC_TRANSMISSION", "verdict": "REJECT", "reason": "The grouped vehicle link does not prove the automatic-transmission variant" },
+    { "requirementId": "c323284f0bb5f91ca5bbf61f083b6769d0f8d41cca53cced1b1aa9b6bfd12520", "vehicle": "Renault Duster I", "system": "BRAKE_FLUID", "verdict": "REVIEW", "reason": "Overall and bleed quantities require interpretation before publication" },
+    { "requirementId": "ac31bfd17b42ac32e0469e94cb1e57e2da5612f31d1ea18d0ed834b10089b29d", "vehicle": "Renault Duster II", "system": "BRAKE_FLUID", "verdict": "REVIEW", "reason": "Overall and bleed quantities require interpretation before publication" },
+    { "requirementId": "3cea8b60323de4ddcee3aad7f177eac4e56e86b6ea5494cd66ddf37907e90979", "vehicle": "Toyota RAV4 IV", "system": "CVT_TRANSMISSION", "verdict": "REVIEW", "reason": "K111 and K111F values are conditional on different engine variants" },
+    { "requirementId": "6af7baf61960c88d9b7cfa6d09210fff9d97462ddffc626c31d528a0518889f6", "vehicle": "Ford Mondeo IV", "system": "ROBOT_TRANSMISSION", "verdict": "REVIEW", "reason": "MPS6 applicability needs transmission-specific evidence" },
+    { "requirementId": "5dcfb47eb2b63b4a4b4a1e9544d7cc4ce9d4c56a6d85f92d1482006b72e79bfb", "vehicle": "Mitsubishi L200 V", "system": "TRANSFER_CASE", "verdict": "REVIEW", "reason": "Super Select 4WD and Super Select 4WD II capacities must be split" },
+    { "requirementId": "620838e2207d723920fa4077544e01e5142543d61a6fba19540c17b93ce527ad", "vehicle": "Nissan Teana II", "system": "CVT_TRANSMISSION", "verdict": "REJECT", "reason": "The historical target is PDF-contaminated and does not confirm JF011E/RE0F10A applicability" },
+    { "requirementId": "822495ce5c62f8f72495c4715f5c4c0f3cb656dd0a4be7ff8ac0da68dd9c041d", "vehicle": "Toyota FJ Cruiser I", "system": "TRANSFER_CASE", "verdict": "REVIEW", "reason": "The 1.0–1.4 litre range lacks a condition that selects the exact value" },
+    { "requirementId": "751b0a69688fcfc21e876022f48a926a3598c716c225cc964aa6bb0e18b6fe56", "vehicle": "SsangYong Rexton II", "system": "TRANSFER_CASE", "verdict": "REJECT", "reason": "TOD transfer-case applicability is not proven for the grouped vehicle link" },
+    { "requirementId": "972154933eceb4005bbfb56455cac2012e7f3c5b7b6d22c1cb0cffc38ef31a13", "vehicle": "Chevrolet Aveo I", "system": "MANUAL_TRANSMISSION", "verdict": "REVIEW", "reason": "The 5MT year condition requires a transmission-specific split" },
+    { "requirementId": "1a20aeec228af3c2495757c784f3adccc3f4db431dd00e4374f5907d90d165b3", "vehicle": "SsangYong Rexton II", "system": "BRAKE_FLUID", "verdict": "REVIEW", "reason": "Independent technical confirmation remains insufficient" },
+    { "requirementId": "011079a1e6b0bb793536e90be4e7bfc0cdab159cae99bb6df49e9534252c50b0", "vehicle": "Honda Accord IX", "system": "CVT_TRANSMISSION", "verdict": "REJECT", "reason": "Body-year capacity alternatives cannot be applied to a generic linked variant" },
+    { "requirementId": "3d309651a9e8fb30fb90643cbb8684fc57880556a8baf3958aff35e776a1ab52", "vehicle": "Mazda CX-9 II", "system": "TRANSFER_CASE", "verdict": "APPROVE", "reason": "The official AWD transfer-case capacity and vehicle application agree" },
+    { "requirementId": "f3b93f200485e1a1465d55489720933b3ffd257903ad7dc023ad274757162c70", "vehicle": "Hyundai Elantra IV", "system": "BRAKE_FLUID", "verdict": "REJECT", "reason": "The historical MANN target belongs to a different Elantra generation/body" },
+    { "requirementId": "d9e7d5fe6574253b0a952ad0d2493f2df25ddc7404ab7e153307edcecc4dd187", "vehicle": "Subaru Forester later range", "system": "BRAKE_FLUID", "verdict": "REVIEW", "reason": "The grouped year range requires independent confirmation" },
+    { "requirementId": "bf6551a663052e81a012e1722f6cea89730eb131ac2649ed0cbd4ee3979f5666", "vehicle": "Subaru Forester early range", "system": "BRAKE_FLUID", "verdict": "REVIEW", "reason": "The grouped year range requires independent confirmation" },
+    { "requirementId": "ad58a22a3297642b33bef01ac93766b65f3316de21929322df2205e3ff7ea7d7", "vehicle": "Honda Civic IX", "system": "MANUAL_TRANSMISSION", "verdict": "APPROVE", "reason": "Official manual-transmission capacity and application agree" },
+    { "requirementId": "20d5dbb99bc5e4f25e2a0b6e210facd27ec60f03ba01356c3310e7b4c7c39f22", "vehicle": "Haval Jolion", "system": "ROBOT_TRANSMISSION", "verdict": "REVIEW", "reason": "7DCT application requires transmission-specific evidence and source reconciliation" },
+    { "requirementId": "b386fffd1f0dc020cf0cbf88e25d97ecacad68e3ac3b9e6f8a962e652d6d77d8", "vehicle": "Mazda CX-9 II", "system": "ENGINE_COOLANT", "verdict": "APPROVE", "reason": "Official coolant capacity and vehicle application agree" }
+  ]
+}
