@@ -23,6 +23,8 @@ import {
 
 const MAX_RECEIPT_LINES = 240;
 const ROSSKO_SOURCE = "rossko";
+const ROSSKO_RECEIPT_SOURCE_SNAPSHOT_VERSION = 1;
+const ROSSKO_RECEIPT_SOURCE_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
 
 export type NormalizedRosskoOrderPart = {
   guid: string;
@@ -212,6 +214,49 @@ function stableJson(value: unknown): string {
 
 function shortHash(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("base64url").slice(0, 24);
+}
+
+function finiteOrNull(value: number | null): number | null {
+  return value != null && Number.isFinite(value) ? value : null;
+}
+
+export function serializeRosskoReceiptSourceSnapshot(order: NormalizedRosskoOrder) {
+  return {
+    version: ROSSKO_RECEIPT_SOURCE_SNAPSHOT_VERSION,
+    order: {
+      id: order.id,
+      created_date: order.createdAt?.toISOString() ?? null,
+      delivery_date: order.deliveryDate?.toISOString() ?? null,
+      detail: { delivery_type: order.deliveryType },
+      total_price: finiteOrNull(order.totalPrice),
+      payment_status: order.paymentStatus,
+      stock_address: order.stockAddress,
+      parts: { part: order.parts.map((part) => ({
+        guid: part.guid,
+        partnumber: part.article,
+        brand: part.brand,
+        name: part.name,
+        count: finiteOrNull(part.orderedQty),
+        price: finiteOrNull(part.price),
+        delivery: finiteOrNull(part.deliveryDays),
+        delivery_date: part.deliveryDate?.toISOString() ?? null,
+        status: part.status,
+        comment: part.comment,
+        source_fingerprint: shortHash(stableJson(part.raw)),
+      })) },
+    },
+  };
+}
+
+export function restoreRosskoReceiptSourceSnapshot(value: unknown, expectedOrderId: string): NormalizedRosskoOrder | null {
+  const snapshot = record(value);
+  const order = record(snapshot?.order);
+  if (numeric(snapshot?.version) !== ROSSKO_RECEIPT_SOURCE_SNAPSHOT_VERSION || text(order?.id) !== expectedOrderId) return null;
+  try {
+    return normalizeRosskoOrder({ OrdersList: { Order: [order] } }, expectedOrderId);
+  } catch {
+    return null;
+  }
 }
 
 function orderPartRecords(order: Record<string, unknown>): Record<string, unknown>[] {
@@ -620,7 +665,12 @@ function assertOrderId(value: string) {
   return orderId;
 }
 
-async function writePreviewAudit(tx: ReceiptDb, context: BranchContext, preview: RosskoReceiptPreview) {
+async function writePreviewAudit(
+  tx: ReceiptDb,
+  context: BranchContext,
+  preview: RosskoReceiptPreview,
+  order: NormalizedRosskoOrder,
+) {
   const branchId = context.branchId!;
   const events: Prisma.BranchAuditLogCreateManyInput[] = [{
     businessGroupId: context.businessGroupId,
@@ -630,6 +680,14 @@ async function writePreviewAudit(tx: ReceiptDb, context: BranchContext, preview:
     entityType: "rossko_order",
     entityId: preview.order.id,
     metadata: { sourceLines: preview.summary.sourceLines, remainingQty: preview.summary.remainingQty },
+  }, {
+    businessGroupId: context.businessGroupId,
+    branchId,
+    userId: context.userId,
+    action: "ROSSKO_RECEIPT_SOURCE_SNAPSHOT_SAVED",
+    entityType: "rossko_order",
+    entityId: preview.order.id,
+    metadata: { sourceSnapshot: serializeRosskoReceiptSourceSnapshot(order) },
   }];
   const matched = preview.lines.filter((line) => line.product);
   if (matched.length) events.push({
@@ -670,9 +728,38 @@ export async function previewRosskoReceipt(input: { context: BranchContext; acto
   const order = await loadNormalizedOrder(orderId);
   return prisma.$transaction(async (tx) => {
     const preview = await buildReceiptPreview(tx, input.context, order, input.storeId?.trim());
-    await writePreviewAudit(tx, input.context, preview);
+    await writePreviewAudit(tx, input.context, preview, order);
     return preview;
   }, { maxWait: 10_000, timeout: 30_000 });
+}
+
+async function loadPreviewedRosskoOrder(tx: ReceiptDb, branchId: string, orderId: string) {
+  const event = await tx.branchAuditLog.findFirst({
+    where: {
+      branchId,
+      action: "ROSSKO_RECEIPT_SOURCE_SNAPSHOT_SAVED",
+      entityType: "rossko_order",
+      entityId: orderId,
+    },
+    select: { metadata: true, createdAt: true },
+    orderBy: [{ createdAt: "desc" }],
+  });
+  if (!event || Date.now() - event.createdAt.getTime() > ROSSKO_RECEIPT_SOURCE_SNAPSHOT_TTL_MS) {
+    throw new RosskoReceiptError(
+      "Данные заказа ROSSKO устарели. Обновите заказ и повторите создание черновика.",
+      409,
+      "ROSSKO_RECEIPT_SOURCE_SNAPSHOT_EXPIRED",
+    );
+  }
+  const order = restoreRosskoReceiptSourceSnapshot(record(event.metadata)?.sourceSnapshot, orderId);
+  if (!order) {
+    throw new RosskoReceiptError(
+      "Обновите заказ ROSSKO перед созданием черновика приёмки.",
+      409,
+      "ROSSKO_RECEIPT_SOURCE_SNAPSHOT_REQUIRED",
+    );
+  }
+  return order;
 }
 
 function draftFingerprint(storeId: string, decisions: RosskoReceiptDraftDecision[]) {
@@ -782,7 +869,7 @@ export async function createRosskoReceiptDraft(input: {
     const existing = drafts.find((document) => text(record(document.raw)?.idempotencyKey) === idempotencyKey);
     if (existing) return draftResult(existing, true);
 
-    const order = await loadNormalizedOrder(orderId);
+    const order = await loadPreviewedRosskoOrder(tx, branchId, orderId);
     const preview = await buildReceiptPreview(tx, input.context, order, storeId);
     const previewByKey = new Map(preview.lines.map((line) => [line.sourceLineKey, line]));
     const duplicateDecisions = decisions.map((line) => text(line.sourceLineKey)).filter(Boolean);

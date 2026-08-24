@@ -9,8 +9,10 @@ const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": r
 const {
   groupRosskoOrderParts,
   normalizeRosskoOrder,
+  restoreRosskoReceiptSourceSnapshot,
   rosskoSourceLineKey,
   rosskoStatusPresentation,
+  serializeRosskoReceiptSourceSnapshot,
 } = await jiti.import("../src/lib/rossko-receipt.ts");
 
 const officialPayload = {
@@ -71,6 +73,22 @@ const conflictingDuplicates = groupRosskoOrderParts([
 ]);
 assert.equal(conflictingDuplicates.length, 1);
 assert.equal(conflictingDuplicates[0].ambiguous, true, "different rows with duplicate GUID are ambiguous");
+
+const persistedSnapshot = JSON.parse(JSON.stringify(serializeRosskoReceiptSourceSnapshot({
+  ...order,
+  parts: [
+    order.parts[0],
+    { ...order.parts[0] },
+    order.parts[1],
+  ],
+})));
+const restoredSnapshot = restoreRosskoReceiptSourceSnapshot(persistedSnapshot, order.id);
+assert.ok(restoredSnapshot, "a JSON-persisted preview snapshot can be restored without ROSSKO");
+assert.equal(restoredSnapshot.parts.length, 3);
+assert.equal(restoredSnapshot.parts[0].article, order.parts[0].article);
+assert.equal(restoredSnapshot.parts[0].price, order.parts[0].price);
+assert.equal(groupRosskoOrderParts(restoredSnapshot.parts)[0].ambiguous, false, "identical provider duplicates stay identical after snapshot restore");
+assert.equal(restoreRosskoReceiptSourceSnapshot(persistedSnapshot, "999"), null, "a snapshot cannot be used for another order");
 
 assert.throws(
   () => normalizeRosskoOrder({ Orders: { Order: [{ id: 42, parts: { part: Array.from({ length: 241 }, (_, index) => ({ guid: `g-${index}` })) } }] } }, "42"),
@@ -136,6 +154,10 @@ assert.match(service, /FOREIGN_PRODUCT/);
 assert.match(service, /resolveRosskoSupplierCounterparty/);
 assert.match(service, /sourceProvider:\s*ROSSKO_SOURCE/);
 assert.match(service, /ROSSKO_RECEIPT_PREVIEWED/);
+assert.match(service, /sourceSnapshot:\s*serializeRosskoReceiptSourceSnapshot\(order\)/);
+assert.match(service, /loadPreviewedRosskoOrder\(tx, branchId, orderId\)/);
+const draftService = service.slice(service.indexOf("export async function createRosskoReceiptDraft"));
+assert.doesNotMatch(draftService, /loadNormalizedOrder\(/, "draft creation must not repeat the external ROSSKO request after preview");
 assert.match(service, /ROSSKO_RECEIPT_DRAFT_CREATED/);
 assert.match(service, /ROSSKO_RECEIPT_PARTIAL/);
 assert.match(service, /ROSSKO_RECEIPT_PRICE_DEVIATION/);

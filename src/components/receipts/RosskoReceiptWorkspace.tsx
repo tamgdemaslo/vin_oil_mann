@@ -830,7 +830,7 @@ function RosskoReceiptEditor({
           {created ? (
             <><EcoButton type="button" onClick={onClose}>К заказам</EcoButton><Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>Открыть приёмку</Link></>
           ) : (
-            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && !preview && <EcoButton type="button" onClick={() => void fetchPreview()}>Повторить</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
+            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
           )}
         </footer>
       </section>
