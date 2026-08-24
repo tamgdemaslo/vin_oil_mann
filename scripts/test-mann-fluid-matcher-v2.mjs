@@ -61,7 +61,7 @@ function requirement(overrides = {}) {
   };
 }
 
-assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v3");
+assert.equal(MANN_FLUID_MATCHER_VERSION, "mann-fluid-matcher-v4");
 
 const single = matchFluidRequirementToMann(requirement(), [row({})]);
 assert.equal(single.status, "CONFIRMED_SINGLE");
@@ -144,4 +144,26 @@ const modelLevelBrakeFluid = matchFluidRequirementToMann(requirement({
 assert.equal(modelLevelBrakeFluid.status, "CONFIRMED_MULTI_APPLICABILITY");
 assert.deepEqual(modelLevelBrakeFluid.targets.map((target) => target.vehicleVariantKey).sort(), ["variant-a", "variant-b"]);
 
-console.log("MANN fluid matcher v3 system-aware policy tests — passed");
+const rearDifferentialWithoutDriveEvidence = matchFluidRequirementToMann(requirement({
+  systemCode: "REAR_DIFFERENTIAL",
+  systemNameRaw: "Задний редуктор",
+  driveType: null,
+}), [row({ vehicleText: "2.4 gasoline (A3)", effectiveVehicleText: "2.4 gasoline (A3)" })]);
+assert.equal(rearDifferentialWithoutDriveEvidence.status, "REVIEW_REQUIRED");
+assert.ok(rearDifferentialWithoutDriveEvidence.topCandidates[0]?.reviewBlockers.includes("MANN variant не подтверждает привод или модель агрегата"));
+
+const rearDifferentialWithDriveEvidence = matchFluidRequirementToMann(requirement({
+  systemCode: "REAR_DIFFERENTIAL",
+  systemNameRaw: "Задний редуктор",
+  driveType: null,
+}), [row({ vehicleText: "2.4 gasoline 4WD (A3)", effectiveVehicleText: "2.4 gasoline 4WD (A3)" })]);
+assert.equal(rearDifferentialWithDriveEvidence.status, "CONFIRMED_SINGLE");
+
+const unprovenPowerSteering = matchFluidRequirementToMann(requirement({
+  systemCode: "POWER_STEERING",
+  systemNameRaw: "Жидкость ГУР",
+}), [row({})]);
+assert.equal(unprovenPowerSteering.status, "REVIEW_REQUIRED");
+assert.ok(unprovenPowerSteering.topCandidates[0]?.reviewBlockers.includes("MANN variant не подтверждает наличие этой гидравлической системы"));
+
+console.log("MANN fluid matcher v4 system-aware policy tests — passed");

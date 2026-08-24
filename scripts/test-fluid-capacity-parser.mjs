@@ -12,7 +12,7 @@ const { FLUID_CAPACITY_PARSER_VERSION, parseFluidCapacities } = await jiti.impor
   "../src/lib/fluid-capacity-parser.ts",
 );
 
-assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v2");
+assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v3");
 
 const tolerance = parseFluidCapacities("Заправочный объём 5,6 ± 0,1 л", "ENGINE_OIL");
 assert.equal(tolerance.capacities.length, 1);
@@ -95,6 +95,19 @@ const unresolvedConditional = parseFluidCapacities("10.9 л. общий объё
 assert.equal(unresolvedConditional.needsReview, true);
 assert.equal(unresolvedConditional.suspicious[0]?.code, "UNRESOLVED_CONDITIONAL_CAPACITY");
 
+for (const text of [
+  "3.3 л. для K7M 4.9 л. для K4M",
+  "7.4 л. для B6304T2 6.8 л. для B6304T4",
+  "11.6 л. для бензина 12.7 л. для дизеля",
+]) {
+  const parsed = parseFluidCapacities(text, "ENGINE_OIL");
+  assert.equal(parsed.needsReview, true, text);
+  assert.ok(parsed.suspicious.some((item) => item.code === "UNRESOLVED_CONDITIONAL_CAPACITY"), text);
+}
+
+const distinctServiceContexts = parseFluidCapacities("6.1 л. сервисный объём 7.1 л. общий объём", "ENGINE_OIL");
+assert.equal(distinctServiceContexts.needsReview, false);
+
 const sourceLexicon = parseFluidCapacities("5.9 л. общий объём 2.5 л. слив 3.0 л. долив 5.5 л. объём без фильтра 5.9 л. объём c фильтром");
 assert.deepEqual(sourceLexicon.capacities.map(({ kind, nominalLiters }) => [kind, nominalLiters]), [
   ["TOTAL", 5.9],
@@ -136,4 +149,4 @@ for (const testCase of golden.cases) {
   assert.deepEqual(stableActual, testCase.expected, testCase.caseId);
 }
 
-console.log("Fluid capacity parser v2 regressions + 200-case real golden set — passed");
+console.log("Fluid capacity parser v3 regressions + 200-case real golden set — passed");

@@ -1,4 +1,4 @@
-export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v2" as const;
+export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v3" as const;
 
 export type FluidCapacityKind =
   | "SERVICE"
@@ -344,7 +344,7 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
     for (let rightIndex = leftIndex + 1; rightIndex < capacities.length; rightIndex += 1) {
       const left = capacities[leftIndex];
       const right = capacities[rightIndex];
-      if (left.kind !== right.kind || left.kind === "UNKNOWN") continue;
+      if (left.kind !== right.kind) continue;
       const leftMin = left.minLiters ?? left.nominalLiters ?? left.maxLiters;
       const leftMax = left.maxLiters ?? left.nominalLiters ?? left.minLiters;
       const rightMin = right.minLiters ?? right.nominalLiters ?? right.maxLiters;
@@ -352,6 +352,10 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
       if (leftMin === null || leftMax === null || rightMin === null || rightMax === null) continue;
       const comparisonTolerance = Math.max(0.05, Math.min(leftMax, rightMax) * 0.03);
       if (leftMax + comparisonTolerance >= rightMin && rightMax + comparisonTolerance >= leftMin) continue;
+      if (left.kind === "UNKNOWN") {
+        const localText = text.slice(Math.max(0, left.start - 32), Math.min(text.length, right.end + 80));
+        if (!/(?:ДЛЯ|\bFOR\b|МОДЕЛ|ДВИГАТЕЛ|АКПП|МКПП|\bCVT\b|\bDCT\b|БЕНЗИН|ДИЗЕЛ|\b2WD\b|\b4WD\b|КУЗОВ|\bWITH\b|\bWITHOUT\b)/iu.test(localText)) continue;
+      }
       conditionalIndexes.add(leftIndex);
       conditionalIndexes.add(rightIndex);
     }

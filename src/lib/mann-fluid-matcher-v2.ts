@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MANN_MIN_PRESENTABLE_SCORE, diagnoseMannCandidatesForTest, evaluateMannCandidate, mannMakeFormsForTest, normalizeDecodedVehicleForTest, type MannResolverTestRow, type MannVehicleCandidate, type NormalizedMannVehicle } from "@/lib/mann-vehicle-resolver";
 import { normalizeMannSearchText, normalizeMannText } from "@/lib/mann-catalog";
 
-export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v3" as const;
+export const MANN_FLUID_MATCHER_VERSION = "mann-fluid-matcher-v4" as const;
 
 export type MannFluidMatchStatus =
   | "CONFIRMED_SINGLE"
@@ -125,6 +125,10 @@ const DRIVETRAIN_SYSTEMS = new Set([
 ]);
 const MODEL_LEVEL_SYSTEMS = new Set(["BRAKE_FLUID"]);
 const AWD_ONLY_SYSTEMS = new Set(["TRANSFER_CASE", "AWD_COUPLING"]);
+const DRIVE_EVIDENCE_REQUIRED_SYSTEMS = new Set([
+  "TRANSFER_CASE", "FRONT_DIFFERENTIAL", "REAR_DIFFERENTIAL", "DIFFERENTIAL_GENERIC", "AWD_COUPLING",
+]);
+const SYSTEM_TYPE_EVIDENCE_REQUIRED = new Set(["POWER_STEERING", "SUSPENSION_HYDRAULIC", "HYDRAULIC_SYSTEM"]);
 
 function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
@@ -177,11 +181,21 @@ function technicalApplicabilityBlockers(
   family: MannFluidSystemFamily,
   row: MannResolverTestRow,
 ): string[] {
-  if (!["TRANSMISSION", "DRIVETRAIN"].includes(family)) return [];
   const blockers: string[] = [];
   const rowText = normalizeMannSearchText(`${row.model} ${row.vehicleText ?? ""} ${row.effectiveVehicleText ?? ""} ${row.condition ?? ""}`);
   const identifiers = componentIdentifiers(requirement.componentModel);
   const componentConfirmed = identifiers.length > 0 && identifiers.some((identifier) => rowText.includes(identifier));
+
+  if (SYSTEM_TYPE_EVIDENCE_REQUIRED.has(requirement.systemCode)) {
+    const systemEvidence = requirement.systemCode === "POWER_STEERING"
+      ? /\b(?:POWER STEER|HYDRAULIC STEER|EHPS|PSF)\b/u.test(rowText)
+      : requirement.systemCode === "SUSPENSION_HYDRAULIC"
+        ? /\b(?:AHC|ABC|AIRMATIC|HYDRAULIC SUSPENSION|HYDROPNEUMATIC)\b/u.test(rowText)
+        : componentConfirmed;
+    if (!systemEvidence) blockers.push("MANN variant не подтверждает наличие этой гидравлической системы");
+  }
+
+  if (!["TRANSMISSION", "DRIVETRAIN"].includes(family)) return blockers;
 
   if (hasConditionalTechnicalAlternatives(requirement)) {
     blockers.push("несколько component/capacity альтернатив не разделены на условия");
@@ -196,8 +210,13 @@ function technicalApplicabilityBlockers(
   }
 
   if (family === "DRIVETRAIN") {
-    const driveConfirmed = /\b(?:4WD|AWD|QUATTRO|4MATIC|XDRIVE)\b/u.test(rowText);
-    if ((requirement.driveType || AWD_ONLY_SYSTEMS.has(requirement.systemCode) || identifiers.length > 0) && !componentConfirmed && !driveConfirmed) {
+    const driveConfirmed = /\b(?:4WD|4X4|AWD|RWD|QUATTRO|4MATIC|XDRIVE)\b/u.test(rowText);
+    if ((
+      requirement.driveType
+      || AWD_ONLY_SYSTEMS.has(requirement.systemCode)
+      || DRIVE_EVIDENCE_REQUIRED_SYSTEMS.has(requirement.systemCode)
+      || identifiers.length > 0
+    ) && !componentConfirmed && !driveConfirmed) {
       blockers.push("MANN variant не подтверждает привод или модель агрегата");
     }
   }

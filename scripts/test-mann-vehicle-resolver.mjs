@@ -252,6 +252,16 @@ assert.equal(
   "a MANN PDF continuation artifact is cleaned into its actual vehicle variant",
 );
 
+const pajeroMini = normalizeDecodedVehicleForTest(vehicle({
+  makeRaw: "MITSUBISHI", modelRaw: "Pajero Mini", generationRaw: "II", year: 2008,
+}));
+assert.ok(evaluateMannCandidate(pajeroMini, row({
+  make: "MITSUBISHI", model: "Pajero II", vehicleText: "3.2DiD", vehicleYearFrom: 2000, vehicleYearTo: 2012,
+})).rejected?.reasons.some((reason) => reason.includes("базовая модель")), "Pajero Mini must not collapse into the full-size Pajero family");
+assert.ok(evaluateMannCandidate(pajeroMini, row({
+  make: "MITSUBISHI", model: "Pajero Mini II", vehicleText: "0.7", vehicleYearFrom: 1998, vehicleYearTo: 2012,
+})).candidate, "Pajero Mini keeps its distinctive model token");
+
 const kiaCeed = normalizeDecodedVehicleForTest(vehicle({ makeRaw: "KIA", modelRaw: "Ceed", year: 2015 }));
 assert.ok(evaluateMannCandidate(kiaCeed, row({
   make: "KIA MOTORS", model: "Cee’d II/Pro Cee’d II/Sports Wagon II(JD)", vehicleText: "1.6GDI", vehicleYearFrom: 2012, vehicleYearTo: 2018,

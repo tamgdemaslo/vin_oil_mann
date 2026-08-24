@@ -26,6 +26,7 @@
     "test:mann-vehicle-matching": "node scripts/run-mann-matching-benchmark.mjs",
     "test:mann-fluid-matcher-v2": "node scripts/test-mann-fluid-matcher-v2.mjs",
     "score:mann-fluid-review-truth": "node scripts/score-mann-fluid-review-truth.mjs",
+    "build:mann-active-review-package": "node scripts/build-mann-active-review-package.mjs",
     "score:mann-vehicle-matching": "node scripts/score-mann-matching-report.mjs",
     "audit:mann-vehicle-matching": "node scripts/audit-mann-vehicle-matching.mjs",
     "audit:mann-filter-local-matching": "node scripts/audit-mann-filter-local-matching.mjs",

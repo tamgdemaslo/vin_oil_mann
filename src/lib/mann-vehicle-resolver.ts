@@ -233,6 +233,10 @@ function modelSimilarity(left?: string, right?: string): number {
   if (!leftKey || !rightKey) return 0;
   if (leftKey === rightKey) return 1;
   if (phoneticModelKey(left) === phoneticModelKey(right)) return 0.96;
+  const distinctiveTokens = ["MINI", "SPORT", "GRAND", "CROSS", "PRIME"];
+  const leftTokens = new Set(normalizeMannSearchText(left).split(" "));
+  const rightTokens = new Set(normalizeMannSearchText(right).split(" "));
+  if (distinctiveTokens.some((token) => leftTokens.has(token) !== rightTokens.has(token))) return 0;
   const shorter = leftKey.length <= rightKey.length ? leftKey : rightKey;
   const longer = leftKey.length <= rightKey.length ? rightKey : leftKey;
   if (shorter.length >= 2 && longer.startsWith(shorter)) return 0.9;
