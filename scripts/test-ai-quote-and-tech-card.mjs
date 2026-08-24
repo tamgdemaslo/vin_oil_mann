@@ -178,6 +178,15 @@ assert.equal(genericAutomaticPlan.options[0].servicePackage.filterReplacement, f
 assert.equal(genericAutomaticPlan.options[1].servicePackage.panRemoval, true, "the unresolved filter-service option describes the prospective pan package");
 assert.equal(genericAutomaticPlan.options[1].servicePackage.filterReplacement, true, "the unresolved filter-service option cannot be represented as a filterless partial quote");
 assert.equal(genericAutomaticPlan.options[1].blocker?.code, "FILTER_SERVICE_CONFIGURATION_NOT_CONFIRMED", "the filter-service option is explicitly blocked until its construction is verified");
+const confirmedGenericScenarios = applyAutomaticTransmissionScenarioDefaults(parseQuoteAndTechCardInput({
+  ...runtimeInput,
+  requestedProcedures: ["partial"],
+  service: { ...runtimeInput.service, filterAccess: "pan_service", filterEvidence: "OEM: фильтр меняется после снятия поддона.", procedures: ["partial"] },
+}), "JTMHV05J804089024 сделай расчёт АКПП");
+const confirmedGenericPlan = createQuoteAndTechCardPlan(confirmedGenericScenarios, rules);
+assert.equal(confirmedGenericPlan.options[0].servicePackage.filterReplacement, false, "the drain-and-fill branch stays filterless even when a separate accessible-filter package is confirmed");
+assert.equal(confirmedGenericPlan.options[1].servicePackage.filterReplacement, true, "the confirmed filter branch includes the accessible filter");
+assert.equal(confirmedGenericPlan.options[1].servicePackage.panRemoval, true, "the confirmed filter branch includes pan removal when the technical contract requires it");
 const explicitPartialScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Нужна частичная замена АКПП");
 assert.deepEqual(explicitPartialScenarios.requestedProcedures, ["partial"], "an explicitly requested partial service is not expanded into another method");
 const explicitMachineWithFilterScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Нужна аппаратная замена АКПП с фильтром");
