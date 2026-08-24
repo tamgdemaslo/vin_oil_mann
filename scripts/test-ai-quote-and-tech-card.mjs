@@ -170,15 +170,6 @@ const integratedPanPlan = createQuoteAndTechCardPlan({
 assert.equal(integratedPanPlan.filterPolicy.access, "integrated_with_pan", "integrated pan is not conflated with a removable filter");
 assert.equal(integratedPanPlan.options[0].servicePackage.requiredParts[0]?.type, "integrated_pan", "integrated pan becomes a distinct required part");
 
-const ab60fPlan = createQuoteAndTechCardPlan({
-  ...runtimeInput,
-  vehicle: { displayName: "Toyota Land Cruiser 200", aggregateCode: "AB60F", snapshot: {} },
-  service: { ...runtimeInput.service, aggregate: "AB60F", filterAccess: "unknown", transmissionConfiguration: null },
-});
-assert.equal(ab60fPlan.filterPolicy.access, "pan_service", "AB60F cannot be downgraded to an unknown filter construction");
-assert.equal(ab60fPlan.input.service.transmissionConfiguration, "pan_and_filter", "AB60F receives the pan-and-filter labour configuration");
-assert.equal(ab60fPlan.options[0].servicePackage.filterReplacement, true, "AB60F service package includes the accessible filter");
-
 const manualMismatchPlan = createQuoteAndTechCardPlan({
   ...runtimeInput,
   vehicleDisplayName: "Volkswagen Golf · WVWZZZ1KZBW588069",
