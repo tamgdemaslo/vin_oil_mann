@@ -32,6 +32,7 @@ const {
   LocalFirstInvariantError,
   QuoteAndTechCardIntegrityError,
   requestedDateRangeFromText,
+  restoreQuoteAndTechCardContinuationInput,
   selectQuoteAndTechCardFallbackServiceCard,
 } = await jiti.import("../src/lib/ai-assistant/tools.ts");
 const { buildClientMessage } = await jiti.import("../src/lib/ai-assistant/client-message.ts");
@@ -354,6 +355,28 @@ const result = parseQuoteAndTechCardResult({
   scenario: "quote_and_tech_card", status: "partial", vehicle: { displayName: "Hyundai Tucson 2.0 CRDi", aggregate: "A6LF2" }, quoteSet, techCard, customerMessage, evidence: parsedInput.evidence,
 });
 assert.ok(result, "shared public contract accepts QuoteSet result with material and quantity traces");
+
+const panServiceResult = parseQuoteAndTechCardResult({
+  ...result,
+  quoteSet: { ...result.quoteSet, requestedProcedures: ["partial", "machine"] },
+  techCard: {
+    ...result.techCard,
+    filterPolicy: panServicePlan.filterPolicy,
+    filter: panServicePlan.filterPolicy,
+    filterSummary: panServicePlan.filterPolicy.customerText,
+    servicePackages: panServicePlan.options.map((option) => option.servicePackage),
+  },
+});
+const downgradedContinuationInput = parseQuoteAndTechCardInput({
+  ...runtimeInput,
+  requestedProcedures: ["partial"],
+  service: { ...runtimeInput.service, filterAccess: "unknown", transmissionConfiguration: null },
+});
+const restoredContinuationInput = restoreQuoteAndTechCardContinuationInput(downgradedContinuationInput, panServiceResult);
+assert.equal(restoredContinuationInput.service.filterAccess, "pan_service", "a generic recalculation cannot downgrade a confirmed pan-service filter to unknown");
+assert.equal(restoredContinuationInput.service.transmissionConfiguration, "pan_and_filter", "the restored filter package keeps the pan-and-filter labour branch");
+assert.deepEqual(restoredContinuationInput.requestedProcedures, ["partial", "machine"], "a generic recalculation keeps every previously requested procedure");
+assert.equal(classifyQuoteAndTechCardFailure(new QuoteAndTechCardIntegrityError("Для сервиса со снятием поддона не подтверждена обязательная позиция «external_filter»")).code, "FILTER_SERVICE_PACKAGE_NOT_CONFIRMED", "an incomplete pan/filter package has an explicit actionable blocker");
 
 const enginePlan = createQuoteAndTechCardPlan({
   vehicle: { id: "vehicle-tucson", displayName: "Hyundai Tucson 2.0 CRDi", aggregateCode: null, snapshot: {} },

@@ -108,7 +108,7 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
     "Не останавливай расчёт из-за одного неподтверждённого параметра. Разделяй ПОДТВЕРЖДЕНО, РАБОЧЕЕ ДОПУЩЕНИЕ и ТРЕБУЕТ ФИНАЛЬНОЙ ПРОВЕРКИ. При средней уверенности дай полезный предварительный расчёт; при низкой — 2–3 сценария или один вопрос, только если ответ существенно меняет расчёт.",
     "Используй VIN максимально: сначала lookup_vehicle, затем данные автомобиля, историю и внешние каталоги. Если точный код агрегата не найден, продолжай по модели, двигателю, году, приводу, рынку и найденным OEM/каталожным связкам. Не перекладывай цифровой поиск на сотрудника.",
     "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз для одной услуги. Если сотрудник явно запросил разные агрегаты одного визита (например, двигатель и АКПП), вызови вместо него build_quote_and_tech_card_bundle ровно один раз и передай независимый input для каждой услуги. Не теряй услугу и не смешивай её допуск, объём, товар или тариф с другой. Не вызывай после сценария calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество.",
-    "Для замены масла считай услугу под ключ: жидкость, доступные без разборки фильтр/поддон, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Внутренний фильтр трансмиссии, требующий разборки агрегата, не включай в смету и не ищи для него ROSSKO: явно передай filterAccess=internal_requires_disassembly. После этого не ищи OE-номер, прокладки или связанные детали внутреннего фильтра и не добавляй в техкарту рекомендаций по его заказу.",
+    "Для замены масла считай услугу под ключ: жидкость, доступные без разборки фильтр/поддон, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Если filterAccess=pan_service или integrated_with_pan, не заменяй эту ветку на filterAccess=unknown: передай в расчёт подтверждённый фильтр/поддон и обязательные прокладку и крепёж с корректными ролями; при отсутствии цены честно заблокируй именно этот пакет. Внутренний фильтр трансмиссии, требующий разборки агрегата, не включай в смету и не ищи для него ROSSKO: явно передай filterAccess=internal_requires_disassembly. После этого не ищи OE-номер, прокладки или связанные детали внутреннего фильтра и не добавляй в техкарту рекомендаций по его заказу.",
     "Для трансмиссионного расчёта всегда передавай в calculate_service_quote_v2 точный requiredFluidSpec, requiredFluidVolumeLiters и OEM-артикул основной жидкости в requiredFluidOemArticle. По умолчанию fluidPreference=prefer_local_compatible: не добавляй основную жидкость в selectedProducts, backend сам выберет совместимый локальный товар с достаточным остатком и заменит им поставщицкую жидкость. Название в OEM-документации вроде «Toyota Genuine CVT Fluid FE» фиксирует требуемую спецификацию, но само по себе не запрещает аналог с явно указанной совместимостью. fluidPreference=original_only допустим только если сотрудник явно потребовал оригинал или источник прямо запрещает аналоги. Оригинал из ROSSKO оставляй как запасной вариант до решения backend.",
     "Для quote_and_tech_card материалы по умолчанию принадлежат сервису; customer допускается только если сотрудник явно указал материалы клиента. Локальный каталог всегда проверяй первым. ROSSKO передавай в build_quote_and_tech_card только для конкретных обязательных позиций, которых нет локально. В комплексном сценарии локальный каталог и ROSSKO проверяются независимо для каждой услуги. Если сотрудник запросил частичную и аппаратную замену, передай обе в requestedProcedures и service.procedures: [partial, machine]; не теряй вариант, который пока нельзя посчитать. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
     "Тарифы ИИ-помощника: моторное масло — 0 ₽ с маслом сервиса / 1 500 ₽ с маслом клиента; частичная трансмиссия без поддона — 4 000 / 6 000 ₽; аппаратная без поддона — 5 000 / 8 000 ₽; частичная с поддоном и фильтром — 5 000 / 10 000 ₽; аппаратная с поддоном и фильтром — 6 000 / 12 000 ₽; два фильтра грубой очистки — 6 000 / 12 000 ₽ частично и 7 000 / 14 000 ₽ аппаратно. Материалы всегда отдельными строками. Тариф «материалы сервиса» применим только когда сервис продаёт основной объём жидкости; при смешанных материалах не выбирай тариф — запроси решение сотрудника.",
@@ -173,6 +173,19 @@ function isComplexEngineAndTransmissionRequest(message: string) {
 
 function continuesCurrentTechnicalRequest(message: string) {
   return /(?:текущ\S*\s+запрос|эт\S*\s+запрос|выполн\S*\s+(?:техническ\S*\s+подбор|расч[её]т)|сначала\s+выполн\S*\s+расч[её]т)/iu.test(message);
+}
+
+function continuationTechnicalContext(artifact: QuoteAndTechCardArtifact | null) {
+  if (!artifact) return "";
+  const results = artifact.scenario === "quote_and_tech_card_bundle" ? artifact.results : [artifact];
+  const items = results.map((result) => {
+    const filter = result.techCard.filterPolicy;
+    const filterFact = filter.presence === "present" && filter.access !== "unknown"
+      ? `фильтр=${filter.access}${filter.evidence ? ` (${filter.evidence})` : ""}`
+      : "фильтр требует проверки";
+    return `${result.techCard.serviceName}; ${filterFact}; варианты=${result.quoteSet.requestedProcedures.join(",")}`;
+  });
+  return items.length ? `Сохранённый технический контекст предыдущего расчёта (не понижать подтверждённые условия без нового источника): ${items.join(" | ")}.` : "";
 }
 
 async function createDeterministicClientMessage(input: {
@@ -556,8 +569,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     await prisma.aIAssistantRun.update({ where: { id: run.id }, data: { status: "failed", errorCode: "assistant_not_configured", errorMessage: error, durationMs: Date.now() - startedAt, completedAt: new Date() } });
     throw new Error(error);
   }
-  const history = await prisma.aIAssistantMessage.findMany({ where: { threadId: thread.id, organizationId: input.organizationId }, orderBy: { createdAt: "asc" }, select: { role: true, content: true } });
-  const employeeRequestedOriginalOnly = employeeRequestedOriginalFluidOnly(message);
+  const history = await prisma.aIAssistantMessage.findMany({ where: { threadId: thread.id, organizationId: input.organizationId }, orderBy: { createdAt: "asc" }, select: { role: true, content: true, attachmentsJson: true } });
   const client = createOpenAIClient(process.env.OPENAI_API_KEY!.trim(), { timeout: Math.min(config.timeoutMs, MAX_RUN_DURATION_MS), maxRetries: 0 });
   const instructions = workspacePrompt(input.actor, input.organizationId);
   const toolSources: AssistantToolSource[] = [];
@@ -567,18 +579,27 @@ export async function runAssistantThread(input: { threadId: string; organization
   try {
     const technicalRequest = isTechnicalRequest(message);
     const previousUserRequest = history.slice(0, -1).reverse().find((item) => item.role === "user")?.content ?? "";
-    const scenarioRequest = continuesCurrentTechnicalRequest(message) ? `${previousUserRequest}\n${message}` : message;
+    const continuationRequested = continuesCurrentTechnicalRequest(message);
+    const originalTechnicalRequest = continuationRequested
+      ? history.slice(0, -1).reverse().find((item) => item.role === "user" && isTechnicalRequest(item.content) && !continuesCurrentTechnicalRequest(item.content))?.content ?? previousUserRequest
+      : "";
+    const previousQuoteAndTechCard = continuationRequested
+      ? history.slice(0, -1).reverse().filter((item) => item.role === "assistant").map((item) => parseQuoteAndTechCardArtifact(record(item.attachmentsJson)?.quoteAndTechCard)).find((item): item is QuoteAndTechCardArtifact => Boolean(item)) ?? null
+      : null;
+    const scenarioRequest = continuationRequested ? `${originalTechnicalRequest}\n${message}` : message;
+    const technicalScenarioContext = [scenarioRequest, continuationTechnicalContext(previousQuoteAndTechCard)].filter(Boolean).join("\n\n");
+    const employeeRequestedOriginalOnly = employeeRequestedOriginalFluidOnly(scenarioRequest);
     const quoteToolName = isComplexEngineAndTransmissionRequest(scenarioRequest) ? "build_quote_and_tech_card_bundle" as const : "build_quote_and_tech_card" as const;
     const technicalVerificationPassLimit = technicalRequest ? (await getAgentSettings(input.organizationId)).calculationRules.maxTechnicalVerificationPasses : 0;
     let technicalVerificationPasses = 0;
-    const vinContext = technicalRequest ? await requiredVinContext({ runId: run.id, organizationId: input.organizationId, actor: input.actor, vin: vinFromMessage(message) }) : null;
+    const vinContext = technicalRequest ? await requiredVinContext({ runId: run.id, organizationId: input.organizationId, actor: input.actor, vin: vinFromMessage(scenarioRequest) }) : null;
     const verifiedVehicleSnapshot = record(record(vinContext?.results.find((item) => text(item.toolName, 120) === "lookup_vehicle")?.result)?.vehicle) ?? {};
     if (vinContext) {
       toolSources.push(...vinContext.sources);
       toolSummaries.push(...vinContext.summaries);
     }
     const research = technicalRequest
-      ? await mandatoryTechnicalResearch({ client, runId: run.id, organizationId: input.organizationId, message, history, internalContext: vinContext?.results, instructions, model: config.model, reasoning: config.reasoning })
+      ? await mandatoryTechnicalResearch({ client, runId: run.id, organizationId: input.organizationId, message: technicalScenarioContext, history, internalContext: vinContext?.results, instructions, model: config.model, reasoning: config.reasoning })
       : null;
     if (research) toolSummaries.push({ toolName: "mandatory_technical_web_search", status: research.error ? "failed" : "completed", ...research.summary });
     const responses: unknown[] = research?.response ? [research.response] : [];
@@ -588,8 +609,8 @@ export async function runAssistantThread(input: { threadId: string; organization
       : await createInitialResponse(client, {
           lastResponseId: thread.lastResponseId,
           message: research?.error
-            ? `${message}\n\nСлужебная информация: встроенный web-поиск сейчас недоступен. Продолжи расчёт по локальным данным и ROSSKO; не выдумывай внешние технические факты и явно отметь, что требуется финальная проверка.`
-            : message,
+            ? `${technicalScenarioContext}\n\nСлужебная информация: встроенный web-поиск сейчас недоступен. Продолжи расчёт по локальным данным и ROSSKO; не выдумывай внешние технические факты и явно отметь, что требуется финальная проверка.`
+            : technicalScenarioContext,
           history,
           instructions,
           model: config.model,
@@ -649,8 +670,9 @@ export async function runAssistantThread(input: { threadId: string; organization
             actorName: input.actor.name,
             actorRole: input.actor.role,
             employeeRequestedOriginalFluidOnly: employeeRequestedOriginalOnly,
-            requestMessage: message,
+            requestMessage: scenarioRequest,
             verifiedVehicleSnapshot,
+            previousQuoteAndTechCard,
           });
           toolSources.push(...(executed.sources ?? []));
           let resultForModel: Record<string, unknown> = executed.result;

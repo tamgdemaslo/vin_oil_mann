@@ -31,5 +31,8 @@ assert.match(runner, /"failed_tool_limit"/);
 assert.match(runner, /Остался один цикл инструментов/);
 assert.match(runner, /build_quote_and_tech_card_bundle/);
 assert.match(runner, /complex_request_requires_bundle/);
+assert.match(runner, /vin: vinFromMessage\(scenarioRequest\)/);
+assert.match(runner, /previousQuoteAndTechCard/);
+assert.match(runner, /continuationTechnicalContext/);
 
 console.log("AI tool loop policy tests — passed");

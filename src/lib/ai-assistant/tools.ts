@@ -10,7 +10,7 @@ import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/l
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -166,6 +166,11 @@ type ToolContext = {
   // server-side so a model cannot silently drop a detected manual/hybrid
   // powertrain on the way to the deterministic quote builder.
   verifiedVehicleSnapshot?: Record<string, unknown> | null;
+  // A generic "calculate the current request" follows an existing checked
+  // technical card. Keep its confirmed service constraints server-side so a
+  // fresh model pass cannot downgrade a pan/filter service into an unrelated
+  // drain-and-fill quote.
+  previousQuoteAndTechCard?: QuoteAndTechCardArtifact | null;
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -845,7 +850,11 @@ export class LocalFirstInvariantError extends Error {
 }
 
 export function classifyQuoteAndTechCardFailure(error: unknown) {
-  const message = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
+  const rawMessage = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
+  const filterPackageFailure = /снятием поддона|external_filter|integrated_pan|одноразовый креп[её]ж|уплотнен/iu.test(rawMessage);
+  const message = filterPackageFailure
+    ? "Для сервиса со снятием поддона не подтверждён комплект: фильтр, прокладка и крепёж должны быть подобраны и оценены вместе."
+    : rawMessage;
   if (error instanceof AssistantToolError) {
     const requiredToContinue = error.code === "DATABASE_TEMPORARILY_UNAVAILABLE"
       ? "Повторить расчёт после восстановления доступа к базе данных."
@@ -860,9 +869,11 @@ export function classifyQuoteAndTechCardFailure(error: unknown) {
   const localFirstFailure = error instanceof LocalFirstInvariantError;
   const supplierFailure = /rossko|поставщик|предложен/i.test(message);
   const laborFailure = /тариф|правил[ао]\s+стоимости|цен[аы]\s+работ/i.test(message);
-  const code = localFirstFailure ? "LOCAL_FIRST_POLICY_ERROR" : integrityFailure ? "QUOTE_INTEGRITY_ERROR" : supplierFailure ? "NO_MATERIAL_PRICE" : laborFailure ? "MISSING_LABOR_RULE" : "QUOTE_CALCULATION_ERROR";
+  const code = localFirstFailure ? "LOCAL_FIRST_POLICY_ERROR" : filterPackageFailure ? "FILTER_SERVICE_PACKAGE_NOT_CONFIRMED" : integrityFailure ? "QUOTE_INTEGRITY_ERROR" : supplierFailure ? "NO_MATERIAL_PRICE" : laborFailure ? "MISSING_LABOR_RULE" : "QUOTE_CALCULATION_ERROR";
   const requiredToContinue = localFirstFailure
     ? "Проверить выбор основной жидкости: при достаточном локальном остатке должна использоваться локальная позиция."
+    : filterPackageFailure
+      ? "Подтвердить применимость и цену фильтра, прокладки поддона и необходимого крепежа для этого VIN."
     : integrityFailure
       ? "Проверить количество, цену, состав пакета и итог в backend-калькуляторе."
       : supplierFailure
@@ -962,7 +973,7 @@ export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuote
   if (requiredPart?.requiredForQuote) {
     const requiredRole = requiredPart.type === "integrated_pan" ? "pan" : "external_filter";
     if (!option.lines.some((line) => line.role === requiredRole && !line.internalOnly)) {
-      throw new QuoteAndTechCardIntegrityError(`Обязательная позиция пакета «${requiredPart.type}» отсутствует в смете.`);
+      throw new QuoteAndTechCardIntegrityError(`Для сервиса со снятием поддона не подтверждена обязательная позиция «${requiredPart.type}»: фильтр, прокладка и крепёж должны быть подобраны и оценены вместе.`);
     }
   }
   const requiredHardware = option.servicePackage.requiredHardware.filter((item) => item.requiredForQuote);
@@ -972,12 +983,48 @@ export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuote
   }
 }
 
+function previousQuoteResultForService(previous: QuoteAndTechCardArtifact | null | undefined, serviceType: QuoteAndTechCardInput["service"]["type"]) {
+  const results = previous?.scenario === "quote_and_tech_card_bundle" ? previous.results : previous?.scenario === "quote_and_tech_card" ? [previous] : [];
+  return results.find((result) => result.techCard.serviceType === serviceType) ?? null;
+}
+
+/**
+ * A generic recalculation is a continuation, not a new technical diagnosis.
+ * Retain only already confirmed service constraints when the fresh model input
+ * has regressed them to `unknown`; new, explicit evidence can still replace
+ * those values on a later non-continuation request.
+ */
+export function restoreQuoteAndTechCardContinuationInput(input: QuoteAndTechCardInput, previous: QuoteAndTechCardArtifact | null | undefined): QuoteAndTechCardInput {
+  const prior = previousQuoteResultForService(previous, input.service.type);
+  if (!prior) return input;
+  const priorFilter = prior.techCard.filterPolicy;
+  const filterWasConfirmed = priorFilter.presence === "present" && priorFilter.access !== "unknown";
+  if (!filterWasConfirmed || input.service.filterAccess !== "unknown") return input;
+  const priorProcedures = prior.quoteSet.requestedProcedures;
+  return {
+    ...input,
+    vehicle: {
+      ...input.vehicle,
+      displayName: input.vehicle.displayName ?? prior.vehicle.displayName,
+      aggregateCode: input.vehicle.aggregateCode ?? prior.vehicle.aggregate,
+    },
+    service: {
+      ...input.service,
+      filterAccess: priorFilter.access,
+      filterEvidence: input.service.filterEvidence ?? priorFilter.evidence,
+      transmissionConfiguration: input.service.transmissionConfiguration ?? (priorFilter.panServiceRequired ? "pan_and_filter" : null),
+      serviceHardware: input.service.serviceHardware.length ? input.service.serviceHardware : prior.techCard.serviceHardware,
+    },
+    requestedProcedures: [...new Set([...priorProcedures, ...input.requestedProcedures])].slice(0, 2),
+  };
+}
+
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
   const settings = await getAgentSettings(context.organizationId);
   const rawInput = object(args.input);
   const rawVehicle = object(rawInput.vehicle);
   const verifiedVehicleSnapshot = object(context.verifiedVehicleSnapshot);
-  const plan = createQuoteAndTechCardPlan({
+  const submittedInput = parseQuoteAndTechCardInput({
     ...rawInput,
     vehicle: {
       ...rawVehicle,
@@ -987,7 +1034,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       },
     },
     requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
-  }, {
+  });
+  const continuedInput = restoreQuoteAndTechCardContinuationInput(submittedInput, context.previousQuoteAndTechCard);
+  const plan = createQuoteAndTechCardPlan(continuedInput, {
     literRoundingStep: settings.calculationRules.literRoundingStep,
     transmissionMachineExchangeMultiplier: settings.calculationRules.transmissionMachineExchangeMultiplier,
     transmissionMinimumBillableLiters: settings.calculationRules.transmissionMinimumBillableLiters,
@@ -1026,7 +1075,11 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     const quoteArgs: Record<string, unknown> = {
       serviceFamily: serviceFamilyForTechCard(input.service.type),
       procedureType: procedureForTechCard(option.code, input.service.type),
-      transmissionConfiguration: input.service.transmissionConfiguration ?? "not_applicable",
+      // The labour rule must follow the actual quoted package.  A saved
+      // pan/filter policy cannot accidentally receive the cheaper
+      // drain-and-fill tariff merely because an upstream source omitted the
+      // configuration field.
+      transmissionConfiguration: option.servicePackage.panRemoval ? "pan_and_filter" : input.service.transmissionConfiguration ?? "not_applicable",
       materialsOwner: input.service.materialsOwner,
       vehicleId: input.vehicle.id ?? null,
       vehicleDisplayName: input.vehicle.displayName ?? null,
@@ -1131,7 +1184,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   }
   const allOptionBlockers = options.flatMap((option) => Array.isArray(option.blockers) ? option.blockers : []) as Array<{ code: string; message: string; requiredToContinue: string }>;
   const hardBlockers = [...baseBlockers];
-  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR", "DATABASE_TEMPORARILY_UNAVAILABLE", "ROSSKO_NOT_CONFIGURED", "ROSSKO_AUTH_FAILED", "ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO_NO_RESULTS", "ROSSKO_SEARCH_FAILED"]) {
+  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "FILTER_SERVICE_PACKAGE_NOT_CONFIRMED", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR", "DATABASE_TEMPORARILY_UNAVAILABLE", "ROSSKO_NOT_CONFIGURED", "ROSSKO_AUTH_FAILED", "ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO_NO_RESULTS", "ROSSKO_SEARCH_FAILED"]) {
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
