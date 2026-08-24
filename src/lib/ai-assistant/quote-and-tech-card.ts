@@ -421,12 +421,40 @@ const SAFETY_CRITICAL_POWERTRAIN_PROFILES = [
   },
 ] as const;
 
+// These profiles encode only service construction, never an interchangeable
+// part number.  The exact filter, pan gasket and hardware still have to be
+// verified and priced by VIN before they can enter a customer quote.
+const KNOWN_TRANSMISSION_FILTER_SERVICE_PROFILES = [
+  {
+    matches: (identity: string) => /\bab60f\b/iu.test(identity),
+    filterAccess: "pan_service" as const,
+    transmissionConfiguration: "pan_and_filter" as const,
+    evidence: "AB60F: маслозаборник АКПП обслуживается после снятия сервисного поддона; точный фильтр, прокладку и крепёж подтвердить по VIN/EPC перед заказом.",
+  },
+] as const;
+
 function compactTechnicalCode(value: string) {
   return value.toLocaleUpperCase("ru-RU").replace(/[^A-ZА-Я0-9]/g, "");
 }
 
 export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<QuoteAndTechCardRules> = {}): QuoteAndTechCardPlan {
-  const input = parseQuoteAndTechCardInput(rawInput);
+  const parsedInput = parseQuoteAndTechCardInput(rawInput);
+  const parsedIdentity = technicalIdentityText(parsedInput);
+  const transmissionServiceProfile = KNOWN_TRANSMISSION_FILTER_SERVICE_PROFILES.find((profile) => profile.matches(parsedIdentity)) ?? null;
+  // Explicit technical evidence supplied by a new request has priority.  The
+  // profile only prevents an otherwise empty/unknown model field from hiding a
+  // known serviceable filter.
+  const input: QuoteAndTechCardInput = transmissionServiceProfile && parsedInput.service.filterAccess === "unknown"
+    ? {
+        ...parsedInput,
+        service: {
+          ...parsedInput.service,
+          filterAccess: transmissionServiceProfile.filterAccess,
+          filterEvidence: parsedInput.service.filterEvidence ?? transmissionServiceProfile.evidence,
+          transmissionConfiguration: parsedInput.service.transmissionConfiguration ?? transmissionServiceProfile.transmissionConfiguration,
+        },
+      }
+    : parsedInput;
   const rules: QuoteAndTechCardRules = { literRoundingStep: Number.isFinite(rawRules.literRoundingStep) ? Math.max(0.1, Math.min(10, Number(rawRules.literRoundingStep))) : DEFAULT_QUOTE_AND_TECH_CARD_RULES.literRoundingStep, transmissionMachineExchangeMultiplier: Number.isFinite(rawRules.transmissionMachineExchangeMultiplier) ? Math.max(1, Math.min(3, Number(rawRules.transmissionMachineExchangeMultiplier))) : DEFAULT_QUOTE_AND_TECH_CARD_RULES.transmissionMachineExchangeMultiplier, transmissionMinimumBillableLiters: Number.isFinite(rawRules.transmissionMinimumBillableLiters) ? Math.max(0, Math.min(200, Number(rawRules.transmissionMinimumBillableLiters))) : DEFAULT_QUOTE_AND_TECH_CARD_RULES.transmissionMinimumBillableLiters, maxTechnicalVerificationPasses: Number.isFinite(rawRules.maxTechnicalVerificationPasses) ? Math.round(Math.max(0, Math.min(2, Number(rawRules.maxTechnicalVerificationPasses)))) : DEFAULT_QUOTE_AND_TECH_CARD_RULES.maxTechnicalVerificationPasses };
   const transmission = isTransmission(input.service.type);
   const hardBlockers: QuoteAndTechCardPlan["hardBlockers"] = [];
