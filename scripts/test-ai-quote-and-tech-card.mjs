@@ -140,8 +140,10 @@ assert.deepEqual(plan.options[1].servicePackage, {
 
 const panServicePlan = createQuoteAndTechCardPlan({
   ...runtimeInput,
+  requestedProcedures: ["filter_service"],
   service: {
     ...runtimeInput.service,
+    procedures: ["filter_service"],
     filterAccess: "pan_service",
     filterEvidence: "OEM: фильтр меняется после снятия сервисного поддона.",
   },
@@ -194,7 +196,8 @@ assert.deepEqual(explicitMachineWithFilterScenarios.requestedProcedures, ["machi
 
 const integratedPanPlan = createQuoteAndTechCardPlan({
   ...runtimeInput,
-  service: { ...runtimeInput.service, filterAccess: "integrated_with_pan" },
+  requestedProcedures: ["filter_service"],
+  service: { ...runtimeInput.service, filterAccess: "integrated_with_pan", procedures: ["filter_service"] },
 });
 assert.equal(integratedPanPlan.filterPolicy.access, "integrated_with_pan", "integrated pan is not conflated with a removable filter");
 assert.equal(integratedPanPlan.options[0].servicePackage.requiredParts[0]?.type, "integrated_pan", "integrated pan becomes a distinct required part");

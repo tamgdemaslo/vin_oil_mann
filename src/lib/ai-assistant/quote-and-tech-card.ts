@@ -301,7 +301,7 @@ export function servicePackageForOption(input: { service: Pick<QuoteAndTechCardI
   // When a generic request produces two scenarios, the base partial option is
   // explicitly a drain-and-fill.  It must not inherit the other option's
   // pan/filter package merely because that package is technically available.
-  const useFilterPackage = isFilterService || !separateFilterService;
+  const useFilterPackage = isFilterService || (procedure !== "partial" && !separateFilterService);
   const filterReplacement = useFilterPackage && (policy.tgmAction === "replace" || policy.tgmAction === "replace_with_pan");
   const panRemoval = useFilterPackage && policy.panServiceRequired;
   const unresolvedFilterService = isFilterService && policy.access === "unknown";
