@@ -31,6 +31,7 @@ const {
   classifyQuoteAndTechCardFailure,
   LocalFirstInvariantError,
   QuoteAndTechCardIntegrityError,
+  applyAutomaticTransmissionScenarioDefaults,
   requestedDateRangeFromText,
   restoreQuoteAndTechCardContinuationInput,
   selectQuoteAndTechCardFallbackServiceCard,
@@ -162,6 +163,25 @@ assert.deepEqual(panServicePlan.filterPolicy, {
 assert.equal(panServicePlan.options[0].servicePackage.panRemoval, true, "pan service package requires pan removal");
 assert.equal(panServicePlan.options[0].servicePackage.filterReplacement, true, "pan service package requires the accessible filter");
 assert.equal(panServicePlan.options[0].servicePackage.requiredParts[0]?.type, "external_filter", "the required filter is machine-readable");
+
+const genericAutomaticInput = parseQuoteAndTechCardInput({
+  ...runtimeInput,
+  requestedProcedures: ["partial"],
+  service: { ...runtimeInput.service, filterAccess: "unknown", filterEvidence: null, procedures: ["partial"] },
+});
+const genericAutomaticScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "JTMHV05J804089024 сделай расчёт АКПП");
+assert.deepEqual(genericAutomaticScenarios.requestedProcedures, ["partial", "filter_service"], "an unspecified АКПП request always retains the independent filter-service scenario");
+const genericAutomaticPlan = createQuoteAndTechCardPlan(genericAutomaticScenarios, rules);
+assert.deepEqual(genericAutomaticPlan.options.map((option) => option.code), ["partial", "filter_service"], "drain-and-fill and filter service have distinct option codes");
+assert.equal(genericAutomaticPlan.options[0].servicePackage.panRemoval, false, "the base partial option never implies pan removal");
+assert.equal(genericAutomaticPlan.options[0].servicePackage.filterReplacement, false, "the base partial option never promises a filter");
+assert.equal(genericAutomaticPlan.options[1].servicePackage.panRemoval, true, "the unresolved filter-service option describes the prospective pan package");
+assert.equal(genericAutomaticPlan.options[1].servicePackage.filterReplacement, true, "the unresolved filter-service option cannot be represented as a filterless partial quote");
+assert.equal(genericAutomaticPlan.options[1].blocker?.code, "FILTER_SERVICE_CONFIGURATION_NOT_CONFIRMED", "the filter-service option is explicitly blocked until its construction is verified");
+const explicitPartialScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Нужна частичная замена АКПП");
+assert.deepEqual(explicitPartialScenarios.requestedProcedures, ["partial"], "an explicitly requested partial service is not expanded into another method");
+const explicitMachineWithFilterScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Нужна аппаратная замена АКПП с фильтром");
+assert.deepEqual(explicitMachineWithFilterScenarios.requestedProcedures, ["machine_filter_service"], "a filter request cannot degrade an аппаратная service into a filterless package");
 
 const integratedPanPlan = createQuoteAndTechCardPlan({
   ...runtimeInput,

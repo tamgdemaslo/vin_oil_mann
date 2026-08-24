@@ -6,7 +6,10 @@ const object = (value: unknown): Record<string, unknown> => value && typeof valu
 const stringList = (value: unknown, max = 12, itemMax = 300) => Array.isArray(value) ? value.map((item) => text(item, itemMax)).filter(Boolean).slice(0, max) : [];
 
 export const QUOTE_AND_TECH_CARD_SERVICE_TYPES = ["engine_oil", "automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "coolant", "brake_fluid"] as const;
-export const QUOTE_AND_TECH_CARD_PROCEDURES = ["partial", "machine", "standard"] as const;
+// `filter_service` is deliberately separate from a drain-and-fill.  A
+// filter/pan package has different mandatory parts and labour, so it may not
+// silently be represented by the same `partial` option.
+export const QUOTE_AND_TECH_CARD_PROCEDURES = ["partial", "filter_service", "machine", "machine_filter_service", "standard"] as const;
 export type QuoteAndTechCardServiceType = (typeof QUOTE_AND_TECH_CARD_SERVICE_TYPES)[number];
 export type QuoteAndTechCardProcedure = (typeof QUOTE_AND_TECH_CARD_PROCEDURES)[number];
 
@@ -72,6 +75,8 @@ const SERVICE_ALIASES: Record<string, QuoteAndTechCardServiceType> = {
 };
 const PROCEDURE_ALIASES: Record<string, QuoteAndTechCardProcedure> = {
   partial: "partial", partial_change: "partial", drain_and_fill: "partial", partial_replacement: "partial",
+  filter_service: "filter_service", pan_filter: "filter_service", pan_and_filter: "filter_service", partial_with_filter: "filter_service", service_with_filter: "filter_service",
+  machine_filter_service: "machine_filter_service", machine_with_filter: "machine_filter_service", machine_pan_filter: "machine_filter_service", apparatus_with_filter: "machine_filter_service",
   machine: "machine", machine_exchange: "machine", apparatus: "machine", full_exchange: "machine", full_replacement: "machine",
   standard: "standard", replace: "standard", replacement: "standard",
 };
@@ -127,6 +132,8 @@ export function normalizeQuoteAndTechCardServiceType(value: unknown, context: Re
 export function normalizeQuoteAndTechCardProcedure(value: unknown): QuoteAndTechCardProcedure | null {
   const token = normalizeToken(value);
   if (PROCEDURE_ALIASES[token]) return PROCEDURE_ALIASES[token];
+  if (/(?:machine|apparat|full).*(?:filter|фильтр|поддон)|(?:filter|фильтр|поддон).*(?:machine|apparat|full)/.test(token)) return "machine_filter_service";
+  if (/filter|фильтр|поддон/.test(token)) return "filter_service";
   if (/machine|apparat|full/.test(token)) return "machine";
   if (/partial|drain/.test(token)) return "partial";
   return null;
@@ -288,19 +295,33 @@ export const QuoteAndTechCardServicePackageSchema = z.object({
 }).strict();
 export type QuoteAndTechCardServicePackage = z.infer<typeof QuoteAndTechCardServicePackageSchema>;
 
-export function servicePackageForOption(input: { service: Pick<QuoteAndTechCardInput["service"], "serviceHardware"> }, policy: QuoteAndTechCardFilterPolicy, procedure: QuoteAndTechCardProcedure): QuoteAndTechCardServicePackage {
-  const machineExchange = procedure === "machine";
-  const filterReplacement = policy.tgmAction === "replace" || policy.tgmAction === "replace_with_pan";
-  const panRemoval = policy.panServiceRequired;
-  const requiredParts = !policy.filterPartRequiredForQuote ? [] : [{
-    type: policy.access === "integrated_with_pan" ? "integrated_pan" as const : "external_filter" as const,
-    requiredForQuote: true,
-    evidence: policy.evidence,
-  }];
+export function servicePackageForOption(input: { service: Pick<QuoteAndTechCardInput["service"], "serviceHardware"> }, policy: QuoteAndTechCardFilterPolicy, procedure: QuoteAndTechCardProcedure, separateFilterService = false): QuoteAndTechCardServicePackage {
+  const machineExchange = procedure === "machine" || procedure === "machine_filter_service";
+  const isFilterService = procedure === "filter_service" || procedure === "machine_filter_service";
+  // When a generic request produces two scenarios, the base partial option is
+  // explicitly a drain-and-fill.  It must not inherit the other option's
+  // pan/filter package merely because that package is technically available.
+  const useFilterPackage = isFilterService || !separateFilterService;
+  const filterReplacement = useFilterPackage && (policy.tgmAction === "replace" || policy.tgmAction === "replace_with_pan");
+  const panRemoval = useFilterPackage && policy.panServiceRequired;
+  const unresolvedFilterService = isFilterService && policy.access === "unknown";
+  const requiredParts = useFilterPackage && policy.filterPartRequiredForQuote
+    ? [{
+      type: policy.access === "integrated_with_pan" ? "integrated_pan" as const : "external_filter" as const,
+      requiredForQuote: true,
+      evidence: policy.evidence,
+    }]
+    : unresolvedFilterService
+      ? [{
+        type: "external_filter" as const,
+        requiredForQuote: true,
+        evidence: null,
+      }]
+      : [];
   const includedOperations = [
     ...(machineExchange ? ["Диагностика АКПП до аппаратной замены", "Аппаратная замена жидкости"] : ["Слив и замена жидкости"]),
-    ...(panRemoval ? ["Снятие сервисного поддона"] : []),
-    ...(filterReplacement ? [policy.access === "integrated_with_pan" ? "Замена поддона с интегрированным фильтром" : "Замена доступного фильтра"] : []),
+    ...(panRemoval ? ["Снятие сервисного поддона"] : unresolvedFilterService ? ["Проверка конструкции фильтра и сервисного комплекта"] : []),
+    ...(filterReplacement ? [policy.access === "integrated_with_pan" ? "Замена поддона с интегрированным фильтром" : "Замена доступного фильтра"] : unresolvedFilterService ? ["Замена фильтра после VIN-подтверждения"] : []),
     "Контроль и корректировка уровня жидкости",
   ];
   return {
@@ -308,8 +329,8 @@ export function servicePackageForOption(input: { service: Pick<QuoteAndTechCardI
     diagnosticsRequired: machineExchange,
     machineExchange,
     chemicalFlush: false,
-    panRemoval,
-    filterReplacement,
+    panRemoval: panRemoval || unresolvedFilterService,
+    filterReplacement: filterReplacement || unresolvedFilterService,
     levelAdjustment: true,
     requiredParts,
     requiredHardware: input.service.serviceHardware,
@@ -332,7 +353,9 @@ export function customerMaterialDisplayName(catalogName: string) {
 export function customerProcedureDisplayName(serviceType: QuoteAndTechCardServiceType, procedure: QuoteAndTechCardProcedure) {
   if (isTransmission(serviceType)) {
     if (procedure === "machine") return "Аппаратная замена масла в АКПП";
-    if (procedure === "partial") return "Частичная замена масла в АКПП";
+    if (procedure === "machine_filter_service") return "Аппаратная замена масла в АКПП с фильтром";
+    if (procedure === "filter_service") return "Сервис АКПП с фильтром";
+    if (procedure === "partial") return "Частичная замена масла в АКПП без снятия поддона";
   }
   return procedure === "standard" ? "Замена масла" : procedure === "machine" ? "Аппаратная замена масла" : "Частичная замена масла";
 }
@@ -385,14 +408,22 @@ export const QuoteAndTechCardQuantityTraceSchema = z.object({
   billableQuantity: z.number().positive().nullable(),
 }).strict();
 export type QuoteAndTechCardQuantityTrace = z.infer<typeof QuoteAndTechCardQuantityTraceSchema>;
-export type QuoteAndTechCardPlanOption = { code: QuoteAndTechCardProcedure; label: string; technicalQuantityLiters: number | null; billableQuantityLiters: number | null; quantityTrace: QuoteAndTechCardQuantityTrace; servicePackage: QuoteAndTechCardServicePackage; blockedReason: string | null };
+export type QuoteAndTechCardPlanOption = {
+  code: QuoteAndTechCardProcedure;
+  label: string;
+  technicalQuantityLiters: number | null;
+  billableQuantityLiters: number | null;
+  quantityTrace: QuoteAndTechCardQuantityTrace;
+  servicePackage: QuoteAndTechCardServicePackage;
+  blocker: { code: string; message: string; requiredToContinue: string } | null;
+};
 export type QuoteAndTechCardPlan = { input: QuoteAndTechCardInput; rules: QuoteAndTechCardRules; isTransmission: boolean; requestedProcedures: QuoteAndTechCardProcedure[]; filterPolicy: QuoteAndTechCardFilterPolicy; hardBlockers: Array<{ code: string; message: string; requiredToContinue: string }>; quoteWarnings: string[]; techCardWarnings: string[]; options: QuoteAndTechCardPlanOption[] };
 function isTransmission(type: QuoteAndTechCardServiceType) { return ["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential"].includes(type); }
 function roundUp(value: number, step: number) { const normalizedStep = Math.max(0.1, Math.min(10, step || 1)); return Math.ceil((value - 1e-8) / normalizedStep) * normalizedStep; }
 
 function quantitySource(input: QuoteAndTechCardInput, code: QuoteAndTechCardProcedure) {
-  if (code === "machine") return { capacity: input.service.totalTechnicalQuantityLiters, mode: "total_capacity_x_machine_multiplier" } as const;
-  if (code === "partial") return { capacity: input.service.partialTechnicalQuantityLiters ?? input.service.standardTechnicalQuantityLiters, mode: "partial_capacity" } as const;
+  if (code === "machine" || code === "machine_filter_service") return { capacity: input.service.totalTechnicalQuantityLiters, mode: "total_capacity_x_machine_multiplier" } as const;
+  if (code === "partial" || code === "filter_service") return { capacity: input.service.partialTechnicalQuantityLiters ?? input.service.standardTechnicalQuantityLiters, mode: "partial_capacity" } as const;
   return { capacity: input.service.standardTechnicalQuantityLiters ?? input.service.partialTechnicalQuantityLiters, mode: "standard_capacity" } as const;
 }
 
@@ -451,7 +482,7 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
   }
   const quoteWarnings = [
     ...(input.localCatalogChecked ? [] : ["Локальный каталог ещё не подтверждён: смета будет предварительной."]),
-    ...(isAutomaticService && input.service.filterAccess === "unknown" ? ["Конструкция фильтра не подтверждена: в смету не включается неподтверждённая операция с фильтром или поддоном."] : []),
+    ...(isAutomaticService && input.service.filterAccess === "unknown" ? ["Конструкция фильтра не подтверждена: частичная замена выполняется без снятия поддона, а сервис с фильтром вынесен в отдельный вариант до VIN-подтверждения."] : []),
   ];
   const filterPolicy = withFilterEvidence(quoteAndTechCardFilterPolicy(input.service.filterAccess), input.service.filterEvidence);
   const suppressInternalFilterSearch = input.service.filterAccess === "internal_requires_disassembly";
@@ -461,9 +492,10 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
   if (!input.service.visualReference) techCardWarnings.push("Визуальная ссылка для техкарты не найдена.");
   const requestedProcedures: readonly QuoteAndTechCardProcedure[] = input.requestedProcedures.length ? input.requestedProcedures : input.service.procedures?.length ? input.service.procedures : transmission ? ["partial"] : ["standard"];
   const configured = (QUOTE_AND_TECH_CARD_PROCEDURES.filter((procedure) => requestedProcedures.includes(procedure)) as QuoteAndTechCardProcedure[]).slice(0, 2);
+  const hasSeparateFilterService = configured.includes("filter_service") || configured.includes("machine_filter_service");
   const options = configured.slice(0, 2).map((code): QuoteAndTechCardPlanOption => {
     const source = quantitySource(input, code);
-    const multiplier = code === "machine" ? rules.transmissionMachineExchangeMultiplier : 1;
+    const multiplier = code === "machine" || code === "machine_filter_service" ? rules.transmissionMachineExchangeMultiplier : 1;
     const rawCalculatedQuantity = source.capacity == null ? null : source.capacity * multiplier;
     const technicalQuantityLiters = rawCalculatedQuantity == null ? null : Math.round(rawCalculatedQuantity * 1_000) / 1_000;
     const billableQuantityLiters = technicalQuantityLiters == null ? null : roundUp(Math.max(technicalQuantityLiters, transmission ? rules.transmissionMinimumBillableLiters : 0), rules.literRoundingStep);
@@ -479,7 +511,25 @@ export function createQuoteAndTechCardPlan(rawInput: unknown, rawRules: Partial<
       technicalQuantity: technicalQuantityLiters,
       billableQuantity: billableQuantityLiters,
     };
-    return { code, label: code === "machine" ? "Аппаратная замена" : code === "partial" ? "Частичная замена" : input.service.name, technicalQuantityLiters, billableQuantityLiters, quantityTrace, servicePackage: servicePackageForOption(input, filterPolicy, code), blockedReason: billableQuantityLiters == null ? "Не определён рабочий объём жидкости для этого варианта." : null };
+    const isFilterService = code === "filter_service" || code === "machine_filter_service";
+    const filterServiceNotConfirmed = isFilterService && filterPolicy.access === "unknown";
+    const filterServiceNotApplicable = isFilterService && (filterPolicy.access === "none" || filterPolicy.access === "internal_requires_disassembly");
+    const blocker = billableQuantityLiters == null
+      ? { code: "NO_MATERIAL_PRICE", message: "Не определён рабочий объём жидкости для этого варианта.", requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." }
+      : filterServiceNotConfirmed
+        ? { code: "FILTER_SERVICE_CONFIGURATION_NOT_CONFIRMED", message: "Для сервиса с поддоном и фильтром не подтверждена конструкция фильтра и состав сервисного комплекта.", requiredToContinue: "Подтвердить по VIN конструкцию фильтра, номер фильтра или поддона, прокладку и необходимый крепёж." }
+        : filterServiceNotApplicable
+          ? { code: "FILTER_SERVICE_NOT_APPLICABLE", message: filterPolicy.reason, requiredToContinue: "Выбрать частичную замену без снятия поддона либо подтвердить иной применимый пакет обслуживания." }
+          : null;
+    return {
+      code,
+      label: code === "machine" ? "Аппаратная замена" : code === "machine_filter_service" ? "Аппаратная замена с фильтром" : code === "filter_service" ? "Сервис с фильтром" : code === "partial" ? "Частичная замена без поддона" : input.service.name,
+      technicalQuantityLiters,
+      billableQuantityLiters,
+      quantityTrace,
+      servicePackage: servicePackageForOption(input, filterPolicy, code, hasSeparateFilterService),
+      blocker,
+    };
   });
   return { input, rules, isTransmission: transmission, requestedProcedures: [...requestedProcedures], filterPolicy, hardBlockers, quoteWarnings, techCardWarnings: [...new Set(techCardWarnings)], options };
 }
@@ -711,6 +761,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
     return [
       option.customerDisplayName,
       `${materialName}${input.techCard.requiredFluidSpec ? ` с допуском ${input.techCard.requiredFluidSpec}` : ""} — ${customerQuantity(option.billableQuantityLiters)} л`,
+      option.code === "partial" ? "Без снятия поддона и замены фильтра." : "",
       showPrice && labor ? `Работа — ${customerMoneyFromCents(labor.totalCents)}` : "",
       showPrice ? `Итого: ${customerMoneyFromCents(option.totalCents!)}` : "",
     ].filter(Boolean).join("\n");
@@ -726,7 +777,7 @@ export function buildQuoteAndTechCardCustomerMessage(input: Pick<QuoteAndTechCar
   // The recommendation action may not invent an upsell.  With no explicit
   // employee wording, it can only repeat the already-grounded diagnostic
   // condition for an аппаратная replacement.
-  const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
+  const safeRecommendation = recommendation ?? (mode === "recommendation" && ready.some((option) => option.code === "machine" || option.code === "machine_filter_service") ? "Рекомендуем начать с диагностики АКПП перед аппаратной заменой." : null);
   const recommendationText = mode === "recommendation" && safeRecommendation ? `Дополнительно: ${safeRecommendation}` : "";
   return { status: "ready", text: [intro + preliminary, ...optionText, filter, machineCondition, recommendationText, dates].filter(Boolean).join("\n\n") };
 }

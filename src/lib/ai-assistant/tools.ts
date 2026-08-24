@@ -10,7 +10,7 @@ import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/l
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
-import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
+import { applyBillableQuantityToPrimaryFluid, buildQuoteAndTechCardBundleCustomerMessage, buildQuoteAndTechCardCustomerMessage, createQuoteAndTechCardPlan, customerMaterialDisplayName, customerProcedureDisplayName, parseQuoteAndTechCardArtifact, parseQuoteAndTechCardInput, parseQuoteAndTechCardResult, parseQuoteAndTechCardToolResult, QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS, QUOTE_AND_TECH_CARD_TOOL_PARAMETERS, quoteAndTechCardMaterials, quoteAndTechCardSupplierRows, quoteStatus, scenarioStatus, type QuoteAndTechCardArtifact, type QuoteAndTechCardInput, type QuoteAndTechCardMaterialSelectionTrace, type QuoteAndTechCardProcedure, type QuoteAndTechCardQuoteOption, type QuoteAndTechCardResult } from "./quote-and-tech-card";
 import { jsonSafe } from "./json-safe";
 
 export type AssistantToolSource = {
@@ -138,7 +138,7 @@ export const assistantFunctionTools = [
   {
     type: "function",
     name: "build_quote_and_tech_card",
-    description: "Собрать единый предсказуемый результат «техкарта + смета» для внутреннего сотрудника. Используй после VIN/технической проверки и проверки локального каталога. Инструмент сам округляет объём, выбирает совместимую жидкость из локального остатка, применяет правило работы и формирует клиентский текст только из готовой сметы. Передавай не более двух процедур. Внутренний фильтр АКПП/CVT/DSG, требующий разборки агрегата, помечай filterAccess=internal_requires_disassembly и не передавай в rosskoItems.",
+    description: "Собрать единый предсказуемый результат «техкарта + смета» для внутреннего сотрудника. Используй после VIN/технической проверки и проверки локального каталога. Инструмент сам округляет объём, выбирает совместимую жидкость из локального остатка, применяет правило работы и формирует клиентский текст только из готовой сметы. Передавай не более двух процедур; для неуказанного способа АКПП используй [partial, filter_service], где filter_service — отдельный пакет с поддоном/фильтром. Внутренний фильтр АКПП/CVT/DSG, требующий разборки агрегата, помечай filterAccess=internal_requires_disassembly и не передавай в rosskoItems.",
     parameters: QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
   },
   {
@@ -802,15 +802,16 @@ function serviceFamilyForTechCard(type: string) {
   return type;
 }
 
-function procedureForTechCard(code: "partial" | "machine" | "standard", serviceType: string) {
-  if (code === "partial" || code === "machine") return code;
+function procedureForTechCard(code: QuoteAndTechCardProcedure, serviceType: string) {
+  if (code === "partial" || code === "filter_service") return "partial";
+  if (code === "machine" || code === "machine_filter_service") return "machine";
   return serviceType === "engine_oil" ? "oil_change" : "replace";
 }
 
 type FallbackServiceCard = { id: string; name: string; code: string | null; searchText: string | null };
 
 /** Selects only an unambiguous service-card fallback; special AI tariffs keep priority in resolveLaborPrice. */
-export function selectQuoteAndTechCardFallbackServiceCard(cards: FallbackServiceCard[], serviceType: string, procedure: "partial" | "machine" | "standard") {
+export function selectQuoteAndTechCardFallbackServiceCard(cards: FallbackServiceCard[], serviceType: string, procedure: QuoteAndTechCardProcedure) {
   const requiredPatterns = serviceType === "engine_oil" && procedure === "standard"
     ? [/(двигател|мотор)/iu, /(масл|oil|замен)/iu]
     : ["automatic_transmission", "cvt", "dsg", "manual_transmission"].includes(serviceType) && procedure === "partial"
@@ -826,7 +827,7 @@ export function selectQuoteAndTechCardFallbackServiceCard(cards: FallbackService
   return matches.length === 1 ? matches[0] : null;
 }
 
-async function quoteAndTechCardFallbackServiceProductId(serviceType: string, procedure: "partial" | "machine" | "standard") {
+async function quoteAndTechCardFallbackServiceProductId(serviceType: string, procedure: QuoteAndTechCardProcedure) {
   const branchId = getScopedBranchId();
   const cards = await prisma.localProduct.findMany({
     where: { branchId, archived: false, entityType: "service", pricingMode: { not: "assistant_rule" }, salePriceCents: { gt: 0 } },
@@ -851,9 +852,9 @@ export class LocalFirstInvariantError extends Error {
 
 export function classifyQuoteAndTechCardFailure(error: unknown) {
   const rawMessage = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
-  const filterPackageFailure = /снятием поддона|external_filter|integrated_pan|одноразовый креп[её]ж|уплотнен/iu.test(rawMessage);
+  const filterPackageFailure = /снятием поддона|сервис[а-я\s]+фильтр|external_filter|integrated_pan|одноразовый креп[её]ж|уплотнен/iu.test(rawMessage);
   const message = filterPackageFailure
-    ? "Для сервиса со снятием поддона не подтверждён комплект: фильтр, прокладка и крепёж должны быть подобраны и оценены вместе."
+    ? "Для сервиса с фильтром не подтверждён комплект: фильтр или поддон, прокладка и крепёж должны быть подобраны и оценены вместе."
     : rawMessage;
   if (error instanceof AssistantToolError) {
     const requiredToContinue = error.code === "DATABASE_TEMPORARILY_UNAVAILABLE"
@@ -973,7 +974,7 @@ export function assertServicePackageIntegrity(option: Pick<QuoteAndTechCardQuote
   if (requiredPart?.requiredForQuote) {
     const requiredRole = requiredPart.type === "integrated_pan" ? "pan" : "external_filter";
     if (!option.lines.some((line) => line.role === requiredRole && !line.internalOnly)) {
-      throw new QuoteAndTechCardIntegrityError(`Для сервиса со снятием поддона не подтверждена обязательная позиция «${requiredPart.type}»: фильтр, прокладка и крепёж должны быть подобраны и оценены вместе.`);
+      throw new QuoteAndTechCardIntegrityError(`Для сервиса с фильтром не подтверждена обязательная позиция «${requiredPart.type}»: фильтр или поддон, прокладка и крепёж должны быть подобраны и оценены вместе.`);
     }
   }
   const requiredHardware = option.servicePackage.requiredHardware.filter((item) => item.requiredForQuote);
@@ -1019,6 +1020,41 @@ export function restoreQuoteAndTechCardContinuationInput(input: QuoteAndTechCard
   };
 }
 
+function isAutomaticTransmissionService(type: QuoteAndTechCardInput["service"]["type"]) {
+  return type === "automatic_transmission" || type === "cvt" || type === "dsg";
+}
+
+function withProcedures(input: QuoteAndTechCardInput, procedures: QuoteAndTechCardProcedure[]): QuoteAndTechCardInput {
+  return { ...input, requestedProcedures: procedures, service: { ...input.service, procedures } };
+}
+
+/**
+ * The employee's wording, rather than a model-selected default, decides
+ * whether an АКПП method was specified. An unspecified request must retain a
+ * separate filter-service branch so an unresolved filter cannot disappear
+ * from an otherwise valid drain-and-fill calculation.
+ */
+export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCardInput, requestMessage: unknown): QuoteAndTechCardInput {
+  if (!isAutomaticTransmissionService(input.service.type)) return input;
+  const request = text(requestMessage, 4_000).toLocaleLowerCase("ru-RU");
+  if (!request) return input;
+  const asksFilterService = /фильтр|filter|поддон|pan\b/iu.test(request);
+  const asksMachine = /аппаратн|machine|полная\s+замен|full\s+(?:exchange|replacement)/iu.test(request);
+  const asksPartial = /частичн|partial|слив\S*\s+(?:и\s+)?залив|drain\S*\s+(?:and\s+)?fill/iu.test(request);
+  const filterServicePossible = input.service.filterAccess !== "none" && input.service.filterAccess !== "internal_requires_disassembly";
+
+  if (asksFilterService && filterServicePossible) {
+    if (asksMachine && asksPartial) return withProcedures(input, ["filter_service", "machine_filter_service"]);
+    if (asksMachine) return withProcedures(input, ["machine_filter_service"]);
+    return withProcedures(input, ["filter_service"]);
+  }
+  if (asksMachine && asksPartial) return withProcedures(input, ["partial", "machine"]);
+  if (asksMachine) return withProcedures(input, ["machine"]);
+  if (asksPartial) return withProcedures(input, ["partial"]);
+  if (filterServicePossible) return withProcedures(input, ["partial", "filter_service"]);
+  return withProcedures(input, ["partial"]);
+}
+
 async function buildQuoteAndTechCard(args: Record<string, unknown>, context: ToolContext) {
   const settings = await getAgentSettings(context.organizationId);
   const rawInput = object(args.input);
@@ -1036,7 +1072,8 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
     requestedDates: text(rawInput.requestedDates, 120) || requestedDateRangeFromText(context.requestMessage) || null,
   });
   const continuedInput = restoreQuoteAndTechCardContinuationInput(submittedInput, context.previousQuoteAndTechCard);
-  const plan = createQuoteAndTechCardPlan(continuedInput, {
+  const scenarioInput = applyAutomaticTransmissionScenarioDefaults(continuedInput, context.requestMessage);
+  const plan = createQuoteAndTechCardPlan(scenarioInput, {
     literRoundingStep: settings.calculationRules.literRoundingStep,
     transmissionMachineExchangeMultiplier: settings.calculationRules.transmissionMachineExchangeMultiplier,
     transmissionMinimumBillableLiters: settings.calculationRules.transmissionMinimumBillableLiters,
@@ -1052,9 +1089,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
 
   for (const option of plan.options) {
     const blockers = [...baseBlockers];
-    if (option.blockedReason) blockers.push({ code: "NO_MATERIAL_PRICE", message: option.blockedReason, requiredToContinue: "Подтвердить рабочий объём жидкости для выбранной процедуры." });
+    if (option.blocker) blockers.push(option.blocker);
     if (blockers.length) {
-      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blockedReason }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
+      options.push({ code: option.code, label: option.label, customerDisplayName: customerProcedureDisplayName(input.service.type, option.code), status: "blocked", technicalQuantityLiters: option.technicalQuantityLiters, billableQuantityLiters: option.billableQuantityLiters, quantityTrace: option.quantityTrace, servicePackage: option.servicePackage, materialSelectionTrace: { requiredSpecification: input.service.requiredFluidSpec ?? null, oemRequirement: { specification: input.service.requiredFluidSpec ?? null, evidence: null }, oemReference: { brand: "OEM", article: input.service.requiredFluidOemArticle ?? null }, localCandidates: [], selectedLocalCandidate: null, compatibleProduct: { productId: null, catalogName: null, compatibilityEvidence: null }, selectedProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, selectedSellableProduct: { source: "none", productId: null, catalogName: null, customerDisplayName: null }, localAvailableQuantity: null, requiredQuantity: option.billableQuantityLiters, fallbackSupplierUsed: false, fallbackReason: option.blocker?.message ?? null }, lines: [], totalCents: null, maximumTotalCents: null, validUntil: null, blockers, warnings: [] });
       continue;
     }
     // Local-first is code, not an instruction: check the compatible local ATF
@@ -1184,7 +1221,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   }
   const allOptionBlockers = options.flatMap((option) => Array.isArray(option.blockers) ? option.blockers : []) as Array<{ code: string; message: string; requiredToContinue: string }>;
   const hardBlockers = [...baseBlockers];
-  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "FILTER_SERVICE_PACKAGE_NOT_CONFIRMED", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR", "DATABASE_TEMPORARILY_UNAVAILABLE", "ROSSKO_NOT_CONFIGURED", "ROSSKO_AUTH_FAILED", "ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO_NO_RESULTS", "ROSSKO_SEARCH_FAILED"]) {
+  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "FILTER_SERVICE_CONFIGURATION_NOT_CONFIRMED", "FILTER_SERVICE_NOT_APPLICABLE", "FILTER_SERVICE_PACKAGE_NOT_CONFIRMED", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR", "DATABASE_TEMPORARILY_UNAVAILABLE", "ROSSKO_NOT_CONFIGURED", "ROSSKO_AUTH_FAILED", "ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO_NO_RESULTS", "ROSSKO_SEARCH_FAILED"]) {
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
