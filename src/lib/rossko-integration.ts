@@ -7,6 +7,8 @@ import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-cred
 import { hasConsecutiveIntegrationFailures, notifyIntegrationOwner, recordIntegrationAudit } from "@/lib/integration-owner-notifications";
 import { getAgentSettings } from "@/lib/ai-agent/settings";
 import type { AIRosskoMarkupRule } from "@/lib/ai-agent/types";
+import { classifyRosskoRuntimeFailure } from "@/lib/rossko-error-classification";
+import { RosskoError } from "@/lib/rossko";
 
 const ROSSKO_CHANNEL = "rossko";
 const SECRET_KEYS = new Set(["key1", "key2"]);
@@ -264,13 +266,11 @@ export async function recordRosskoCheck(code: string | null) {
   return getRosskoIntegrationStatus();
 }
 
-export function rosskoIntegrationError(error: unknown) {
+export function rosskoIntegrationError(error: unknown, operation: "search" | "check" | "request" = "request") {
   if (error instanceof IntegrationNotConfiguredForBranch) {
     return { code: "ROSSKO_NOT_CONFIGURED", error: "Добавьте оба ключа ROSSKO для этого филиала." };
   }
-  const message = error instanceof Error ? error.message : String(error);
-  if (/(auth|authoriz|ключ|key1|key2|access denied|forbidden|401|403)/i.test(message)) {
-    return { code: "ROSSKO_AUTH_FAILED", error: "ROSSKO не принял ключи филиала. Проверьте их и сохраните снова." };
-  }
-  return { code: "ROSSKO_TEMPORARILY_UNAVAILABLE", error: "ROSSKO временно недоступен. Повторите проверку позже." };
+  const failure = classifyRosskoRuntimeFailure(error, { operation, providerError: error instanceof RosskoError });
+  console.error("[rossko.integration] request failed", { code: failure.code, diagnostic: failure.diagnosticMessage });
+  return { code: failure.code, error: failure.publicMessage };
 }

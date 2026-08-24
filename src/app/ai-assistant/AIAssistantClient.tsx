@@ -49,6 +49,8 @@ function toolLabel(name: string) {
     search_rossko: "ROSSKO",
     calculate_quote_preview: "Предварительный расчёт",
     calculate_service_quote_v2: "Расчёт материалов и работы",
+    build_quote_and_tech_card: "Техкарта и смета",
+    build_quote_and_tech_card_bundle: "Комплексная техкарта и смета",
   };
   return labels[name] || name;
 }
@@ -60,8 +62,10 @@ function asError(value: unknown) {
     if (code === "BRANCH_SELECTION_REQUIRED") return "Выберите филиал для нового диалога ИИ-помощника.";
     if (code === "ROSSKO_NOT_CONFIGURED") return "ROSSKO не подключён для этого филиала. Настройте его в Кабинете → Интеграции.";
     if (code === "ROSSKO_AUTH_FAILED") return "ROSSKO не принял ключи выбранного филиала.";
-    if (code === "ROSSKO_TEMPORARILY_UNAVAILABLE") return "ROSSKO временно недоступен. Повторите попытку позже.";
+    if (code === "DATABASE_TEMPORARILY_UNAVAILABLE") return "База данных временно перегружена. Поиск ROSSKO не выполнен — повторите попытку.";
+    if (code === "ROSSKO_TEMPORARILY_UNAVAILABLE") return "Не удалось связаться с API ROSSKO. Повторите попытку позже.";
     if (code === "ROSSKO_NO_RESULTS") return "ROSSKO не нашёл предложений по этому номеру.";
+    if (code === "ROSSKO_SEARCH_FAILED") return "Поиск ROSSKO завершился ошибкой. Откройте техническую причину в trace.";
     return String(data.error || "Не удалось выполнить действие");
   }
   return "Не удалось выполнить действие";

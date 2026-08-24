@@ -9,10 +9,10 @@ const { configurePrismaPool } = await jiti.import("../src/lib/prisma-pool-config
 const defaults = configurePrismaPool("postgresql://user:secret@db.example/app?schema=public", {});
 assert.ok(defaults);
 assert.equal(defaults.connectionLimit, 8);
-assert.equal(defaults.poolTimeoutSeconds, 5);
+assert.equal(defaults.poolTimeoutSeconds, 10);
 assert.equal(new URL(defaults.url).searchParams.get("schema"), "public");
 assert.equal(new URL(defaults.url).searchParams.get("connection_limit"), "8");
-assert.equal(new URL(defaults.url).searchParams.get("pool_timeout"), "5");
+assert.equal(new URL(defaults.url).searchParams.get("pool_timeout"), "10");
 
 const configured = configurePrismaPool(
   "postgresql://user:secret@db.example/app?connection_limit=3&pool_timeout=10",
@@ -28,7 +28,7 @@ const legacyUrlSettings = configurePrismaPool(
 );
 assert.ok(legacyUrlSettings);
 assert.equal(legacyUrlSettings.connectionLimit, 8);
-assert.equal(legacyUrlSettings.poolTimeoutSeconds, 5);
+assert.equal(legacyUrlSettings.poolTimeoutSeconds, 10);
 
 const bounded = configurePrismaPool("postgresql://user:secret@db.example/app", {
   PRISMA_CONNECTION_LIMIT: "1000",
@@ -41,4 +41,4 @@ assert.equal(bounded.poolTimeoutSeconds, 30);
 assert.equal(configurePrismaPool(undefined, {}), null);
 assert.equal(configurePrismaPool("not-a-url", {}), null);
 
-console.log("Prisma pool configuration checks passed (bounded pool size and fail-fast timeout).");
+console.log("Prisma pool configuration checks passed (bounded pool size and burst-tolerant timeout).");

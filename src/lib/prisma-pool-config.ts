@@ -1,5 +1,8 @@
 const DEFAULT_CONNECTION_LIMIT = 8;
-const DEFAULT_POOL_TIMEOUT_SECONDS = 5;
+// Production logs showed healthy requests failing during short bursts because
+// all eight connections stayed busy for slightly more than five seconds. Keep
+// the connection count bounded, but allow the existing pool to drain.
+const DEFAULT_POOL_TIMEOUT_SECONDS = 10;
 const MAX_CONNECTION_LIMIT = 20;
 const MAX_POOL_TIMEOUT_SECONDS = 30;
 

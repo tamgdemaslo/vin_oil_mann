@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
-    const safe = rosskoIntegrationError(error);
+    const safe = rosskoIntegrationError(error, "check");
     const integration = !usesTemporaryKeys
       ? await runWithBranchApiContext(access.context, () => recordRosskoCheck(safe.code)).catch(() => null)
       : null;

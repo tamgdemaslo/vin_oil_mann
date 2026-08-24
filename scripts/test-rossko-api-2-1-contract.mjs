@@ -6,7 +6,19 @@ import { resolve } from "node:path";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
-const { rosskoCheckoutOptions, validateRosskoCheckoutSelection } = await jiti.import("../src/lib/rossko.ts");
+const { recoverableRosskoClient, rosskoCheckoutOptions, validateRosskoCheckoutSelection } = await jiti.import("../src/lib/rossko.ts");
+
+const clientCache = new Map();
+let clientAttempts = 0;
+const createRecoverableClient = async () => {
+  clientAttempts += 1;
+  if (clientAttempts === 1) throw new Error("temporary WSDL failure");
+  return { connected: true };
+};
+await assert.rejects(() => recoverableRosskoClient(clientCache, "branch", createRecoverableClient), /temporary WSDL failure/);
+assert.equal(clientCache.size, 0, "a failed SOAP client promise must not remain cached");
+assert.deepEqual(await recoverableRosskoClient(clientCache, "branch", createRecoverableClient), { connected: true });
+assert.equal(clientAttempts, 2, "the next request must be able to recreate the SOAP client");
 
 const details = {
   success: true,

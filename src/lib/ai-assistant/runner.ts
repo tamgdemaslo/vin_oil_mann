@@ -673,7 +673,8 @@ export async function runAssistantThread(input: { threadId: string; organization
               });
               savedQuoteIds.push(quote.id);
             }
-            resultForModel = { ...parsed, quoteIds: savedQuoteIds };
+            const traceDiagnostics = Array.isArray(executed.result.traceDiagnostics) ? executed.result.traceDiagnostics.slice(0, 8) : [];
+            resultForModel = { ...parsed, quoteIds: savedQuoteIds, ...(traceDiagnostics.length ? { traceDiagnostics } : {}) };
             calculationCompletedThisTurn = true;
             quoteSavedThisTurn = savedQuoteIds.length > 0;
           } else if (isAssistantCalculationTool(toolName)) calculationCompletedThisTurn = true;
@@ -702,7 +703,9 @@ export async function runAssistantThread(input: { threadId: string; organization
           outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify(jsonSafe(resultForModel)) });
         } catch (error) {
           const errorMessage = text(error instanceof Error ? error.message : String(error), 800) || "Инструмент недоступен";
-          await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
+          const diagnosticMessage = error instanceof AssistantToolError ? text(error.diagnosticMessage, 600) : "";
+          const auditErrorMessage = diagnosticMessage ? `${errorMessage}\nТехническая причина: ${diagnosticMessage}` : errorMessage;
+          await prisma.aIAssistantToolCall.update({ where: { id: audit.id }, data: { status: "failed", errorMessage: auditErrorMessage, durationMs: Date.now() - toolStartedAt, completedAt: new Date() } });
           const code = error instanceof AssistantToolError ? error.code : undefined;
           toolSummaries.push({ toolName, status: "failed", error: errorMessage, ...(code ? { code } : {}) });
           outputs.push({ type: "function_call_output", call_id: callId, output: JSON.stringify({ error: errorMessage, ...(code ? { code } : {}) }) });

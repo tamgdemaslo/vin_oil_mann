@@ -93,14 +93,27 @@ async function createClient(service: string, cfg: RosskoConfig): Promise<SoapCli
   return client;
 }
 
-async function getSearchClient(cfg: RosskoConfig): Promise<SoapClient> {
-  const sig = `${cfg.timeoutMs}:${cfg.key1}:${cfg.key2}`;
-  let client = searchClients.get(sig);
-  if (!client) {
-    client = createClient("GetSearch", cfg);
-    searchClients.set(sig, client);
+export async function recoverableRosskoClient<T>(cache: Map<string, Promise<T>>, key: string, create: () => Promise<T>): Promise<T> {
+  let pending = cache.get(key);
+  if (!pending) {
+    pending = Promise.resolve().then(create);
+    cache.set(key, pending);
   }
-  return client;
+  try {
+    return await pending;
+  } catch (error) {
+    // A rejected Promise must not poison every later search until the app is
+    // restarted. Delete only the same attempt so a concurrent replacement is
+    // never removed accidentally.
+    if (cache.get(key) === pending) cache.delete(key);
+    throw error;
+  }
+}
+
+async function getSearchClient(cfg: RosskoConfig): Promise<SoapClient> {
+  const sig = `${cfg.timeoutMs}:${credentialFingerprint(cfg)}`;
+  if (!searchClients.has(sig) && searchClients.size >= 20) searchClients.delete(searchClients.keys().next().value!);
+  return recoverableRosskoClient(searchClients, sig, () => createClient("GetSearch", cfg));
 }
 
 function firstResult(v: unknown): Record<string, unknown> {

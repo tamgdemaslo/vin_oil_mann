@@ -13,6 +13,7 @@
     "test:lookup": "node scripts/test-lookup.mjs",
     "test:catalog-search": "node scripts/test-catalog-search.mjs",
     "test:rossko-api": "node scripts/test-rossko-api-2-1-contract.mjs",
+    "test:rossko-errors": "node scripts/test-rossko-error-classification.mjs",
     "test:rossko-product-import": "node scripts/test-rossko-product-import.mjs",
     "test:product-oem-catalog": "node scripts/test-product-oem-catalog.mjs",
     "test:product-history": "node scripts/test-product-document-history.mjs",

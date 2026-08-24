@@ -5,7 +5,8 @@ import { DEFAULT_ROSSKO_MARKUP_RULES, getAgentSettings } from "@/lib/ai-agent/se
 import type { AIRosskoMarkupRule } from "@/lib/ai-agent/types";
 import { IntegrationNotConfiguredForBranch } from "@/lib/branch-integration-credentials";
 import { lookupVehicle, normalizeVehicleMake, normalizeVehicleModel } from "@/lib/vehicle-identity";
-import { rosskoConfig, rosskoSearch } from "@/lib/rossko";
+import { RosskoError, rosskoConfig, rosskoSearch } from "@/lib/rossko";
+import { classifyRosskoRuntimeFailure, type RosskoRuntimeFailureCode } from "@/lib/rossko-error-classification";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import { resolveLaborPrice } from "./labor-pricing";
 import { evaluatePreferredLocalFluid, fluidSpecificationExcerpt, fluidSpecificationSearchTokenGroups, shouldRequireOriginalFluid, type LocalFluidCandidateTrace, type LocalFluidSelection } from "./material-selection";
@@ -23,8 +24,10 @@ export type AssistantToolSource = {
 export type AssistantToolResult = { result: Record<string, unknown>; sources?: AssistantToolSource[] };
 
 /** A safe, user-facing failure passed into both trace and the model response. */
+export type AssistantToolErrorCode = "ROSSKO_NOT_CONFIGURED" | "ROSSKO_NO_RESULTS" | RosskoRuntimeFailureCode;
+
 export class AssistantToolError extends Error {
-  constructor(public readonly code: "ROSSKO_NOT_CONFIGURED" | "ROSSKO_AUTH_FAILED" | "ROSSKO_TEMPORARILY_UNAVAILABLE" | "ROSSKO_NO_RESULTS", message: string) {
+  constructor(public readonly code: AssistantToolErrorCode, message: string, public readonly diagnosticMessage: string | null = null) {
     super(message);
     this.name = "AssistantToolError";
   }
@@ -434,16 +437,21 @@ async function stock(args: Record<string, unknown>) {
   return { result: { products: products.map((product) => ({ ...product, stock: product.stockBalances.map((row) => ({ store: row.store.name, quantity: Number(row.quantity), reserve: Number(row.reserve), available: Number(row.available) })) })) }, sources: [{ sourceType: "internal_catalog", title: "Локальные остатки" }] } satisfies AssistantToolResult;
 }
 
-function rosskoFailure(error: unknown) {
+export function rosskoFailure(error: unknown) {
   if (error instanceof AssistantToolError) return error;
   if (error instanceof IntegrationNotConfiguredForBranch) {
     return new AssistantToolError("ROSSKO_NOT_CONFIGURED", "ROSSKO не подключён для этого филиала. Откройте Кабинет → Интеграции и добавьте ключи.");
   }
-  const message = error instanceof Error ? error.message : String(error);
-  if (/(auth|authoriz|ключ|key1|key2|access denied|forbidden|401|403)/i.test(message)) {
-    return new AssistantToolError("ROSSKO_AUTH_FAILED", "ROSSKO не принял ключи этого филиала. Проверьте подключение в Кабинете → Интеграции.");
+  const classified = classifyRosskoRuntimeFailure(error, { operation: "search", providerError: error instanceof RosskoError });
+  return new AssistantToolError(classified.code, classified.publicMessage, classified.diagnosticMessage);
+}
+
+function scopedBranchIdForDiagnostic() {
+  try {
+    return getScopedBranchId();
+  } catch {
+    return null;
   }
-  return new AssistantToolError("ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO временно недоступен. Повторите поиск позже или используйте локальный каталог.");
 }
 
 async function rossko(args: Record<string, unknown>, context: ToolContext) {
@@ -478,7 +486,17 @@ async function rossko(args: Record<string, unknown>, context: ToolContext) {
     if (!offers.length) throw new AssistantToolError("ROSSKO_NO_RESULTS", "ROSSKO не вернул предложений по этому номеру для выбранного филиала.");
     return { result: { found: true, article, brand: brand || null, offers, validForHours: 24, mode: "read_only_search" }, sources: [{ sourceType: "rossko", title: "ROSSKO · read-only поиск", excerpt: `Артикул: ${article}` }] } satisfies AssistantToolResult;
   } catch (error) {
-    throw rosskoFailure(error);
+    const failure = rosskoFailure(error);
+    if (!(error instanceof AssistantToolError)) {
+      console.error("[ai-assistant.rossko] search failed", {
+        branchId: scopedBranchIdForDiagnostic(),
+        article: article || null,
+        brand: brand || null,
+        code: failure.code,
+        diagnostic: failure.diagnosticMessage,
+      });
+    }
+    throw failure;
   }
 }
 
@@ -828,6 +846,16 @@ export class LocalFirstInvariantError extends Error {
 
 export function classifyQuoteAndTechCardFailure(error: unknown) {
   const message = text(error instanceof Error ? error.message : String(error), 360) || "Не удалось получить цену материала или работы.";
+  if (error instanceof AssistantToolError) {
+    const requiredToContinue = error.code === "DATABASE_TEMPORARILY_UNAVAILABLE"
+      ? "Повторить расчёт после восстановления доступа к базе данных."
+      : error.code === "ROSSKO_AUTH_FAILED" || error.code === "ROSSKO_NOT_CONFIGURED"
+        ? "Проверить настройки ROSSKO выбранного филиала."
+        : error.code === "ROSSKO_NO_RESULTS"
+          ? "Проверить OEM/кросс-номер или выбрать совместимый материал из локального каталога."
+          : "Повторить поиск ROSSKO; при повторении открыть техническую причину в trace.";
+    return { code: error.code, message, requiredToContinue };
+  }
   const integrityFailure = error instanceof QuoteAndTechCardIntegrityError;
   const localFirstFailure = error instanceof LocalFirstInvariantError;
   const supplierFailure = /rossko|поставщик|предложен/i.test(message);
@@ -968,6 +996,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const input = plan.input;
   const baseBlockers = [...plan.hardBlockers];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
+  const traceDiagnostics: Array<{ scope: "rossko"; code: AssistantToolErrorCode; message: string; diagnostic: string | null }> = [];
   let selectedMaterial: { name: string; catalogName: string; customerDisplayName: string; specification: string | null; quantity: number; compatibilityEvidence: string | null } | null = null;
   const options: QuoteAndTechCardQuoteOption[] = [];
   const fluidPreference = context.employeeRequestedOriginalFluidOnly ? "original_only" : "prefer_local_compatible";
@@ -1078,6 +1107,9 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
       if (status !== "blocked") quoteSnapshots.push({ argumentsValue: quoteArgs, preview: quote });
     } catch (error) {
       const failure = classifyQuoteAndTechCardFailure(error);
+      if (error instanceof AssistantToolError) {
+        traceDiagnostics.push({ scope: "rossko", code: error.code, message: error.message, diagnostic: error.diagnosticMessage });
+      }
       options.push({
         code: option.code,
         label: option.label,
@@ -1099,7 +1131,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   }
   const allOptionBlockers = options.flatMap((option) => Array.isArray(option.blockers) ? option.blockers : []) as Array<{ code: string; message: string; requiredToContinue: string }>;
   const hardBlockers = [...baseBlockers];
-  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR"]) {
+  for (const code of ["NO_MATERIAL_PRICE", "MISSING_LABOR_RULE", "QUOTE_INTEGRITY_ERROR", "LOCAL_FIRST_POLICY_ERROR", "QUOTE_CALCULATION_ERROR", "DATABASE_TEMPORARILY_UNAVAILABLE", "ROSSKO_NOT_CONFIGURED", "ROSSKO_AUTH_FAILED", "ROSSKO_TEMPORARILY_UNAVAILABLE", "ROSSKO_NO_RESULTS", "ROSSKO_SEARCH_FAILED"]) {
     const matching = allOptionBlockers.filter((blocker) => blocker.code === code);
     if (matching.length === options.length && matching[0]) hardBlockers.push(matching[0]);
   }
@@ -1150,7 +1182,7 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
   const result = parseQuoteAndTechCardResult(resultBase);
   if (!result) throw new Error("Не удалось сформировать проверенный контракт техкарты и сметы");
   return {
-    result: { ...result, quoteSnapshots, finalQuote: false },
+    result: { ...result, quoteSnapshots, traceDiagnostics, finalQuote: false },
     sources: [
       { sourceType: "internal_catalog" as const, title: "Техкарта и смета: детерминированный сценарий", excerpt: `Проверочных проходов: не более ${plan.rules.maxTechnicalVerificationPasses}; вариантов процедуры: ${options.length}.` },
       ...input.evidence.map((item) => ({ sourceType: "internal_catalog" as const, title: item.source, url: item.url ?? null, excerpt: item.fact })),
@@ -1169,6 +1201,7 @@ async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, contex
   if (rawInputs.length < 2) throw new Error("Для комплексного расчёта укажите минимум две независимые услуги.");
   const results: QuoteAndTechCardResult[] = [];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
+  const traceDiagnostics: Array<Record<string, unknown>> = [];
   const sources: AssistantToolSource[] = [];
   for (const rawInput of rawInputs) {
     const built = await buildQuoteAndTechCard({ input: rawInput }, context);
@@ -1177,6 +1210,8 @@ async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, contex
     results.push(parsed);
     const snapshots = Array.isArray(built.result.quoteSnapshots) ? built.result.quoteSnapshots : [];
     quoteSnapshots.push(...snapshots.map(object).filter((snapshot) => object(snapshot.argumentsValue) && object(snapshot.preview)) as Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }>);
+    const diagnostics = Array.isArray(built.result.traceDiagnostics) ? built.result.traceDiagnostics : [];
+    traceDiagnostics.push(...diagnostics.map(object));
     sources.push(...(built.sources ?? []));
   }
   const vehicle = results[0]?.vehicle ?? { displayName: "Автомобиль уточняется", aggregate: null };
@@ -1194,7 +1229,7 @@ async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, contex
   const result = parseQuoteAndTechCardArtifact({ ...draft, customerMessage, status: customerMessage.status === "ready" ? bundleStatus : "blocked" });
   if (!result || result.scenario !== "quote_and_tech_card_bundle") throw new Error("Не удалось сформировать проверенный контракт комплексного расчёта.");
   return {
-    result: { ...result, quoteSnapshots, finalQuote: false },
+    result: { ...result, quoteSnapshots, traceDiagnostics, finalQuote: false },
     sources: [
       { sourceType: "internal_catalog" as const, title: "Комплексная техкарта и смета", excerpt: `Независимых услуг: ${results.length}; рассчитано: ${quotedServiceCount}.` },
       ...sources,

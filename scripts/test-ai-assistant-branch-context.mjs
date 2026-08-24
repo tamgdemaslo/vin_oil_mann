@@ -38,8 +38,12 @@ assert.match(tools, /ROSSKO_NOT_CONFIGURED/);
 assert.match(tools, /ROSSKO_AUTH_FAILED/);
 assert.match(tools, /ROSSKO_TEMPORARILY_UNAVAILABLE/);
 assert.match(tools, /ROSSKO_NO_RESULTS/);
+assert.match(tools, /DATABASE_TEMPORARILY_UNAVAILABLE/);
+assert.match(tools, /ROSSKO_SEARCH_FAILED/);
+assert.match(tools, /traceDiagnostics/);
 assert.doesNotMatch(rossko, /process\.env\.ROSSKO_KEY[12]/);
 assert.match(rossko, /credentialFingerprint/);
+assert.match(rossko, /recoverableRosskoClient/);
 assert.match(rossko, /checkoutDetailsCache = new Map/);
 
 // Env credentials are allowed only in the one-time command and the command

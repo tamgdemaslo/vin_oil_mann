@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, data });
     });
   } catch (e) {
-    const safe = rosskoIntegrationError(e);
+    const safe = rosskoIntegrationError(e, "search");
     return NextResponse.json(safe, { status: safe.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 });
   }
 }
