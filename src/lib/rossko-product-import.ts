@@ -269,6 +269,14 @@ const FILTER_TYPE_LABELS: Record<Exclude<RosskoFilterType, "other">, string> = {
   fuel: "Фильтр топливный",
 };
 
+function removeRosskoProductIdentity(value: string, identity: string): string {
+  if (!identity) return value;
+  const pattern = identity
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  return value.replace(new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "giu"), " ");
+}
+
 export function buildRosskoProductName(input: {
   brand: unknown;
   article: unknown;
@@ -282,18 +290,14 @@ export function buildRosskoProductName(input: {
   const inferred = inferRosskoFilterType(`${category} ${sourceName}`);
 
   if (inferred.type !== "other") {
-    return cleanEditedText(`${brand} ${FILTER_TYPE_LABELS[inferred.type]} ${article}`, 240);
+    return cleanEditedText(`${FILTER_TYPE_LABELS[inferred.type]} ${brand} ${article}`, 240);
   }
 
-  const normalizedSourceBrand = normalizeRosskoBrand(sourceName);
-  const normalizedSourceArticle = normalizeRosskoArticle(sourceName);
-  const hasBrand = Boolean(brand) && normalizedSourceBrand.includes(normalizeRosskoBrand(brand));
-  const hasArticle = Boolean(article) && normalizedSourceArticle.includes(normalizeRosskoArticle(article));
-  return cleanEditedText([
-    hasBrand ? "" : brand,
-    sourceName,
-    hasArticle ? "" : article,
-  ].filter(Boolean).join(" "), 240);
+  const productCategory = cleanEditedText(
+    removeRosskoProductIdentity(removeRosskoProductIdentity(sourceName, brand), article),
+    240,
+  ).replace(/^[,;|·\-/\s]+|[,;|·\-/\s]+$/g, "");
+  return cleanEditedText([productCategory || category, brand, article].filter(Boolean).join(" "), 240);
 }
 
 function summary(rows: RosskoImportPreviewRow[]): RosskoImportSummary {
