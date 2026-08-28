@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "parserVersion": "capacity-parser-v4",
+  "parserVersion": "capacity-parser-v5",
   "source": {
     "kind": "frozen-local-postgresql-snapshot",
     "archiveId": "railway-final-frozen-backup-2026-08-02-codex-019fb41a",
@@ -591,7 +591,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "8.5 л. | 7.53 л. | 9.83 л. | 11.7 л. | 8.3 л."
+            "raw": "8.5 л. | 7.53 л. | 9.83 л. | 8.3 л. | 11.7 л."
           }
         ],
         "needsReview": true
@@ -1252,7 +1252,7 @@
             "nominalLiters": 3.6,
             "toleranceLiters": null,
             "context": "6.3 л. общий объём для 2WD 3.6 л. для частичной замены в 2WD 6.7 л. общий объём для 4WD 3.5 л. для частичной заме",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "3.6 л.",
             "qualifier": "EXACT",
             "serviceContext": "PARTIAL",
@@ -1278,7 +1278,7 @@
             "nominalLiters": 3.5,
             "toleranceLiters": null,
             "context": "бщий объём для 2WD 3.6 л. для частичной замены в 2WD 6.7 л. общий объём для 4WD 3.5 л. для частичной замены в 4WD",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "3.5 л.",
             "qualifier": "EXACT",
             "serviceContext": "PARTIAL",
@@ -1289,7 +1289,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "6.3 л. | 6.7 л."
+            "raw": "6.3 л. | 6.7 л. | 3.6 л. | 3.5 л."
           }
         ],
         "needsReview": true
@@ -1831,7 +1831,7 @@
             "nominalLiters": 7.5,
             "toleranceLiters": null,
             "context": "7.5 л. с отопителем 6.9 л. без отопителя",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "7.5 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -1844,7 +1844,7 @@
             "nominalLiters": 6.9,
             "toleranceLiters": null,
             "context": "7.5 л. с отопителем 6.9 л. без отопителя",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "6.9 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -1852,8 +1852,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "7.5 л. | 6.9 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "ENGINE_COOLANT",
       "observedSystemCodes": [
@@ -2519,7 +2524,7 @@
             "nominalLiters": 5.88,
             "toleranceLiters": null,
             "context": "5.88 л. (включая жидкость 0.65 л. в расширительном бачке)",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "5.88 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -2532,7 +2537,7 @@
             "nominalLiters": 0.65,
             "toleranceLiters": null,
             "context": "5.88 л. (включая жидкость 0.65 л. в расширительном бачке)",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "0.65 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -2540,8 +2545,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "5.88 л. | 0.65 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "ENGINE_COOLANT",
       "observedSystemCodes": [
@@ -2682,7 +2692,7 @@
             "nominalLiters": 6.5,
             "toleranceLiters": null,
             "context": "6.5 л. для моделей с АКПП 6.4 л. для моделей с МКПП",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "6.5 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -2695,7 +2705,7 @@
             "nominalLiters": 6.4,
             "toleranceLiters": null,
             "context": "6.5 л. для моделей с АКПП 6.4 л. для моделей с МКПП",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "6.4 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -2703,8 +2713,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "6.5 л. | 6.4 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "ENGINE_COOLANT",
       "observedSystemCodes": [
@@ -2779,7 +2794,7 @@
             "nominalLiters": 5.9,
             "toleranceLiters": null,
             "context": "6.0 л. для моделей с Multidrive и двс 3ZR-FE 5.9 л. для моделей с Multidrive и двс 3ZR-FAE 5.8 л. для моделей с МКПП",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "5.9 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -2803,7 +2818,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "6.0 л. | 5.8 л."
+            "raw": "6.0 л. | 5.9 л. | 5.8 л."
           }
         ],
         "needsReview": true
@@ -3707,7 +3722,7 @@
             "nominalLiters": 4.2,
             "toleranceLiters": null,
             "context": "4.2 л. с масло-охладителем 4.1 л. без масло-охладителя",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "4.2 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -3720,7 +3735,7 @@
             "nominalLiters": 4.1,
             "toleranceLiters": null,
             "context": "4.2 л. с масло-охладителем 4.1 л. без масло-охладителя",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "4.1 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -3728,8 +3743,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "4.2 л. | 4.1 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "ENGINE_OIL",
       "observedSystemCodes": [
@@ -4141,7 +4161,7 @@
             "nominalLiters": 1.55,
             "toleranceLiters": null,
             "context": "1.55 л. - с A. D. D. 1.4 л. - без A. D. D.",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "1.55 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -4154,7 +4174,7 @@
             "nominalLiters": 1.4,
             "toleranceLiters": null,
             "context": "1.55 л. - с A. D. D. 1.4 л. - без A. D. D.",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "1.4 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -4162,8 +4182,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "1.55 л. | 1.4 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "FRONT_DIFFERENTIAL",
       "observedSystemCodes": [
@@ -4885,7 +4910,7 @@
             "nominalLiters": 61,
             "toleranceLiters": null,
             "context": "61.0 л. для моделей 2000-2004 г. 62.0 л. для моделей 2004-2006 г.",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "61.0 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -4898,7 +4923,7 @@
             "nominalLiters": 62,
             "toleranceLiters": null,
             "context": "61.0 л. для моделей 2000-2004 г. 62.0 л. для моделей 2004-2006 г.",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "62.0 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -4909,7 +4934,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "61.0 л. для моделей 2000-2004 г. 62.0 л. для моделей 2004-2006 г."
+            "raw": "61.0 л. | 62.0 л."
           }
         ],
         "needsReview": true
@@ -5218,7 +5243,7 @@
             "nominalLiters": 8,
             "toleranceLiters": null,
             "context": "8.00 л. для 2WD 7.90 л. для 4WD",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "8.00 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -5231,7 +5256,7 @@
             "nominalLiters": 7.9,
             "toleranceLiters": null,
             "context": "8.00 л. для 2WD 7.90 л. для 4WD",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "7.90 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -5239,8 +5264,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "8.00 л. | 7.90 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "CVT_TRANSMISSION",
       "observedSystemCodes": [
@@ -5265,7 +5295,7 @@
             "nominalLiters": 7,
             "toleranceLiters": 0.5,
             "context": "7.0 ± 0.5 л. для МКПП 7.4 ± 0.5 л. для Робота",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "7.0 ± 0.5 л.",
             "qualifier": "TOLERANCE",
             "serviceContext": "UNKNOWN",
@@ -5278,7 +5308,7 @@
             "nominalLiters": 7.4,
             "toleranceLiters": 0.5,
             "context": "7.0 ± 0.5 л. для МКПП 7.4 ± 0.5 л. для Робота",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "7.4 ± 0.5 л.",
             "qualifier": "TOLERANCE",
             "serviceContext": "UNKNOWN",
@@ -5286,8 +5316,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "7.0 ± 0.5 л. | 7.4 ± 0.5 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "ENGINE_COOLANT",
       "observedSystemCodes": [
@@ -5801,7 +5836,7 @@
             "nominalLiters": 8.2,
             "toleranceLiters": 0.5,
             "context": "8.2 ± 0.5 л. для CATL 8.8 ± 0.5 л. для Wei Rui, 86 kWh 9.3 ± 0.5 л. для Wei Rui, 100 kWh",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "8.2 ± 0.5 л.",
             "qualifier": "TOLERANCE",
             "serviceContext": "UNKNOWN",
@@ -5814,7 +5849,7 @@
             "nominalLiters": 8.8,
             "toleranceLiters": 0.5,
             "context": "8.2 ± 0.5 л. для CATL 8.8 ± 0.5 л. для Wei Rui, 86 kWh 9.3 ± 0.5 л. для Wei Rui, 100 kWh",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "8.8 ± 0.5 л.",
             "qualifier": "TOLERANCE",
             "serviceContext": "UNKNOWN",
@@ -5827,7 +5862,7 @@
             "nominalLiters": 9.3,
             "toleranceLiters": 0.5,
             "context": "8.2 ± 0.5 л. для CATL 8.8 ± 0.5 л. для Wei Rui, 86 kWh 9.3 ± 0.5 л. для Wei Rui, 100 kWh",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "9.3 ± 0.5 л.",
             "qualifier": "TOLERANCE",
             "serviceContext": "UNKNOWN",
@@ -5838,7 +5873,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "8.2 ± 0.5 л. для CATL 8.8 ± 0.5 л. для Wei Rui, 86 kWh 9.3 ± 0.5 л. для Wei Rui, 100 kWh"
+            "raw": "8.2 ± 0.5 л. | 8.8 ± 0.5 л. | 9.3 ± 0.5 л."
           }
         ],
         "needsReview": true
@@ -6190,7 +6225,7 @@
             "nominalLiters": null,
             "toleranceLiters": null,
             "context": "3.3-3.4 л. охлаждающее масло 2.45-2.5 л. в контур управления",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "3.3-3.4 л.",
             "qualifier": "RANGE",
             "serviceContext": "UNKNOWN",
@@ -6203,7 +6238,7 @@
             "nominalLiters": null,
             "toleranceLiters": null,
             "context": "3.3-3.4 л. охлаждающее масло 2.45-2.5 л. в контур управления",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "2.45-2.5 л.",
             "qualifier": "RANGE",
             "serviceContext": "UNKNOWN",
@@ -6211,8 +6246,13 @@
           }
         ],
         "rejected": [],
-        "suspicious": [],
-        "needsReview": false
+        "suspicious": [
+          {
+            "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
+            "raw": "3.3-3.4 л. | 2.45-2.5 л."
+          }
+        ],
+        "needsReview": true
       },
       "systemCode": "CLUTCH_FLUID",
       "observedSystemCodes": [
@@ -6738,7 +6778,7 @@
             "nominalLiters": 8.9,
             "toleranceLiters": null,
             "context": "8.9 л. для двс: - 2.0 D3 (D5204T7) - 2.0 D3 (D5204T3) 8.9-9.2 л. для двс: - 2.0 D3 (D4",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "8.9 л.",
             "qualifier": "EXACT",
             "serviceContext": "UNKNOWN",
@@ -6751,7 +6791,7 @@
             "nominalLiters": null,
             "toleranceLiters": null,
             "context": "8.9 л. для двс: - 2.0 D3 (D5204T7) - 2.0 D3 (D5204T3) 8.9-9.2 л. для двс: - 2.0 D3 (D4204T4) - 2.0 D4 (D4204T14)",
-            "confidence": "HIGH",
+            "confidence": "MEDIUM",
             "raw": "8.9-9.2 л.",
             "qualifier": "RANGE",
             "serviceContext": "UNKNOWN",
@@ -6762,7 +6802,7 @@
         "suspicious": [
           {
             "code": "UNRESOLVED_CONDITIONAL_CAPACITY",
-            "raw": "8.9 л. для двс: - 2.0 D3 (D5204T7) - 2.0 D3 (D5204T3) 8.9-9.2 л. для двс: - 2.0 D3 (D4204T4) - 2.0 D4 (D4204T14)"
+            "raw": "8.9 л. | 8.9-9.2 л."
           }
         ],
         "needsReview": true

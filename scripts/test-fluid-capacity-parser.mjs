@@ -12,7 +12,7 @@ const { FLUID_CAPACITY_PARSER_VERSION, parseFluidCapacities } = await jiti.impor
   "../src/lib/fluid-capacity-parser.ts",
 );
 
-assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v4");
+assert.equal(FLUID_CAPACITY_PARSER_VERSION, "capacity-parser-v5");
 
 const tolerance = parseFluidCapacities("Заправочный объём 5,6 ± 0,1 л", "ENGINE_OIL");
 assert.equal(tolerance.capacities.length, 1);
@@ -109,6 +109,14 @@ const omittedFirstUnitConditional = parseFluidCapacities("6.5 для бензи�
 assert.equal(omittedFirstUnitConditional.needsReview, true);
 assert.ok(omittedFirstUnitConditional.suspicious.some((item) => item.code === "UNRESOLVED_CONDITIONAL_CAPACITY"));
 
+const engineDisplacementAfterCapacity = parseFluidCapacities("6.6 л. для SKYACTIV-G 2.0", "ENGINE_COOLANT");
+assert.equal(engineDisplacementAfterCapacity.needsReview, false);
+assert.deepEqual(engineDisplacementAfterCapacity.capacities.map(({ nominalLiters }) => nominalLiters), [6.6]);
+
+const closeConditionalAlternatives = parseFluidCapacities("5.5 л. для моделей с МКПП 5.6 л. для моделей с АКПП", "ENGINE_COOLANT");
+assert.equal(closeConditionalAlternatives.needsReview, true);
+assert.ok(closeConditionalAlternatives.suspicious.some((item) => item.code === "UNRESOLVED_CONDITIONAL_CAPACITY"));
+
 const distinctServiceContexts = parseFluidCapacities("6.1 л. сервисный объём 7.1 л. общий объём", "ENGINE_OIL");
 assert.equal(distinctServiceContexts.needsReview, false);
 
@@ -153,4 +161,4 @@ for (const testCase of golden.cases) {
   assert.deepEqual(stableActual, testCase.expected, testCase.caseId);
 }
 
-console.log("Fluid capacity parser v4 regressions + 200-case real golden set — passed");
+console.log("Fluid capacity parser v5 regressions + 200-case real golden set — passed");

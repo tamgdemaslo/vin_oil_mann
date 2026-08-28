@@ -1,4 +1,4 @@
-export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v4" as const;
+export const FLUID_CAPACITY_PARSER_VERSION = "capacity-parser-v5" as const;
 
 export type FluidCapacityKind =
   | "SERVICE"
@@ -350,17 +350,12 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
       const left = capacities[leftIndex];
       const right = capacities[rightIndex];
       if (left.kind !== right.kind) continue;
-      const leftMin = left.minLiters ?? left.nominalLiters ?? left.maxLiters;
-      const leftMax = left.maxLiters ?? left.nominalLiters ?? left.minLiters;
-      const rightMin = right.minLiters ?? right.nominalLiters ?? right.maxLiters;
-      const rightMax = right.maxLiters ?? right.nominalLiters ?? right.minLiters;
-      if (leftMin === null || leftMax === null || rightMin === null || rightMax === null) continue;
-      const comparisonTolerance = Math.max(0.05, Math.min(leftMax, rightMax) * 0.03);
-      if (leftMax + comparisonTolerance >= rightMin && rightMax + comparisonTolerance >= leftMin) continue;
-      if (left.kind === "UNKNOWN") {
-        const localText = text.slice(Math.max(0, left.start - 32), Math.min(text.length, right.end + 80));
-        if (!/(?:ДЛЯ|\bFOR\b|МОДЕЛ|ДВИГАТЕЛ|АКПП|МКПП|\bCVT\b|\bDCT\b|БЕНЗИН|ДИЗЕЛ|\b2WD\b|\b4WD\b|КУЗОВ|\bWITH\b|\bWITHOUT\b)/iu.test(localText)) continue;
-      }
+      const sameSemanticCapacity = left.minLiters === right.minLiters
+        && left.maxLiters === right.maxLiters
+        && left.nominalLiters === right.nominalLiters
+        && left.toleranceLiters === right.toleranceLiters
+        && left.qualifier === right.qualifier;
+      if (sameSemanticCapacity) continue;
       conditionalIndexes.add(leftIndex);
       conditionalIndexes.add(rightIndex);
     }
@@ -372,7 +367,7 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
     const involved = [...conditionalIndexes].map((index) => capacities[index]);
     suspicious.push({
       code: "UNRESOLVED_CONDITIONAL_CAPACITY",
-      message: "В одной строке есть взаимоисключающие объёмы одного kind; условие нужно структурировать до materialization.",
+      message: "В одной строке есть разные объёмы одного kind; условия или компоненты нужно структурировать до materialization.",
       raw: involved.map((capacity) => capacity.raw).join(" | "),
       start: Math.min(...involved.map((capacity) => capacity.start)),
       end: Math.max(...involved.map((capacity) => capacity.end)),
@@ -391,7 +386,8 @@ export function parseFluidCapacities(value: unknown, systemCode?: string | null)
       if (capacities.some((capacity) => capacity.start <= start && end <= capacity.end)) return false;
       if (rejected.some((diagnostic) => diagnostic.start <= start && end <= diagnostic.end)) return false;
       const number = parseNumber(match.groups?.value);
-      return number !== null && number >= limits.min && number <= limits.max;
+      const introducesCondition = /^\s*(?:ДЛЯ(?![\p{L}\p{N}])|\bFOR\b)/iu.test(text.slice(end, end + 16));
+      return introducesCondition && number !== null && number >= limits.min && number <= limits.max;
     });
     if (unmatchedPlausibleNumbers.length > 0) {
       suspicious.push({
