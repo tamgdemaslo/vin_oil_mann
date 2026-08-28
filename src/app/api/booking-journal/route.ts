@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingViewIsSelfOnly, canConfirmBookings, canManageBookings, canOverrideBookingConflict, canViewBookings, requireBookingCapability } from "@/lib/booking/access";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
+import { DEFAULT_BOOKING_STEP_MINUTES, DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { buildBookingManagementUrl } from "@/lib/booking/management-url";
 import { notifyBookingCancelled, notifyBookingConfirmed, notifyBookingCreated, notifyBookingRescheduled } from "@/lib/booking/notifications";
@@ -225,12 +226,27 @@ export async function GET(request: NextRequest) {
         ? await prisma.branchMembership.findFirst({ where: { branchId, userId: access.context.userId, status: "active" }, select: { id: true } })
         : null;
       const action = request.nextUrl.searchParams.get("action");
-      if (action === "config") return NextResponse.json({ success: true, data: {
-        company_id: journalId(branchId),
-        company_title: branch.displayName || branch.shortName || branch.name,
-        can_manage: canManageBookings(access.context),
-        can_override_conflict: canOverrideBookingConflict(access.context),
-      } });
+      if (action === "config") {
+        const [settings, savedWorkingHours] = await Promise.all([
+          prisma.branchBookingSettings.findUnique({
+            where: { branchId },
+            select: { bookingStepMinutes: true },
+          }),
+          prisma.branchBookingWorkingHour.findMany({
+            where: { branchId },
+            select: { weekday: true, isWorking: true, startTime: true, endTime: true },
+            orderBy: { weekday: "asc" },
+          }),
+        ]);
+        return NextResponse.json({ success: true, data: {
+          company_id: journalId(branchId),
+          company_title: branch.displayName || branch.shortName || branch.name,
+          can_manage: canManageBookings(access.context),
+          can_override_conflict: canOverrideBookingConflict(access.context),
+          booking_step_minutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
+          working_hours: savedWorkingHours.length ? savedWorkingHours : DEFAULT_BOOKING_WORKING_HOURS,
+        } });
+      }
       if (action === "staff") {
         const memberships = await prisma.branchMembership.findMany({
           where: {

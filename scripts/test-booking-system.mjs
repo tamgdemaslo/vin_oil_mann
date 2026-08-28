@@ -160,6 +160,9 @@ function availabilityDb(overrides = {}) {
   ];
   const exceptions = overrides.exceptions ?? [];
   const busy = overrides.busy ?? [];
+  const branchHours = overrides.branchHours === undefined
+    ? { weekday: 1, isWorking: true, startTime: "09:00", endTime: "18:00" }
+    : overrides.branchHours;
   const settings = {
     publicBookingEnabled: overrides.publicBookingEnabled ?? true,
     bookingHorizonDays: 60,
@@ -184,7 +187,7 @@ function availabilityDb(overrides = {}) {
         .map(([membershipId, serviceId]) => ({ branchId: "branch-a", membershipId, serviceId, membership: masters[membershipId] })),
     },
     branchBookingWorkingHour: {
-      findUnique: async () => ({ weekday: 1, isWorking: true, startTime: "09:00", endTime: "18:00" }),
+      findUnique: async () => branchHours,
     },
     bookingMasterWorkingHour: {
       findMany: async ({ where }) => masterHours.filter((row) => where.membershipId.in.includes(row.membershipId) && row.weekday === where.weekday),
@@ -251,6 +254,19 @@ assert.deepEqual(
   new Set(inheritedBranchHours.slots.filter((slot) => slot.localTime === "09:00").map((slot) => slot.master.name)),
   new Set(["Александр", "Кирилл"]),
 );
+
+const defaultBranchHours = await getBookingAvailability(
+  { ...availabilityInput, serviceIds: ["oil"] },
+  availabilityDb({ branchHours: null, masterHours: [] }),
+);
+assert.equal(defaultBranchHours.slots.some((slot) => slot.localTime === "09:00"), true);
+assert.equal(defaultBranchHours.slots.some((slot) => slot.localTime === "18:00"), true);
+
+const defaultSundayClosed = await getBookingAvailability(
+  { ...availabilityInput, localDate: "2026-08-23", serviceIds: ["oil"] },
+  availabilityDb({ branchHours: null, masterHours: [] }),
+);
+assert.equal(defaultSundayClosed.slots.length, 0);
 
 await assert.rejects(
   () => getBookingAvailability({ ...availabilityInput, serviceIds: ["hidden"] }, availabilityDb()),

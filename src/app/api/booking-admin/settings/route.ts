@@ -3,17 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { canManageBookingSettings, requireBookingCapability } from "@/lib/booking/access";
 import { isCatalogBookingServiceId } from "@/lib/booking/catalog-services";
 import { BOOKING_MASTER_ROLE_ID } from "@/lib/booking/constants";
+import { DEFAULT_BOOKING_STEP_MINUTES, DEFAULT_BOOKING_WORKING_HOURS } from "@/lib/booking/defaults";
 import { bookingErrorPayload, BookingError } from "@/lib/booking/errors";
 import { assertLocalTime } from "@/lib/booking/timezone";
 import { requireBranchApi, runWithBranchApiContext } from "@/lib/branch-api";
 import { prisma } from "@/lib/db";
-
-const DEFAULT_HOURS = Array.from({ length: 7 }, (_, index) => ({
-  weekday: index + 1,
-  isWorking: index < 6,
-  startTime: index < 6 ? "09:00" : null,
-  endTime: index < 6 ? "19:00" : null,
-}));
 
 function bounded(value: unknown, fallback: number, minimum: number, maximum: number) {
   const parsed = Number(value);
@@ -21,7 +15,7 @@ function bounded(value: unknown, fallback: number, minimum: number, maximum: num
 }
 
 function workingHours(value: unknown) {
-  if (!Array.isArray(value)) return DEFAULT_HOURS;
+  if (!Array.isArray(value)) return DEFAULT_BOOKING_WORKING_HOURS;
   const rows = value.map((item) => {
     const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const weekday = bounded(row.weekday, 0, 1, 7);
@@ -79,11 +73,11 @@ export async function GET() {
         publicBookingEnabled: false,
         publicName: access.context.branch?.shortName ?? access.context.branch?.name ?? "",
         publicIntro: "",
-        bookingStepMinutes: 30,
+        bookingStepMinutes: DEFAULT_BOOKING_STEP_MINUTES,
         bookingHorizonDays: 60,
         minimumLeadMinutes: 60,
       },
-      workingHours: state.branchHours.length ? state.branchHours : DEFAULT_HOURS,
+      workingHours: state.branchHours.length ? state.branchHours : DEFAULT_BOOKING_WORKING_HOURS,
       services: state.services.map((service) => ({
         ...service,
         catalogManaged: isCatalogBookingServiceId(service.id),
@@ -125,7 +119,7 @@ export async function PUT(request: NextRequest) {
           publicBookingEnabled: body.publicBookingEnabled === true,
           publicName,
           publicIntro,
-          bookingStepMinutes: bounded(body.bookingStepMinutes, 30, 5, 240),
+          bookingStepMinutes: bounded(body.bookingStepMinutes, DEFAULT_BOOKING_STEP_MINUTES, 5, 240),
           bookingHorizonDays: bounded(body.bookingHorizonDays, 60, 1, 365),
           minimumLeadMinutes: bounded(body.minimumLeadMinutes, 60, 0, 10_080),
         },
@@ -133,7 +127,7 @@ export async function PUT(request: NextRequest) {
           publicBookingEnabled: body.publicBookingEnabled === true,
           publicName,
           publicIntro,
-          bookingStepMinutes: bounded(body.bookingStepMinutes, 30, 5, 240),
+          bookingStepMinutes: bounded(body.bookingStepMinutes, DEFAULT_BOOKING_STEP_MINUTES, 5, 240),
           bookingHorizonDays: bounded(body.bookingHorizonDays, 60, 1, 365),
           minimumLeadMinutes: bounded(body.minimumLeadMinutes, 60, 0, 10_080),
         },

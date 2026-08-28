@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { BOOKING_MASTER_ROLE_ID, BOOKING_STATUS } from "./constants";
+import { DEFAULT_BOOKING_STEP_MINUTES, defaultBookingWorkingHour } from "./defaults";
 import { BookingError } from "./errors";
 import {
   addLocalDays,
@@ -143,7 +144,7 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
       branch: { id: branch.id, name: branch.name, timezone: branch.timezone },
       localDate,
       durationMinutes,
-      stepMinutes: settings?.bookingStepMinutes ?? 30,
+      stepMinutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
       requiresVin: services.some((service) => service.requiresVin),
       requiresConfirmation: services.some((service) => service.requiresConfirmation),
       slots: [],
@@ -156,13 +157,15 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
     db.bookingMasterWorkingHour.findMany({ where: { branchId: branch.id, membershipId: { in: candidateIds }, weekday } }),
     db.bookingScheduleException.findMany({ where: { branchId: branch.id, membershipId: { in: candidateIds }, localDate } }),
   ]);
-  const branchInterval = intervalFromHours(branchHours);
+  // The settings screen shows these defaults before the owner saves anything.
+  // Availability must use the same defaults instead of treating the branch as closed.
+  const branchInterval = intervalFromHours(branchHours ?? defaultBookingWorkingHour(weekday));
   if (!branchInterval) {
     return {
       branch: { id: branch.id, name: branch.name, timezone: branch.timezone },
       localDate,
       durationMinutes,
-      stepMinutes: settings?.bookingStepMinutes ?? 30,
+      stepMinutes: settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES,
       requiresVin: services.some((service) => service.requiresVin),
       requiresConfirmation: services.some((service) => service.requiresConfirmation),
       slots: [],
@@ -191,7 +194,7 @@ export async function getBookingAvailability(input: AvailabilityInput, suppliedD
 
   const masterHoursById = new Map(masterHours.map((row) => [row.membershipId, row]));
   const exceptionById = new Map(exceptions.map((row) => [row.membershipId, row]));
-  const stepMinutes = Math.max(5, Math.min(settings?.bookingStepMinutes ?? 30, 240));
+  const stepMinutes = Math.max(5, Math.min(settings?.bookingStepMinutes ?? DEFAULT_BOOKING_STEP_MINUTES, 240));
   const minimumLeadMinutes = input.respectLeadTime === false ? 0 : Math.max(0, settings?.minimumLeadMinutes ?? 60);
   const earliest = now.getTime() + minimumLeadMinutes * 60_000;
   const slots: BookingSlot[] = [];

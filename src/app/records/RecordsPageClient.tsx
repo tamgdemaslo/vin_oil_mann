@@ -30,6 +30,11 @@ import {
   X,
 } from "lucide-react";
 import { SERVICE_TIME_ZONE, formatServiceDate, toServiceDateInput } from "@/lib/date-time";
+import {
+  DEFAULT_BOOKING_STEP_MINUTES,
+  DEFAULT_BOOKING_WORKING_HOURS,
+  type BookingWorkingHour,
+} from "@/lib/booking/defaults";
 import { ContactActionButton } from "@/components/messenger/ContactActionButton";
 import { EcoBadge, EcoButton, EcoStatusDot } from "@/components/platform/EcoUI";
 
@@ -223,13 +228,13 @@ type MonthDayLoad = {
 
 const DEFAULT_RECORD_DURATION_SECONDS = 40 * 60;
 const DEFAULT_TIMELINE_START = 9 * 60;
-const DEFAULT_TIMELINE_END = 21 * 60;
+const DEFAULT_TIMELINE_END = 19 * 60;
 const MIN_SLOT_MINUTES = 30;
 const TIMELINE_MINUTE_PX = 1.6;
 const TIMELINE_AXIS_WIDTH = 78;
 const EVENT_GUTTER_PX = 8;
 const EVENT_LANE_GAP_PX = 4;
-const TIMELINE_SNAP_MINUTES = 5;
+const DEFAULT_TIMELINE_SNAP_MINUTES = DEFAULT_BOOKING_STEP_MINUTES;
 
 type PositionedTimelineRecord = TimelineRecord & {
   displayMode: TimelineEventMode;
@@ -287,6 +292,56 @@ const emptyForm: RecordFormState = {
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function localTimeMinute(value: string | null | undefined) {
+  const match = String(value ?? "").match(/^(\d{2}):(\d{2})$/u);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function bookingWeekday(localDate: string) {
+  const date = new Date(`${localDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.getDay() || 7;
+}
+
+function normalizeBookingWorkingHours(value: unknown): BookingWorkingHour[] {
+  if (!Array.isArray(value)) return DEFAULT_BOOKING_WORKING_HOURS;
+  const rows = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    const weekday = Number(row.weekday);
+    if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) return [];
+    return [{
+      weekday,
+      isWorking: row.isWorking === true,
+      startTime: typeof row.startTime === "string" ? row.startTime : null,
+      endTime: typeof row.endTime === "string" ? row.endTime : null,
+    }];
+  });
+  return new Set(rows.map((row) => row.weekday)).size === 7 ? rows : DEFAULT_BOOKING_WORKING_HOURS;
+}
+
+function bookingWorkingWindow(workingHours: BookingWorkingHour[], localDate: string) {
+  const weekday = bookingWeekday(localDate);
+  const hours = workingHours.find((row) => row.weekday === weekday);
+  if (!hours?.isWorking) return null;
+  const start = localTimeMinute(hours.startTime);
+  const end = localTimeMinute(hours.endTime);
+  return start !== null && end !== null && start < end ? { start, end } : null;
+}
+
+function snapTimelineMinute(minute: number, stepMinutes: number, startMinute: number, endMinute: number, durationMinutes = stepMinutes) {
+  const step = Math.max(5, Math.min(240, Math.trunc(stepMinutes) || DEFAULT_TIMELINE_SNAP_MINUTES));
+  const first = Math.ceil(startMinute / step) * step;
+  const latest = Math.floor((endMinute - Math.max(5, durationMinutes)) / step) * step;
+  if (latest <= first) return first;
+  const rounded = Math.floor(minute / step) * step;
+  return Math.max(first, Math.min(latest, rounded));
 }
 
 function toDateInputValue(value: Date) {
@@ -778,6 +833,8 @@ export default function RecordsPageClient() {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [companyTitle, setCompanyTitle] = useState("Там где масло");
+  const [bookingStepMinutes, setBookingStepMinutes] = useState(DEFAULT_BOOKING_STEP_MINUTES);
+  const [bookingWorkingHours, setBookingWorkingHours] = useState<BookingWorkingHour[]>(DEFAULT_BOOKING_WORKING_HOURS);
   const [canManageRecords, setCanManageRecords] = useState(false);
   const [canOverrideConflict, setCanOverrideConflict] = useState(false);
 
@@ -971,6 +1028,9 @@ export default function RecordsPageClient() {
       if (!id) throw new Error("Система записи не настроена для активного филиала");
       setCompanyId(id);
       if (cfg.company_title) setCompanyTitle(String(cfg.company_title));
+      const configuredStep = Number(cfg.booking_step_minutes);
+      setBookingStepMinutes(Number.isFinite(configuredStep) ? Math.max(5, Math.min(240, Math.trunc(configuredStep))) : DEFAULT_BOOKING_STEP_MINUTES);
+      setBookingWorkingHours(normalizeBookingWorkingHours(cfg.working_hours));
       setCanManageRecords(cfg.can_manage === true);
       setCanOverrideConflict(cfg.can_override_conflict === true);
     } catch (e) {
@@ -1415,13 +1475,20 @@ export default function RecordsPageClient() {
     return out;
   }, [calendarDays, monthRecords, staff, timelineStaff]);
 
+  const branchDayWindow = useMemo(
+    () => bookingWorkingWindow(bookingWorkingHours, scheduleDate),
+    [bookingWorkingHours, scheduleDate]
+  );
+
   const timelineBounds = useMemo(() => {
     const starts = dayTimeline.map((item) => item.startMinute);
     const ends = dayTimeline.map((item) => item.endMinute);
-    const start = Math.max(0, Math.floor(Math.min(DEFAULT_TIMELINE_START, ...starts) / 60) * 60);
-    const end = Math.min(24 * 60, Math.ceil(Math.max(DEFAULT_TIMELINE_END, ...ends) / 60) * 60);
+    const configuredStart = branchDayWindow?.start ?? DEFAULT_TIMELINE_START;
+    const configuredEnd = branchDayWindow?.end ?? DEFAULT_TIMELINE_END;
+    const start = Math.max(0, Math.floor(Math.min(configuredStart, ...starts) / 60) * 60);
+    const end = Math.min(24 * 60, Math.ceil(Math.max(configuredEnd, ...ends) / 60) * 60);
     return { start, end };
-  }, [dayTimeline]);
+  }, [branchDayWindow, dayTimeline]);
 
   const timelineStartMinute = timelineBounds.start;
   const timelineEndMinute = timelineBounds.end;
@@ -1614,6 +1681,22 @@ export default function RecordsPageClient() {
     if (endMinute <= startMinute) {
       return { ok: false, warning: false, message: "Окончание записи должно быть позже начала" };
     }
+    if (formMode === "create") {
+      const workingWindow = bookingWorkingWindow(bookingWorkingHours, form.datetime.slice(0, 10));
+      if (!workingWindow) {
+        return { ok: false, warning: false, message: "Филиал не работает в выбранный день" };
+      }
+      if (startMinute < workingWindow.start || endMinute > workingWindow.end) {
+        return {
+          ok: false,
+          warning: false,
+          message: `Выберите время в рабочих часах ${formatMinute(workingWindow.start)}–${formatMinute(workingWindow.end)}`,
+        };
+      }
+      if (startMinute % bookingStepMinutes !== 0) {
+        return { ok: false, warning: false, message: `Начало записи выбирается с шагом ${bookingStepMinutes} минут` };
+      }
+    }
     if (formConflicts.length > 0 && !form.allowOverlap) {
       return { ok: false, warning: false, message: "В это время уже есть запись" };
     }
@@ -1625,7 +1708,7 @@ export default function RecordsPageClient() {
       };
     }
     return { ok: true, warning: false, message: "Время свободно" };
-  }, [form.allowOverlap, form.datetime, form.datetimeEnd, form.staffId, formConflicts.length, timelineEndMinute, timelineStartMinute]);
+  }, [bookingStepMinutes, bookingWorkingHours, form.allowOverlap, form.datetime, form.datetimeEnd, form.staffId, formConflicts.length, formMode, timelineEndMinute, timelineStartMinute]);
 
   const nearestFormSlots = useMemo(() => {
     const staffIdNum = Number(form.staffId);
@@ -1647,12 +1730,19 @@ export default function RecordsPageClient() {
   const openCreateForm = useCallback(
     (defaults?: Partial<RecordFormState>) => {
       if (!canManageRecords) return;
-      const now = new Date(`${scheduleDate}T09:00:00`);
-      const baseStart = defaults?.datetime || toDateTimeLocalValue(now);
       const serviceIds = defaults?.serviceIds ?? [];
       const defaultDuration =
         serviceIds.reduce((sum, id) => sum + getServiceDurationSeconds(serviceById.get(id)), 0) ||
         DEFAULT_RECORD_DURATION_SECONDS;
+      const defaultStartMinute = snapTimelineMinute(
+        branchDayWindow?.start ?? DEFAULT_TIMELINE_START,
+        bookingStepMinutes,
+        branchDayWindow?.start ?? DEFAULT_TIMELINE_START,
+        branchDayWindow?.end ?? DEFAULT_TIMELINE_END,
+        Math.ceil(defaultDuration / 60),
+      );
+      const now = new Date(`${scheduleDate}T${formatMinute(defaultStartMinute)}:00`);
+      const baseStart = defaults?.datetime || toDateTimeLocalValue(now);
       setForm({
         ...emptyForm,
         staffId: defaults?.staffId ?? (timelineStaff[0] ? String(timelineStaff[0].id) : ""),
@@ -1668,13 +1758,13 @@ export default function RecordsPageClient() {
       setLinkedCreateDealId(null);
       setFormOpen(true);
     },
-    [canManageRecords, scheduleDate, serviceById, timelineStaff]
+    [bookingStepMinutes, branchDayWindow, canManageRecords, scheduleDate, serviceById, timelineStaff]
   );
 
   const openQuickCreateFromMinute = useCallback(
     (staffIdValue: number, minute: number) => {
-      const clamped = Math.max(timelineStartMinute, Math.min(timelineEndMinute - 5, minute));
-      const rounded = Math.floor(clamped / 5) * 5;
+      const durationMinutes = Math.max(5, Math.ceil(selectedServiceDurationSeconds / 60));
+      const rounded = snapTimelineMinute(minute, bookingStepMinutes, timelineStartMinute, timelineEndMinute, durationMinutes);
       const start = `${scheduleDate}T${formatMinute(rounded)}`;
       openCreateForm({
         staffId: String(staffIdValue),
@@ -1683,7 +1773,7 @@ export default function RecordsPageClient() {
       });
       setSelectedRecordId(null);
     },
-    [openCreateForm, scheduleDate, selectedServiceDurationSeconds, timelineEndMinute, timelineStartMinute]
+    [bookingStepMinutes, openCreateForm, scheduleDate, selectedServiceDurationSeconds, timelineEndMinute, timelineStartMinute]
   );
 
   useEffect(() => {
@@ -1755,11 +1845,8 @@ export default function RecordsPageClient() {
   }, [dayTimeline, pendingFocusRecordId]);
 
   const getRoundedMinute = useCallback(
-    (minute: number) => {
-      const clamped = Math.max(timelineStartMinute, Math.min(timelineEndMinute - TIMELINE_SNAP_MINUTES, minute));
-      return Math.floor(clamped / TIMELINE_SNAP_MINUTES) * TIMELINE_SNAP_MINUTES;
-    },
-    [timelineEndMinute, timelineStartMinute]
+    (minute: number) => snapTimelineMinute(minute, bookingStepMinutes, timelineStartMinute, timelineEndMinute),
+    [bookingStepMinutes, timelineEndMinute, timelineStartMinute]
   );
 
   const openEditForm = useCallback((record: TimelineRecord, original: RecordItem) => {
@@ -3247,7 +3334,7 @@ export default function RecordsPageClient() {
                   </label>
                   <label>
                     <span>Начало</span>
-                    <input type="time" value={formStartTime} onChange={(event) => {
+                    <input type="time" step={bookingStepMinutes * 60} value={formStartTime} onChange={(event) => {
                       const nextStart = replaceTimePart(form.datetime, event.target.value, scheduleDate);
                       setForm((prev) => ({ ...prev, datetime: nextStart, datetimeEnd: addSecondsToDateTimeLocal(nextStart, selectedServiceDurationSeconds), allowOverlap: false }));
                     }} />
