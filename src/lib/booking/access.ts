@@ -1,6 +1,11 @@
 import type { BranchContext } from "@/lib/branch-context";
 import { BookingError } from "./errors";
-import { BOOKING_MANAGER_ROLES, BOOKING_PERMISSION, BOOKING_VIEW_ROLES } from "./constants";
+import {
+  BOOKING_JOURNAL_MANAGER_ROLES,
+  BOOKING_MANAGER_ROLES,
+  BOOKING_PERMISSION,
+  BOOKING_VIEW_ROLES,
+} from "./constants";
 
 function roles(context: BranchContext) {
   return [context.groupRole, context.branchRole].filter((value): value is string => Boolean(value));
@@ -15,7 +20,7 @@ export function canViewBookings(context: BranchContext) {
 }
 
 export function canManageBookings(context: BranchContext) {
-  return roles(context).some((role) => BOOKING_MANAGER_ROLES.has(role)) || hasPermission(context, BOOKING_PERMISSION.MANAGE);
+  return roles(context).some((role) => BOOKING_JOURNAL_MANAGER_ROLES.has(role)) || hasPermission(context, BOOKING_PERMISSION.MANAGE);
 }
 
 export function canManageBookingSettings(context: BranchContext) {

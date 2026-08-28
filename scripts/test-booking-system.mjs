@@ -19,6 +19,21 @@ const catalogServices = await jiti.import("../src/lib/booking/catalog-services.t
 const journalWindows = await jiti.import("../src/lib/booking/journal-windows.ts");
 const publicLinks = await jiti.import("../src/lib/booking/public-link.ts");
 const { getBookingAvailability } = await jiti.import("../src/lib/booking/availability.ts");
+const bookingAccess = await jiti.import("../src/lib/booking/access.ts");
+
+const masterReceptionistContext = {
+  groupRole: null,
+  branchRole: "master",
+  permissions: [],
+};
+assert.equal(bookingAccess.canManageBookings(masterReceptionistContext), true);
+assert.equal(bookingAccess.canManageBookingSettings(masterReceptionistContext), false);
+assert.equal(bookingAccess.canOverrideBookingConflict(masterReceptionistContext), false);
+assert.equal(bookingAccess.bookingViewIsSelfOnly(masterReceptionistContext), false);
+assert.equal(
+  bookingAccess.canManageBookings({ groupRole: null, branchRole: "mechanic", permissions: [] }),
+  false,
+);
 
 assert.equal(publicLinks.publicBookingPath(), "/booking");
 assert.equal(publicLinks.publicBookingPath("branch-a"), "/booking?branchId=branch-a");
