@@ -13,6 +13,7 @@ import {
   normalizeRosskoArticle,
   normalizeRosskoBrand,
   recommendedRosskoRetailCents,
+  RosskoProductImportError,
   resolveOrCreateRosskoLocalProduct,
 } from "@/lib/rossko-product-import";
 import { rosskoConfig, rosskoOrders } from "@/lib/rossko";
@@ -945,21 +946,34 @@ export async function createRosskoReceiptDraft(input: {
         throw new RosskoReceiptError("Для неоднозначной позиции выберите товар из каталога", 409, "AMBIGUOUS_PRODUCT");
       } else if (!productId) {
         if (decision.createProduct !== true) throw new RosskoReceiptError("Подтвердите создание отсутствующего товара", 409, "PRODUCT_DECISION_REQUIRED");
-        const resolved = await resolveOrCreateRosskoLocalProduct({
-          context: input.context,
-          actor: input.actor,
-          orderId,
-          sourceLineKey: sourceLine.sourceLineKey,
-          partGuid: part.guid,
-          brand: part.brand,
-          article: part.article,
-          name: part.name,
-          category: null,
-          purchasePriceCents: Math.round(part.price * 100),
-          retailPriceCents: recommendedRosskoRetailCents(Math.round(part.price * 100)),
-          supplierCounterpartyId: supplier.id,
-          transaction: tx,
-        });
+        let resolved;
+        try {
+          resolved = await resolveOrCreateRosskoLocalProduct({
+            context: input.context,
+            actor: input.actor,
+            orderId,
+            sourceLineKey: sourceLine.sourceLineKey,
+            partGuid: part.guid,
+            brand: part.brand,
+            article: part.article,
+            name: part.name,
+            category: null,
+            purchasePriceCents: Math.round(part.price * 100),
+            retailPriceCents: recommendedRosskoRetailCents(Math.round(part.price * 100)),
+            supplierCounterpartyId: supplier.id,
+            transaction: tx,
+          });
+        } catch (error) {
+          if (error instanceof RosskoProductImportError) {
+            throw new RosskoReceiptError(
+              `Не удалось создать товар «${part.name}»: ${error.message}`,
+              422,
+              "ROSSKO_RECEIPT_PRODUCT_CREATE_FAILED",
+              { sourceLineKey: sourceLine.sourceLineKey, productImportCode: error.code },
+            );
+          }
+          throw error;
+        }
         productId = resolved.product.id;
         (resolved.created ? createdProductIds : matchedProductIds).push(productId);
       } else {

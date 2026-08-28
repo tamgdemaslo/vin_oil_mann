@@ -322,6 +322,30 @@ function categoryByType(products: CatalogIdentityRow[]) {
   ]));
 }
 
+export function fallbackRosskoProductGroup(value: unknown): string {
+  return inferRosskoFilterType(value).type === "other" ? "Прочее" : "Фильтры";
+}
+
+async function resolveRosskoProductGroup(
+  tx: Prisma.TransactionClient,
+  branchId: string,
+  requestedCategory: string,
+  productName: string,
+) {
+  if (requestedCategory) return requestedCategory;
+  const products = await tx.localProduct.findMany({
+    where: { branchId, archived: false, entityType: "product", groupPath: { not: null } },
+    select: { id: true, name: true, brand: true, article: true, groupPath: true },
+    take: 20_000,
+  });
+  const inferred = inferRosskoFilterType(productName);
+  const inferredGroup = categoryByType(products).get(inferred.type)?.trim();
+  if (inferredGroup) return inferredGroup;
+  const existingGroups = [...new Set(products.map((product) => product.groupPath?.trim()).filter((group): group is string => Boolean(group)))];
+  const genericGroup = existingGroups.find((group) => /(?:^|[\s>/])(?:проч(?:ее|ие)?|запчаст|детал|товар)(?:$|[\s>/])/i.test(group));
+  return genericGroup ?? fallbackRosskoProductGroup(productName);
+}
+
 async function mapWithConcurrency<T, R>(values: T[], concurrency: number, operation: (value: T, index: number) => Promise<R>): Promise<R[]> {
   const result = new Array<R>(values.length);
   let cursor = 0;
@@ -503,7 +527,7 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
   const brand = cleanEditedText(input.brand, 100);
   const article = cleanEditedText(input.article, 120).replace(/[–—−]/g, "-");
   const name = cleanEditedText(input.name, 240) || `${brand} ${article}`.trim();
-  const category = cleanEditedText(input.category, 300);
+  const requestedCategory = cleanEditedText(input.category, 300);
   const purchasePriceCents = Math.max(0, Math.round(Number(input.purchasePriceCents) || 0));
   const retailPriceCents = Number.isInteger(input.retailPriceCents)
     ? Math.max(0, Number(input.retailPriceCents))
@@ -530,11 +554,12 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
       return { created: false as const, product: { id: duplicate.id, name: duplicate.name } };
     }
 
+    const groupPath = await resolveRosskoProductGroup(tx, branchId, requestedCategory, name);
     const payload: Parameters<typeof createLocalAdminProduct>[0] = {
       name,
       entityType: "product",
       article,
-      groupPath: category || undefined,
+      groupPath,
       uomName: "шт",
       salePrice: retailPriceCents / 100,
       buyPrice: purchasePriceCents / 100,

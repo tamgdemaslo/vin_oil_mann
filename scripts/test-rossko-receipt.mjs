@@ -115,6 +115,8 @@ assert.match(service, /normalizeRosskoArticle/);
 assert.match(service, /rosskoPartNumber/);
 assert.match(service, /normalized_brand_article/);
 assert.match(service, /resolveOrCreateRosskoLocalProduct/);
+assert.match(service, /error instanceof RosskoProductImportError/);
+assert.match(service, /ROSSKO_RECEIPT_PRODUCT_CREATE_FAILED/);
 assert.match(importer, /export async function resolveOrCreateRosskoLocalProduct/);
 assert.match(importer, /pg_advisory_xact_lock/);
 assert.match(importer, /minimumBalance:\s*0/);

@@ -8,6 +8,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
 const {
   extractRosskoOrderLines,
+  fallbackRosskoProductGroup,
   inferRosskoFilterType,
   normalizeRosskoArticle,
   normalizeRosskoBrand,
@@ -57,6 +58,8 @@ assert.deepEqual(inferRosskoFilterType("Air filter panel"), { type: "air", confi
 assert.deepEqual(inferRosskoFilterType("Diesel fuel filter"), { type: "fuel", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Фильтр масляный"), { type: "oil", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Комплект деталей"), { type: "other", confidence: "low" });
+assert.equal(fallbackRosskoProductGroup("Фильтр масляный (картридж)"), "Фильтры");
+assert.equal(fallbackRosskoProductGroup("Комплект деталей подвески"), "Прочее");
 
 const [service, inventoryService, oemService, batchService, executeRoute, previewRoute, manualOemRoute, dialog, supplierPicker, schema] = await Promise.all([
   readFile("src/lib/rossko-product-import.ts", "utf8"),
@@ -80,6 +83,8 @@ assert.match(inventoryService, /companyType:\s*\{\s*equals:\s*"supplier"/);
 assert.match(inventoryService, /counterpartyTypeName:\s*\{\s*contains:\s*"поставщик"/);
 assert.match(inventoryService, /resolveProductSupplierCounterparty[\s\S]*supplierCounterpartyIdentityWhere/);
 assert.match(service, /minimumBalance:\s*0/);
+assert.match(service, /resolveRosskoProductGroup/);
+assert.match(service, /groupPath,?/);
 assert.match(service, /origin:\s*"IMPORT"/);
 assert.match(service, /PRODUCTS_IMPORTED_FROM_ROSSKO_ORDER/);
 assert.match(service, /branch_id\s*=\s*\$\{branchId\}/);
