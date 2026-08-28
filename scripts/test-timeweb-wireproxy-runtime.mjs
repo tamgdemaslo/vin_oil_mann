@@ -28,5 +28,9 @@ assert.match(startup, /--proxy "\$local_proxy_url"/);
 assert.match(startup, /https:\/\/api\.openai\.com\/v1\/models/);
 assert.match(startup, /if \[ "\$openai_status" = "401" \]/);
 assert.match(startup, /if \[ "\$openai_status" = "403" \]/);
+assert.match(startup, /wireproxy_required="\$\{WIREPROXY_REQUIRED:-true\}"/);
+assert.match(startup, /WIREPROXY_REQUIRED must be true or false/);
+assert.match(startup, /application will start with OpenAI unavailable/);
+assert.doesNotMatch(startup, /unset OPENAI_PROXY_URL/);
 
 console.info("Timeweb WireGuard proxy runtime guard: PASS");

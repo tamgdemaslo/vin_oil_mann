@@ -21,6 +21,15 @@ start_wireproxy() {
     return
   fi
 
+  wireproxy_required="${WIREPROXY_REQUIRED:-true}"
+  case "$wireproxy_required" in
+    true|false) ;;
+    *)
+      echo "WIREPROXY_REQUIRED must be true or false" >&2
+      exit 1
+      ;;
+  esac
+
   # Timeweb stores the original WireGuard profile as a multiline secret. Only
   # standard WireGuard sections are accepted so a supplied profile cannot open
   # an additional public listener inside the application container.
@@ -66,8 +75,13 @@ start_wireproxy() {
   attempt=1
   while [ "$attempt" -le 6 ]; do
     if ! kill -0 "$WIREPROXY_PID" 2>/dev/null; then
-      echo "WireGuard proxy stopped during startup" >&2
-      exit 1
+      WIREPROXY_PID=""
+      if [ "$wireproxy_required" = "true" ]; then
+        echo "WireGuard proxy stopped during startup" >&2
+        exit 1
+      fi
+      echo "WireGuard proxy stopped during startup; application will start with OpenAI unavailable" >&2
+      return
     fi
 
     openai_status="$(curl --silent --show-error --output /dev/null \
@@ -82,16 +96,23 @@ start_wireproxy() {
       return
     fi
     if [ "$openai_status" = "403" ]; then
-      echo "OpenAI rejected the WireGuard exit region (HTTP 403)" >&2
-      exit 1
+      if [ "$wireproxy_required" = "true" ]; then
+        echo "OpenAI rejected the WireGuard exit region (HTTP 403)" >&2
+        exit 1
+      fi
+      echo "OpenAI rejected the WireGuard exit region (HTTP 403); application will start with OpenAI unavailable" >&2
+      return
     fi
 
     attempt=$((attempt + 1))
     sleep 1
   done
 
-  echo "OpenAI WireGuard proxy did not become ready" >&2
-  exit 1
+  if [ "$wireproxy_required" = "true" ]; then
+    echo "OpenAI WireGuard proxy did not become ready" >&2
+    exit 1
+  fi
+  echo "OpenAI WireGuard proxy did not become ready; application will start with OpenAI unavailable" >&2
 }
 
 # App Platform builds the repository directly, rather than through the former

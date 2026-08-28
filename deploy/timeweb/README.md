@@ -46,6 +46,12 @@ the configuration, and requires an HTTP 401 response from the unauthenticated
 OpenAI models endpoint through the tunnel. A regional HTTP 403 or an unavailable
 tunnel stops the container instead of silently falling back to a direct route.
 
+`WIREPROXY_REQUIRED` defaults to `true`. During a confirmed WireGuard provider
+outage, an operator may temporarily set it to `false` so the rest of the CRM can
+start. The application still receives the loopback `OPENAI_PROXY_URL`, so OpenAI
+requests fail against the unavailable local proxy and never fall back to a
+direct route. Restore the default after replacing or recovering the profile.
+
 ## Database changes
 
 App startup never applies Prisma migrations. Before a schema change reaches
