@@ -89,6 +89,10 @@ requireText("src/lib/db.ts", [
   /Попытка доступа к данным другого филиала/,
   /В режиме «Все филиалы» операции изменения запрещены/,
 ]);
+requireText("src/lib/diagnostic-map-service.ts", [
+  /export async function createDiagnosticMapSession[\s\S]*?const branchId = getScopedBranchId\(\)/,
+  /tx\.diagnosticMapSession\.create\(\{\s*data:\s*\{\s*branchId,\s*demandId,/,
+]);
 requireText("src/lib/request-tenant.ts", [/timingSafeEqual/, /businessGroupMembership/, /branchMembership/]);
 requireText("src/lib/request-tenant-store.ts", [/Branch context is required/, /runWithRequestTenant/]);
 requireText("src/lib/external-side-effects.ts", [/branch-migration-rehearsal/, /EXTERNAL_SIDE_EFFECTS_ENABLED/]);

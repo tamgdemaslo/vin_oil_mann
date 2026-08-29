@@ -377,6 +377,10 @@ async function ensureArchiveDiagnosticItems(sessionId: string) {
 }
 
 export async function createDiagnosticMapSession(input: CreateDiagnosticInput, user: SessionUser) {
+  // Interactive Prisma transaction clients do not pass through our top-level
+  // branch query extension. Bind the parent row explicitly so the composite
+  // (branch_id, demand_id) relation remains valid outside branch-main.
+  const branchId = getScopedBranchId();
   const demandId = await resolvePrimaryDemandId(input.shipmentId);
   if (asString(input.shipmentId) && !demandId) {
     console.error("[diagnostics] create failed: shipment not found", { shipmentId: input.shipmentId });
@@ -402,6 +406,7 @@ export async function createDiagnosticMapSession(input: CreateDiagnosticInput, u
   const created = await prisma.$transaction(async (tx) => {
     const session = await tx.diagnosticMapSession.create({
       data: {
+        branchId,
         demandId,
         clientId: input.clientId || shipmentVehicle?.clientId || null,
         clientName: clientName || asString(input.clientName) || null,
