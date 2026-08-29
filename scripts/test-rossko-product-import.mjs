@@ -7,6 +7,7 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, alias: { "@": resolve(process.cwd(), "src") } });
 const {
+  buildRosskoProductName,
   extractRosskoOrderLines,
   fallbackRosskoProductGroup,
   inferRosskoFilterType,
@@ -58,6 +59,22 @@ assert.deepEqual(inferRosskoFilterType("Air filter panel"), { type: "air", confi
 assert.deepEqual(inferRosskoFilterType("Diesel fuel filter"), { type: "fuel", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Фильтр масляный"), { type: "oil", confidence: "high" });
 assert.deepEqual(inferRosskoFilterType("Комплект деталей"), { type: "other", confidence: "low" });
+assert.equal(
+  buildRosskoProductName({ brand: "LYNXauto", article: "LO-1902", sourceName: "Фильтр масляный (картридж)" }),
+  "Фильтр масляный LYNXauto LO-1902",
+);
+assert.equal(
+  buildRosskoProductName({ brand: "MANN-FILTER", article: "W 811/80", sourceName: "фильтра маслянный (картридж)" }),
+  "Фильтр масляный MANN-FILTER W 811/80",
+);
+assert.equal(
+  buildRosskoProductName({ brand: "FEBI", article: "10101", sourceName: "Комплект прокладок" }),
+  "Комплект прокладок FEBI 10101",
+);
+assert.equal(
+  buildRosskoProductName({ brand: "FEBI", article: "10101", sourceName: "FEBI Комплект прокладок 10101" }),
+  "Комплект прокладок FEBI 10101",
+);
 assert.equal(fallbackRosskoProductGroup("Фильтр масляный (картридж)"), "Фильтры");
 assert.equal(fallbackRosskoProductGroup("Комплект деталей подвески"), "Прочее");
 

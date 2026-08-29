@@ -263,11 +263,42 @@ export function inferRosskoFilterType(value: unknown): { type: RosskoFilterType;
 }
 
 const FILTER_TYPE_LABELS: Record<Exclude<RosskoFilterType, "other">, string> = {
-  oil: "Масляный фильтр",
-  air: "Воздушный фильтр",
-  cabin: "Салонный фильтр",
-  fuel: "Топливный фильтр",
+  oil: "Фильтр масляный",
+  air: "Фильтр воздушный",
+  cabin: "Фильтр салонный",
+  fuel: "Фильтр топливный",
 };
+
+function removeRosskoProductIdentity(value: string, identity: string): string {
+  if (!identity) return value;
+  const pattern = identity
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  return value.replace(new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "giu"), " ");
+}
+
+export function buildRosskoProductName(input: {
+  brand: unknown;
+  article: unknown;
+  sourceName?: unknown;
+  category?: unknown;
+}): string {
+  const brand = cleanEditedText(input.brand, 100);
+  const article = cleanEditedText(input.article, 120).replace(/[–—−]/g, "-");
+  const sourceName = cleanEditedText(input.sourceName, 240);
+  const category = cleanEditedText(input.category, 300);
+  const inferred = inferRosskoFilterType(`${category} ${sourceName}`);
+
+  if (inferred.type !== "other") {
+    return cleanEditedText(`${FILTER_TYPE_LABELS[inferred.type]} ${brand} ${article}`, 240);
+  }
+
+  const productCategory = cleanEditedText(
+    removeRosskoProductIdentity(removeRosskoProductIdentity(sourceName, brand), article),
+    240,
+  ).replace(/^[,;|·\-/\s]+|[,;|·\-/\s]+$/g, "");
+  return cleanEditedText([productCategory || category, brand, article].filter(Boolean).join(" "), 240);
+}
 
 function summary(rows: RosskoImportPreviewRow[]): RosskoImportSummary {
   return {
@@ -397,9 +428,12 @@ export async function previewRosskoProductImport(input: { branchId: string; orde
     const possible = !duplicate ? (byArticle.get(articleKey) ?? [])[0] ?? null : null;
     const inferred = inferRosskoFilterType(`${source.categoryText} ${source.sourceName}`);
     const category = inferred.type === "other" ? "" : groupByType.get(inferred.type) ?? "";
-    const name = inferred.type === "other"
-      ? `${brand} ${article}`.trim()
-      : `${FILTER_TYPE_LABELS[inferred.type]} ${brand} ${article}`.replace(/\s+/g, " ").trim();
+    const name = buildRosskoProductName({
+      brand,
+      article,
+      sourceName: source.sourceName,
+      category: source.categoryText,
+    });
     const recommendedRetailCents = recommendedRosskoRetailCents(source.purchasePriceCents);
     const missing: string[] = [];
     if (!brandKey) missing.push("бренд");
@@ -526,8 +560,8 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
   if (!branchId) throw new RosskoProductImportError("Выберите филиал, в каталог которого нужно импортировать товары.", 409, "concrete_branch_required");
   const brand = cleanEditedText(input.brand, 100);
   const article = cleanEditedText(input.article, 120).replace(/[–—−]/g, "-");
-  const name = cleanEditedText(input.name, 240) || `${brand} ${article}`.trim();
   const requestedCategory = cleanEditedText(input.category, 300);
+  const name = buildRosskoProductName({ brand, article, sourceName: input.name, category: requestedCategory });
   const purchasePriceCents = Math.max(0, Math.round(Number(input.purchasePriceCents) || 0));
   const retailPriceCents = Number.isInteger(input.retailPriceCents)
     ? Math.max(0, Number(input.retailPriceCents))
