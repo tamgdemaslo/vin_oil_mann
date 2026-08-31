@@ -25766,7 +25766,7 @@ select.eco-input::-ms-expand,
 
 .eco-restock-receipt-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--eco-line);
   border-bottom: 1px solid var(--eco-line);
@@ -25825,6 +25825,40 @@ select.eco-input::-ms-expand,
   outline-offset: 1px;
 }
 
+.eco-restock-receipt-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border-bottom: 1px solid var(--eco-line);
+  background: var(--eco-line);
+}
+
+.eco-restock-receipt-summary > div {
+  min-width: 0;
+  padding: 10px 14px;
+  background: var(--eco-surface);
+}
+
+.eco-restock-receipt-summary > div.is-receivable {
+  background: color-mix(in srgb, var(--eco-success-tint) 74%, var(--eco-surface));
+}
+
+.eco-restock-receipt-summary dt {
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eco-restock-receipt-summary dd {
+  margin: 3px 0 0;
+  color: var(--eco-ink);
+  font-size: 15px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
 .eco-restock-receipt-body {
   flex: 1 1 auto;
   padding: 0;
@@ -25835,9 +25869,26 @@ select.eco-input::-ms-expand,
   overflow: auto;
 }
 
+.eco-restock-receipt-zero {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--eco-line);
+  color: var(--eco-ink-2);
+  background: var(--eco-surface-sunk);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.eco-restock-receipt-zero svg {
+  flex: 0 0 auto;
+  color: var(--eco-muted);
+}
+
 .eco-restock-receipt-table {
   width: 100%;
-  min-width: 1320px;
+  min-width: 1420px;
   border-collapse: collapse;
   color: var(--eco-ink);
   font-size: 12px;
@@ -25869,6 +25920,16 @@ select.eco-input::-ms-expand,
 }
 
 .eco-restock-receipt-table tr.is-disabled > td {
+  color: var(--eco-muted);
+  background: var(--eco-surface-sunk);
+}
+
+.eco-restock-receipt-table tr.is-waiting > td {
+  color: var(--eco-ink-2);
+  background: color-mix(in srgb, var(--eco-info-tint) 45%, var(--eco-surface));
+}
+
+.eco-restock-receipt-table tr.is-cancelled > td {
   color: var(--eco-muted);
   background: var(--eco-surface-sunk);
 }
@@ -25968,6 +26029,24 @@ select.eco-input::-ms-expand,
   background: color-mix(in srgb, #fffbeb 72%, var(--eco-surface));
 }
 
+.eco-restock-receipt-detail-row.is-waiting_provider td {
+  background: color-mix(in srgb, var(--eco-info-tint) 45%, var(--eco-surface));
+}
+
+.eco-restock-receipt-detail-row.is-waiting_provider p {
+  color: var(--eco-ink-2);
+}
+
+.eco-restock-receipt-detail-row.is-provider_cancelled td,
+.eco-restock-receipt-detail-row.is-already_received td {
+  background: var(--eco-surface-sunk);
+}
+
+.eco-restock-receipt-detail-row.is-provider_cancelled p,
+.eco-restock-receipt-detail-row.is-already_received p {
+  color: var(--eco-muted);
+}
+
 .eco-restock-receipt-detail-row p {
   display: flex;
   align-items: flex-start;
@@ -26064,6 +26143,23 @@ select.eco-input::-ms-expand,
   font-weight: 700;
 }
 
+.eco-restock-receipt-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--eco-info) 24%, var(--eco-line));
+  color: var(--eco-ink-2);
+  background: var(--eco-info-tint);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.eco-restock-receipt-notice svg {
+  flex: 0 0 auto;
+  color: var(--eco-info);
+}
+
 .eco-restock-receipt-error svg {
   flex: 0 0 auto;
 }
@@ -26123,6 +26219,23 @@ select.eco-input::-ms-expand,
     transform: none;
     border: 0;
     border-radius: 0;
+  }
+
+  .eco-restock-receipt-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .eco-restock-receipt-meta > div,
+  .eco-restock-receipt-meta > label {
+    min-height: 60px;
+  }
+
+  .eco-restock-receipt-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .eco-restock-receipt-summary > div:last-child {
+    grid-column: 1 / -1;
   }
 
   .eco-restock-incoming-line {

@@ -24,13 +24,17 @@ import { formatServiceDateTime } from "@/lib/date-time";
 type RosskoReceiptAction =
   | "MATCHED_EXISTING"
   | "CREATE_PRODUCT"
+  | "WAITING_PROVIDER"
   | "FULLY_RECEIVED"
   | "PROVIDER_CLOSED"
   | "CLOSED_MANUALLY"
+  | "MANUAL_REVIEW"
   | "AMBIGUOUS_PRODUCT"
   | "AMBIGUOUS_SOURCE_LINE"
   | "SOURCE_STATUS_WARNING"
   | "INVALID_LINE";
+
+type RosskoReceiptEligibility = "ELIGIBLE" | "WAITING_PROVIDER" | "PROVIDER_CANCELLED" | "ALREADY_RECEIVED" | "MANUAL_REVIEW";
 
 type RosskoReceiptPreviewLine = {
   sourceLineKey: string;
@@ -43,9 +47,11 @@ type RosskoReceiptPreviewLine = {
   manualClosedQty: number;
   providerClosedQty: number;
   remainingQty: number;
+  receivableQty: number;
   receiveQty: number;
   purchasePrice: number;
   rosskoStatusLabel: string;
+  receiptEligibility: RosskoReceiptEligibility;
   product: { id: string; name: string; article: string; matchType: string } | null;
   action: RosskoReceiptAction;
   warnings: string[];
@@ -64,6 +70,10 @@ type RosskoReceiptPreview = {
     providerClosedQty: number;
     closedQty: number;
     remainingQty: number;
+    receivableQty: number;
+    waitingProviderQty: number;
+    cancelledQty: number;
+    manualReviewQty: number;
   };
   lines: RosskoReceiptPreviewLine[];
 };
@@ -264,10 +274,12 @@ async function loadPreview(orderId: string, storeId?: string): Promise<RosskoRec
 function actionLabel(action: RosskoReceiptAction) {
   if (action === "MATCHED_EXISTING") return "Найден в каталоге";
   if (action === "CREATE_PRODUCT") return "Будет создан товар";
+  if (action === "WAITING_PROVIDER") return "Ожидается у ROSSKO";
   if (action === "AMBIGUOUS_PRODUCT") return "Нужно выбрать товар";
   if (action === "FULLY_RECEIVED") return "Уже принято полностью";
   if (action === "PROVIDER_CLOSED") return "Закрыто ROSSKO";
   if (action === "CLOSED_MANUALLY") return "Закрыто вручную";
+  if (action === "MANUAL_REVIEW") return "Нужна проверка";
   if (action === "AMBIGUOUS_SOURCE_LINE") return "Неоднозначная строка ROSSKO";
   if (action === "SOURCE_STATUS_WARNING") return "Подтвердите получение";
   return "Проверьте строку";
@@ -277,6 +289,7 @@ function actionTone(action: RosskoReceiptAction): "neutral" | "success" | "warni
   if (action === "MATCHED_EXISTING" || action === "FULLY_RECEIVED") return "success";
   if (action === "PROVIDER_CLOSED") return "danger";
   if (action === "CLOSED_MANUALLY") return "neutral";
+  if (action === "WAITING_PROVIDER") return "info";
   if (action === "CREATE_PRODUCT") return "info";
   if (action === "INVALID_LINE" || action === "AMBIGUOUS_SOURCE_LINE") return "danger";
   return "warning";
@@ -628,6 +641,7 @@ function RosskoReceiptEditor({
   const [preview, setPreview] = useState<RosskoReceiptPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [storeId, setStoreId] = useState("");
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -640,9 +654,10 @@ function RosskoReceiptEditor({
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState<RosskoReceiptDraftResult | null>(null);
 
-  const fetchPreview = useCallback(async () => {
+  const fetchPreview = useCallback(async (noticeAfterRefresh = "") => {
     setLoading(true);
     setError("");
+    setNotice("");
     try {
       const data = await loadPreview(orderId, storeId || undefined);
       setPreview(data);
@@ -651,6 +666,7 @@ function RosskoReceiptEditor({
       setQuantities(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty])));
       setSelectedProducts({});
       setNewProductNames(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.suggestedProductName])));
+      setNotice(noticeAfterRefresh);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить заказ ROSSKO");
     } finally {
@@ -686,7 +702,7 @@ function RosskoReceiptEditor({
     setEnabled((current) => ({ ...current, [line.sourceLineKey]: checked }));
     setQuantities((current) => ({
       ...current,
-      [line.sourceLineKey]: checked ? Math.max(1, current[line.sourceLineKey] || line.remainingQty) : 0,
+      [line.sourceLineKey]: checked ? Math.max(1, current[line.sourceLineKey] || line.receivableQty) : 0,
     }));
   }
 
@@ -717,13 +733,18 @@ function RosskoReceiptEditor({
     }
     setSaving(true);
     setError("");
+    setNotice("");
     try {
       const response = await fetch(`/api/rossko/orders/${encodeURIComponent(orderId)}/receipt-draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ storeId, lines }),
       });
-      const data = await response.json() as RosskoReceiptDraftResult & { error?: string };
+      const data = await response.json() as RosskoReceiptDraftResult & { error?: string; code?: string };
+      if (response.status === 409 && data.code === "ROSSKO_RECEIPT_STATUS_CHANGED") {
+        await fetchPreview("Статусы заказа изменились. Список доступных к приёмке позиций обновлён.");
+        return;
+      }
       if (!response.ok || data.error) throw new Error(data.error || "Не удалось создать черновик приёмки");
       setCreated(data);
       onCreated(data);
@@ -740,7 +761,7 @@ function RosskoReceiptEditor({
   );
   const selectedQty = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0), 0);
   const selectedSum = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0) * line.purchasePrice, 0);
-  const nothingReceivable = Boolean(preview?.lines.length && preview.lines.every((line) => line.remainingQty <= 0));
+  const nothingReceivable = Boolean(preview?.lines.length && preview.summary.receivableQty <= 0);
   const hasInvalidNewProductName = Boolean(preview?.lines.some((line) =>
     line.action === "CREATE_PRODUCT" &&
     enabled[line.sourceLineKey] &&
@@ -786,19 +807,24 @@ function RosskoReceiptEditor({
               <div><span>Поставщик</span><strong>{preview.supplier.name}</strong>{preview.supplier.willCreate && <small>будет создан при сохранении</small>}</div>
               <label><span>Склад</span><select value={storeId} onChange={(event) => setStoreId(event.target.value)}>{preview.stores.map((store) => <option key={store.id} value={store.id}>{store.name}{store.isMain ? " · основной" : ""}</option>)}</select></label>
               <div><span>Источник</span><strong>ROSSKO</strong><small>{preview.order.stockAddress || "Адрес не указан"}</small></div>
-              <div><span>Активно в пути</span><strong>{formatNumber(preview.summary.remainingQty)} шт.</strong><small>принято {formatNumber(preview.summary.alreadyReceivedQty)} · закрыто {formatNumber(preview.summary.closedQty)}</small></div>
             </div>
 
+            <dl className="eco-restock-receipt-summary" aria-label="Сводка заказа ROSSKO">
+              <div><dt>Заказано</dt><dd>{formatNumber(preview.summary.orderedQty)} шт.</dd></div>
+              <div className="is-receivable"><dt>Доступно к приёмке</dt><dd>{formatNumber(preview.summary.receivableQty)} шт.</dd></div>
+              <div><dt>Ещё ожидается</dt><dd>{formatNumber(preview.summary.waitingProviderQty)} шт.</dd></div>
+              <div><dt>Уже принято</dt><dd>{formatNumber(preview.summary.alreadyReceivedQty)} шт.</dd></div>
+              <div><dt>Отменено</dt><dd>{formatNumber(preview.summary.cancelledQty)} шт.</dd></div>
+            </dl>
+
             <div className="eco-restock-cart-body eco-restock-receipt-body">
-              {nothingReceivable ? (
-                <div className="eco-restock-cart-empty"><PackageCheck size={30} /><strong>Нет позиций для приёмки</strong><span>Позиции уже приняты, закрыты ROSSKO или закрыты локально. Они не попадут в новый черновик.</span></div>
-              ) : (
-                <div className="eco-restock-receipt-table-wrap">
+              {nothingReceivable && <div className="eco-restock-receipt-zero"><PackageCheck size={17} /><span><strong>Сейчас нечего принимать.</strong> Все строки ниже ещё ожидаются, закрыты или уже приняты.</span></div>}
+              <div className="eco-restock-receipt-table-wrap">
                   <table className="eco-restock-receipt-table">
-                    <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">В пути</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
+                    <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус ROSSKO</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">Осталось</th><th className="l-number">Доступно</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
                     <tbody>
                       {preview.lines.map((line) => {
-                        const blocked = ["FULLY_RECEIVED", "PROVIDER_CLOSED", "CLOSED_MANUALLY", "SOURCE_STATUS_WARNING", "INVALID_LINE", "AMBIGUOUS_SOURCE_LINE"].includes(line.action);
+                        const blocked = line.receiptEligibility !== "ELIGIBLE" || ["FULLY_RECEIVED", "PROVIDER_CLOSED", "CLOSED_MANUALLY", "SOURCE_STATUS_WARNING", "MANUAL_REVIEW", "INVALID_LINE", "AMBIGUOUS_SOURCE_LINE"].includes(line.action);
                         const needsProduct = line.action === "AMBIGUOUS_PRODUCT" && !selectedProducts[line.sourceLineKey];
                         const pickerOpen = pickerLineKey === line.sourceLineKey;
                         const invalidNewProductName = line.action === "CREATE_PRODUCT" &&
@@ -807,7 +833,7 @@ function RosskoReceiptEditor({
                           !newProductNames[line.sourceLineKey]?.trim();
                         return (
                           <Fragment key={line.sourceLineKey}>
-                            <tr className={blocked ? "is-disabled" : line.warnings.length ? "has-warning" : ""}>
+                            <tr className={line.receiptEligibility === "WAITING_PROVIDER" ? "is-waiting" : line.receiptEligibility === "PROVIDER_CANCELLED" ? "is-cancelled" : blocked ? "is-disabled" : line.warnings.length ? "has-warning" : ""}>
                               <td><input type="checkbox" checked={Boolean(enabled[line.sourceLineKey])} disabled={blocked || needsProduct} onChange={(event) => toggleLine(line, event.target.checked)} aria-label={`Принять ${line.name}`} /></td>
                               <td className="eco-restock-receipt-product">
                                 {line.action === "CREATE_PRODUCT" ? (
@@ -833,8 +859,9 @@ function RosskoReceiptEditor({
                               <td className="l-number">{formatNumber(line.orderedQty)}</td>
                               <td className="l-number">{formatNumber(line.alreadyReceivedQty)}</td>
                               <td className="l-number"><strong>{formatNumber(line.remainingQty)}</strong></td>
+                              <td className="l-number"><strong>{formatNumber(line.receivableQty)}</strong></td>
                               <td className="l-number">{formatNumber(line.manualClosedQty + line.providerClosedQty)}</td>
-                              <td className="l-number"><EcoInput type="number" min={0} max={line.remainingQty} step={1} value={quantities[line.sourceLineKey] ?? 0} disabled={!enabled[line.sourceLineKey] || blocked} onChange={(event) => setQuantities((current) => ({ ...current, [line.sourceLineKey]: Math.max(0, Math.min(line.remainingQty, parseInt(event.target.value, 10) || 0)) }))} aria-label={`Фактически принято: ${line.name}`} /></td>
+                              <td className="l-number"><EcoInput type="number" min={0} max={line.receivableQty} step={1} value={quantities[line.sourceLineKey] ?? 0} disabled={!enabled[line.sourceLineKey] || blocked} onChange={(event) => setQuantities((current) => ({ ...current, [line.sourceLineKey]: Math.max(0, Math.min(line.receivableQty, parseInt(event.target.value, 10) || 0)) }))} aria-label={`Фактически принято: ${line.name}`} /></td>
                               <td className="eco-restock-receipt-match">
                                 <EcoBadge tone={actionTone(line.action)}>{actionLabel(line.action)}</EcoBadge>
                                 {line.product && <small>{line.product.name}</small>}
@@ -844,8 +871,8 @@ function RosskoReceiptEditor({
                               <td className="l-number">{formatMoney(line.purchasePrice)} ₽</td>
                             </tr>
                             {(line.warnings.length > 0 || pickerOpen) && (
-                              <tr className="eco-restock-receipt-detail-row"><td /><td colSpan={10}>
-                                {line.warnings.map((warning) => <p key={warning}><AlertTriangle size={14} />{warning}</p>)}
+                              <tr className={`eco-restock-receipt-detail-row is-${line.receiptEligibility.toLocaleLowerCase("ru-RU")}`}><td /><td colSpan={11}>
+                                {line.warnings.map((warning) => <p key={warning}>{line.receiptEligibility === "WAITING_PROVIDER" ? <CalendarClock size={14} /> : line.receiptEligibility === "PROVIDER_CANCELLED" ? <PackageX size={14} /> : <AlertTriangle size={14} />}{warning}</p>)}
                                 {pickerOpen && <div className="eco-restock-receipt-picker">
                                   <EcoInput value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Название, артикул или бренд" />
                                   <EcoButton type="button" size="sm" onClick={() => void searchProducts(line)} disabled={productsBusy}>{productsBusy ? <Loader2 size={14} className="eco-spin" /> : <Search size={14} />} Найти</EcoButton>
@@ -862,17 +889,17 @@ function RosskoReceiptEditor({
                     </tbody>
                   </table>
                 </div>
-              )}
             </div>
           </>
         ) : null}
 
+        {notice && <div className="eco-restock-receipt-notice" role="status"><RefreshCw size={16} /><span>{notice}</span></div>}
         {error && <div className="eco-restock-receipt-error" role="alert"><AlertTriangle size={16} /><span>{error}</span></div>}
         <footer className="eco-restock-cart-footer eco-restock-receipt-footer">
           {created ? (
             <><EcoButton type="button" onClick={onClose}>К заказам</EcoButton><Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>Открыть приёмку</Link></>
           ) : (
-            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
+            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать приёмку на {formatNumber(selectedQty)} шт.</EcoButton></>
           )}
         </footer>
       </section>

@@ -14,6 +14,11 @@ const {
   rosskoStatusPresentation,
   serializeRosskoReceiptSourceSnapshot,
 } = await jiti.import("../src/lib/rossko-receipt.ts");
+const {
+  calculateRosskoReceiptQuantities,
+  ROSSKO_ORDER_PART_STATUS_TABLE,
+  resolveRosskoReceiptEligibility,
+} = await jiti.import("../src/lib/rossko-order-status.ts");
 
 const officialPayload = {
   success: true,
@@ -56,23 +61,69 @@ assert.equal(rosskoStatusPresentation(7).warning, true);
 assert.equal(rosskoStatusPresentation(8).label, "Отменён клиентом");
 assert.equal(rosskoStatusPresentation(36).warning, true);
 assert.equal(rosskoStatusPresentation(999).warning, true, "unknown source status requires manual confirmation");
+assert.deepEqual(
+  ROSSKO_ORDER_PART_STATUS_TABLE.map(({ code, rawStatus, label, receiptEligibility }) => ({ code, rawStatus, label, receiptEligibility })),
+  [
+    { code: 0, rawStatus: "ждёт подтверждения", label: "Ожидает подтверждения", receiptEligibility: "WAITING_PROVIDER" },
+    { code: 1, rawStatus: "комплектуется", label: "Комплектуется", receiptEligibility: "WAITING_PROVIDER" },
+    { code: 2, rawStatus: "отгружено", label: "Отгружено", receiptEligibility: "ELIGIBLE" },
+    { code: 3, rawStatus: "готово к отгрузке", label: "Готово к отгрузке", receiptEligibility: "WAITING_PROVIDER" },
+    { code: 5, rawStatus: "ожидаем поступление", label: "Ожидаем поступление", receiptEligibility: "WAITING_PROVIDER" },
+    { code: 6, rawStatus: "на складе филиала", label: "На складе ROSSKO", receiptEligibility: "ELIGIBLE" },
+    { code: 7, rawStatus: "нет в наличии", label: "Нет в наличии", receiptEligibility: "PROVIDER_CANCELLED" },
+    { code: 8, rawStatus: "отменён клиентом", label: "Отменён клиентом", receiptEligibility: "PROVIDER_CANCELLED" },
+    { code: 9, rawStatus: "просрочен", label: "Просрочено ROSSKO", receiptEligibility: "PROVIDER_CANCELLED" },
+    { code: 31, rawStatus: "ожидаем товар на складе", label: "Ожидаем товар на складе", receiptEligibility: "WAITING_PROVIDER" },
+    { code: 32, rawStatus: "возврат на согласовании", label: "Возврат на согласовании", receiptEligibility: "MANUAL_REVIEW" },
+    { code: 33, rawStatus: "товар на экспертизе", label: "Товар на экспертизе", receiptEligibility: "MANUAL_REVIEW" },
+    { code: 34, rawStatus: "возврат отклонён", label: "Возврат отклонён", receiptEligibility: "MANUAL_REVIEW" },
+    { code: 35, rawStatus: "возврат частично отклонён", label: "Возврат частично отклонён", receiptEligibility: "MANUAL_REVIEW" },
+    { code: 36, rawStatus: "товар возвращён", label: "Товар возвращён", receiptEligibility: "MANUAL_REVIEW" },
+  ],
+  "receipt status table follows the documented GetOrders v2.1 codes",
+);
+for (const status of [0, 1, 3, 5, 31]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "WAITING_PROVIDER");
+for (const status of [2, 6]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "ELIGIBLE");
+for (const status of [7, 8, 9]) assert.equal(resolveRosskoReceiptEligibility(status, 0), "PROVIDER_CANCELLED");
+for (const status of [32, 36, 999, null]) assert.equal(resolveRosskoReceiptEligibility(status, 3), "MANUAL_REVIEW");
+assert.equal(resolveRosskoReceiptEligibility(2, 0), "ALREADY_RECEIVED");
+const shippedReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 0, manualClosedQty: 0, sourceStatus: 2 });
+const waitingReceiptQty = calculateRosskoReceiptQuantities({ orderedQty: 3, postedReceivedQty: 0, manualClosedQty: 0, sourceStatus: 31 });
+assert.equal(shippedReceiptQty.remainingQty, 5);
+assert.equal(shippedReceiptQty.receivableQty, 5);
+assert.equal(waitingReceiptQty.remainingQty, 3);
+assert.equal(waitingReceiptQty.receivableQty, 0);
+assert.equal(shippedReceiptQty.receivableQty + waitingReceiptQty.receivableQty, 5, "5 shipped + 3 waiting exposes only 5 units to receipt");
+const partiallyReceived = calculateRosskoReceiptQuantities({ orderedQty: 5, postedReceivedQty: 2, manualClosedQty: 0, sourceStatus: 2 });
+assert.equal(partiallyReceived.alreadyReceivedQty, 2);
+assert.equal(partiallyReceived.remainingQty, 3);
+assert.equal(partiallyReceived.receivableQty, 3);
 
 const immutableKey = rosskoSourceLineKey(order.id, order.parts[0].guid);
 assert.equal(immutableKey, "rossko:182269117:guid-1");
+assert.equal(rosskoSourceLineKey(order.id, order.parts[0].guid, 2), "rossko:182269117:guid-1:line:2");
 const changedMutableFields = { ...order.parts[0], price: 999, status: 9, orderedQty: 1, name: "Новое имя" };
 assert.equal(rosskoSourceLineKey(order.id, changedMutableFields.guid), immutableKey, "mutable fields do not affect source identity");
 
 const identicalDuplicates = groupRosskoOrderParts([order.parts[0], { ...order.parts[0] }]);
-assert.equal(identicalDuplicates.length, 1);
+assert.equal(identicalDuplicates.length, 2, "repeated nomenclature GUIDs remain separate source lines");
 assert.equal(identicalDuplicates[0].duplicateCount, 2);
 assert.equal(identicalDuplicates[0].ambiguous, false);
+assert.deepEqual(identicalDuplicates.map(({ sourceOccurrence }) => sourceOccurrence), [1, 2]);
 
 const conflictingDuplicates = groupRosskoOrderParts([
   order.parts[0],
   { ...order.parts[0], orderedQty: 3, raw: { ...order.parts[0].raw, count: 3 } },
 ]);
-assert.equal(conflictingDuplicates.length, 1);
-assert.equal(conflictingDuplicates[0].ambiguous, true, "different rows with duplicate GUID are ambiguous");
+assert.equal(conflictingDuplicates.length, 2);
+assert.ok(conflictingDuplicates.every(({ ambiguous }) => !ambiguous), "different rows with duplicate nomenclature GUID are preserved, not merged");
+
+const splitBySourceLine = groupRosskoOrderParts([
+  { ...order.parts[0], guid: "shipment-line", orderedQty: 3, status: 2, raw: { ...order.parts[0].raw, guid: "shipment-line", count: 3, status: 2 } },
+  { ...order.parts[0], guid: "waiting-line", orderedQty: 2, status: 31, raw: { ...order.parts[0].raw, guid: "waiting-line", count: 2, status: 31 } },
+]);
+assert.equal(splitBySourceLine.length, 2, "same brand/article with different source lines is never aggregated before eligibility");
+assert.deepEqual(splitBySourceLine.map(({ part }) => resolveRosskoReceiptEligibility(part.status, part.orderedQty)), ["ELIGIBLE", "WAITING_PROVIDER"]);
 
 const persistedSnapshot = JSON.parse(JSON.stringify(serializeRosskoReceiptSourceSnapshot({
   ...order,
@@ -87,7 +138,7 @@ assert.ok(restoredSnapshot, "a JSON-persisted preview snapshot can be restored w
 assert.equal(restoredSnapshot.parts.length, 3);
 assert.equal(restoredSnapshot.parts[0].article, order.parts[0].article);
 assert.equal(restoredSnapshot.parts[0].price, order.parts[0].price);
-assert.equal(groupRosskoOrderParts(restoredSnapshot.parts)[0].ambiguous, false, "identical provider duplicates stay identical after snapshot restore");
+assert.deepEqual(groupRosskoOrderParts(restoredSnapshot.parts).map(({ sourceOccurrence }) => sourceOccurrence), [1, 2, 1], "source-line occurrence survives snapshot order");
 assert.equal(restoreRosskoReceiptSourceSnapshot(persistedSnapshot, "999"), null, "a snapshot cannot be used for another order");
 
 assert.throws(
@@ -166,7 +217,11 @@ assert.match(service, /ROSSKO_RECEIPT_PREVIEWED/);
 assert.match(service, /sourceSnapshot:\s*serializeRosskoReceiptSourceSnapshot\(order\)/);
 assert.match(service, /loadPreviewedRosskoOrder\(tx, branchId, orderId\)/);
 const draftService = service.slice(service.indexOf("export async function createRosskoReceiptDraft"));
-assert.doesNotMatch(draftService, /loadNormalizedOrder\(/, "draft creation must not repeat the external ROSSKO request after preview");
+assert.match(draftService, /const freshOrder = await loadNormalizedOrder\(orderId\)/, "draft creation repeats GetOrders before taking the branch+order lock");
+assert.match(draftService, /ROSSKO_RECEIPT_STATUS_CHANGED/);
+assert.match(service, /calculateRosskoReceiptQuantities/);
+assert.match(service, /receivableQty/);
+assert.match(service, /waitingProviderQty/);
 assert.match(service, /ROSSKO_RECEIPT_DRAFT_CREATED/);
 assert.match(service, /ROSSKO_RECEIPT_PARTIAL/);
 assert.match(service, /ROSSKO_RECEIPT_PRICE_DEVIATION/);
@@ -174,7 +229,10 @@ assert.match(service, /ROSSKO_RECEIPT_SOURCE_STATUS_WARNING/);
 assert.match(service, /ORDER_FULLY_RECEIVED/);
 assert.match(ui, /Принять на склад/);
 assert.match(ui, /Заказ ROSSKO №/);
-assert.match(ui, /Создать черновик приёмки/);
+assert.match(ui, /Создать приёмку на/);
+assert.match(ui, /Доступно к приёмке/);
+assert.match(ui, /Ещё ожидается/);
+assert.match(ui, /ROSSKO_RECEIPT_STATUS_CHANGED/);
 assert.match(ui, /Название новой карточки/);
 assert.match(ui, /newProductNames\[line\.sourceLineKey\]/);
 assert.match(ui, /Открыть приёмку/);
