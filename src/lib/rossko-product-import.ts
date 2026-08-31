@@ -548,6 +548,7 @@ export type ResolveOrCreateRosskoLocalProductInput = {
   brand: string;
   article: string;
   name: string;
+  nameOverride?: string | null;
   category?: string | null;
   purchasePriceCents: number;
   retailPriceCents?: number | null;
@@ -561,7 +562,8 @@ export async function resolveOrCreateRosskoLocalProduct(input: ResolveOrCreateRo
   const brand = cleanEditedText(input.brand, 100);
   const article = cleanEditedText(input.article, 120).replace(/[–—−]/g, "-");
   const requestedCategory = cleanEditedText(input.category, 300);
-  const name = buildRosskoProductName({ brand, article, sourceName: input.name, category: requestedCategory });
+  const nameOverride = cleanEditedText(input.nameOverride, 240);
+  const name = nameOverride || buildRosskoProductName({ brand, article, sourceName: input.name, category: requestedCategory });
   const purchasePriceCents = Math.max(0, Math.round(Number(input.purchasePriceCents) || 0));
   const retailPriceCents = Number.isInteger(input.retailPriceCents)
     ? Math.max(0, Number(input.retailPriceCents))

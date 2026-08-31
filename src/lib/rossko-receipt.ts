@@ -10,6 +10,7 @@ import {
   type StockDocumentSourceMetadata,
 } from "@/lib/local-inventory-admin";
 import {
+  buildRosskoProductName,
   normalizeRosskoArticle,
   normalizeRosskoBrand,
   recommendedRosskoRetailCents,
@@ -71,6 +72,7 @@ export type RosskoReceiptPreviewLine = {
   article: string;
   brand: string;
   name: string;
+  suggestedProductName: string;
   orderedQty: number;
   alreadyReceivedQty: number;
   manualClosedQty: number;
@@ -124,6 +126,7 @@ export type RosskoReceiptDraftDecision = {
   receiveQty?: number;
   selectedProductId?: string | null;
   createProduct?: boolean;
+  newProductName?: string;
 };
 
 export class RosskoReceiptError extends Error {
@@ -152,6 +155,14 @@ function valueAt(row: Record<string, unknown>, key: string): unknown {
 
 function text(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function receiptProductName(value: unknown): string {
+  const normalized = typeof value === "string" ? value.normalize("NFKC").trim().replace(/\s+/g, " ") : "";
+  if (normalized.length > 240) {
+    throw new RosskoReceiptError("Название нового товара не должно превышать 240 символов", 400, "NEW_PRODUCT_NAME_TOO_LONG");
+  }
+  return normalized;
 }
 
 function textAt(row: Record<string, unknown>, key: string): string {
@@ -602,6 +613,7 @@ async function buildReceiptPreview(tx: ReceiptDb, context: BranchContext, order:
       article: part.article,
       brand: part.brand,
       name: part.name,
+      suggestedProductName: buildRosskoProductName({ brand: part.brand, article: part.article, sourceName: part.name }),
       orderedQty,
       alreadyReceivedQty,
       manualClosedQty,
@@ -770,6 +782,7 @@ function draftFingerprint(storeId: string, decisions: RosskoReceiptDraftDecision
       receiveQty: Number(line.receiveQty) || 0,
       selectedProductId: text(line.selectedProductId) || null,
       createProduct: line.createProduct === true,
+      newProductName: line.newProductName === undefined ? null : receiptProductName(line.newProductName),
     }))
     .filter((line) => line.receiveQty > 0)
     .sort((left, right) => left.sourceLineKey.localeCompare(right.sourceLineKey));
@@ -946,6 +959,17 @@ export async function createRosskoReceiptDraft(input: {
         throw new RosskoReceiptError("Для неоднозначной позиции выберите товар из каталога", 409, "AMBIGUOUS_PRODUCT");
       } else if (!productId) {
         if (decision.createProduct !== true) throw new RosskoReceiptError("Подтвердите создание отсутствующего товара", 409, "PRODUCT_DECISION_REQUIRED");
+        const newProductName = decision.newProductName === undefined
+          ? sourceLine.suggestedProductName
+          : receiptProductName(decision.newProductName);
+        if (!newProductName) {
+          throw new RosskoReceiptError(
+            "Укажите название нового товара",
+            422,
+            "NEW_PRODUCT_NAME_REQUIRED",
+            { sourceLineKey: sourceLine.sourceLineKey },
+          );
+        }
         let resolved;
         try {
           resolved = await resolveOrCreateRosskoLocalProduct({
@@ -957,6 +981,7 @@ export async function createRosskoReceiptDraft(input: {
             brand: part.brand,
             article: part.article,
             name: part.name,
+            nameOverride: newProductName,
             category: null,
             purchasePriceCents: Math.round(part.price * 100),
             retailPriceCents: recommendedRosskoRetailCents(Math.round(part.price * 100)),

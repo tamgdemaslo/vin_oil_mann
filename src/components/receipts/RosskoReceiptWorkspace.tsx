@@ -37,6 +37,7 @@ type RosskoReceiptPreviewLine = {
   article: string;
   brand: string;
   name: string;
+  suggestedProductName: string;
   orderedQty: number;
   alreadyReceivedQty: number;
   manualClosedQty: number;
@@ -631,6 +632,7 @@ function RosskoReceiptEditor({
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [selectedProducts, setSelectedProducts] = useState<Record<string, string>>({});
+  const [newProductNames, setNewProductNames] = useState<Record<string, string>>({});
   const [pickerLineKey, setPickerLineKey] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
@@ -648,6 +650,7 @@ function RosskoReceiptEditor({
       setEnabled(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty > 0])));
       setQuantities(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.receiveQty])));
       setSelectedProducts({});
+      setNewProductNames(Object.fromEntries(data.lines.map((line) => [line.sourceLineKey, line.suggestedProductName])));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось загрузить заказ ROSSKO");
     } finally {
@@ -689,6 +692,16 @@ function RosskoReceiptEditor({
 
   async function createDraft() {
     if (!preview || saving) return;
+    const missingName = preview.lines.find((line) =>
+      line.action === "CREATE_PRODUCT" &&
+      enabled[line.sourceLineKey] &&
+      Number(quantities[line.sourceLineKey]) > 0 &&
+      !newProductNames[line.sourceLineKey]?.trim()
+    );
+    if (missingName) {
+      setError(`Укажите название нового товара для позиции ${missingName.brand} ${missingName.article}.`);
+      return;
+    }
     const lines = preview.lines
       .filter((line) => enabled[line.sourceLineKey] && Number(quantities[line.sourceLineKey]) > 0)
       .map((line) => ({
@@ -696,6 +709,7 @@ function RosskoReceiptEditor({
         receiveQty: Number(quantities[line.sourceLineKey]),
         selectedProductId: selectedProducts[line.sourceLineKey] || null,
         createProduct: !line.product && line.action !== "AMBIGUOUS_PRODUCT",
+        newProductName: line.action === "CREATE_PRODUCT" ? newProductNames[line.sourceLineKey]?.trim() : undefined,
       }));
     if (!lines.length) {
       setError("Выберите хотя бы одну позицию и укажите фактически принятое количество.");
@@ -727,6 +741,12 @@ function RosskoReceiptEditor({
   const selectedQty = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0), 0);
   const selectedSum = selectedLines.reduce((sum, line) => sum + Number(quantities[line.sourceLineKey] || 0) * line.purchasePrice, 0);
   const nothingReceivable = Boolean(preview?.lines.length && preview.lines.every((line) => line.remainingQty <= 0));
+  const hasInvalidNewProductName = Boolean(preview?.lines.some((line) =>
+    line.action === "CREATE_PRODUCT" &&
+    enabled[line.sourceLineKey] &&
+    Number(quantities[line.sourceLineKey]) > 0 &&
+    !newProductNames[line.sourceLineKey]?.trim()
+  ));
 
   return (
     <div className="eco-restock-cart-shell is-workspace" role="presentation">
@@ -775,17 +795,39 @@ function RosskoReceiptEditor({
               ) : (
                 <div className="eco-restock-receipt-table-wrap">
                   <table className="eco-restock-receipt-table">
-                    <thead><tr><th aria-label="Выбрать" /><th>Товар</th><th>Артикул</th><th>Статус</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">В пути</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
+                    <thead><tr><th aria-label="Выбрать" /><th>Товар / название карточки</th><th>Артикул</th><th>Статус</th><th className="l-number">Заказано</th><th className="l-number">Принято</th><th className="l-number">В пути</th><th className="l-number">Закрыто</th><th className="l-number">Принимаем</th><th>Каталог</th><th className="l-number">Закупка</th></tr></thead>
                     <tbody>
                       {preview.lines.map((line) => {
                         const blocked = ["FULLY_RECEIVED", "PROVIDER_CLOSED", "CLOSED_MANUALLY", "SOURCE_STATUS_WARNING", "INVALID_LINE", "AMBIGUOUS_SOURCE_LINE"].includes(line.action);
                         const needsProduct = line.action === "AMBIGUOUS_PRODUCT" && !selectedProducts[line.sourceLineKey];
                         const pickerOpen = pickerLineKey === line.sourceLineKey;
+                        const invalidNewProductName = line.action === "CREATE_PRODUCT" &&
+                          enabled[line.sourceLineKey] &&
+                          Number(quantities[line.sourceLineKey]) > 0 &&
+                          !newProductNames[line.sourceLineKey]?.trim();
                         return (
                           <Fragment key={line.sourceLineKey}>
                             <tr className={blocked ? "is-disabled" : line.warnings.length ? "has-warning" : ""}>
                               <td><input type="checkbox" checked={Boolean(enabled[line.sourceLineKey])} disabled={blocked || needsProduct} onChange={(event) => toggleLine(line, event.target.checked)} aria-label={`Принять ${line.name}`} /></td>
-                              <td className="eco-restock-receipt-product"><strong>{line.name}</strong><span>{line.brand}</span></td>
+                              <td className="eco-restock-receipt-product">
+                                {line.action === "CREATE_PRODUCT" ? (
+                                  <label className="eco-restock-receipt-new-name">
+                                    <span>Название новой карточки</span>
+                                    <EcoInput
+                                      value={newProductNames[line.sourceLineKey] ?? ""}
+                                      maxLength={240}
+                                      aria-label={`Название нового товара: ${line.brand} ${line.article}`}
+                                      aria-invalid={invalidNewProductName}
+                                      onChange={(event) => setNewProductNames((current) => ({ ...current, [line.sourceLineKey]: event.target.value }))}
+                                    />
+                                    {invalidNewProductName
+                                      ? <small className="is-error">Укажите название новой карточки</small>
+                                      : <small>ROSSKO: {line.name}</small>}
+                                  </label>
+                                ) : (
+                                  <><strong>{line.name}</strong><span>{line.brand}</span></>
+                                )}
+                              </td>
                               <td className="l-mono">{line.article}</td>
                               <td>{line.rosskoStatusLabel}</td>
                               <td className="l-number">{formatNumber(line.orderedQty)}</td>
@@ -830,7 +872,7 @@ function RosskoReceiptEditor({
           {created ? (
             <><EcoButton type="button" onClick={onClose}>К заказам</EcoButton><Link className="eco-btn eco-btn--primary" href={`/inventory/receipts?document=${encodeURIComponent(created.documentId)}&open=edit`}>Открыть приёмку</Link></>
           ) : (
-            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
+            <><div className="eco-restock-receipt-totals"><span>{selectedLines.length} поз. · {formatNumber(selectedQty)} шт.</span><strong>{formatMoney(selectedSum)} ₽</strong></div><EcoButton type="button" onClick={onClose}>Назад</EcoButton>{error && <EcoButton type="button" onClick={() => void fetchPreview()}><RefreshCw size={15} />{preview ? "Обновить данные" : "Повторить"}</EcoButton>}<EcoButton type="button" variant="primary" onClick={() => void createDraft()} disabled={!preview || nothingReceivable || !selectedLines.length || hasInvalidNewProductName || saving}>{saving ? <Loader2 size={15} className="eco-spin" /> : <FilePlus2 size={15} />} Создать черновик приёмки</EcoButton></>
           )}
         </footer>
       </section>

@@ -25837,7 +25837,7 @@ select.eco-input::-ms-expand,
 
 .eco-restock-receipt-table {
   width: 100%;
-  min-width: 1200px;
+  min-width: 1320px;
   border-collapse: collapse;
   color: var(--eco-ink);
   font-size: 12px;
@@ -25891,14 +25891,51 @@ select.eco-input::-ms-expand,
 }
 
 .eco-restock-receipt-product {
-  min-width: 180px;
-  max-width: 260px;
+  min-width: 290px;
+  max-width: 380px;
 }
 
 .eco-restock-receipt-product strong,
 .eco-restock-receipt-product span,
 .eco-restock-receipt-match small {
   display: block;
+}
+
+.eco-restock-receipt-new-name {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.eco-restock-receipt-new-name > span {
+  margin: 0;
+  color: var(--eco-ink-2);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.eco-restock-receipt-new-name .eco-input {
+  width: 100%;
+  min-height: 36px;
+  text-align: left;
+}
+
+.eco-restock-receipt-new-name .eco-input[aria-invalid="true"] {
+  border-color: var(--eco-danger);
+}
+
+.eco-restock-receipt-new-name small {
+  overflow: hidden;
+  color: var(--eco-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eco-restock-receipt-new-name small.is-error {
+  color: var(--eco-danger);
+  font-weight: 750;
 }
 
 .eco-restock-receipt-product strong {
