@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { runWithBranchApiContext } from "@/lib/branch-api";
 import { requireBranchContext } from "@/lib/branch-context";
+import { resolveShipmentPrintAccess, runWithDocumentPrintAccess } from "@/lib/document-print-access";
 import { buildJobOrderPosterModel, posterModelOptsFromVariant } from "@/lib/job-order-poster-data";
 import OrderPoster from "@/components/print/OrderPoster";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
@@ -185,8 +185,11 @@ export default async function ShipmentPosterPrintPage({
     redirect(`/login?from=${encodeURIComponent(`/shipment/${id}/poster${suffix}`)}`);
   }
 
-  const branch = await requireBranchContext({ allowAll: false, requireActive: true });
-  const data = await runWithBranchApiContext(branch, () => buildJobOrderPosterModel(id, intervalOpts));
+  const branch = await requireBranchContext({ allowAll: true, requireActive: false });
+  const printAccess = await resolveShipmentPrintAccess(branch, id);
+  const data = printAccess
+    ? await runWithDocumentPrintAccess(printAccess, () => buildJobOrderPosterModel(id, { ...intervalOpts, branchId: printAccess.branchId }))
+    : null;
   if (!data) {
     return (
       <div id="poster-print-mount" className="mx-auto max-w-lg px-6 py-16 text-center">

@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { normalizeSellerPhonesForPrint } from "@/lib/job-order-seller-phone";
 
 type SellerRequisites = {
   director: string;
@@ -14,7 +13,7 @@ const DEFAULT_SELLER: SellerRequisites = {
   inn: "392302838630",
   ogrn: "319392600035915",
   legalAddress: "238410, РОССИЯ, КАЛИНИНГРАДСКАЯ ОБЛ, ПРАВДИНСКИЙ Р-Н, ПГТ ЖЕЛЕЗНОДОРОЖНЫЙ, УЛ ДЕПОВСКАЯ, Д 1, КВ 7",
-  phones: "8 (995) 054-58-59",
+  phones: "",
 };
 
 function cleanText(value: unknown): string {
@@ -42,16 +41,7 @@ function envSeller(): SellerRequisites {
       DEFAULT_SELLER.ogrn
     ),
     legalAddress: firstFilled(process.env.JOB_ORDER_SELLER_ADDRESS, process.env.CLOSING_SELLER_ADDRESS, DEFAULT_SELLER.legalAddress),
-    phones: normalizeSellerPhonesForPrint(
-      firstFilled(
-        process.env.JOB_ORDER_SELLER_PHONES,
-        process.env.CLOSING_SELLER_PHONE,
-        process.env.CLOSING_SELLER_PHONES,
-        process.env.POSTER_PHONE,
-        process.env.POSTER_CONTACT_PHONE,
-        DEFAULT_SELLER.phones
-      )
-    ),
+    phones: "",
   };
 }
 
@@ -205,8 +195,8 @@ export function sellerFromOrg(org: Record<string, unknown> | null): SellerRequis
       fallback.legalAddress
     ),
     phones: firstFilled(
-      normalizeSellerPhonesForPrint(formatOrgPhones(org)),
-      normalizeSellerPhonesForPrint(formatOrgPhones(raw)),
+      formatOrgPhones(org),
+      formatOrgPhones(raw),
       fallback.phones
     ),
   };

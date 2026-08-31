@@ -1802,7 +1802,12 @@ export async function loadLocalDemandDetailPayload(
   id: string,
   branchId?: string
 ): Promise<{ ok: true; data: DemandDetailPayload } | { ok: false; error: string; notFound?: boolean }> {
-  const scope = await resolveDemandBranchScope(branchId);
+  const explicitBranch = branchId
+    ? await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, legacyOrganizationId: true } })
+    : null;
+  const scope = explicitBranch?.legacyOrganizationId
+    ? { branchId: explicitBranch.id, organizationId: explicitBranch.legacyOrganizationId }
+    : await resolveDemandBranchScope(branchId);
   const demand = await prisma.localDemand.findFirst({
     where: { branchId: scope.branchId, OR: [{ id }, { id: id }] },
     include: {
@@ -1920,6 +1925,7 @@ export async function loadLocalDemandDetailPayload(
     : undefined;
 
   const data: DemandDetailPayload = {
+    branchId: demand.branchId,
     header: {
       id: demand.id,
       name: demand.name,

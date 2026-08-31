@@ -55,6 +55,8 @@ export type DemandDetailPosition = {
 };
 
 export type DemandDetailPayload = {
+  /** Серверный branchId самой отгрузки; не берётся из frontend/session. */
+  branchId: string;
   header: DemandDetailHeader;
   attributes: DemandDetailAttribute[];
   positions: DemandDetailPosition[];

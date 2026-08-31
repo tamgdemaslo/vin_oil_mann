@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { ensureAnonymousRetailCounterparty } from "@/lib/anonymous-retail-counterparty";
 import { prisma } from "@/lib/db";
 import type { BranchContext } from "@/lib/branch-context";
+import { formatPhoneForDisplay } from "@/lib/phone-normalize";
 
 export type BranchInput = {
   name?: unknown;
@@ -65,7 +66,7 @@ function branchData(input: BranchInput, current?: { name: string; shortName: str
     slug,
     address: optional("address", clean(input.address, 1000)),
     timezone: optional("timezone", clean(input.timezone, 80) ?? "Europe/Kaliningrad"),
-    phone: optional("phone", clean(input.phone, 80)),
+    phone: optional("phone", formatPhoneForDisplay(clean(input.phone, 80)) || null),
     email: optional("email", clean(input.email, 180)),
     telegramUsername: optional("telegramUsername", clean(input.telegramUsername, 180)),
     legalEntityName: optional("legalEntityName", clean(input.legalEntityName, 320)),
@@ -101,8 +102,12 @@ function communicationData(
   return {
     touched,
     data: {
-      primaryPhone: clean(input.phone, 80) ?? current?.primaryPhone ?? "",
-      secondaryPhone: input.secondaryPhone === undefined ? current?.secondaryPhone ?? null : clean(input.secondaryPhone, 80),
+      primaryPhone: input.phone === undefined
+        ? formatPhoneForDisplay(current?.primaryPhone)
+        : formatPhoneForDisplay(clean(input.phone, 80)),
+      secondaryPhone: input.secondaryPhone === undefined
+        ? current?.secondaryPhone ?? null
+        : formatPhoneForDisplay(clean(input.secondaryPhone, 80)) || null,
       whatsapp: input.whatsapp === undefined ? current?.whatsapp ?? null : clean(input.whatsapp, 180),
       telegram: input.communicationTelegram === undefined && input.telegramUsername === undefined
         ? current?.telegram ?? null
@@ -136,6 +141,7 @@ export async function createBranch(context: BranchContext, input: BranchInput) {
     }
   }
   const data = branchData(input);
+  const communication = communicationData(input, null);
   const error = validate(data);
   if (error) return { ok: false as const, status: 400, error };
   const duplicate = await prisma.branch.findFirst({
@@ -176,6 +182,9 @@ export async function createBranch(context: BranchContext, input: BranchInput) {
         legacyOrganizationId: organization.id,
       },
     });
+    await tx.branchCommunicationSettings.create({
+      data: { branchId: created.id, ...communication.data },
+    });
     await ensureAnonymousRetailCounterparty(created.id, tx);
     if (context.userId) {
       await tx.branchMembership.create({
@@ -205,7 +214,15 @@ export async function updateBranch(context: BranchContext, branchId: string, inp
   });
   if (!current) return { ok: false as const, status: 404, error: "Филиал не найден" };
   const data = branchData(input, current);
-  const communication = communicationData(input, current.communication);
+  const oldCanonicalPhone = formatPhoneForDisplay(current.communication?.primaryPhone || current.phone);
+  const canonicalPhone = input.phone === undefined
+    ? oldCanonicalPhone
+    : formatPhoneForDisplay(clean(input.phone, 80));
+  // Branch.phone is a legacy mirror. Every write through the only branch
+  // settings service heals old divergence with the canonical communication row.
+  data.phone = canonicalPhone || null;
+  const communication = communicationData({ ...input, phone: canonicalPhone }, current.communication);
+  const phoneChanged = input.phone !== undefined && oldCanonicalPhone !== canonicalPhone;
   const error = validate(data);
   if (error) return { ok: false as const, status: 400, error };
   if (data.legacyOrganizationId) {
@@ -220,13 +237,11 @@ export async function updateBranch(context: BranchContext, branchId: string, inp
 
   const branch = await prisma.$transaction(async (tx) => {
     const updated = await tx.branch.update({ where: { id: current.id }, data });
-    if (communication.touched) {
-      await tx.branchCommunicationSettings.upsert({
-        where: { branchId: current.id },
-        update: communication.data,
-        create: { branchId: current.id, ...communication.data },
-      });
-    }
+    await tx.branchCommunicationSettings.upsert({
+      where: { branchId: current.id },
+      update: communication.data,
+      create: { branchId: current.id, ...communication.data },
+    });
     if (data.status === "active" && data.legacyOrganizationId) {
       await tx.localOrganization.update({
         where: { id: data.legacyOrganizationId },
@@ -243,6 +258,19 @@ export async function updateBranch(context: BranchContext, branchId: string, inp
         entityId: updated.id,
       },
     });
+    if (phoneChanged) {
+      await tx.branchAuditLog.create({
+        data: {
+          businessGroupId: context.businessGroupId,
+          branchId: updated.id,
+          userId: context.userId,
+          action: "BRANCH_CONTACT_PHONE_UPDATED",
+          entityType: "branch_communication_settings",
+          entityId: updated.id,
+          metadata: { oldPhone: oldCanonicalPhone || null, newPhone: canonicalPhone || null },
+        },
+      });
+    }
     return updated;
   });
   return { ok: true as const, branch };

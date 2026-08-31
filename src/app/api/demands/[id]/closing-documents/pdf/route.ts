@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
+import { resolveShipmentPrintAccess, runWithDocumentPrintAccess } from "@/lib/document-print-access";
 import { renderPagePdf, requestOriginFromHeaders } from "@/lib/pdf-render";
 import { prisma } from "@/lib/db";
 
@@ -11,10 +12,12 @@ function renderKey(): string {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: true, requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
   const { id } = await params;
-  const demand = await prisma.localDemand.findFirst({ where: { id }, select: { id: true } });
+  const printAccess = await resolveShipmentPrintAccess(branchAccess.context, id);
+  if (!printAccess) return NextResponse.json({ error: "Отгрузка не найдена или недоступна" }, { status: 404 });
+  const demand = await runWithDocumentPrintAccess(printAccess, () => prisma.localDemand.findFirst({ where: { id, branchId: printAccess.branchId }, select: { id: true } }));
   if (!demand) return NextResponse.json({ error: "Отгрузка не найдена" }, { status: 404 });
   const type = request.nextUrl.searchParams.get("type") || "closing_work_order";
   const bundle = request.nextUrl.searchParams.get("bundle") === "1";

@@ -10,7 +10,6 @@ const BG = "#fff";
 
 const TAG_W = "50mm";
 const TAG_H = "80mm";
-const SERVICE_PHONE = "8 (995) 054-58-59";
 
 function shipmentPassNumber(raw: string): string {
   const clean = raw.trim();
@@ -209,20 +208,22 @@ export default function UnderHoodTags({ data: o }: { data: JobOrderPosterModel }
           }}
         >
           <Monogram size={9} color={BG} />
-          <span
-            className="under-hood-tag-phone"
-            style={{
-              maxWidth: "34mm",
-              overflow: "visible",
-              fontSize: 7.4,
-              fontWeight: 700,
-              letterSpacing: 0,
-              textAlign: "right",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {SERVICE_PHONE}
-          </span>
+          {o.ip.phone ? (
+            <span
+              className="under-hood-tag-phone"
+              style={{
+                maxWidth: "34mm",
+                overflow: "visible",
+                fontSize: 7.4,
+                fontWeight: 700,
+                letterSpacing: 0,
+                textAlign: "right",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {o.ip.phone}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>

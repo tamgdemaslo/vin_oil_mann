@@ -367,8 +367,10 @@ for (const pagePath of [
   "../src/app/shipment/[id]/tags/page.tsx",
 ]) {
   const pageSource = fs.readFileSync(new URL(pagePath, import.meta.url), "utf8");
-  assert.match(pageSource, /requireBranchContext\(\{ allowAll: false, requireActive: true \}\)/);
-  assert.match(pageSource, /runWithBranchApiContext\(/);
+  assert.match(pageSource, /requireBranchContext\(\{ allowAll: true, requireActive: false \}\)/);
+  assert.match(pageSource, /resolveShipmentPrintAccess\(branch, id\)/);
+  assert.match(pageSource, /runWithDocumentPrintAccess\(/);
+  assert.match(pageSource, /branchId: printAccess\.branchId/);
 }
 
 if (previousSessionSecret === undefined) delete process.env.SESSION_SECRET;

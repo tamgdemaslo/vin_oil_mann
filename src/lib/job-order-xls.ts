@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as XLSX from "xlsx";
 import type { DemandDetailAttribute, DemandDetailPayload, DemandDetailPosition } from "@/lib/demand-detail-load";
 import { fetchOrganizationRecord, sellerFromOrg } from "@/lib/job-order-poster-org";
+import { resolveBranchPrintContext } from "@/lib/branch-print-context";
 
 const SHEET_NAMES_PREFERRED = ["Заказ-наряд"];
 
@@ -159,7 +160,9 @@ export async function buildJobOrderXlsBuffer(payload: DemandDetailPayload): Prom
   }
 
   const org = await fetchOrganizationRecord(payload.raw);
-  const seller = sellerFromOrg(org);
+  const organizationSeller = sellerFromOrg(org);
+  const branchPrint = await resolveBranchPrintContext(payload.branchId);
+  const seller = { ...organizationSeller, phones: branchPrint?.phone || "" };
 
   const wb = XLSX.readFile(templatePath, { cellDates: true });
   const sheetName = pickSheetName(wb);

@@ -7,6 +7,7 @@ import {
 } from "@/data/diagnostic-report-copy";
 import { prisma } from "@/lib/db";
 import { buildDiagnosticReportUrl } from "@/lib/diagnostic-report-link";
+import { resolveBranchPrintContext } from "@/lib/branch-print-context";
 
 type PublicOffer = {
   title: string;
@@ -34,6 +35,7 @@ export async function GET(
   });
 
   if (!diag) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
+  const branchPrint = await resolveBranchPrintContext(diag.branchId);
 
   const publicUrl = buildDiagnosticReportUrl(request, token);
   const qrDataUrl = await QRCode.toDataURL(publicUrl, {
@@ -104,6 +106,9 @@ export async function GET(
 
   return NextResponse.json({
     publicUrl,
+    publicPhone: branchPrint?.phone || null,
+    publicAddress: branchPrint?.address || null,
+    publicTelegramUsername: branchPrint?.telegram || null,
     qrDataUrl,
     header: {
       brand: diag.brand,

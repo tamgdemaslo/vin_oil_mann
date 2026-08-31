@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Archive, Building2, Check, MessageSquareText, Pencil, Plus, Save, Star, UserPlus, UsersRound, Warehouse } from "lucide-react";
+import { AlertTriangle, Archive, Building2, Check, FileText, MessageSquareText, Pencil, Plus, Save, Star, UserPlus, UsersRound, Warehouse } from "lucide-react";
 import { safeReadJson } from "@/lib/http-json";
+import { formatPhoneForDisplay } from "@/lib/phone-normalize";
 
 type Branch = {
   id: string;
@@ -120,6 +121,7 @@ export default function BranchesPage() {
   const [employeeFormOpen, setEmployeeFormOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [phonePreview, setPhonePreview] = useState("");
 
   const updateLocation = useCallback((branchId: string | null, nextTab: BranchTab) => {
     if (typeof window === "undefined") return;
@@ -182,6 +184,7 @@ export default function BranchesPage() {
         setDetails(null);
       } else {
         setDetails(branchPayload.branch);
+        setPhonePreview(formatPhoneForDisplay(branchPayload.branch.communication?.primaryPhone || branchPayload.branch.phone));
         if (!membersResponse.ok) setError(membersPayload?.error ?? "Не удалось загрузить сотрудников филиала");
         else if (!usersResponse.ok) setError(usersPayload?.error ?? "Не удалось загрузить список пользователей");
       }
@@ -503,7 +506,7 @@ export default function BranchesPage() {
         <form className="eco-branches-page__form" onSubmit={createBranch}>
           <div><label>Название<input name="name" required placeholder="Дачная 6В" /></label><label>Короткое название<input name="shortName" required placeholder="Дачная 6В" /></label></div>
           <div><label>Адрес<input name="address" placeholder="Адрес физической точки" /></label><label>Часовой пояс<input name="timezone" defaultValue="Europe/Kaliningrad" /></label></div>
-          <div><label>Рабочий телефон<input name="phone" inputMode="tel" /></label><label>Дата открытия<input name="openingDate" type="date" /></label></div>
+          <div><label>Основной телефон<input name="phone" inputMode="tel" autoComplete="tel" placeholder="+7 (950) 676-46-16" onBlur={(event) => { event.currentTarget.value = formatPhoneForDisplay(event.currentTarget.value); }} /><small>Используется в документах этого филиала.</small></label><label>Дата открытия<input name="openingDate" type="date" /></label></div>
           <label>Связанная организация<select name="legacyOrganizationId" defaultValue=""><option value="">Создать операционную организацию автоматически</option>{organizations.filter((organization) => organization.isActive).map((organization) => <option value={organization.id} key={organization.id}>{organization.name}{organization.inn ? ` · ИНН ${organization.inn}` : ""}</option>)}</select></label>
           <footer><span>Филиал — физическая точка. ИНН, банк и налоги настраиваются в отдельном разделе «Организации».</span><button className="eco-btn eco-btn--primary" type="submit" disabled={saving}>{saving ? "Создаём…" : "Создать филиал"}</button></footer>
         </form>
@@ -655,14 +658,21 @@ export default function BranchesPage() {
               )}
 
               {tab === "channels" && (
-                <form className="eco-branch-editor" onSubmit={saveBranch}>
+                <form className="eco-branch-editor" key={`channels-${details.id}-${details.updatedAt ?? ""}`} onSubmit={saveBranch}>
                   <div className="eco-branch-form-grid">
-                    <label>Основной телефон<input name="phone" defaultValue={details.communication?.primaryPhone || details.phone || ""} disabled={!canManage} /></label>
+                    <label>Основной телефон<input name="phone" inputMode="tel" autoComplete="tel" placeholder="+7 (950) 676-46-16" defaultValue={formatPhoneForDisplay(details.communication?.primaryPhone || details.phone)} onChange={(event) => setPhonePreview(formatPhoneForDisplay(event.currentTarget.value))} onBlur={(event) => { const formatted = formatPhoneForDisplay(event.currentTarget.value); event.currentTarget.value = formatted; setPhonePreview(formatted); }} aria-describedby="branch-primary-phone-help" disabled={!canManage} /><small id="branch-primary-phone-help">Используется в заказ-нарядах, бирках и других документах этого филиала.</small></label>
                     <label>Дополнительный телефон<input name="secondaryPhone" defaultValue={details.communication?.secondaryPhone ?? ""} disabled={!canManage} /></label>
                     <label>Email филиала<input name="communicationEmail" type="email" defaultValue={details.communication?.email || details.email || ""} disabled={!canManage} /></label>
                     <label>WhatsApp<input name="whatsapp" defaultValue={details.communication?.whatsapp ?? ""} disabled={!canManage} /></label>
                     <label className="is-wide">Публичное имя рабочего Telegram<input name="communicationTelegram" defaultValue={details.communication?.telegram || details.telegramUsername || ""} placeholder="@tam_gde_maslo" disabled={!canManage} /><small>Это канал филиала для клиентов, не личный Telegram сотрудника.</small></label>
                   </div>
+                  {details.status === "active" && !phonePreview && (
+                    <div className="eco-branch-phone-warning" role="status"><AlertTriangle aria-hidden size={18} /><span><strong>Не указан основной телефон</strong><small>Он не будет отображаться в печатных документах этого филиала.</small></span></div>
+                  )}
+                  <section className="eco-branch-document-preview" aria-label="Предпросмотр контактов в документах">
+                    <header><FileText aria-hidden size={17} /><span><strong>Используется в документах</strong><small>Актуальные контакты филиала при каждой печати</small></span></header>
+                    <div><strong>{details.address || branchName(details)}</strong><span>{phonePreview || "Телефон не указан"}</span></div>
+                  </section>
                   <div className="eco-working-telegram-status"><MessageSquareText aria-hidden size={20} /><span><strong>Рабочий Telegram филиала</strong><small>{details.telegramIntegration?.status === "connected" ? `${details.telegramIntegration.telegramUsername ? `@${details.telegramIntegration.telegramUsername}` : details.telegramIntegration.phoneNumberMasked ?? "Подключён"}` : "Не подключён или требует настройки"}</small></span><Link href="/cabinet/integrations/messenger" className="eco-btn eco-btn--secondary">Настроить канал связи</Link></div>
                   <div className="eco-branch-editor__actions">{canManage && <button type="submit" className="eco-btn eco-btn--primary" disabled={saving}><Save aria-hidden className="eco-icon" />{saving ? "Сохраняем…" : "Сохранить каналы"}</button>}</div>
                 </form>

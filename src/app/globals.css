@@ -65007,6 +65007,20 @@ html.tgm-print-active .tgm-client-report .qr {
 .eco-branch-form-grid label { display: grid; align-content: start; gap: 6px; color: var(--eco-ink-2); font-size: 11px; font-weight: 750; }
 .eco-branch-form-grid label.is-wide { grid-column: 1 / -1; }
 .eco-branch-form-grid label small { color: var(--eco-muted); font-weight: 500; line-height: 1.4; }
+.eco-branch-phone-warning { display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; color: var(--eco-warning-ink, #70451b); background: color-mix(in srgb, var(--eco-warning, #a6641b) 8%, var(--eco-surface)); border: 1px solid color-mix(in srgb, var(--eco-warning, #a6641b) 30%, var(--eco-line)); border-radius: 6px; }
+.eco-branch-phone-warning > svg { flex: 0 0 auto; margin-top: 1px; }
+.eco-branch-phone-warning > span { display: grid; gap: 3px; }
+.eco-branch-phone-warning small { color: inherit; font-size: 11px; line-height: 1.4; }
+.eco-branch-document-preview { display: grid; grid-template-columns: minmax(190px, .7fr) minmax(220px, 1fr); gap: 18px; padding: 14px; background: var(--eco-surface-sunk); border: 1px solid var(--eco-line); border-radius: 7px; }
+.eco-branch-document-preview > header { display: flex; align-items: flex-start; gap: 9px; }
+.eco-branch-document-preview > header > svg { flex: 0 0 auto; color: var(--eco-rust); }
+.eco-branch-document-preview > header > span,
+.eco-branch-document-preview > div { display: grid; align-content: start; gap: 3px; }
+.eco-branch-document-preview small,
+.eco-branch-document-preview > div > span { color: var(--eco-muted); font-size: 11px; line-height: 1.4; }
+.eco-branch-document-preview > div { padding-left: 18px; border-left: 1px solid var(--eco-line); }
+.eco-branch-document-preview > div strong { font-size: 13px; }
+.eco-branch-document-preview > div span { font-variant-numeric: tabular-nums; }
 .eco-branch-editor__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 14px; border-top: 1px solid var(--eco-line); }
 .eco-branch-employees { display: grid; gap: 18px; padding-top: 18px; }
 .eco-branch-employees__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -65103,6 +65117,8 @@ html.tgm-print-active .tgm-client-report .qr {
   .eco-branch-tabs { overflow-x: auto; }
   .eco-branch-tabs button { white-space: nowrap; }
   .eco-branch-form-grid label.is-wide { grid-column: auto; }
+  .eco-branch-document-preview { grid-template-columns: 1fr; gap: 12px; }
+  .eco-branch-document-preview > div { padding-top: 12px; padding-left: 0; border-top: 1px solid var(--eco-line); border-left: 0; }
   .eco-branch-add-member { grid-template-columns: 1fr; }
   .eco-branch-add-member > div { grid-column: auto; }
   .eco-branch-employees__head,

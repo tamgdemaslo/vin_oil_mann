@@ -21,6 +21,22 @@ export function normalizePhoneKey(raw: string | undefined | null): string | null
 }
 
 /**
+ * Человекочитаемый формат для интерфейса и печатных документов.
+ * Российские номера приводятся к единому виду, уже отформатированные
+ * международные номера сохраняются без разрушения их национальной разметки.
+ */
+export function formatPhoneForDisplay(raw: string | undefined | null): string {
+  const source = raw == null ? "" : String(raw).trim().replace(/\s+/gu, " ");
+  if (!source) return "";
+  const key = normalizePhoneKey(source);
+  const russianKey = key && /^9\d{9}$/u.test(key) ? `7${key}` : key;
+  if (russianKey && /^7\d{10}$/u.test(russianKey)) {
+    return `+7 (${russianKey.slice(1, 4)}) ${russianKey.slice(4, 7)}-${russianKey.slice(7, 9)}-${russianKey.slice(9, 11)}`;
+  }
+  return source;
+}
+
+/**
  * Единый ключ для сравнения телефонов в операционных сценариях.
  * Для РФ сравниваем последние 10 цифр, чтобы +7 и 8 не расходились.
  * Международные номера оставляем в полном нормализованном виде.

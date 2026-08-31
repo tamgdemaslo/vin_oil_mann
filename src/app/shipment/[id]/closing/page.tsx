@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { requireBranchContext } from "@/lib/branch-context";
 import { buildClosingDocumentPayload, loadClosingDocument, type ClosingDocumentType } from "@/lib/closing-documents";
+import {
+  resolveClosingDocumentPrintAccess,
+  resolveInternalClosingDocumentPrintAccess,
+  resolveInternalShipmentPrintAccess,
+  resolveShipmentPrintAccess,
+  runWithDocumentPrintAccess,
+} from "@/lib/document-print-access";
 import { ClosingDocumentPrint, ClosingDocumentStyles } from "@/components/closing-documents/ClosingDocumentPrint";
 import { ClosingDocumentToolbar } from "@/components/closing-documents/ClosingDocumentToolbar";
 import { PosterAutoPrint } from "@/components/print/PosterAutoPrint";
@@ -102,11 +110,26 @@ export default async function ClosingDocumentPage({
     redirect(`/login?from=${encodeURIComponent(`/shipment/${id}/closing${suffix}`)}`);
   }
 
+  const branchContext = session ? await requireBranchContext({ allowAll: true, requireActive: false }) : null;
+  const printAccess = sp.documentId
+    ? branchContext
+      ? await resolveClosingDocumentPrintAccess(branchContext, sp.documentId)
+      : await resolveInternalClosingDocumentPrintAccess(sp.documentId)
+    : branchContext
+      ? await resolveShipmentPrintAccess(branchContext, id)
+      : await resolveInternalShipmentPrintAccess(id);
+
   const type = isClosingType(sp.type) ? sp.type : "closing_work_order";
-  const existing = sp.documentId ? await loadClosingDocument(sp.documentId) : null;
+  const existing = sp.documentId && printAccess
+    ? await runWithDocumentPrintAccess(printAccess, () => loadClosingDocument(sp.documentId!))
+    : null;
   const bundle = sp.bundle === "1" && !existing;
-  const payload = existing ? null : await buildClosingDocumentPayload(id, updBuildOptions(type, sp));
-  const actPayload = bundle ? await buildClosingDocumentPayload(id, { type: "work_act" }) : null;
+  const payload = existing || !printAccess
+    ? null
+    : await runWithDocumentPrintAccess(printAccess, () => buildClosingDocumentPayload(id, updBuildOptions(type, sp)));
+  const actPayload = bundle && printAccess
+    ? await runWithDocumentPrintAccess(printAccess, () => buildClosingDocumentPayload(id, { type: "work_act" }))
+    : null;
   const document = existing ?? payload?.document ?? null;
   const documents = [document, actPayload?.document ?? null].filter((item): item is NonNullable<typeof document> => Boolean(item));
 

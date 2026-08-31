@@ -82,6 +82,9 @@ type ReportPayload = {
 
 type LegacyPayload = {
   publicUrl: string;
+  publicPhone?: string | null;
+  publicAddress?: string | null;
+  publicTelegramUsername?: string | null;
   qrDataUrl?: string;
   header: {
     brand: string | null;
@@ -120,8 +123,6 @@ type DiagnosticPublicReportProps = {
   initialError?: string | null;
 };
 
-const REPORT_PHONE = "+7 (995) 054-58-59";
-const REPORT_PHONE_HREF = "tel:+79950545859";
 const BOOKING_HREF = "/booking";
 const ATTENTION_STATUSES = ["crit", "warn"] as const;
 const INDIRECT_STATUSES = ["by-mileage", "by-client"] as const;
@@ -369,6 +370,9 @@ function adaptLegacy(payload: LegacyPayload): ReportPayload {
 
   return {
     reportUrl: payload.publicUrl,
+    publicPhone: payload.publicPhone,
+    publicAddress: payload.publicAddress,
+    publicTelegramUsername: payload.publicTelegramUsername,
     vehicle: {
       title: [payload.header.brand, payload.header.model, payload.header.year ? String(payload.header.year) : ""].filter(Boolean).join(" ") || "Автомобиль",
       vin: payload.header.vin,
@@ -635,15 +639,19 @@ export function DiagnosticPublicReport({
     primaryMessenger === "telegram"
       ? telegramUrl(payload.publicTelegramUrl) ?? (publicTelegramUsername ? `https://t.me/${publicTelegramUsername}` : null)
       : null;
-  const publicPhone = payload.publicPhone || REPORT_PHONE;
-  const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : REPORT_PHONE_HREF;
+  const publicPhone = payload.publicPhone?.trim() || null;
+  const publicPhoneHref = publicPhone ? `tel:${publicPhone.replace(/[^\d+]/gu, "")}` : null;
   const publicBookingUrl = payload.publicBookingUrl || BOOKING_HREF;
   const publicSite = payload.publicSiteUrl || "tamgdemaslo.ru";
-  const publicAddress = payload.publicAddress || "Калининград";
+  const publicAddress = payload.publicAddress?.trim() || null;
   const nextStepTail = attentionCount > 0
     ? "объясним рекомендации и подскажем, что делать дальше."
     : "ответим на вопросы по отчёту и подскажем, что проверить при следующем визите.";
-  const nextStepText = publicTelegramHref ? `Напишите нам — ${nextStepTail}` : `Позвоните нам — ${nextStepTail}`;
+  const nextStepText = publicTelegramHref
+    ? `Напишите нам — ${nextStepTail}`
+    : publicPhoneHref
+      ? `Позвоните нам — ${nextStepTail}`
+      : `Запишитесь онлайн — ${nextStepTail}`;
   const footerCopy = attentionCount > 0
     ? `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Рекомендации помогают спланировать обслуживание и не заменяют отдельное согласование работ.`
     : `Отчёт отражает состояние автомобиля на момент диагностики (${formatNumericDate(reportDate)}). Если останутся вопросы по отчёту, мастер подскажет следующий шаг.`;
@@ -885,7 +893,7 @@ export function DiagnosticPublicReport({
               </div>
             <div className="tgm-public-actions">
               {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать в Telegram</a>}
-              <a href={publicPhoneHref}>Позвонить</a>
+              {publicPhoneHref && <a href={publicPhoneHref}>Позвонить</a>}
               <a href={publicBookingUrl}>Записаться</a>
             </div>
           </section>
@@ -896,17 +904,17 @@ export function DiagnosticPublicReport({
                 <strong>Там где масло</strong>
                 <p>{footerCopy}</p>
               <div className="tgm-public-footer-meta">
-                <span>{publicPhone}</span>
+                {publicPhone && <span>{publicPhone}</span>}
                 {publicTelegramUsername && <span>Telegram · @{publicTelegramUsername}</span>}
                 <span>{publicSite}</span>
-                <span>{publicAddress}</span>
+                {publicAddress && <span>{publicAddress}</span>}
               </div>
             </div>
           </footer>
 
           <nav className={`tgm-public-sticky no-print ${publicTelegramHref ? "has-telegram" : "no-telegram"}`} aria-label="Действия клиента">
             {publicTelegramHref && <a className="is-primary" href={publicTelegramHref} target="_blank" rel="noreferrer">Написать</a>}
-            <a href={publicPhoneHref}>Позвонить</a>
+            {publicPhoneHref && <a href={publicPhoneHref}>Позвонить</a>}
             <a href={publicBookingUrl}>Записаться</a>
           </nav>
 
@@ -1063,11 +1071,11 @@ export function DiagnosticPublicReport({
               <div>
                 <div className="rep-eyebrow rust">Что дальше</div>
                 <div className="rep-foot-q">{recommendations.length > 0 ? "Запишем на работы по точкам внимания?" : "Остались вопросы по отчёту?"}</div>
-                <div className="rep-foot-sub">{recommendations.length > 0 ? "Подберём материалы заранее, согласуем время. Пишите в Telegram или звоните." : "Ответим на вопросы по отчёту и запишем на отдельную проверку. Пишите в Telegram или звоните."}</div>
+                <div className="rep-foot-sub">{nextStepText}</div>
             </div>
             <div className="rep-foot-contact">
-              <div className="ph">{REPORT_PHONE}</div>
-              <div className="tg">Telegram · @tamgdemaslo</div>
+              {publicPhone && <div className="ph">{publicPhone}</div>}
+              {publicTelegramUsername && <div className="tg">Telegram · @{publicTelegramUsername}</div>}
               <div className="link">Онлайн-версия: {reportShareLabel}</div>
             </div>
           </div>

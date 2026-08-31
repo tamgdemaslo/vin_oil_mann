@@ -18,6 +18,7 @@ import type {
   PosterPart,
   PosterWork,
 } from "@/lib/job-order-poster-types";
+import { resolveBranchPrintContext } from "@/lib/branch-print-context";
 
 function formatDemandDateRu(momentStr: string): string {
   const normalized = momentStr.includes("T") ? momentStr : momentStr.replace(" ", "T");
@@ -372,9 +373,9 @@ export function posterModelOptsFromVariant(
 
 export async function buildJobOrderPosterModel(
   demandId: string,
-  opts?: { nextIntervalKm?: number }
+  opts?: { nextIntervalKm?: number; branchId?: string }
 ): Promise<JobOrderPosterModel | null> {
-  const loaded = await loadLocalDemandDetailPayload(demandId);
+  const loaded = await loadLocalDemandDetailPayload(demandId, opts?.branchId);
   if (!loaded.ok) return null;
 
   const { header, attributes, raw, rawPositions } = loaded.data;
@@ -382,6 +383,7 @@ export async function buildJobOrderPosterModel(
 
   const orgRecord = await fetchOrganizationRecord(raw);
   const seller = sellerFromOrg(orgRecord);
+  const branchPrint = await resolveBranchPrintContext(loaded.data.branchId);
 
   const site = process.env.POSTER_SITE?.trim() || "tamgdemaslo.ru";
   const tg = process.env.POSTER_TELEGRAM?.trim() || "@tamgdemaslo";
@@ -391,7 +393,8 @@ export async function buildJobOrderPosterModel(
   const warrantyDays = Math.max(1, parseInt(process.env.POSTER_WARRANTY_DAYS ?? "60", 10) || 60);
   const defaultCity = process.env.POSTER_CITY?.trim() || "Калининград";
 
-  const address = seller.legalAddress || "";
+  const serviceAddress = branchPrint?.address || "";
+  const address = serviceAddress || seller.legalAddress || "";
   const city =
     address.match(/г\.\s*([^,]+)/i)?.[1]?.trim() ||
     address.match(/,\s*([^,]+)\s*,/)?.[1]?.trim() ||
@@ -515,13 +518,13 @@ export async function buildJobOrderPosterModel(
     number: header.name?.trim() || demandId,
     date: formatDemandDateRu(header.moment),
     city,
-    point: header.storeName?.trim() || shortPointFromAddress(address, city),
+    point: branchPrint?.shortName?.trim() || header.storeName?.trim() || shortPointFromAddress(address, city),
     ip: {
       name: seller.director || header.organizationName || "—",
       inn: seller.inn,
       ogrn: seller.ogrn,
-      address,
-      phone: seller.phones || "—",
+      address: seller.legalAddress || "",
+      phone: branchPrint?.phone || "",
       site,
       tg,
     },

@@ -26,6 +26,7 @@ import {
 } from "@/data/diagnostic-map";
 import { buildDiagnosticReportText } from "@/data/diagnostic-report-text";
 import { optimizeReportImage, type ReportPhotoVariant } from "@/lib/report-photo-optimization";
+import { resolveBranchPrintContext } from "@/lib/branch-print-context";
 
 type SessionUser = {
   login: string;
@@ -490,7 +491,7 @@ export async function getDiagnosticMapSession(id: string, origin = "") {
     },
   });
   if (!row) return null;
-  return serializeDiagnosticMap(row, origin, await publicReportContactSettings(), await getDiagnosticVehicleSyncState(row.id));
+  return serializeDiagnosticMap(row, origin, await publicReportContactSettings(row.branchId), await getDiagnosticVehicleSyncState(row.id));
 }
 
 export async function getDiagnosticMapByToken(token: string, origin = "") {
@@ -511,7 +512,7 @@ export async function getDiagnosticMapByToken(token: string, origin = "") {
     },
   });
   if (!row) return null;
-  const full = serializeDiagnosticMap(row, origin, await publicReportContactSettings());
+  const full = serializeDiagnosticMap(row, origin, await publicReportContactSettings(row.branchId));
   return {
     reportUrl: full.reportUrl,
     publicToken: full.publicToken,
@@ -595,9 +596,11 @@ function publicTelegramUrl(value: string | null) {
   return null;
 }
 
-async function publicReportContactSettings(): Promise<PublicReportContactSettings> {
+async function publicReportContactSettings(branchId: string): Promise<PublicReportContactSettings> {
+  const branchPrint = await resolveBranchPrintContext(branchId);
   const primaryMessenger = firstPublicString(process.env.PUBLIC_REPORT_PRIMARY_MESSENGER, process.env.NEXT_PUBLIC_REPORT_PRIMARY_MESSENGER);
   const directTelegram = firstPublicString(
+    branchPrint?.telegram,
     process.env.PUBLIC_TELEGRAM_URL,
     process.env.NEXT_PUBLIC_TELEGRAM_URL,
     process.env.NEXT_PUBLIC_PUBLIC_TELEGRAM_URL,
@@ -621,10 +624,10 @@ async function publicReportContactSettings(): Promise<PublicReportContactSetting
     publicTelegramUrl: publicUrl,
     publicTelegramUsername: publicUsername,
     publicReportPrimaryMessenger: primaryMessenger?.toLowerCase() || "telegram",
-    publicPhone: firstPublicString(process.env.NEXT_PUBLIC_COMPANY_PHONE, process.env.COMPANY_PHONE, process.env.POSTER_PHONE),
+    publicPhone: branchPrint?.phone || null,
     publicBookingUrl: firstPublicString(process.env.NEXT_PUBLIC_BOOKING_URL, process.env.BOOKING_URL, process.env.PUBLIC_BOOKING_URL),
     publicSiteUrl: firstPublicString(process.env.NEXT_PUBLIC_SITE_URL, process.env.SITE_URL, process.env.POSTER_SITE),
-    publicAddress: firstPublicString(process.env.NEXT_PUBLIC_SERVICE_ADDRESS, process.env.SERVICE_ADDRESS, process.env.POSTER_CITY),
+    publicAddress: branchPrint?.address || null,
   };
 }
 

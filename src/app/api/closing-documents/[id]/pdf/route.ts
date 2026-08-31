@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
 import { loadClosingDocument } from "@/lib/closing-documents";
+import { resolveClosingDocumentPrintAccess, runWithDocumentPrintAccess } from "@/lib/document-print-access";
 import { renderPagePdf, requestOriginFromHeaders } from "@/lib/pdf-render";
 
 export const runtime = "nodejs";
@@ -11,10 +12,12 @@ function renderKey(): string {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: true, requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
   const { id } = await params;
-  const document = await loadClosingDocument(id);
+  const printAccess = await resolveClosingDocumentPrintAccess(branchAccess.context, id);
+  if (!printAccess) return NextResponse.json({ error: "Документ не найден или недоступен" }, { status: 404 });
+  const document = await runWithDocumentPrintAccess(printAccess, () => loadClosingDocument(id));
   if (!document) return NextResponse.json({ error: "Документ не найден" }, { status: 404 });
 
   const origin = requestOriginFromHeaders(request.headers, request.nextUrl.origin);

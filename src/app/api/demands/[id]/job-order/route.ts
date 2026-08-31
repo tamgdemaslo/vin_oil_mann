@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireBranchApi } from "@/lib/branch-api";
+import { resolveShipmentPrintAccess, runWithDocumentPrintAccess } from "@/lib/document-print-access";
 import { buildJobOrderXlsBuffer } from "@/lib/job-order-xls";
 import { loadLocalDemandDetailPayload } from "@/lib/local-demand-write";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Необходима авторизация" }, { status: 401 });
+  const branchAccess = await requireBranchApi({ allowAll: true, requireActive: false });
+  if (!branchAccess.ok) return branchAccess.response;
 
   const { id } = await params;
   if (!id) return NextResponse.json({ error: "id не указан" }, { status: 400 });
+  const printAccess = await resolveShipmentPrintAccess(branchAccess.context, id);
+  if (!printAccess) return NextResponse.json({ error: "Отгрузка не найдена или недоступна" }, { status: 404 });
 
-  const loaded = await loadLocalDemandDetailPayload(id);
+  const loaded = await runWithDocumentPrintAccess(printAccess, () => loadLocalDemandDetailPayload(id, printAccess.branchId));
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: 502 });
 
   let buffer: Buffer;
   try {
-    buffer = await buildJobOrderXlsBuffer(loaded.data);
+    buffer = await runWithDocumentPrintAccess(printAccess, () => buildJobOrderXlsBuffer(loaded.data));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ошибка формирования Excel";
     return NextResponse.json({ error: msg }, { status: 500 });

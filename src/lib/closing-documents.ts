@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type { User } from "@/lib/auth";
+import { resolveBranchPrintContext } from "@/lib/branch-print-context";
 
 export type ClosingDocumentType = "closing_work_order" | "work_act" | "upd_print";
 export type ClosingDocumentStatus = "draft" | "issued" | "signed" | "cancelled";
@@ -244,7 +245,7 @@ function defaultSellerRequisites(): ClosingPartySnapshot {
     bik: firstFilled(process.env.CLOSING_SELLER_BIK, DEFAULT_SELLER_REQUISITES.bik),
     checkingAccount: firstFilled(process.env.CLOSING_SELLER_CHECKING_ACCOUNT, DEFAULT_SELLER_REQUISITES.checkingAccount),
     correspondentAccount: firstFilled(process.env.CLOSING_SELLER_CORRESPONDENT_ACCOUNT, DEFAULT_SELLER_REQUISITES.correspondentAccount),
-    phone: firstFilled(process.env.CLOSING_SELLER_PHONE, process.env.JOB_ORDER_SELLER_PHONES, DEFAULT_SELLER_REQUISITES.phone),
+    phone: "",
     email: firstFilled(process.env.CLOSING_SELLER_EMAIL, DEFAULT_SELLER_REQUISITES.email),
     signatoryPosition: firstFilled(process.env.CLOSING_SELLER_SIGNATORY_POSITION, DEFAULT_SELLER_REQUISITES.signatoryPosition),
     signatoryName: firstFilled(process.env.CLOSING_SELLER_SIGNATORY_NAME, DEFAULT_SELLER_REQUISITES.signatoryName),
@@ -632,7 +633,13 @@ export async function buildClosingDocumentPayload(
   const today = dateOnly(new Date());
   const documentDate = normalizeDateInput(options.documentDate, today);
   const completionDate = normalizeDateInput(options.completionDate, dateOnly(demand.momentAt));
-  const seller = partyFromOrganization(demand.organization);
+  const organizationSeller = partyFromOrganization(demand.organization);
+  const branchPrint = await resolveBranchPrintContext(demand.branchId);
+  const seller: ClosingPartySnapshot = {
+    ...organizationSeller,
+    phone: branchPrint?.phone || "",
+    email: branchPrint?.email || organizationSeller.email,
+  };
   const buyer = partyFromCounterparty(demand.counterparty);
   const sellerSignatory = {
     position: firstFilled(options.sellerSignatory?.position, seller.signatoryPosition),
@@ -889,7 +896,14 @@ export async function loadClosingDocument(id: string): Promise<ClosingDocumentSn
     include: { shipment: { select: { name: true, applicable: true, updatedAt: true } } },
   });
   if (!row) return null;
-  return closingRowToSnapshot(row, row.shipment.applicable, row.shipment.name, row.shipment.updatedAt.toISOString());
+  const snapshot = closingRowToSnapshot(row, row.shipment.applicable, row.shipment.name, row.shipment.updatedAt.toISOString());
+  const branchPrint = await resolveBranchPrintContext(row.branchId);
+  snapshot.sellerSnapshot = {
+    ...snapshot.sellerSnapshot,
+    phone: branchPrint?.phone || "",
+    email: branchPrint?.email || snapshot.sellerSnapshot.email,
+  };
+  return snapshot;
 }
 
 export async function cancelClosingDocument(id: string, user: User, reason?: string): Promise<boolean> {
