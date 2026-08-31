@@ -148,7 +148,10 @@ assert.doesNotMatch(service, /inventoryLedgerEntry\.(create|update|upsert)/i, "n
 assert.match(inventory, /export async function postLocalReceipt/);
 assert.match(inventory, /source:\s*position\.sourcePosition\?\.source/);
 assert.match(inventory, /externalCode:\s*position\.sourcePosition\?\.externalCode/);
+assert.match(inventory, /uniqueRosskoProductPosition/);
+assert.match(inventory, /currentPositionById\.get\(sourcePositionId\)\s*\?\?\s*uniqueRosskoProductPosition/);
 assert.match(stockDocumentUi, /documentPositionId:\s*position\.id/);
+assert.match(stockDocumentUi, /fillFormFromDocument\(persistedDocument, nextApplicable \? "view" : "edit"\)/);
 assert.match(previewRoute, /getSession/);
 assert.match(previewRoute, /requireBranchApi\(\{ allowAll: false, requireActive: true \}\)/);
 assert.match(previewRoute, /runWithBranchApiContext/);

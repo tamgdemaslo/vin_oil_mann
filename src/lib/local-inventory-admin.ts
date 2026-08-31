@@ -4837,11 +4837,14 @@ export async function updateLocalStockDocument(documentId: string, body: StockDo
   const positions = inputPositions.map((position) => {
     const sourcePositionId = position.id?.trim() ?? "";
     const productId = position.productId!.trim();
+    const uniqueRosskoProductPosition = current.source === "rossko" &&
+      inputCountByProduct.get(productId) === 1 &&
+      currentPositionsByProduct.get(productId)?.length === 1
+      ? currentPositionsByProduct.get(productId)![0]
+      : null;
     const sourcePosition = sourcePositionId
-      ? currentPositionById.get(sourcePositionId) ?? null
-      : current.source === "rossko" && inputCountByProduct.get(productId) === 1 && currentPositionsByProduct.get(productId)?.length === 1
-        ? currentPositionsByProduct.get(productId)![0]
-        : null;
+      ? currentPositionById.get(sourcePositionId) ?? uniqueRosskoProductPosition
+      : uniqueRosskoProductPosition;
     if (sourcePositionId && !sourcePosition) {
       return { error: "Позиция складского документа не найдена" as const };
     }

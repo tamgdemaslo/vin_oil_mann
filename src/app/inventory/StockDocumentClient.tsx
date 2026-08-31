@@ -1304,16 +1304,18 @@ export default function StockDocumentClient({ type }: { type: StockDocumentType 
         applicable: nextApplicable,
         invoice: data?.invoice ?? null,
       });
-      setEditingDocument(nextDocument);
-      setFormMode(nextApplicable ? "view" : "edit");
-      setInfo(
-        nextApplicable
-          ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
-          : `${title} ${nextDocument.name} сохранена как черновик.`
-      );
+      const successMessage = nextApplicable
+        ? `${title} ${nextDocument.name} проведена. Остатки обновлены.`
+        : `${title} ${nextDocument.name} сохранена как черновик.`;
       const refreshedDocuments = await loadDocuments(formMode === "new" ? 0 : documentPage);
       const persistedDocument = refreshedDocuments.find((document) => document.id === nextDocument.id);
-      if (persistedDocument) setEditingDocument(persistedDocument);
+      if (persistedDocument) {
+        fillFormFromDocument(persistedDocument, nextApplicable ? "view" : "edit");
+      } else {
+        setEditingDocument(nextDocument);
+        setFormMode(nextApplicable ? "view" : "edit");
+      }
+      setInfo(successMessage);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
     } finally {
