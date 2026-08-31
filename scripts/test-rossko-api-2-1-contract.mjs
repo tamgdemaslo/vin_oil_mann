@@ -53,9 +53,11 @@ assert.match(
   /адрес не поддерживает/i
 );
 
-const [integration, settingsRoute, form] = await Promise.all([
+const [integration, settingsRoute, orderRoute, restockClient, form] = await Promise.all([
   readFile("src/lib/rossko-integration.ts", "utf8"),
   readFile("src/app/api/integrations/rossko/route.ts", "utf8"),
+  readFile("src/app/api/rossko/order/route.ts", "utf8"),
+  readFile("src/app/operations/restock/RestockClient.tsx", "utf8"),
   readFile("src/app/cabinet/integrations/IntegrationsClient.tsx", "utf8"),
 ]);
 assert.doesNotMatch(settingsRoute, /profile:\s*z\./);
@@ -64,5 +66,9 @@ assert.doesNotMatch(form, />Профиль ROSSKO</);
 assert.doesNotMatch(form, />Предпочитаемый склад</);
 assert.match(integration, /"contactComment"/);
 assert.match(integration, /"offerPriority"/);
+assert.match(restockClient, /contact_name:\s*DEFAULT_RSSK_CONTACT_NAME/);
+assert.match(restockClient, /contact_phone:\s*DEFAULT_RSSK_CONTACT_PHONE/);
+assert.match(orderRoute, /cfg\.contactName\?\.trim\(\) \|\| requestText\(body\.contact_name, 180\)/);
+assert.match(orderRoute, /cfg\.contactPhone\?\.trim\(\) \|\| requestText\(body\.contact_phone, 80\)/);
 
 console.log("ROSSKO API 2.1 checkout mapping and form contract — passed");

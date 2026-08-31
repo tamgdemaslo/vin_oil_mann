@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = (await request.json()) as {
+      contact_name?: unknown;
+      contact_phone?: unknown;
       comment?: string;
       parts?: BodyPart[];
     };
@@ -30,8 +32,11 @@ export async function POST(request: NextRequest) {
     const addressId = cfg.addressId?.trim() || "";
     const paymentId = cfg.paymentId?.trim() || "";
     const requisiteId = cfg.requisiteId?.trim() || "";
-    const contactName = cfg.contactName?.trim() || "";
-    const contactPhone = cfg.contactPhone?.trim() || "";
+    // Branch settings are authoritative. Keep the request fallback for the
+    // existing restock checkout client and for branches migrated before
+    // contact settings were persisted in integration_credentials.
+    const contactName = cfg.contactName?.trim() || requestText(body.contact_name, 180);
+    const contactPhone = cfg.contactPhone?.trim() || requestText(body.contact_phone, 80);
 
     const selectionErrors = validateRosskoCheckoutSelection(
       rosskoCheckoutOptions(await rosskoCheckoutDetails(cfg)),
@@ -114,4 +119,8 @@ export async function POST(request: NextRequest) {
     const safe = rosskoIntegrationError(e);
     return NextResponse.json(safe, { status: safe.code === "ROSSKO_NOT_CONFIGURED" ? 409 : 502 });
   }
+}
+
+function requestText(value: unknown, maxLength: number) {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
