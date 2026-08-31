@@ -93,6 +93,16 @@ requireText("src/lib/diagnostic-map-service.ts", [
   /export async function createDiagnosticMapSession[\s\S]*?const branchId = getScopedBranchId\(\)/,
   /tx\.diagnosticMapSession\.create\(\{\s*data:\s*\{\s*branchId,\s*demandId,/,
 ]);
+function filesUnder(directory) {
+  return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(file) : [file];
+  });
+}
+for (const route of filesUnder("src/app/api/diagnostics")
+  .filter((file) => path.basename(file) === "route.ts" && !file.includes(`${path.sep}public${path.sep}`))) {
+  requireText(route, [/withDiagnosticBranchRoute/]);
+}
 requireText("src/lib/request-tenant.ts", [/timingSafeEqual/, /businessGroupMembership/, /branchMembership/]);
 requireText("src/lib/request-tenant-store.ts", [/Branch context is required/, /runWithRequestTenant/]);
 requireText("src/lib/external-side-effects.ts", [/branch-migration-rehearsal/, /EXTERNAL_SIDE_EFFECTS_ENABLED/]);

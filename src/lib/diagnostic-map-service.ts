@@ -377,9 +377,8 @@ async function ensureArchiveDiagnosticItems(sessionId: string) {
 }
 
 export async function createDiagnosticMapSession(input: CreateDiagnosticInput, user: SessionUser) {
-  // Interactive Prisma transaction clients do not pass through our top-level
-  // branch query extension. Bind the parent row explicitly so the composite
-  // (branch_id, demand_id) relation remains valid outside branch-main.
+  // Bind the parent explicitly from the verified route tenant. Transactional
+  // writes must never depend on the historical branch-main schema default.
   const branchId = getScopedBranchId();
   const demandId = await resolvePrimaryDemandId(input.shipmentId);
   if (asString(input.shipmentId) && !demandId) {

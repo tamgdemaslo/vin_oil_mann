@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
+import { withDiagnosticBranchRoute } from "@/lib/diagnostic-api-context";
 import {
   deleteDiagnosticMapVehiclePhoto,
   diagnosticMapPhotoMime,
@@ -9,7 +10,7 @@ import {
   saveDiagnosticMapVehiclePhoto,
 } from "@/lib/diagnostic-map-service";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withDiagnosticBranchRoute(async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id } = await params;
@@ -34,9 +35,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   } catch {
     return NextResponse.json({ error: "Файл фото автомобиля не найден" }, { status: 404 });
   }
-}
+});
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withDiagnosticBranchRoute(async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
@@ -62,9 +63,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось сохранить фото автомобиля" }, { status: 400 });
   }
-}
+});
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withDiagnosticBranchRoute(async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
@@ -73,4 +74,4 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const diagnostic = await getDiagnosticMapSession(id);
   if (!ok) return NextResponse.json({ error: "Фото автомобиля не найдено", diagnostic }, { status: 404 });
   return NextResponse.json({ ok: true, diagnostic });
-}
+});

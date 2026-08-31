@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
+import { withDiagnosticBranchRoute } from "@/lib/diagnostic-api-context";
 import {
   deleteDiagnosticMapPhoto,
   diagnosticMapPhotoMime,
@@ -23,7 +24,7 @@ function responseBody(buffer: Buffer): ArrayBuffer {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 }
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
+export const GET = withDiagnosticBranchRoute(async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
@@ -61,9 +62,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
     return NextResponse.json({ error: "Файл фото не найден" }, { status: 404 });
   }
-}
+});
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
+export const PATCH = withDiagnosticBranchRoute(async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
@@ -71,13 +72,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const photo = await updateDiagnosticMapPhoto(id, photoId, String(body.caption ?? ""));
   if (!photo) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
   return NextResponse.json({ photo: { id: photo.id, caption: photo.caption } });
-}
+});
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
+export const DELETE = withDiagnosticBranchRoute(async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; photoId: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
   const { id, photoId } = await params;
   const ok = await deleteDiagnosticMapPhoto(id, photoId);
   if (!ok) return NextResponse.json({ error: "Фото не найдено" }, { status: 404 });
   return NextResponse.json({ ok: true });
-}
+});

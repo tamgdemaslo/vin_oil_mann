@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
+import { withDiagnosticBranchRoute } from "@/lib/diagnostic-api-context";
 import { createDiagnosticMapSession } from "@/lib/diagnostic-map-service";
 
-export async function POST(request: NextRequest) {
+export const POST = withDiagnosticBranchRoute(async function POST(request: NextRequest) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
@@ -27,4 +28,4 @@ export async function POST(request: NextRequest) {
 
   const diagnostic = await createDiagnosticMapSession(body, auth.session.user);
   return NextResponse.json({ diagnostic, diagnosticId: diagnostic?.id });
-}
+});

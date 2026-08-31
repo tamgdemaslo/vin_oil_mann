@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
+import { withDiagnosticBranchRoute } from "@/lib/diagnostic-api-context";
 import { saveDiagnosticMapPhoto } from "@/lib/diagnostic-map-service";
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withDiagnosticBranchRoute(async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiSessionWithCashShift();
   if (!auth.ok) return auth.response;
 
@@ -20,4 +21,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось сохранить фото" }, { status: 400 });
   }
-}
+});

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSessionWithCashShift } from "@/lib/api-session-cash-shift";
+import { withDiagnosticBranchRoute } from "@/lib/diagnostic-api-context";
 import {
   handleDiagnosticReportSent,
   markDiagnosticReportSent,
@@ -14,7 +15,7 @@ function actionError(error: unknown) {
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withDiagnosticBranchRoute(async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireApiSessionWithCashShift();
   if (!gate.ok) return gate.response;
 
@@ -39,4 +40,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch (error) {
     return actionError(error);
   }
-}
+});
