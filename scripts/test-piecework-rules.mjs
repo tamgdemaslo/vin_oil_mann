@@ -26,6 +26,8 @@ for (const groupName of [
   "Maслo в канистрах трансмиссионное",
   "Авто > Масло в канистрах трансмиссионное",
   "Масло в канистрах трансмиссионное\u200B",
+  "Масло в канистрах трансмиссион\u00ADное",
+  "Масло в канистрах трансмиссион-ное",
 ]) {
   assert.equal(resolveProductGroupTargetId(groupName), "transmission-oil-cans");
   assert.deepEqual(resolveProductGroupPieceworkRule({ ruleMap: rules, groupPath: groupName, role: "admin" }), {

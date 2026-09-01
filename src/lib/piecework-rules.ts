@@ -308,6 +308,10 @@ const LATIN_TO_CYRILLIC_LOOKALIKE: Record<string, string> = {
 
 export function normalizeProductGroupName(value: string) {
   return normalizeText(value)
+    // Supplier imports can contain invisible format and combining characters
+    // inside a word (for example `трансмиссион\u00ADное`). They are not part of
+    // the group name and must not turn one word into two during matching.
+    .replace(/[\p{Cf}\p{Cc}\p{M}]/gu, "")
     .replace(/[abcehkmoptxy]/g, (character) => LATIN_TO_CYRILLIC_LOOKALIKE[character] ?? character)
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
@@ -317,12 +321,22 @@ export function normalizeProductGroupName(value: string) {
 function productGroupNamesMatch(left: string, right: string) {
   const normalizedLeft = normalizeProductGroupName(left);
   const normalizedRight = normalizeProductGroupName(right);
+  // A hierarchy separator or an invisible import character can land inside a
+  // word. Compare a compact form as well, while retaining the ordinary text
+  // comparison above for readable group paths.
+  const compactLeft = normalizedLeft.replace(/[^\p{L}\p{N}]+/gu, "");
+  const compactRight = normalizedRight.replace(/[^\p{L}\p{N}]+/gu, "");
   return Boolean(
     normalizedLeft &&
       normalizedRight &&
       (normalizedLeft === normalizedRight ||
         normalizedLeft.includes(normalizedRight) ||
-        normalizedRight.includes(normalizedLeft))
+        normalizedRight.includes(normalizedLeft) ||
+        (compactLeft &&
+          compactRight &&
+          (compactLeft === compactRight ||
+            compactLeft.includes(compactRight) ||
+            compactRight.includes(compactLeft))))
   );
 }
 
