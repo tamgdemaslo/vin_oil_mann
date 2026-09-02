@@ -17,7 +17,13 @@ const {
   salesAnalyticsMappingKey,
 } = taxonomy;
 const { normalizeOneOffServiceInput } = oneOffService;
-const { countSalesPlanWorkingDays, normalizeSalesPerformancePeriod, summarizeSalesPerformanceLines } = analytics;
+const {
+  calculateAttachOpportunity,
+  calculateSalesPotential,
+  countSalesPlanWorkingDays,
+  normalizeSalesPerformancePeriod,
+  summarizeSalesPerformanceLines,
+} = analytics;
 const { normalizeSalesPlanMonth, parseSalesPlanRowKey } = salesPlans;
 
 function classify(input) {
@@ -171,6 +177,37 @@ assert.equal(airAttach.attachedVisits, 1);
 assert.equal(airAttach.standaloneVisits, 1);
 assert.equal(airAttach.ratePercent, 50);
 
+assert.deepEqual(calculateSalesPotential(10, 2_500, 1_900), {
+  amountCents: 25_000,
+  averagePerUnitCents: 2_500,
+  source: "PLAN",
+}, "explicit plan value has priority over the 90-day average");
+assert.deepEqual(calculateSalesPotential(10, null, 1_900), {
+  amountCents: 19_000,
+  averagePerUnitCents: 1_900,
+  source: "LAST_90_DAYS",
+});
+assert.deepEqual(calculateSalesPotential(10, null, null), {
+  amountCents: null,
+  averagePerUnitCents: null,
+  source: "UNAVAILABLE",
+}, "potential stays unavailable without a plan value or historical basis");
+assert.deepEqual(calculateAttachOpportunity(3, 1, 50, 4_000), {
+  targetAttachedVisits: 2,
+  opportunityVisits: 1,
+  opportunityGrossProfitCents: 4_000,
+}, "attach target uses ceil on distinct eligible visits");
+assert.deepEqual(calculateAttachOpportunity(3, 1, 50, null), {
+  targetAttachedVisits: 2,
+  opportunityVisits: 1,
+  opportunityGrossProfitCents: null,
+}, "attach profit is unavailable without an average gross-profit basis");
+assert.deepEqual(calculateAttachOpportunity(3, 2, 50, null), {
+  targetAttachedVisits: 2,
+  opportunityVisits: 0,
+  opportunityGrossProfitCents: 0,
+}, "zero attach opportunity is zero even when no profit basis is needed");
+
 const branchLines = [
   line({ demandId: "branch-a-sale", branchId: "branch-a", classification: airFilter }),
   line({ demandId: "branch-b-sale", branchId: "branch-b", classification: airFilter }),
@@ -237,6 +274,10 @@ assert.doesNotMatch(serviceSource, /shipmentRevision|\.revisions/i, "revisions a
 assert.doesNotMatch(serviceSource, /name\.includes\(/, "runtime analytics does not use fuzzy name includes");
 assert.match(serviceSource, /businessGroupId:\s*context\.businessGroupId[\s\S]*mode:\s*context\.mode[\s\S]*branchIds:\s*\[\.\.\.branchIds\]\.sort\(\)/, "cache key contains the full server-authorized scope");
 assert.match(serviceSource, /planVersion:\s*planContext\.versionKey/, "cache key contains the plan version");
+assert.match(serviceSource, /addDays\(period\.dateTo, -89\)/, "potential uses a rolling 90-day basis");
+assert.match(serviceSource, /productLine\.grossProfitCents == null/, "missing product cost is excluded rather than converted to zero");
+assert.match(serviceSource, /Math\.ceil\(eligible \* rate \/ 100\)/, "attach target rounds up to a whole distinct visit");
+assert.match(serviceSource, /standaloneVisits/, "standalone filter sales remain separate from attach calculations");
 assert.match(detailRoute, /readableBranchIds\(access\.context\)/);
 assert.match(mappingRoute, /invalidateSalesPerformanceAnalytics\(\)/);
 assert.match(mappingRoute, /branchAuditLog\.create/);
@@ -244,9 +285,14 @@ assert.match(demandWrite, /freezeSalesAnalyticsSnapshots/);
 assert.match(demandWrite, /invalidateSalesPerformanceAnalytics\(\)/);
 assert.match(salesUi, /href=\{`\/shipment\/\$\{encodeURIComponent\(row\.shipmentId\)\}`\}/, "drill-down opens the source shipment");
 assert.match(salesUi, /План \/ факт/);
+assert.match(salesUi, /Возможности роста/);
+assert.match(salesUi, /Потенциал до плана/);
+assert.match(salesUi, /Это оценка потенциала, а не зафиксированная потеря/);
+assert.doesNotMatch(salesUi, /упущенн(?:ая|ой|ые)|потерянн(?:ая|ой|ые)/i, "growth UI does not label estimates as losses");
 assert.match(plansRoute, /saveSalesPlans\(access\.context/);
 assert.match(plansService, /branchAuditLog\.create/);
 assert.match(plansService, /runWithBranchApiTargetContext/);
+assert.match(plansService, /Attach rate задаётся только для воздушного или салонного фильтра/);
 assert.match(plansMigration, /CHECK \("month" ~/);
 
 console.log("sales performance analytics tests: ok");
