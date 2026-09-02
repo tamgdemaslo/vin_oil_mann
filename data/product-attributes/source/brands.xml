@@ -1,0 +1,693 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BrandValues>
+	<Brand>3TON</Brand>
+	<Brand>77 Lubricants</Brand>
+	<Brand>333</Brand>
+	<Brand>Abro</Brand>
+	<Brand>ABSEL</Brand>
+	<Brand>AC Delco</Brand>
+	<Brand>Addinol</Brand>
+	<Brand>Adeco</Brand>
+	<Brand>Adilof</Brand>
+	<Brand>AEG Lubricants</Brand>
+	<Brand>Afinol</Brand>
+	<Brand>AGR</Brand>
+	<Brand>Agrinol</Brand>
+	<Brand>Aim-One</Brand>
+	<Brand>Aimol</Brand>
+	<Brand>Akira</Brand>
+	<Brand>Akkora</Brand>
+	<Brand>Akross</Brand>
+	<Brand>Alkim Petrokimya</Brand>
+	<Brand>ALPET</Brand>
+	<Brand>Alpha Oil</Brand>
+	<Brand>ALPHAS</Brand>
+	<Brand>Alpine</Brand>
+	<Brand>Amalie</Brand>
+	<Brand>Amazon Lubricants</Brand>
+	<Brand>Amsoil</Brand>
+	<Brand>Aodes</Brand>
+	<Brand>APEX</Brand>
+	<Brand>Apollostation</Brand>
+	<Brand>APSCO</Brand>
+	<Brand>APTANIUM</Brand>
+	<Brand>Arabian Petroleum</Brand>
+	<Brand>Aral</Brand>
+	<Brand>ARCTIC CAT</Brand>
+	<Brand>Ardeca</Brand>
+	<Brand>Ardina</Brand>
+	<Brand>Ardol</Brand>
+	<Brand>Areca</Brand>
+	<Brand>Areol</Brand>
+	<Brand>Arial</Brand>
+	<Brand>Armor</Brand>
+	<Brand>Arrow</Brand>
+	<Brand>Arzol</Brand>
+	<Brand>ASILAK</Brand>
+	<Brand>ASSERT</Brand>
+	<Brand>Astron</Brand>
+	<Brand>ATLANTIC</Brand>
+	<Brand>Atlas Copco</Brand>
+	<Brand>Autobacs</Brand>
+	<Brand>Aveno</Brand>
+	<Brand>AVIA</Brand>
+	<Brand>Avista</Brand>
+	<Brand>Avisynth</Brand>
+	<Brand>AVOL STREICHERT</Brand>
+	<Brand>Ayger</Brand>
+	<Brand>AZMOL</Brand>
+	<Brand>Balevik</Brand>
+	<Brand>Bardahl</Brand>
+	<Brand>BAROX</Brand>
+	<Brand>BarrelTank</Brand>
+	<Brand>Behran</Brand>
+	<Brand>Belco</Brand>
+	<Brand>Bell1</Brand>
+	<Brand>Bendix Oil</Brand>
+	<Brand>Benzol</Brand>
+	<Brand>BiaoBang</Brand>
+	<Brand>BIKE4YOU</Brand>
+	<Brand>BiOil</Brand>
+	<Brand>Bizol</Brand>
+	<Brand>BMW</Brand>
+	<Brand>Bobcat</Brand>
+	<Brand>BP</Brand>
+	<Brand>BRAIT</Brand>
+	<Brand>Bravoil</Brand>
+	<Brand>Briggs&amp;Stratton</Brand>
+	<Brand>BRP</Brand>
+	<Brand>BTMOIL</Brand>
+	<Brand>BYD</Brand>
+	<Brand>C.N.R.G.</Brand>
+	<Brand>Caesar Motor Oils</Brand>
+	<Brand>Caldini</Brand>
+	<Brand>Canada Lubrifiant</Brand>
+	<Brand>Cartender</Brand>
+	<Brand>Carver</Brand>
+	<Brand>Carville Racing</Brand>
+	<Brand>Castle</Brand>
+	<Brand>Castrol</Brand>
+	<Brand>CATERPILLAR</Brand>
+	<Brand>Cepsa</Brand>
+	<Brand>Champion Oil</Brand>
+	<Brand>ChanganOil</Brand>
+	<Brand>Chempioil</Brand>
+	<Brand>Chery</Brand>
+	<Brand>CheryOil</Brand>
+	<Brand>Chevron</Brand>
+	<Brand>CHP</Brand>
+	<Brand>Chp Tehnogrease</Brand>
+	<Brand>Chrysler</Brand>
+	<Brand>Citroen/Peugeot</Brand>
+	<Brand>Claas</Brand>
+	<Brand>CNH Industrial</Brand>
+	<Brand>CNOOC</Brand>
+	<Brand>Comma</Brand>
+	<Brand>Condor</Brand>
+	<Brand>Consol</Brand>
+	<Brand>Copton</Brand>
+	<Brand>Country</Brand>
+	<Brand>Craftoil</Brand>
+	<Brand>Crocus</Brand>
+	<Brand>Cupper</Brand>
+	<Brand>Cworks</Brand>
+	<Brand>CYCLON</Brand>
+	<Brand>Daewoo</Brand>
+	<Brand>DAF</Brand>
+	<Brand>Dana Lubricants Factory</Brand>
+	<Brand>Datsun</Brand>
+	<Brand>DELPHI</Brand>
+	<Brand>DEUTZ</Brand>
+	<Brand>Devon</Brand>
+	<Brand>Dextrim</Brand>
+	<Brand>Divinol</Brand>
+	<Brand>DocDallas</Brand>
+	<Brand>Doosan</Brand>
+	<Brand>DRAGON POWER</Brand>
+	<Brand>duranza</Brand>
+	<Brand>EAGLE</Brand>
+	<Brand>Echo</Brand>
+	<Brand>Eco Fes</Brand>
+	<Brand>Eiffel</Brand>
+	<Brand>EKOIL</Brand>
+	<Brand>EKSO</Brand>
+	<Brand>Elementoil</Brand>
+	<Brand>Elf</Brand>
+	<Brand>Elissa</Brand>
+	<Brand>Elitech</Brand>
+	<Brand>Emarat</Brand>
+	<Brand>Eneos</Brand>
+	<Brand>ENI</Brand>
+	<Brand>Enix</Brand>
+	<Brand>ENOC</Brand>
+	<Brand>Enzo Lubricants</Brand>
+	<Brand>ERGOOIL</Brand>
+	<Brand>Errecom</Brand>
+	<Brand>ESSENZA</Brand>
+	<Brand>Eurol</Brand>
+	<Brand>Eurolub</Brand>
+	<Brand>Euronol</Brand>
+	<Brand>Europart</Brand>
+	<Brand>Eurorepar</Brand>
+	<Brand>Eurotec</Brand>
+	<Brand>EVANS</Brand>
+	<Brand>Everest</Brand>
+	<Brand>Evooil</Brand>
+	<Brand>ExLine Lubricants</Brand>
+	<Brand>Exoil</Brand>
+	<Brand>Exsoil</Brand>
+	<Brand>EXTREME LUBRICANTS</Brand>
+	<Brand>Exxa</Brand>
+	<Brand>Exxon</Brand>
+	<Brand>Fanfaro</Brand>
+	<Brand>FASTROIL</Brand>
+	<Brand>Favorit</Brand>
+	<Brand>Febi</Brand>
+	<Brand>Felix</Brand>
+	<Brand>Fighter</Brand>
+	<Brand>Ford</Brand>
+	<Brand>Forsage</Brand>
+	<Brand>Forum</Brand>
+	<Brand>Fosser</Brand>
+	<Brand>Foxy</Brand>
+	<Brand>FQ</Brand>
+	<Brand>Fuchs</Brand>
+	<Brand>Fukuoka Energy</Brand>
+	<Brand>Furo</Brand>
+	<Brand>Furo Sinto</Brand>
+	<Brand>G-Energy</Brand>
+	<Brand>G-motion</Brand>
+	<Brand>G-profi</Brand>
+	<Brand>GAC</Brand>
+	<Brand>Gans Oil</Brand>
+	<Brand>Gas&amp;Oil</Brand>
+	<Brand>Gazpromneft</Brand>
+	<Brand>GeelyOil</Brand>
+	<Brand>General</Brand>
+	<Brand>General-Petroleum</Brand>
+	<Brand>General Motors</Brand>
+	<Brand>Genuine</Brand>
+	<Brand>GF-6A</Brand>
+	<Brand>GIGAS</Brand>
+	<Brand>Gladiator</Brand>
+	<Brand>Glanz</Brand>
+	<Brand>G Line</Brand>
+	<Brand>GMS</Brand>
+	<Brand>GNV</Brand>
+	<Brand>GQOIL</Brand>
+	<Brand>Grace Lubricants</Brand>
+	<Brand>GRACE Toylex</Brand>
+	<Brand>GRAT</Brand>
+	<Brand>Green Forest</Brand>
+	<Brand>GreenLube</Brand>
+	<Brand>GS Caltex</Brand>
+	<Brand>GSM-MSK</Brand>
+	<Brand>Gt Cruizer</Brand>
+	<Brand>Gt oil</Brand>
+	<Brand>Gulf</Brand>
+	<Brand>Gulf Western Oil</Brand>
+	<Brand>Hanata</Brand>
+	<Brand>Hanval</Brand>
+	<Brand>Harley-Davidson</Brand>
+	<Brand>HavalOIl</Brand>
+	<Brand>Havens</Brand>
+	<Brand>Heck Oil</Brand>
+	<Brand>Hengst</Brand>
+	<Brand>Hessol</Brand>
+	<Brand>Hexol</Brand>
+	<Brand>Hi-Gear</Brand>
+	<Brand>Hidea</Brand>
+	<Brand>Highway</Brand>
+	<Brand>Hitatsu</Brand>
+	<Brand>HKS</Brand>
+	<Brand>HMP</Brand>
+	<Brand>HND</Brand>
+	<Brand>Holfier</Brand>
+	<Brand>Holv</Brand>
+	<Brand>Honda</Brand>
+	<Brand>HONO JAPAN</Brand>
+	<Brand>Husqvarna</Brand>
+	<Brand>Huter</Brand>
+	<Brand>HYLLE</Brand>
+	<Brand>Hyundai/Kia</Brand>
+	<Brand>Hyundai XTeer</Brand>
+	<Brand>I.G.A.T.</Brand>
+	<Brand>ICHIRO</Brand>
+	<Brand>Idemitsu</Brand>
+	<Brand>IGOL</Brand>
+	<Brand>Index M</Brand>
+	<Brand>Infinoil</Brand>
+	<Brand>Intex</Brand>
+	<Brand>INTREK</Brand>
+	<Brand>IP</Brand>
+	<Brand>Ipone</Brand>
+	<Brand>Isuzu</Brand>
+	<Brand>IXAT</Brand>
+	<Brand>JB GERMAN OIL</Brand>
+	<Brand>JCB</Brand>
+	<Brand>JDA</Brand>
+	<Brand>John Deere</Brand>
+	<Brand>Joyner</Brand>
+	<Brand>JSI</Brand>
+	<Brand>K1 Lube</Brand>
+	<Brand>K3N</Brand>
+	<Brand>Kangaroo</Brand>
+	<Brand>Kansler</Brand>
+	<Brand>KASDER</Brand>
+	<Brand>Kaskad</Brand>
+	<Brand>KAT-Lubricants</Brand>
+	<Brand>KATANA</Brand>
+	<Brand>Kendall</Brand>
+	<Brand>Kennol</Brand>
+	<Brand>Khamako</Brand>
+	<Brand>Kick Lubricants</Brand>
+	<Brand>KIREI Chemical</Brand>
+	<Brand>Kixx</Brand>
+	<Brand>Klotz</Brand>
+	<Brand>KNK</Brand>
+	<Brand>KOMATSU</Brand>
+	<Brand>Kompressol</Brand>
+	<Brand>Korson</Brand>
+	<Brand>Koryo</Brand>
+	<Brand>Kraftmax</Brand>
+	<Brand>Kraft oil</Brand>
+	<Brand>Kroon oil</Brand>
+	<Brand>Kross</Brand>
+	<Brand>KSMG</Brand>
+	<Brand>KTM</Brand>
+	<Brand>KunLun</Brand>
+	<Brand>Kuttenkeuler</Brand>
+	<Brand>Lada</Brand>
+	<Brand>LAT</Brand>
+	<Brand>Lavr</Brand>
+	<Brand>Lecar</Brand>
+	<Brand>Leibabo</Brand>
+	<Brand>Lemarc</Brand>
+	<Brand>Lexus</Brand>
+	<Brand>Liebherr</Brand>
+	<Brand>LIFAN</Brand>
+	<Brand>lihon</Brand>
+	<Brand>Liqui Moly</Brand>
+	<Brand>LiuGong</Brand>
+	<Brand>Livcar</Brand>
+	<Brand>Lixiang</Brand>
+	<Brand>LOGGER</Brand>
+	<Brand>Loncin</Brand>
+	<Brand>Lopal</Brand>
+	<Brand>Lotos</Brand>
+	<Brand>Lubex</Brand>
+	<Brand>Lubratech</Brand>
+	<Brand>Lubrex</Brand>
+	<Brand>Lubrico</Brand>
+	<Brand>LUBRIGARD</Brand>
+	<Brand>LUBSAR</Brand>
+	<Brand>Lucas</Brand>
+	<Brand>Lukoil</Brand>
+	<Brand>Luxe</Brand>
+	<Brand>LY</Brand>
+	<Brand>Mabanol</Brand>
+	<Brand>MAG 1</Brand>
+	<Brand>Mag Lubricants</Brand>
+	<Brand>Magna</Brand>
+	<Brand>Mando</Brand>
+	<Brand>MANITOU</Brand>
+	<Brand>Mannol</Brand>
+	<Brand>MAPETROL</Brand>
+	<Brand>Marine</Brand>
+	<Brand>Marine Rocket</Brand>
+	<Brand>Marshall</Brand>
+	<Brand>Masuma</Brand>
+	<Brand>MAUSER</Brand>
+	<Brand>Maxcut</Brand>
+	<Brand>Max Factory</Brand>
+	<Brand>MAXIMA</Brand>
+	<Brand>Maxmo</Brand>
+	<Brand>Mazda</Brand>
+	<Brand>McCulloch</Brand>
+	<Brand>Mechanical Brothers</Brand>
+	<Brand>Megaprofy</Brand>
+	<Brand>Meguin</Brand>
+	<Brand>Mercedes</Brand>
+	<Brand>Mercury</Brand>
+	<Brand>Metaco</Brand>
+	<Brand>Michang</Brand>
+	<Brand>Michi</Brand>
+	<Brand>Micking</Brand>
+	<Brand>Millers Oils</Brand>
+	<Brand>MINEROL</Brand>
+	<Brand>Mio car</Brand>
+	<Brand>Mirax</Brand>
+	<Brand>MirrOils</Brand>
+	<Brand>Mishimo</Brand>
+	<Brand>Mitasu</Brand>
+	<Brand>Mitsubishi</Brand>
+	<Brand>MITSUOIL</Brand>
+	<Brand>Mobil</Brand>
+	<Brand>Mol</Brand>
+	<Brand>Moly Green</Brand>
+	<Brand>Momin</Brand>
+	<Brand>MONEX</Brand>
+	<Brand>Monterossi</Brand>
+	<Brand>Monza</Brand>
+	<Brand>Mopar</Brand>
+	<Brand>Motorcraft</Brand>
+	<Brand>Motorex</Brand>
+	<Brand>Motul</Brand>
+	<Brand>Mozer</Brand>
+	<Brand>MPM Oil</Brand>
+	<Brand>Munhen Germany</Brand>
+	<Brand>My Project</Brand>
+	<Brand>Mzd</Brand>
+	<Brand>Nadun</Brand>
+	<Brand>Nafta</Brand>
+	<Brand>Navigator</Brand>
+	<Brand>Neftesintez</Brand>
+	<Brand>NEO</Brand>
+	<Brand>NERAIN</Brand>
+	<Brand>Nerson</Brand>
+	<Brand>Neste</Brand>
+	<Brand>Nestro</Brand>
+	<Brand>NEXXOL</Brand>
+	<Brand>NGN</Brand>
+	<Brand>Nishimoto</Brand>
+	<Brand>Nissan</Brand>
+	<Brand>Nomad</Brand>
+	<Brand>Nord</Brand>
+	<Brand>NordFire</Brand>
+	<Brand>Nord Oil</Brand>
+	<Brand>NORD TREK</Brand>
+	<Brand>NORTHOIL</Brand>
+	<Brand>North Sea Lubricants</Brand>
+	<Brand>NOVOIL</Brand>
+	<Brand>Novonol</Brand>
+	<Brand>Novus</Brand>
+	<Brand>O.E.M. Truck</Brand>
+	<Brand>OEM</Brand>
+	<Brand>OilBaltic</Brand>
+	<Brand>OILOK</Brand>
+	<Brand>Oilright</Brand>
+	<Brand>Oilway</Brand>
+	<Brand>Okano</Brand>
+	<Brand>Olex</Brand>
+	<Brand>Olympia</Brand>
+	<Brand>Onzoil</Brand>
+	<Brand>Opel</Brand>
+	<Brand>Opet</Brand>
+	<Brand>OPTITECH</Brand>
+	<Brand>Oregon</Brand>
+	<Brand>Orlen Oil</Brand>
+	<Brand>Oscar</Brand>
+	<Brand>Otomoshi</Brand>
+	<Brand>Pakelo</Brand>
+	<Brand>Pars Oil</Brand>
+	<Brand>PARTNUMBER 710</Brand>
+	<Brand>Patriot</Brand>
+	<Brand>Patron</Brand>
+	<Brand>PEAK</Brand>
+	<Brand>Pemco</Brand>
+	<Brand>Pennol</Brand>
+	<Brand>Pennzoil</Brand>
+	<Brand>Penrite</Brand>
+	<Brand>Pentosynth</Brand>
+	<Brand>Peravia</Brand>
+	<Brand>PERFECT</Brand>
+	<Brand>Persoil</Brand>
+	<Brand>Petro-Canada</Brand>
+	<Brand>Petro-Florida</Brand>
+	<Brand>PETROCAND</Brand>
+	<Brand>PETROFER</Brand>
+	<Brand>Petrolero</Brand>
+	<Brand>Petrol Ofisi</Brand>
+	<Brand>Petromax</Brand>
+	<Brand>Petronas</Brand>
+	<Brand>PetroViscol</Brand>
+	<Brand>Petrovoll</Brand>
+	<Brand>Pexol</Brand>
+	<Brand>Phillips 66 Lubricants</Brand>
+	<Brand>PHI OIL</Brand>
+	<Brand>Pilots</Brand>
+	<Brand>Polar Badger</Brand>
+	<Brand>Polaris</Brand>
+	<Brand>Polymerium</Brand>
+	<Brand>Prima-Oil</Brand>
+	<Brand>Primetech</Brand>
+	<Brand>Prista</Brand>
+	<Brand>Professional Hundert</Brand>
+	<Brand>Profi-Car</Brand>
+	<Brand>Profix</Brand>
+	<Brand>PROMATIX</Brand>
+	<Brand>Protol</Brand>
+	<Brand>PTT Lubricants</Brand>
+	<Brand>Putoline</Brand>
+	<Brand>Q8</Brand>
+	<Brand>QC OIL</Brand>
+	<Brand>QuakerState</Brand>
+	<Brand>QUALITET</Brand>
+	<Brand>Quality Formula</Brand>
+	<Brand>Quicksilver</Brand>
+	<Brand>QVpro</Brand>
+	<Brand>Race Motor</Brand>
+	<Brand>Ravel</Brand>
+	<Brand>RAVENOL</Brand>
+	<Brand>Real</Brand>
+	<Brand>Red Dragon Group</Brand>
+	<Brand>RedLine</Brand>
+	<Brand>Red Tiger</Brand>
+	<Brand>ReinWell</Brand>
+	<Brand>Rektol</Brand>
+	<Brand>Relynolli</Brand>
+	<Brand>Renault</Brand>
+	<Brand>Renovar</Brand>
+	<Brand>Repsol</Brand>
+	<Brand>Revline</Brand>
+	<Brand>Rewoll</Brand>
+	<Brand>Rexoil</Brand>
+	<Brand>Rezoil</Brand>
+	<Brand>RhinOIL</Brand>
+	<Brand>RichOil</Brand>
+	<Brand>Rinkai</Brand>
+	<Brand>RINNOL</Brand>
+	<Brand>RITOLI</Brand>
+	<Brand>RiverShark</Brand>
+	<Brand>RIXX</Brand>
+	<Brand>RIZOLL</Brand>
+	<Brand>RM</Brand>
+	<Brand>Rock Oil</Brand>
+	<Brand>Rolf</Brand>
+	<Brand>Rowe</Brand>
+	<Brand>Rulexx Plus</Brand>
+	<Brand>Ruseff</Brand>
+	<Brand>Ruxx Oil</Brand>
+	<Brand>RW</Brand>
+	<Brand>Ryde</Brand>
+	<Brand>Rymax</Brand>
+	<Brand>Ryseup</Brand>
+	<Brand>S-Oil</Brand>
+	<Brand>Sakura</Brand>
+	<Brand>Samic</Brand>
+	<Brand>Sanlube</Brand>
+	<Brand>SANY</Brand>
+	<Brand>Sash</Brand>
+	<Brand>SatOil</Brand>
+	<Brand>Savsol</Brand>
+	<Brand>Scania</Brand>
+	<Brand>SCOPE</Brand>
+	<Brand>Screamin Eagle</Brand>
+	<Brand>Seagull</Brand>
+	<Brand>Seiken</Brand>
+	<Brand>Senfineco</Brand>
+	<Brand>SERVO</Brand>
+	<Brand>Shantui</Brand>
+	<Brand>Shell</Brand>
+	<Brand>Shield Lubricants</Brand>
+	<Brand>Shinobi</Brand>
+	<Brand>Siboil</Brand>
+	<Brand>Sinica</Brand>
+	<Brand>Sinopec</Brand>
+	<Brand>Sintec</Brand>
+	<Brand>SITRAK</Brand>
+	<Brand>SKODA</Brand>
+	<Brand>SMK Produkt</Brand>
+	<Brand>Spectrol</Brand>
+	<Brand>Speedol</Brand>
+	<Brand>SRS</Brand>
+	<Brand>Ssang Yong</Brand>
+	<Brand>Stanley</Brand>
+	<Brand>StanOil</Brand>
+	<Brand>StarkOil</Brand>
+	<Brand>Steel Fox</Brand>
+	<Brand>STELS</Brand>
+	<Brand>STIHL</Brand>
+	<Brand>ST Oil</Brand>
+	<Brand>STP</Brand>
+	<Brand>Strong Oil</Brand>
+	<Brand>Subaru</Brand>
+	<Brand>Sumico</Brand>
+	<Brand>Sumitachi</Brand>
+	<Brand>SUNGBO</Brand>
+	<Brand>Suprema</Brand>
+	<Brand>Suprotec</Brand>
+	<Brand>Suzuki</Brand>
+	<Brand>SVANCER</Brand>
+	<Brand>SWAG</Brand>
+	<Brand>SWD Rheinol</Brand>
+	<Brand>Synolex</Brand>
+	<Brand>Tactil</Brand>
+	<Brand>Tahoshy</Brand>
+	<Brand>TAIF</Brand>
+	<Brand>Takay</Brand>
+	<Brand>Takayama</Brand>
+	<Brand>Takumi</Brand>
+	<Brand>Takuro</Brand>
+	<Brand>Taler</Brand>
+	<Brand>Tamashi</Brand>
+	<Brand>Taneco</Brand>
+	<Brand>TANI</Brand>
+	<Brand>Tarmond</Brand>
+	<Brand>Tatneft</Brand>
+	<Brand>Tauberg</Brand>
+	<Brand>TCK</Brand>
+	<Brand>TCL</Brand>
+	<Brand>TEBOIL</Brand>
+	<Brand>Technol</Brand>
+	<Brand>Techno Power</Brand>
+	<Brand>Tecnol</Brand>
+	<Brand>TEHNOIL</Brand>
+	<Brand>TEL</Brand>
+	<Brand>Terrion OIL</Brand>
+	<Brand>TESLA</Brand>
+	<Brand>Teslaine</Brand>
+	<Brand>TESMA</Brand>
+	<Brand>Tetrol</Brand>
+	<Brand>Texaco</Brand>
+	<Brand>Texas</Brand>
+	<Brand>Texoil</Brand>
+	<Brand>TEXXUM</Brand>
+	<Brand>TGB</Brand>
+	<Brand>TGR</Brand>
+	<Brand>The beast</Brand>
+	<Brand>TIR-OIL</Brand>
+	<Brand>Titex</Brand>
+	<Brand>TIXXON</Brand>
+	<Brand>TLP</Brand>
+	<Brand>Tohatsu</Brand>
+	<Brand>TOM&apos;S</Brand>
+	<Brand>Tomoil</Brand>
+	<Brand>Top Drive</Brand>
+	<Brand>TOR</Brand>
+	<Brand>Totachi</Brand>
+	<Brand>Total</Brand>
+	<Brand>Totek</Brand>
+	<Brand>Toyama</Brand>
+	<Brand>Toyota</Brand>
+	<Brand>TSD PRO</Brand>
+	<Brand>TUTALL</Brand>
+	<Brand>TWC</Brand>
+	<Brand>UAZ</Brand>
+	<Brand>ULTROL</Brand>
+	<Brand>Unil</Brand>
+	<Brand>United Grease &amp; Lubricants (UGL)</Brand>
+	<Brand>United Oil</Brand>
+	<Brand>UNIX</Brand>
+	<Brand>UNZER</Brand>
+	<Brand>USE</Brand>
+	<Brand>US Lube</Brand>
+	<Brand>VAG</Brand>
+	<Brand>Vaico</Brand>
+	<Brand>Valesko</Brand>
+	<Brand>Valvoline</Brand>
+	<Brand>Vapro Lubricant</Brand>
+	<Brand>Vatoil</Brand>
+	<Brand>Vectrol</Brand>
+	<Brand>VENOL</Brand>
+	<Brand>Verity</Brand>
+	<Brand>Villartec</Brand>
+	<Brand>Vitex</Brand>
+	<Brand>VMLUBE</Brand>
+	<Brand>VOLEX</Brand>
+	<Brand>Volkswagen</Brand>
+	<Brand>Vollmax</Brand>
+	<Brand>Volume</Brand>
+	<Brand>Volvo</Brand>
+	<Brand>VOYAH</Brand>
+	<Brand>Wabco</Brand>
+	<Brand>Wakos</Brand>
+	<Brand>Wectol</Brand>
+	<Brand>WEGO</Brand>
+	<Brand>WEICHAI</Brand>
+	<Brand>Well Run</Brand>
+	<Brand>WEZZER</Brand>
+	<Brand>WINDEX</Brand>
+	<Brand>Windigo</Brand>
+	<Brand>WinSteel</Brand>
+	<Brand>Wolf oil</Brand>
+	<Brand>Wolver</Brand>
+	<Brand>Wynns</Brand>
+	<Brand>X-oil</Brand>
+	<Brand>Xado</Brand>
+	<Brand>XCMG</Brand>
+	<Brand>X ELEMENT</Brand>
+	<Brand>Xenol</Brand>
+	<Brand>Xenum</Brand>
+	<Brand>XIM</Brand>
+	<Brand>XPS</Brand>
+	<Brand>Yacco</Brand>
+	<Brand>Yamaha</Brand>
+	<Brand>Yamalube</Brand>
+	<Brand>Yasaki</Brand>
+	<Brand>YMIOIL</Brand>
+	<Brand>Yokki</Brand>
+	<Brand>Yuchai Petronas</Brand>
+	<Brand>Zeffo</Brand>
+	<Brand>Zeith</Brand>
+	<Brand>Zekkert</Brand>
+	<Brand>ZENQ</Brand>
+	<Brand>Zepro</Brand>
+	<Brand>Zero Mileage</Brand>
+	<Brand>ZF Lifeguard</Brand>
+	<Brand>ZIC</Brand>
+	<Brand>Zinol</Brand>
+	<Brand>Ziplix</Brand>
+	<Brand>Автол</Brand>
+	<Brand>АНВЕК ЭНЕРГО</Brand>
+	<Brand>АО &quot;Русская механика&quot;</Brand>
+	<Brand>БОНМЗ</Brand>
+	<Brand>ВМПАВТО</Brand>
+	<Brand>Волга-Ойл</Brand>
+	<Brand>ГАЗ</Brand>
+	<Brand>ГлавСмаз</Brand>
+	<Brand>Евростар</Brand>
+	<Brand>ЗМЗ</Brand>
+	<Brand>ЗМТМ</Brand>
+	<Brand>ЗУБР</Brand>
+	<Brand>Империя Оил</Brand>
+	<Brand>ИНТЕР</Brand>
+	<Brand>ИНТЕРСКОЛ</Brand>
+	<Brand>Каждый день</Brand>
+	<Brand>Калибр</Brand>
+	<Brand>Кама Ойл</Brand>
+	<Brand>ККМ</Brand>
+	<Brand>КРУЗАК</Brand>
+	<Brand>Ладога</Brand>
+	<Brand>Лакирис</Brand>
+	<Brand>МБ РУС</Brand>
+	<Brand>МЕТКОЕ</Brand>
+	<Brand>Мотордеталь</Brand>
+	<Brand>МПГ СИСТЕМА</Brand>
+	<Brand>НАНОТЕК</Brand>
+	<Brand>Нафтан</Brand>
+	<Brand>Нейс-Деталь</Brand>
+	<Brand>ПЗМ</Brand>
+	<Brand>РЗСМ</Brand>
+	<Brand>Роснефть</Brand>
+	<Brand>РУСМА</Brand>
+	<Brand>Русойл</Brand>
+	<Brand>Симэкс-Хим</Brand>
+	<Brand>Союз</Brand>
+	<Brand>СоюзАвиаХим</Brand>
+	<Brand>ТНК</Brand>
+	<Brand>ХимАвто</Brand>
+	<Brand>Честное Моторное</Brand>
+	<Brand>ЭZO</Brand>
+	<Brand>Экохимтех</Brand>
+</BrandValues>

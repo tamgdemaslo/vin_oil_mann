@@ -37973,6 +37973,40 @@ select.eco-input::-ms-expand,
   margin-left: auto;
 }
 
+.product-editor-preserved-fields {
+  display: grid;
+  flex: 1 1 360px;
+  gap: 7px;
+  min-width: 0;
+}
+
+.product-editor-preserved-fields dl,
+.product-editor-preserved-fields dd {
+  margin: 0;
+}
+
+.product-editor-preserved-fields dl {
+  display: grid;
+  gap: 4px;
+}
+
+.product-editor-preserved-fields dl > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.product-editor-preserved-fields dt {
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+.product-editor-preserved-fields dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--eco-ink);
+  font-weight: 700;
+}
+
 .product-editor-empty-note {
   padding: 14px;
   color: var(--eco-muted);
@@ -39297,6 +39331,330 @@ textarea.product-editor-input {
 .product-supplier-popover__actions button:hover { background: var(--eco-hover); }
 .product-supplier-popover__actions button:last-child { color: var(--eco-info); }
 
+.product-attribute-field.is-multi {
+  grid-column: 1 / -1;
+}
+
+.product-attribute-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 6px;
+  background: var(--eco-surface);
+  transition: border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.product-attribute-control:hover:not(.is-disabled) {
+  border-color: var(--eco-ink-3);
+}
+
+.product-attribute-control:focus-within,
+.product-attribute-control.is-open {
+  border-color: var(--eco-info);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--eco-info) 18%, transparent);
+}
+
+.product-attribute-control.is-disabled {
+  opacity: 0.62;
+  background: var(--eco-surface-sunk);
+}
+
+.product-attribute-control > input.product-editor-input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 38px;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0;
+}
+
+.product-attribute-clear {
+  position: absolute;
+  right: 5px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--eco-muted);
+  border-radius: 5px;
+}
+
+.product-attribute-clear:hover {
+  color: var(--eco-ink);
+  background: var(--eco-hover);
+}
+
+.product-attribute-clear svg,
+.product-attribute-chevron,
+.product-attribute-popover svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.product-attribute-chevron {
+  position: absolute;
+  right: 12px;
+  color: var(--eco-muted);
+  pointer-events: none;
+}
+
+.product-attribute-multi-control {
+  min-height: 44px;
+  padding: 5px 36px 5px 6px;
+}
+
+.product-attribute-chips {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.product-attribute-chips > input {
+  flex: 1 1 150px;
+  min-width: 120px;
+  min-height: 30px;
+  padding: 0 5px;
+  color: var(--eco-ink);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.product-attribute-chips > input::placeholder {
+  color: var(--eco-muted);
+  opacity: 1;
+}
+
+.product-attribute-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  min-height: 29px;
+  padding: 2px 3px 2px 9px;
+  color: var(--eco-ink);
+  border-radius: 999px;
+  background: var(--eco-info-tint);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.product-attribute-chip > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.product-attribute-chip.is-custom {
+  color: #5e4816;
+  background: #fff4cc;
+}
+
+.product-attribute-chip small {
+  color: currentColor;
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.76;
+}
+
+.product-attribute-chip button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: currentColor;
+  border-radius: 999px;
+}
+
+.product-attribute-chip button:hover,
+.product-attribute-chip button:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  outline: none;
+}
+
+.product-attribute-chip button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.product-attribute-popover {
+  position: fixed;
+  z-index: var(--eco-z-floating-control);
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 8px;
+  background: var(--eco-surface);
+  box-shadow: 0 4px 8px color-mix(in srgb, var(--eco-ink) 16%, transparent);
+}
+
+.product-attribute-options {
+  min-height: 42px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+}
+
+.product-attribute-options > button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  color: var(--eco-ink);
+  border-radius: 5px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.product-attribute-options > button:hover,
+.product-attribute-options > button.is-active {
+  background: var(--eco-info-tint);
+}
+
+.product-attribute-options > button:focus-visible {
+  outline: 2px solid var(--eco-info);
+  outline-offset: -2px;
+}
+
+.product-attribute-options > button small {
+  flex: 0 0 auto;
+  color: var(--eco-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.product-attribute-options > button > svg {
+  color: var(--eco-info);
+}
+
+.product-attribute-empty,
+.product-attribute-state,
+.product-attribute-source-note {
+  color: var(--eco-muted);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.product-attribute-empty {
+  padding: 15px 10px;
+  text-align: center;
+}
+
+.product-attribute-state {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.product-attribute-state.is-error {
+  color: var(--eco-danger);
+}
+
+.product-attribute-state button,
+.product-attribute-suggestion button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 8px;
+  color: var(--eco-ink);
+  border: 1px solid var(--eco-line-strong);
+  border-radius: 5px;
+  background: var(--eco-surface);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.product-attribute-create {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--eco-info);
+  border-top: 1px solid var(--eco-line);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.product-attribute-create:hover {
+  background: var(--eco-hover);
+}
+
+.product-attribute-create strong {
+  overflow-wrap: anywhere;
+}
+
+.product-attribute-normalization-note,
+.product-attribute-suggestion {
+  display: flex;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--eco-line);
+  background: var(--eco-info-tint);
+  color: var(--eco-ink);
+  font-size: 11px;
+}
+
+.product-attribute-normalization-note {
+  align-items: center;
+}
+
+.product-attribute-normalization-note svg {
+  color: var(--eco-info);
+}
+
+.product-attribute-suggestion {
+  background: #fff7dc;
+}
+
+.product-attribute-suggestion > svg {
+  margin-top: 1px;
+  color: #8a6412;
+}
+
+.product-attribute-suggestion > div {
+  display: grid;
+  gap: 4px;
+}
+
+.product-attribute-suggestion span {
+  color: #5e522f;
+}
+
+.product-attribute-suggestion > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.product-attribute-source-note {
+  padding: 7px 10px;
+  border-top: 1px solid var(--eco-line);
+  background: var(--eco-surface-sunk);
+}
+
 .product-supplier-modal-backdrop {
   position: fixed;
   z-index: var(--eco-z-nested-dialog);
@@ -39740,6 +40098,25 @@ textarea.product-editor-input {
 }
 
 @media (max-width: 640px) {
+  .product-editor-preserved-fields dl > div {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .product-attribute-popover {
+    border-radius: 10px;
+  }
+
+  .product-attribute-options > button {
+    min-height: 44px;
+    align-items: flex-start;
+  }
+
+  .product-attribute-options > button span,
+  .product-attribute-create span {
+    overflow-wrap: anywhere;
+  }
+
   .product-editor-backdrop {
     justify-content: stretch;
   }
@@ -39881,6 +40258,12 @@ textarea.product-editor-input {
     max-width: 100%;
     overflow-wrap: anywhere;
     white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-attribute-control {
+    transition: none;
   }
 }
 

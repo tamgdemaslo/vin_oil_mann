@@ -1,0 +1,2339 @@
+{
+  "mode": "DRY_RUN",
+  "database": {
+    "host": "127.0.0.1",
+    "database": "eco_sales_manifest_20260802"
+  },
+  "dictionaryVersion": "52a1a8b775c4ff10",
+  "sourceComplete": true,
+  "schemaScope": "LEGACY_UNSCOPED",
+  "productCount": 1752,
+  "changeCount": 169,
+  "changes": [
+    {
+      "productId": "cmphdg4ha012z8zkszzre6b2w",
+      "productName": "Воздушный фильтр HENGST E1779L",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Воздушные фильтры",
+      "field": "brand",
+      "before": "HENGST",
+      "after": "Hengst",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmqwd6kjz006xmp0pj06fd6b4",
+      "productName": "Воздушный фильтр HENGST E1015L",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Воздушные фильтры",
+      "field": "brand",
+      "before": "HENGST",
+      "after": "Hengst",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdfwyc01298zksh2ka35x0",
+      "productName": "Маслянный фильтр HENGST FILTER H97W16",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масляные фильтры",
+      "field": "brand",
+      "before": "HENGST",
+      "after": "Hengst",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdnr8101s68zkspvlemc4e",
+      "productName": "Масляный фильтр Patron PF4201KOR (HU7030Z)",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масляные фильтры",
+      "field": "brand",
+      "before": "PATRON",
+      "after": "Patron",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlgj101kk8zks9jgqzziv",
+      "productName": "Салонный фильтр METACO",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Салонные фильтры",
+      "field": "brand",
+      "before": "METACO",
+      "after": "Metaco",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdg7nq01398zkscvfqqizk",
+      "productName": "06162 FEBI Гидравлическая жидкость",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах трансмисионное",
+      "field": "brand",
+      "before": "Swag",
+      "after": "SWAG",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd1rne00928zksm1kb4ge2",
+      "productName": "BARDAHL XTS 5W-30, моторное масло, 100 мл.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло моторное в бочках на розлив",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A|FORD WSS-M2C913-B|FORD WSS-M2C913-C|FORD WSS-M2C913-D|RENAULT RN 0700|Jaguar/Land Rover STJLR.03.5003",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Renault RN 0700; Jaguar/Land Rover STJLR.03.5003",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdmr5401ou8zksi6f6kmkv",
+      "productName": "BARDAHL XTS 5W-40, моторное масло 100 мл.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло моторное в бочках на розлив",
+      "field": "oem",
+      "before": "MB 229.3|MB 229.5|BMW LongLife-01|VW 502.00/505.00|VW 501.01|PORSCHE A40|Renault RN 0700|Renault RN 0710|PSA B71 2296",
+      "after": "MB 229.3; MB 229.5; BMW Longlife-01; VW 502.00/505.00; VW 501.01; PORSCHE A40; Renault RN 0700; Renault RN 0710; PSA B71 2296",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmqrzv88r00r1rs0ptfvupqdw",
+      "productName": "BARDAHL XTS 5W-40, моторное масло на розлив 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло моторное в бочках на розлив",
+      "field": "oem",
+      "before": "MB 229.3|MB 229.5|BMW LongLife-01|VW 502.00/505.00|VW 501.01|PORSCHE A40|Renault RN 0700|Renault RN 0710|PSA B71 2296",
+      "after": "MB 229.3; MB 229.5; BMW Longlife-01; VW 502.00/505.00; VW 501.01; PORSCHE A40; Renault RN 0700; Renault RN 0710; PSA B71 2296",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdkc4o01gs8zkskzfqero8",
+      "productName": "Масло трансмиссионное Valvoline Light & Heavy Duty ATF / CVT , 1л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло трансмиссионное в бочках на розлив",
+      "field": "atf",
+      "before": "Acura\tATF-Z1 Aisin Warner\tAW-1; AW-2; JWS 3309; JWS 3324 Allison\tC-3; C-4; TES-295; TES-389 American Motors\tATF +3; ATF +4 Applo/IKC\tATF RED 1; RED 1K Audi/VW\tLT71141; G 052 025-A2; G 052 162-A1/A2; G 052 990; G 053 025-A2; G 055 005-A/A1/A2; G 055 025-A2; G 055 162-A2/A6; G 055 540-A2; G 060 162 Bentley\tPY112995PA BMW\t7045E (83 22 0 026 922); 81 22 9 400 272/275; 81 22 9 407 858/859; 83 22 024 359; 83 22 0403 248; 83 22 0403 249; 83 22 9 407 765; 83 220 142 516; 83 220 397 114; 83 220 402 413; 83 222 152 426; 83 222 289 720; 83 227 542 290; 83 229 407 807; ATF 3.0; ETL-8072B (83 22 9 407 807); JWS 3309; LA2634; LT71141; M-1375 4; MINI (83 22 0 402 413); ZF Lifeguardfluid 6; ZF Lifeguardfluid 8 Bosch\tTE-ML 09 Caterpillar\tCAT TO-2 Chrysler\tATF+3; ATF+4; ATF+, +2; MOPAR AS 68 RC (T-lV), JWS 3309; NAG 2 Chrysler/Dodge/Jeep\t05127382AA; 68043742AA<; 68157995AA; NAG 1 Daewoo\tLT 71141 Daihatsu\tAMMIX ATF D-II; AMMIX ATFD-III SP Fiat\tT-IV type; JWS 3309 Ford\tESP-M2C166H, XL-12; FNR5; M2C138CJ; M2C166H; MERCON® LV (FF-WSS-M2C-938A/SF, XR-10 QLV); MERCON® SR; MERCON® V; MERCON®; Type F; Type G; WSS-M2C-138CJ, 166H; WSS-M2C-922A1, 924A (XT-8-QAW); JWS 3309; XT-2-QDX(M); XT-2-QSM(Syn); XT-5-QM(V); XT-6-QSP or-DSP (SP); XT-9-QMMF5 Fuso\tATF-A4; ATF-II; ATF-SPIII GM\t1940700; 1940767; 12378515; 21005966; 22717466; 88900925; 93160393; GM Autotrak II; GM DEXRON - VI; GM DEXRON - II; GM DEXRON MD; GM DEXRON*- IIE; GM DEXRON - IIIG; GM DEXRON - IIIH; GM TASA GM/GMC/Opel/Saturn\t88863400; 88863401; AW-1 Hino\tBlue Ribbon ATF Honda\tATF-Z1 (кроме CVT); DW-1; Тип 3.0 и 3.1 Hyundai/Kia\t040000C90SG; Dex-II/SP-II; NWS 9638; SP-III; SP-IV; SP-IV H; SP-IV M; SP-IV-RR; WS3314 Idemitsu\tK17 3100 PL085 Isuzu\t08200-9001; SCS Fluid Isuzu Besco\tATF-II; ATF-III; ATF-SP Jaguar\tATF LT71141, ZF 5HP24; ATF 3403, JLM20238; ATF3403-M115; Jaguar Fluid 8432; JLM 20292; JLM 21044 JASO\tM315-2013 1A; M315-2013 1A-LV; M315-2013 2A Jeep\tATF+3, +4 Kia\tATF Red 1; ATF SP-II; ATF SP-III; ATF SP-IV; ATF SP-IV M Land Rover\tLR0022460; LR023288; TYK500050 Lexus\tJWS 3309 MAN\t339 Type D; 339 Type F; 339 V2; 339 Z1; 339 Z2; 339 Z3; MAN 339 V1 Maserati\t231603 Mazda\tATF 3317; ATF F-1; ATF FZ; ATF M-III; ATF M-V; ATF N-1; ATF S-1; D-II MB (Mercedes Benz)\t236.1; 236.11; 236.12; 236.14; 236.15; 236.16; 236.2; 236.3; 236.41; 236.6; 236.7; 236.8; 236.9; 236.91; ZF 4HP20 Mini\tT-IV Разное\tM1375.6 Mitsubishi\tDiaqueen ATF PA; Diaqueen AW; Diaqueen J2; Diaqueen J3; Diaqueen SK; Diaqueen SP-II; Diaqueen SP-III; Diaqueen SP-IV Nissan\tMatic Fluid C; Matic Fluid D; Matic Fluid J; Matic Fluid K; Matic Fluid S; Matic Fluid W Opel/GM\t9986195; 88900925; 19 40 700; 19 40 767; Моноблочная трансмиссия 21005966; 2.217.466 Peugeot/Citroen\tZ000169756 Peugeot\tZF 4HP20 Porsche\t000 043 205 09; 000 043 205 28; 000 043 304 00; 999 917 547 00 (A2); ATF 3403-M115; T-IV (JWS 3309); Z000169756; ZF 5HP19FL, ZF 5HP20, LT71141 Renault\tDPO/AL4; Matic D2; Samsung SATF-D Saab\t93.160.393; 93.165.147; T-IV (JWS 3309) Saturn\tT-IV (JWS 3309) Scion\tВсе автомобили Subaru\tDSIH 5M-66; ATF; ATF 5AT; ATF HP; Dexron-II; K0140Y0700 Suzuki\tAT OIL 5D06; ATF 2326; ATF 2384K; ATF 3314; ATF 3317; ATF AW-1; JWS 3309 Toyota\tATF D-II; ATF D-III; ATF T-III; ATF T-IV; ATF Type T; ATF WS Vickers\tM2950-S, I-286-S Voith\t55.6335. XX (G607); 55.6336. XX (G13636); Бюллетень технического обслуживания № 013 и № 118 Volvo\t97325; 97335; CE 97340; CE 97341; CE 97342; PN 1161521; PN 1161540/1161640; STD 1273 41 VW (Volkswagen)\t5 HP (ZF 5 HP 30) 5HP(18FL, 30) 5HP (19FL, 24A); G US 000 162; G 052 025-A2; G 052 055; G 052 162-A1/A2 (ZF Lifeguardfluid 5); G 052 990; G 053 025-A2; G 055 005-A/A1/A2 (ZF Lifeguardfluid 6); G 055 025 A2 (JWS 3309); G 055 162-A2/A6 (ZF Lifeguardfluid 6+); G 055 540-A2; G 060 162 (ZF Lifeguardfluid 8); G-053 162 A1 (ZF Lifeguardfluid 5); LT71141; TL 521 62 ZF\t3-, 4-, 5-, 6 и 8-ступенчатые коробки передач; TE-ML 02F; TE-ML 03D; TE-ML 04D; TE-ML 05L; TE-ML 09; TE-ML 11 A, 11B; TE-ML 14A; TE-ML 14B; TE-ML 14C; TE-ML 16L; TE-ML 17C; TE-ML 21L OEM\tСпецификации для вариатора Audi\tMultitronic BMW/Mini\tEZL 799/ 83 22 0 136 376/ 83 22 0 429 154 Chery\tCVT Chrysler/Dodge/Jeep\tCVT+4; NS-2 Daihatsu\tAMMIX CVTF DFE; AMMIX CVT Fluid DC; AMMIX CVT Fluid DFC; Fluid TC Ford\tCFT; CVT 30 или WSS-M2C933A; MERCON® C Fujijyuuko\ti-CVTF FG GM/Saturn\tDEX-CVT Honda\tMultimatic HMMF (без пусковой муфты); HCF2; Z-1 (модель с CVT, без пусковой муфты) ;Honda CVT Hyundai/Kia\tCVT-J1; SP III (модель с CVT) Idemitsu\tCVTS-EX1 Lexus\tFluid TC, Fluid FE Mazda\tJWS3320 MB (Mercedes Benz)\t236.20/ CVT28 MG Rover\tEM-CVT Mini\tEZL/EZL 799A.ZF CVT V1 Mitsubishi\tCVTF-J1 (MMC Diaqueen CVT Fluid J1); CVTF-J4 и -J4+ (MMC Diaqueen CVT Fluid J4 и J4+); Diaqueen SP-III (только модели с CVT) Nissan\tKTF-1; NS-1, NS-2, NS-3 Punch\tCVT Renault\tElfMatic CVT Rover\tUnipart Superflow CVT (без пусковой муфты) Subaru\tECVT; iCVT; iCVT FG; Жидкость Lineartronic chain CVT и CVT II; Lineartronic High Torque (HT) CVT Fluid, CV-30, K0425Y0710; NS-2 Suzuki\tCVTF TC; CVTF 3320; CVT Green 1 & 2; CVT Green 1V; NS-2 Toyota\tCVTF FE; CVTF TC; Prius (CVT с делителем мощности, планетарный комплект гибридной Toyota WS с ременным приводом CVT) Volvo\tjCVT 4959 VW/Audi\tG 055 190; TL 521 16 (G 052 516); TL 521 80 (G 052 180); TL 521 90 (G 052 190)",
+      "after": "Acura ATF-Z1 Aisin Warner; AW-1; AW-2; JWS 3309; JWS 3324 Allison C-3; C-4; TES-295; TES-389 American Motors ATF +3; ATF +4 Applo/IKC ATF RED 1; RED 1K Audi/VW LT71141; G 052 025-A2; G 052 162-A1/A2; G 052 990; G 053 025-A2; G 055 005-A/A1/A2; G 055 025-A2; G 055 162-A2/A6; G 055 540-A2; G 060 162 Bentley PY112995PA BMW 7045E (83 22 0 026 922); 81 22 9 400 272/275; 81 22 9 407 858/859; 83 22 024 359; 83 22 0403 248; 83 22 0403 249; 83 22 9 407 765; 83 220 142 516; 83 220 397 114; 83 220 402 413; 83 222 152 426; 83 222 289 720; 83 227 542 290; 83 229 407 807; ATF 3.0; ETL-8072B (83 22 9 407 807); LA2634; LT71141; M-1375 4; MINI (83 22 0 402 413); ZF Lifeguardfluid 6; ZF Lifeguardfluid 8 Bosch TE-ML 09 Caterpillar CAT TO-2 Chrysler; ATF+3; ATF+4; ATF+, +2; MOPAR AS 68 RC (T-lV), JWS 3309; NAG 2 Chrysler/Dodge/Jeep 05127382AA; 68043742AA<; 68157995AA; NAG 1 Daewoo LT 71141 Daihatsu AMMIX ATF D-II; AMMIX ATFD-III SP Fiat T-IV type; JWS 3309 Ford ESP-M2C166H, XL-12; FNR5; M2C138CJ; M2C166H; Mercon; ® LV (FF-WSS-M2C-938A/SF, XR-10 QLV); Mercon SR; Mercon V; Type F; Type G; WSS-M2C-138CJ, 166H; WSS-M2C-922A1, 924A (XT-8-QAW); XT-2-QDX(M); XT-2-QSM(Syn); XT-5-QM(V); XT-6-QSP or-DSP (SP); XT-9-QMMF5 Fuso ATF-A4; ATF-II; ATF-; SP-III; GM 1940700; 1940767; 12378515; 21005966; 22717466; 88900925; 93160393; GM Autotrak II; GM; Dexron; - VI; - II; MD; *- IIE; - IIIG; - IIIH; GM TASA GM/GMC/Opel/Saturn 88863400; 88863401; Hino Blue Ribbon ATF Honda ATF-Z1 (кроме CVT); DW-1; Тип 3.0 и 3.1 Hyundai/Kia 040000C90SG; Dex-II/; SP-II; NWS 9638; SP-IV; H; SP-IV M; SP-IV RR; WS3314 Idemitsu K17 3100 PL085 Isuzu 08200-9001; SCS Fluid Isuzu Besco ATF-II; ATF III; ATF-SP Jaguar; ATF LT 71141; ZF 5HP24; ATF 3403, JLM20238; ATF3403-M115; Jaguar Fluid 8432; JLM 20292; JLM 21044 JASO M315-2013 1A; M315-2013 1A-LV; M315-2013 2A Jeep; +4 Kia ATF Red 1; ATF; Land Rover LR0022460; LR023288; TYK500050 Lexus JWS 3309 MAN 339 Type D; 339; 339 V2; 339 Z1; 339 Z2; 339 Z3; MAN 339 V1 Maserati 231603 Mazda ATF 3317; ATF F-1; ATF FZ; ATF M-III; ATF M-V; ATF N-1; ATF S-1; D-II MB (Mercedes Benz) 236.1; 236.11; 236.12; 236.14; 236.15; 236.16; 236.2; 236.3; 236.41; 236.6; 236.7; 236.8; 236.9; 236.91; ZF 4HP20 Mini T-IV Разное M1375.6 Mitsubishi Diaqueen ATF PA; Diaqueen AW; Diaqueen J2; Diaqueen J3; Diaqueen SK; Diaqueen; Nissan Matic Fluid C; Matic Fluid D; Matic; Fluid J; Matic Fluid K; Matic Fluid S; Matic Fluid W Opel/GM 9986195; 19 40 700; 19 40 767; Моноблочная трансмиссия 21005966; 2.217.466 Peugeot/Citroen Z000169756 Peugeot ZF 4HP20 Porsche 000 043 205 09; 000 043 205 28; 000 043 304 00; 999 917 547 00 (A2); ATF 3403-M115; T-IV (JWS 3309); Z000169756; ZF 5HP19FL, ZF 5HP20, LT71141 Renault DPO/AL4; Matic D2; Samsung SATF-D Saab 93.160.393; 93.165.147; T-IV (JWS 3309) Saturn T-IV (JWS 3309) Scion Все автомобили Subaru DSIH 5M-66; ATF 5AT; ATF HP; Dexron II; K0140Y0700 Suzuki AT OIL 5D06; ATF 2326; ATF 2384K; ATF 3314; ATF 3317; JWS 3309 Toyota ATF D-II; ATF D-III; ATF T-III; ATF T-IV; Type T; ATF WS Vickers M2950-S, I-286-S Voith 55.6335. XX (G607); 55.6336. XX (G13636); Бюллетень технического обслуживания No 013 и No 118 Volvo 97325; 97335; CE 97340; CE 97341; CE 97342; PN 1161521; PN 1161540/1161640; STD 1273 41 VW (Volkswagen) 5 HP (ZF 5 HP 30) 5HP(18FL, 30) 5HP (19FL, 24A); G US 000 162; G 052 055; G 052 162-A1/A2 (ZF Lifeguardfluid 5); G 055 005-A/A1/A2 (ZF Lifeguardfluid 6); G 055 025 A2 (JWS 3309); G 055 162-A2/A6 (ZF Lifeguardfluid 6+); G 060 162 (ZF Lifeguardfluid 8); G-053 162 A1 (ZF Lifeguardfluid 5); TL 521 62 ZF 3-, 4-, 5-, 6 и 8-ступенчатые коробки передач; TE-ML 02F; TE-ML 03D; TE-ML 04D; TE-ML 05L; TE-ML 09; TE-ML 11 A, 11B; TE-ML 14A; TE-ML 14B; TE-ML 14C; TE-ML 16L; TE-ML 17C; TE-ML 21L OEM Спецификации для вариатора Audi Multitronic BMW/Mini EZL 799/ 83 22 0 136 376/ 83 22 0 429 154 Chery CVT Chrysler/Dodge/Jeep CVT+4; NS-2 Daihatsu AMMIX CVTF DFE; AMMIX CVT Fluid DC; AMMIX CVT Fluid DFC; Fluid TC Ford CFT; CVT 30 или WSS-M2C933A; ® C Fujijyuuko i-CVTF FG GM/Saturn DEX-CVT Honda Multimatic HMMF (без пусковой муфты); HCF2; Z-1 (модель с CVT, без пусковой муфты); Honda CVT Hyundai/Kia CVT-J1; (модель с CVT) Idemitsu CVTS-EX1 Lexus Fluid TC, Fluid FE Mazda JWS3320 MB (Mercedes Benz) 236.20/ CVT28 MG Rover EM-CVT Mini EZL/EZL 799A.ZF CVT V1 Mitsubishi CVTF-J1 (MMC Diaqueen CVT Fluid J1); CVTF-J4 и -J4+ (MMC Diaqueen CVT Fluid J4 и J4+); (только модели с CVT) Nissan KTF-1; NS-1, NS-2, NS-3 Punch CVT Renault ElfMatic CVT Rover Unipart Superflow CVT (без пусковой муфты) Subaru ECVT; iCVT; iCVT FG; Жидкость Lineartronic chain CVT и CVT II; Lineartronic High Torque (HT) CVT Fluid, CV-30, K0425Y0710; NS-2 Suzuki CVTF TC; CVTF 3320; CVT Green 1 & 2; CVT Green 1V; NS-2 Toyota CVTF FE; CVTF TC; Prius (CVT с делителем мощности, планетарный комплект гибридной Toyota WS с ременным приводом CVT) Volvo jCVT 4959 VW/Audi G 055 190; TL 521 16 (G 052 516); TL 521 80 (G 052 180); TL 521 90 (G 052 190)",
+      "matchMethod": "CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphcz7if000s8zksmepzsdh5",
+      "productName": "ELF EVOLUTION 900 NF 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00 / VW 505.00, PORSCHE A40, MB-Approval 229.3",
+      "after": "VW 502.00; /; VW 505.00; PORSCHE A40; MB-Approval 229.3",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphcz7if000s8zksmepzsdh5",
+      "productName": "ELF EVOLUTION 900 NF 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczf3k001i8zksdt6ixb5m",
+      "productName": "NGN 0W-20 A-Line PAO SP/ILSAC GF-6, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczfdy001j8zkskfhxq1oc",
+      "productName": "Bardahl XTS 5W-20 GF-6A, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "ilsac",
+      "before": "GF6-A",
+      "after": "GF-6A",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczfdy001j8zkskfhxq1oc",
+      "productName": "Bardahl XTS 5W-20 GF-6A, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 1TM Gen 2  FORD WSS-M2C948B  FIAT 9.55535-CR1  CHRYSLER MS 6395",
+      "after": "GM Dexos 1TM Gen 2; Ford WSS-M2C 948-B; FIAT 9.55535-CR1; Chrysler MS 6395",
+      "matchMethod": "CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczg99001m8zkstt2x7skp",
+      "productName": "ELF EVOLUTION 900 SXR 5W-30, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C 913-C, Ford WSS-M2C 913-D, Jaguar/Land Rover STJLR.03.5003, Renault RN 0700",
+      "after": "Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Jaguar/Land Rover STJLR.03.5003; Renault RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczh49001o8zkst1lfyhgy",
+      "productName": "ZIC X9 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczh49001o8zkst1lfyhgy",
+      "productName": "ZIC X9 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00/505.00VW 503.01MB 229.5MB 226.5BMW Longlife-01Renault-Nissan RN 0700Renault-Nissan RN 0710PSA B71 2296Porsche A-40",
+      "after": "VW 502.00; /505.00VW 503.01MB 229.5MB 226.5BMW Longlife-01Renault-Nissan RN 0700Renault-Nissan RN 0710PSA B71 2296Porsche A-40",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczh49001o8zkst1lfyhgy",
+      "productName": "ZIC X9 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczhp2001q8zksnqtgz95v",
+      "productName": "ZIC X9 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczhp2001q8zksnqtgz95v",
+      "productName": "ZIC X9 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00/505.00VW 503.01MB 229.5MB 226.5BMW Longlife-01Renault RN 0700Renault RN 0710PSA B71 2296Porsche A-41",
+      "after": "VW 502.00; /505.00VW 503.01MB 229.5MB 226.5BMW Longlife-01Renault RN 0700Renault RN 0710PSA B71 2296Porsche A-41",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczhp2001q8zksnqtgz95v",
+      "productName": "ZIC X9 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczhzj001r8zks367s71qi",
+      "productName": "ZIC X9 FE 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczhzj001r8zks367s71qi",
+      "productName": "ZIC X9 FE 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700Ford WSS-M2C913-DJaguar-Land Rover STJLR 03.5003",
+      "after": "Renault RN 0700Ford WSS-M2C913-DJaguar-; Land Rover; STJLR 03.5003",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczi9y001s8zkssiel96zd",
+      "productName": "ZIC X9 LS 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczi9y001s8zkssiel96zd",
+      "productName": "ZIC X9 LS 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.52MB 229.51 BMW Longlife-04 VW 505.00VW 505.01GM dexos2",
+      "after": "MB 229.52MB 229.51; BMW Longlife-04; VW 505.00VW 505.01GM dexos2",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczike001t8zksj49spifq",
+      "productName": "GENESIS ARMORTECH DISEL 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos2™  MB-Approval 229.51  Renault RN 0700/0710  VW 505 00/505 01BMW LL-04  MB 229.31, 226.5  Porsche A40  Ford WSS-M2C-917-A  Fiat 9.55535-S2",
+      "after": "GM dexos2TM MB-Approval 229.51; Renault RN 0700; /0710; VW 505.00; /505 01BMW LL-04; MB 229.31; 226.5; PORSCHE A40; Ford WSS-M2C 917-A; FIAT 9.55535-S2",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczkl900208zksn19eo3h0",
+      "productName": "ELF EVOLUTION 900 NF 5W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00 / VW 505.00, PORSCHE A40, MB-Approval 229.3",
+      "after": "VW 502.00; /; VW 505.00; PORSCHE A40; MB-Approval 229.3",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczqdg002k8zks82vugmhf",
+      "productName": "Bardahl XTEC 5W-30 С4, моторное масло, 1л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.51|MB 226.51|RENAULT RN 0720|FIAT 9.55535-S4",
+      "after": "MB 229.51; MB 226.51; Renault RN 0720; FIAT 9.55535-S4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphczqdg002k8zks82vugmhf",
+      "productName": "Bardahl XTEC 5W-30 С4, моторное масло, 1л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С3, C4",
+      "after": "C3; C4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphcztk0002u8zksaotgqal8",
+      "productName": "GENESIS ARMORTECH JP 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00/505 00, MB 229.5, Renault 0700/0710.",
+      "after": "VW 502.00/505.00; MB 229.5; Renault 0700/0710.",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczz2w003d8zkslv1t7hu3",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 501.01|VW 505.00|MB 229.1|RN 0700",
+      "after": "VW 501.01; VW 505.00; MB 229.1; RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphczz2w003d8zkslv1t7hu3",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd01es003l8zkssdqoh825",
+      "productName": "ZIC X9 FE 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd06cu00418zksawcbm681",
+      "productName": "ELF EVOLUTION 900 SXR 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FIAT 9.55535-M2, MB 229.5, MS-12991, PORSCHE A40, PSA B71 2296, Renault RN 0700, Renault RN 0710, VW 502.00/505.00",
+      "after": "FIAT 9.55535-M2; MB 229.5; MS-12991; PORSCHE A40; PSA B71 2296; Renault RN 0700; Renault RN 0710; VW 502.00/505.00",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd07mv00458zksij1jmdk6",
+      "productName": "VAG (VW/Audi/Skoda) 0W-30, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Vag",
+      "after": "VAG",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd093b004a8zks3acenac7",
+      "productName": "Bardahl XTS 5W-20 GF-6A, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "ilsac",
+      "before": "GF6-A",
+      "after": "GF-6A",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd093b004a8zks3acenac7",
+      "productName": "Bardahl XTS 5W-20 GF-6A, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 1TM Gen 2  FORD WSS-M2C948B  FIAT 9.55535-CR1  CHRYSLER MS 6395",
+      "after": "GM Dexos 1TM Gen 2; Ford WSS-M2C 948-B; FIAT 9.55535-CR1; Chrysler MS 6395",
+      "matchMethod": "CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd09dt004b8zksdia357b3",
+      "productName": "NGN 5W-20 A-Line SP/ILSAC GF-6, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd09oc004c8zksm50u65tq",
+      "productName": "NGN 5W-30 A-Line SP/ILSAC GF-6, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd09ys004d8zksrjlh3if4",
+      "productName": "NGN 5W-40 A-Line SP, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0a95004e8zks4n0fknno",
+      "productName": "NGN 5W-40 A-Line SP, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0ajp004f8zkshkpapazk",
+      "productName": "NGN 5W-30 A-Line SP/ILSAC GF-6, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0aua004g8zksqdc0czqq",
+      "productName": "NGN 0W-20 A-Line SP/ILSAC GF-6, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0b4r004h8zksjp7pj1pa",
+      "productName": "NGN 0W-20 A-Line SP/ILSAC GF-6, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0bf7004i8zkslavpkycj",
+      "productName": "NGN 5W-20 A-Line SP/ILSAC GF-6, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0ijb00558zksdvjo3jpj",
+      "productName": "VAG (VW/Audi/Skoda) 0W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Vag",
+      "after": "VAG",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0itw00568zksnroxlgpg",
+      "productName": "ELF EVOLUTION 900 SXR 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C 913-C, Ford WSS-M2C 913-D, Jaguar/Land Rover STJLR.03.5003, Renault RN 0700",
+      "after": "Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Jaguar/Land Rover STJLR.03.5003; Renault RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0ka7005b8zksa33ueyjp",
+      "productName": "Bardahl XTEC C3 5W-30, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "BMW Longlife-04, Porsche C30, MB 229.31, MB 229.51, MB 229.52, VW 504.00, VW 507.00",
+      "after": "BMW Longlife-04; PORSCHE C30; MB 229.31; MB 229.51; MB 229.52; VW 504.00; VW 507.00",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd0z1e006m8zksa0n4ctpt",
+      "productName": "Bardahl XTS 5W-40 , моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 505.00, VW 501.01, MB 229.3, MB 229.5, Porsche A40, BMW Longlife-01, GM LL-B-025, PSA B71 2296, RN 0700/0710",
+      "after": "VW 502.00; VW 505.00; VW 501.01; MB 229.3; MB 229.5; PORSCHE A40; BMW Longlife-01; GM-LL-B-025; PSA B71 2296; RN 0700/0710",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd0z1e006m8zksa0n4ctpt",
+      "productName": "Bardahl XTS 5W-40 , моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd12mw006y8zks0yv2g54e",
+      "productName": "ZIC X9 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd19ae007k8zksq6kuslqi",
+      "productName": "GENESIS ARMORTECH JP 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00/505 00, MB 229.5, Renault 0700/0710.",
+      "after": "VW 502.00/505.00; MB 229.5; Renault 0700/0710.",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd19v7007m8zks378zo0gz",
+      "productName": "GENESIS ARMORTECH EURO 5W-40,  моторное масло, 100 мл.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Porsche A40  BMW LL-01  Fiat 9.55535-N2/Z2  PSA B71 2296  Opel GM-LL-B-025",
+      "after": "PORSCHE A40; BMW LL-01; FIAT 9.55535-N2; /Z2; PSA B71 2296; Opel; GM-LL-B-025",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd1r2g00908zkselhb208k",
+      "productName": "Bardahl XTS 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "SS-M2C913-D, RN 0700, Jaguar Land Rover STJR.03.5003",
+      "after": "SS-M2C913-D, RN 0700, Jaguar; Land Rover; STJR.03.5003",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd1uu6009d8zksboi30oro",
+      "productName": "Total Quartz INEO ECS 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "PSA B71 2290, TOYOTA",
+      "after": "PSA B71 2290; TOYOTA",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd1x5o009l8zksxtmg3sju",
+      "productName": "Bardahl XTEC C3 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "BMW Longlife-04, Porsche C30, MB 229.31, MB 229.51, MB 229.52, VW 504.00, VW 507.00",
+      "after": "BMW Longlife-04; PORSCHE C30; MB 229.31; MB 229.51; MB 229.52; VW 504.00; VW 507.00",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd1yxc009r8zksnz4ab996",
+      "productName": "Eurol Evolence 0W-20 (API SP-RC; ILSAC GF-6A) моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 1, Chrysler MS 6395",
+      "after": "GM Dexos 1; Chrysler MS 6395",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd1z7t009s8zkstzp0fqbf",
+      "productName": "Eurol Evolence 0W-20 (API SP-RC; ILSAC GF-6A), моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 1, Chrysler MS 6396",
+      "after": "GM Dexos 1; Chrysler MS 6396",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd1zi8009t8zkstpdi4sda",
+      "productName": "Eurol Fluence DXS 5W30 (WW 505.01, MB 229.51), 1л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB-Approval 229.51, VW 502 00/505 01, MB 229.31, Opel OV0401547-D30, BMW Longlife-04, Opel OV0401547, GM-LL-A-025, GM-LL-B-025, Fiat 9.55535-S3, VW 505.00, MB 229.52",
+      "after": "MB-Approval 229.51; VW 502.00; /505 01; MB 229.31; Opel OV0401547 - D30; BMW Longlife-04; Opel OV0401547; GM-LL-A-025; GM-LL-B-025; FIAT 9.55535-S3; VW 505.00; MB 229.52",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd1zsq009u8zksw923ytgy",
+      "productName": "Eurol Fluence DXS 5W30 (VW 505.01, MB 229.51), 5л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB-Approval 229.51, VW 502 00/505 01, MB 229.31, Opel OV0401547-D30, BMW Longlife-04, Opel OV0401547, GM-LL-A-025, GM-LL-B-025, Fiat 9.55535-S3, VW 505.00, MB 229.53",
+      "after": "MB-Approval 229.51; VW 502.00; /505 01; MB 229.31; Opel OV0401547 - D30; BMW Longlife-04; Opel OV0401547; GM-LL-A-025; GM-LL-B-025; FIAT 9.55535-S3; VW 505.00; MB 229.53",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd2037009v8zkszhxvqvim",
+      "productName": "Eurol Fluence FE 5W30 INEO ECS, моторное масло 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700, RENAULT RN0700, PSA B71 2290, FIAT 9.55535-S1",
+      "after": "Renault RN 0700; PSA B71 2290; FIAT 9.55535-S1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd20dn009w8zks4wl3kvt4",
+      "productName": "Eurol Fluence FE 5W30 INEO ECS, моторное масло 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700, RENAULT RN0700, PSA B71 2290, FIAT 9.55535-S2",
+      "after": "Renault RN 0700; PSA B71 2290; FIAT 9.55535-S2",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd20o2009x8zks8nx4uvju",
+      "productName": "Eurol Fortence 5W30, моторное масло, 1 л. (Ford 913-D)",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C913-D, Land Rover - ST JLR.03.5003, STJLR.03.5003, RENAULT RN0700, Fiat 9.55535-G1, Fiat 9.55535-N1",
+      "after": "Ford WSS-M2C 913-D; Land Rover; - ST JLR.03.5003, STJLR.03.5003; Renault RN 0700; FIAT 9.55535-G1; Fiat 9.55535-N1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd20yn009y8zksp4j5tomn",
+      "productName": "Eurol Fortence 5W30, моторное масло, 5 л. (Ford 913-D)",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C913-D, Land Rover - ST JLR.03.5003, STJLR.03.5003, RENAULT RN0700, Fiat 9.55535-G1, Fiat 9.55535-N1",
+      "after": "Ford WSS-M2C 913-D; Land Rover; - ST JLR.03.5003, STJLR.03.5003; Renault RN 0700; FIAT 9.55535-G1; Fiat 9.55535-N1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd2192009z8zksicv4ffte",
+      "productName": "Eurol Super Lite 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 502.00,505.00, VW 502.00/505.00, VW 502.00, VW 505.00, VW 502.00/VW 505.00, VW (Audi) 502.00/505.00, MB 229.3, MB-Approval 229.3, Renault RN0700, Renault RN0710, Renault RN 0700/RN0710, Renault RN0700, RN0710, Renault RN0700/RN0710, Renault",
+      "after": "VW 502.00; 505.00; VW 502.00/505.00; VW 505.00; /; VW (Audi) 502.00/505.00; MB 229.3; MB-Approval 229.3; Renault RN 0700; Renault RN 0710; /RN0710; RN0710; /RN0710, Renault",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd21jk00a08zkshga0q4a5",
+      "productName": "Eurol Super Lite 5W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 502.00,505.00, VW 502.00/505.00, VW 502.00, VW 505.00, VW 502.00/VW 505.00, VW (Audi) 502.00/505.00, MB 229.3, MB-Approval 229.3, Renault RN0700, Renault RN0710, Renault RN 0700/RN0710, Renault RN0700, RN0710, Renault RN0700/RN0710, Renault",
+      "after": "VW 502.00; 505.00; VW 502.00/505.00; VW 505.00; /; VW (Audi) 502.00/505.00; MB 229.3; MB-Approval 229.3; Renault RN 0700; Renault RN 0710; /RN0710; RN0710; /RN0710, Renault",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM, CUSTOM, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd224400a18zksj91mkjxw",
+      "productName": "Eurol Syntence 5W30 (VW 504.00/507.00), 1л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.31, MB 229.51, BMW Longlife-04, Opel OV0401547-D30, VW 504 00, VW 507 00, Porsche C30",
+      "after": "MB 229.31; MB 229.51; BMW Longlife-04; Opel OV0401547 - D30; VW 504.00; VW 507.00; PORSCHE C30",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd22el00a28zksulnnu9gt",
+      "productName": "Eurol Syntence 5W30 (VW 504.00/507.00), 4 л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.31, MB 229.51, BMW Longlife-04, Opel OV0401547-D30, VW 504 00, VW 507 00, Porsche C30",
+      "after": "MB 229.31; MB 229.51; BMW Longlife-04; Opel OV0401547 - D30; VW 504.00; VW 507.00; PORSCHE C30",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd22p500a38zksz5nu3thy",
+      "productName": "Eurol Syntence 5W30 (VW 504.00/507.00), 5л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.31, MB 229.51, BMW Longlife-04, Opel OV0401547-D30, VW 504 00, VW 507 00, Porsche C30",
+      "after": "MB 229.31; MB 229.51; BMW Longlife-04; Opel OV0401547 - D30; VW 504.00; VW 507.00; PORSCHE C30",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd23kl00a68zksqwdif1lo",
+      "productName": "Eurol TURBO DI 5W-40 (СЗ), моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700/0710, MB 226.5, BMW Longlife-04, Porsche A40, GM Dexos 2, FORD WSS-M2C917-A, MB-Approval 229.31, VW 505.01, VW 502.00/505.00, Fiat 9.55535-GH2, Fiat 9.55535-T2, Fiat 9.55535-S2",
+      "after": "Renault RN 0700; /0710; MB 226.5; BMW Longlife-04; PORSCHE A40; GM Dexos 2; Ford WSS-M2C 917-A; MB-Approval 229.31; VW 505.01; VW 502.00/505.00; FIAT 9.55535-GH2; FIAT 9.55535-T2; FIAT 9.55535-S2",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd23v500a78zksiweq9gt1",
+      "productName": "Eurol TURBO DI 5W-40 (С3), моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700/0710, MB 226.5, BMW Longlife-04, Porsche A40, GM Dexos 2, FORD WSS-M2C917-A, MB-Approval 229.31, VW 505.01, VW 502.00/505.00, Fiat 9.55535-GH2, Fiat 9.55535-T2, Fiat 9.55535-S2",
+      "after": "Renault RN 0700; /0710; MB 226.5; BMW Longlife-04; PORSCHE A40; GM Dexos 2; Ford WSS-M2C 917-A; MB-Approval 229.31; VW 505.01; VW 502.00/505.00; FIAT 9.55535-GH2; FIAT 9.55535-T2; FIAT 9.55535-S2",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd245n00a88zks38fpo6nf",
+      "productName": "Eurol Turbosyn 10W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00 , VW 505 00, BMW Longlife-01, MB 229.5, GM-LL-A-025, GM-LL-B-025, Fiat 9.55535-G1, Porsche A40",
+      "after": "VW 502.00; VW 505.00; BMW Longlife-01; MB 229.5; GM-LL-A-025; GM-LL-B-025; FIAT 9.55535-G1; PORSCHE A40",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd24g400a98zkstt9inokn",
+      "productName": "Eurol Turbosyn 10W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00 , VW 505 00, BMW Longlife-01, MB 229.5, GM-LL-A-025, GM-LL-B-025, Fiat 9.55535-G1, Porsche A40",
+      "after": "VW 502.00; VW 505.00; BMW Longlife-01; MB 229.5; GM-LL-A-025; GM-LL-B-025; FIAT 9.55535-G1; PORSCHE A40",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd251000ab8zksmfzl4p88",
+      "productName": "Mannol 7701 O.E.M. 5W-30 Energy Formula OP моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505.01, BMW LL-04, MB 229.52, MB 229.51, MB 229.31, dexos 2, Porsche C30, JASO DL-1, Chrysler MS 11106, FIAT 9.55535-S1, Fiat 9.55535-S3, RENAULT RN0700, Renault RN0710, PSA B71 2290, WSS-M2C934-B, STJLR.03.5005",
+      "after": "VW 505.01; BMW Longlife-04; MB 229.52; MB 229.51; MB 229.31; dexos 2; PORSCHE C30; JASO DL-1; Chrysler MS 11106; FIAT 9.55535-S1; FIAT 9.55535-S3; Renault RN 0700; Renault RN 0710; PSA B71 2290; WSS-M2C934-B; STJLR.03.5005",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd25bg00ac8zksv5c4bg6g",
+      "productName": "Mannol 7701 O.E.M. 5W-30 Energy Formula OP моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505.01, BMW LL-04, MB 229.52, MB 229.51, MB 229.31, dexos 2, Porsche C30, JASO DL-1, Chrysler MS 11106, FIAT 9.55535-S1, Fiat 9.55535-S3, RENAULT RN0700, Renault RN0710, PSA B71 2290, WSS-M2C934-B, STJLR.03.5005",
+      "after": "VW 505.01; BMW Longlife-04; MB 229.52; MB 229.51; MB 229.31; dexos 2; PORSCHE C30; JASO DL-1; Chrysler MS 11106; FIAT 9.55535-S1; FIAT 9.55535-S3; Renault RN 0700; Renault RN 0710; PSA B71 2290; WSS-M2C934-B; STJLR.03.5005",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd25lt00ad8zksv2r648v8",
+      "productName": "Mannol 7707 O.E.M.5W-30 Ford Volvo, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A, FORD WSS-M2C913-B, Ford WSS-M2C913-D, Volvo VCC 95200377",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-D; Volvo VCC 95200377",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd25w700ae8zksd2g4f7p8",
+      "productName": "Mannol 7707 O.E.M. 5W-30 Ford Volvo, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A, FORD WSS-M2C913-B, Ford WSS-M2C913-D, Volvo VCC 95200377",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-D; Volvo VCC 95200377",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd266o00af8zkszx4abjfh",
+      "productName": "Mannol 7709 O.E.M. 5W-30 for Toyota Lexus 1л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Fiat 9.55535-G1, FORD WSS-M2C913-B, FORD WSS-M2C913-A, Ford WSS-M2C913-C, Ford WSS-M2C913-D, STJLR.03.5003, Renault RN0700, Renault RN0710, Iveco 18-1811",
+      "after": "FIAT 9.55535-G1; Ford WSS-M2C 913-B; Ford WSS-M2C 913-A; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; STJLR.03.5003; Renault RN 0700; Renault RN 0710; Iveco 18-1811",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd26h400ag8zks2cjey97c",
+      "productName": "Mannol 7709 O.E.M. 5W-30 for Toyota Lexus 4л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Fiat 9.55535-G1, FORD WSS-M2C913-B, FORD WSS-M2C913-A, Ford WSS-M2C913-C, Ford WSS-M2C913-D, STJLR.03.5003, Renault RN0700, Renault RN0710, Iveco 18-1811",
+      "after": "FIAT 9.55535-G1; Ford WSS-M2C 913-B; Ford WSS-M2C 913-A; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; STJLR.03.5003; Renault RN 0700; Renault RN 0710; Iveco 18-1811",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd26rk00ah8zksapnmodfm",
+      "productName": "Mannol 7715 O.E.M. 5W-30 for VW Audi Skoda 1л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.51 VOLKSWAGEN TL 52 195 BMW Longlife-04 PORSCHE C30 VOLKSWAGEN 504 00 Approval VOLKSWAGEN 507 00 Approval",
+      "after": "MB 229.51; VOLKSWAGEN TL 52 195; BMW Longlife-04; PORSCHE C30; VOLKSWAGEN 504 00 Approval VOLKSWAGEN 507 00 Approval",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd272000ai8zks4cu7sli3",
+      "productName": "Mannol 7715 O.E.M. 5W-30 for VW Audi Skoda 5л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.51 VOLKSWAGEN TL 52 195 BMW Longlife-04 PORSCHE C30 VOLKSWAGEN 504 00 Approval VOLKSWAGEN 507 00 Approval",
+      "after": "MB 229.51; VOLKSWAGEN TL 52 195; BMW Longlife-04; PORSCHE C30; VOLKSWAGEN 504 00 Approval VOLKSWAGEN 507 00 Approval",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd2jmz00bo8zksvg6fsiqy",
+      "productName": "BARDAHL XTS 0W-20, моторное масло, 1л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos1Gen2  Chrysler MS 6395  FORD WSS-M2C947-A/B1  FORD WSSM2C962-A1",
+      "after": "GM Dexos 1 Gen 2; Chrysler MS 6395; Ford WSS-M2C 947-A; /B1; Ford WSS-M2C 962-A1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd2l5w00bt8zksiih10jgb",
+      "productName": "Shell Helix HX8 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB-Approval 229.3; VW Standard 502.00, 505.00; Renault RN 0700, RN 0710; Fiat (FCA) 9.55535-М2",
+      "after": "MB-Approval 229.3; VW Standard 502.00, 505.00; Renault RN 0700; RN 0710; Fiat (FCA) 9.55535-М2",
+      "matchMethod": "CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd2t5j00cj8zksso9mrx87",
+      "productName": "ZIC X9 LS 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd3lht00f18zkskmw4126v",
+      "productName": "ZIC X9 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd3mnh00f58zksi8o3a26o",
+      "productName": "GENESIS ARMORTECH FD A5/B5 5W-30, моторное масло, 100 мл.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C-913-A/B/C/D IVECO 18-1811 Classe S1 Jaguar Land Rover ST JLR.03.5003 ACEA A5/B5, A1/B1 Renault RN 0700 Fiat 9.55535-G1",
+      "after": "Ford WSS-M2C-913-A/B/C/D; Iveco 18-1811; Classe S1 Jaguar; Land Rover; ST JLR.03.5003 ACEA A5/B5, A1/B1; Renault RN 0700; FIAT 9.55535-G1",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd3nj500f88zkscv87dve8",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd3nj500f88zkscv87dve8",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700|FIAT 9.55535-S1",
+      "after": "Renault RN 0700; FIAT 9.55535-S1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd3nj500f88zkscv87dve8",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphd3qpw00fi8zkste2ctnzl",
+      "productName": "ELF EVOLUTION 700 STI 10W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 501 01/505 00, MB-Approval 229.1, Renault RN0700/0710, PSA B71 2300, Fiat 9.55535-G2",
+      "after": "VW 501.01; /505 00, MB-Approval 229.1; Renault RN 0700; /0710; PSA B71 2300; FIAT 9.55535-G2",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd4hzr00i28zksfwj7otrg",
+      "productName": "GENESIS ARMORTECH  EURO 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Porsche A40  BMW LL-01  Fiat 9.55535-N2/Z2  PSA B71 2296  Opel GM-LL-B-025",
+      "after": "PORSCHE A40; BMW LL-01; FIAT 9.55535-N2; /Z2; PSA B71 2296; Opel; GM-LL-B-025",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd4ia900i38zksikrww9q3",
+      "productName": "Bardahl XTEC RC 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos1 (TM) Gen 3, Opel OV 040 1547 - G30 , Chrysler MS 6395,  FIAT 9.55535-CR1,  Ford WSS-M2C946-A , Ford WSS-M2C946-B1,  Ford WSS-M2C961-A1,  Ford WSS-M2C929-A , FIAT 9.55535-CR1, GM 6094M,  GM 4718M",
+      "after": "GM Dexos 1; (TM) Gen 3, Opel OV 040 1547 - G30; Chrysler MS 6395; FIAT 9.55535-CR1; Ford WSS-M2C 946-A; Ford WSS-M2C 946-B1; Ford WSS-M2C 961-A1; Ford WSS-M2C 929-A; GM 6094M; GM 4718M",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphd4j5m00i68zks64mc8889",
+      "productName": "BARDAHL XTS 0W-20, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos1Gen2  Chrysler MS 6395  FORD WSS-M2C947-A/B1  FORD WSSM2C962-A1",
+      "after": "GM Dexos 1 Gen 2; Chrysler MS 6395; Ford WSS-M2C 947-A; /B1; Ford WSS-M2C 962-A1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdfjbj010z8zks14xu33wm",
+      "productName": "GENESIS ARMORTECH EURO 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Porsche A40  BMW LL-01  Fiat 9.55535-N2/Z2  PSA B71 2296  Opel GM-LL-B-025",
+      "after": "PORSCHE A40; BMW LL-01; FIAT 9.55535-N2; /Z2; PSA B71 2296; Opel; GM-LL-B-025",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdfkhb01138zksptrdxktr",
+      "productName": "Rolf 5W-30 С3, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdfm8401198zks8x62gv0o",
+      "productName": "Motul 8100 X-cess GEN 2 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdfm8401198zks8x62gv0o",
+      "productName": "Motul 8100 X-cess GEN 2 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 505.00, VW 501.01, MB 229.3, MB 229.5, Porsche A40, BMW Longlife-01, GM LL-B-025, PSA B71 2296, RN 0700/0710",
+      "after": "VW 502.00; VW 505.00; VW 501.01; MB 229.3; MB 229.5; PORSCHE A40; BMW Longlife-01; GM-LL-B-025; PSA B71 2296; RN 0700/0710",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdfs1e011t8zks5pmdpc5l",
+      "productName": "Motul 8100 X-cess GEN 2 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdfs1e011t8zks5pmdpc5l",
+      "productName": "Motul 8100 X-cess GEN 2 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 505.00, VW 501.01, MB 229.3, MB 229.5, Porsche A40, BMW Longlife-01, GM LL-B-025, PSA B71 2296, RN 0700/0710",
+      "after": "VW 502.00; VW 505.00; VW 501.01; MB 229.3; MB 229.5; PORSCHE A40; BMW Longlife-01; GM-LL-B-025; PSA B71 2296; RN 0700/0710",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdftro011y8zksezqxs65q",
+      "productName": "Bardahl XTS 5W-30, моторное масло, 4л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A|FORD WSS-M2C913-B|FORD WSS-M2C913-C|FORD WSS-M2C913-D|RENAULT RN 0700|Jaguar/Land Rover STJLR.03.5003",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Renault RN 0700; Jaguar/Land Rover STJLR.03.5003",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdgol3014m8zkszlkl9p2s",
+      "productName": "Mobil SUPER 3000 XE 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505 01, VW 505 00, MB 229.52, MB 229.51, MB 229.31, GM Dexos 2, BMW Longlife-04",
+      "after": "VW 505.01; VW 505.00; MB 229.52; MB 229.51; MB 229.31; GM Dexos 2; BMW Longlife-04",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdgovl014n8zkshhvhyqqp",
+      "productName": "ZIC TOP 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdgovl014n8zkshhvhyqqp",
+      "productName": "ZIC TOP 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "BMW Longlife-04, MB 226.5, MB 229.3, MB 229.5, MB 229.51, PORSCHE C30, Renault RN 0700, Renault RN 0710, VW 502.00, VW 504.00, VW 505.00, VW 507.00, 132681",
+      "after": "BMW Longlife-04; MB 226.5; MB 229.3; MB 229.5; MB 229.51; PORSCHE C30; Renault RN 0700; Renault RN 0710; VW 502.00; VW 504.00; VW 505.00; VW 507.00; 132681",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdgp61014o8zksf7uwk6ay",
+      "productName": "ZIC TOP 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdgp61014o8zksf7uwk6ay",
+      "productName": "ZIC TOP 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "BMW Longlife-04, MB 226.5, MB 229.3, MB 229.5, MB 229.51, PORSCHE C30, Renault RN 0700, Renault RN 0710, VW 502.00, VW 504.00, VW 505.00, VW 507.00, 132681",
+      "after": "BMW Longlife-04; MB 226.5; MB 229.3; MB 229.5; MB 229.51; PORSCHE C30; Renault RN 0700; Renault RN 0710; VW 502.00; VW 504.00; VW 505.00; VW 507.00; 132681",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdgqwm014u8zksm65n6ra1",
+      "productName": "Shell Helix HX8 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB-Approval 229.3; VW Standard 502.00, 505.00; Renault RN 0700, RN 0710; Fiat (FCA) 9.55535-М2",
+      "after": "MB-Approval 229.3; VW Standard 502.00, 505.00; Renault RN 0700; RN 0710; Fiat (FCA) 9.55535-М2",
+      "matchMethod": "CUSTOM, CUSTOM, EXACT_RAW, CUSTOM, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdhj35017h8zkss23s1zv1",
+      "productName": "MOBIL SUPER 3000 XE 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "С3",
+      "after": "C3",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdhj35017h8zkss23s1zv1",
+      "productName": "MOBIL SUPER 3000 XE 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505 00, VW 505 01, MB 229.31, MB 229.51, MB 229.52, GM Dexos 2, Opel GM LL-A-025, OPEL GM LL-B-025, FORD WSS-M2C917-A",
+      "after": "VW 505.00; VW 505.01; MB 229.31; MB 229.51; MB 229.52; GM Dexos 2; Opel; GM-LL-A-025; GM-LL-B-025; Ford WSS-M2C 917-A",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdhktn017n8zksockfozbe",
+      "productName": "Mobil 1 ESP 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 2MB 229.31MB 229.51MB 229.52VW 504.00VW 507.00Porsche C30PSA B 71 2290PSA B71 2297VW 502.00VW 503.00VW 503.01VW 505.00 VW 506.00",
+      "after": "GM Dexos 2MB 229.31MB 229.51MB 229.52VW 504.00VW 507.00Porsche C30PSA B 71 2290PSA B71 2297VW 502.00VW 503.00VW 503.01VW 505.00; VW 506.00",
+      "matchMethod": "CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdhktn017n8zksockfozbe",
+      "productName": "Mobil 1 ESP 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "C2, C3",
+      "after": "C2; C3",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdhq3x01848zksb3nvcuwl",
+      "productName": "Rolf Energy 10W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdhsfn018c8zksgia307rv",
+      "productName": "Total Quartz INEO ECS 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "PSA B71 2290, TOYOTA",
+      "after": "PSA B71 2290; TOYOTA",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdi7ps019r8zkspxv29dwv",
+      "productName": "Rolf GT 5W-40 SN/CF, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdib6o01a28zksktgxsnca",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 501.01|VW 505.00|MB 229.1|RN 0700",
+      "after": "VW 501.01; VW 505.00; MB 229.1; RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdib6o01a28zksktgxsnca",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdifg901ag8zkso1xoxh0t",
+      "productName": "Bardahl XTEC C3 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "BMW Longlife-04, Porsche C30, MB 229.31, MB 229.51, MB 229.52, VW 504.00, VW 507.00",
+      "after": "BMW Longlife-04; PORSCHE C30; MB 229.31; MB 229.51; MB 229.52; VW 504.00; VW 507.00",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdikel01ax8zksxrr5y7om",
+      "productName": "Shell Helix Ultra ECT C3 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Chrysler MS-11106; GM Dexos 2; MB 229.31; MB 229.51",
+      "after": "Chrysler MS 11106; GM Dexos 2; MB 229.31; MB 229.51",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdit2y01bq8zksy41cjei7",
+      "productName": "NGN 0W-20 A-Line PAO SP/ILSAC GF-6, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Ngn",
+      "after": "NGN",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdiywl01c98zks368wc4pu",
+      "productName": "GENESIS ARMORTECH FD A5/B5 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C-913-A/B/C/D IVECO 18-1811 Classe S1 Jaguar Land Rover ST JLR.03.5003 ACEA A5/B5, A1/B1 Renault RN 0700 Fiat 9.55535-G1",
+      "after": "Ford WSS-M2C-913-A/B/C/D; Iveco 18-1811; Classe S1 Jaguar; Land Rover; ST JLR.03.5003 ACEA A5/B5, A1/B1; Renault RN 0700; FIAT 9.55535-G1",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdj18m01ch8zkscdku71k6",
+      "productName": "Bardahl XTEC 5W-30 C2/C3, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "С3",
+      "after": "C3",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj18m01ch8zkscdku71k6",
+      "productName": "Bardahl XTEC 5W-30 C2/C3, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 504.00|VW 507.00|MB 229.51|BMW LongLife-04|Porsche C30",
+      "after": "VW 504.00; VW 507.00; MB 229.51; BMW Longlife-04; PORSCHE C30",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj18m01ch8zkscdku71k6",
+      "productName": "Bardahl XTEC 5W-30 C2/C3, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С3",
+      "after": "C3",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj1tg01cj8zksd9l06tjc",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 501.01|VW 505.00|MB 229.1|RN 0700",
+      "after": "VW 501.01; VW 505.00; MB 229.1; RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdj1tg01cj8zksd9l06tjc",
+      "productName": "Bardahl XTC 10W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj24101ck8zksuss1c3wz",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj24101ck8zksuss1c3wz",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700|FIAT 9.55535-S1",
+      "after": "Renault RN 0700; FIAT 9.55535-S1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj24101ck8zksuss1c3wz",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj2el01cl8zksoc7miejb",
+      "productName": "Bardahl XTEC 5W-30 С4, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.51|MB 226.51|RENAULT RN 0720|FIAT 9.55535-S4",
+      "after": "MB 229.51; MB 226.51; Renault RN 0720; FIAT 9.55535-S4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj2el01cl8zksoc7miejb",
+      "productName": "Bardahl XTEC 5W-30 С4, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С3, C4",
+      "after": "C3; C4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj2pa01cm8zksp5xj9mvc",
+      "productName": "Bardahl XTEC 5W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505.00|VW 505.01|MB 229.51|MB 229.31|MB 226.5|PORSCHE A40|BMW Longlife-04|FORD M2C917-A|RENAULT RN 0700|RENAULT RN 0710|GM Dexos 2|FIAT 9.55535-S2|FIAT 9.55535 GH2",
+      "after": "VW 505.00; VW 505.01; MB 229.51; MB 229.31; MB 226.5; PORSCHE A40; BMW Longlife-04; FORD M2C917-A; Renault RN 0700; Renault RN 0710; GM Dexos 2; FIAT 9.55535-S2; FIAT 9.55535-GH2",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdj34501cn8zks19dan743",
+      "productName": "Bardahl XTS 5W-30,  моторное масло, 5л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A|FORD WSS-M2C913-B|FORD WSS-M2C913-C|FORD WSS-M2C913-D|RENAULT RN 0700|Jaguar/Land Rover STJLR.03.5003",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Renault RN 0700; Jaguar/Land Rover STJLR.03.5003",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj3j001co8zksby59xe33",
+      "productName": "Bardahl XTS 5W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.3|MB 229.5|BMW LongLife-01|VW 502.00/505.00|VW 501.01|PORSCHE A40|Renault RN 0700|Renault RN 0710|PSA B71 2296",
+      "after": "MB 229.3; MB 229.5; BMW Longlife-01; VW 502.00/505.00; VW 501.01; PORSCHE A40; Renault RN 0700; Renault RN 0710; PSA B71 2296",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj8a901d48zksxgtt9vlv",
+      "productName": "GENESIS UNIVERSAL A5/B5 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C-913-C, Ford WSS-M2C 913-A, Ford WSS-M2C 913-B, Ford WSS-M2C 913-D, Renault RN 0700",
+      "after": "Ford WSS-M2C 913-C; Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-D; Renault RN 0700",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdj8v501d68zksug82gowe",
+      "productName": "GENESIS ARMORTECH DIESEL C2/C3 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "MB 229.51, dexos 2",
+      "after": "MB 229.51; dexos 2",
+      "matchMethod": "EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdj95q01d78zkszjpi0mj3",
+      "productName": "GENESIS ARMORTECH GC 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 504 00, VW 507 00, MB 229.51, MB 229.31, Fiat 9.55535-S3, Porsche C30, BMW Longlife-04",
+      "after": "VW 504.00; VW 507.00; MB 229.51; MB 229.31; FIAT 9.55535-S3; PORSCHE C30; BMW Longlife-04",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdja1a01da8zks05e1hic8",
+      "productName": "GENESIS ARMORTECH GC 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 504 00, VW 507 00, MB 229.51, MB 229.31, Fiat 9.55535-S3, Porsche C30, BMW Longlife-04",
+      "after": "VW 504.00; VW 507.00; MB 229.51; MB 229.31; FIAT 9.55535-S3; PORSCHE C30; BMW Longlife-04",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdjezr01dq8zksjs3p0sia",
+      "productName": "MOBIL SUPER 3000 FE 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "apiSpec",
+      "before": "Sl",
+      "after": "SL",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdjjn001e68zksl101nrl2",
+      "productName": "Rolf GT 5W-30 A3/B4, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdjp7101eo8zksmlln99be",
+      "productName": "ELF EVOLUTION 900 SXR 5W-40, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FIAT 9.55535-M2, MB 229.5, MS-12991, PORSCHE A40, PSA B71 2296, Renault RN 0700, Renault RN 0710, VW 502.00/505.00",
+      "after": "FIAT 9.55535-M2; MB 229.5; MS-12991; PORSCHE A40; PSA B71 2296; Renault RN 0700; Renault RN 0710; VW 502.00/505.00",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdkbu701gr8zksv79wbwn3",
+      "productName": "Shell Helix HX8 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00 , VW 505 00, MB 229.5, Renault RN 0700, Renault RN 0710",
+      "after": "VW 502.00; VW 505.00; MB 229.5; Renault RN 0700; Renault RN 0710",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdkxnx01it8zksgbfts43x",
+      "productName": "Mobil 1 ESP 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM Dexos 2MB 229.31MB 229.51MB 229.52VW 504.00VW 507.00Porsche C30PSA B 71 2290PSA B71 2297VW 502.00VW 503.00VW 503.01VW 505.00 VW 506.00",
+      "after": "GM Dexos 2MB 229.31MB 229.51MB 229.52VW 504.00VW 507.00Porsche C30PSA B 71 2290PSA B71 2297VW 502.00VW 503.00VW 503.01VW 505.00; VW 506.00",
+      "matchMethod": "CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdkxnx01it8zksgbfts43x",
+      "productName": "Mobil 1 ESP 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "C2, C3",
+      "after": "C2; C3",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdl99s01jw8zks9jh3px1m",
+      "productName": "Rolf GT 5W-30 A3/B4, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdla4t01jy8zks63ttpfnd",
+      "productName": "Rolf 5W-30 С3, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlaf701jz8zksc1pxlb8l",
+      "productName": "Rolf GT 5W-40 SN/CF, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlapn01k08zksifc4qzkp",
+      "productName": "Rolf Energy 10W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlhoz01ko8zksyui2n666",
+      "productName": "GENESIS ARMORTECH DIESEL C2/C3 5W-30, моторное масло, 4 л",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos2™  MB-Approval 229.51  Renault RN 0700/0710  VW 505 00/505 01BMW LL-04  MB 229.31, 226.5  Porsche A40  Ford WSS-M2C-917-A  Fiat 9.55535-S2",
+      "after": "GM dexos2TM MB-Approval 229.51; Renault RN 0700; /0710; VW 505.00; /505 01BMW LL-04; MB 229.31; 226.5; PORSCHE A40; Ford WSS-M2C 917-A; FIAT 9.55535-S2",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdlhze01kp8zks52aaulwp",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlhze01kp8zks52aaulwp",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Renault RN 0700|FIAT 9.55535-S1",
+      "after": "Renault RN 0700; FIAT 9.55535-S1",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlhze01kp8zks52aaulwp",
+      "productName": "Bardahl XTEC 5W-30 С2, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "С2",
+      "after": "C2",
+      "matchMethod": "EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdloyo01lc8zksyznnoivq",
+      "productName": "ZIC TOP 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdlquu01lh8zksqyuzbkue",
+      "productName": "GENESIS ARMORTECH FD A5/B5 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "Ford WSS-M2C-913-A/B/C/D IVECO 18-1811 Classe S1 Jaguar Land Rover ST JLR.03.5003 ACEA A5/B5, A1/B1 Renault RN 0700 Fiat 9.55535-G1",
+      "after": "Ford WSS-M2C-913-A/B/C/D; Iveco 18-1811; Classe S1 Jaguar; Land Rover; ST JLR.03.5003 ACEA A5/B5, A1/B1; Renault RN 0700; FIAT 9.55535-G1",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdlyex01m78zksx2nbh4d3",
+      "productName": "Mobil Super 3000 X1 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "JASO MA, MA2, AAE Group B6, АвтоВАЗ LADA cars, FIAT 9.55535-M2, GM GM-LL-B-025, Porsche A40, Renault RN0700, RN0710, VW 502 00, 505 00, Peugeot Citroen Automobiles B71 2296, MB 229.3",
+      "after": "JASO MA; MA2, AAE Group B6; АВТОВАЗ; LADA cars; FIAT 9.55535-M2; GM; GM-LL-B-025; PORSCHE A40; Renault RN 0700; RN0710; VW 502.00; 505 00, Peugeot Citroen Automobiles B71 2296; MB 229.3",
+      "matchMethod": "EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdmmhs01of8zks7srxcqxg",
+      "productName": "Motul 8100 Eco-nergy 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "A5, B5",
+      "after": "A5; B5",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdmmhs01of8zks7srxcqxg",
+      "productName": "Motul 8100 Eco-nergy 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A|FORD WSS-M2C913-B|FORD WSS-M2C913-C|FORD WSS-M2C913-D|RENAULT RN 0700|Jaguar/Land Rover STJLR.03.5003",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Renault RN 0700; Jaguar/Land Rover STJLR.03.5003",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdmn2r01oh8zksxwvuivri",
+      "productName": "GM Dexos 2 (Европа) 5W-30, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "502.00, 505.00, 505,01, MB 229.51, MB 229.52",
+      "after": "502.00, 505.00, 505,01; MB 229.51; MB 229.52",
+      "matchMethod": "CUSTOM, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdmucb01p58zksy2mb90nm",
+      "productName": "Bardahl XTEC RC 5W-30, моторное масло, 5 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "API SP Resource Conserving , ILSAC GF-6A , GM dexos1 (TM) Gen 3, Opel OV 040 1547 - G30 , Chrysler MS 6395,  FIAT 9.55535-CR1,  Ford WSS-M2C946-A , Ford WSS-M2C946-B1,  Ford WSS-M2C961-A1,  Ford WSS-M2C929-A , FIAT 9.55535-CR1, GM 6094M,  GM 4718M",
+      "after": "API SP Resource Conserving , ILSAC GF-6A; GM Dexos 1; (TM) Gen 3, Opel OV 040 1547 - G30; Chrysler MS 6395; FIAT 9.55535-CR1; Ford WSS-M2C 946-A; Ford WSS-M2C 946-B1; Ford WSS-M2C 961-A1; Ford WSS-M2C 929-A; GM 6094M; GM 4718M",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdmumr01p68zksud43yxez",
+      "productName": "Bardahl XTS 5W-40 , моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502.00, VW 505.00, VW 501.01, MB 229.3, MB 229.5, Porsche A40, BMW Longlife-01, GM LL-B-025, PSA B71 2296, RN 0700/0710",
+      "after": "VW 502.00; VW 505.00; VW 501.01; MB 229.3; MB 229.5; PORSCHE A40; BMW Longlife-01; GM-LL-B-025; PSA B71 2296; RN 0700/0710",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdmumr01p68zksud43yxez",
+      "productName": "Bardahl XTS 5W-40 , моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "aceaExtra",
+      "before": "A3, B4",
+      "after": "A3; B4",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdmvc301p88zks4hdafqzu",
+      "productName": "GENESIS ARMORTECH HK 5W-30, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00/505 00, MB 229.5, Renault 0700/0710.",
+      "after": "VW 502.00/505.00; MB 229.5; Renault 0700/0710.",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdn2b001pv8zksnlss3eji",
+      "productName": "Motul 8100 Eco-nergy 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "acea",
+      "before": "A5, B5",
+      "after": "A5; B5",
+      "matchMethod": "EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdn2b001pv8zksnlss3eji",
+      "productName": "Motul 8100 Eco-nergy 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "FORD WSS-M2C913-A|FORD WSS-M2C913-B|FORD WSS-M2C913-C|FORD WSS-M2C913-D|RENAULT RN 0700|Jaguar/Land Rover STJLR.03.5003",
+      "after": "Ford WSS-M2C 913-A; Ford WSS-M2C 913-B; Ford WSS-M2C 913-C; Ford WSS-M2C 913-D; Renault RN 0700; Jaguar/Land Rover STJLR.03.5003",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdn9by01qj8zksbj0saddw",
+      "productName": "Bardahl XTEC 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 505.00|VW 505.01|MB 229.51|MB 229.31|MB 226.5|PORSCHE A40|BMW Longlife-04|FORD M2C917-A|RENAULT RN 0700|RENAULT RN 0710|GM Dexos 2|FIAT 9.55535-S2|FIAT 9.55535 GH2",
+      "after": "VW 505.00; VW 505.01; MB 229.51; MB 229.31; MB 226.5; PORSCHE A40; BMW Longlife-04; FORD M2C917-A; Renault RN 0700; Renault RN 0710; GM Dexos 2; FIAT 9.55535-S2; FIAT 9.55535-GH2",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdnlpb01ro8zksaqqpbfrl",
+      "productName": "GENESIS ARMORTECH DISEL 5W-40, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "GM dexos2™  MB-Approval 229.51  Renault RN 0700/0710  VW 505 00/505 01BMW LL-04  MB 229.31, 226.5  Porsche A40  Ford WSS-M2C-917-A  Fiat 9.55535-S2",
+      "after": "GM dexos2TM MB-Approval 229.51; Renault RN 0700; /0710; VW 505.00; /505 01BMW LL-04; MB 229.31; 226.5; PORSCHE A40; Ford WSS-M2C 917-A; FIAT 9.55535-S2",
+      "matchMethod": "CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, CUSTOM, EXACT_RAW, EXACT_RAW, EXACT_RAW",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmphdnp6j01rz8zks3qsytreu",
+      "productName": "ZIC TOP 5W-40, моторное масло, 4 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "brand",
+      "before": "Zic",
+      "after": "ZIC",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmphdns3e01s98zksq89wq0je",
+      "productName": "GENESIS ARMORTECH HK 5W-30, моторное масло, 1 л.",
+      "branchId": "legacy-unscoped",
+      "groupPath": "Масло в канистрах моторное/Масло в канистрах моторное",
+      "field": "oem",
+      "before": "VW 502 00/505 00, MB 229.5, Renault 0700/0710.",
+      "after": "VW 502.00/505.00; MB 229.5; Renault 0700/0710.",
+      "matchMethod": "EXACT_RAW, EXACT_RAW, CUSTOM",
+      "confidence": "NONE",
+      "warnings": [
+        "Содержит пользовательское значение; автоматическая запись запрещена"
+      ],
+      "applyEligible": false
+    },
+    {
+      "productId": "cmqkto5dg01hkmg0puow5981c",
+      "productName": "Масло дифференциала FEBI 70W-80 GL-5",
+      "branchId": "legacy-unscoped",
+      "groupPath": null,
+      "field": "brand",
+      "before": "FEBI",
+      "after": "Febi",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    },
+    {
+      "productId": "cmrdq0yib00ymlg0p5xa44ycu",
+      "productName": "Маслянный фильтр METACO 1020208",
+      "branchId": "legacy-unscoped",
+      "groupPath": null,
+      "field": "brand",
+      "before": "METACO",
+      "after": "Metaco",
+      "matchMethod": "EXACT_NORMALIZED",
+      "confidence": "HIGH",
+      "warnings": [],
+      "applyEligible": true
+    }
+  ]
+}

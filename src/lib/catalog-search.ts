@@ -9,6 +9,8 @@ import {
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
 import { splitProductCrossReferences } from "@/lib/product-cross-references";
+import { parseStoredAttributeValues } from "@/lib/product-attribute-values";
+import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 
 type LocalEntityMeta = {
   href: string;
@@ -530,6 +532,7 @@ function fieldsForProduct(product: CatalogProduct): SearchField[] {
     { key: "article", label: "Артикул", value: product.article ?? "", weight: 90, exact: true, identifier: true },
     { key: "externalCode", label: "Внешний код", value: product.externalCode ?? "", weight: 88, exact: true, identifier: true },
     { key: "oem", label: "OEM", value: product.oem ?? "", weight: 90, exact: true, identifier: true },
+    { key: "oemAtf", label: "OEM трансмиссии", value: product.oemAtf ?? "", weight: 90, exact: true, identifier: true },
     { key: "oemParts", label: "OEM Parts / кросс-номера / аналоги", value: product.oemParts ?? "", weight: 86, exact: true, identifier: true },
     { key: "rosskoPartNumber", label: "Код поставщика", value: product.rosskoPartNumber ?? "", weight: 84, exact: true, identifier: true },
     { key: "name", label: "Название", value: product.name, weight: 80 },
@@ -764,10 +767,8 @@ function cleanFilterValues(value: string | string[] | undefined): string[] {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   const seen = new Set<string>();
   for (const item of values) {
-    for (const part of String(item).split(",")) {
-      const clean = part.trim();
-      if (clean) seen.add(clean);
-    }
+    const clean = String(item).trim();
+    if (clean) seen.add(clean);
   }
   return [...seen];
 }
@@ -803,33 +804,39 @@ function normalizeType(value?: string): CatalogSearchType {
   return "all";
 }
 
-function filterValuesInclude(values: string[], candidate: string | null | undefined) {
+function filterValuesInclude(values: string[], candidates: string | string[] | null | undefined) {
   if (!values.length) return true;
-  const clean = candidate?.trim() ?? "";
-  const normalized = normalizeSearchText(clean);
-  return clean ? values.some((value) => value === clean || normalizeSearchText(value) === normalized) : false;
+  const candidateValues = Array.isArray(candidates) ? candidates : candidates ? [candidates] : [];
+  return candidateValues.some((candidate) => {
+    const clean = candidate.trim();
+    const normalized = normalizeSearchText(clean);
+    return clean ? values.some((value) => value === clean || normalizeSearchText(value) === normalized) : false;
+  });
 }
 
-function productFacetValue(item: CatalogSearchItem, key: "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "packageVolume") {
-  if (key === "brand") return item.brand;
-  if (key === "sae") return item.sae;
-  if (key === "supplier") return item.supplierName;
-  if (key === "group") return item.groupPath;
-  if (key === "entityType") return item.entityType;
-  if (key === "apiSpec") return item.apiSpec;
-  if (key === "acea") return item.acea;
-  return item.packageVolume;
+type CatalogFacetKey = "brand" | "sae" | "supplier" | "group" | "entityType" | "apiSpec" | "acea" | "packageVolume";
+
+function productFacetValues(item: CatalogSearchItem, key: CatalogFacetKey): string[] {
+  if (key === "brand") return item.brand ? [item.brand] : [];
+  if (key === "sae") return item.sae ? [item.sae] : [];
+  if (key === "supplier") return item.supplierName ? [item.supplierName] : [];
+  if (key === "group") return item.groupPath ? [item.groupPath] : [];
+  if (key === "entityType") return item.entityType ? [item.entityType] : [];
+  if (key === "packageVolume") return item.packageVolume ? [item.packageVolume] : [];
+  if (key === "acea") return parseStoredAttributeValues(item.acea, "acea");
+  const profile = resolveProductFluidAttributeProfile(item);
+  return parseStoredAttributeValues(item.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
 
 function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult["meta"]["filters"]) {
-  if (!filterValuesInclude(filters.brand, item.brand)) return false;
-  if (!filterValuesInclude(filters.sae, item.sae)) return false;
-  if (!filterValuesInclude(filters.supplier, item.supplierName)) return false;
-  if (!filterValuesInclude(filters.group, item.groupPath)) return false;
-  if (!filterValuesInclude(filters.entityType, item.entityType)) return false;
-  if (!filterValuesInclude(filters.apiSpec, item.apiSpec)) return false;
-  if (!filterValuesInclude(filters.acea, item.acea)) return false;
-  if (!filterValuesInclude(filters.packageVolume, item.packageVolume)) return false;
+  if (!filterValuesInclude(filters.brand, productFacetValues(item, "brand"))) return false;
+  if (!filterValuesInclude(filters.sae, productFacetValues(item, "sae"))) return false;
+  if (!filterValuesInclude(filters.supplier, productFacetValues(item, "supplier"))) return false;
+  if (!filterValuesInclude(filters.group, productFacetValues(item, "group"))) return false;
+  if (!filterValuesInclude(filters.entityType, productFacetValues(item, "entityType"))) return false;
+  if (!filterValuesInclude(filters.apiSpec, productFacetValues(item, "apiSpec"))) return false;
+  if (!filterValuesInclude(filters.acea, productFacetValues(item, "acea"))) return false;
+  if (!filterValuesInclude(filters.packageVolume, productFacetValues(item, "packageVolume"))) return false;
   if (filters.stock === "inStock" && item.totalAvailable <= 0) return false;
   if (filters.stock === "outOfStock" && item.totalAvailable > 0) return false;
   if (filters.markingProblems && !productHasMarkingProblem({
@@ -848,14 +855,15 @@ function rowMatchesFilters(item: CatalogSearchItem, filters: CatalogSearchResult
   return true;
 }
 
-function facetOptions(items: CatalogSearchItem[], key: Parameters<typeof productFacetValue>[1]): FacetOption[] {
+function facetOptions(items: CatalogSearchItem[], key: CatalogFacetKey): FacetOption[] {
   const counts = new Map<string, { value: string; count: number }>();
   for (const item of items) {
-    const value = productFacetValue(item, key).trim();
-    if (!value) continue;
-    const normalized = normalizeSearchText(value);
-    const current = counts.get(normalized);
-    counts.set(normalized, { value: current?.value ?? value, count: (current?.count ?? 0) + 1 });
+    const uniqueValues = new Map(productFacetValues(item, key).map((value) => [normalizeSearchText(value), value]));
+    for (const [normalized, value] of uniqueValues) {
+      if (!normalized) continue;
+      const current = counts.get(normalized);
+      counts.set(normalized, { value: current?.value ?? value, count: (current?.count ?? 0) + 1 });
+    }
   }
   return [...counts.values()].sort((a, b) => b.count - a.count || ruCollator.compare(a.value, b.value));
 }

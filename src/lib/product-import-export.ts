@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { invalidateProductFilterOptions } from "@/lib/local-inventory-admin";
 import { mergeProductCrossReferences } from "@/lib/product-cross-references";
 import { productIdentityKey, sameExactProductIdentity } from "@/lib/product-identity";
+import { normalizeProductAttributePayload, type ProductAttributeMatch } from "@/lib/product-attribute-values";
 
 type ProductWithStock = Prisma.LocalProductGetPayload<{
   include: { stockBalances: true };
@@ -95,7 +96,13 @@ type ImportPreviewRow = {
   source: Record<string, unknown>;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
-  changedFields: Array<{ field: string; label: string; oldValue: unknown; newValue: unknown }>;
+  changedFields: Array<{
+    field: string;
+    label: string;
+    oldValue: unknown;
+    newValue: unknown;
+    normalization?: Array<Pick<ProductAttributeMatch, "method" | "status" | "confidence" | "warnings">>;
+  }>;
   errors: string[];
   warnings: string[];
 };
@@ -614,6 +621,24 @@ function productInputFromPreview(after: Record<string, unknown>) {
   };
 }
 
+const importAttributeFields = ["brand", "sae", "packageVolume", "acea", "apiSpec", "ilsac", "atf", "oem", "oemAtf", "aceaExtra"] as const;
+type ImportAttributeField = (typeof importAttributeFields)[number];
+
+function normalizeImportedAttributes(after: Record<string, unknown>, presentFields: ReadonlySet<string>) {
+  const supplied = Object.fromEntries(importAttributeFields
+    .filter((field) => presentFields.has(field))
+    .map((field) => [field, after[field]]));
+  const normalized = normalizeProductAttributePayload({
+    groupPath: after.groupPath ? String(after.groupPath) : null,
+    entityType: after.entityType ? String(after.entityType) : "product",
+    ...supplied,
+  });
+  for (const field of importAttributeFields) {
+    if (presentFields.has(field) && normalized.values[field] !== undefined) after[field] = normalized.values[field];
+  }
+  return normalized.matches as Partial<Record<ImportAttributeField, ProductAttributeMatch[]>>;
+}
+
 function currentEditableSnapshot(product: ProductWithStock) {
   const snapshot = productSnapshot(product);
   const result: Record<string, unknown> = {};
@@ -671,7 +696,7 @@ function productDataFromAfter(after: Record<string, unknown>) {
   const data = productInputFromPreview(after);
   return {
     ...data,
-    searchText: buildSearchText(after),
+    searchText: buildSearchText({ ...after, ...data }),
     raw: toJson({ importSource: "product-excel", importedAt: new Date().toISOString() }),
     syncedAt: new Date(),
   };
@@ -791,7 +816,22 @@ async function buildPreviewRows(rows: ParsedImportRow[], options: Required<Produ
       after.oemParts = mergeProductCrossReferences(after.oemParts, [parsed.values[LEGACY_MANN_POMAN_KEY]]);
       rowWarnings.push(LEGACY_MANN_POMAN_WARNING);
     }
+    const presentAttributeFields = new Set(editableColumns.flatMap((column) =>
+      column.field && importAttributeFields.includes(column.field as ImportAttributeField) && parsed.presentKeys.has(column.key)
+        ? [column.field]
+        : []
+    ));
+    const attributeMatches = normalizeImportedAttributes(after, presentAttributeFields);
     const changedFields = buildChangedFields(before, after);
+    for (const changedField of changedFields) {
+      const matches = attributeMatches[changedField.field as ImportAttributeField];
+      if (!matches?.length) continue;
+      changedField.normalization = matches.map(({ method, status, confidence, warnings }) => ({ method, status, confidence, warnings }));
+      for (const match of matches) {
+        if (match.status === "CUSTOM" && match.value) rowWarnings.push(`${changedField.label}: пользовательское значение «${match.value}» сохранено без потери`);
+        if (match.status === "AMBIGUOUS") rowWarnings.push(`${changedField.label}: неоднозначное значение «${match.input}» оставлено для ручной проверки`);
+      }
+    }
     const validation = validateAfter(after, parsed, products, product?.id ?? null);
     validation.warnings.push(...rowWarnings);
     const identityFingerprint = productIdentityKey(after);

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<APIValues>
+	<API>CD</API>
+	<API>CE</API>
+	<API>CF</API>
+	<API>CF-2</API>
+	<API>CG-4</API>
+	<API>GL-1</API>
+	<API>GL-2</API>
+	<API>GL-3</API>
+	<API>GL-3+</API>
+	<API>GL-4</API>
+	<API>GL-4+</API>
+	<API>GL-4/GL-5</API>
+	<API>GL-5</API>
+	<API>GL-5 LS</API>
+	<API>GL-5+</API>
+	<API>LS</API>
+	<API>MT-1</API>
+	<API>SE</API>
+	<API>SF</API>
+	<API>SG</API>
+	<API>SH</API>
+	<API>TM-1</API>
+</APIValues>

@@ -38,6 +38,12 @@ import { lockInventoryCostKeys } from "@/lib/inventory-costing-db";
 import { invalidateWarehouseProductAnalyticsCache } from "@/lib/warehouse-product-analytics";
 import { invalidatePayrollCache } from "@/lib/payroll";
 import { applyProductStorageCellTx, StorageCellError } from "@/lib/storage-cells";
+import {
+  normalizeProductAttributePayload,
+  parseStoredAttributeValues,
+  type ProductAttributeMatch,
+} from "@/lib/product-attribute-values";
+import { resolveProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 
 export type LocalStockDocumentType = "receipt" | "writeoff";
 type LocalAdjustmentType = "technical" | "expense";
@@ -347,6 +353,50 @@ type CounterpartyRow = LocalCounterparty;
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   if (value == null) return Prisma.JsonNull;
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+type ProductFluidStorageField = "brand" | "sae" | "packageVolume" | "acea" | "apiSpec" | "ilsac" | "atf" | "oem" | "oemAtf" | "aceaExtra";
+
+async function writeProductAttributeNormalizationAudit(input: {
+  client: Prisma.TransactionClient | typeof prisma;
+  branchId: string;
+  productId: string;
+  action: "create" | "update";
+  actor?: ActingUser | null;
+  before?: Partial<Record<ProductFluidStorageField, unknown>>;
+  after: Partial<Record<ProductFluidStorageField, unknown>>;
+  matches: Partial<Record<ProductFluidStorageField, ProductAttributeMatch[]>>;
+}) {
+  const changedFields = (Object.keys(input.after) as ProductFluidStorageField[]).flatMap((field) => {
+    const oldValue = input.before?.[field] ?? null;
+    const newValue = input.after[field] ?? null;
+    if (input.action === "update" && String(oldValue ?? "") === String(newValue ?? "")) return [];
+    return [{
+      field,
+      oldValue,
+      newValue,
+      normalization: (input.matches[field] ?? []).map((match) => ({
+        input: match.input,
+        value: match.value,
+        method: match.method,
+        status: match.status,
+        confidence: match.confidence,
+        warnings: match.warnings,
+      })),
+    }];
+  });
+  if (!changedFields.length) return;
+  await input.client.changeLog.create({
+    data: {
+      branchId: input.branchId,
+      entityType: "LocalProduct.attributes",
+      entityId: input.productId,
+      action: input.action,
+      oldValue: input.action === "update" ? toJson(Object.fromEntries(changedFields.map((item) => [item.field, item.oldValue]))) : Prisma.JsonNull,
+      newValue: toJson({ branchId: input.branchId, fields: changedFields }),
+      performedByLogin: input.actor?.login ?? "system",
+    },
+  });
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> {
@@ -1404,19 +1454,19 @@ function cleanFilterValues(value: MultiProductFilterValue): string[] {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   const seen = new Set<string>();
   for (const item of values) {
-    for (const part of String(item).split(",")) {
-      const clean = part.trim();
-      if (clean) seen.add(clean);
-    }
+    const clean = String(item).trim();
+    if (clean) seen.add(clean);
   }
   return [...seen];
 }
 
-function filterValuesInclude(values: string[], candidate: string | null | undefined) {
+function filterValuesInclude(values: string[], candidates: Array<string | null | undefined>) {
   if (!values.length) return true;
-  const clean = candidate?.trim() ?? "";
-  const normalized = normalizeSearchText(clean);
-  return clean ? values.some((value) => value === clean || normalizeSearchText(value) === normalized) : false;
+  const normalizedCandidates = candidates.map((candidate) => candidate?.trim() ?? "").filter(Boolean);
+  return normalizedCandidates.some((candidate) => {
+    const normalized = normalizeSearchText(candidate);
+    return values.some((value) => value === candidate || normalizeSearchText(value) === normalized);
+  });
 }
 
 function uniqueSorted(values: Array<string | null | undefined>, limit = 200) {
@@ -1479,15 +1529,16 @@ type ProductFacets = {
   stock: Record<StockFilter, number>;
 };
 
-function productFacetValue(row: ProductSearchRow, key: ProductFacetKey): string {
-  if (key === "brand") return row.brand;
-  if (key === "sae") return row.sae;
-  if (key === "supplier") return row.supplierName;
-  if (key === "group") return row.groupPath;
-  if (key === "entityType") return row.entityType;
-  if (key === "apiSpec") return row.apiSpec;
-  if (key === "acea") return row.acea;
-  return row.packageVolume;
+function productFacetValues(row: ProductSearchRow, key: ProductFacetKey): string[] {
+  if (key === "brand") return [row.brand];
+  if (key === "sae") return [row.sae];
+  if (key === "supplier") return [row.supplierName];
+  if (key === "group") return [row.groupPath];
+  if (key === "entityType") return [row.entityType];
+  if (key === "packageVolume") return [row.packageVolume];
+  if (key === "acea") return parseStoredAttributeValues(row.acea, "acea");
+  const profile = resolveProductFluidAttributeProfile(row);
+  return parseStoredAttributeValues(row.apiSpec, profile === "TRANSMISSION_FLUID" ? "transmissionApi" : "engineApi");
 }
 
 function facetCollectionKey(key: ProductFacetKey): keyof Omit<ProductFacets, "stock"> {
@@ -1505,7 +1556,7 @@ function productFilterValues(params: ProductFilterParams, key: ProductFacetKey):
 }
 
 function productMatchesFacetFilter(row: ProductSearchRow, params: ProductFilterParams, key: ProductFacetKey) {
-  return filterValuesInclude(productFilterValues(params, key), productFacetValue(row, key));
+  return filterValuesInclude(productFilterValues(params, key), productFacetValues(row, key));
 }
 
 function facetOptionsFromRows(rows: ProductSearchRow[], key: ProductFacetKey, params: ProductFilterParams) {
@@ -1513,14 +1564,16 @@ function facetOptionsFromRows(rows: ProductSearchRow[], key: ProductFacetKey, pa
   const selectedByNormalized = new Map([...selected].map((value) => [normalizeSearchText(value), value]));
   const counts = new Map<string, { value: string; count: number }>();
   for (const row of rows) {
-    const value = productFacetValue(row, key).trim();
-    if (!value) continue;
-    const normalized = normalizeSearchText(value);
-    const current = counts.get(normalized);
-    counts.set(normalized, {
-      value: current?.value ?? selectedByNormalized.get(normalized) ?? value,
-      count: (current?.count ?? 0) + 1,
-    });
+    for (const rawValue of productFacetValues(row, key)) {
+      const value = rawValue.trim();
+      if (!value) continue;
+      const normalized = normalizeSearchText(value);
+      const current = counts.get(normalized);
+      counts.set(normalized, {
+        value: current?.value ?? selectedByNormalized.get(normalized) ?? value,
+        count: (current?.count ?? 0) + 1,
+      });
+    }
   }
   for (const value of selected) {
     const normalized = normalizeSearchText(value);
@@ -1752,7 +1805,10 @@ function productSearchRank(row: ProductSearchRow, query: SearchQuery) {
     [row.packageVolume, 18],
     [row.apiSpec, 20],
     [row.acea, 20],
+    [row.ilsac, 20],
+    [row.atf, 20],
     [row.oem, 22],
+    [row.oemAtf, 22],
     [row.oemParts, 24],
     [row.supplierAttribute, 32],
     [row.supplierName, 45],
@@ -1793,14 +1849,14 @@ function rowMatchesProductStockFilter(row: ProductSearchRow, value?: string) {
 
 function rowMatchesProductFilters(row: ProductSearchRow, params: ProductFilterParams) {
   const stock = normalizeStockFilter(params.stock);
-  if (!filterValuesInclude(cleanFilterValues(params.brand), row.brand)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.sae), row.sae)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.supplier), row.supplierName)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.group), row.groupPath)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.entityType), row.entityType)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.apiSpec), row.apiSpec)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.acea), row.acea)) return false;
-  if (!filterValuesInclude(cleanFilterValues(params.packageVolume), row.packageVolume)) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.brand), productFacetValues(row, "brand"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.sae), productFacetValues(row, "sae"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.supplier), productFacetValues(row, "supplier"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.group), productFacetValues(row, "group"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.entityType), productFacetValues(row, "entityType"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.apiSpec), productFacetValues(row, "apiSpec"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.acea), productFacetValues(row, "acea"))) return false;
+  if (!filterValuesInclude(cleanFilterValues(params.packageVolume), productFacetValues(row, "packageVolume"))) return false;
   if (stock === "inStock" && row.totalAvailable <= 0) return false;
   if (stock === "outOfStock" && row.totalAvailable > 0) return false;
   if (params.markingProblems && !productHasMarkingProblem({
@@ -2830,16 +2886,18 @@ export async function createLocalAdminProduct(
   const legacySupplierName = cleanText(body.legacySupplierName);
   const modificationCode = cleanText(body.modificationCode);
   const tnvedCode = cleanText(body.tnvedCode);
-  const sae = cleanText(body.sae);
-  const oem = cleanText(body.oem);
-  const acea = cleanText(body.acea);
-  const apiSpec = cleanText(body.apiSpec);
-  const packageVolume = cleanText(body.packageVolume);
-  const brand = cleanText(body.brand);
-  const atf = cleanText(body.atf);
-  const ilsac = cleanText(body.ilsac);
-  const aceaExtra = cleanText(body.aceaExtra);
-  const oemAtf = cleanText(body.oemAtf);
+  const attributeNormalization = normalizeProductAttributePayload({ ...body, groupPath, entityType });
+  const normalizedAttributes = attributeNormalization.values;
+  const sae = normalizedAttributes.sae === undefined ? cleanText(body.sae) : normalizedAttributes.sae;
+  const oem = normalizedAttributes.oem === undefined ? cleanText(body.oem) : normalizedAttributes.oem;
+  const acea = normalizedAttributes.acea === undefined ? cleanText(body.acea) : normalizedAttributes.acea;
+  const apiSpec = normalizedAttributes.apiSpec === undefined ? cleanText(body.apiSpec) : normalizedAttributes.apiSpec;
+  const packageVolume = normalizedAttributes.packageVolume === undefined ? cleanText(body.packageVolume) : normalizedAttributes.packageVolume;
+  const brand = normalizedAttributes.brand === undefined ? cleanText(body.brand) : normalizedAttributes.brand;
+  const atf = normalizedAttributes.atf === undefined ? cleanText(body.atf) : normalizedAttributes.atf;
+  const ilsac = normalizedAttributes.ilsac === undefined ? cleanText(body.ilsac) : normalizedAttributes.ilsac;
+  const aceaExtra = normalizedAttributes.aceaExtra === undefined ? cleanText(body.aceaExtra) : normalizedAttributes.aceaExtra;
+  const oemAtf = normalizedAttributes.oemAtf === undefined ? cleanText(body.oemAtf) : normalizedAttributes.oemAtf;
   const legacyMannName = cleanText(body.mannName);
   const rosskoPartNumber = cleanText(body.rosskoPartNumber);
   const rosskoBrand = cleanText(body.rosskoBrand);
@@ -2999,6 +3057,15 @@ export async function createLocalAdminProduct(
       transaction: options.transaction,
     });
   }
+  await writeProductAttributeNormalizationAudit({
+    client,
+    branchId,
+    productId: product.id,
+    action: "create",
+    actor,
+    after: normalizedAttributes as Partial<Record<ProductFluidStorageField, unknown>>,
+    matches: attributeNormalization.matches as Partial<Record<ProductFluidStorageField, ProductAttributeMatch[]>>,
+  });
   invalidateProductFilterOptions();
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();
@@ -3045,17 +3112,19 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
   const volume = body.volume === undefined ? current.volume : decimalFromInput(body.volume);
   const modificationCode = body.modificationCode === undefined ? current.modificationCode : cleanText(body.modificationCode);
   const tnvedCode = body.tnvedCode === undefined ? current.tnvedCode : cleanText(body.tnvedCode);
-  const sae = body.sae === undefined ? current.sae : cleanText(body.sae);
-  const oem = body.oem === undefined ? current.oem : cleanText(body.oem);
-  const acea = body.acea === undefined ? current.acea : cleanText(body.acea);
-  const apiSpec = body.apiSpec === undefined ? current.apiSpec : cleanText(body.apiSpec);
-  const packageVolume = body.packageVolume === undefined ? current.packageVolume : cleanText(body.packageVolume);
+  const attributeNormalization = normalizeProductAttributePayload({ ...body, groupPath, entityType });
+  const normalizedAttributes = attributeNormalization.values;
+  const sae = body.sae === undefined ? current.sae : normalizedAttributes.sae ?? null;
+  const oem = body.oem === undefined ? current.oem : normalizedAttributes.oem ?? null;
+  const acea = body.acea === undefined ? current.acea : normalizedAttributes.acea ?? null;
+  const apiSpec = body.apiSpec === undefined ? current.apiSpec : normalizedAttributes.apiSpec ?? null;
+  const packageVolume = body.packageVolume === undefined ? current.packageVolume : normalizedAttributes.packageVolume ?? null;
   const avito = body.avito === undefined ? current.avito : booleanFromInput(body.avito);
-  const brand = body.brand === undefined ? current.brand : cleanText(body.brand);
-  const atf = body.atf === undefined ? current.atf : cleanText(body.atf);
-  const ilsac = body.ilsac === undefined ? current.ilsac : cleanText(body.ilsac);
-  const aceaExtra = body.aceaExtra === undefined ? current.aceaExtra : cleanText(body.aceaExtra);
-  const oemAtf = body.oemAtf === undefined ? current.oemAtf : cleanText(body.oemAtf);
+  const brand = body.brand === undefined ? current.brand : normalizedAttributes.brand ?? null;
+  const atf = body.atf === undefined ? current.atf : normalizedAttributes.atf ?? null;
+  const ilsac = body.ilsac === undefined ? current.ilsac : normalizedAttributes.ilsac ?? null;
+  const aceaExtra = body.aceaExtra === undefined ? current.aceaExtra : normalizedAttributes.aceaExtra ?? null;
+  const oemAtf = body.oemAtf === undefined ? current.oemAtf : normalizedAttributes.oemAtf ?? null;
   const legacyMannName = body.mannName === undefined ? current.mannName : cleanText(body.mannName);
   const rosskoPartNumber =
     body.rosskoPartNumber === undefined ? current.rosskoPartNumber : cleanText(body.rosskoPartNumber);
@@ -3172,6 +3241,38 @@ export async function updateLocalAdminProduct(id: string, body: ProductInput, ac
       actor,
     });
   }
+  await writeProductAttributeNormalizationAudit({
+    client: prisma,
+    branchId,
+    productId: product.id,
+    action: "update",
+    actor,
+    before: {
+      brand: current.brand,
+      sae: current.sae,
+      packageVolume: current.packageVolume,
+      acea: current.acea,
+      apiSpec: current.apiSpec,
+      ilsac: current.ilsac,
+      atf: current.atf,
+      oem: current.oem,
+      oemAtf: current.oemAtf,
+      aceaExtra: current.aceaExtra,
+    },
+    after: Object.fromEntries((Object.keys(normalizedAttributes) as ProductFluidStorageField[]).map((field) => [field, {
+      brand,
+      sae,
+      packageVolume,
+      acea,
+      apiSpec,
+      ilsac,
+      atf,
+      oem,
+      oemAtf,
+      aceaExtra,
+    }[field]])) as Partial<Record<ProductFluidStorageField, unknown>>,
+    matches: attributeNormalization.matches as Partial<Record<ProductFluidStorageField, ProductAttributeMatch[]>>,
+  });
   invalidateProductFilterOptions();
   invalidateRestockNeedsLists();
   invalidateLocalInventoryFinanceCache();

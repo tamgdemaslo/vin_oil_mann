@@ -6,7 +6,6 @@ import { searchCatalog, type CatalogSearchParams } from "@/lib/catalog-search";
 function readValues(request: NextRequest, key: string) {
   return request.nextUrl.searchParams
     .getAll(key)
-    .flatMap((value) => value.split(","))
     .map((value) => value.trim())
     .filter(Boolean);
 }

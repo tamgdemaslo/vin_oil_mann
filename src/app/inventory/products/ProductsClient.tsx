@@ -38,6 +38,8 @@ import ProductCopyToBranchDialog from "@/components/products/ProductCopyToBranch
 import ProductHistoryPanel from "@/components/products/ProductHistoryPanel";
 import ProductOemBatchPanel from "@/components/products/ProductOemBatchPanel";
 import RosskoProductImportDialog from "@/components/products/RosskoProductImportDialog";
+import CreatableSearchCombobox from "@/components/products/CreatableSearchCombobox";
+import CreatableMultiCombobox from "@/components/products/CreatableMultiCombobox";
 import type { RosskoImportCreatedProduct } from "@/lib/rossko-product-import";
 import type { ProductOemBatchView } from "@/lib/product-oem-batches";
 import { mergeProductCrossReferences, splitProductCrossReferences } from "@/lib/product-cross-references";
@@ -54,6 +56,7 @@ import {
   type ProductMarkingMode,
   type ProductMarkingSettings,
 } from "@/lib/product-marking";
+import { resolveProductFluidAttributeProfile, type ProductFluidAttributeProfile } from "@/lib/product-fluid-profile";
 
 type StockRow = {
   storeId: string;
@@ -1049,18 +1052,17 @@ function compactHeaderValue(value: string | null | undefined, fallback = "не �
 function productGroupKindFromGroup(groupPath: string): ProductGroupKind {
   const group = normalizeFieldSearch(groupPath);
   if (!group) return "other";
-  if (
-    /(^|\s)(масл|масло|oil|жидк|fluid|atf|трансмисс|редуктор|гур|антифриз|тормозн)/.test(group)
-    && !/фильтр/.test(group)
-  ) {
-    return "oil";
-  }
   if (/фильтр|filter/.test(group)) return "filter";
+  if (resolveProductFluidAttributeProfile({ groupPath }) !== "OTHER") return "oil";
   return "other";
 }
 
 function productGroupKind(form: ProductForm): ProductGroupKind {
   return productGroupKindFromGroup(form.groupPath);
+}
+
+function productFluidProfile(form: ProductForm): ProductFluidAttributeProfile {
+  return resolveProductFluidAttributeProfile({ groupPath: form.groupPath, entityType: form.entityType });
 }
 
 function isOilProduct(form: ProductForm) {
@@ -1071,22 +1073,29 @@ function isFilterProduct(form: ProductForm) {
   return productGroupKind(form) === "filter";
 }
 
-function filledLabels(form: ProductForm, fields: Array<{ key: keyof ProductForm; label: string }>) {
+function filledCharacteristics(form: ProductForm, fields: Array<{ key: keyof ProductForm; label: string }>) {
   return fields
     .filter((field) => String(form[field.key] ?? "").trim())
-    .map((field) => field.label);
+    .map((field) => ({ label: field.label, value: String(form[field.key] ?? "").trim() }));
 }
 
-const oilCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
+const sharedFluidCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
   { key: "sae", label: "SAE" },
   { key: "apiSpec", label: "API" },
+  { key: "packageVolume", label: "Фасовка" },
+  { key: "volume", label: "Объём" },
+];
+
+const engineOilCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
   { key: "acea", label: "ACEA" },
   { key: "aceaExtra", label: "ACEA A/B" },
   { key: "ilsac", label: "ILSAC" },
+  { key: "oem", label: "Допуски моторного масла" },
+];
+
+const transmissionFluidCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
   { key: "atf", label: "ATF" },
-  { key: "packageVolume", label: "Фасовка" },
-  { key: "volume", label: "Объём" },
-  { key: "oemAtf", label: "Допуски производителя" },
+  { key: "oemAtf", label: "Допуски трансмиссии" },
 ];
 
 const filterCharacteristicFields: Array<{ key: keyof ProductForm; label: string }> = [
@@ -1096,9 +1105,17 @@ const filterCharacteristicFields: Array<{ key: keyof ProductForm; label: string 
 ];
 
 function hiddenCharacteristicLabels(form: ProductForm) {
-  if (isOilProduct(form)) return filledLabels(form, filterCharacteristicFields);
-  if (isFilterProduct(form)) return filledLabels(form, oilCharacteristicFields);
-  return filledLabels(form, [...oilCharacteristicFields, ...filterCharacteristicFields]);
+  const profile = productFluidProfile(form);
+  if (profile === "ENGINE_OIL") {
+    return filledCharacteristics(form, [...transmissionFluidCharacteristicFields, ...filterCharacteristicFields.filter((field) => field.key !== "oem")]);
+  }
+  if (profile === "TRANSMISSION_FLUID") {
+    return filledCharacteristics(form, [...engineOilCharacteristicFields, ...filterCharacteristicFields]);
+  }
+  if (isFilterProduct(form)) {
+    return filledCharacteristics(form, [...sharedFluidCharacteristicFields, ...engineOilCharacteristicFields.filter((field) => field.key !== "oem"), ...transmissionFluidCharacteristicFields]);
+  }
+  return filledCharacteristics(form, [...sharedFluidCharacteristicFields, ...engineOilCharacteristicFields, ...transmissionFluidCharacteristicFields, ...filterCharacteristicFields]);
 }
 
 function isMarkingEnabled(form: ProductForm): boolean {
@@ -2037,6 +2054,7 @@ export default function ProductsClient() {
     ? null
     : Math.round((marginDraft / salePriceDraft) * 100);
   const groupKind = productGroupKind(form);
+  const fluidAttributeProfile = productFluidProfile(form);
   const hiddenFieldsForGroup = useMemo(() => hiddenCharacteristicLabels(form), [form]);
   const completionItems = useMemo(() => {
     const items = [
@@ -3547,7 +3565,7 @@ export default function ProductsClient() {
     setFormError(null);
     setInfo(null);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: form.name.trim(),
         article: form.article.trim() || undefined,
         code: form.code.trim() || undefined,
@@ -3572,17 +3590,17 @@ export default function ProductsClient() {
         volume: form.volume.trim() || null,
         modificationCode: form.modificationCode.trim() || undefined,
         tnvedCode: form.tnvedCode.trim() || undefined,
-        sae: form.sae.trim() || undefined,
-        oem: form.oem.trim() || undefined,
-        acea: form.acea.trim() || undefined,
-        apiSpec: form.apiSpec.trim() || undefined,
-        packageVolume: form.packageVolume.trim() || undefined,
+        sae: form.sae.trim() || null,
+        oem: form.oem.trim() || null,
+        acea: form.acea.trim() || null,
+        apiSpec: form.apiSpec.trim() || null,
+        packageVolume: form.packageVolume.trim() || null,
         avito: form.avito === "" ? null : form.avito === "true",
-        brand: form.brand.trim() || undefined,
-        atf: form.atf.trim() || undefined,
-        ilsac: form.ilsac.trim() || undefined,
-        aceaExtra: form.aceaExtra.trim() || undefined,
-        oemAtf: form.oemAtf.trim() || undefined,
+        brand: form.brand.trim() || null,
+        atf: form.atf.trim() || null,
+        ilsac: form.ilsac.trim() || null,
+        aceaExtra: form.aceaExtra.trim() || null,
+        oemAtf: form.oemAtf.trim() || null,
         rosskoPartNumber: form.rosskoPartNumber.trim() || undefined,
         rosskoBrand: form.rosskoBrand.trim() || undefined,
         rosskoMin: form.rosskoMin.trim() || undefined,
@@ -3607,6 +3625,12 @@ export default function ProductsClient() {
             }
           : null,
       };
+      if (editingId) {
+        const attributeKeys: Array<keyof ProductForm> = ["brand", "sae", "packageVolume", "acea", "apiSpec", "ilsac", "atf", "oem", "oemAtf", "aceaExtra"];
+        for (const key of attributeKeys) {
+          if (form[key] === formBaseline[key]) delete payload[key];
+        }
+      }
       const res = await fetch(
         editingId ? `/api/local-inventory/products/${editingId}` : "/api/local-inventory/products",
         {
@@ -4149,8 +4173,10 @@ export default function ProductsClient() {
   }
 
   function clearHiddenCharacteristics() {
-    if (groupKind === "oil") {
-      updateForm({ oem: "", oemParts: "", mannCharacteristicName: "" });
+    if (fluidAttributeProfile === "ENGINE_OIL") {
+      updateForm({ atf: "", oemAtf: "", oemParts: "", mannCharacteristicName: "" });
+    } else if (fluidAttributeProfile === "TRANSMISSION_FLUID") {
+      updateForm({ acea: "", aceaExtra: "", ilsac: "", oem: "", oemParts: "", mannCharacteristicName: "" });
     } else if (groupKind === "filter") {
       updateForm({
         sae: "",
@@ -4186,10 +4212,17 @@ export default function ProductsClient() {
     return (
       <div className="product-editor-alert is-warning">
         <AlertCircle aria-hidden className="eco-icon" />
-        <span>
-          Для выбранной группы скрыты заполненные поля: {hiddenFieldsForGroup.join(", ")}.
-          Данные сохранятся в карточке, но не используются в рабочем блоке характеристик.
-        </span>
+        <div className="product-editor-preserved-fields">
+          <span>Эти заполненные поля относятся к другому профилю. Они видимы ниже и сохранятся без изменений:</span>
+          <dl>
+            {hiddenFieldsForGroup.map((field) => (
+              <div key={field.label}>
+                <dt>{field.label}</dt>
+                <dd>{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
         <button type="button" className="eco-btn eco-btn--sm" onClick={clearHiddenCharacteristics}>
           Очистить скрытые поля
         </button>
@@ -4343,32 +4376,49 @@ export default function ProductsClient() {
   }
 
   function renderGroupCharacteristicsSection() {
-    if (groupKind === "oil") {
+    if (fluidAttributeProfile === "ENGINE_OIL") {
       return (
         <section id={productEditorSectionElementId("oil")} className="product-editor-section is-oil">
           <div className="product-editor-section-head">
             <div>
-              <h3>Характеристики масла</h3>
-              <p>Вязкость, допуски, фасовка и объём для масел и технических жидкостей</p>
+              <h3>Моторное масло</h3>
+              <p>Канонические SAE, ACEA, API, ILSAC и допуски производителя</p>
             </div>
-            <span className="product-editor-type-badge">Масло / жидкость</span>
+            <span className="product-editor-type-badge">ENGINE OIL</span>
           </div>
           {renderHiddenCharacteristicsWarning()}
           <div className="product-editor-grid">
-            {renderField("sae", "SAE / вязкость", { placeholder: "5W-30" })}
-            {renderField("apiSpec", "API", { placeholder: "SP" })}
-            {renderField("acea", "ACEA", { placeholder: "C3" })}
-            {renderField("aceaExtra", "ACEA A/B", { placeholder: "A3/B4" })}
-            {renderField("ilsac", "ILSAC", { placeholder: "GF-6" })}
-            {renderField("atf", "ATF", { placeholder: "Dexron VI" })}
-            {renderField("packageVolume", "Фасовка", { placeholder: "канистра 1 л / бочка / разлив" })}
+            <CreatableSearchCombobox id="product-field-sae" label="Вязкость SAE" field="engineSae" value={form.sae} onChange={(sae) => updateForm({ sae })} placeholder="Например, 5W-30" />
+            <CreatableSearchCombobox id="product-field-packageVolume" label="Объём упаковки" field="packageVolume" value={form.packageVolume} onChange={(packageVolume) => updateForm({ packageVolume })} placeholder="Например, 4 л" />
+            <CreatableMultiCombobox id="product-field-acea" label="ACEA" field="acea" value={form.acea} onChange={(acea) => updateForm({ acea })} placeholder="C3; A3/B4" />
+            {form.aceaExtra.trim() ? <CreatableMultiCombobox id="product-field-aceaExtra" label="ACEA A/B (сохранённое legacy-поле)" field="acea" value={form.aceaExtra} onChange={(aceaExtra) => updateForm({ aceaExtra })} placeholder="A3/B4" hint="Поле показано, чтобы существующее значение не скрывалось и не терялось. Новые ACEA добавляйте в основное поле выше." /> : null}
+            <CreatableMultiCombobox id="product-field-apiSpec" label="API" field="engineApi" value={form.apiSpec} onChange={(apiSpec) => updateForm({ apiSpec })} placeholder="SP; SN/CF" />
+            <CreatableMultiCombobox id="product-field-ilsac" label="ILSAC" field="ilsac" value={form.ilsac} onChange={(ilsac) => updateForm({ ilsac })} placeholder="GF-6A" />
             {renderField("volume", "Объём, л", { type: "number", placeholder: "1" })}
-            {renderField("oemAtf", "Допуски производителя", {
-              type: "textarea",
-              rows: 3,
-              full: true,
-              placeholder: "MB 229.51, VW 504/507...",
-            })}
+            <CreatableMultiCombobox id="product-field-oem" label="Допуски производителей" field="engineOem" value={form.oem} onChange={(oem) => updateForm({ oem })} placeholder="BMW Longlife-04; VW 504.00/507.00" hint="Составные допуски с / остаются одним значением." />
+          </div>
+        </section>
+      );
+    }
+
+    if (fluidAttributeProfile === "TRANSMISSION_FLUID") {
+      return (
+        <section id={productEditorSectionElementId("oil")} className="product-editor-section is-oil">
+          <div className="product-editor-section-head">
+            <div>
+              <h3>Трансмиссионная жидкость</h3>
+              <p>SAE, ATF, API GL/MT и отдельные допуски агрегатов</p>
+            </div>
+            <span className="product-editor-type-badge">TRANSMISSION</span>
+          </div>
+          {renderHiddenCharacteristicsWarning()}
+          <div className="product-editor-grid">
+            <CreatableSearchCombobox id="product-field-sae" label="Вязкость трансмиссионного масла" field="transmissionSae" value={form.sae} onChange={(sae) => updateForm({ sae })} placeholder="Например, 75W-90" />
+            <CreatableSearchCombobox id="product-field-packageVolume" label="Объём упаковки" field="packageVolume" value={form.packageVolume} onChange={(packageVolume) => updateForm({ packageVolume })} placeholder="Например, 1 л" />
+            <CreatableMultiCombobox id="product-field-atf" label="ATF" field="atf" value={form.atf} onChange={(atf) => updateForm({ atf })} placeholder="Dexron III; Mercon V" />
+            <CreatableMultiCombobox id="product-field-apiSpec" label="API трансмиссионного масла" field="transmissionApi" value={form.apiSpec} onChange={(apiSpec) => updateForm({ apiSpec })} placeholder="GL-4; GL-5" />
+            {renderField("volume", "Объём, л", { type: "number", placeholder: "1" })}
+            <CreatableMultiCombobox id="product-field-oemAtf" label="Допуски производителей для трансмиссии" field="transmissionOem" value={form.oemAtf} onChange={(oemAtf) => updateForm({ oemAtf })} placeholder="Aisin JWS 3309; MB 236.14" hint="ATF-классы и OEM-допуски не считаются взаимозаменяемыми автоматически." />
           </div>
         </section>
       );
@@ -5019,7 +5069,14 @@ export default function ProductsClient() {
                         ) : null}
                       </fieldset>
                       {renderEntityTypeField()}
-                      {renderField("brand", "Бренд", { placeholder: "Mobil" })}
+                      <CreatableSearchCombobox
+                        id="product-field-brand"
+                        label="Бренд"
+                        field="brand"
+                        value={form.brand}
+                        onChange={(brand) => updateForm({ brand })}
+                        placeholder="Начните вводить бренд"
+                      />
                       {renderGroupField()}
                       {renderUomField()}
                       {renderField("salePrice", "Цена продажи", { type: "money", required: true, placeholder: "0,00" })}

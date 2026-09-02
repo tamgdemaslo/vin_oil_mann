@@ -1,0 +1,537 @@
+{
+  "metadata": {
+    "version": "52a1a8b775c4ff10",
+    "generatedAt": "2026-09-02T17:12:30.469Z",
+    "complete": true,
+    "sourceFiles": [
+      {
+        "fileName": "brands.xml",
+        "repositoryPath": "data/product-attributes/source/brands.xml",
+        "legacyFallback": false,
+        "sha256": "ebb8a7316bb47e76767de3f6a8287a2a38337a0dabe6e383b9d89087a605c9d6",
+        "rootTag": "BrandValues",
+        "itemTag": "Brand",
+        "sourceCount": 690,
+        "canonicalCount": 690,
+        "legacyComparison": null
+      },
+      {
+        "fileName": "engine-sae.xml",
+        "repositoryPath": "data/product-attributes/source/engine-sae.xml",
+        "legacyFallback": false,
+        "sha256": "69453b7858fee9b6cea5653dbd81eab4df2d0a880f616766f96f5deb7209386b",
+        "rootTag": "SAEValues",
+        "itemTag": "SAE",
+        "sourceCount": 42,
+        "canonicalCount": 42,
+        "legacyComparison": {
+          "legacyPath": "data/values-xml-4.xml",
+          "legacySha256": "69453b7858fee9b6cea5653dbd81eab4df2d0a880f616766f96f5deb7209386b",
+          "status": "MATCH"
+        }
+      },
+      {
+        "fileName": "package-volumes.xml",
+        "repositoryPath": "data/product-attributes/source/package-volumes.xml",
+        "legacyFallback": false,
+        "sha256": "8781d9dbcaaa54439e1dcdc42356253bb4cb5a3a17f26c0c02f6d6043dac39fe",
+        "rootTag": "VolumeValues",
+        "itemTag": "Volume",
+        "sourceCount": 443,
+        "canonicalCount": 443,
+        "legacyComparison": null
+      },
+      {
+        "fileName": "acea.xml",
+        "repositoryPath": "data/product-attributes/source/acea.xml",
+        "legacyFallback": false,
+        "sha256": "b62f119ee1d52a50bb00ea168def3506389b5d984861ea2b08ba9fb9d30b30a4",
+        "rootTag": "ACEAValues",
+        "itemTag": "ACEA",
+        "sourceCount": 33,
+        "canonicalCount": 33,
+        "legacyComparison": {
+          "legacyPath": "data/values-xml.xml",
+          "legacySha256": "b62f119ee1d52a50bb00ea168def3506389b5d984861ea2b08ba9fb9d30b30a4",
+          "status": "MATCH"
+        }
+      },
+      {
+        "fileName": "engine-api.xml",
+        "repositoryPath": "data/product-attributes/source/engine-api.xml",
+        "legacyFallback": false,
+        "sha256": "5823ab11038112a13f60a9fc87cfbec542e6fafe76296273fcf898e61a4b07de",
+        "rootTag": "APIValues",
+        "itemTag": "API",
+        "sourceCount": 53,
+        "canonicalCount": 53,
+        "legacyComparison": {
+          "legacyPath": "data/values-xml-2.xml",
+          "legacySha256": "5823ab11038112a13f60a9fc87cfbec542e6fafe76296273fcf898e61a4b07de",
+          "status": "MATCH"
+        }
+      },
+      {
+        "fileName": "engine-oem.xml",
+        "repositoryPath": "data/product-attributes/source/engine-oem.xml",
+        "legacyFallback": false,
+        "sha256": "f294e3660b45ede71b4a798bf2c7d915d605881faac27e40192f971a369f46b8",
+        "rootTag": "OEMOilValues",
+        "itemTag": "OEMOil",
+        "sourceCount": 530,
+        "canonicalCount": 523,
+        "legacyComparison": {
+          "legacyPath": "data/values-xml-3.xml",
+          "legacySha256": "f294e3660b45ede71b4a798bf2c7d915d605881faac27e40192f971a369f46b8",
+          "status": "MATCH"
+        }
+      },
+      {
+        "fileName": "transmission-sae.xml",
+        "repositoryPath": "data/product-attributes/source/transmission-sae.xml",
+        "legacyFallback": false,
+        "sha256": "61b6007e072072b56dbdd872709a84de4b91a5a8ccfd368a5224a6763458f197",
+        "rootTag": "SAEValues",
+        "itemTag": "SAE",
+        "sourceCount": 53,
+        "canonicalCount": 53,
+        "legacyComparison": null
+      },
+      {
+        "fileName": "atf.xml",
+        "repositoryPath": "data/product-attributes/source/atf.xml",
+        "legacyFallback": false,
+        "sha256": "97fa518a81784ff1fdded3892da1bdf96efa728ca62da8a37aed27b376f3cc0a",
+        "rootTag": "ATFValues",
+        "itemTag": "ATF",
+        "sourceCount": 63,
+        "canonicalCount": 63,
+        "legacyComparison": null
+      },
+      {
+        "fileName": "transmission-api.xml",
+        "repositoryPath": "data/product-attributes/source/transmission-api.xml",
+        "legacyFallback": false,
+        "sha256": "7266cd4dc86f51d502b1b10d672f7407bf9378f74705ab16409b46a539848670",
+        "rootTag": "APIValues",
+        "itemTag": "API",
+        "sourceCount": 22,
+        "canonicalCount": 22,
+        "legacyComparison": null
+      },
+      {
+        "fileName": "transmission-oem.xml",
+        "repositoryPath": "data/product-attributes/source/transmission-oem.xml",
+        "legacyFallback": false,
+        "sha256": "c5a89ae31bfbce303f59c4c25a74398c3b60ff52215c3a650b7e2536529f9197",
+        "rootTag": "OEMOilValues",
+        "itemTag": "OEMOil",
+        "sourceCount": 873,
+        "canonicalCount": 870,
+        "legacyComparison": null
+      }
+    ],
+    "missingSourceFiles": []
+  },
+  "summary": {
+    "EXACT_DUPLICATE": 6,
+    "CASE_VARIANT": 0,
+    "WHITESPACE_VARIANT": 7,
+    "PUNCTUATION_VARIANT": 3,
+    "UNICODE_CONFUSABLE": 1,
+    "SEMANTIC_ALIAS_CANDIDATE": 4,
+    "CROSS_DICTIONARY_VALUE": 19,
+    "SUSPICIOUS_VALUE": 3,
+    "COLLISION": 0,
+    "NO_ISSUE": 2759
+  },
+  "qualityIssues": [
+    {
+      "category": "SUSPICIOUS_VALUE",
+      "field": "brand",
+      "raw": "OEM",
+      "canonical": "OEM",
+      "resolution": "KEPT_FOR_REVIEW",
+      "sourceFile": "data/product-attributes/source/brands.xml"
+    },
+    {
+      "category": "SUSPICIOUS_VALUE",
+      "field": "engineSae",
+      "raw": "Не подлежит классификации по SAE",
+      "canonical": "Не подлежит классификации по SAE",
+      "resolution": "KEPT_FOR_REVIEW",
+      "sourceFile": "data/product-attributes/source/engine-sae.xml"
+    },
+    {
+      "category": "UNICODE_CONFUSABLE",
+      "field": "acea",
+      "raw": "А4",
+      "canonical": "A4",
+      "resolution": "SAFE_FIELD_SPECIFIC_CANONICALIZATION",
+      "sourceFile": "data/product-attributes/source/acea.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "engineOem",
+      "raw": "Ford WSS-M2C153-H",
+      "canonical": "Ford WSS-M2C 153-H",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "engineOem",
+      "raw": "Ford WSS-M2C912-A",
+      "canonical": "Ford WSS-M2C 912-A",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "engineOem",
+      "raw": "Ford WSS-M2C913-C",
+      "canonical": "Ford WSS-M2C 913-C",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "engineOem",
+      "raw": "Ford WSS-M2C925-A",
+      "canonical": "Ford WSS-M2C 925-A",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "PUNCTUATION_VARIANT",
+      "field": "engineOem",
+      "raw": "GM dexos1",
+      "canonical": "GM Dexos 1",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "PUNCTUATION_VARIANT",
+      "field": "engineOem",
+      "raw": "GM dexos1 Gen 2",
+      "canonical": "GM Dexos 1 Gen 2",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "PUNCTUATION_VARIANT",
+      "field": "engineOem",
+      "raw": "GM dexos1 Gen 3",
+      "canonical": "GM Dexos 1 Gen 3",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/engine-oem.xml"
+    },
+    {
+      "category": "SUSPICIOUS_VALUE",
+      "field": "transmissionSae",
+      "raw": "Не подлежит классификации по SAE",
+      "canonical": "Не подлежит классификации по SAE",
+      "resolution": "KEPT_FOR_REVIEW",
+      "sourceFile": "data/product-attributes/source/transmission-sae.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "transmissionOem",
+      "raw": "Ford CVT 23",
+      "canonical": "Ford CVT23",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/transmission-oem.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "transmissionOem",
+      "raw": "Ford CVT 30",
+      "canonical": "Ford CVT30",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/transmission-oem.xml"
+    },
+    {
+      "category": "WHITESPACE_VARIANT",
+      "field": "transmissionOem",
+      "raw": "Massey Ferguson M 1135",
+      "canonical": "Massey Ferguson M1135",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceFile": "data/product-attributes/source/transmission-oem.xml"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineApi",
+      "raw": "GF-4",
+      "canonical": "GF-4",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "GF is an ILSAC family"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineApi",
+      "raw": "GF-5",
+      "canonical": "GF-5",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "GF is an ILSAC family"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "transmissionApi",
+      "raw": "GL-3",
+      "canonical": "GL-3",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineApi",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineApi",
+      "raw": "GL-3",
+      "canonical": "GL-3",
+      "targetField": "transmissionApi",
+      "resolution": "RECLASSIFIED",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "transmissionApi",
+      "raw": "GL-4",
+      "canonical": "GL-4",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineApi",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineApi",
+      "raw": "GL-4",
+      "canonical": "GL-4",
+      "targetField": "transmissionApi",
+      "resolution": "RECLASSIFIED",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "transmissionApi",
+      "raw": "GL-5",
+      "canonical": "GL-5",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineApi",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineApi",
+      "raw": "GL-5",
+      "canonical": "GL-5",
+      "targetField": "transmissionApi",
+      "resolution": "RECLASSIFIED",
+      "reason": "GL/MT is a transmission API family"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-1",
+      "canonical": "GF-1",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-2",
+      "canonical": "GF-2",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-3",
+      "canonical": "GF-3",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "ilsac",
+      "raw": "GF-4",
+      "canonical": "GF-4",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineOem",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-4",
+      "canonical": "GF-4",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "ilsac",
+      "raw": "GF-5",
+      "canonical": "GF-5",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineOem",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-5",
+      "canonical": "GF-5",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-6",
+      "canonical": "GF-6",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-6A",
+      "canonical": "GF-6A",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-6B",
+      "canonical": "GF-6B",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-7",
+      "canonical": "GF-7",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-7A",
+      "canonical": "GF-7A",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ILSAC GF-7B",
+      "canonical": "GF-7B",
+      "targetField": "ilsac",
+      "resolution": "RECLASSIFIED",
+      "reason": "ILSAC extracted from engine OEM source"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "ACEA E4/E7",
+      "canonical": "E4/E7",
+      "targetField": "acea",
+      "resolution": "RECLASSIFIED",
+      "reason": "ACEA removed from OEM dropdown"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "API CI-4/CH-4",
+      "canonical": "CI-4/CH-4",
+      "targetField": "engineApi",
+      "resolution": "RECLASSIFIED",
+      "reason": "API removed from OEM dropdown"
+    },
+    {
+      "category": "EXACT_DUPLICATE",
+      "field": "engineApi",
+      "raw": "SN Plus",
+      "canonical": "SN Plus",
+      "resolution": "DEDUPLICATED_TO_FIRST_CANONICAL",
+      "sourceField": "engineOem",
+      "reason": "API removed from OEM dropdown"
+    },
+    {
+      "category": "CROSS_DICTIONARY_VALUE",
+      "field": "engineOem",
+      "raw": "SN Plus",
+      "canonical": "SN Plus",
+      "targetField": "engineApi",
+      "resolution": "RECLASSIFIED",
+      "reason": "API removed from OEM dropdown"
+    },
+    {
+      "category": "SEMANTIC_ALIAS_CANDIDATE",
+      "field": "engineOem",
+      "alias": "BMW LL-04",
+      "canonical": "BMW Longlife-04",
+      "reason": "verified common abbreviation",
+      "resolution": "VERIFIED_ALIAS"
+    },
+    {
+      "category": "SEMANTIC_ALIAS_CANDIDATE",
+      "field": "engineOem",
+      "alias": "GM dexos2",
+      "canonical": "GM Dexos 2",
+      "reason": "verified spelling variant",
+      "resolution": "VERIFIED_ALIAS"
+    },
+    {
+      "category": "SEMANTIC_ALIAS_CANDIDATE",
+      "field": "engineOem",
+      "alias": "VW 505 00",
+      "canonical": "VW 505.00",
+      "reason": "verified punctuation variant",
+      "resolution": "VERIFIED_ALIAS"
+    },
+    {
+      "category": "SEMANTIC_ALIAS_CANDIDATE",
+      "field": "engineOem",
+      "alias": "VW 505 01",
+      "canonical": "VW 505.01",
+      "reason": "verified punctuation variant",
+      "resolution": "VERIFIED_ALIAS"
+    }
+  ],
+  "collisions": {
+    "brand": [],
+    "engineSae": [],
+    "transmissionSae": [],
+    "packageVolume": [],
+    "acea": [],
+    "engineApi": [],
+    "transmissionApi": [],
+    "ilsac": [],
+    "atf": [],
+    "engineOem": [],
+    "transmissionOem": []
+  },
+  "notes": [
+    "A slash is always preserved as part of an atomic technical value.",
+    "Disputed and suspicious values are kept and reported; they are not silently deleted.",
+    "A lookup-key collision disables automatic canonical selection for that key."
+  ]
+}

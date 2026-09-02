@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { prisma } from "@/lib/db";
 import { getOilLineBaseName, parsePackVolumeLitersFromOilName } from "@/lib/oil-pack-volume";
-import { normalizeSAE, normalizeOEM, normalizeACEA, normalizeAPI } from "@/lib/oil-normalizer";
+import { normalizeSAE, normalizeOEM, normalizeACEA, normalizeAPI, normalizeILSAC } from "@/lib/oil-normalizer";
 import { getScopedBranchId } from "@/lib/request-tenant-store";
 import type {
   VinDecodeResponse,
@@ -386,19 +386,6 @@ async function loadOilProductsFromLocalDb(limit = 200): Promise<OilProduct[]> {
   }
 
   return enrichOilLineRequirements(oils.slice(0, take));
-}
-
-/** Нормализация ILSAC (GF-5, GF-6 и т.д.) для поиска. */
-function normalizeILSAC(value: string): string[] {
-  if (!value || typeof value !== "string") return [];
-  const parts = value.split(/[,;\/\s]+/).map((s) => s.trim()).filter(Boolean);
-  const out: string[] = [];
-  for (const p of parts) {
-    const m = p.match(/GF-?(\d)/i);
-    if (m) out.push(`GF-${m[1]}`);
-    else if (p.length >= 2) out.push(p);
-  }
-  return [...new Set(out)];
 }
 
 /** Поиск масел в локальной БД только по допускам (OEM/SAE/ACEA/API/ILSAC) — без VIN/OpenAI. */
