@@ -2,6 +2,8 @@
 -- Facts remain immutable; every plan mutation is additionally written to
 -- branch_audit_logs by the application.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS "branch_sales_plans" (
   "id" TEXT NOT NULL,
   "business_group_id" TEXT NOT NULL,
@@ -44,3 +46,5 @@ CREATE INDEX IF NOT EXISTS "branch_sales_plans_group_month_idx"
   ON "branch_sales_plans" ("business_group_id", "month");
 CREATE INDEX IF NOT EXISTS "branch_sales_plans_branch_month_metric_idx"
   ON "branch_sales_plans" ("branch_id", "month", "metric_code");
+
+COMMIT;

@@ -2,6 +2,8 @@
 -- plans and never changes source shipment values. It only adds mappings and
 -- controlled analytics snapshots that can be rebuilt from the same versioned rules.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS sales_analytics_metrics (
   code TEXT PRIMARY KEY,
   type TEXT NOT NULL,
@@ -312,3 +314,5 @@ SET analytics_category_label = metrics.title,
 FROM sales_analytics_metrics AS metrics
 WHERE metrics.code = positions.analytics_metric_code
   AND positions.analytics_category_label IS NULL;
+
+COMMIT;
