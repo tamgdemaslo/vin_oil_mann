@@ -107,7 +107,7 @@ function workspacePrompt(actor: AssistantActor, organizationId: string) {
     "Для технических задач web-исследование обычно запускается раннером. Продолжай его, используя результаты и ссылки; не утверждай, что интернет не дал результатов, если в trace нет успешного web_search. Если инструмент web-поиска недоступен, не прекращай работу: продолжи с VIN, локальной базой, MANN и ROSSKO, явно отдели неподтверждённые технические данные и попроси финальную проверку только там, где она влияет на сценарий.",
     "Не останавливай расчёт из-за одного неподтверждённого параметра. Разделяй ПОДТВЕРЖДЕНО, РАБОЧЕЕ ДОПУЩЕНИЕ и ТРЕБУЕТ ФИНАЛЬНОЙ ПРОВЕРКИ. При средней уверенности дай полезный предварительный расчёт; при низкой — 2–3 сценария или один вопрос, только если ответ существенно меняет расчёт.",
     "Используй VIN максимально: сначала lookup_vehicle, затем данные автомобиля, историю и внешние каталоги. Если точный код агрегата не найден, продолжай по модели, двигателю, году, приводу, рынку и найденным OEM/каталожным связкам. Не перекладывай цифровой поиск на сотрудника.",
-    "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз для одной услуги. Если сотрудник явно запросил разные агрегаты одного визита (например, двигатель и АКПП), вызови вместо него build_quote_and_tech_card_bundle ровно один раз и передай независимый input для каждой услуги. Не теряй услугу и не смешивай её допуск, объём, товар или тариф с другой. Не вызывай после сценария calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество.",
+    "Основной сценарий технического запроса — quote_and_tech_card. После обязательных проверок вызови build_quote_and_tech_card ровно один раз для одной услуги. Если сотрудник явно запросил разные агрегаты одного визита (например, двигатель и АКПП либо АКПП, раздатку, редукторы и муфту Haldex), вызови вместо него build_quote_and_tech_card_bundle ровно один раз и передай независимый input для каждой услуги. В комплексе допустимо 2–6 техкарт. Не теряй услугу и не смешивай её допуск, объём, товар или тариф с другой. Муфта Haldex — самостоятельная услуга service.type=awd_clutch; вопросы про её насос, сетку или поддон не относятся к фильтру АКПП. В её собственной техкарте ответь на вопрос о снятии поддона и очистке сетки насоса только по подтверждённому источнику; при отсутствии такого источника обозначь проверку перед работой, не выдумывай операцию. Не вызывай после сценария calculate_service_quote_v2 или calculate_quote_preview и не переписывай полученную сумму/количество.",
     "Для замены масла считай услугу под ключ: жидкость, доступные без разборки фильтр/поддон, прокладку, болты, пробки, уплотнения, герметик при необходимости, выставление уровня и работу. Если filterAccess=pan_service или integrated_with_pan, не заменяй эту ветку на filterAccess=unknown: передай в расчёт подтверждённый фильтр/поддон и обязательные прокладку и крепёж с корректными ролями; при отсутствии цены честно заблокируй именно этот пакет. Внутренний фильтр трансмиссии, требующий разборки агрегата, не включай в смету и не ищи для него ROSSKO: явно передай filterAccess=internal_requires_disassembly. После этого не ищи OE-номер, прокладки или связанные детали внутреннего фильтра и не добавляй в техкарту рекомендаций по его заказу.",
     "Для трансмиссионного расчёта всегда передавай в calculate_service_quote_v2 точный requiredFluidSpec, requiredFluidVolumeLiters и OEM-артикул основной жидкости в requiredFluidOemArticle. По умолчанию fluidPreference=prefer_local_compatible: не добавляй основную жидкость в selectedProducts, backend сам выберет совместимый локальный товар с достаточным остатком и заменит им поставщицкую жидкость. Название в OEM-документации вроде «Toyota Genuine CVT Fluid FE» фиксирует требуемую спецификацию, но само по себе не запрещает аналог с явно указанной совместимостью. fluidPreference=original_only допустим только если сотрудник явно потребовал оригинал или источник прямо запрещает аналоги. Оригинал из ROSSKO оставляй как запасной вариант до решения backend.",
     "Для quote_and_tech_card материалы по умолчанию принадлежат сервису; customer допускается только если сотрудник явно указал материалы клиента. Локальный каталог всегда проверяй первым. ROSSKO передавай в build_quote_and_tech_card только для конкретных обязательных позиций, которых нет локально. В комплексном сценарии локальный каталог и ROSSKO проверяются независимо для каждой услуги. Если сотрудник запросил частичную и аппаратную замену, передай обе в requestedProcedures и service.procedures: [partial, machine]; не теряй вариант, который пока нельзя посчитать. Никогда не используй цену карточки услуги, если найдено специальное правило. Не используй «выставление уровня» как отдельную полноценную работу и не добавляй его повторно: он входит в тарифы трансмиссии.",
@@ -166,9 +166,18 @@ function isTechnicalRequest(message: string) {
   return TECHNICAL_REQUEST_RE.test(message);
 }
 
-function isComplexEngineAndTransmissionRequest(message: string) {
+export function isComplexQuoteAndTechCardRequest(message: string) {
   const source = String(message ?? "");
-  return /(?:двигател|моторн\S*\s*масл)/iu.test(source) && /(?:акпп|автоматическ\S*\s*(?:короб|трансмисс)|\batf\b|aisin|eat8|cvt|dsg)/iu.test(source);
+  const aggregates = new Set<string>();
+  if (/(?:двигател|моторн\S*\s*масл)/iu.test(source)) aggregates.add("engine");
+  if (/(?:акпп|автоматическ\S*\s*(?:короб|трансмисс)|\batf\b|aisin|eat8|cvt|dsg)/iu.test(source)) aggregates.add("automatic_transmission");
+  if (/(?:раздатк|transfer\s*case|ptu|углов\S*\s*редуктор)/iu.test(source)) aggregates.add("transfer_case");
+  if (/(?:передн\S*\s*(?:мост|редуктор)|front\s*differential)/iu.test(source)) aggregates.add("front_differential");
+  if (/(?:задн\S*\s*(?:мост|редуктор)|\bhoc\b|rear\s*differential)/iu.test(source)) aggregates.add("rear_differential");
+  if (/(?:главн\S*\s*передач|final\s*drive)/iu.test(source)) aggregates.add("final_drive");
+  if (/(?:haldex|халдекс|муфт\S*\s*(?:полного\s*привод|awd|4wd))/iu.test(source)) aggregates.add("awd_clutch");
+  if (/(?:редуктор|differential)/iu.test(source) && ![...aggregates].some((item) => /differential|final_drive/.test(item))) aggregates.add("differential");
+  return aggregates.size >= 2;
 }
 
 function continuesCurrentTechnicalRequest(message: string) {
@@ -589,7 +598,7 @@ export async function runAssistantThread(input: { threadId: string; organization
     const scenarioRequest = continuationRequested ? `${originalTechnicalRequest}\n${message}` : message;
     const technicalScenarioContext = [scenarioRequest, continuationTechnicalContext(previousQuoteAndTechCard)].filter(Boolean).join("\n\n");
     const employeeRequestedOriginalOnly = employeeRequestedOriginalFluidOnly(scenarioRequest);
-    const quoteToolName = isComplexEngineAndTransmissionRequest(scenarioRequest) ? "build_quote_and_tech_card_bundle" as const : "build_quote_and_tech_card" as const;
+    const quoteToolName = isComplexQuoteAndTechCardRequest(scenarioRequest) ? "build_quote_and_tech_card_bundle" as const : "build_quote_and_tech_card" as const;
     const technicalVerificationPassLimit = technicalRequest ? (await getAgentSettings(input.organizationId)).calculationRules.maxTechnicalVerificationPasses : 0;
     let technicalVerificationPasses = 0;
     const vinContext = technicalRequest ? await requiredVinContext({ runId: run.id, organizationId: input.organizationId, actor: input.actor, vin: vinFromMessage(scenarioRequest) }) : null;

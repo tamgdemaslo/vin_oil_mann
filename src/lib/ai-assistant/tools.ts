@@ -144,7 +144,7 @@ export const assistantFunctionTools = [
   {
     type: "function",
     name: "build_quote_and_tech_card_bundle",
-    description: "Собрать комплекс одного визита из 2–3 независимых техкарт и смет. Используй только когда сотрудник явно запросил несколько разных агрегатов, например двигатель и АКПП. Каждый input рассчитывается отдельно: не объединяй допуски, объёмы, позиции или тарифы между сервисами.",
+    description: "Собрать комплекс одного визита из 2–6 независимых техкарт и смет. Используй, когда сотрудник явно запросил несколько разных агрегатов: например двигатель и АКПП, либо АКПП, раздатку, редукторы и муфту Haldex. Каждый input рассчитывается отдельно: не объединяй допуски, объёмы, позиции или тарифы между сервисами. Муфта Haldex — отдельный service.type=awd_clutch: ответы о снятии поддона и очистке сетки насоса фиксируй только по подтверждённому источнику в её собственной техкарте.",
     parameters: QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS,
   },
   {
@@ -795,7 +795,7 @@ async function serviceQuoteV2(args: Record<string, unknown>, context: ToolContex
 
 function serviceFamilyForTechCard(type: string) {
   if (type === "engine_oil") return "engine_oil";
-  if (["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential"].includes(type)) return "transmission_fluid";
+  if (["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "awd_clutch"].includes(type)) return "transmission_fluid";
   // The pricing-rule resolver is deliberately allowed to return no rule for
   // these service families. That becomes an explicit hard blocker rather than
   // silently borrowing an unrelated engine or transmission tariff.
@@ -1038,7 +1038,14 @@ export function applyAutomaticTransmissionScenarioDefaults(input: QuoteAndTechCa
   if (!isAutomaticTransmissionService(input.service.type)) return input;
   const request = text(requestMessage, 4_000).toLocaleLowerCase("ru-RU");
   if (!request) return input;
-  const asksFilterService = /фильтр|filter|поддон|pan\b/iu.test(request);
+  const asksAnyFilterService = /фильтр|filter|поддон|pan\b/iu.test(request);
+  // A multi-aggregate question may ask about a Haldex pump mesh or pan. That
+  // wording belongs to the clutch service; it must not turn the АКПП input
+  // into a filter-only scenario. Explicit gearbox + filter wording still
+  // keeps the filter-service branch for the gearbox itself.
+  const hasOtherFilterBearingAggregate = /haldex|халдекс|(?:муфт|насос|сетк)\S*\s*(?:haldex|халдекс|муфт)|(?:haldex|халдекс|муфт).*?(?:насос|сетк|поддон)/iu.test(request);
+  const asksAutomaticFilterService = /(?:акпп|коробк\S*|автоматическ\S*|\batf\b|aisin|ga\d{1,2}[a-z0-9-]*)(?:[^.\n]{0,60})(?:фильтр|filter|поддон|pan\b)|(?:фильтр|filter|поддон|pan\b)(?:[^.\n]{0,60})(?:акпп|коробк\S*|автоматическ\S*|\batf\b|aisin|ga\d{1,2}[a-z0-9-]*)/iu.test(request);
+  const asksFilterService = asksAnyFilterService && (!hasOtherFilterBearingAggregate || asksAutomaticFilterService);
   const asksMachine = /аппаратн|machine|полная\s+замен|full\s+(?:exchange|replacement)/iu.test(request);
   const asksPartial = /частичн|partial|слив\S*\s+(?:и\s+)?залив|drain\S*\s+(?:and\s+)?fill/iu.test(request);
   const filterServicePossible = input.service.filterAccess !== "none" && input.service.filterAccess !== "internal_requires_disassembly";
@@ -1284,10 +1291,10 @@ async function buildQuoteAndTechCard(args: Record<string, unknown>, context: Too
  * The existing single-service builder remains the only calculator.  A complex
  * visit simply runs it once per aggregate and returns the independent results
  * together, so quantities and tariffs cannot leak from engine service into
- * the transmission (or vice versa).
+ * the transmission (or any other aggregate).
  */
 async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, context: ToolContext) {
-  const rawInputs = Array.isArray(args.inputs) ? args.inputs.slice(0, 3) : [];
+  const rawInputs = Array.isArray(args.inputs) ? args.inputs.slice(0, 6) : [];
   if (rawInputs.length < 2) throw new Error("Для комплексного расчёта укажите минимум две независимые услуги.");
   const results: QuoteAndTechCardResult[] = [];
   const quoteSnapshots: Array<{ argumentsValue: Record<string, unknown>; preview: Record<string, unknown> }> = [];
@@ -1313,7 +1320,7 @@ async function buildQuoteAndTechCardBundle(args: Record<string, unknown>, contex
     vehicle,
     results,
     customerMessage: { status: "blocked" as const, text: "" },
-    evidence: results.flatMap((result) => result.evidence).filter((item, index, list) => list.findIndex((other) => `${other.source}:${other.url ?? ""}:${other.fact}` === `${item.source}:${item.url ?? ""}:${item.fact}`) === index).slice(0, 40),
+    evidence: results.flatMap((result) => result.evidence).filter((item, index, list) => list.findIndex((other) => `${other.source}:${other.url ?? ""}:${other.fact}` === `${item.source}:${item.url ?? ""}:${item.fact}`) === index).slice(0, 60),
   };
   const customerMessage = buildQuoteAndTechCardBundleCustomerMessage(draft);
   const result = parseQuoteAndTechCardArtifact({ ...draft, customerMessage, status: customerMessage.status === "ready" ? bundleStatus : "blocked" });

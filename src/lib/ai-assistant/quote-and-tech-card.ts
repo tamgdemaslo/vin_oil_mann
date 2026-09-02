@@ -5,7 +5,7 @@ const numberOrNull = (value: unknown) => typeof value === "number" && Number.isF
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const stringList = (value: unknown, max = 12, itemMax = 300) => Array.isArray(value) ? value.map((item) => text(item, itemMax)).filter(Boolean).slice(0, max) : [];
 
-export const QUOTE_AND_TECH_CARD_SERVICE_TYPES = ["engine_oil", "automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "coolant", "brake_fluid"] as const;
+export const QUOTE_AND_TECH_CARD_SERVICE_TYPES = ["engine_oil", "automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "awd_clutch", "coolant", "brake_fluid"] as const;
 // `filter_service` is deliberately separate from a drain-and-fill.  A
 // filter/pan package has different mandatory parts and labour, so it may not
 // silently be represented by the same `partial` option.
@@ -71,7 +71,9 @@ const SERVICE_ALIASES: Record<string, QuoteAndTechCardServiceType> = {
   automatic_transmission: "automatic_transmission", transmission_fluid: "automatic_transmission", atf: "automatic_transmission", automatic_gearbox: "automatic_transmission", automatic: "automatic_transmission", akpp: "automatic_transmission",
   cvt: "cvt", variator: "cvt", dsg: "dsg", dct: "dsg", robot: "dsg",
   manual_transmission: "manual_transmission", manual_gearbox: "manual_transmission", mt: "manual_transmission",
-  transfer_case: "transfer_case", transfer: "transfer_case", differential: "differential", front_differential: "differential", rear_differential: "differential", coolant: "coolant", antifreeze: "coolant", brake_fluid: "brake_fluid", brake: "brake_fluid",
+  transfer_case: "transfer_case", transfer: "transfer_case", differential: "differential", front_differential: "differential", rear_differential: "differential",
+  awd_clutch: "awd_clutch", haldex: "awd_clutch", haldex_clutch: "awd_clutch", awd_coupling: "awd_clutch", four_wheel_drive_clutch: "awd_clutch",
+  coolant: "coolant", antifreeze: "coolant", brake_fluid: "brake_fluid", brake: "brake_fluid",
 };
 const PROCEDURE_ALIASES: Record<string, QuoteAndTechCardProcedure> = {
   partial: "partial", partial_change: "partial", drain_and_fill: "partial", partial_replacement: "partial",
@@ -112,7 +114,7 @@ export const QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS = {
     inputs: {
       type: "array",
       minItems: 2,
-      maxItems: 3,
+      maxItems: 6,
       description: "Независимые сервисы одного визита. Не объединяй объёмы или материалы между ними.",
       items: generatedInput,
     },
@@ -126,6 +128,7 @@ export function normalizeQuoteAndTechCardServiceType(value: unknown, context: Re
   const joined = candidates.join("_");
   if (/cvt|вариатор/.test(joined)) return "cvt";
   if (/dsg|dct|робот/.test(joined)) return "dsg";
+  if (/haldex|халдекс|awd.*(?:clutch|coupl)|(?:clutch|coupl).*awd|муфт/.test(joined)) return "awd_clutch";
   if (/atf|акпп|automatic|transmission/.test(joined)) return "automatic_transmission";
   return null;
 }
@@ -418,7 +421,7 @@ export type QuoteAndTechCardPlanOption = {
   blocker: { code: string; message: string; requiredToContinue: string } | null;
 };
 export type QuoteAndTechCardPlan = { input: QuoteAndTechCardInput; rules: QuoteAndTechCardRules; isTransmission: boolean; requestedProcedures: QuoteAndTechCardProcedure[]; filterPolicy: QuoteAndTechCardFilterPolicy; hardBlockers: Array<{ code: string; message: string; requiredToContinue: string }>; quoteWarnings: string[]; techCardWarnings: string[]; options: QuoteAndTechCardPlanOption[] };
-function isTransmission(type: QuoteAndTechCardServiceType) { return ["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential"].includes(type); }
+function isTransmission(type: QuoteAndTechCardServiceType) { return ["automatic_transmission", "cvt", "dsg", "manual_transmission", "transfer_case", "differential", "awd_clutch"].includes(type); }
 function roundUp(value: number, step: number) { const normalizedStep = Math.max(0.1, Math.min(10, step || 1)); return Math.ceil((value - 1e-8) / normalizedStep) * normalizedStep; }
 
 function quantitySource(input: QuoteAndTechCardInput, code: QuoteAndTechCardProcedure) {
@@ -573,9 +576,9 @@ export const QuoteAndTechCardBundleSchema = z.object({
   scenario: z.literal("quote_and_tech_card_bundle"),
   status: z.enum(["ready", "partial", "blocked"]),
   vehicle: z.object({ displayName: z.string().min(1).max(180), aggregate: z.string().max(160).nullable() }).strict(),
-  results: z.array(QuoteAndTechCardResultSchema).min(2).max(3),
-  customerMessage: z.object({ status: z.enum(["ready", "blocked"]), text: z.string().max(6_000) }).strict(),
-  evidence: z.array(QuoteAndTechCardEvidenceSchema).max(40),
+  results: z.array(QuoteAndTechCardResultSchema).min(2).max(6),
+  customerMessage: z.object({ status: z.enum(["ready", "blocked"]), text: z.string().max(12_000) }).strict(),
+  evidence: z.array(QuoteAndTechCardEvidenceSchema).max(60),
 }).strict();
 export type QuoteAndTechCardBundle = z.infer<typeof QuoteAndTechCardBundleSchema>;
 export type QuoteAndTechCardArtifact = QuoteAndTechCardResult | QuoteAndTechCardBundle;

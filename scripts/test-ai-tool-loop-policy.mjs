@@ -10,6 +10,7 @@ const {
   isAssistantCalculationTool,
   shouldFinalizeAssistantToolTurn,
 } = await jiti.import("../src/lib/ai-assistant/tool-loop-policy.ts");
+const { isComplexQuoteAndTechCardRequest } = await jiti.import("../src/lib/ai-assistant/runner.ts");
 
 assert.equal(isAssistantCalculationTool("calculate_service_quote_v2"), true);
 assert.equal(isAssistantCalculationTool("calculate_quote_preview"), true);
@@ -20,6 +21,8 @@ assert.equal(isAssistantCalculationTool("search_rossko"), false);
 assert.equal(shouldFinalizeAssistantToolTurn({ turn: 1, maxToolTurns: 6, calculationCompleted: true }), true);
 assert.equal(shouldFinalizeAssistantToolTurn({ turn: 4, maxToolTurns: 6, calculationCompleted: false }), false);
 assert.equal(shouldFinalizeAssistantToolTurn({ turn: 5, maxToolTurns: 6, calculationCompleted: false }), true);
+assert.equal(isComplexQuoteAndTechCardRequest("Нужна замена масла в АКПП, раздатке, редукторе главной передачи, редукторе заднего моста HOC и муфте Haldex"), true, "a multi-aggregate drivetrain request must use the bundle calculator");
+assert.equal(isComplexQuoteAndTechCardRequest("Нужна частичная замена масла в АКПП"), false, "a single АКПП request remains a single-service calculation");
 
 const runner = await readFile("src/lib/ai-assistant/runner.ts", "utf8");
 assert.match(runner, /const MAX_TOOL_CALLS = \d+;/);

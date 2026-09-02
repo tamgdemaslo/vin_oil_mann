@@ -18,6 +18,7 @@ const {
   parseQuoteAndTechCardResult,
   parseQuoteAndTechCardToolResult,
   QUOTE_AND_TECH_CARD_TOOL_PARAMETERS,
+  QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS,
   quoteAndTechCardFilterPolicy,
   quoteAndTechCardMaterials,
   quoteAndTechCardSupplierRows,
@@ -80,6 +81,7 @@ const toolEvidence = QUOTE_AND_TECH_CARD_TOOL_PARAMETERS.properties.input.proper
 assert.equal(toolService.properties.type.type, "string", "tool intake accepts upstream service aliases before normalization");
 assert.equal(toolService.properties.procedures.items.type, "string", "tool intake accepts upstream procedure aliases before normalization");
 assert.equal(toolEvidence.properties.status.type, "string", "tool intake accepts observed evidence statuses before normalization");
+assert.equal(QUOTE_AND_TECH_CARD_BUNDLE_TOOL_PARAMETERS.properties.inputs.maxItems, 6, "a complex visit can retain up to six independent aggregates");
 assert.equal(normalized.service.type, "automatic_transmission", "transmission_fluid normalizes to automatic_transmission");
 assert.deepEqual(normalized.requestedProcedures, ["machine", "partial"], "requested procedures survive separately from a single scenario procedure");
 assert.equal(normalized.requestedDates, "29–30 августа", "requested dates stay in the normalized scenario input");
@@ -193,6 +195,15 @@ const explicitPartialScenarios = applyAutomaticTransmissionScenarioDefaults(gene
 assert.deepEqual(explicitPartialScenarios.requestedProcedures, ["partial"], "an explicitly requested partial service is not expanded into another method");
 const explicitMachineWithFilterScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Нужна аппаратная замена АКПП с фильтром");
 assert.deepEqual(explicitMachineWithFilterScenarios.requestedProcedures, ["machine_filter_service"], "a filter request cannot degrade an аппаратная service into a filterless package");
+const bmwMultiAggregateScenarios = applyAutomaticTransmissionScenarioDefaults(genericAutomaticInput, "Стоимость замены масла АКПП, раздатке (он же передний мост), редукторе главной передачи и заднем редукторе HOC. При замене масла в муфте Haldex: на насосе сетку чистите? Поддон муфты снимаете?");
+assert.deepEqual(bmwMultiAggregateScenarios.requestedProcedures, ["partial", "filter_service"], "Haldex pan or mesh wording does not turn the АКПП branch into a filter-only service");
+const haldexInput = parseQuoteAndTechCardInput({
+  vehicle: { id: "vehicle-bmw", displayName: "BMW X1 F48 xDrive20i", aggregateCode: "Haldex" },
+  service: { type: "haldex", name: "Замена жидкости в муфте Haldex", requiredFluidSpec: "OEM specification", standardTechnicalQuantityLiters: 0.65, filterAccess: "unknown", serviceHardware: [], materialsOwner: "service" },
+  requestedProcedures: ["standard"], selectedProducts: [], consumables: [], rosskoItems: [], localCatalogChecked: true, fluidMissingLocally: false, softWarnings: [], evidence: [],
+});
+assert.equal(haldexInput.service.type, "awd_clutch", "Haldex is represented as its own AWD-clutch service, not as an АКПП filter request");
+assert.equal(createQuoteAndTechCardPlan(haldexInput, rules).isTransmission, true, "Haldex fluid uses the shared transmission-fluid calculation family");
 
 const integratedPanPlan = createQuoteAndTechCardPlan({
   ...runtimeInput,
@@ -450,6 +461,9 @@ assert.equal(bundle?.scenario, "quote_and_tech_card_bundle", "bundle is accepted
 assert.equal(bundle?.results.length, 2, "bundle preserves two independent technical cards and quote sets");
 assert.equal(buildQuoteAndTechCardArtifactCustomerMessage(bundle).status, "ready", "deterministic customer-message actions also support a complex quote");
 assert.equal(parseQuoteAndTechCardToolResult({ ...bundle, quoteSnapshots: [{ argumentsValue: {}, preview: {} }], finalQuote: false })?.scenario, "quote_and_tech_card_bundle", "runner strips operational metadata before validating a complex quote attachment");
+const fiveServiceBundleMessage = buildQuoteAndTechCardBundleCustomerMessage({ vehicle: result.vehicle, results: [engineResult, result, engineResult, result, engineResult] });
+const fiveServiceBundle = parseQuoteAndTechCardArtifact({ scenario: "quote_and_tech_card_bundle", status: "partial", vehicle: result.vehicle, results: [engineResult, result, engineResult, result, engineResult], customerMessage: fiveServiceBundleMessage, evidence: [...engineResult.evidence, ...result.evidence] });
+assert.equal(fiveServiceBundle?.results.length, 5, "a drivetrain visit with five independently priced aggregates remains a valid bundle");
 const engineBlocker = { code: "SPECIFICATION_NOT_CONFIRMED", message: "Не подтверждён допуск моторного масла.", requiredToContinue: "Укажите VIN либо модель, год и допуск масла." };
 const blockedEngineResult = parseQuoteAndTechCardResult({
   ...engineResult,
